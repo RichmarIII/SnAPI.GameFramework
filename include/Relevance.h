@@ -15,22 +15,44 @@ namespace SnAPI::GameFramework
 
 class NodeGraph;
 
+/**
+ * @brief Context passed to relevance policy evaluation.
+ * @remarks Provides access to the node handle and owning graph.
+ */
 struct RelevanceContext
 {
-    NodeHandle Node;
-    std::reference_wrapper<NodeGraph> Graph;
+    NodeHandle Node; /**< @brief Node being evaluated. */
+    std::reference_wrapper<NodeGraph> Graph; /**< @brief Owning graph. */
 };
 
+/**
+ * @brief Registry for relevance policy types.
+ * @remarks Policies are stored by TypeId and invoked via type-erased callbacks.
+ */
 class RelevancePolicyRegistry
 {
 public:
+    /**
+     * @brief Signature for relevance evaluation callbacks.
+     * @param PolicyData Pointer to policy instance.
+     * @param Context Evaluation context.
+     * @return True if the node is relevant/active.
+     */
     using EvaluateFn = bool(*)(const void* PolicyData, const RelevanceContext& Context);
 
+    /**
+     * @brief Stored policy metadata.
+     */
     struct PolicyInfo
     {
-        EvaluateFn Evaluate = nullptr;
+        EvaluateFn Evaluate = nullptr; /**< @brief Evaluation callback. */
     };
 
+    /**
+     * @brief Register a policy type.
+     * @tparam PolicyT Policy type (must implement Evaluate).
+     * @remarks Duplicate registrations are ignored.
+     */
     template<typename PolicyT>
     static void Register()
     {
@@ -43,6 +65,11 @@ public:
         m_policies.emplace(PolicyId, PolicyInfo{&EvaluateImpl<PolicyT>});
     }
 
+    /**
+     * @brief Find policy metadata by TypeId.
+     * @param PolicyId Policy type id.
+     * @return Pointer to PolicyInfo or nullptr.
+     */
     static const PolicyInfo* Find(const TypeId& PolicyId)
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -55,6 +82,13 @@ public:
     }
 
 private:
+    /**
+     * @brief Internal evaluation wrapper for PolicyT.
+     * @tparam PolicyT Policy type.
+     * @param PolicyData Pointer to policy instance.
+     * @param Context Evaluation context.
+     * @return True if relevant.
+     */
     template<typename PolicyT>
     static bool EvaluateImpl(const void* PolicyData, const RelevanceContext& Context)
     {
@@ -62,15 +96,26 @@ private:
         return Typed->Evaluate(Context);
     }
 
-    static inline std::mutex m_mutex{};
-    static inline std::unordered_map<TypeId, PolicyInfo, UuidHash> m_policies{};
+    static inline std::mutex m_mutex{}; /**< @brief Protects policy map. */
+    static inline std::unordered_map<TypeId, PolicyInfo, UuidHash> m_policies{}; /**< @brief Policy map by TypeId. */
 };
 
+/**
+ * @brief Component that drives relevance evaluation for a node.
+ * @remarks Stores a policy instance and activation result.
+ */
 class RelevanceComponent : public IComponent
 {
 public:
+    /** @brief Stable type name for reflection. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RelevanceComponent";
 
+    /**
+     * @brief Set the relevance policy for this component.
+     * @tparam PolicyT Policy type.
+     * @param Policy Policy instance to store.
+     * @remarks Registers the policy type on first use.
+     */
     template<typename PolicyT>
     void Policy(PolicyT Policy)
     {
@@ -79,41 +124,66 @@ public:
         m_policyData = std::shared_ptr<void>(new PolicyT(std::move(Policy)), [](void* Ptr) { delete static_cast<PolicyT*>(Ptr); });
     }
 
+    /**
+     * @brief Get the policy type id.
+     * @return TypeId of the policy.
+     */
     const TypeId& PolicyId() const
     {
         return m_policyId;
     }
 
+    /**
+     * @brief Get the stored policy instance.
+     * @return Shared pointer to the policy data.
+     * @remarks The stored pointer is type-erased.
+     */
     const std::shared_ptr<void>& PolicyData() const
     {
         return m_policyData;
     }
 
+    /**
+     * @brief Get the active state computed by relevance.
+     * @return True if relevant.
+     */
     bool Active() const
     {
         return m_active;
     }
 
+    /**
+     * @brief Set the active state computed by relevance.
+     * @param Active New active state.
+     */
     void Active(bool Active)
     {
         m_active = Active;
     }
 
+    /**
+     * @brief Get the last computed relevance score.
+     * @return Score value.
+     */
     float LastScore() const
     {
         return m_lastScore;
     }
 
+    /**
+     * @brief Set the last computed relevance score.
+     * @param Score Score value.
+     */
     void LastScore(float Score)
     {
         m_lastScore = Score;
     }
 
 private:
-    TypeId m_policyId{};
-    std::shared_ptr<void> m_policyData{};
-    bool m_active = true;
-    float m_lastScore = 1.0f;
+    TypeId m_policyId{}; /**< @brief Policy type id. */
+    std::shared_ptr<void> m_policyData{}; /**< @brief Type-erased policy instance. */
+    bool m_active = true; /**< @brief Last computed active state. */
+    float m_lastScore = 1.0f; /**< @brief Last computed score. */
 };
 
 } // namespace SnAPI::GameFramework

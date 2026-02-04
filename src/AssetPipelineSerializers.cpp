@@ -7,24 +7,46 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+/**
+ * @brief AssetPipeline serializer for NodeGraphPayload.
+ * @remarks Wraps reflection-based serialization into AssetPipeline payloads.
+ */
 class NodeGraphPayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
 {
 public:
+    /**
+     * @brief Get the payload type id.
+     * @return Payload type id for NodeGraph.
+     */
     ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
     {
         return PayloadNodeGraph();
     }
 
+    /**
+     * @brief Get the payload type name.
+     * @return Payload type name string.
+     */
     const char* GetTypeName() const override
     {
         return kPayloadNodeGraphName;
     }
 
+    /**
+     * @brief Get the payload schema version.
+     * @return Schema version for NodeGraph payloads.
+     */
     uint32_t GetSchemaVersion() const override
     {
         return NodeGraphSerializer::kSchemaVersion;
     }
 
+    /**
+     * @brief Serialize a NodeGraphPayload into bytes.
+     * @param Object Pointer to NodeGraphPayload.
+     * @param OutBytes Output byte buffer.
+     * @remarks Clears OutBytes on failure.
+     */
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
     {
         const auto* Payload = static_cast<const NodeGraphPayload*>(Object);
@@ -40,6 +62,13 @@ public:
         }
     }
 
+    /**
+     * @brief Deserialize a NodeGraphPayload from bytes.
+     * @param Object Pointer to destination payload.
+     * @param Bytes Byte buffer.
+     * @param Size Byte count.
+     * @return True on success.
+     */
     bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
     {
         auto* Payload = static_cast<NodeGraphPayload*>(Object);
@@ -57,24 +86,35 @@ public:
     }
 };
 
+/**
+ * @brief AssetPipeline serializer for LevelPayload.
+ */
 class LevelPayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
 {
 public:
+    /** @brief Get the payload type id. */
     ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
     {
         return PayloadLevel();
     }
 
+    /** @brief Get the payload type name. */
     const char* GetTypeName() const override
     {
         return kPayloadLevelName;
     }
 
+    /** @brief Get the payload schema version. */
     uint32_t GetSchemaVersion() const override
     {
         return LevelSerializer::kSchemaVersion;
     }
 
+    /**
+     * @brief Serialize a LevelPayload into bytes.
+     * @param Object Pointer to LevelPayload.
+     * @param OutBytes Output byte buffer.
+     */
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
     {
         const auto* Payload = static_cast<const LevelPayload*>(Object);
@@ -90,6 +130,13 @@ public:
         }
     }
 
+    /**
+     * @brief Deserialize a LevelPayload from bytes.
+     * @param Object Pointer to destination payload.
+     * @param Bytes Byte buffer.
+     * @param Size Byte count.
+     * @return True on success.
+     */
     bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
     {
         auto* Payload = static_cast<LevelPayload*>(Object);
@@ -107,24 +154,35 @@ public:
     }
 };
 
+/**
+ * @brief AssetPipeline serializer for WorldPayload.
+ */
 class WorldPayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
 {
 public:
+    /** @brief Get the payload type id. */
     ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
     {
         return PayloadWorld();
     }
 
+    /** @brief Get the payload type name. */
     const char* GetTypeName() const override
     {
         return kPayloadWorldName;
     }
 
+    /** @brief Get the payload schema version. */
     uint32_t GetSchemaVersion() const override
     {
         return WorldSerializer::kSchemaVersion;
     }
 
+    /**
+     * @brief Serialize a WorldPayload into bytes.
+     * @param Object Pointer to WorldPayload.
+     * @param OutBytes Output byte buffer.
+     */
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
     {
         const auto* Payload = static_cast<const WorldPayload*>(Object);
@@ -140,6 +198,13 @@ public:
         }
     }
 
+    /**
+     * @brief Deserialize a WorldPayload from bytes.
+     * @param Object Pointer to destination payload.
+     * @param Bytes Byte buffer.
+     * @param Size Byte count.
+     * @return True on success.
+     */
     bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
     {
         auto* Payload = static_cast<WorldPayload*>(Object);
@@ -159,16 +224,28 @@ public:
 
 } // namespace
 
+/**
+ * @brief Create the NodeGraph payload serializer.
+ * @return Serializer instance.
+ */
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateNodeGraphPayloadSerializer()
 {
     return std::make_unique<NodeGraphPayloadSerializer>();
 }
 
+/**
+ * @brief Create the Level payload serializer.
+ * @return Serializer instance.
+ */
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelPayloadSerializer()
 {
     return std::make_unique<LevelPayloadSerializer>();
 }
 
+/**
+ * @brief Create the World payload serializer.
+ * @return Serializer instance.
+ */
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateWorldPayloadSerializer()
 {
     return std::make_unique<WorldPayloadSerializer>();

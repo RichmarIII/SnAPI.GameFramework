@@ -23,6 +23,12 @@
 namespace cereal
 {
 
+/**
+ * @brief cereal save function for Uuid.
+ * @param ArchiveRef Output archive.
+ * @param Id UUID to serialize.
+ * @remarks Stored as 16 raw bytes.
+ */
 template <class Archive>
 void save(Archive& ArchiveRef, const SnAPI::GameFramework::Uuid& Id)
 {
@@ -35,6 +41,12 @@ void save(Archive& ArchiveRef, const SnAPI::GameFramework::Uuid& Id)
     ArchiveRef(Data);
 }
 
+/**
+ * @brief cereal load function for Uuid.
+ * @param ArchiveRef Input archive.
+ * @param Id UUID to deserialize into.
+ * @remarks Reads 16 raw bytes.
+ */
 template <class Archive>
 void load(Archive& ArchiveRef, SnAPI::GameFramework::Uuid& Id)
 {
@@ -48,12 +60,22 @@ void load(Archive& ArchiveRef, SnAPI::GameFramework::Uuid& Id)
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @brief cereal serialize for NodeComponentPayload.
+ * @param ArchiveRef Archive.
+ * @param Value Payload to serialize.
+ */
 template <class Archive>
 void serialize(Archive& ArchiveRef, NodeComponentPayload& Value)
 {
     ArchiveRef(Value.ComponentId, Value.ComponentType, Value.Bytes);
 }
 
+/**
+ * @brief cereal serialize for NodePayload.
+ * @param ArchiveRef Archive.
+ * @param Value Payload to serialize.
+ */
 template <class Archive>
 void serialize(Archive& ArchiveRef, NodePayload& Value)
 {
@@ -70,18 +92,33 @@ void serialize(Archive& ArchiveRef, NodePayload& Value)
         Value.GraphBytes);
 }
 
+/**
+ * @brief cereal serialize for NodeGraphPayload.
+ * @param ArchiveRef Archive.
+ * @param Value Payload to serialize.
+ */
 template <class Archive>
 void serialize(Archive& ArchiveRef, NodeGraphPayload& Value)
 {
     ArchiveRef(Value.Name, Value.Nodes);
 }
 
+/**
+ * @brief cereal serialize for LevelPayload.
+ * @param ArchiveRef Archive.
+ * @param Value Payload to serialize.
+ */
 template <class Archive>
 void serialize(Archive& ArchiveRef, LevelPayload& Value)
 {
     ArchiveRef(Value.Name, Value.Graph);
 }
 
+/**
+ * @brief cereal serialize for WorldPayload.
+ * @param ArchiveRef Archive.
+ * @param Value Payload to serialize.
+ */
 template <class Archive>
 void serialize(Archive& ArchiveRef, WorldPayload& Value)
 {
@@ -90,6 +127,12 @@ void serialize(Archive& ArchiveRef, WorldPayload& Value)
 
 namespace
 {
+/**
+ * @brief Check if a type (or its bases) has serializable fields.
+ * @param Type TypeId to check.
+ * @param Cache Memoization cache.
+ * @return True if any fields are registered for serialization.
+ */
 bool HasSerializableFields(const TypeId& Type, std::unordered_map<TypeId, bool, UuidHash>& Cache)
 {
     auto It = Cache.find(Type);
@@ -124,6 +167,15 @@ bool HasSerializableFields(const TypeId& Type, std::unordered_map<TypeId, bool, 
     return false;
 }
 
+/**
+ * @brief Serialize fields recursively for a type and its bases.
+ * @param Type TypeId to serialize.
+ * @param Instance Pointer to instance.
+ * @param Archive Output archive.
+ * @param Context Serialization context.
+ * @param Visited Cycle guard for type traversal.
+ * @return Success or error.
+ */
 TExpected<void> SerializeFieldsRecursive(
     const TypeId& Type,
     const void* Instance,
@@ -192,6 +244,15 @@ TExpected<void> SerializeFieldsRecursive(
     return Ok();
 }
 
+/**
+ * @brief Deserialize fields recursively for a type and its bases.
+ * @param Type TypeId to deserialize.
+ * @param Instance Pointer to instance.
+ * @param Archive Input archive.
+ * @param Context Serialization context.
+ * @param Visited Cycle guard for type traversal.
+ * @return Success or error.
+ */
 TExpected<void> DeserializeFieldsRecursive(
     const TypeId& Type,
     void* Instance,

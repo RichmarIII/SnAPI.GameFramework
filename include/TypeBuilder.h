@@ -12,11 +12,21 @@
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @brief Fluent builder for registering reflection metadata.
+ * @tparam T Type to register.
+ * @remarks Use in a single translation unit per type.
+ */
 template<typename T>
 class TTypeBuilder
 {
 public:
     static_assert(std::is_class_v<T> || std::is_union_v<T>, "TTypeBuilder requires class/struct types");
+    /**
+     * @brief Construct a builder for a type name.
+     * @param Name Fully qualified type name.
+     * @remarks The TypeId is derived from Name via TypeIdFromName.
+     */
     explicit TTypeBuilder(const char* Name)
     {
         m_info.Name = Name;
@@ -25,6 +35,12 @@ public:
         m_info.Align = alignof(T);
     }
 
+    /**
+     * @brief Register a base type.
+     * @tparam BaseT Base class type.
+     * @return Reference to the builder for chaining.
+     * @remarks Base types are used for inheritance queries and serialization.
+     */
     template<typename BaseT>
     TTypeBuilder& Base()
     {
@@ -32,6 +48,14 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Register a field with getter/setter support.
+     * @tparam FieldT Field type.
+     * @param Name Field name.
+     * @param Member Pointer-to-member field.
+     * @return Reference to the builder for chaining.
+     * @remarks Const fields are treated as read-only (setter fails).
+     */
     template<typename FieldT>
     TTypeBuilder& Field(const char* Name, FieldT T::*Member)
     {
@@ -79,6 +103,14 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Register a non-const method for reflection.
+     * @tparam R Return type.
+     * @tparam Args Parameter pack.
+     * @param Name Method name.
+     * @param Method Pointer to member function.
+     * @return Reference to the builder for chaining.
+     */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...))
     {
@@ -99,6 +131,14 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Register a const method for reflection.
+     * @tparam R Return type.
+     * @tparam Args Parameter pack.
+     * @param Name Method name.
+     * @param Method Pointer to const member function.
+     * @return Reference to the builder for chaining.
+     */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const)
     {
@@ -119,6 +159,12 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Register a constructor signature.
+     * @tparam Args Constructor argument types.
+     * @return Reference to the builder for chaining.
+     * @remarks Constructors are used by serialization and scripting.
+     */
     template<typename... Args>
     TTypeBuilder& Constructor()
     {
@@ -135,12 +181,24 @@ public:
         return *this;
     }
 
+    /**
+     * @brief Register the built TypeInfo into the global TypeRegistry.
+     * @return Pointer to stored TypeInfo or error.
+     * @remarks Fails if the type is already registered.
+     */
     TExpected<TypeInfo*> Register()
     {
         return TypeRegistry::Instance().Register(std::move(m_info));
     }
 
 private:
+    /**
+     * @brief Construct an instance from a Variant argument pack.
+     * @tparam Args Constructor argument types.
+     * @param ArgsPack Argument span.
+     * @return Shared pointer to the constructed object.
+     * @remarks Performs runtime type extraction and conversion.
+     */
     template<typename... Args, size_t... I>
     static TExpected<std::shared_ptr<void>> ConstructImpl(std::span<const Variant> ArgsPack, std::index_sequence<I...>)
     {
@@ -167,7 +225,7 @@ private:
         return std::static_pointer_cast<void>(Ptr);
     }
 
-    TypeInfo m_info{};
+    TypeInfo m_info{}; /**< @brief Accumulated type metadata. */
 };
 
 } // namespace SnAPI::GameFramework

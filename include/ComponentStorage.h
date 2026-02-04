@@ -19,9 +19,19 @@ namespace SnAPI::GameFramework
 
 class TypeRegistry;
 
+/**
+ * @brief Global registry for component type indices and masks.
+ * @remarks Provides stable bit positions for fast component queries.
+ */
 class ComponentTypeRegistry
 {
 public:
+    /**
+     * @brief Get or assign a bit index for a component type.
+     * @param Id Component type id.
+     * @return Bit index for the type.
+     * @remarks Increments the version when a new type is added.
+     */
     static uint32_t TypeIndex(const TypeId& Id)
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -36,12 +46,21 @@ public:
         return Index;
     }
 
+    /**
+     * @brief Get the current registry version.
+     * @return Version counter.
+     * @remarks Incremented when new types are registered.
+     */
     static uint32_t Version()
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
         return m_version;
     }
 
+    /**
+     * @brief Get the number of 64-bit words required for the mask.
+     * @return Word count for the current type set.
+     */
     static size_t WordCount()
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -50,49 +69,128 @@ public:
     }
 
 private:
-    static inline std::mutex m_mutex{};
-    static inline std::unordered_map<TypeId, uint32_t, UuidHash> m_typeToIndex{};
-    static inline uint32_t m_version = 0;
+    static inline std::mutex m_mutex{}; /**< @brief Protects registry state. */
+    static inline std::unordered_map<TypeId, uint32_t, UuidHash> m_typeToIndex{}; /**< @brief TypeId -> bit index. */
+    static inline uint32_t m_version = 0; /**< @brief Version counter. */
 };
 
+/**
+ * @brief Type-erased interface for component storage.
+ * @remarks NodeGraph uses this to manage components generically.
+ */
 class IComponentStorage
 {
 public:
+    /** @brief Virtual destructor. */
     virtual ~IComponentStorage() = default;
+    /**
+     * @brief Get the component type id stored by this storage.
+     * @return TypeId value.
+     */
     virtual TypeId TypeKey() const = 0;
+    /**
+     * @brief Check if a node has this component.
+     * @param Owner Node handle.
+     * @return True if the component exists.
+     */
     virtual bool Has(NodeHandle Owner) const = 0;
+    /**
+     * @brief Remove a component from a node.
+     * @param Owner Node handle.
+     * @remarks Removal is deferred until EndFrame.
+     */
     virtual void Remove(NodeHandle Owner) = 0;
+    /**
+     * @brief Tick a component for a node.
+     * @param Owner Node handle.
+     * @param DeltaSeconds Time since last tick.
+     */
     virtual void TickComponent(NodeHandle Owner, float DeltaSeconds) = 0;
+    /**
+     * @brief Fixed-step tick a component for a node.
+     * @param Owner Node handle.
+     * @param DeltaSeconds Fixed time step.
+     */
     virtual void FixedTickComponent(NodeHandle Owner, float DeltaSeconds) = 0;
+    /**
+     * @brief Late tick a component for a node.
+     * @param Owner Node handle.
+     * @param DeltaSeconds Time since last tick.
+     */
     virtual void LateTickComponent(NodeHandle Owner, float DeltaSeconds) = 0;
+    /**
+     * @brief Borrow a component instance (mutable).
+     * @param Owner Node handle.
+     * @return Pointer to component or nullptr.
+     * @note Borrowed pointers must not be cached.
+     */
     virtual void* Borrowed(NodeHandle Owner) = 0;
+    /**
+     * @brief Borrow a component instance (const).
+     * @param Owner Node handle.
+     * @return Pointer to component or nullptr.
+     */
     virtual const void* Borrowed(NodeHandle Owner) const = 0;
+    /**
+     * @brief Process pending destruction at end-of-frame.
+     */
     virtual void EndFrame() = 0;
+    /**
+     * @brief Clear all components immediately.
+     */
     virtual void Clear() = 0;
 };
 
+/**
+ * @brief Typed component storage for a specific component type.
+ * @tparam T Component type.
+ * @remarks Manages component pool and owner mapping.
+ */
 template<typename T>
 class TComponentStorage final : public IComponentStorage
 {
 public:
     static_assert(std::is_base_of_v<IComponent, T>, "Components must derive from IComponent");
 
+    /**
+     * @brief Get the component type id.
+     * @return TypeId value.
+     */
     TypeId TypeKey() const override
     {
         return m_typeId;
     }
 
+    /**
+     * @brief Add a component with a generated UUID.
+     * @param Owner Owner node handle.
+     * @return Reference wrapper or error.
+     */
     TExpectedRef<T> Add(NodeHandle Owner)
     {
         return AddWithId(Owner, NewUuid());
     }
 
+    /**
+     * @brief Add a component with constructor arguments.
+     * @param Owner Owner node handle.
+     * @param args Constructor arguments.
+     * @return Reference wrapper or error.
+     */
     template<typename... Args>
     TExpectedRef<T> Add(NodeHandle Owner, Args&&... args)
     {
         return AddWithId(Owner, NewUuid(), std::forward<Args>(args)...);
     }
 
+    /**
+     * @brief Add a component with an explicit UUID.
+     * @param Owner Owner node handle.
+     * @param Id Component UUID.
+     * @param args Constructor arguments.
+     * @return Reference wrapper or error.
+     * @remarks Used by serialization to preserve identity.
+     */
     template<typename... Args>
     TExpectedRef<T> AddWithId(NodeHandle Owner, const Uuid& Id, Args&&... args)
     {
@@ -119,6 +217,11 @@ public:
         return *Component;
     }
 
+    /**
+     * @brief Get a component by owner.
+     * @param Owner Owner node handle.
+     * @return Reference wrapper or error.
+     */
     TExpectedRef<T> Component(NodeHandle Owner)
     {
         auto It = m_index.find(Owner);
@@ -134,11 +237,21 @@ public:
         return *Component;
     }
 
+    /**
+     * @brief Check if a node has this component.
+     * @param Owner Node handle.
+     * @return True if present.
+     */
     bool Has(NodeHandle Owner) const override
     {
         return m_index.find(Owner) != m_index.end();
     }
 
+    /**
+     * @brief Remove a component from a node.
+     * @param Owner Node handle.
+     * @remarks Removal is deferred until EndFrame.
+     */
     void Remove(NodeHandle Owner) override
     {
         auto It = m_index.find(Owner);
@@ -155,6 +268,11 @@ public:
         m_pendingDestroy.push_back(Id);
     }
 
+    /**
+     * @brief Tick the component for a node.
+     * @param Owner Node handle.
+     * @param DeltaSeconds Time since last tick.
+     */
     void TickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
         auto It = m_index.find(Owner);
@@ -169,6 +287,11 @@ public:
         }
     }
 
+    /**
+     * @brief Fixed-step tick the component for a node.
+     * @param Owner Node handle.
+     * @param DeltaSeconds Fixed time step.
+     */
     void FixedTickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
         auto It = m_index.find(Owner);
@@ -183,6 +306,11 @@ public:
         }
     }
 
+    /**
+     * @brief Late tick the component for a node.
+     * @param Owner Node handle.
+     * @param DeltaSeconds Time since last tick.
+     */
     void LateTickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
         auto It = m_index.find(Owner);
@@ -197,6 +325,11 @@ public:
         }
     }
 
+    /**
+     * @brief Borrow the component instance (mutable).
+     * @param Owner Node handle.
+     * @return Pointer to component or nullptr.
+     */
     void* Borrowed(NodeHandle Owner) override
     {
         auto It = m_index.find(Owner);
@@ -207,6 +340,11 @@ public:
         return m_pool.Borrowed(It->second);
     }
 
+    /**
+     * @brief Borrow the component instance (const).
+     * @param Owner Node handle.
+     * @return Pointer to component or nullptr.
+     */
     const void* Borrowed(NodeHandle Owner) const override
     {
         auto It = m_index.find(Owner);
@@ -217,6 +355,10 @@ public:
         return m_pool.Borrowed(It->second);
     }
 
+    /**
+     * @brief Process pending destruction at end-of-frame.
+     * @remarks Calls OnDestroy and unregisters components.
+     */
     void EndFrame() override
     {
         for (const auto& Id : m_pendingDestroy)
@@ -231,6 +373,10 @@ public:
         m_pool.EndFrame();
     }
 
+    /**
+     * @brief Clear all components immediately.
+     * @remarks Calls OnDestroy and clears internal mappings.
+     */
     void Clear() override
     {
         m_pool.ForEachAll([&](const THandle<T>& Handle, T& Component) {
@@ -243,10 +389,10 @@ public:
     }
 
 private:
-    TypeId m_typeId = TypeIdFromName(TTypeNameV<T>);
-    TObjectPool<T> m_pool{};
-    std::unordered_map<NodeHandle, Uuid, HandleHash> m_index{};
-    std::vector<Uuid> m_pendingDestroy{};
+    TypeId m_typeId = TypeIdFromName(TTypeNameV<T>); /**< @brief Component type id. */
+    TObjectPool<T> m_pool{}; /**< @brief Pool storing component instances. */
+    std::unordered_map<NodeHandle, Uuid, HandleHash> m_index{}; /**< @brief Owner -> component UUID. */
+    std::vector<Uuid> m_pendingDestroy{}; /**< @brief Components scheduled for deletion. */
 };
 
 } // namespace SnAPI::GameFramework

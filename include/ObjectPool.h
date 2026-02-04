@@ -14,14 +14,33 @@
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @brief Thread-safe object pool keyed by UUID handles.
+ * @tparam T Base type stored in the pool.
+ * @remarks Objects are stored as shared_ptr for stable addresses and ownership.
+ * @note Destruction is deferred until EndFrame to keep handles valid within a frame.
+ */
 template<typename T>
 class TObjectPool : public std::enable_shared_from_this<TObjectPool<T>>
 {
 public:
+    /**
+     * @brief Handle type for objects in this pool.
+     */
     using Handle = THandle<T>;
 
+    /**
+     * @brief Construct an empty pool.
+     */
     TObjectPool() = default;
 
+    /**
+     * @brief Create a new object with a generated UUID.
+     * @tparam U Derived type to construct.
+     * @param args Constructor arguments for U.
+     * @return Handle to the created object or error.
+     * @remarks Uses NewUuid for the handle identity.
+     */
     template<typename U = T, typename... Args>
     TExpected<Handle> Create(Args&&... args)
     {
@@ -29,6 +48,14 @@ public:
         return CreateWithId<U>(NewUuid(), std::forward<Args>(args)...);
     }
 
+    /**
+     * @brief Create a new object with an explicit UUID.
+     * @tparam U Derived type to construct.
+     * @param Id UUID to assign to the object.
+     * @param args Constructor arguments for U.
+     * @return Handle to the created object or error.
+     * @remarks Fails if Id is nil or already present in the pool.
+     */
     template<typename U = T, typename... Args>
     TExpected<Handle> CreateWithId(const Uuid& Id, Args&&... args)
     {
@@ -51,6 +78,12 @@ public:
         return Handle(Id);
     }
 
+    /**
+     * @brief Insert an existing shared object with a generated UUID.
+     * @param Object Shared pointer to insert.
+     * @return Handle to the inserted object or error.
+     * @remarks Fails if Object is null.
+     */
     TExpected<Handle> CreateFromShared(std::shared_ptr<T> Object)
     {
         if (!Object)
@@ -60,6 +93,13 @@ public:
         return CreateFromSharedWithId(std::move(Object), NewUuid());
     }
 
+    /**
+     * @brief Insert an existing shared object with an explicit UUID.
+     * @param Object Shared pointer to insert.
+     * @param Id UUID to assign to the object.
+     * @return Handle to the inserted object or error.
+     * @remarks Fails if Id is nil or already present in the pool.
+     */
     TExpected<Handle> CreateFromSharedWithId(std::shared_ptr<T> Object, const Uuid& Id)
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -84,11 +124,21 @@ public:
         return Handle(Id);
     }
 
+    /**
+     * @brief Check if a handle resolves to a live object.
+     * @param HandleRef Handle to validate.
+     * @return True if object exists and is not pending destroy.
+     */
     bool IsValid(const Handle& HandleRef) const
     {
         return IsValid(HandleRef.Id);
     }
 
+    /**
+     * @brief Check if a UUID resolves to a live object.
+     * @param Id UUID to validate.
+     * @return True if object exists and is not pending destroy.
+     */
     bool IsValid(const Uuid& Id) const
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -105,11 +155,23 @@ public:
         return true;
     }
 
+    /**
+     * @brief Resolve a handle to a borrowed pointer.
+     * @param HandleRef Handle to resolve.
+     * @return Pointer to object or nullptr if not found/pending destroy.
+     * @note Borrowed pointers must not be cached.
+     */
     T* Borrowed(const Handle& HandleRef)
     {
         return Borrowed(HandleRef.Id);
     }
 
+    /**
+     * @brief Resolve a UUID to a borrowed pointer.
+     * @param Id UUID to resolve.
+     * @return Pointer to object or nullptr if not found/pending destroy.
+     * @note Borrowed pointers must not be cached.
+     */
     T* Borrowed(const Uuid& Id)
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -126,11 +188,21 @@ public:
         return EntryRef.m_object.get();
     }
 
+    /**
+     * @brief Resolve a handle to a borrowed pointer (const).
+     * @param HandleRef Handle to resolve.
+     * @return Pointer to object or nullptr if not found/pending destroy.
+     */
     const T* Borrowed(const Handle& HandleRef) const
     {
         return Borrowed(HandleRef.Id);
     }
 
+    /**
+     * @brief Resolve a UUID to a borrowed pointer (const).
+     * @param Id UUID to resolve.
+     * @return Pointer to object or nullptr if not found/pending destroy.
+     */
     const T* Borrowed(const Uuid& Id) const
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -147,11 +219,23 @@ public:
         return EntryRef.m_object.get();
     }
 
+    /**
+     * @brief Mark an object for end-of-frame destruction by handle.
+     * @param HandleRef Handle to destroy.
+     * @return Success or error if not found.
+     * @remarks Object remains valid until EndFrame.
+     */
     TExpected<void> DestroyLater(const Handle& HandleRef)
     {
         return DestroyLater(HandleRef.Id);
     }
 
+    /**
+     * @brief Mark an object for end-of-frame destruction by UUID.
+     * @param Id UUID to destroy.
+     * @return Success or error if not found.
+     * @remarks Object remains valid until EndFrame.
+     */
     TExpected<void> DestroyLater(const Uuid& Id)
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -173,6 +257,11 @@ public:
         return Ok();
     }
 
+    /**
+     * @brief Destroy all objects that were marked for deletion.
+     * @remarks Frees slots and clears pending lists.
+     * @note Should be called at end of frame to keep handles stable.
+     */
     void EndFrame()
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -192,6 +281,11 @@ public:
         m_pendingDestroy.clear();
     }
 
+    /**
+     * @brief Remove all objects immediately.
+     * @remarks Clears the pool and all indices.
+     * @note Use cautiously; invalidates all handles immediately.
+     */
     void Clear()
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -201,11 +295,21 @@ public:
         m_pendingDestroy.clear();
     }
 
+    /**
+     * @brief Check if a handle is pending destruction.
+     * @param HandleRef Handle to check.
+     * @return True if the object is marked for deletion.
+     */
     bool IsPendingDestroy(const Handle& HandleRef) const
     {
         return IsPendingDestroy(HandleRef.Id);
     }
 
+    /**
+     * @brief Check if a UUID is pending destruction.
+     * @param Id UUID to check.
+     * @return True if the object is marked for deletion.
+     */
     bool IsPendingDestroy(const Uuid& Id) const
     {
         std::lock_guard<std::mutex> Lock(m_mutex);
@@ -217,6 +321,12 @@ public:
         return m_entries[It->second].m_pendingDestroy;
     }
 
+    /**
+     * @brief Iterate over all live (non-pending) objects (const).
+     * @tparam Fn Callable type.
+     * @param Func Callback invoked with (Handle, Object).
+     * @remarks Skips pending-destroy entries.
+     */
     template<typename Fn>
     void ForEach(const Fn& Func) const
     {
@@ -232,6 +342,12 @@ public:
         }
     }
 
+    /**
+     * @brief Iterate over all objects including pending destroy (const).
+     * @tparam Fn Callable type.
+     * @param Func Callback invoked with (Handle, Object).
+     * @remarks Includes objects marked for deletion.
+     */
     template<typename Fn>
     void ForEachAll(const Fn& Func) const
     {
@@ -247,6 +363,12 @@ public:
         }
     }
 
+    /**
+     * @brief Iterate over all live (non-pending) objects (mutable).
+     * @tparam Fn Callable type.
+     * @param Func Callback invoked with (Handle, Object).
+     * @remarks Skips pending-destroy entries.
+     */
     template<typename Fn>
     void ForEach(const Fn& Func)
     {
@@ -262,6 +384,12 @@ public:
         }
     }
 
+    /**
+     * @brief Iterate over all objects including pending destroy (mutable).
+     * @tparam Fn Callable type.
+     * @param Func Callback invoked with (Handle, Object).
+     * @remarks Includes objects marked for deletion.
+     */
     template<typename Fn>
     void ForEachAll(const Fn& Func)
     {
@@ -278,13 +406,22 @@ public:
     }
 
 private:
+    /**
+     * @brief Internal storage entry.
+     * @remarks Uses shared_ptr to keep stable addresses.
+     */
     struct Entry
     {
-        Uuid Id{};
-        std::shared_ptr<T> m_object{};
-        bool m_pendingDestroy = false;
+        Uuid Id{}; /**< @brief UUID key for this entry. */
+        std::shared_ptr<T> m_object{}; /**< @brief Stored object pointer. */
+        bool m_pendingDestroy = false; /**< @brief True when scheduled for deletion. */
     };
 
+    /**
+     * @brief Allocate a storage slot, reusing free slots if possible.
+     * @return Index into m_entries.
+     * @remarks Free list is used to avoid vector growth where possible.
+     */
     size_t AllocateSlot()
     {
         if (!m_freeList.empty())
@@ -298,11 +435,11 @@ private:
         return Index;
     }
 
-    mutable std::mutex m_mutex{};
-    std::vector<Entry> m_entries{};
-    std::unordered_map<Uuid, size_t, UuidHash> m_index{};
-    std::vector<size_t> m_freeList{};
-    std::vector<size_t> m_pendingDestroy{};
+    mutable std::mutex m_mutex{}; /**< @brief Protects pool state. */
+    std::vector<Entry> m_entries{}; /**< @brief Dense storage for entries. */
+    std::unordered_map<Uuid, size_t, UuidHash> m_index{}; /**< @brief UUID -> entry index. */
+    std::vector<size_t> m_freeList{}; /**< @brief Reusable entry indices. */
+    std::vector<size_t> m_pendingDestroy{}; /**< @brief Indices scheduled for deletion. */
 };
 
 } // namespace SnAPI::GameFramework

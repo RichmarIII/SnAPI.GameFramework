@@ -11,27 +11,51 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+/**
+ * @brief Convert a TypeId to the C ABI UUID struct.
+ * @param Id TypeId to convert.
+ * @return C ABI UUID representation.
+ */
 SnGfUuid ToC(const TypeId& Id)
 {
     const auto Parts = ToParts(Id);
     return {Parts.High, Parts.Low};
 }
 
+/**
+ * @brief Convert a C ABI UUID struct to a TypeId.
+ * @param Id C ABI UUID.
+ * @return TypeId value.
+ */
 TypeId FromC(const SnGfUuid& Id)
 {
     return FromParts({Id.High, Id.Low});
 }
 
+/**
+ * @brief Get the sentinel value used for invalid handles.
+ * @return Sentinel handle value.
+ */
 uint64_t InvalidHandle()
 {
     return std::numeric_limits<uint64_t>::max();
 }
 
+/**
+ * @brief Convert a variant handle to a Variant pointer.
+ * @param Handle Variant handle.
+ * @return Variant pointer or nullptr.
+ */
 Variant* FromHandle(SnGfVariantHandle Handle)
 {
     return static_cast<Variant*>(Handle.Ptr);
 }
 
+/**
+ * @brief Convert a Variant pointer to a handle.
+ * @param Ptr Variant pointer.
+ * @return Variant handle.
+ */
 SnGfVariantHandle ToHandle(Variant* Ptr)
 {
     return {Ptr};

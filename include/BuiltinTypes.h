@@ -12,6 +12,10 @@
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @brief Built-in type name registrations for reflection.
+ * @remarks These are used by TypeIdFromName and Variant conversions.
+ */
 SNAPI_DEFINE_TYPE_NAME(void, "void")
 SNAPI_DEFINE_TYPE_NAME(bool, "bool")
 SNAPI_DEFINE_TYPE_NAME(int, "int")

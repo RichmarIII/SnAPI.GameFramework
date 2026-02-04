@@ -1,5 +1,9 @@
 #pragma once
 
+/**
+ * @brief Umbrella header for SnAPI.GameFramework.
+ * @remarks Include this to access the full public API surface.
+ */
 #include "Assert.h"
 #include "BuiltinTypes.h"
 #include "ComponentStorage.h"

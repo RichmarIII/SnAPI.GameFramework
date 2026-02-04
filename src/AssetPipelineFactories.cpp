@@ -12,15 +12,28 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+/**
+ * @brief AssetFactory for NodeGraph runtime objects.
+ * @remarks Converts cooked NodeGraph payloads into NodeGraph instances.
+ */
 class TNodeGraphFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<NodeGraph>
 {
 public:
+    /**
+     * @brief Get the cooked payload type handled by this factory.
+     * @return Payload TypeId.
+     */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
         return PayloadNodeGraph();
     }
 
 protected:
+    /**
+     * @brief Load a NodeGraph from cooked data.
+     * @param Context Asset load context.
+     * @return Loaded NodeGraph or error.
+     */
     std::expected<NodeGraph, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
         auto PayloadResult = Context.DeserializeCooked<NodeGraphPayload>();
@@ -40,15 +53,24 @@ protected:
     }
 };
 
+/**
+ * @brief AssetFactory for Level runtime objects.
+ */
 class TLevelFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<Level>
 {
 public:
+    /** @brief Get the cooked payload type handled by this factory. */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
         return PayloadLevel();
     }
 
 protected:
+    /**
+     * @brief Load a Level from cooked data.
+     * @param Context Asset load context.
+     * @return Loaded Level or error.
+     */
     std::expected<Level, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
         auto PayloadResult = Context.DeserializeCooked<LevelPayload>();
@@ -68,15 +90,24 @@ protected:
     }
 };
 
+/**
+ * @brief AssetFactory for World runtime objects.
+ */
 class TWorldFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<World>
 {
 public:
+    /** @brief Get the cooked payload type handled by this factory. */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
         return PayloadWorld();
     }
 
 protected:
+    /**
+     * @brief Load a World from cooked data.
+     * @param Context Asset load context.
+     * @return Loaded World or error.
+     */
     std::expected<World, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
         auto PayloadResult = Context.DeserializeCooked<WorldPayload>();
@@ -98,6 +129,10 @@ protected:
 
 } // namespace
 
+/**
+ * @brief Register GameFramework payload serializers with the AssetPipeline registry.
+ * @param Registry Payload registry.
+ */
 void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Registry)
 {
     Registry.Register(CreateNodeGraphPayloadSerializer());
@@ -105,6 +140,10 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
     Registry.Register(CreateWorldPayloadSerializer());
 }
 
+/**
+ * @brief Register GameFramework runtime factories with the AssetManager.
+ * @param Manager Asset manager.
+ */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager)
 {
     Manager.RegisterFactory<NodeGraph>(std::make_unique<TNodeGraphFactory>());

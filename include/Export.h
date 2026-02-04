@@ -1,5 +1,10 @@
 #pragma once
 
+/**
+ * @brief Export/import macro for shared library builds.
+ * @remarks Use SNAPI_GAMEFRAMEWORK_API on public symbols.
+ * @note Behavior varies by platform and build defines.
+ */
 #if defined(_WIN32)
     #if defined(SNAPI_GAMEFRAMEWORK_BUILD_DLL)
         #define SNAPI_GAMEFRAMEWORK_API __declspec(dllexport)

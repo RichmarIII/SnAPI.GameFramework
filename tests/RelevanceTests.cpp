@@ -6,8 +6,9 @@ using namespace SnAPI::GameFramework;
 
 struct RelevanceTickNode : public BaseNode
 {
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::RelevanceTickNode";
+    static constexpr auto kTypeName = "SnAPI::GameFramework::RelevanceTickNode";
     int* Counter = nullptr;
+
 
     explicit RelevanceTickNode(int* InCounter)
         : Counter(InCounter)
@@ -18,7 +19,7 @@ struct RelevanceTickNode : public BaseNode
     {
         if (Counter)
         {
-            ++(*Counter);
+            ++*Counter;
         }
     }
 };
