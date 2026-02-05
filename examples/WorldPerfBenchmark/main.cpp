@@ -1,6 +1,5 @@
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -17,7 +16,7 @@ using namespace SnAPI::GameFramework;
 class PerfComponentA final : public IComponent
 {
 public:
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::PerfComponentA";
+    static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentA";
 
     int m_index = 0;
     float m_weight = 0.0f;
@@ -28,7 +27,7 @@ public:
 class PerfComponentB final : public IComponent
 {
 public:
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::PerfComponentB";
+    static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentB";
 
     int m_group = 0;
     float m_value = 0.0f;
@@ -60,7 +59,7 @@ double ToMilliseconds(const Clock::duration& Duration)
 NodeHandle FindNodeByName(NodeGraph& Graph, const std::string& Name)
 {
     NodeHandle Found;
-    Graph.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    Graph.NodePool().ForEach([&](const NodeHandle& Handle, const BaseNode& Node) {
         if (Node.Name() == Name)
         {
             Found = Handle;
