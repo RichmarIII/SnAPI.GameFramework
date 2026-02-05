@@ -1,1 +1,2 @@
 add_subdirectory(FeatureShowcase)
+add_subdirectory(WorldPerfBenchmark)

@@ -1,8 +1,11 @@
 #include "Serialization.h"
 
 #include <array>
+#include <cstring>
 #include <exception>
-#include <sstream>
+#include <istream>
+#include <ostream>
+#include <streambuf>
 #include <unordered_map>
 
 #include <cereal/archives/binary.hpp>
@@ -59,6 +62,60 @@ void load(Archive& ArchiveRef, SnAPI::GameFramework::Uuid& Id)
 
 namespace SnAPI::GameFramework
 {
+
+namespace
+{
+class VectorWriteStreambuf final : public std::streambuf
+{
+public:
+    explicit VectorWriteStreambuf(std::vector<uint8_t>& Buffer)
+        : m_buffer(Buffer)
+    {
+    }
+
+protected:
+    int_type overflow(int_type Ch) override
+    {
+        if (traits_type::eq_int_type(Ch, traits_type::eof()))
+        {
+            return traits_type::eof();
+        }
+        m_buffer.push_back(static_cast<uint8_t>(Ch));
+        return Ch;
+    }
+
+    std::streamsize xsputn(const char* Data, std::streamsize Count) override
+    {
+        if (!Data || Count <= 0)
+        {
+            return 0;
+        }
+        const auto Size = static_cast<size_t>(Count);
+        const size_t Offset = m_buffer.size();
+        m_buffer.resize(Offset + Size);
+        std::memcpy(m_buffer.data() + Offset, Data, Size);
+        return Count;
+    }
+
+private:
+    std::vector<uint8_t>& m_buffer;
+};
+
+class MemoryReadStreambuf final : public std::streambuf
+{
+public:
+    MemoryReadStreambuf(const uint8_t* Data, size_t Size)
+    {
+        if (!Data || Size == 0)
+        {
+            setg(nullptr, nullptr, nullptr);
+            return;
+        }
+        char* Begin = const_cast<char*>(reinterpret_cast<const char*>(Data));
+        setg(Begin, Begin, Begin + static_cast<std::streamsize>(Size));
+    }
+};
+} // namespace
 
 /**
  * @brief cereal serialize for NodeComponentPayload.
@@ -391,15 +448,15 @@ TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, co
     }
     try
     {
-        std::ostringstream Os(std::ios::binary);
+        OutBytes.clear();
+        VectorWriteStreambuf Buffer(OutBytes);
+        std::ostream Os(&Buffer);
         cereal::BinaryOutputArchive Archive(Os);
         auto Result = It->second.Serialize(Instance, Archive, Context);
         if (!Result)
         {
             return Result;
         }
-        const auto Data = Os.str();
-        OutBytes.assign(Data.begin(), Data.end());
         return Ok();
     }
     catch (const std::exception& Ex)
@@ -421,8 +478,8 @@ TExpected<void> ComponentSerializationRegistry::Deserialize(const TypeId& Type, 
     }
     try
     {
-        std::string Data(reinterpret_cast<const char*>(Bytes), Size);
-        std::istringstream Is(Data, std::ios::binary);
+        MemoryReadStreambuf Buffer(Bytes, Size);
+        std::istream Is(&Buffer);
         cereal::BinaryInputArchive Archive(Is);
         return It->second.Deserialize(Instance, Archive, Context);
     }
@@ -491,15 +548,15 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
 
         if (HasSerializableFields(NodeData.NodeType, FieldCache))
         {
-            std::ostringstream Os(std::ios::binary);
+            NodeData.NodeBytes.clear();
+            VectorWriteStreambuf Buffer(NodeData.NodeBytes);
+            std::ostream Os(&Buffer);
             cereal::BinaryOutputArchive Archive(Os);
             auto NodeResult = ComponentSerializationRegistry::SerializeByReflection(NodeData.NodeType, Node, Archive, Context);
             if (!NodeResult)
             {
                 return std::unexpected(NodeResult.error());
             }
-            const auto Data = Os.str();
-            NodeData.NodeBytes.assign(Data.begin(), Data.end());
             NodeData.HasNodeData = true;
         }
 
@@ -602,8 +659,8 @@ TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload
             {
                 return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
             }
-            std::string Data(reinterpret_cast<const char*>(NodeData.NodeBytes.data()), NodeData.NodeBytes.size());
-            std::istringstream Is(Data, std::ios::binary);
+            MemoryReadStreambuf Buffer(NodeData.NodeBytes.data(), NodeData.NodeBytes.size());
+            std::istream Is(&Buffer);
             cereal::BinaryInputArchive Archive(Is);
             auto NodeResult = ComponentSerializationRegistry::DeserializeByReflection(NodeData.NodeType, Node, Archive, Context);
             if (!NodeResult)
@@ -703,11 +760,11 @@ TExpected<void> SerializeNodeGraphPayload(const NodeGraphPayload& Payload, std::
 {
     try
     {
-        std::ostringstream Os(std::ios::binary);
+        OutBytes.clear();
+        VectorWriteStreambuf Buffer(OutBytes);
+        std::ostream Os(&Buffer);
         cereal::BinaryOutputArchive Archive(Os);
         Archive(Payload);
-        const auto Data = Os.str();
-        OutBytes.assign(Data.begin(), Data.end());
         return Ok();
     }
     catch (const std::exception& Ex)
@@ -724,8 +781,8 @@ TExpected<NodeGraphPayload> DeserializeNodeGraphPayload(const uint8_t* Bytes, si
     }
     try
     {
-        std::string Data(reinterpret_cast<const char*>(Bytes), Size);
-        std::istringstream Is(Data, std::ios::binary);
+        MemoryReadStreambuf Buffer(Bytes, Size);
+        std::istream Is(&Buffer);
         cereal::BinaryInputArchive Archive(Is);
         NodeGraphPayload Payload;
         Archive(Payload);
@@ -741,11 +798,11 @@ TExpected<void> SerializeLevelPayload(const LevelPayload& Payload, std::vector<u
 {
     try
     {
-        std::ostringstream Os(std::ios::binary);
+        OutBytes.clear();
+        VectorWriteStreambuf Buffer(OutBytes);
+        std::ostream Os(&Buffer);
         cereal::BinaryOutputArchive Archive(Os);
         Archive(Payload);
-        const auto Data = Os.str();
-        OutBytes.assign(Data.begin(), Data.end());
         return Ok();
     }
     catch (const std::exception& Ex)
@@ -762,8 +819,8 @@ TExpected<LevelPayload> DeserializeLevelPayload(const uint8_t* Bytes, size_t Siz
     }
     try
     {
-        std::string Data(reinterpret_cast<const char*>(Bytes), Size);
-        std::istringstream Is(Data, std::ios::binary);
+        MemoryReadStreambuf Buffer(Bytes, Size);
+        std::istream Is(&Buffer);
         cereal::BinaryInputArchive Archive(Is);
         LevelPayload Payload;
         Archive(Payload);
@@ -779,11 +836,11 @@ TExpected<void> SerializeWorldPayload(const WorldPayload& Payload, std::vector<u
 {
     try
     {
-        std::ostringstream Os(std::ios::binary);
+        OutBytes.clear();
+        VectorWriteStreambuf Buffer(OutBytes);
+        std::ostream Os(&Buffer);
         cereal::BinaryOutputArchive Archive(Os);
         Archive(Payload);
-        const auto Data = Os.str();
-        OutBytes.assign(Data.begin(), Data.end());
         return Ok();
     }
     catch (const std::exception& Ex)
@@ -800,8 +857,8 @@ TExpected<WorldPayload> DeserializeWorldPayload(const uint8_t* Bytes, size_t Siz
     }
     try
     {
-        std::string Data(reinterpret_cast<const char*>(Bytes), Size);
-        std::istringstream Is(Data, std::ios::binary);
+        MemoryReadStreambuf Buffer(Bytes, Size);
+        std::istream Is(&Buffer);
         cereal::BinaryInputArchive Archive(Is);
         WorldPayload Payload;
         Archive(Payload);
