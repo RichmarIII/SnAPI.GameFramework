@@ -1,7 +1,9 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <string>
@@ -40,6 +42,179 @@ struct TSerializationContext
 };
 
 /**
+ * @brief Customization point for value serialization.
+ * @remarks Specialize TValueCodec<T> to override Encode/Decode/DecodeInto for type T.
+ */
+template<typename T>
+struct TValueCodec
+{
+    static TExpected<void> Encode(const T& Value, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context)
+    {
+        if constexpr (std::is_same_v<T, std::string>)
+        {
+            Archive(Value);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+        {
+            Archive(Value);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, Uuid>)
+        {
+            const auto& Bytes = Value.as_bytes();
+            std::array<uint8_t, 16> Data{};
+            std::memcpy(Data.data(), Bytes.data(), Data.size());
+            Archive(Data);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, Vec3>)
+        {
+            Archive(Value.X, Value.Y, Value.Z);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, NodeHandle>)
+        {
+            const auto& Bytes = Value.Id.as_bytes();
+            std::array<uint8_t, 16> Data{};
+            std::memcpy(Data.data(), Bytes.data(), Data.size());
+            Archive(Data);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, ComponentHandle>)
+        {
+            const auto& Bytes = Value.Id.as_bytes();
+            std::array<uint8_t, 16> Data{};
+            std::memcpy(Data.data(), Bytes.data(), Data.size());
+            Archive(Data);
+            return Ok();
+        }
+        else if constexpr (std::is_trivially_copyable_v<T>)
+        {
+            Archive(cereal::binary_data(const_cast<T*>(&Value), sizeof(T)));
+            return Ok();
+        }
+        else
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type not serializable"));
+        }
+    }
+
+    static TExpected<T> Decode(cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)
+    {
+        if constexpr (std::is_same_v<T, std::string>)
+        {
+            std::string Value;
+            Archive(Value);
+            return Value;
+        }
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+        {
+            std::vector<uint8_t> Value;
+            Archive(Value);
+            return Value;
+        }
+        else if constexpr (std::is_same_v<T, Uuid>)
+        {
+            std::array<uint8_t, 16> Data{};
+            Archive(Data);
+            std::array<uint8_t, 16> Bytes{};
+            std::memcpy(Bytes.data(), Data.data(), Bytes.size());
+            return Uuid(Bytes);
+        }
+        else if constexpr (std::is_same_v<T, Vec3>)
+        {
+            float X = 0.0f;
+            float Y = 0.0f;
+            float Z = 0.0f;
+            Archive(X, Y, Z);
+            return Vec3{X, Y, Z};
+        }
+        else if constexpr (std::is_same_v<T, NodeHandle>)
+        {
+            std::array<uint8_t, 16> Data{};
+            Archive(Data);
+            std::array<uint8_t, 16> Bytes{};
+            std::memcpy(Bytes.data(), Data.data(), Bytes.size());
+            return NodeHandle(Uuid(Bytes));
+        }
+        else if constexpr (std::is_same_v<T, ComponentHandle>)
+        {
+            std::array<uint8_t, 16> Data{};
+            Archive(Data);
+            std::array<uint8_t, 16> Bytes{};
+            std::memcpy(Bytes.data(), Data.data(), Bytes.size());
+            return ComponentHandle(Uuid(Bytes));
+        }
+        else if constexpr (std::is_trivially_copyable_v<T>)
+        {
+            T Value{};
+            Archive(cereal::binary_data(&Value, sizeof(T)));
+            return Value;
+        }
+        else
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type not deserializable"));
+        }
+    }
+
+    static TExpected<void> DecodeInto(T& Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)
+    {
+        if constexpr (std::is_same_v<T, std::string>)
+        {
+            Archive(Value);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, std::vector<uint8_t>>)
+        {
+            Archive(Value);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, Uuid>)
+        {
+            std::array<uint8_t, 16> Data{};
+            Archive(Data);
+            std::array<uint8_t, 16> Bytes{};
+            std::memcpy(Bytes.data(), Data.data(), Bytes.size());
+            Value = Uuid(Bytes);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, Vec3>)
+        {
+            Archive(Value.X, Value.Y, Value.Z);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, NodeHandle>)
+        {
+            std::array<uint8_t, 16> Data{};
+            Archive(Data);
+            std::array<uint8_t, 16> Bytes{};
+            std::memcpy(Bytes.data(), Data.data(), Bytes.size());
+            Value = NodeHandle(Uuid(Bytes));
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, ComponentHandle>)
+        {
+            std::array<uint8_t, 16> Data{};
+            Archive(Data);
+            std::array<uint8_t, 16> Bytes{};
+            std::memcpy(Bytes.data(), Data.data(), Bytes.size());
+            Value = ComponentHandle(Uuid(Bytes));
+            return Ok();
+        }
+        else if constexpr (std::is_trivially_copyable_v<T>)
+        {
+            Archive(cereal::binary_data(&Value, sizeof(T)));
+            return Ok();
+        }
+        else
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type not deserializable"));
+        }
+    }
+};
+
+/**
  * @brief Registry for value codecs used by reflection serialization.
  * @remarks Handles built-in and trivially copyable types.
  */
@@ -61,6 +236,24 @@ public:
      * @return Variant containing decoded value or error.
      */
     using DecodeFn = TExpected<Variant>(*)(cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
+    /**
+     * @brief Decode-into function signature.
+     * @param Value Output pointer to write into.
+     * @param Archive Input archive.
+     * @param Context Serialization context.
+     * @return Success or error.
+     */
+    using DecodeIntoFn = TExpected<void>(*)(void* Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
+
+    /**
+     * @brief Entry storing encode/decode callbacks.
+     */
+    struct CodecEntry
+    {
+        EncodeFn Encode = nullptr; /**< @brief Encode callback. */
+        DecodeFn Decode = nullptr; /**< @brief Decode callback. */
+        DecodeIntoFn DecodeInto = nullptr; /**< @brief Decode-into callback. */
+    };
 
     /**
      * @brief Access the singleton registry.
@@ -71,13 +264,14 @@ public:
     /**
      * @brief Register a codec for type T.
      * @tparam T Type to register.
-     * @remarks Uses EncodeImpl/DecodeImpl specialization logic.
+     * @remarks Uses TValueCodec<T> implementations.
      */
     template<typename T>
     void Register()
     {
         const TypeId Type = TypeIdFromName(TTypeNameV<T>);
-        m_entries[Type] = {&EncodeImpl<T>, &DecodeImpl<T>};
+        m_entries[Type] = {&EncodeImpl<T>, &DecodeImpl<T>, &DecodeIntoImpl<T>};
+        ++m_version;
     }
 
     /**
@@ -87,7 +281,23 @@ public:
      */
     bool Has(const TypeId& Type) const
     {
-        return m_entries.find(Type) != m_entries.end();
+        return FindEntry(Type) != nullptr;
+    }
+
+    /**
+     * @brief Lookup the codec entry for a type.
+     * @param Type TypeId to query.
+     * @return Pointer to codec entry or nullptr if not found.
+     */
+    const CodecEntry* FindEntry(const TypeId& Type) const;
+
+    /**
+     * @brief Get the codec registry version.
+     * @return Version counter incremented on registration.
+     */
+    uint32_t Version() const
+    {
+        return m_version;
     }
 
     /**
@@ -107,6 +317,15 @@ public:
      * @return Variant containing decoded value or error.
      */
     TExpected<Variant> Decode(const TypeId& Type, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context) const;
+    /**
+     * @brief Decode a value by type id directly into memory.
+     * @param Type TypeId of the value.
+     * @param Value Output pointer.
+     * @param Archive Input archive.
+     * @param Context Serialization context.
+     * @return Success or error.
+     */
+    TExpected<void> DecodeInto(const TypeId& Type, void* Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context) const;
 
 private:
     /**
@@ -122,17 +341,15 @@ private:
      */
     template<typename T>
     static TExpected<Variant> DecodeImpl(cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
-
     /**
-     * @brief Entry storing encode/decode callbacks.
+     * @brief Template decode-into implementation.
+     * @tparam T Value type.
      */
-    struct Entry
-    {
-        EncodeFn Encode = nullptr; /**< @brief Encode callback. */
-        DecodeFn Decode = nullptr; /**< @brief Decode callback. */
-    };
+    template<typename T>
+    static TExpected<void> DecodeIntoImpl(void* Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
 
-    std::unordered_map<TypeId, Entry, UuidHash> m_entries{}; /**< @brief Codec map by TypeId. */
+    std::unordered_map<TypeId, CodecEntry, UuidHash> m_entries{}; /**< @brief Codec map by TypeId. */
+    uint32_t m_version = 0;
 };
 
 class ComponentSerializationRegistry
@@ -519,123 +736,28 @@ TExpected<void> ValueCodecRegistry::EncodeImpl(const void* Value, cereal::Binary
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null value"));
     }
-    if constexpr (std::is_same_v<T, std::string>)
-    {
-        Archive(*static_cast<const std::string*>(Value));
-        return Ok();
-    }
-    else if constexpr (std::is_same_v<T, Uuid>)
-    {
-        const auto& Bytes = static_cast<const Uuid*>(Value)->as_bytes();
-        std::array<uint8_t, 16> Data{};
-        for (size_t i = 0; i < Data.size(); ++i)
-        {
-            Data[i] = static_cast<uint8_t>(std::to_integer<uint8_t>(Bytes[i]));
-        }
-        Archive(Data);
-        return Ok();
-    }
-    else if constexpr (std::is_same_v<T, Vec3>)
-    {
-        const auto& Vec = *static_cast<const Vec3*>(Value);
-        Archive(Vec.X, Vec.Y, Vec.Z);
-        return Ok();
-    }
-    else if constexpr (std::is_same_v<T, NodeHandle>)
-    {
-        const auto& Handle = *static_cast<const NodeHandle*>(Value);
-        const auto& Bytes = Handle.Id.as_bytes();
-        std::array<uint8_t, 16> Data{};
-        for (size_t i = 0; i < Data.size(); ++i)
-        {
-            Data[i] = static_cast<uint8_t>(std::to_integer<uint8_t>(Bytes[i]));
-        }
-        Archive(Data);
-        return Ok();
-    }
-    else if constexpr (std::is_same_v<T, ComponentHandle>)
-    {
-        const auto& Handle = *static_cast<const ComponentHandle*>(Value);
-        const auto& Bytes = Handle.Id.as_bytes();
-        std::array<uint8_t, 16> Data{};
-        for (size_t i = 0; i < Data.size(); ++i)
-        {
-            Data[i] = static_cast<uint8_t>(std::to_integer<uint8_t>(Bytes[i]));
-        }
-        Archive(Data);
-        return Ok();
-    }
-    else if constexpr (std::is_trivially_copyable_v<T>)
-    {
-        Archive(cereal::binary_data(const_cast<T*>(static_cast<const T*>(Value)), sizeof(T)));
-        return Ok();
-    }
-    else
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type not serializable"));
-    }
+    return TValueCodec<T>::Encode(*static_cast<const T*>(Value), Archive, Context);
 }
 
 template<typename T>
 TExpected<Variant> ValueCodecRegistry::DecodeImpl(cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)
 {
-    if constexpr (std::is_same_v<T, std::string>)
+    auto Result = TValueCodec<T>::Decode(Archive, Context);
+    if (!Result)
     {
-        std::string Value;
-        Archive(Value);
-        return Variant::FromValue(std::move(Value));
+        return std::unexpected(Result.error());
     }
-    else if constexpr (std::is_same_v<T, Uuid>)
+    return Variant::FromValue(std::move(Result.value()));
+}
+
+template<typename T>
+TExpected<void> ValueCodecRegistry::DecodeIntoImpl(void* Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)
+{
+    if (!Value)
     {
-        std::array<uint8_t, 16> Data{};
-        Archive(Data);
-        std::array<uint8_t, 16> Bytes{};
-        for (size_t i = 0; i < Bytes.size(); ++i)
-        {
-            Bytes[i] = Data[i];
-        }
-        return Variant::FromValue(Uuid(Bytes));
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null value"));
     }
-    else if constexpr (std::is_same_v<T, Vec3>)
-    {
-        float X = 0.0f;
-        float Y = 0.0f;
-        float Z = 0.0f;
-        Archive(X, Y, Z);
-        return Variant::FromValue(Vec3{X, Y, Z});
-    }
-    else if constexpr (std::is_same_v<T, NodeHandle>)
-    {
-        std::array<uint8_t, 16> Data{};
-        Archive(Data);
-        std::array<uint8_t, 16> Bytes{};
-        for (size_t i = 0; i < Bytes.size(); ++i)
-        {
-            Bytes[i] = Data[i];
-        }
-        return Variant::FromValue(NodeHandle(Uuid(Bytes)));
-    }
-    else if constexpr (std::is_same_v<T, ComponentHandle>)
-    {
-        std::array<uint8_t, 16> Data{};
-        Archive(Data);
-        std::array<uint8_t, 16> Bytes{};
-        for (size_t i = 0; i < Bytes.size(); ++i)
-        {
-            Bytes[i] = Data[i];
-        }
-        return Variant::FromValue(ComponentHandle(Uuid(Bytes)));
-    }
-    else if constexpr (std::is_trivially_copyable_v<T>)
-    {
-        T Value{};
-        Archive(cereal::binary_data(&Value, sizeof(T)));
-        return Variant::FromValue(Value);
-    }
-    else
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type not deserializable"));
-    }
+    return TValueCodec<T>::DecodeInto(*static_cast<T*>(Value), Archive, Context);
 }
 
 } // namespace SnAPI::GameFramework

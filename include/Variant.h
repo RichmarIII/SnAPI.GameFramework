@@ -33,7 +33,7 @@ public:
     static Variant Void()
     {
         Variant Result;
-        Result.m_type = TypeIdFromName("void");
+        Result.m_type = VoidTypeId();
         Result.m_isRef = false;
         Result.m_isConst = false;
         return Result;
@@ -51,7 +51,7 @@ public:
     {
         using Decayed = std::decay_t<T>;
         Variant Result;
-        Result.m_type = TypeIdFromName(TTypeNameV<Decayed>);
+        Result.m_type = CachedTypeId<Decayed>();
         Result.m_storage = std::make_shared<Decayed>(std::move(Value));
         Result.m_isRef = false;
         Result.m_isConst = false;
@@ -69,7 +69,7 @@ public:
     static Variant FromRef(T& Value)
     {
         Variant Result;
-        Result.m_type = TypeIdFromName(TTypeNameV<std::decay_t<T>>);
+        Result.m_type = CachedTypeId<std::decay_t<T>>();
         Result.m_storage = std::shared_ptr<void>(&Value, [](void*) {});
         Result.m_isRef = true;
         Result.m_isConst = false;
@@ -87,7 +87,7 @@ public:
     static Variant FromConstRef(const T& Value)
     {
         Variant Result;
-        Result.m_type = TypeIdFromName(TTypeNameV<std::decay_t<T>>);
+        Result.m_type = CachedTypeId<std::decay_t<T>>();
         Result.m_storage = std::shared_ptr<void>(const_cast<T*>(&Value), [](void*) {});
         Result.m_isRef = true;
         Result.m_isConst = true;
@@ -109,7 +109,7 @@ public:
      */
     bool IsVoid() const
     {
-        return m_type == TypeIdFromName("void");
+        return m_type == VoidTypeId();
     }
 
     /**
@@ -157,7 +157,7 @@ public:
     template<typename T>
     bool Is() const
     {
-        return m_type == TypeIdFromName(TTypeNameV<std::decay_t<T>>);
+        return m_type == CachedTypeId<std::decay_t<T>>();
     }
 
     /**
@@ -206,10 +206,64 @@ public:
     }
 
 private:
+    static const TypeId& VoidTypeId()
+    {
+        static const TypeId Type = TypeIdFromName("void");
+        return Type;
+    }
+
+    template<typename T>
+    static const TypeId& CachedTypeId()
+    {
+        static const TypeId Type = TypeIdFromName(TTypeNameV<T>);
+        return Type;
+    }
+
     TypeId m_type{}; /**< @brief Type id of the stored value. */
     std::shared_ptr<void> m_storage{}; /**< @brief Owned value or referenced pointer. */
     bool m_isRef = false; /**< @brief True if the variant holds a reference. */
     bool m_isConst = false; /**< @brief True if the reference is const. */
+};
+
+/**
+ * @brief Non-owning view into a Variant-like value.
+ * @remarks Avoids heap allocations for hot-path reflection use.
+ */
+class VariantView
+{
+public:
+    VariantView() = default;
+    VariantView(TypeId Type, const void* Ptr, bool IsConst)
+        : m_type(std::move(Type))
+        , m_ptr(Ptr)
+        , m_isConst(IsConst)
+    {
+    }
+
+    const TypeId& Type() const
+    {
+        return m_type;
+    }
+
+    bool IsConst() const
+    {
+        return m_isConst;
+    }
+
+    const void* Borrowed() const
+    {
+        return m_ptr;
+    }
+
+    void* BorrowedMutable()
+    {
+        return m_isConst ? nullptr : const_cast<void*>(m_ptr);
+    }
+
+private:
+    TypeId m_type{};
+    const void* m_ptr = nullptr;
+    bool m_isConst = true;
 };
 
 } // namespace SnAPI::GameFramework

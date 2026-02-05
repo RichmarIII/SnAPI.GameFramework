@@ -4,6 +4,8 @@
 #include <cstring>
 #include <exception>
 #include <istream>
+#include <memory>
+#include <mutex>
 #include <ostream>
 #include <streambuf>
 #include <unordered_map>
@@ -184,44 +186,124 @@ void serialize(Archive& ArchiveRef, WorldPayload& Value)
 
 namespace
 {
-/**
- * @brief Check if a type (or its bases) has serializable fields.
- * @param Type TypeId to check.
- * @param Cache Memoization cache.
- * @return True if any fields are registered for serialization.
- */
-bool HasSerializableFields(const TypeId& Type, std::unordered_map<TypeId, bool, UuidHash>& Cache)
+struct SerializableField
 {
-    auto It = Cache.find(Type);
-    if (It != Cache.end())
+    const FieldInfo* Field = nullptr;
+    const ValueCodecRegistry::CodecEntry* Codec = nullptr;
+    TypeId NestedType{};
+    bool HasNested = false;
+};
+
+struct SerializableFieldCacheEntry
+{
+    uint32_t CodecVersion = 0;
+    bool TypeFound = true;
+    std::vector<SerializableField> Fields;
+};
+
+struct TypeVisitGuard
+{
+    std::unordered_map<TypeId, bool, UuidHash>& Visited;
+    TypeId Type{};
+    bool Inserted = false;
+
+    TypeVisitGuard(std::unordered_map<TypeId, bool, UuidHash>& InVisited, const TypeId& InType)
+        : Visited(InVisited)
+        , Type(InType)
     {
-        return It->second;
+        Inserted = Visited.emplace(Type, true).second;
+    }
+
+    ~TypeVisitGuard()
+    {
+        if (Inserted)
+        {
+            Visited.erase(Type);
+        }
+    }
+};
+
+std::unordered_map<TypeId, std::shared_ptr<SerializableFieldCacheEntry>, UuidHash> g_serializableFieldCache;
+std::mutex g_serializableFieldMutex;
+
+void BuildSerializableFields(
+    const TypeId& Type,
+    std::vector<SerializableField>& Out,
+    std::unordered_map<TypeId, bool, UuidHash>& Visited)
+{
+    auto [It, Inserted] = Visited.emplace(Type, true);
+    if (!Inserted)
+    {
+        return;
     }
 
     const auto* Info = TypeRegistry::Instance().Find(Type);
     if (!Info)
     {
-        Cache.emplace(Type, false);
-        return false;
-    }
-
-    if (!Info->Fields.empty())
-    {
-        Cache.emplace(Type, true);
-        return true;
+        return;
     }
 
     for (const auto& Base : Info->BaseTypes)
     {
-        if (HasSerializableFields(Base, Cache))
+        BuildSerializableFields(Base, Out, Visited);
+    }
+
+    auto& ValueRegistry = ValueCodecRegistry::Instance();
+    for (const auto& Field : Info->Fields)
+    {
+        SerializableField Entry;
+        Entry.Field = &Field;
+        Entry.Codec = ValueRegistry.FindEntry(Field.FieldType);
+        if (!Entry.Codec)
         {
-            Cache.emplace(Type, true);
-            return true;
+            const auto* NestedInfo = TypeRegistry::Instance().Find(Field.FieldType);
+            if (NestedInfo && (!NestedInfo->Fields.empty() || !NestedInfo->BaseTypes.empty()))
+            {
+                Entry.NestedType = Field.FieldType;
+                Entry.HasNested = true;
+            }
+        }
+        Out.push_back(Entry);
+    }
+}
+
+std::shared_ptr<const SerializableFieldCacheEntry> GetSerializableFieldCache(const TypeId& Type)
+{
+    auto& ValueRegistry = ValueCodecRegistry::Instance();
+    const uint32_t Version = ValueRegistry.Version();
+    {
+        std::lock_guard<std::mutex> Lock(g_serializableFieldMutex);
+        auto It = g_serializableFieldCache.find(Type);
+        if (It != g_serializableFieldCache.end() && It->second->CodecVersion == Version)
+        {
+            return It->second;
         }
     }
 
-    Cache.emplace(Type, false);
-    return false;
+    auto Entry = std::make_shared<SerializableFieldCacheEntry>();
+    Entry->CodecVersion = Version;
+    if (TypeRegistry::Instance().Find(Type))
+    {
+        std::unordered_map<TypeId, bool, UuidHash> Visited;
+        BuildSerializableFields(Type, Entry->Fields, Visited);
+    }
+    else
+    {
+        Entry->TypeFound = false;
+    }
+
+    {
+        std::lock_guard<std::mutex> Lock(g_serializableFieldMutex);
+        g_serializableFieldCache[Type] = Entry;
+    }
+
+    return Entry;
+}
+
+bool HasSerializableFields(const TypeId& Type)
+{
+    auto Cache = GetSerializableFieldCache(Type);
+    return Cache && !Cache->Fields.empty();
 }
 
 /**
@@ -240,61 +322,72 @@ TExpected<void> SerializeFieldsRecursive(
     const TSerializationContext& Context,
     std::unordered_map<TypeId, bool, UuidHash>& Visited)
 {
-    auto [It, Inserted] = Visited.emplace(Type, true);
-    if (!Inserted)
+    TypeVisitGuard Visit(Visited, Type);
+    if (!Visit.Inserted)
     {
         return Ok();
     }
 
-    auto* Info = TypeRegistry::Instance().Find(Type);
-    if (!Info)
+    auto Cache = GetSerializableFieldCache(Type);
+    if (!Cache || !Cache->TypeFound)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Type not registered"));
     }
 
-    for (const auto& Base : Info->BaseTypes)
+    for (const auto& Entry : Cache->Fields)
     {
-        auto BaseResult = SerializeFieldsRecursive(Base, Instance, Archive, Context, Visited);
-        if (!BaseResult)
+        const auto* Field = Entry.Field;
+        if (!Field)
         {
-            return BaseResult;
+            continue;
         }
-    }
+        const void* FieldPtr = nullptr;
+        if (Field->ConstPointer)
+        {
+            FieldPtr = Field->ConstPointer(Instance);
+        }
+        if (!FieldPtr && Field->ViewGetter)
+        {
+            auto ViewResult = Field->ViewGetter(const_cast<void*>(Instance));
+            if (!ViewResult)
+            {
+                return std::unexpected(ViewResult.error());
+            }
+            FieldPtr = ViewResult->Borrowed();
+        }
+        if (!FieldPtr && Field->Getter)
+        {
+            auto FieldResult = Field->Getter(const_cast<void*>(Instance));
+            if (!FieldResult)
+            {
+                return std::unexpected(FieldResult.error());
+            }
+            FieldPtr = FieldResult->Borrowed();
+        }
+        if (!FieldPtr)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null field pointer"));
+        }
 
-    auto& ValueRegistry = ValueCodecRegistry::Instance();
-    for (const auto& Field : Info->Fields)
-    {
-        auto FieldResult = Field.Getter(const_cast<void*>(Instance));
-        if (!FieldResult)
+        if (Entry.Codec)
         {
-            return std::unexpected(FieldResult.error());
-        }
-        const Variant& FieldValue = FieldResult.value();
-        if (ValueRegistry.Has(Field.FieldType))
-        {
-            auto EncodeResult = ValueRegistry.Encode(Field.FieldType, FieldValue.Borrowed(), Archive, Context);
+            auto EncodeResult = Entry.Codec->Encode(FieldPtr, Archive, Context);
             if (!EncodeResult)
             {
                 return EncodeResult;
             }
         }
-        else
+        else if (Entry.HasNested)
         {
-            auto* NestedInfo = TypeRegistry::Instance().Find(Field.FieldType);
-            if (!NestedInfo || (NestedInfo->Fields.empty() && NestedInfo->BaseTypes.empty()))
-            {
-                return std::unexpected(MakeError(EErrorCode::NotFound, "No serializer for field type"));
-            }
-            const void* FieldPtr = FieldValue.Borrowed();
-            if (!FieldPtr)
-            {
-                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null field pointer"));
-            }
-            auto NestedResult = SerializeFieldsRecursive(Field.FieldType, FieldPtr, Archive, Context, Visited);
+            auto NestedResult = SerializeFieldsRecursive(Entry.NestedType, FieldPtr, Archive, Context, Visited);
             if (!NestedResult)
             {
                 return NestedResult;
             }
+        }
+        else
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "No serializer for field type"));
         }
     }
 
@@ -317,51 +410,46 @@ TExpected<void> DeserializeFieldsRecursive(
     const TSerializationContext& Context,
     std::unordered_map<TypeId, bool, UuidHash>& Visited)
 {
-    auto [It, Inserted] = Visited.emplace(Type, true);
-    if (!Inserted)
+    TypeVisitGuard Visit(Visited, Type);
+    if (!Visit.Inserted)
     {
         return Ok();
     }
 
-    auto* Info = TypeRegistry::Instance().Find(Type);
-    if (!Info)
+    auto Cache = GetSerializableFieldCache(Type);
+    if (!Cache || !Cache->TypeFound)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Type not registered"));
     }
 
-    for (const auto& Base : Info->BaseTypes)
+    for (const auto& Entry : Cache->Fields)
     {
-        auto BaseResult = DeserializeFieldsRecursive(Base, Instance, Archive, Context, Visited);
-        if (!BaseResult)
+        const auto* Field = Entry.Field;
+        if (!Field)
         {
-            return BaseResult;
+            continue;
         }
-    }
-
-    auto& ValueRegistry = ValueCodecRegistry::Instance();
-    for (const auto& Field : Info->Fields)
-    {
-        if (ValueRegistry.Has(Field.FieldType))
+        void* FieldPtr = nullptr;
+        if (Field->MutablePointer)
         {
-            auto ValueResult = ValueRegistry.Decode(Field.FieldType, Archive, Context);
-            if (!ValueResult)
-            {
-                return std::unexpected(ValueResult.error());
-            }
-            auto SetResult = Field.Setter(Instance, ValueResult.value());
-            if (!SetResult)
-            {
-                return std::unexpected(SetResult.error());
-            }
+            FieldPtr = Field->MutablePointer(Instance);
         }
-        else
+        if (!FieldPtr && Field->ViewGetter)
         {
-            auto* NestedInfo = TypeRegistry::Instance().Find(Field.FieldType);
-            if (!NestedInfo || (NestedInfo->Fields.empty() && NestedInfo->BaseTypes.empty()))
+            auto ViewResult = Field->ViewGetter(Instance);
+            if (!ViewResult)
             {
-                return std::unexpected(MakeError(EErrorCode::NotFound, "No deserializer for field type"));
+                return std::unexpected(ViewResult.error());
             }
-            auto FieldResult = Field.Getter(Instance);
+            if (ViewResult->IsConst())
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
+            }
+            FieldPtr = ViewResult->BorrowedMutable();
+        }
+        if (!FieldPtr && Field->Getter)
+        {
+            auto FieldResult = Field->Getter(Instance);
             if (!FieldResult)
             {
                 return std::unexpected(FieldResult.error());
@@ -370,16 +458,38 @@ TExpected<void> DeserializeFieldsRecursive(
             {
                 return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
             }
-            void* FieldPtr = const_cast<void*>(FieldResult->Borrowed());
-            if (!FieldPtr)
+            FieldPtr = const_cast<void*>(FieldResult->Borrowed());
+        }
+        if (Field->IsConst)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
+        }
+        if (!FieldPtr)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null field pointer"));
+        }
+
+        if (Entry.Codec)
+        {
+            auto DecodeResult = Entry.Codec->DecodeInto
+                ? Entry.Codec->DecodeInto(FieldPtr, Archive, Context)
+                : ValueCodecRegistry::Instance().DecodeInto(Field->FieldType, FieldPtr, Archive, Context);
+            if (!DecodeResult)
             {
-                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null field pointer"));
+                return DecodeResult;
             }
-            auto NestedResult = DeserializeFieldsRecursive(Field.FieldType, FieldPtr, Archive, Context, Visited);
+        }
+        else if (Entry.HasNested)
+        {
+            auto NestedResult = DeserializeFieldsRecursive(Entry.NestedType, FieldPtr, Archive, Context, Visited);
             if (!NestedResult)
             {
                 return NestedResult;
             }
+        }
+        else
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "No deserializer for field type"));
         }
     }
 
@@ -393,24 +503,48 @@ ValueCodecRegistry& ValueCodecRegistry::Instance()
     return Instance;
 }
 
-TExpected<void> ValueCodecRegistry::Encode(const TypeId& Type, const void* Value, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context) const
+const ValueCodecRegistry::CodecEntry* ValueCodecRegistry::FindEntry(const TypeId& Type) const
 {
     auto It = m_entries.find(Type);
-    if (It == m_entries.end() || !It->second.Encode)
+    if (It == m_entries.end())
+    {
+        return nullptr;
+    }
+    return &It->second;
+}
+
+TExpected<void> ValueCodecRegistry::Encode(const TypeId& Type, const void* Value, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context) const
+{
+    auto* Entry = FindEntry(Type);
+    if (!Entry || !Entry->Encode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No value codec registered"));
     }
-    return It->second.Encode(Value, Archive, Context);
+    return Entry->Encode(Value, Archive, Context);
 }
 
 TExpected<Variant> ValueCodecRegistry::Decode(const TypeId& Type, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context) const
 {
-    auto It = m_entries.find(Type);
-    if (It == m_entries.end() || !It->second.Decode)
+    auto* Entry = FindEntry(Type);
+    if (!Entry || !Entry->Decode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No value codec registered"));
     }
-    return It->second.Decode(Archive, Context);
+    return Entry->Decode(Archive, Context);
+}
+
+TExpected<void> ValueCodecRegistry::DecodeInto(
+    const TypeId& Type,
+    void* Value,
+    cereal::BinaryInputArchive& Archive,
+    const TSerializationContext& Context) const
+{
+    auto* Entry = FindEntry(Type);
+    if (!Entry || !Entry->DecodeInto)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No value codec registered"));
+    }
+    return Entry->DecodeInto(Value, Archive, Context);
 }
 
 ComponentSerializationRegistry& ComponentSerializationRegistry::Instance()
@@ -516,7 +650,6 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
 
     TSerializationContext Context;
     Context.Graph = &Graph;
-    std::unordered_map<TypeId, bool, UuidHash> FieldCache;
 
     std::vector<NodeHandle> Handles;
     Graph.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode&) {
@@ -535,9 +668,12 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
         NodePayload NodeData;
         NodeData.NodeId = Node->Id();
         NodeData.NodeType = Node->TypeKey();
-        if (const auto* Info = TypeRegistry::Instance().Find(NodeData.NodeType))
+        if (NodeData.NodeType == TypeId{})
         {
-            NodeData.NodeTypeName = Info->Name;
+            if (const auto* Info = TypeRegistry::Instance().Find(NodeData.NodeType))
+            {
+                NodeData.NodeTypeName = Info->Name;
+            }
         }
         NodeData.Name = Node->Name();
         NodeData.Active = Node->Active();
@@ -546,7 +682,7 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
             NodeData.ParentId = Node->Parent().Id;
         }
 
-        if (HasSerializableFields(NodeData.NodeType, FieldCache))
+        if (HasSerializableFields(NodeData.NodeType))
         {
             NodeData.NodeBytes.clear();
             VectorWriteStreambuf Buffer(NodeData.NodeBytes);
@@ -880,6 +1016,7 @@ void RegisterSerializationDefaults()
     ValueRegistry.Register<float>();
     ValueRegistry.Register<double>();
     ValueRegistry.Register<std::string>();
+    ValueRegistry.Register<std::vector<uint8_t>>();
     ValueRegistry.Register<Uuid>();
     ValueRegistry.Register<Vec3>();
     ValueRegistry.Register<NodeHandle>();

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <functional>
 #include <mutex>
 #include <span>
 #include <string>
@@ -14,6 +16,46 @@
 namespace SnAPI::GameFramework
 {
 
+struct TransparentStringHash
+{
+    using is_transparent = void;
+
+    size_t operator()(std::string_view Value) const noexcept
+    {
+        return std::hash<std::string_view>{}(Value);
+    }
+
+    size_t operator()(const std::string& Value) const noexcept
+    {
+        return std::hash<std::string_view>{}(Value);
+    }
+};
+
+struct TransparentStringEqual
+{
+    using is_transparent = void;
+
+    bool operator()(std::string_view Left, std::string_view Right) const noexcept
+    {
+        return Left == Right;
+    }
+
+    bool operator()(std::string_view Left, const std::string& Right) const noexcept
+    {
+        return Left == std::string_view(Right);
+    }
+
+    bool operator()(const std::string& Left, std::string_view Right) const noexcept
+    {
+        return std::string_view(Left) == Right;
+    }
+
+    bool operator()(const std::string& Left, const std::string& Right) const noexcept
+    {
+        return Left == Right;
+    }
+};
+
 /**
  * @brief Reflection metadata for a field.
  * @remarks Getter/Setter use Variant for type-erased access.
@@ -24,6 +66,10 @@ struct FieldInfo
     TypeId FieldType; /**< @brief TypeId of the field. */
     std::function<TExpected<Variant>(void* Instance)> Getter; /**< @brief Getter callback. */
     std::function<Result(void* Instance, const Variant& Value)> Setter; /**< @brief Setter callback. */
+    std::function<TExpected<VariantView>(void* Instance)> ViewGetter; /**< @brief Non-owning getter. */
+    std::function<const void*(const void* Instance)> ConstPointer; /**< @brief Direct const pointer accessor. */
+    std::function<void*(void* Instance)> MutablePointer; /**< @brief Direct mutable pointer accessor. */
+    bool IsConst = false; /**< @brief True if field is const-qualified. */
 };
 
 /**
@@ -113,11 +159,23 @@ public:
      * @remarks Includes indirect derivatives.
      */
     std::vector<const TypeInfo*> Derived(const TypeId& Base) const;
+    /**
+     * @brief Enable or disable lock-free reads.
+     * @param Enable True to freeze the registry (no further registration).
+     * @remarks When enabled, read operations skip locking.
+     */
+    void Freeze(bool Enable);
+    /**
+     * @brief Check if the registry is frozen.
+     * @return True if frozen.
+     */
+    bool IsFrozen() const;
 
 private:
     mutable std::mutex m_mutex{}; /**< @brief Protects registry maps. */
+    std::atomic<bool> m_frozen{false}; /**< @brief If true, reads skip locking and registration is disabled. */
     std::unordered_map<TypeId, TypeInfo, UuidHash> m_types{}; /**< @brief TypeId -> TypeInfo. */
-    std::unordered_map<std::string, TypeId> m_nameToId{}; /**< @brief Name -> TypeId. */
+    std::unordered_map<std::string, TypeId, TransparentStringHash, TransparentStringEqual> m_nameToId{}; /**< @brief Name -> TypeId. */
 };
 
 } // namespace SnAPI::GameFramework

@@ -62,7 +62,8 @@ public:
         using Raw = std::remove_cv_t<FieldT>;
         FieldInfo Info;
         Info.Name = Name;
-        Info.FieldType = TypeIdFromName(TTypeNameV<Raw>);
+        const TypeId FieldType = TypeIdFromName(TTypeNameV<Raw>);
+        Info.FieldType = FieldType;
         Info.Getter = [Member](void* Instance) -> TExpected<Variant> {
             if (!Instance)
             {
@@ -99,6 +100,39 @@ public:
                 return Ok();
             }
         };
+        Info.ViewGetter = [Member, FieldType](void* Instance) -> TExpected<VariantView> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            const auto* Ptr = &(Typed->*Member);
+            return VariantView(FieldType, Ptr, std::is_const_v<FieldT>);
+        };
+        Info.ConstPointer = [Member](const void* Instance) -> const void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            auto* Typed = static_cast<const T*>(Instance);
+            return &(Typed->*Member);
+        };
+        Info.MutablePointer = [Member](void* Instance) -> void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            if constexpr (std::is_const_v<FieldT>)
+            {
+                return nullptr;
+            }
+            else
+            {
+                auto* Typed = static_cast<T*>(Instance);
+                return &(Typed->*Member);
+            }
+        };
+        Info.IsConst = std::is_const_v<FieldT>;
         m_info.Fields.push_back(std::move(Info));
         return *this;
     }

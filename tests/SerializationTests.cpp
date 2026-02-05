@@ -1,3 +1,4 @@
+#include <sstream>
 #include <unordered_map>
 
 #include <catch2/catch_approx.hpp>
@@ -6,6 +7,43 @@
 #include "GameFramework.hpp"
 
 using namespace SnAPI::GameFramework;
+
+namespace SnAPI::GameFramework
+{
+struct CustomPackedValue
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::CustomPackedValue";
+    int32_t A = 0;
+    int32_t B = 0;
+};
+
+template<>
+struct TValueCodec<CustomPackedValue>
+{
+    static TExpected<void> Encode(const CustomPackedValue& Value, cereal::BinaryOutputArchive& Archive, const TSerializationContext&)
+    {
+        const int32_t Packed = Value.A + Value.B;
+        Archive(Packed);
+        return Ok();
+    }
+
+    static TExpected<CustomPackedValue> Decode(cereal::BinaryInputArchive& Archive, const TSerializationContext&)
+    {
+        int32_t Packed = 0;
+        Archive(Packed);
+        return CustomPackedValue{Packed, Packed + 1};
+    }
+
+    static TExpected<void> DecodeInto(CustomPackedValue& Value, cereal::BinaryInputArchive& Archive, const TSerializationContext&)
+    {
+        int32_t Packed = 0;
+        Archive(Packed);
+        Value.A = Packed;
+        Value.B = Packed + 1;
+        return Ok();
+    }
+};
+} // namespace SnAPI::GameFramework
 
 struct LinkComponent : public IComponent
 {
@@ -249,4 +287,44 @@ TEST_CASE("Node handles resolve across graphs after deserialization")
     auto* ResolvedTarget = LoadedRef->Target.Borrowed();
     REQUIRE(ResolvedTarget != nullptr);
     REQUIRE(ResolvedTarget->Name() == "TargetNode");
+}
+
+TEST_CASE("ValueCodecRegistry forwards to TValueCodec specializations")
+{
+    RegisterBuiltinTypes();
+
+    auto& Registry = ValueCodecRegistry::Instance();
+    Registry.Register<CustomPackedValue>();
+
+    CustomPackedValue Input{4, 5};
+    TSerializationContext Context;
+    std::stringstream Stream(std::ios::in | std::ios::out | std::ios::binary);
+
+    {
+        cereal::BinaryOutputArchive Archive(Stream);
+        auto EncodeResult = Registry.Encode(TypeIdFromName(TTypeNameV<CustomPackedValue>), &Input, Archive, Context);
+        REQUIRE(EncodeResult);
+    }
+
+    Stream.seekg(0);
+    {
+        cereal::BinaryInputArchive Archive(Stream);
+        auto DecodeResult = Registry.Decode(TypeIdFromName(TTypeNameV<CustomPackedValue>), Archive, Context);
+        REQUIRE(DecodeResult);
+        auto Value = DecodeResult->AsConstRef<CustomPackedValue>();
+        REQUIRE(Value);
+        REQUIRE(Value->get().A == 9);
+        REQUIRE(Value->get().B == 10);
+    }
+
+    Stream.clear();
+    Stream.seekg(0);
+    {
+        cereal::BinaryInputArchive Archive(Stream);
+        CustomPackedValue Output{};
+        auto DecodeIntoResult = Registry.DecodeInto(TypeIdFromName(TTypeNameV<CustomPackedValue>), &Output, Archive, Context);
+        REQUIRE(DecodeIntoResult);
+        REQUIRE(Output.A == 9);
+        REQUIRE(Output.B == 10);
+    }
 }

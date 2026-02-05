@@ -40,6 +40,7 @@ void RegisterBuiltinTypes()
     RegisterPlain(TTypeNameV<float>, sizeof(float), alignof(float));
     RegisterPlain(TTypeNameV<double>, sizeof(double), alignof(double));
     RegisterPlain(TTypeNameV<std::string>, sizeof(std::string), alignof(std::string));
+    RegisterPlain(TTypeNameV<std::vector<uint8_t>>, sizeof(std::vector<uint8_t>), alignof(std::vector<uint8_t>));
     RegisterPlain(TTypeNameV<Uuid>, sizeof(Uuid), alignof(Uuid));
     RegisterPlain(TTypeNameV<Vec3>, sizeof(Vec3), alignof(Vec3));
     RegisterPlain(TTypeNameV<NodeHandle>, sizeof(NodeHandle), alignof(NodeHandle));

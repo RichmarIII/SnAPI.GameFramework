@@ -12,20 +12,32 @@ TypeRegistry& TypeRegistry::Instance()
 TExpected<TypeInfo*> TypeRegistry::Register(TypeInfo Info)
 {
     std::lock_guard<std::mutex> Lock(m_mutex);
+    if (m_frozen.load(std::memory_order_acquire))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type registry is frozen"));
+    }
     auto It = m_types.find(Info.Id);
     if (It != m_types.end())
     {
         return std::unexpected(MakeError(EErrorCode::AlreadyExists, "Type already registered"));
     }
-    const auto NameCopy = Info.Name;
     auto Inserted = m_types.emplace(Info.Id, std::move(Info));
-    m_nameToId.emplace(NameCopy, Inserted.first->first);
+    m_nameToId.emplace(Inserted.first->second.Name, Inserted.first->first);
     return &Inserted.first->second;
 }
 
 const TypeInfo* TypeRegistry::Find(const TypeId& Id) const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_types.find(Id);
+        if (It == m_types.end())
+        {
+            return nullptr;
+        }
+        return &It->second;
+    }
     auto It = m_types.find(Id);
     if (It == m_types.end())
     {
@@ -36,8 +48,22 @@ const TypeInfo* TypeRegistry::Find(const TypeId& Id) const
 
 const TypeInfo* TypeRegistry::FindByName(std::string_view Name) const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
-    auto It = m_nameToId.find(std::string(Name));
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_nameToId.find(Name);
+        if (It == m_nameToId.end())
+        {
+            return nullptr;
+        }
+        auto TypeIt = m_types.find(It->second);
+        if (TypeIt == m_types.end())
+        {
+            return nullptr;
+        }
+        return &TypeIt->second;
+    }
+    auto It = m_nameToId.find(Name);
     if (It == m_nameToId.end())
     {
         return nullptr;
@@ -81,14 +107,33 @@ bool IsAUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types, co
 
 bool TypeRegistry::IsA(const TypeId& Type, const TypeId& Base) const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        return IsAUnlocked(m_types, Type, Base);
+    }
     return IsAUnlocked(m_types, Type, Base);
 }
 
 std::vector<const TypeInfo*> TypeRegistry::Derived(const TypeId& Base) const
 {
     std::vector<const TypeInfo*> Result;
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        for (const auto& [Id, Info] : m_types)
+        {
+            if (Id == Base)
+            {
+                continue;
+            }
+            if (IsAUnlocked(m_types, Id, Base))
+            {
+                Result.push_back(&Info);
+            }
+        }
+        return Result;
+    }
     for (const auto& [Id, Info] : m_types)
     {
         if (Id == Base)
@@ -101,6 +146,16 @@ std::vector<const TypeInfo*> TypeRegistry::Derived(const TypeId& Base) const
         }
     }
     return Result;
+}
+
+void TypeRegistry::Freeze(bool Enable)
+{
+    m_frozen.store(Enable, std::memory_order_release);
+}
+
+bool TypeRegistry::IsFrozen() const
+{
+    return m_frozen.load(std::memory_order_acquire);
 }
 
 } // namespace SnAPI::GameFramework

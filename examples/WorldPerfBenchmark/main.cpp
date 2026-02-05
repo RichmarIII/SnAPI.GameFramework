@@ -19,10 +19,15 @@ class PerfComponentA final : public IComponent
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::PerfComponentA";
 
+    PerfComponentA()
+    {
+        m_blob.resize(100 * 1024, 1);
+    }
+
     int m_index = 0;
     float m_weight = 0.0f;
     Vec3 m_offset{};
-    std::string m_blob{};
+    std::vector<uint8_t> m_blob{};
 };
 
 class PerfComponentB final : public IComponent
@@ -38,7 +43,7 @@ SNAPI_REFLECT_COMPONENT((TTypeBuilder<PerfComponentA>(PerfComponentA::kTypeName)
     .Field("Index", &PerfComponentA::m_index)
     .Field("Weight", &PerfComponentA::m_weight)
     .Field("Offset", &PerfComponentA::m_offset)
-    //.Field("Blob", &PerfComponentA::m_blob)
+    .Field("Blob", &PerfComponentA::m_blob)
     .Constructor<>()
     .Register()), PerfComponentA);
 
@@ -186,7 +191,8 @@ int main()
     }
 
     ::SnAPI::AssetPipeline::AssetPackWriter Writer;
-    Writer.SetCompression(SnAPI::AssetPipeline::EPackCompression::Zstd);
+    Writer.SetCompression(SnAPI::AssetPipeline::EPackCompression::ZstdFast);
+    Writer.SetCompressionLevel(SnAPI::AssetPipeline::EPackCompressionLevel::Fast);
     {
         ::SnAPI::AssetPipeline::AssetPackEntry Entry;
         Entry.Id = AssetPipelineAssetIdFromName("perf.world");
