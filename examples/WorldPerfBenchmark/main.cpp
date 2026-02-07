@@ -220,7 +220,7 @@ int main()
     auto MountEnd = Clock::now();
 
     auto LoadStart = Clock::now();
-    auto LoadedWorld = Manager.Load<World>("perf.world");
+    auto LoadedWorld = Manager.Get<World>("perf.world");
     auto LoadEnd = Clock::now();
 
     if (!LoadedWorld.has_value())
