@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <span>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "Expected.h"
+#include "Flags.h"
 #include "Invoker.h"
 #include "Variant.h"
 
@@ -57,6 +59,32 @@ struct TransparentStringEqual
 };
 
 /**
+ * @brief Field-level flags for reflection metadata.
+ */
+enum class EFieldFlagBits : uint32_t
+{
+    None = 0,
+    Replication = 1u << 0,
+};
+
+using FieldFlags = TFlags<EFieldFlagBits>;
+
+/**
+ * @brief Method-level flags for reflection metadata.
+ */
+enum class EMethodFlagBits : uint32_t
+{
+    None = 0,
+    RpcReliable = 1u << 0,
+    RpcUnreliable = 1u << 1,
+    RpcNetServer = 1u << 2,
+    RpcNetClient = 1u << 3,
+    RpcNetMulticast = 1u << 4,
+};
+
+using MethodFlags = TFlags<EMethodFlagBits>;
+
+/**
  * @brief Reflection metadata for a field.
  * @remarks Getter/Setter use Variant for type-erased access.
  */
@@ -64,6 +92,7 @@ struct FieldInfo
 {
     std::string Name; /**< @brief Field name as registered. */
     TypeId FieldType; /**< @brief TypeId of the field. */
+    FieldFlags Flags{}; /**< @brief Field flags (replication, etc.). */
     std::function<TExpected<Variant>(void* Instance)> Getter; /**< @brief Getter callback. */
     std::function<Result(void* Instance, const Variant& Value)> Setter; /**< @brief Setter callback. */
     std::function<TExpected<VariantView>(void* Instance)> ViewGetter; /**< @brief Non-owning getter. */
@@ -82,6 +111,7 @@ struct MethodInfo
     TypeId ReturnType; /**< @brief Return type id. */
     std::vector<TypeId> ParamTypes; /**< @brief Parameter type ids. */
     MethodInvoker Invoke; /**< @brief Invocation callback. */
+    MethodFlags Flags{}; /**< @brief Method flags (rpc, etc.). */
     bool IsConst = false; /**< @brief True if method is const-qualified. */
 };
 

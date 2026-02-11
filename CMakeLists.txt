@@ -28,6 +28,8 @@ set(SNAPI_GF_SOURCES
     src/GameFramework.cpp
     src/Level.cpp
     src/NodeGraph.cpp
+    src/NetReplication.cpp
+    src/NetRpc.cpp
     src/Serialization.cpp
     src/ScriptABI.cpp
     src/TypeRegistry.cpp
@@ -128,6 +130,35 @@ FetchContent_MakeAvailable(SnAPI.AssetPipeline)
 target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.AssetPipeline)
 target_link_libraries(SnAPI.GameFramework PUBLIC cereal)
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_ASSETPipeline)
+
+# SnAPI.Networking integration (required)
+set(SNAPI_NETWORKING_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SNAPI_NETWORKING_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SNAPI_NETWORKING_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(SNAPI_NETWORKING_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(SNAPI_NETWORKING_ENABLE_FUZZ OFF CACHE BOOL "" FORCE)
+
+set(SNAPI_GF_NETWORKING_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Networking")
+if (SNAPI_GF_NETWORKING_SOURCE_DIR)
+    FetchContent_Declare(
+        SnAPI.Networking
+        SOURCE_DIR ${SNAPI_GF_NETWORKING_SOURCE_DIR}
+    )
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Networking/CMakeLists.txt")
+    FetchContent_Declare(
+        SnAPI.Networking
+        SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Networking
+    )
+else()
+    FetchContent_Declare(
+        SnAPI.Networking
+        GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.Networking.git
+        GIT_TAG master
+    )
+endif()
+FetchContent_MakeAvailable(SnAPI.Networking)
+target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Networking)
+target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_NETWORKING)
 
 # SWIG bindings (optional)
 if (SNAPI_GF_ENABLE_SWIG)

@@ -18,6 +18,8 @@
 #include "Math.h"
 #include "NodeGraph.h"
 #include "ObjectPool.h"
+#include "NetReplication.h"
+#include "NetRpc.h"
 #include "Relevance.h"
 #include "Reflection.h"
 #include "Serialization.h"

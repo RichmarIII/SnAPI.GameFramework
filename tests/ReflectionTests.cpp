@@ -78,3 +78,31 @@ TEST_CASE("Reflection registers types and supports inheritance")
     auto Ptr = std::static_pointer_cast<TestDerived>(CtorResult.value());
     REQUIRE(Ptr != nullptr);
 }
+
+struct FlaggedType
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::FlaggedType";
+    int Replicated = 0;
+
+    void RpcCall(int) {}
+};
+
+TEST_CASE("Reflection records field and method flags")
+{
+    RegisterBuiltinTypes();
+
+    (void)TTypeBuilder<FlaggedType>(FlaggedType::kTypeName)
+        .Field("Replicated", &FlaggedType::Replicated, EFieldFlagBits::Replication)
+        .Method("RpcCall", &FlaggedType::RpcCall,
+                EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+        .Constructor<>()
+        .Register();
+
+    auto* Info = TypeRegistry::Instance().Find(TypeIdFromName(FlaggedType::kTypeName));
+    REQUIRE(Info);
+    REQUIRE(Info->Fields.size() == 1);
+    REQUIRE(Info->Methods.size() == 1);
+    REQUIRE(Info->Fields[0].Flags.Has(EFieldFlagBits::Replication));
+    REQUIRE(Info->Methods[0].Flags.Has(EMethodFlagBits::RpcReliable));
+    REQUIRE(Info->Methods[0].Flags.Has(EMethodFlagBits::RpcNetServer));
+}

@@ -74,7 +74,7 @@ public:
      * @param Handle New handle.
      * @remarks Set by NodeGraph when the node is created.
      */
-    void Handle(NodeHandle Handle)
+    void Handle(NodeHandle Handle) override
     {
         m_self = Handle;
     }
@@ -83,7 +83,7 @@ public:
      * @brief Get the node UUID.
      * @return UUID value.
      */
-    const Uuid& Id() const
+    const Uuid& Id() const override
     {
         return m_self.Id;
     }
@@ -93,7 +93,7 @@ public:
      * @param Id UUID value.
      * @remarks Updates the internal handle.
      */
-    void Id(Uuid Id)
+    void Id(Uuid Id) override
     {
         m_self = NodeHandle(std::move(Id));
     }
@@ -102,7 +102,7 @@ public:
      * @brief Get the reflected type id for this node.
      * @return TypeId value.
      */
-    const TypeId& TypeKey() const
+    const TypeId& TypeKey() const override
     {
         return m_typeId;
     }
@@ -112,7 +112,7 @@ public:
      * @param Id TypeId value.
      * @remarks Set by NodeGraph when creating nodes by type.
      */
-    void TypeKey(const TypeId& Id)
+    void TypeKey(const TypeId& Id) override
     {
         m_typeId = Id;
     }
@@ -121,7 +121,7 @@ public:
      * @brief Get the parent node handle.
      * @return Parent handle or null handle if root.
      */
-    NodeHandle Parent() const
+    NodeHandle Parent() const override
     {
         return m_parent;
     }
@@ -131,7 +131,7 @@ public:
      * @param Parent Parent handle.
      * @remarks Used by NodeGraph to maintain hierarchy.
      */
-    void Parent(NodeHandle Parent)
+    void Parent(NodeHandle Parent) override
     {
         m_parent = Parent;
     }
@@ -140,7 +140,7 @@ public:
      * @brief Get the list of child handles.
      * @return Vector of child handles.
      */
-    const std::vector<NodeHandle>& Children() const
+    const std::vector<NodeHandle>& Children() const override
     {
         return m_children;
     }
@@ -150,7 +150,7 @@ public:
      * @param Child Child handle.
      * @remarks Does not set the child's parent; NodeGraph manages this.
      */
-    void AddChild(NodeHandle Child)
+    void AddChild(NodeHandle Child) override
     {
         m_children.push_back(Child);
     }
@@ -159,7 +159,7 @@ public:
      * @brief Remove a child handle from the node.
      * @param Child Child handle to remove.
      */
-    void RemoveChild(NodeHandle Child)
+    void RemoveChild(NodeHandle Child) override
     {
         for (auto It = m_children.begin(); It != m_children.end(); ++It)
         {
@@ -176,7 +176,7 @@ public:
      * @return True if active.
      * @remarks Inactive nodes are skipped during tick.
      */
-    bool Active() const
+    bool Active() const override
     {
         return m_active;
     }
@@ -185,16 +185,34 @@ public:
      * @brief Set the active state for the node.
      * @param Active New active state.
      */
-    void Active(bool Active)
+    void Active(bool Active) override
     {
         m_active = Active;
+    }
+
+    /**
+     * @brief Check if the node is replicated over the network.
+     * @return True if replicated.
+     */
+    bool Replicated() const override
+    {
+        return m_replicated;
+    }
+
+    /**
+     * @brief Set whether the node is replicated over the network.
+     * @param Replicated New replicated state.
+     */
+    void Replicated(bool Replicated) override
+    {
+        m_replicated = Replicated;
     }
 
     /**
      * @brief Access the list of component type ids.
      * @return Mutable reference to the type id list.
      */
-    std::vector<TypeId>& ComponentTypes()
+    std::vector<TypeId>& ComponentTypes() override
     {
         return m_componentTypes;
     }
@@ -203,7 +221,7 @@ public:
      * @brief Access the list of component type ids (const).
      * @return Const reference to the type id list.
      */
-    const std::vector<TypeId>& ComponentTypes() const
+    const std::vector<TypeId>& ComponentTypes() const override
     {
         return m_componentTypes;
     }
@@ -213,7 +231,7 @@ public:
      * @return Mutable reference to the component mask.
      * @remarks Used for fast type queries.
      */
-    std::vector<uint64_t>& ComponentMask()
+    std::vector<uint64_t>& ComponentMask() override
     {
         return m_componentMask;
     }
@@ -222,7 +240,7 @@ public:
      * @brief Access the component bitmask storage (const).
      * @return Const reference to the component mask.
      */
-    const std::vector<uint64_t>& ComponentMask() const
+    const std::vector<uint64_t>& ComponentMask() const override
     {
         return m_componentMask;
     }
@@ -232,7 +250,7 @@ public:
      * @return Version id.
      * @remarks Used to resize masks when type registry grows.
      */
-    uint32_t MaskVersion() const
+    uint32_t MaskVersion() const override
     {
         return m_maskVersion;
     }
@@ -241,7 +259,7 @@ public:
      * @brief Set the component mask version.
      * @param Version New version id.
      */
-    void MaskVersion(uint32_t Version)
+    void MaskVersion(uint32_t Version) override
     {
         m_maskVersion = Version;
     }
@@ -250,7 +268,7 @@ public:
      * @brief Get the owning graph.
      * @return Pointer to owner graph or nullptr if unowned.
      */
-    NodeGraph* OwnerGraph() const
+    NodeGraph* OwnerGraph() const override
     {
         return m_ownerGraph;
     }
@@ -260,7 +278,7 @@ public:
      * @param Graph Owner graph pointer.
      * @remarks Assigned by NodeGraph when the node is inserted.
      */
-    void OwnerGraph(NodeGraph* Graph)
+    void OwnerGraph(NodeGraph* Graph) override
     {
         m_ownerGraph = Graph;
     }
@@ -304,17 +322,17 @@ public:
      * @param DeltaSeconds Time since last tick.
      * @remarks Checks relevance and active state.
      */
-    void TickTree(float DeltaSeconds);
+    void TickTree(float DeltaSeconds) override;
     /**
      * @brief Fixed-step tick for this node and its subtree.
      * @param DeltaSeconds Fixed time step.
      */
-    void FixedTickTree(float DeltaSeconds);
+    void FixedTickTree(float DeltaSeconds) override;
     /**
      * @brief Late tick for this node and its subtree.
      * @param DeltaSeconds Time since last tick.
      */
-    void LateTickTree(float DeltaSeconds);
+    void LateTickTree(float DeltaSeconds) override;
 
 private:
     NodeHandle m_self{}; /**< @brief Handle for this node. */
@@ -322,6 +340,7 @@ private:
     std::vector<NodeHandle> m_children{}; /**< @brief Child handles. */
     std::string m_name{"Node"}; /**< @brief Display name. */
     bool m_active = true; /**< @brief Active state. */
+    bool m_replicated = false; /**< @brief Replication flag. */
     std::vector<TypeId> m_componentTypes{}; /**< @brief Component type ids present. */
     std::vector<uint64_t> m_componentMask{}; /**< @brief Bitmask for component queries. */
     uint32_t m_maskVersion = 0; /**< @brief Mask version for registry changes. */

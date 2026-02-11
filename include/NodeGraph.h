@@ -22,6 +22,7 @@ namespace SnAPI::GameFramework
 
 class ComponentSerializationRegistry;
 class NodeGraphSerializer;
+class NetReplicationBridge;
 
 /**
  * @brief A node that owns and manages a hierarchy of child nodes.
@@ -409,6 +410,7 @@ private:
     friend class BaseNode;
     friend class ComponentSerializationRegistry;
     friend class NodeGraphSerializer;
+    friend class NetReplicationBridge;
 
     /**
      * @brief Add a component of type T to a node.

@@ -71,6 +71,24 @@ public:
     }
 
     /**
+     * @brief Check if the component is replicated over the network.
+     * @return True if replicated.
+     */
+    bool Replicated() const
+    {
+        return m_replicated;
+    }
+
+    /**
+     * @brief Set whether the component is replicated over the network.
+     * @param Replicated New replicated state.
+     */
+    void Replicated(bool Replicated)
+    {
+        m_replicated = Replicated;
+    }
+
+    /**
      * @brief Get the component UUID.
      * @return UUID of this component.
      */
@@ -101,6 +119,7 @@ public:
 private:
     NodeHandle m_owner{}; /**< @brief Owning node handle. */
     Uuid m_id{}; /**< @brief Component UUID. */
+    bool m_replicated = false; /**< @brief Replication flag. */
 };
 
 } // namespace SnAPI::GameFramework

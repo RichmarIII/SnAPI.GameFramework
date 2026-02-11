@@ -57,13 +57,14 @@ public:
      * @remarks Const fields are treated as read-only (setter fails).
      */
     template<typename FieldT>
-    TTypeBuilder& Field(const char* Name, FieldT T::*Member)
+    TTypeBuilder& Field(const char* Name, FieldT T::*Member, FieldFlags Flags = {})
     {
         using Raw = std::remove_cv_t<FieldT>;
         FieldInfo Info;
         Info.Name = Name;
         const TypeId FieldType = TypeIdFromName(TTypeNameV<Raw>);
         Info.FieldType = FieldType;
+        Info.Flags = Flags;
         Info.Getter = [Member](void* Instance) -> TExpected<Variant> {
             if (!Instance)
             {
@@ -146,7 +147,7 @@ public:
      * @return Reference to the builder for chaining.
      */
     template<typename R, typename... Args>
-    TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...))
+    TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...), MethodFlags Flags = {})
     {
         MethodInfo Info;
         Info.Name = Name;
@@ -161,6 +162,7 @@ public:
         Info.ParamTypes = {TypeIdFromName(TTypeNameV<std::remove_cvref_t<Args>>) ...};
         Info.Invoke = MakeInvoker(Method);
         Info.IsConst = false;
+        Info.Flags = Flags;
         m_info.Methods.push_back(std::move(Info));
         return *this;
     }
@@ -174,7 +176,7 @@ public:
      * @return Reference to the builder for chaining.
      */
     template<typename R, typename... Args>
-    TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const)
+    TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const, MethodFlags Flags = {})
     {
         MethodInfo Info;
         Info.Name = Name;
@@ -189,6 +191,7 @@ public:
         Info.ParamTypes = {TypeIdFromName(TTypeNameV<std::remove_cvref_t<Args>>) ...};
         Info.Invoke = MakeInvoker(Method);
         Info.IsConst = true;
+        Info.Flags = Flags;
         m_info.Methods.push_back(std::move(Info));
         return *this;
     }
