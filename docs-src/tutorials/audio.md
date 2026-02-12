@@ -1,0 +1,95 @@
+# Audio Components
+
+This page explains how audio is integrated into GameFramework through world-owned subsystems and components.
+
+## 1. Architecture
+
+- `World` owns `AudioSystem`.
+- `AudioListenerComponent` writes listener transform each tick.
+- `AudioSourceComponent` controls emitter, sound loading, playback, and spatial settings.
+
+Design goal: gameplay code accesses systems through world context (`Owner()->World()->Audio()` pattern), not globals.
+
+## 2. Add a Listener to a Camera Node
+
+```cpp
+auto CameraNodeResult = Graph.CreateNode("Camera");
+auto* CameraNode = CameraNodeResult->Borrowed();
+
+auto CameraTransform = CameraNode->Add<TransformComponent>();
+CameraTransform->Position = Vec3(0.0f, 2.0f, -6.0f);
+
+auto Listener = CameraNode->Add<AudioListenerComponent>();
+Listener->Active(true);
+```
+
+What happens:
+
+- `OnCreate()` initializes audio system lazily.
+- Each tick, listener transform is pushed to `AudioEngine`.
+
+## 3. Add a Source to an Actor Node
+
+```cpp
+auto ActorNodeResult = Graph.CreateNode("Speaker");
+auto* ActorNode = ActorNodeResult->Borrowed();
+
+auto ActorTransform = ActorNode->Add<TransformComponent>();
+ActorTransform->Position = Vec3(3.0f, 0.0f, 0.0f);
+
+auto Source = ActorNode->Add<AudioSourceComponent>();
+Source->EditSettings().SoundPath = "assets/audio/loop.wav";
+Source->EditSettings().Streaming = false;
+Source->EditSettings().AutoPlay = true;
+Source->EditSettings().Looping = true;
+Source->EditSettings().Volume = 0.8f;
+Source->EditSettings().MinDistance = 1.0f;
+Source->EditSettings().MaxDistance = 40.0f;
+Source->EditSettings().Rolloff = 1.0f;
+```
+
+## 4. Runtime Control
+
+```cpp
+Source->Play();
+Source->Stop();
+
+bool Loaded = Source->IsLoaded();
+bool Playing = Source->IsPlaying();
+
+Source->LoadSound("assets/audio/one_shot.wav", false);
+Source->UnloadSound();
+```
+
+`AudioSourceComponent` keeps emitter state synced with current settings and owner transform.
+
+## 5. Important Behavior
+
+- Source/listener components rely on owner node transform if `TransformComponent` exists.
+- Audio system initialization is lazy (`Initialize()` called as needed).
+- Audio components are ordinary reflected components, so they serialize like other components.
+
+## 6. Minimal Frame Pump
+
+```cpp
+while (Running)
+{
+    const float Dt = 1.0f / 60.0f;
+    WorldInstance.Tick(Dt);
+    WorldInstance.LateTick(Dt);
+    WorldInstance.EndFrame();
+}
+```
+
+Listener/source updates happen through normal component ticking.
+
+## 7. Troubleshooting
+
+- No audio output:
+  - verify audio asset path in `Settings.SoundPath`
+  - ensure listener exists and is active
+  - ensure source was loaded/played
+- Spatial audio sounds wrong:
+  - check transform values and distance parameters (`MinDistance`, `MaxDistance`, `Rolloff`)
+
+Next: [Testing and Validation](testing.md)

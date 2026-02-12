@@ -1,0 +1,78 @@
+site_name: SnAPI.GameFramework
+site_description: Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration
+site_url: https://richmarIII.github.io/SnAPI.GameFramework
+repo_url: https://github.com/RichmarIII/SnAPI.GameFramework
+repo_name: RichmarIII/SnAPI.GameFramework
+edit_uri: ""
+
+docs_dir: docs-src
+site_dir: docs
+use_directory_urls: true
+
+theme:
+  name: material
+  language: en
+  font:
+    text: Space Grotesk
+    code: JetBrains Mono
+  palette:
+    - scheme: default
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      primary: teal
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - toc.integrate
+    - content.code.copy
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - search.share
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Start Here: tutorials.md
+  - Architecture: architecture.md
+  - Tutorials:
+      - Worlds and Graphs: tutorials/worlds_graphs.md
+      - Nodes and Components: tutorials/nodes_components.md
+      - Reflection and Serialization: tutorials/reflection_serialization.md
+      - AssetPipeline Integration: tutorials/assetpipeline.md
+      - Networking Replication and RPC: tutorials/networking.md
+      - Audio Components: tutorials/audio.md
+      - Testing and Validation: tutorials/testing.md
+  - API Reference:
+      - Overview: api/index.md
+      - Namespaces: api/namespaces.md
+      - Types: api/types.md
+      - Files: api/files.md
