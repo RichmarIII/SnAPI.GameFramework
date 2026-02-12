@@ -1,5 +1,9 @@
 #include "BaseNode.h"
 
+#include "IWorld.h"
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include "NetworkSystem.h"
+#endif
 #include "NodeGraph.h"
 
 namespace SnAPI::GameFramework
@@ -75,6 +79,39 @@ void BaseNode::LateTickTree(float DeltaSeconds)
             ChildNode->LateTickTree(DeltaSeconds);
         }
     }
+}
+
+bool BaseNode::IsServer() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (m_world)
+    {
+        return m_world->Networking().IsServer();
+    }
+#endif
+    return true;
+}
+
+bool BaseNode::IsClient() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (m_world)
+    {
+        return m_world->Networking().IsClient();
+    }
+#endif
+    return false;
+}
+
+bool BaseNode::IsListenServer() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (m_world)
+    {
+        return m_world->Networking().IsListenServer();
+    }
+#endif
+    return false;
 }
 
 } // namespace SnAPI::GameFramework

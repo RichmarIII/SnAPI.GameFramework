@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <string_view>
@@ -14,7 +15,6 @@
 #include "GameFramework.hpp"
 
 #include "NetSession.h"
-#include "Services/ReplicationService.h"
 #include "Transport/UdpTransportAsio.h"
 
 using namespace SnAPI::GameFramework;
@@ -32,6 +32,34 @@ struct Args
     std::uint16_t Port = 7777;
     int CubeCount = 16;
 };
+
+void InitializeWorkingDirectory(const char* ExeArgv0)
+{
+    if (!ExeArgv0 || *ExeArgv0 == '\0')
+    {
+        return;
+    }
+
+    namespace fs = std::filesystem;
+    std::error_code Ec;
+    fs::path ExePath(ExeArgv0);
+    if (ExePath.is_relative())
+    {
+        ExePath = fs::absolute(ExePath, Ec);
+        if (Ec)
+        {
+            return;
+        }
+    }
+
+    const fs::path ExeDir = ExePath.parent_path();
+    if (ExeDir.empty())
+    {
+        return;
+    }
+
+    fs::current_path(ExeDir, Ec);
+}
 
 std::string EndpointToString(const NetEndpoint& Endpoint)
 {
@@ -53,8 +81,9 @@ const char* DisconnectReasonToString(EDisconnectReason Reason)
 
 struct SessionListener final : public INetSessionListener
 {
-    explicit SessionListener(std::string LabelValue)
+    explicit SessionListener(std::string LabelValue, NetSession* SessionValue = nullptr)
         : Label(std::move(LabelValue))
+        , SessionRef(SessionValue)
     {
     }
 
@@ -74,7 +103,19 @@ struct SessionListener final : public INetSessionListener
     void OnConnectionClosed(const NetConnectionEvent& Event) override
     {
         std::cout << "[" << Label << "] Connection closed handle=" << Event.Handle
-                  << " remote=" << EndpointToString(Event.Remote) << "\n";
+                  << " remote=" << EndpointToString(Event.Remote);
+        if (SessionRef)
+        {
+            auto Dump = SessionRef->DumpConnection(Event.Handle, Clock::now());
+            if (Dump)
+            {
+                std::cout << " reason=" << DisconnectReasonToString(Dump->DisconnectReason)
+                          << " pending_rel=" << Dump->PendingReliableCount
+                          << " pending_unrel=" << Dump->PendingUnreliableCount
+                          << " strikes=" << Dump->Strikes;
+            }
+        }
+        std::cout << "\n";
     }
 
     void OnConnectionMigrated(const NetConnectionEvent& Event,
@@ -86,6 +127,7 @@ struct SessionListener final : public INetSessionListener
     }
 
     std::string Label;
+    NetSession* SessionRef = nullptr;
 };
 
 void PrintConnectionDump(const std::string& Label,
@@ -99,7 +141,10 @@ void PrintConnectionDump(const std::string& Label,
               << " mtu=" << Dump.MtuBytes
               << " pending_rel=" << Dump.PendingReliableCount
               << " pending_unrel=" << Dump.PendingUnreliableCount
-              << " strikes=" << Dump.Strikes;
+              << " strikes=" << Dump.Strikes
+              << " pkt_sent=" << Dump.Stats.PacketsSent
+              << " pkt_acked=" << Dump.Stats.PacketsAcked
+              << " pkt_lost=" << Dump.Stats.PacketsLost;
 
     if (Dump.DisconnectRequested || Dump.DisconnectSent)
     {
@@ -205,7 +250,7 @@ NetConfig MakeNetConfig()
     Config.Pacing.MaxBytesPerSecond = 1024 * 1024;
     Config.Pacing.BurstBytes = 1024 * 1024;
     Config.Pacing.MaxBytesPerPump = 1024 * 1024;
-    Config.KeepAlive.Timeout = Milliseconds{5000};
+    Config.KeepAlive.Timeout = Milliseconds{20000};
     return Config;
 }
 
@@ -291,7 +336,7 @@ int RunServer(const Args& Parsed)
 
     NetSession Session(MakeNetConfig());
     Session.Role(ESessionRole::Server);
-    SessionListener Listener("Server");
+    SessionListener Listener("Server", &Session);
     Session.AddListener(&Listener);
 
     auto Transport = MakeUdpTransport(NetEndpoint{Parsed.Bind, Parsed.Port});
@@ -302,15 +347,17 @@ int RunServer(const Args& Parsed)
     }
     Session.RegisterTransport(Transport);
 
-    auto Replication = ReplicationService::Create(Session);
-
-    NodeGraph Graph("ServerGraph");
-    NetReplicationBridge Bridge(Graph);
-    Replication->EntityProvider(&Bridge);
-    Replication->InterestProvider(&Bridge);
-    Replication->PriorityProvider(&Bridge);
+    World Graph("ServerWorld");
+    if (!Graph.Networking().AttachSession(Session))
+    {
+        std::cerr << "Failed to attach world networking\n";
+        return 1;
+    }
 
     std::vector<MovingCube> Cubes;
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    AudioSourceComponent* ReplicatedAudio = nullptr;
+#endif
     const int Grid = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(Parsed.CubeCount))));
     const float Spacing = 4.0f;
     const float Offset = (Grid - 1) * Spacing * 0.5f;
@@ -343,13 +390,57 @@ int RunServer(const Args& Parsed)
         Cubes.push_back({Transform, Vec3(X, 0.0f, Z), static_cast<float>(i) * 0.35f});
     }
 
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    {
+        auto AudioNodeResult = Graph.CreateNode("ReplicatedAudio");
+        if (AudioNodeResult)
+        {
+            auto* AudioNode = AudioNodeResult->Borrowed();
+            if (AudioNode)
+            {
+                AudioNode->Replicated(true);
+                auto TransformResult = AudioNode->Add<ReplicatedTransformComponent>();
+                if (TransformResult)
+                {
+                    auto* Transform = &*TransformResult;
+                    Transform->Replicated(true);
+                    Transform->Position = Vec3(0.0f, 0.0f, 0.0f);
+                }
+
+                auto AudioResult = AudioNode->Add<AudioSourceComponent>();
+                if (AudioResult)
+                {
+                    ReplicatedAudio = &*AudioResult;
+                    ReplicatedAudio->Replicated(true);
+                    auto& Settings = ReplicatedAudio->EditSettings();
+                    Settings.SoundPath = "sound.wav";
+                    Settings.Streaming = false;
+                    Settings.AutoPlay = false;
+                    Settings.Looping = false;
+                    Settings.Volume = 1.0f;
+                    Settings.SpatialGain = 1.0f;
+                    Settings.MinDistance = 1.0f;
+                    Settings.MaxDistance = 64.0f;
+                    Settings.Rolloff = 1.0f;
+                }
+            }
+        }
+    }
+#endif
+
     std::cout << "Server listening on " << Parsed.Bind << ":" << Parsed.Port << "\n";
 
     const auto Start = Clock::now();
+    auto Previous = Start;
     auto NextLog = Start;
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    float NextSoundTime = 0.0f;
+#endif
     while (true)
     {
         const auto Now = Clock::now();
+        const float DeltaSeconds = std::chrono::duration<float>(Now - Previous).count();
+        Previous = Now;
         const float TimeSeconds = std::chrono::duration<float>(Now - Start).count();
 
         for (auto& Cube : Cubes)
@@ -367,6 +458,25 @@ int RunServer(const Args& Parsed)
         }
 
         Session.Pump(Now);
+        Graph.Tick(DeltaSeconds);
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+        if (ReplicatedAudio && TimeSeconds >= NextSoundTime)
+        {
+            const auto Dumps = Session.DumpConnections(Now);
+            const bool HasReadyConnection = std::any_of(Dumps.begin(),
+                                                        Dumps.end(),
+                                                        [](const NetConnectionDump& Dump) {
+                                                            return Dump.HandshakeComplete;
+                                                        });
+            if (HasReadyConnection)
+            {
+                ReplicatedAudio->Play();
+                std::cout << "[Server] Triggered replicated audio playback: sound.wav\n";
+                NextSoundTime = TimeSeconds + 5.0f;
+            }
+        }
+#endif
 
         if (Now >= NextLog)
         {
@@ -388,7 +498,7 @@ int RunClient(const Args& Parsed)
 
     NetSession Session(MakeNetConfig());
     Session.Role(ESessionRole::Client);
-    SessionListener Listener("Client");
+    SessionListener Listener("Client", &Session);
     Session.AddListener(&Listener);
 
     auto Transport = MakeUdpTransport(NetEndpoint{Parsed.Bind, 0});
@@ -400,11 +510,12 @@ int RunClient(const Args& Parsed)
     Session.RegisterTransport(Transport);
     Session.OpenConnection(Transport->Handle(), NetEndpoint{Parsed.Host, Parsed.Port});
 
-    auto Replication = ReplicationService::Create(Session);
-
-    NodeGraph Graph("ClientGraph");
-    NetReplicationBridge Bridge(Graph);
-    Replication->Receiver(&Bridge);
+    World Graph("ClientWorld");
+    if (!Graph.Networking().AttachSession(Session))
+    {
+        std::cerr << "Failed to attach world networking\n";
+        return 1;
+    }
 
     if (!glfwInit())
     {
@@ -424,12 +535,16 @@ int RunClient(const Args& Parsed)
     glEnable(GL_DEPTH_TEST);
 
     const auto Start = Clock::now();
+    auto Previous = Start;
     auto NextLog = Start;
     while (!glfwWindowShouldClose(Window))
     {
         const auto Now = Clock::now();
+        const float DeltaSeconds = std::chrono::duration<float>(Now - Previous).count();
+        Previous = Now;
         const float TimeSeconds = std::chrono::duration<float>(Now - Start).count();
         Session.Pump(Now);
+        Graph.Tick(DeltaSeconds);
 
         if (Now >= NextLog)
         {
@@ -479,6 +594,8 @@ int RunClient(const Args& Parsed)
 
 int main(int argc, char** argv)
 {
+    InitializeWorkingDirectory((argc > 0) ? argv[0] : nullptr);
+
     Args Parsed;
     if (!ParseArgs(argc, argv, Parsed))
     {

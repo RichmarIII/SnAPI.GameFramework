@@ -139,6 +139,22 @@ public:
     virtual void Replicated(bool Replicated) = 0;
 
     /**
+     * @brief Check whether this node is executing with server authority.
+     * @return True when server-authoritative.
+     */
+    virtual bool IsServer() const = 0;
+    /**
+     * @brief Check whether this node is executing in a client context.
+     * @return True when client-side.
+     */
+    virtual bool IsClient() const = 0;
+    /**
+     * @brief Check whether this node is executing as a listen-server.
+     * @return True when both server and client role are active.
+     */
+    virtual bool IsListenServer() const = 0;
+
+    /**
      * @brief Access the list of component type ids.
      * @return Mutable reference to the type id list.
      */

@@ -11,6 +11,7 @@ namespace SnAPI::GameFramework
 
 class NodeGraph;
 class BaseNode;
+class IWorld;
 
 /**
  * @brief Base interface for components attached to nodes.
@@ -115,6 +116,36 @@ public:
     {
         return ComponentHandle(m_id);
     }
+
+    /**
+     * @brief Resolve the owning node pointer.
+     * @return Owning BaseNode pointer or nullptr.
+     */
+    BaseNode* OwnerNode() const;
+
+    /**
+     * @brief Resolve the owning world pointer.
+     * @return Owning world or nullptr.
+     */
+    IWorld* World() const;
+
+    /**
+     * @brief Check whether this component executes with server authority.
+     * @return True when server-authoritative.
+     */
+    bool IsServer() const;
+
+    /**
+     * @brief Check whether this component executes in a client context.
+     * @return True when client-side.
+     */
+    bool IsClient() const;
+
+    /**
+     * @brief Check whether this component executes as listen-server.
+     * @return True when both server and client role are active.
+     */
+    bool IsListenServer() const;
 
 private:
     NodeHandle m_owner{}; /**< @brief Owning node handle. */

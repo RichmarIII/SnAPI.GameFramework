@@ -10,6 +10,9 @@
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 #include "AudioSystem.h"
 #endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include "NetworkSystem.h"
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -90,10 +93,26 @@ public:
     const AudioSystem& Audio() const override;
 #endif
 
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    /**
+     * @brief Access world networking subsystem.
+     * @return Reference to NetworkSystem.
+     */
+    NetworkSystem& Networking() override;
+    /**
+     * @brief Access world networking subsystem (const).
+     * @return Const reference to NetworkSystem.
+     */
+    const NetworkSystem& Networking() const override;
+#endif
+
 private:
     JobSystem m_jobSystem{}; /**< @brief Internal job system. */
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     AudioSystem m_audioSystem{}; /**< @brief Audio system instance. */
+#endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    NetworkSystem m_networkSystem; /**< @brief Networking system instance. */
 #endif
 };
 

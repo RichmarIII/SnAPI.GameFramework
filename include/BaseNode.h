@@ -211,6 +211,19 @@ public:
     }
 
     /**
+     * @brief True when this node executes with server authority.
+     */
+    bool IsServer() const override;
+    /**
+     * @brief True when this node executes in client context.
+     */
+    bool IsClient() const override;
+    /**
+     * @brief True when this node executes as listen-server.
+     */
+    bool IsListenServer() const override;
+
+    /**
      * @brief Access the list of component type ids.
      * @return Mutable reference to the type id list.
      */

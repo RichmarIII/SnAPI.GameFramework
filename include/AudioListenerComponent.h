@@ -9,6 +9,9 @@ namespace SnAPI::GameFramework
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
 class AudioSystem;
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+class NetworkSystem;
+#endif
 
 /**
  * @brief Component that drives the shared SnAPI.Audio listener.
@@ -45,8 +48,26 @@ public:
     void OnCreate() override;
     void Tick(float DeltaSeconds) override;
 
+    /**
+     * @brief Gameplay-facing setter.
+     * @param ActiveValue New active state.
+     * @remarks Gameplay-facing non-RPC method; forwards to SetActiveServer() when networked.
+     */
+    void SetActive(bool ActiveValue);
+    /**
+     * @brief RPC server endpoint for SetActive().
+     */
+    void SetActiveServer(bool ActiveValue);
+    /**
+     * @brief RPC client/multicast endpoint for SetActive().
+     */
+    void SetActiveClient(bool ActiveValue);
+
 private:
     AudioSystem* ResolveAudioSystem() const;
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    NetworkSystem* ResolveNetworkSystem() const;
+#endif
     bool m_active = true;
     Vec3 m_lastPosition{};
     bool m_hasLastPosition = false;

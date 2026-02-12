@@ -5,6 +5,9 @@ namespace SnAPI::GameFramework
 
 World::World()
     : NodeGraph("World")
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    , m_networkSystem(*this)
+#endif
 {
     TypeKey(StaticTypeId<World>());
     BaseNode::World(this);
@@ -12,6 +15,9 @@ World::World()
 
 World::World(std::string Name)
     : NodeGraph(std::move(Name))
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    , m_networkSystem(*this)
+#endif
 {
     TypeKey(StaticTypeId<World>());
     BaseNode::World(this);
@@ -80,6 +86,18 @@ AudioSystem& World::Audio()
 const AudioSystem& World::Audio() const
 {
     return m_audioSystem;
+}
+#endif
+
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+NetworkSystem& World::Networking()
+{
+    return m_networkSystem;
+}
+
+const NetworkSystem& World::Networking() const
+{
+    return m_networkSystem;
 }
 #endif
 

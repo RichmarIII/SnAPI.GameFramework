@@ -12,6 +12,9 @@ class Level;
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 class AudioSystem;
 #endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+class NetworkSystem;
+#endif
 
 /**
  * @brief Interface for world containers.
@@ -68,6 +71,19 @@ public:
      * @return Const reference to AudioSystem.
      */
     virtual const AudioSystem& Audio() const = 0;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    /**
+     * @brief Access the networking subsystem for this world.
+     * @return Reference to NetworkSystem.
+     */
+    virtual NetworkSystem& Networking() = 0;
+    /**
+     * @brief Access the networking subsystem for this world (const).
+     * @return Const reference to NetworkSystem.
+     */
+    virtual const NetworkSystem& Networking() const = 0;
 #endif
 };
 

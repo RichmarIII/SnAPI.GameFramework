@@ -30,8 +30,10 @@ set(SNAPI_GF_SOURCES
     src/AssetPipelineSerializers.cpp
     src/BaseNode.cpp
     src/GameFramework.cpp
+    src/IComponent.cpp
     src/Level.cpp
     src/NodeGraph.cpp
+    src/NetworkSystem.cpp
     src/NetReplication.cpp
     src/NetRpc.cpp
     src/Serialization.cpp

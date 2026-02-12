@@ -6,6 +6,7 @@ add_executable(GameFrameworkTests
     NodeGraphTests.cpp
     RelevanceTests.cpp
     SerializationTests.cpp
+    WorldNetworkingTests.cpp
 )
 
 target_link_libraries(GameFrameworkTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)

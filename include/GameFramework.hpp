@@ -23,6 +23,7 @@
 #include "ObjectPool.h"
 #include "NetReplication.h"
 #include "NetRpc.h"
+#include "NetworkSystem.h"
 #include "Relevance.h"
 #include "Reflection.h"
 #include "Serialization.h"

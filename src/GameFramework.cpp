@@ -59,7 +59,7 @@ SNAPI_REFLECT_TYPE(ScriptComponent, (TTypeBuilder<ScriptComponent>(ScriptCompone
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
 SNAPI_REFLECT_TYPE(AudioSourceComponent::Settings, (TTypeBuilder<AudioSourceComponent::Settings>(AudioSourceComponent::Settings::kTypeName)
-    .Field("SoundPath", &AudioSourceComponent::Settings::SoundPath)
+    .Field("SoundPath", &AudioSourceComponent::Settings::SoundPath, EFieldFlagBits::Replication)
     .Field("Streaming", &AudioSourceComponent::Settings::Streaming)
     .Field("AutoPlay", &AudioSourceComponent::Settings::AutoPlay)
     .Field("Looping", &AudioSourceComponent::Settings::Looping)
@@ -72,12 +72,33 @@ SNAPI_REFLECT_TYPE(AudioSourceComponent::Settings, (TTypeBuilder<AudioSourceComp
     .Register()));
 
 SNAPI_REFLECT_TYPE(AudioSourceComponent, (TTypeBuilder<AudioSourceComponent>(AudioSourceComponent::kTypeName)
-    .Field("Settings", &AudioSourceComponent::EditSettings, &AudioSourceComponent::GetSettings)
+    .Field("Settings",
+           &AudioSourceComponent::EditSettings,
+           &AudioSourceComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Method("PlayServer",
+            &AudioSourceComponent::PlayServer,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("PlayClient",
+            &AudioSourceComponent::PlayClient,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetMulticast)
+    .Method("StopServer",
+            &AudioSourceComponent::StopServer,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("StopClient",
+            &AudioSourceComponent::StopClient,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetMulticast)
     .Constructor<>()
     .Register()));
 
 SNAPI_REFLECT_TYPE(AudioListenerComponent, (TTypeBuilder<AudioListenerComponent>(AudioListenerComponent::kTypeName)
     .Field("Active", &AudioListenerComponent::EditActive, &AudioListenerComponent::GetActive)
+    .Method("SetActiveServer",
+            &AudioListenerComponent::SetActiveServer,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("SetActiveClient",
+            &AudioListenerComponent::SetActiveClient,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetMulticast)
     .Constructor<>()
     .Register()));
 

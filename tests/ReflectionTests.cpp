@@ -106,3 +106,106 @@ TEST_CASE("Reflection records field and method flags")
     REQUIRE(Info->Methods[0].Flags.Has(EMethodFlagBits::RpcReliable));
     REQUIRE(Info->Methods[0].Flags.Has(EMethodFlagBits::RpcNetServer));
 }
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+TEST_CASE("AudioSourceComponent exposes reflected RPC endpoints")
+{
+    RegisterBuiltinTypes();
+
+    auto* Info = TypeRegistry::Instance().Find(StaticTypeId<AudioSourceComponent>());
+    REQUIRE(Info);
+
+    bool HasPlayServer = false;
+    bool HasPlayClient = false;
+    bool HasStopServer = false;
+    bool HasStopClient = false;
+    bool HasSetActiveServer = false;
+    bool HasSetActiveClient = false;
+
+    for (const auto& Method : Info->Methods)
+    {
+        if (Method.Name == "PlayServer")
+        {
+            HasPlayServer = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+        }
+        else if (Method.Name == "PlayClient")
+        {
+            HasPlayClient = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
+        }
+        else if (Method.Name == "StopServer")
+        {
+            HasStopServer = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+        }
+        else if (Method.Name == "StopClient")
+        {
+            HasStopClient = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
+        }
+    }
+
+    REQUIRE(HasPlayServer);
+    REQUIRE(HasPlayClient);
+    REQUIRE(HasStopServer);
+    REQUIRE(HasStopClient);
+
+    auto* ListenerInfo = TypeRegistry::Instance().Find(StaticTypeId<AudioListenerComponent>());
+    REQUIRE(ListenerInfo);
+    for (const auto& Method : ListenerInfo->Methods)
+    {
+        if (Method.Name == "SetActiveServer")
+        {
+            HasSetActiveServer = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+        }
+        else if (Method.Name == "SetActiveClient")
+        {
+            HasSetActiveClient = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
+        }
+    }
+
+    REQUIRE(HasSetActiveServer);
+    REQUIRE(HasSetActiveClient);
+}
+
+TEST_CASE("AudioSourceComponent settings fields are marked for replication")
+{
+    RegisterBuiltinTypes();
+
+    auto* AudioInfo = TypeRegistry::Instance().Find(StaticTypeId<AudioSourceComponent>());
+    REQUIRE(AudioInfo);
+
+    bool HasReplicatedSettingsField = false;
+    for (const auto& Field : AudioInfo->Fields)
+    {
+        if (Field.Name == "Settings")
+        {
+            HasReplicatedSettingsField = Field.Flags.Has(EFieldFlagBits::Replication);
+            break;
+        }
+    }
+    REQUIRE(HasReplicatedSettingsField);
+
+    auto* SettingsInfo = TypeRegistry::Instance().Find(StaticTypeId<AudioSourceComponent::Settings>());
+    REQUIRE(SettingsInfo);
+
+    bool HasReplicatedSoundPath = false;
+    bool HasReplicatedStreaming = false;
+    for (const auto& Field : SettingsInfo->Fields)
+    {
+        if (Field.Name == "SoundPath")
+        {
+            HasReplicatedSoundPath = Field.Flags.Has(EFieldFlagBits::Replication);
+        }
+        else if (Field.Name == "Streaming")
+        {
+            HasReplicatedStreaming = Field.Flags.Has(EFieldFlagBits::Replication);
+        }
+    }
+    REQUIRE(HasReplicatedSoundPath);
+    REQUIRE_FALSE(HasReplicatedStreaming);
+}
+#endif

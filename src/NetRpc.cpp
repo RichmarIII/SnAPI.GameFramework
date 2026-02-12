@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstring>
+#include <exception>
 #include <limits>
 #include <ostream>
 #include <streambuf>
@@ -354,6 +355,20 @@ NodeGraph* NetRpcBridge::Graph() const
 
 bool NetRpcBridge::Bind(SnAPI::Networking::RpcService& Service, RpcTargetId TargetIdValue)
 {
+    if (m_rpc == &Service && m_targetId == TargetIdValue)
+    {
+        RegisterGraphTypes();
+        return true;
+    }
+    if (m_rpc == &Service && m_targetId != TargetIdValue)
+    {
+        return false;
+    }
+    if (m_rpc && m_rpc != &Service)
+    {
+        return false;
+    }
+
     m_rpc = &Service;
     m_targetId = TargetIdValue;
     if (!m_rpc->RegisterMethod<&INetReflectionRpc::InvokeServer>(SnAPI::Networking::EDispatchThread::Net))
@@ -629,7 +644,21 @@ NetRpcResponse NetRpcBridge::HandleRequest(NetConnectionHandle,
         return Response;
     }
 
-    auto InvokeResult = Entry.Method.Invoke(Instance, ArgsResult.value());
+    TExpected<Variant> InvokeResult = std::unexpected(MakeError(EErrorCode::InternalError, "RPC invoke failed"));
+    try
+    {
+        InvokeResult = Entry.Method.Invoke(Instance, ArgsResult.value());
+    }
+    catch (const std::exception&)
+    {
+        Response.Status = ERpcReflectionStatus::InvokeFailed;
+        return Response;
+    }
+    catch (...)
+    {
+        Response.Status = ERpcReflectionStatus::InvokeFailed;
+        return Response;
+    }
     if (!InvokeResult)
     {
         Response.Status = ERpcReflectionStatus::InvokeFailed;

@@ -15,6 +15,9 @@ namespace SnAPI::GameFramework
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
 class AudioSystem;
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+class NetworkSystem;
+#endif
 
 /**
  * @brief Component that drives a SnAPI.Audio emitter.
@@ -66,8 +69,34 @@ public:
     void OnDestroy() override;
     void Tick(float DeltaSeconds) override;
 
+    /**
+     * @brief Start playback.
+     * @remarks Gameplay-facing non-RPC method; forwards to PlayServer() when networked.
+     */
     void Play();
+    /**
+     * @brief Stop playback.
+     * @remarks Gameplay-facing non-RPC method; forwards to StopServer() when networked.
+     */
     void Stop();
+
+    /**
+     * @brief RPC server endpoint for Play().
+     */
+    void PlayServer();
+    /**
+     * @brief RPC client/multicast endpoint for Play().
+     */
+    void PlayClient();
+    /**
+     * @brief RPC server endpoint for Stop().
+     */
+    void StopServer();
+    /**
+     * @brief RPC client/multicast endpoint for Stop().
+     */
+    void StopClient();
+
     bool IsPlaying() const;
     bool IsLoaded() const;
     bool LoadSound(const std::string& Path, bool StreamingMode);
@@ -78,6 +107,9 @@ protected:
 
 private:
     AudioSystem* ResolveAudioSystem() const;
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    NetworkSystem* ResolveNetworkSystem() const;
+#endif
     void EnsureEmitter();
     void UpdateEmitterTransform(float DeltaSeconds);
     void RefreshPlaybackState();

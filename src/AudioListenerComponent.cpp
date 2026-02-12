@@ -4,6 +4,11 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include "NetworkSystem.h"
+#include "StaticTypeId.h"
+#include "Variant.h"
+#endif
 #include "NodeGraph.h"
 #include "TransformComponent.h"
 #include "World.h"
@@ -11,6 +16,8 @@
 #include <AudioEngine.h>
 #include <Types.h>
 #include <Eigen/Geometry>
+#include <array>
+#include <span>
 
 namespace SnAPI::GameFramework
 {
@@ -32,7 +39,7 @@ SnAPI::Audio::QuaternionF ToAudioQuaternion(const Vec3& EulerRadians)
 
 AudioSystem* AudioListenerComponent::ResolveAudioSystem() const
 {
-    auto* OwnerNode = Owner().Borrowed();
+    auto* OwnerNode = this->OwnerNode();
     if (!OwnerNode)
     {
         return nullptr;
@@ -45,12 +52,87 @@ AudioSystem* AudioListenerComponent::ResolveAudioSystem() const
     return &WorldPtr->Audio();
 }
 
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+NetworkSystem* AudioListenerComponent::ResolveNetworkSystem() const
+{
+    auto* OwnerNode = this->OwnerNode();
+    if (!OwnerNode)
+    {
+        return nullptr;
+    }
+    auto* WorldPtr = OwnerNode->World();
+    if (!WorldPtr)
+    {
+        return nullptr;
+    }
+    return &WorldPtr->Networking();
+}
+#endif
+
 void AudioListenerComponent::OnCreate()
 {
     if (auto* Audio = ResolveAudioSystem())
     {
         Audio->Initialize();
     }
+}
+
+void AudioListenerComponent::SetActive(bool ActiveValue)
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    auto* Network = ResolveNetworkSystem();
+    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
+    if (Network && Network->Session() && Network->Rpc() && Bridge)
+    {
+        if (IsClient() && !IsServer())
+        {
+            auto Connection = Network->PrimaryConnection();
+            if (Connection)
+            {
+                const std::array<Variant, 1> Args{Variant::FromValue(ActiveValue)};
+                if (Bridge->Call(*Connection,
+                                 *this,
+                                 StaticTypeId<AudioListenerComponent>(),
+                                 "SetActiveServer",
+                                 std::span<const Variant>(Args)) != 0)
+                {
+                    return;
+                }
+            }
+        }
+        else if (IsServer())
+        {
+            SetActiveServer(ActiveValue);
+            return;
+        }
+    }
+#endif
+    SetActiveClient(ActiveValue);
+}
+
+void AudioListenerComponent::SetActiveServer(bool ActiveValue)
+{
+    m_active = ActiveValue;
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    auto* Network = ResolveNetworkSystem();
+    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
+    if (Network && Network->Session() && Network->Rpc() && Bridge && IsServer())
+    {
+        const std::array<Variant, 1> Args{Variant::FromValue(ActiveValue)};
+        (void)Bridge->Call(0,
+                           *this,
+                           StaticTypeId<AudioListenerComponent>(),
+                           "SetActiveClient",
+                           std::span<const Variant>(Args));
+        return;
+    }
+#endif
+    SetActiveClient(ActiveValue);
+}
+
+void AudioListenerComponent::SetActiveClient(bool ActiveValue)
+{
+    m_active = ActiveValue;
 }
 
 void AudioListenerComponent::Tick(float DeltaSeconds)
@@ -74,7 +156,7 @@ void AudioListenerComponent::Tick(float DeltaSeconds)
 
     Vec3 Position{};
     Vec3 Rotation{};
-    if (auto* OwnerNode = Owner().Borrowed())
+    if (auto* OwnerNode = this->OwnerNode())
     {
         if (auto TransformResult = OwnerNode->Component<TransformComponent>())
         {
