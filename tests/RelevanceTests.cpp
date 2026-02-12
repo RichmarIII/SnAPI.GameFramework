@@ -24,6 +24,10 @@ struct RelevanceTickNode : public BaseNode
     }
 };
 
+SNAPI_REFLECT_TYPE(RelevanceTickNode, (TTypeBuilder<RelevanceTickNode>(RelevanceTickNode::kTypeName)
+    .Base<BaseNode>()
+    .Register()));
+
 struct AlwaysInactivePolicy
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::AlwaysInactivePolicy";

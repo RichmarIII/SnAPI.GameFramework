@@ -5,6 +5,9 @@
 #include <type_traits>
 #include <utility>
 
+#include "IComponent.h"
+#include "Serialization.h"
+#include "StaticTypeId.h"
 #include "TypeName.h"
 #include "TypeRegistry.h"
 #include "Uuid.h"
@@ -44,7 +47,9 @@ public:
     template<typename BaseT>
     TTypeBuilder& Base()
     {
-        m_info.BaseTypes.push_back(TypeIdFromName(TTypeNameV<BaseT>));
+        const TypeId BaseId = StaticTypeId<BaseT>();
+        (void)TypeRegistry::Instance().Find(BaseId); // triggers lazy ensure on miss
+        m_info.BaseTypes.push_back(BaseId);
         return *this;
     }
 
@@ -62,7 +67,7 @@ public:
         using Raw = std::remove_cv_t<FieldT>;
         FieldInfo Info;
         Info.Name = Name;
-        const TypeId FieldType = TypeIdFromName(TTypeNameV<Raw>);
+        const TypeId FieldType = StaticTypeId<Raw>();
         Info.FieldType = FieldType;
         Info.Flags = Flags;
         Info.Getter = [Member](void* Instance) -> TExpected<Variant> {
@@ -139,6 +144,80 @@ public:
     }
 
     /**
+     * @brief Register a field via accessors that return references.
+     * @tparam FieldT Field type.
+     * @param Name Field name.
+     * @param Getter Mutable accessor returning FieldT&.
+     * @param GetterConst Const accessor returning const FieldT&.
+     * @return Reference to the builder for chaining.
+     * @remarks Use this to reflect private/protected storage via public accessors.
+     */
+    template<typename FieldT>
+    TTypeBuilder& Field(
+        const char* Name,
+        FieldT& (T::*Getter)(),
+        const FieldT& (T::*GetterConst)() const,
+        FieldFlags Flags = {})
+    {
+        using Raw = std::remove_cv_t<FieldT>;
+        FieldInfo Info;
+        Info.Name = Name;
+        const TypeId FieldType = StaticTypeId<Raw>();
+        Info.FieldType = FieldType;
+        Info.Flags = Flags;
+        Info.Getter = [Getter](void* Instance) -> TExpected<Variant> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return Variant::FromRef((Typed->*Getter)());
+        };
+        Info.Setter = [Getter](void* Instance, const Variant& Value) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            auto Ref = Value.AsConstRef<Raw>();
+            if (!Ref)
+            {
+                return std::unexpected(Ref.error());
+            }
+            (Typed->*Getter)() = Ref->get();
+            return Ok();
+        };
+        Info.ViewGetter = [Getter, FieldType](void* Instance) -> TExpected<VariantView> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            const auto* Ptr = &((Typed->*Getter)());
+            return VariantView(FieldType, Ptr, false);
+        };
+        Info.ConstPointer = [GetterConst](const void* Instance) -> const void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            auto* Typed = static_cast<const T*>(Instance);
+            return &((Typed->*GetterConst)());
+        };
+        Info.MutablePointer = [Getter](void* Instance) -> void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return &((Typed->*Getter)());
+        };
+        Info.IsConst = false;
+        m_info.Fields.push_back(std::move(Info));
+        return *this;
+    }
+
+    /**
      * @brief Register a non-const method for reflection.
      * @tparam R Return type.
      * @tparam Args Parameter pack.
@@ -153,13 +232,13 @@ public:
         Info.Name = Name;
         if constexpr (std::is_void_v<R>)
         {
-            Info.ReturnType = TypeIdFromName("void");
+            Info.ReturnType = StaticTypeId<void>();
         }
         else
         {
-            Info.ReturnType = TypeIdFromName(TTypeNameV<std::remove_cvref_t<R>>);
+            Info.ReturnType = StaticTypeId<std::remove_cvref_t<R>>();
         }
-        Info.ParamTypes = {TypeIdFromName(TTypeNameV<std::remove_cvref_t<Args>>) ...};
+        Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
         Info.Invoke = MakeInvoker(Method);
         Info.IsConst = false;
         Info.Flags = Flags;
@@ -182,13 +261,13 @@ public:
         Info.Name = Name;
         if constexpr (std::is_void_v<R>)
         {
-            Info.ReturnType = TypeIdFromName("void");
+            Info.ReturnType = StaticTypeId<void>();
         }
         else
         {
-            Info.ReturnType = TypeIdFromName(TTypeNameV<std::remove_cvref_t<R>>);
+            Info.ReturnType = StaticTypeId<std::remove_cvref_t<R>>();
         }
-        Info.ParamTypes = {TypeIdFromName(TTypeNameV<std::remove_cvref_t<Args>>) ...};
+        Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
         Info.Invoke = MakeInvoker(Method);
         Info.IsConst = true;
         Info.Flags = Flags;
@@ -206,7 +285,7 @@ public:
     TTypeBuilder& Constructor()
     {
         ConstructorInfo Info;
-        Info.ParamTypes = {TypeIdFromName(TTypeNameV<std::remove_cvref_t<Args>>) ...};
+        Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
         Info.Construct = [](std::span<const Variant> ArgsPack) -> TExpected<std::shared_ptr<void>> {
             if (ArgsPack.size() != sizeof...(Args))
             {
@@ -225,7 +304,12 @@ public:
      */
     TExpected<TypeInfo*> Register()
     {
-        return TypeRegistry::Instance().Register(std::move(m_info));
+        auto Result = TypeRegistry::Instance().Register(std::move(m_info));
+        if constexpr (std::is_base_of_v<IComponent, T>)
+        {
+            ComponentSerializationRegistry::Instance().Register<T>();
+        }
+        return Result;
     }
 
 private:

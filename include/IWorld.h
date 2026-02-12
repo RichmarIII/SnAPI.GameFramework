@@ -9,6 +9,9 @@ namespace SnAPI::GameFramework
 {
 
 class Level;
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+class AudioSystem;
+#endif
 
 /**
  * @brief Interface for world containers.
@@ -53,6 +56,19 @@ public:
      * @return Reference wrapper or error.
      */
     virtual TExpectedRef<Level> LevelRef(NodeHandle Handle) = 0;
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    /**
+     * @brief Access the audio system for this world.
+     * @return Reference to AudioSystem.
+     */
+    virtual AudioSystem& Audio() = 0;
+    /**
+     * @brief Access the audio system for this world (const).
+     * @return Const reference to AudioSystem.
+     */
+    virtual const AudioSystem& Audio() const = 0;
+#endif
 };
 
 } // namespace SnAPI::GameFramework

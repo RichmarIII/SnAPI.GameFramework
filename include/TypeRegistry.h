@@ -68,6 +68,10 @@ enum class EFieldFlagBits : uint32_t
 };
 
 using FieldFlags = TFlags<EFieldFlagBits>;
+template<>
+struct EnableFlags<EFieldFlagBits> : std::true_type
+{
+};
 
 /**
  * @brief Method-level flags for reflection metadata.
@@ -83,6 +87,10 @@ enum class EMethodFlagBits : uint32_t
 };
 
 using MethodFlags = TFlags<EMethodFlagBits>;
+template<>
+struct EnableFlags<EMethodFlagBits> : std::true_type
+{
+};
 
 /**
  * @brief Reflection metadata for a field.

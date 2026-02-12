@@ -13,6 +13,7 @@
 #include "ObjectPool.h"
 #include "ObjectRegistry.h"
 #include "Relevance.h"
+#include "TypeRegistration.h"
 #include "TypeRegistry.h"
 #include "TypeName.h"
 #include "Uuid.h"
@@ -60,7 +61,7 @@ public:
     NodeGraph()
         : m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
     {
-        TypeKey(TypeIdFromName(kTypeName));
+        TypeKey(StaticTypeId<NodeGraph>());
     }
     /**
      * @brief Construct an empty graph with a name.
@@ -70,7 +71,7 @@ public:
         : BaseNode(std::move(Name))
         , m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
     {
-        TypeKey(TypeIdFromName(kTypeName));
+        TypeKey(StaticTypeId<NodeGraph>());
     }
     /**
      * @brief Destructor.
@@ -90,6 +91,7 @@ public:
     TExpected<NodeHandle> CreateNode(std::string Name, Args&&... args)
     {
         static_assert(std::is_base_of_v<BaseNode, T>, "Nodes must derive from BaseNode");
+        EnsureReflectionRegistered<T>();
         auto HandleResult = m_nodePool->Create<T>(std::forward<Args>(args)...);
         if (!HandleResult)
         {
@@ -104,7 +106,8 @@ public:
         Node->Handle(Handle);
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
-        Node->TypeKey(TypeIdFromName(TTypeNameV<T>));
+        Node->World(World());
+        Node->TypeKey(StaticTypeId<T>());
         ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
         m_rootNodes.push_back(Handle);
         return Handle;
@@ -123,6 +126,7 @@ public:
     TExpected<NodeHandle> CreateNodeWithId(const Uuid& Id, std::string Name, Args&&... args)
     {
         static_assert(std::is_base_of_v<BaseNode, T>, "Nodes must derive from BaseNode");
+        EnsureReflectionRegistered<T>();
         auto HandleResult = m_nodePool->CreateWithId<T>(Id, std::forward<Args>(args)...);
         if (!HandleResult)
         {
@@ -137,7 +141,8 @@ public:
         Node->Handle(Handle);
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
-        Node->TypeKey(TypeIdFromName(TTypeNameV<T>));
+        Node->World(World());
+        Node->TypeKey(StaticTypeId<T>());
         ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
         m_rootNodes.push_back(Handle);
         return Handle;
@@ -157,7 +162,7 @@ public:
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Type not registered"));
         }
-        if (!TypeRegistry::Instance().IsA(Type, TypeIdFromName(BaseNode::kTypeName)))
+        if (!TypeRegistry::Instance().IsA(Type, StaticTypeId<BaseNode>()))
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type is not a node type"));
         }
@@ -199,6 +204,7 @@ public:
         Node->Handle(Handle);
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
+        Node->World(World());
         Node->TypeKey(Type);
         ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
         m_rootNodes.push_back(Handle);
@@ -220,7 +226,7 @@ public:
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Type not registered"));
         }
-        if (!TypeRegistry::Instance().IsA(Type, TypeIdFromName(BaseNode::kTypeName)))
+        if (!TypeRegistry::Instance().IsA(Type, StaticTypeId<BaseNode>()))
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type is not a node type"));
         }
@@ -262,6 +268,7 @@ public:
         Node->Handle(Handle);
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
+        Node->World(World());
         Node->TypeKey(Type);
         ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
         m_rootNodes.push_back(Handle);
@@ -306,6 +313,7 @@ public:
         }
         ParentNode->AddChild(Child);
         ChildNode->Parent(Parent);
+        ChildNode->World(ParentNode->World());
         for (auto It = m_rootNodes.begin(); It != m_rootNodes.end(); ++It)
         {
             if (*It == Child)
@@ -423,6 +431,7 @@ private:
     template<typename T, typename... Args>
     TExpectedRef<T> AddComponent(NodeHandle Owner, Args&&... args)
     {
+        EnsureReflectionRegistered<T>();
         auto* Node = Owner.Borrowed();
         if (!Node)
         {
@@ -434,7 +443,7 @@ private:
         {
             return std::unexpected(Result.error());
         }
-        RegisterComponentOnNode(*Node, TypeIdFromName(TTypeNameV<T>));
+        RegisterComponentOnNode(*Node, StaticTypeId<T>());
         return Result;
     }
 
@@ -450,6 +459,7 @@ private:
     template<typename T, typename... Args>
     TExpectedRef<T> AddComponentWithId(NodeHandle Owner, const Uuid& Id, Args&&... args)
     {
+        EnsureReflectionRegistered<T>();
         auto* Node = Owner.Borrowed();
         if (!Node)
         {
@@ -461,7 +471,7 @@ private:
         {
             return std::unexpected(Result.error());
         }
-        RegisterComponentOnNode(*Node, TypeIdFromName(TTypeNameV<T>));
+        RegisterComponentOnNode(*Node, StaticTypeId<T>());
         return Result;
     }
 
@@ -487,7 +497,7 @@ private:
     template<typename T>
     bool HasComponent(NodeHandle Owner) const
     {
-        auto It = m_storages.find(TypeIdFromName(TTypeNameV<T>));
+        auto It = m_storages.find(StaticTypeId<T>());
         if (It == m_storages.end())
         {
             return false;
@@ -504,7 +514,7 @@ private:
     template<typename T>
     void RemoveComponent(NodeHandle Owner)
     {
-        auto It = m_storages.find(TypeIdFromName(TTypeNameV<T>));
+        auto It = m_storages.find(StaticTypeId<T>());
         if (It == m_storages.end())
         {
             return;
@@ -515,7 +525,7 @@ private:
             return;
         }
         It->second->Remove(Owner);
-        UnregisterComponentOnNode(*Node, TypeIdFromName(TTypeNameV<T>));
+        UnregisterComponentOnNode(*Node, StaticTypeId<T>());
     }
 
     /**
@@ -575,7 +585,7 @@ private:
     template<typename T>
     TComponentStorage<T>& StorageFor()
     {
-        const TypeId Type = TypeIdFromName(TTypeNameV<T>);
+        const TypeId Type = StaticTypeId<T>();
         auto It = m_storages.find(Type);
         if (It == m_storages.end())
         {

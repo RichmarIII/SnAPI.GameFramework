@@ -1,5 +1,7 @@
 #include "TypeRegistry.h"
 
+#include "TypeAutoRegistry.h"
+
 namespace SnAPI::GameFramework
 {
 
@@ -30,13 +32,21 @@ const TypeInfo* TypeRegistry::Find(const TypeId& Id) const
 {
     if (!m_frozen.load(std::memory_order_acquire))
     {
+        {
+            std::lock_guard<std::mutex> Lock(m_mutex);
+            auto It = m_types.find(Id);
+            if (It != m_types.end())
+            {
+                return &It->second;
+            }
+        }
+
+        // Not found: attempt lazy registration without holding the registry lock.
+        (void)TypeAutoRegistry::Instance().Ensure(Id);
+
         std::lock_guard<std::mutex> Lock(m_mutex);
         auto It = m_types.find(Id);
-        if (It == m_types.end())
-        {
-            return nullptr;
-        }
-        return &It->second;
+        return It != m_types.end() ? &It->second : nullptr;
     }
     auto It = m_types.find(Id);
     if (It == m_types.end())
@@ -50,6 +60,22 @@ const TypeInfo* TypeRegistry::FindByName(std::string_view Name) const
 {
     if (!m_frozen.load(std::memory_order_acquire))
     {
+        {
+            std::lock_guard<std::mutex> Lock(m_mutex);
+            auto It = m_nameToId.find(Name);
+            if (It != m_nameToId.end())
+            {
+                auto TypeIt = m_types.find(It->second);
+                if (TypeIt != m_types.end())
+                {
+                    return &TypeIt->second;
+                }
+            }
+        }
+
+        // Name not found: derive TypeId deterministically and attempt lazy registration.
+        (void)TypeAutoRegistry::Instance().Ensure(TypeIdFromName(Name));
+
         std::lock_guard<std::mutex> Lock(m_mutex);
         auto It = m_nameToId.find(Name);
         if (It == m_nameToId.end())
@@ -57,11 +83,7 @@ const TypeInfo* TypeRegistry::FindByName(std::string_view Name) const
             return nullptr;
         }
         auto TypeIt = m_types.find(It->second);
-        if (TypeIt == m_types.end())
-        {
-            return nullptr;
-        }
-        return &TypeIt->second;
+        return TypeIt != m_types.end() ? &TypeIt->second : nullptr;
     }
     auto It = m_nameToId.find(Name);
     if (It == m_nameToId.end())

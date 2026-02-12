@@ -202,7 +202,7 @@ public:
     }
 };
 
-SNAPI_REFLECT_TYPE((TTypeBuilder<RotatorNode>(RotatorNode::kTypeName)
+SNAPI_REFLECT_TYPE(RotatorNode, (TTypeBuilder<RotatorNode>(RotatorNode::kTypeName)
     .Base<BaseNode>()
     .Field("Speed", &RotatorNode::m_speed)
     .Constructor<>()
@@ -262,11 +262,11 @@ public:
     float m_radius = 1.0f;
 };
 
-SNAPI_REFLECT_COMPONENT((TTypeBuilder<DamageComponent>(DamageComponent::kTypeName)
+SNAPI_REFLECT_COMPONENT(DamageComponent, (TTypeBuilder<DamageComponent>(DamageComponent::kTypeName)
     .Field("Amount", &DamageComponent::m_amount)
     .Field("Radius", &DamageComponent::m_radius)
     .Constructor<>()
-    .Register()), DamageComponent);
+    .Register()));
 ```
 
 ### Custom serialization (optional)
@@ -313,7 +313,7 @@ tick.
 
 ## Reflection System
 
-Reflection is built on type traits + static registration:
+Reflection is built on type traits + lazy auto-registration:
 TypeIds are stable UUIDs derived from the fully qualified type name via
 `TypeIdFromName`. Keep type names stable to preserve serialized data.
 
@@ -329,7 +329,7 @@ public:
 
 ### 2) Register with `TTypeBuilder`
 ```cpp
-SNAPI_REFLECT_TYPE((TTypeBuilder<MyNode>(MyNode::kTypeName)
+SNAPI_REFLECT_TYPE(MyNode, (TTypeBuilder<MyNode>(MyNode::kTypeName)
     .Base<BaseNode>()
     .Field("Value", &MyNode::m_value)
     .Constructor<>()
@@ -338,14 +338,15 @@ SNAPI_REFLECT_TYPE((TTypeBuilder<MyNode>(MyNode::kTypeName)
 
 ### 3) Components also register with the serialization registry
 ```cpp
-SNAPI_REFLECT_COMPONENT((TTypeBuilder<HealthComponent>(HealthComponent::kTypeName)
+SNAPI_REFLECT_COMPONENT(HealthComponent, (TTypeBuilder<HealthComponent>(HealthComponent::kTypeName)
     .Field("Health", &HealthComponent::m_health)
     .Constructor<>()
-    .Register()), HealthComponent);
+    .Register()));
 ```
 
 ### Notes
 - Register types **once per TU** (use `SNAPI_REFLECT_TYPE` macros in a `.cpp`).
+- Types are registered on first use (TypeRegistry::Find will auto-ensure a missing type id).
 - Default constructors must be registered for types created by TypeId.
 - Fields can be const‑qualified (setter will reject writes).
 - Call `RegisterBuiltinTypes()` once at startup to register core types and default serializers.
@@ -423,7 +424,7 @@ struct TColor
     float m_a = 1.0f;
 };
 
-SNAPI_REFLECT_TYPE((TTypeBuilder<TColor>(TColor::kTypeName)
+SNAPI_REFLECT_TYPE(TColor, (TTypeBuilder<TColor>(TColor::kTypeName)
     .Field("R", &TColor::m_r)
     .Field("G", &TColor::m_g)
     .Field("B", &TColor::m_b)
@@ -443,7 +444,7 @@ struct TDamageInfo
     float m_radius = 0.0f;
 };
 
-SNAPI_REFLECT_TYPE((TTypeBuilder<TDamageInfo>(TDamageInfo::kTypeName)
+SNAPI_REFLECT_TYPE(TDamageInfo, (TTypeBuilder<TDamageInfo>(TDamageInfo::kTypeName)
     .Field("Amount", &TDamageInfo::m_amount)
     .Field("Radius", &TDamageInfo::m_radius)
     .Constructor<>()
@@ -456,10 +457,10 @@ public:
     TDamageInfo m_info{};
 };
 
-SNAPI_REFLECT_COMPONENT((TTypeBuilder<DamageComponent>(DamageComponent::kTypeName)
+SNAPI_REFLECT_COMPONENT(DamageComponent, (TTypeBuilder<DamageComponent>(DamageComponent::kTypeName)
     .Field("Info", &DamageComponent::m_info)
     .Constructor<>()
-    .Register()), DamageComponent);
+    .Register()));
 ```
 
 ### Handle fixups

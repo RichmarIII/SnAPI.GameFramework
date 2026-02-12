@@ -28,24 +28,23 @@ class PerfComponentB final : public IComponent
 {
 public:
     static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentB";
-
     int m_group = 0;
     float m_value = 0.0f;
 };
 
-SNAPI_REFLECT_COMPONENT((TTypeBuilder<PerfComponentA>(PerfComponentA::kTypeName)
+SNAPI_REFLECT_TYPE(PerfComponentA, (TTypeBuilder<PerfComponentA>(PerfComponentA::kTypeName)
     .Field("Index", &PerfComponentA::m_index)
     .Field("Weight", &PerfComponentA::m_weight)
     .Field("Offset", &PerfComponentA::m_offset)
     .Field("Blob", &PerfComponentA::m_blob)
     .Constructor<>()
-    .Register()), PerfComponentA);
+    .Register()));
 
-SNAPI_REFLECT_COMPONENT((TTypeBuilder<PerfComponentB>(PerfComponentB::kTypeName)
+SNAPI_REFLECT_TYPE(PerfComponentB, (TTypeBuilder<PerfComponentB>(PerfComponentB::kTypeName)
     .Field("Group", &PerfComponentB::m_group)
     .Field("Value", &PerfComponentB::m_value)
     .Constructor<>()
-    .Register()), PerfComponentB);
+    .Register()));
 
 namespace
 {

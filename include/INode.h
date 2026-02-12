@@ -10,6 +10,7 @@ namespace SnAPI::GameFramework
 {
 
 class NodeGraph;
+class IWorld;
 
 /**
  * @brief Abstract node interface for the scene graph.
@@ -180,6 +181,17 @@ public:
      * @param Graph Owner graph pointer.
      */
     virtual void OwnerGraph(NodeGraph* Graph) = 0;
+
+    /**
+     * @brief Get the owning world for this node.
+     * @return Pointer to the world interface or nullptr if unowned.
+     */
+    virtual IWorld* World() const = 0;
+    /**
+     * @brief Set the owning world for this node.
+     * @param InWorld World interface pointer.
+     */
+    virtual void World(IWorld* InWorld) = 0;
 
     /**
      * @brief Tick this node and its subtree.

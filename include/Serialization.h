@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <mutex>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -22,6 +23,7 @@
 #include "Handle.h"
 #include "Math.h"
 #include "NodeGraph.h"
+#include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
 #include "Variant.h"
@@ -269,7 +271,7 @@ public:
     template<typename T>
     void Register()
     {
-        const TypeId Type = TypeIdFromName(TTypeNameV<T>);
+        const TypeId Type = StaticTypeId<T>();
         m_entries[Type] = {&EncodeImpl<T>, &DecodeImpl<T>, &DecodeIntoImpl<T>};
         ++m_version;
     }
@@ -401,7 +403,14 @@ public:
     template<typename T>
     void Register()
     {
-        const TypeId Type = TypeIdFromName(TTypeNameV<T>);
+        const TypeId Type = StaticTypeId<T>();
+        {
+            std::lock_guard<std::mutex> Lock(m_mutex);
+            if (m_entries.find(Type) != m_entries.end())
+            {
+                return;
+            }
+        }
         Entry EntryValue;
         EntryValue.Create = [](NodeGraph& Graph, NodeHandle Owner) -> TExpected<void*> {
             auto Result = Graph.template AddComponent<T>(Owner);
@@ -425,6 +434,7 @@ public:
         EntryValue.Deserialize = [Type](void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context) -> TExpected<void> {
             return DeserializeByReflection(Type, Instance, Archive, Context);
         };
+        std::lock_guard<std::mutex> Lock(m_mutex);
         m_entries[Type] = std::move(EntryValue);
     }
 
@@ -438,7 +448,7 @@ public:
     template<typename T>
     void RegisterCustom(SerializeFn Serialize, DeserializeFn Deserialize)
     {
-        const TypeId Type = TypeIdFromName(TTypeNameV<T>);
+        const TypeId Type = StaticTypeId<T>();
         Entry EntryValue;
         EntryValue.Create = [](NodeGraph& Graph, NodeHandle Owner) -> TExpected<void*> {
             auto Result = Graph.template AddComponent<T>(Owner);
@@ -458,6 +468,7 @@ public:
         };
         EntryValue.Serialize = std::move(Serialize);
         EntryValue.Deserialize = std::move(Deserialize);
+        std::lock_guard<std::mutex> Lock(m_mutex);
         m_entries[Type] = std::move(EntryValue);
     }
 
@@ -468,6 +479,7 @@ public:
      */
     bool Has(const TypeId& Type) const
     {
+        std::lock_guard<std::mutex> Lock(m_mutex);
         return m_entries.find(Type) != m_entries.end();
     }
 
@@ -541,6 +553,7 @@ private:
      */
     static TExpected<void> DeserializeByReflection(const TypeId& Type, void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
 
+    mutable std::mutex m_mutex{};
     std::unordered_map<TypeId, Entry, UuidHash> m_entries{}; /**< @brief Registry map by TypeId. */
 };
 

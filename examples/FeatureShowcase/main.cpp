@@ -41,7 +41,7 @@ public:
     Vec3 m_tint{};
 };
 
-SNAPI_REFLECT_TYPE((TTypeBuilder<DemoNode>(DemoNode::kTypeName)
+SNAPI_REFLECT_TYPE(DemoNode, (TTypeBuilder<DemoNode>(DemoNode::kTypeName)
     .Base<BaseNode>()
     .Field("Health", &DemoNode::m_health)
     .Field("Speed", &DemoNode::m_speed)
@@ -51,12 +51,12 @@ SNAPI_REFLECT_TYPE((TTypeBuilder<DemoNode>(DemoNode::kTypeName)
     .Constructor<>()
     .Register()));
 
-SNAPI_REFLECT_COMPONENT((TTypeBuilder<DemoComponent>(DemoComponent::kTypeName)
+SNAPI_REFLECT_TYPE(DemoComponent, (TTypeBuilder<DemoComponent>(DemoComponent::kTypeName)
     .Field("Score", &DemoComponent::m_score)
     .Field("Label", &DemoComponent::m_label)
     .Field("Tint", &DemoComponent::m_tint)
     .Constructor<>()
-    .Register()), DemoComponent);
+    .Register()));
 
 namespace
 {

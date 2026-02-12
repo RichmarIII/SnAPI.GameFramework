@@ -2,6 +2,7 @@
 
 #include "Expected.h"
 #include "Reflection.h"
+#include "StaticTypeId.h"
 
 namespace SnAPI::GameFramework
 {
@@ -22,7 +23,7 @@ public:
     template<typename T>
     static TExpected<void> RegisterType()
     {
-        auto* Info = TypeRegistry::Instance().Find(TypeIdFromName(TTypeNameV<T>));
+        auto* Info = TypeRegistry::Instance().Find(StaticTypeId<T>());
         if (!Info)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Type not registered"));

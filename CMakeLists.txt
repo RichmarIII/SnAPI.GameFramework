@@ -21,6 +21,9 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stduuid)
 
 set(SNAPI_GF_SOURCES
+    src/AudioListenerComponent.cpp
+    src/AudioSourceComponent.cpp
+    src/AudioSystem.cpp
     src/AssetPipelinePlugin.cpp
     src/AssetPipelineFactories.cpp
     src/AssetPipelineSerializers.cpp
@@ -32,6 +35,7 @@ set(SNAPI_GF_SOURCES
     src/NetRpc.cpp
     src/Serialization.cpp
     src/ScriptABI.cpp
+    src/TypeAutoRegistry.cpp
     src/TypeRegistry.cpp
     src/World.cpp
 )
@@ -130,6 +134,35 @@ FetchContent_MakeAvailable(SnAPI.AssetPipeline)
 target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.AssetPipeline)
 target_link_libraries(SnAPI.GameFramework PUBLIC cereal)
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_ASSETPipeline)
+
+# SnAPI.Audio integration (required)
+set(SNAPI_AUDIO_BUILD_DEMO OFF CACHE BOOL "" FORCE)
+set(SNAPI_AUDIO_BUILD_BACKEND_MINIAUDIO ON CACHE BOOL "" FORCE)
+set(SNAPI_AUDIO_ENABLE_FLAC OFF CACHE BOOL "" FORCE)
+set(SNAPI_AUDIO_ENABLE_MP3 OFF CACHE BOOL "" FORCE)
+set(SNAPI_AUDIO_ENABLE_VORBIS OFF CACHE BOOL "" FORCE)
+
+set(SNAPI_GF_AUDIO_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Audio")
+if (SNAPI_GF_AUDIO_SOURCE_DIR)
+    FetchContent_Declare(
+        SnAPI.Audio
+        SOURCE_DIR ${SNAPI_GF_AUDIO_SOURCE_DIR}
+    )
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Audio/CMakeLists.txt")
+    FetchContent_Declare(
+        SnAPI.Audio
+        SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Audio
+    )
+else()
+    FetchContent_Declare(
+        SnAPI.Audio
+        GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.Audio.git
+        GIT_TAG master
+    )
+endif()
+FetchContent_MakeAvailable(SnAPI.Audio)
+target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Audio SnAPI.Audio.Backend.Miniaudio)
+target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_AUDIO)
 
 # SnAPI.Networking integration (required)
 set(SNAPI_NETWORKING_BUILD_TESTS OFF CACHE BOOL "" FORCE)

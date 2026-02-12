@@ -126,7 +126,7 @@ public:
         static_assert(std::is_base_of_v<IComponent, T>, "T must derive from IComponent");
         return Call(Handle,
                     static_cast<const IComponent&>(Target),
-                    TypeIdFromName(TTypeNameV<T>),
+                    StaticTypeId<T>(),
                     MethodName,
                     Args,
                     std::move(Completion),

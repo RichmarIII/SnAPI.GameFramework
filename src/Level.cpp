@@ -6,13 +6,13 @@ namespace SnAPI::GameFramework
 Level::Level()
     : NodeGraph("Level")
 {
-    TypeKey(TypeIdFromName(kTypeName));
+    TypeKey(StaticTypeId<Level>());
 }
 
 Level::Level(std::string Name)
     : NodeGraph(std::move(Name))
 {
-    TypeKey(TypeIdFromName(kTypeName));
+    TypeKey(StaticTypeId<Level>());
 }
 
 void Level::Tick(float DeltaSeconds)

@@ -6,6 +6,9 @@
  */
 #include "Assert.h"
 #include "BuiltinTypes.h"
+#include "AudioListenerComponent.h"
+#include "AudioSourceComponent.h"
+#include "AudioSystem.h"
 #include "ComponentStorage.h"
 #include "Expected.h"
 #include "Handle.h"

@@ -11,6 +11,7 @@
 #include "IComponent.h"
 #include "ObjectPool.h"
 #include "ObjectRegistry.h"
+#include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
 
@@ -389,7 +390,7 @@ public:
     }
 
 private:
-    TypeId m_typeId = TypeIdFromName(TTypeNameV<T>); /**< @brief Component type id. */
+    TypeId m_typeId = StaticTypeId<T>(); /**< @brief Component type id. */
     TObjectPool<T> m_pool{}; /**< @brief Pool storing component instances. */
     std::unordered_map<NodeHandle, Uuid, HandleHash> m_index{}; /**< @brief Owner -> component UUID. */
     std::vector<Uuid> m_pendingDestroy{}; /**< @brief Components scheduled for deletion. */

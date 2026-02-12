@@ -270,7 +270,7 @@ TExpected<void> EncodeReturnValue(const TypeId& ReturnType,
                                   std::vector<uint8_t>& OutBytes,
                                   const TSerializationContext& Context)
 {
-    if (ReturnType == TypeIdFromName("void"))
+    if (ReturnType == StaticTypeId<void>())
     {
         OutBytes.clear();
         return Ok();
@@ -287,7 +287,7 @@ TExpected<Variant> DecodeReturnValue(const TypeId& ReturnType,
                                      ConstByteSpan Data,
                                      const TSerializationContext& Context)
 {
-    if (ReturnType == TypeIdFromName("void"))
+    if (ReturnType == StaticTypeId<void>())
     {
         return Variant::Void();
     }

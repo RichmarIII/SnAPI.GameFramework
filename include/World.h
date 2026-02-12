@@ -7,6 +7,9 @@
 #include "JobSystem.h"
 #include "Level.h"
 #include "NodeGraph.h"
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+#include "AudioSystem.h"
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -74,8 +77,24 @@ public:
      */
     JobSystem& Jobs();
 
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    /**
+     * @brief Access the audio system for this world.
+     * @return Reference to AudioSystem.
+     */
+    AudioSystem& Audio() override;
+    /**
+     * @brief Access the audio system for this world (const).
+     * @return Const reference to AudioSystem.
+     */
+    const AudioSystem& Audio() const override;
+#endif
+
 private:
     JobSystem m_jobSystem{}; /**< @brief Internal job system. */
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    AudioSystem m_audioSystem{}; /**< @brief Audio system instance. */
+#endif
 };
 
 } // namespace SnAPI::GameFramework

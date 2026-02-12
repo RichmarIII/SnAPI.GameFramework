@@ -74,16 +74,33 @@ struct CrossRefComponent : public IComponent
 };
 } // namespace
 
+SNAPI_REFLECT_TYPE(LinkComponent, (TTypeBuilder<LinkComponent>(LinkComponent::kTypeName)
+    .Field("Target", &LinkComponent::Target)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(BaseStatsNode, (TTypeBuilder<BaseStatsNode>(BaseStatsNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("BaseValue", &BaseStatsNode::m_baseValue)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(DerivedStatsNode, (TTypeBuilder<DerivedStatsNode>(DerivedStatsNode::kTypeName)
+    .Base<BaseStatsNode>()
+    .Field("Health", &DerivedStatsNode::m_health)
+    .Field("Spawn", &DerivedStatsNode::m_spawn)
+    .Field("Target", &DerivedStatsNode::m_target)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(CrossRefComponent, (TTypeBuilder<CrossRefComponent>(CrossRefComponent::kTypeName)
+    .Field("Target", &CrossRefComponent::Target)
+    .Constructor<>()
+    .Register()));
+
 TEST_CASE("NodeGraph serialization round-trips with components and handles")
 {
     RegisterBuiltinTypes();
-
-    (void)TTypeBuilder<LinkComponent>(LinkComponent::kTypeName)
-        .Field("Target", &LinkComponent::Target)
-        .Constructor<>()
-        .Register();
-
-    ComponentSerializationRegistry::Instance().Register<LinkComponent>();
 
     NodeGraph Graph;
     auto AResult = Graph.CreateNode("A");
@@ -154,20 +171,6 @@ TEST_CASE("NodeGraph serialization round-trips node fields across inheritance")
 {
     RegisterBuiltinTypes();
 
-    (void)TTypeBuilder<BaseStatsNode>(BaseStatsNode::kTypeName)
-        .Base<BaseNode>()
-        .Field("BaseValue", &BaseStatsNode::m_baseValue)
-        .Constructor<>()
-        .Register();
-
-    (void)TTypeBuilder<DerivedStatsNode>(DerivedStatsNode::kTypeName)
-        .Base<BaseStatsNode>()
-        .Field("Health", &DerivedStatsNode::m_health)
-        .Field("Spawn", &DerivedStatsNode::m_spawn)
-        .Field("Target", &DerivedStatsNode::m_target)
-        .Constructor<>()
-        .Register();
-
     NodeGraph Graph;
     auto TargetResult = Graph.CreateNode("Target");
     REQUIRE(TargetResult);
@@ -221,13 +224,6 @@ TEST_CASE("NodeGraph serialization round-trips node fields across inheritance")
 TEST_CASE("Node handles resolve across graphs after deserialization")
 {
     RegisterBuiltinTypes();
-
-    (void)TTypeBuilder<CrossRefComponent>(CrossRefComponent::kTypeName)
-        .Field("Target", &CrossRefComponent::Target)
-        .Constructor<>()
-        .Register();
-
-    ComponentSerializationRegistry::Instance().Register<CrossRefComponent>();
 
     NodeGraph GraphA("GraphA");
     NodeGraph GraphB("GraphB");

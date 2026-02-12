@@ -7,6 +7,7 @@
 
 #include "Expected.h"
 #include "IComponent.h"
+#include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
 
@@ -56,7 +57,7 @@ public:
     template<typename PolicyT>
     static void Register()
     {
-        const TypeId PolicyId = TypeIdFromName(TTypeNameV<PolicyT>);
+        const TypeId PolicyId = StaticTypeId<PolicyT>();
         std::lock_guard<std::mutex> Lock(m_mutex);
         if (m_policies.find(PolicyId) != m_policies.end())
         {
@@ -120,7 +121,7 @@ public:
     void Policy(PolicyT Policy)
     {
         RelevancePolicyRegistry::Register<PolicyT>();
-        m_policyId = TypeIdFromName(TTypeNameV<PolicyT>);
+        m_policyId = StaticTypeId<PolicyT>();
         m_policyData = std::shared_ptr<void>(new PolicyT(std::move(Policy)), [](void* Ptr) { delete static_cast<PolicyT*>(Ptr); });
     }
 

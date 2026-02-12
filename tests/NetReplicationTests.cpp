@@ -78,6 +78,18 @@ struct ReplicatedComponent final : public IComponent
     Vec3 Offset{};
 };
 
+SNAPI_REFLECT_TYPE(ReplicatedNode, (TTypeBuilder<ReplicatedNode>(ReplicatedNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("Health", &ReplicatedNode::Health, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(ReplicatedComponent, (TTypeBuilder<ReplicatedComponent>(ReplicatedComponent::kTypeName)
+    .Field("Value", &ReplicatedComponent::Value, EFieldFlagBits::Replication)
+    .Field("Offset", &ReplicatedComponent::Offset, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
 void RegisterReplicationTestTypes()
 {
     static bool Registered = false;
@@ -86,17 +98,6 @@ void RegisterReplicationTestTypes()
         return;
     }
     RegisterBuiltinTypes();
-    (void)TTypeBuilder<ReplicatedNode>(ReplicatedNode::kTypeName)
-        .Base<BaseNode>()
-        .Field("Health", &ReplicatedNode::Health, EFieldFlagBits::Replication)
-        .Constructor<>()
-        .Register();
-    (void)TTypeBuilder<ReplicatedComponent>(ReplicatedComponent::kTypeName)
-        .Field("Value", &ReplicatedComponent::Value, EFieldFlagBits::Replication)
-        .Field("Offset", &ReplicatedComponent::Offset, EFieldFlagBits::Replication)
-        .Constructor<>()
-        .Register();
-    ComponentSerializationRegistry::Instance().Register<ReplicatedComponent>();
     Registered = true;
 }
 

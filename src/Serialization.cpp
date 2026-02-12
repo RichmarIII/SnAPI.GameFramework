@@ -22,6 +22,7 @@
 #include "Relevance.h"
 #include "ScriptComponent.h"
 #include "TransformComponent.h"
+#include "TypeAutoRegistry.h"
 #include "TypeRegistry.h"
 #include "World.h"
 
@@ -555,28 +556,82 @@ ComponentSerializationRegistry& ComponentSerializationRegistry::Instance()
 
 TExpected<void*> ComponentSerializationRegistry::Create(NodeGraph& Graph, NodeHandle Owner, const TypeId& Type) const
 {
-    auto It = m_entries.find(Type);
-    if (It == m_entries.end() || !It->second.Create)
+    CreateFn CreateValue;
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            CreateValue = It->second.Create;
+        }
+    }
+    if (!CreateValue)
+    {
+        (void)TypeAutoRegistry::Instance().Ensure(Type);
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            CreateValue = It->second.Create;
+        }
+    }
+    if (!CreateValue)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No component factory registered"));
     }
-    return It->second.Create(Graph, Owner);
+    return CreateValue(Graph, Owner);
 }
 
 TExpected<void*> ComponentSerializationRegistry::CreateWithId(NodeGraph& Graph, NodeHandle Owner, const TypeId& Type, const Uuid& Id) const
 {
-    auto It = m_entries.find(Type);
-    if (It == m_entries.end() || !It->second.CreateWithId)
+    CreateWithIdFn CreateValue;
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            CreateValue = It->second.CreateWithId;
+        }
+    }
+    if (!CreateValue)
+    {
+        (void)TypeAutoRegistry::Instance().Ensure(Type);
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            CreateValue = It->second.CreateWithId;
+        }
+    }
+    if (!CreateValue)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No component factory registered"));
     }
-    return It->second.CreateWithId(Graph, Owner, Id);
+    return CreateValue(Graph, Owner, Id);
 }
 
 TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, const void* Instance, std::vector<uint8_t>& OutBytes, const TSerializationContext& Context) const
 {
-    auto It = m_entries.find(Type);
-    if (It == m_entries.end() || !It->second.Serialize)
+    SerializeFn SerializeValue;
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            SerializeValue = It->second.Serialize;
+        }
+    }
+    if (!SerializeValue)
+    {
+        (void)TypeAutoRegistry::Instance().Ensure(Type);
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            SerializeValue = It->second.Serialize;
+        }
+    }
+    if (!SerializeValue)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No component serializer registered"));
     }
@@ -586,7 +641,7 @@ TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, co
         VectorWriteStreambuf Buffer(OutBytes);
         std::ostream Os(&Buffer);
         cereal::BinaryOutputArchive Archive(Os);
-        auto Result = It->second.Serialize(Instance, Archive, Context);
+        auto Result = SerializeValue(Instance, Archive, Context);
         if (!Result)
         {
             return Result;
@@ -601,8 +656,26 @@ TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, co
 
 TExpected<void> ComponentSerializationRegistry::Deserialize(const TypeId& Type, void* Instance, const uint8_t* Bytes, size_t Size, const TSerializationContext& Context) const
 {
-    auto It = m_entries.find(Type);
-    if (It == m_entries.end() || !It->second.Deserialize)
+    DeserializeFn DeserializeValue;
+    {
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            DeserializeValue = It->second.Deserialize;
+        }
+    }
+    if (!DeserializeValue)
+    {
+        (void)TypeAutoRegistry::Instance().Ensure(Type);
+        std::lock_guard<std::mutex> Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            DeserializeValue = It->second.Deserialize;
+        }
+    }
+    if (!DeserializeValue)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No component serializer registered"));
     }
@@ -615,7 +688,7 @@ TExpected<void> ComponentSerializationRegistry::Deserialize(const TypeId& Type, 
         MemoryReadStreambuf Buffer(Bytes, Size);
         std::istream Is(&Buffer);
         cereal::BinaryInputArchive Archive(Is);
-        return It->second.Deserialize(Instance, Archive, Context);
+        return DeserializeValue(Instance, Archive, Context);
     }
     catch (const std::exception& Ex)
     {
@@ -1023,9 +1096,6 @@ void RegisterSerializationDefaults()
     ValueRegistry.Register<ComponentHandle>();
 
     auto& ComponentRegistry = ComponentSerializationRegistry::Instance();
-    ComponentRegistry.Register<TransformComponent>();
-    ComponentRegistry.Register<ScriptComponent>();
-
     ComponentRegistry.RegisterCustom<RelevanceComponent>(
         [](const void* Instance, cereal::BinaryOutputArchive& Archive, const TSerializationContext&) -> TExpected<void> {
             if (!Instance)

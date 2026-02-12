@@ -180,6 +180,13 @@ struct ReplicatedTransformComponent final : public IComponent
     Vec3 Scale{1.0f, 1.0f, 1.0f};
 };
 
+SNAPI_REFLECT_TYPE(ReplicatedTransformComponent, (TTypeBuilder<ReplicatedTransformComponent>(ReplicatedTransformComponent::kTypeName)
+    .Field("Position", &ReplicatedTransformComponent::Position, EFieldFlagBits::Replication)
+    .Field("Rotation", &ReplicatedTransformComponent::Rotation, EFieldFlagBits::Replication)
+    .Field("Scale", &ReplicatedTransformComponent::Scale, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
 void RegisterExampleTypes()
 {
     static bool Registered = false;
@@ -188,13 +195,6 @@ void RegisterExampleTypes()
         return;
     }
     RegisterBuiltinTypes();
-    (void)TTypeBuilder<ReplicatedTransformComponent>(ReplicatedTransformComponent::kTypeName)
-        .Field("Position", &ReplicatedTransformComponent::Position, EFieldFlagBits::Replication)
-        .Field("Rotation", &ReplicatedTransformComponent::Rotation, EFieldFlagBits::Replication)
-        .Field("Scale", &ReplicatedTransformComponent::Scale, EFieldFlagBits::Replication)
-        .Constructor<>()
-        .Register();
-    ComponentSerializationRegistry::Instance().Register<ReplicatedTransformComponent>();
     Registered = true;
 }
 

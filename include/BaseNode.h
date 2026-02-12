@@ -7,12 +7,14 @@
 #include "Expected.h"
 #include "Handle.h"
 #include "INode.h"
+#include "StaticTypeId.h"
 #include "Uuid.h"
 
 namespace SnAPI::GameFramework
 {
 
 class NodeGraph;
+class IWorld;
 
 /**
  * @brief Default node implementation for the scene graph.
@@ -29,7 +31,7 @@ public:
      * @brief Construct a node with default name.
      */
     BaseNode()
-        : m_typeId(TypeIdFromName(kTypeName))
+        : m_typeId(StaticTypeId<BaseNode>())
     {
     }
     /**
@@ -38,7 +40,7 @@ public:
      */
     explicit BaseNode(std::string InName)
         : m_name(std::move(InName))
-        , m_typeId(TypeIdFromName(kTypeName))
+        , m_typeId(StaticTypeId<BaseNode>())
     {
     }
 
@@ -284,6 +286,24 @@ public:
     }
 
     /**
+     * @brief Get the owning world for this node.
+     * @return Pointer to the world interface or nullptr if unowned.
+     */
+    IWorld* World() const override
+    {
+        return m_world;
+    }
+
+    /**
+     * @brief Set the owning world for this node.
+     * @param InWorld World interface pointer.
+     */
+    void World(IWorld* InWorld) override
+    {
+        m_world = InWorld;
+    }
+
+    /**
      * @brief Add a component of type T to this node.
      * @tparam T Component type.
      * @param args Constructor arguments.
@@ -345,6 +365,7 @@ private:
     std::vector<uint64_t> m_componentMask{}; /**< @brief Bitmask for component queries. */
     uint32_t m_maskVersion = 0; /**< @brief Mask version for registry changes. */
     NodeGraph* m_ownerGraph = nullptr; /**< @brief Owning graph (non-owning). */
+    IWorld* m_world = nullptr; /**< @brief Owning world (non-owning). */
     TypeId m_typeId{}; /**< @brief Reflected type id. */
 };
 

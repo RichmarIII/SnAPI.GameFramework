@@ -28,6 +28,7 @@ struct CounterComponent : public IComponent
     static constexpr const char* kTypeName = "SnAPI::GameFramework::CounterComponent";
     int* Counter = nullptr;
 
+    CounterComponent() = default;
     explicit CounterComponent(int* InCounter)
         : Counter(InCounter)
     {
@@ -41,6 +42,13 @@ struct CounterComponent : public IComponent
         }
     }
 };
+
+SNAPI_REFLECT_TYPE(TickNode, (TTypeBuilder<TickNode>(TickNode::kTypeName)
+    .Base<BaseNode>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(CounterComponent, (TTypeBuilder<CounterComponent>(CounterComponent::kTypeName)
+    .Register()));
 
 TEST_CASE("NodeGraph ticks nodes and components")
 {

@@ -6,13 +6,15 @@ namespace SnAPI::GameFramework
 World::World()
     : NodeGraph("World")
 {
-    TypeKey(TypeIdFromName(kTypeName));
+    TypeKey(StaticTypeId<World>());
+    BaseNode::World(this);
 }
 
 World::World(std::string Name)
     : NodeGraph(std::move(Name))
 {
-    TypeKey(TypeIdFromName(kTypeName));
+    TypeKey(StaticTypeId<World>());
+    BaseNode::World(this);
 }
 
 void World::Tick(float DeltaSeconds)
@@ -68,5 +70,17 @@ JobSystem& World::Jobs()
 {
     return m_jobSystem;
 }
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+AudioSystem& World::Audio()
+{
+    return m_audioSystem;
+}
+
+const AudioSystem& World::Audio() const
+{
+    return m_audioSystem;
+}
+#endif
 
 } // namespace SnAPI::GameFramework

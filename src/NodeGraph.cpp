@@ -304,6 +304,7 @@ void NodeGraph::RebindOwnerGraph()
     }
     m_nodePool->ForEach([this](const NodeHandle&, BaseNode& Node) {
         Node.OwnerGraph(this);
+        Node.World(World());
     });
 }
 

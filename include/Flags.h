@@ -108,10 +108,22 @@ private:
 };
 
 /**
+ * @brief Trait to opt enums into flag operators.
+ * @tparam Enum Enum type.
+ */
+template<typename Enum>
+struct EnableFlags : std::false_type
+{
+};
+
+template<typename Enum>
+inline constexpr bool EnableFlagsV = EnableFlags<Enum>::value;
+
+/**
  * @brief Combine two enum flag bits into a TFlags value.
  */
 template<typename Enum>
-constexpr TFlags<Enum> operator|(Enum Left, Enum Right)
+constexpr std::enable_if_t<EnableFlagsV<Enum>, TFlags<Enum>> operator|(Enum Left, Enum Right)
 {
     return TFlags<Enum>(Left) | Right;
 }
@@ -120,7 +132,7 @@ constexpr TFlags<Enum> operator|(Enum Left, Enum Right)
  * @brief Intersect two enum flag bits into a TFlags value.
  */
 template<typename Enum>
-constexpr TFlags<Enum> operator&(Enum Left, Enum Right)
+constexpr std::enable_if_t<EnableFlagsV<Enum>, TFlags<Enum>> operator&(Enum Left, Enum Right)
 {
     return TFlags<Enum>(Left) & Right;
 }
