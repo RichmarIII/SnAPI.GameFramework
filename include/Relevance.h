@@ -28,7 +28,10 @@ struct RelevanceContext
 
 /**
  * @brief Registry for relevance policy types.
- * @remarks Policies are stored by TypeId and invoked via type-erased callbacks.
+ * @remarks
+ * Static process-wide registry that binds policy type ids to evaluate callbacks.
+ * Relevance components store policy data + type id, while NodeGraph executes callbacks
+ * during relevance evaluation passes.
  */
 class RelevancePolicyRegistry
 {
@@ -52,7 +55,7 @@ public:
     /**
      * @brief Register a policy type.
      * @tparam PolicyT Policy type (must implement Evaluate).
-     * @remarks Duplicate registrations are ignored.
+     * @remarks Duplicate registrations are ignored to keep registration idempotent.
      */
     template<typename PolicyT>
     static void Register()
@@ -103,7 +106,9 @@ private:
 
 /**
  * @brief Component that drives relevance evaluation for a node.
- * @remarks Stores a policy instance and activation result.
+ * @remarks
+ * Holds type-erased policy instance and latest evaluation outputs.
+ * NodeGraph relevance pass reads this component to decide node activation.
  */
 class RelevanceComponent : public IComponent
 {
@@ -115,7 +120,7 @@ public:
      * @brief Set the relevance policy for this component.
      * @tparam PolicyT Policy type.
      * @param Policy Policy instance to store.
-     * @remarks Registers the policy type on first use.
+     * @remarks Registers policy type metadata on first use and replaces existing policy instance.
      */
     template<typename PolicyT>
     void Policy(PolicyT Policy)
@@ -181,10 +186,10 @@ public:
     }
 
 private:
-    TypeId m_policyId{}; /**< @brief Policy type id. */
-    std::shared_ptr<void> m_policyData{}; /**< @brief Type-erased policy instance. */
-    bool m_active = true; /**< @brief Last computed active state. */
-    float m_lastScore = 1.0f; /**< @brief Last computed score. */
+    TypeId m_policyId{}; /**< @brief Reflected type id of current policy object. */
+    std::shared_ptr<void> m_policyData{}; /**< @brief Owned type-erased policy instance payload. */
+    bool m_active = true; /**< @brief Last computed relevance active state applied to node gating. */
+    float m_lastScore = 1.0f; /**< @brief Last computed score used for diagnostics/future prioritization. */
 };
 
 } // namespace SnAPI::GameFramework

@@ -18,8 +18,17 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief World implementation that is also a NodeGraph.
- * @remarks Worlds are root tick objects and own levels.
+ * @brief Concrete world root that owns levels and subsystems.
+ * @remarks
+ * `World` is the top-level runtime orchestration object:
+ * - derives from `NodeGraph` for hierarchical node traversal
+ * - implements `IWorld` for level/subsystem contracts
+ * - owns subsystem instances (job system, optional audio, optional networking)
+ *
+ * Responsibility boundaries:
+ * - world controls frame lifecycle and end-of-frame flush
+ * - levels are represented as child nodes/graphs under the world
+ * - nodes/components can query world context through `Owner()->World()`
  */
 class World : public NodeGraph, public IWorld
 {
@@ -54,6 +63,7 @@ public:
     void LateTick(float DeltaSeconds) override;
     /**
      * @brief End-of-frame processing.
+     * @remarks Executes graph end-frame flush and subsystem post-frame maintenance.
      */
     void EndFrame() override;
 
@@ -61,6 +71,7 @@ public:
      * @brief Create a level as a child node.
      * @param Name Level name.
      * @return Handle to the created level or error.
+     * @remarks Created level is inserted into world graph and participates in world tick traversal.
      */
     TExpected<NodeHandle> CreateLevel(std::string Name) override;
     /**
@@ -72,11 +83,13 @@ public:
     /**
      * @brief Get all level handles.
      * @return Vector of level handles.
+     * @remarks Snapshot of currently attached level-node handles.
      */
     std::vector<NodeHandle> Levels() const;
     /**
      * @brief Access the job system for parallel internal tasks.
      * @return Reference to JobSystem.
+     * @remarks Current implementation is minimal but provides a stable integration point.
      */
     JobSystem& Jobs();
 
@@ -107,12 +120,12 @@ public:
 #endif
 
 private:
-    JobSystem m_jobSystem{}; /**< @brief Internal job system. */
+    JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
 #if defined(SNAPI_GF_ENABLE_AUDIO)
-    AudioSystem m_audioSystem{}; /**< @brief Audio system instance. */
+    AudioSystem m_audioSystem{}; /**< @brief World-scoped audio subsystem instance. */
 #endif
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
-    NetworkSystem m_networkSystem; /**< @brief Networking system instance. */
+    NetworkSystem m_networkSystem; /**< @brief World-scoped networking subsystem with replication/RPC bridges. */
 #endif
 };
 

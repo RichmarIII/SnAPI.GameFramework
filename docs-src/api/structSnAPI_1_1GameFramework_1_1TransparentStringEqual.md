@@ -1,5 +1,7 @@
 # SnAPI::GameFramework::TransparentStringEqual
 
+Heterogeneous equality functor for string-key lookups.
+
 ## Public Types
 
 <div class="snapi-api-card" markdown="1">

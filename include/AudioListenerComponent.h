@@ -15,6 +15,13 @@ class NetworkSystem;
 
 /**
  * @brief Component that drives the shared SnAPI.Audio listener.
+ * @remarks
+ * Uses owning node transform as listener pose source and pushes updates into
+ * world audio system each tick when active.
+ *
+ * Networking-enabled behavior mirrors AudioSource:
+ * - Gameplay entry (`SetActive`) routes by role.
+ * - Server endpoint fans out to client endpoint.
  */
 class AudioListenerComponent : public IComponent
 {
@@ -27,7 +34,7 @@ public:
     {
         return m_active;
     }
-    /** @brief Enable or disable updates for this listener. */
+    /** @brief Enable or disable listener pose updates and activation state. */
     void Active(bool Active)
     {
         m_active = Active;
@@ -45,32 +52,42 @@ public:
         return m_active;
     }
 
+    /** @brief Lifecycle hook after creation; prepares listener-side runtime state. */
     void OnCreate() override;
+    /**
+     * @brief Per-frame update.
+     * @param DeltaSeconds Frame delta seconds.
+     * @remarks If active, synchronizes listener transform into audio engine.
+     */
     void Tick(float DeltaSeconds) override;
 
     /**
      * @brief Gameplay-facing setter.
      * @param ActiveValue New active state.
-     * @remarks Gameplay-facing non-RPC method; forwards to SetActiveServer() when networked.
+     * @remarks Role-aware ergonomic entry point (client->server RPC, server->multicast fan-out).
      */
     void SetActive(bool ActiveValue);
     /**
      * @brief RPC server endpoint for SetActive().
+     * @remarks Authoritative path, forwards to multicast client endpoint.
      */
     void SetActiveServer(bool ActiveValue);
     /**
      * @brief RPC client/multicast endpoint for SetActive().
+     * @remarks Applies local listener active state.
      */
     void SetActiveClient(bool ActiveValue);
 
 private:
+    /** @brief Resolve world audio subsystem, if available. */
     AudioSystem* ResolveAudioSystem() const;
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
+    /** @brief Resolve world networking subsystem, if available. */
     NetworkSystem* ResolveNetworkSystem() const;
 #endif
-    bool m_active = true;
-    Vec3 m_lastPosition{};
-    bool m_hasLastPosition = false;
+    bool m_active = true; /**< @brief Local listener activation gate. */
+    Vec3 m_lastPosition{}; /**< @brief Last listener position pushed to backend (change detection). */
+    bool m_hasLastPosition = false; /**< @brief True once listener position cache has been initialized. */
 };
 
 #endif // SNAPI_GF_ENABLE_AUDIO

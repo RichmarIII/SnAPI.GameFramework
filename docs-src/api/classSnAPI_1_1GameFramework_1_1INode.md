@@ -1,6 +1,15 @@
 # SnAPI::GameFramework::INode
 
-Abstract node interface for the scene graph.
+Abstract runtime contract for graph nodes.
+
+Semantics:
+- A node is identity-first (`Handle` / `Id`) and hierarchy-aware (`Parent` / `Children`).
+- Runtime ownership is external: `NodeGraph` controls insertion/removal and lifecycle.
+- `World` association is optional for detached/prefab graphs, but world-backed behavior (networking/audio subsystems, authoritative role queries, tick-tree participation) depends on a valid `World()` pointer.
+
+Implementers:
+- `BaseNode` is the canonical implementation and should be preferred.
+- Implementing `INode` directly is valid but requires preserving all invariants described on each accessor/mutator below.
 
 ## Public Functions
 
@@ -172,6 +181,27 @@ Set whether the node is replicated over the network.
 **Parameters**
 
 - `Replicated`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `virtual bool SnAPI::GameFramework::INode::IsServer() const =0`
+
+Check whether this node is executing with server authority.
+
+**Returns:** True when server-authoritative.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `virtual bool SnAPI::GameFramework::INode::IsClient() const =0`
+
+Check whether this node is executing in a client context.
+
+**Returns:** True when client-side.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `virtual bool SnAPI::GameFramework::INode::IsListenServer() const =0`
+
+Check whether this node is executing as a listen-server.
+
+**Returns:** True when both server and client role are active.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `virtual std::vector< TypeId > & SnAPI::GameFramework::INode::ComponentTypes()=0`

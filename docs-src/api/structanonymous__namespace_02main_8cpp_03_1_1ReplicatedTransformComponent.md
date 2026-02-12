@@ -1,5 +1,7 @@
 # anonymous_namespace{main.cpp}::ReplicatedTransformComponent
 
+Example component whose transform fields are marked for replication.
+
 ## Public Static Members
 
 <div class="snapi-api-card" markdown="1">

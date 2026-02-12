@@ -21,7 +21,7 @@ Current tests include:
 - `tests/NodeGraphTests.cpp`
   - node + component ticking through graph hierarchy
 - `tests/ReflectionTests.cpp`
-  - type registration, inheritance, field/method flags
+  - type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags
 - `tests/SerializationTests.cpp`
   - graph serialization round-trip, cross-graph handle resolution, custom `TValueCodec`
 - `tests/LevelWorldSerializationTests.cpp`
@@ -30,6 +30,8 @@ Current tests include:
   - relevance policy gating tick
 - `tests/NetReplicationTests.cpp`
   - replication spawn/update ordering and session integration
+- `tests/WorldNetworkingTests.cpp`
+  - world-owned networking system wiring, replication/rpc bridge integration
 
 ## 3. Run Integration Examples
 
@@ -60,7 +62,11 @@ If you change serialization code:
 If you change networking/replication code:
 
 - run `NetReplicationTests`
+- run `WorldNetworkingTests`
 - run multiplayer example across two processes/devices
+- watch connection dumps:
+  - `pending_rel` should not grow forever
+  - non-zero `pkt_lost` alone is not a failure if reliable backlog drains and gameplay state remains correct
 
 If you change component lifecycle code:
 

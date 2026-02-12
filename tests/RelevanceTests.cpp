@@ -4,6 +4,9 @@
 
 using namespace SnAPI::GameFramework;
 
+/**
+ * @brief Tick-counting node used to verify relevance gating behavior.
+ */
 struct RelevanceTickNode : public BaseNode
 {
     static constexpr auto kTypeName = "SnAPI::GameFramework::RelevanceTickNode";
@@ -28,6 +31,9 @@ SNAPI_REFLECT_TYPE(RelevanceTickNode, (TTypeBuilder<RelevanceTickNode>(Relevance
     .Base<BaseNode>()
     .Register()));
 
+/**
+ * @brief Policy that always returns inactive to force relevance culling.
+ */
 struct AlwaysInactivePolicy
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::AlwaysInactivePolicy";

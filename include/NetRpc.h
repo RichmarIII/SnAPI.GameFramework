@@ -28,6 +28,7 @@ using SnAPI::Networking::NetConnectionHandle;
 
 /**
  * @brief Status codes for reflection RPC responses.
+ * @remarks Encodes bridge-level resolution/invoke failures in transport-neutral form.
  */
 enum class ERpcReflectionStatus : std::uint8_t
 {
@@ -41,6 +42,7 @@ enum class ERpcReflectionStatus : std::uint8_t
 
 /**
  * @brief Reflection RPC request payload.
+ * @remarks Compact transport object used by `NetRpcBridge` + `RpcService`.
  */
 struct NetRpcRequest
 {
@@ -53,6 +55,7 @@ struct NetRpcRequest
 
 /**
  * @brief Reflection RPC response payload.
+ * @remarks Contains status plus optional serialized return value payload.
  */
 struct NetRpcResponse
 {
@@ -62,6 +65,7 @@ struct NetRpcResponse
 
 /**
  * @brief Codec for reflection RPC request/response payloads.
+ * @remarks Converts between in-memory request/response structures and byte streams.
  */
 struct NetRpcCodec
 {
@@ -73,6 +77,7 @@ struct NetRpcCodec
 
 /**
  * @brief RPC interface used by the bridge to route reflection calls.
+ * @remarks Abstract target for server/client/multicast dispatch entrypoints.
  */
 struct INetReflectionRpc
 {
@@ -84,22 +89,55 @@ struct INetReflectionRpc
 
 /**
  * @brief Reflection-driven RPC bridge for Nodes and Components.
+ * @remarks
+ * Maps reflected method metadata to runtime RPC dispatch.
+ *
+ * Responsibilities:
+ * - register reflected RPC-capable methods and deterministic method ids
+ * - encode argument variants via codec registry
+ * - resolve target object and method by UUID/type/method id on receive
+ * - invoke reflected methods and encode return payloads
  */
 class SNAPI_GAMEFRAMEWORK_API NetRpcBridge final : public INetReflectionRpc
 {
 public:
+    /** @brief Completion callback signature for asynchronous RPC call results. */
     using CompletionFn = std::function<void(const TExpected<Variant>& Result)>;
 
+    /**
+     * @brief Construct bridge for an optional graph context.
+     * @param Graph Graph used for target resolution.
+     */
     explicit NetRpcBridge(NodeGraph* Graph = nullptr);
 
+    /** @brief Set target graph used for node/component lookup on invoke. */
     void Graph(NodeGraph* Graph);
+    /** @brief Get target graph used for invoke routing. */
     NodeGraph* Graph() const;
 
+    /**
+     * @brief Bind bridge to RpcService target id.
+     * @param Service RPC service instance.
+     * @param TargetIdValue target id namespace/channel.
+     * @return True on successful bind.
+     */
     bool Bind(SnAPI::Networking::RpcService& Service, SnAPI::Networking::RpcTargetId TargetIdValue = 1);
 
+    /** @brief Register one reflected type for RPC method mapping. */
     void RegisterType(const TypeId& Type);
+    /** @brief Register all currently present graph node/component types for RPC mapping. */
     void RegisterGraphTypes();
 
+    /**
+     * @brief Invoke reflected RPC targeting a node instance.
+     * @param Handle Connection handle (0 for multicast/broadcast semantics where supported).
+     * @param Target Node target object.
+     * @param MethodName Reflected method name.
+     * @param Args Variant-packed arguments.
+     * @param Completion Optional completion callback for return payload.
+     * @param Options Transport RPC options (reliability/channel/timeouts).
+     * @return RpcId assigned by underlying RpcService.
+     */
     SnAPI::Networking::RpcId Call(NetConnectionHandle Handle,
                                   const BaseNode& Target,
                                   std::string_view MethodName,
@@ -107,6 +145,17 @@ public:
                                   CompletionFn Completion = {},
                                   SnAPI::Networking::RpcCallOptions Options = {});
 
+    /**
+     * @brief Invoke reflected RPC targeting a component instance.
+     * @param Handle Connection handle (0 for multicast/broadcast semantics where supported).
+     * @param Target Component target object.
+     * @param TargetType Reflected concrete component type id.
+     * @param MethodName Reflected method name.
+     * @param Args Variant-packed arguments.
+     * @param Completion Optional completion callback for return payload.
+     * @param Options Transport RPC options.
+     * @return RpcId assigned by underlying RpcService.
+     */
     SnAPI::Networking::RpcId Call(NetConnectionHandle Handle,
                                   const IComponent& Target,
                                   const TypeId& TargetType,
@@ -133,6 +182,19 @@ public:
                     Options);
     }
 
+    /**
+     * @brief Low-level call path with explicit target metadata.
+     * @param Handle Connection handle.
+     * @param TargetKind 0=node, 1=component.
+     * @param TargetId UUID of target object.
+     * @param TargetType Reflected concrete target type id.
+     * @param MethodOwnerType Reflected owner type id that declares the method.
+     * @param Method Reflected method metadata.
+     * @param Args Variant-packed arguments.
+     * @param Completion Optional completion callback.
+     * @param Options Transport options.
+     * @return RpcId assigned by underlying RpcService.
+     */
     SnAPI::Networking::RpcId Call(NetConnectionHandle Handle,
                                   std::uint8_t TargetKind,
                                   const Uuid& TargetId,
@@ -144,25 +206,38 @@ public:
                                   SnAPI::Networking::RpcCallOptions Options = {});
 
     // INetReflectionRpc
+    /** @brief Server-target dispatcher implementation for incoming request payloads. */
     NetRpcResponse InvokeServer(SnAPI::Networking::NetConnectionHandle Handle, const NetRpcRequest& RequestValue) override;
+    /** @brief Client-target dispatcher implementation for incoming request payloads. */
     NetRpcResponse InvokeClient(SnAPI::Networking::NetConnectionHandle Handle, const NetRpcRequest& RequestValue) override;
+    /** @brief Multicast-target dispatcher implementation for incoming request payloads. */
     NetRpcResponse InvokeMulticast(SnAPI::Networking::NetConnectionHandle Handle, const NetRpcRequest& RequestValue) override;
 
 private:
     struct RpcMethodEntry
     {
-        TypeId OwnerType{};
-        MethodInfo Method{};
-        SnAPI::Networking::MethodId MethodIdValue = 0;
+        TypeId OwnerType{}; /**< @brief Reflected owner type where the method is declared. */
+        MethodInfo Method{}; /**< @brief Reflected method metadata including invoke callback and flags. */
+        SnAPI::Networking::MethodId MethodIdValue = 0; /**< @brief Deterministic networking method id used on wire. */
     };
 
+    /**
+     * @brief Resolve reflected method metadata by name and compatible argument signature.
+     * @param Type Target reflected type id.
+     * @param Name Requested method name.
+     * @param Args Argument payload used for overload compatibility check.
+     * @param OutOwnerType Filled with owner type id that declares selected method.
+     * @return Pointer to resolved method metadata or nullptr.
+     */
     const MethodInfo* FindRpcMethod(const TypeId& Type,
                                     std::string_view Name,
                                     std::span<const Variant> Args,
                                     TypeId& OutOwnerType) const;
 
+    /** @brief Decode + execute one incoming request against local graph object state. */
     NetRpcResponse HandleRequest(SnAPI::Networking::NetConnectionHandle Handle, const NetRpcRequest& RequestValue);
 
+    /** @brief Shared internal call implementation used by all public `Call` overloads. */
     SnAPI::Networking::RpcId CallInternal(NetConnectionHandle Handle,
                                           std::uint8_t TargetKind,
                                           const Uuid& TargetId,
@@ -172,10 +247,10 @@ private:
                                           CompletionFn Completion,
                                           SnAPI::Networking::RpcCallOptions Options);
 
-    NodeGraph* m_graph = nullptr;
-    SnAPI::Networking::RpcService* m_rpc = nullptr;
-    SnAPI::Networking::RpcTargetId m_targetId = 1;
-    std::unordered_map<SnAPI::Networking::MethodId, RpcMethodEntry> m_methods{};
+    NodeGraph* m_graph = nullptr; /**< @brief Non-owning graph context for target UUID resolution. */
+    SnAPI::Networking::RpcService* m_rpc = nullptr; /**< @brief Non-owning bound RpcService pointer. */
+    SnAPI::Networking::RpcTargetId m_targetId = 1; /**< @brief Bound target id namespace/channel. */
+    std::unordered_map<SnAPI::Networking::MethodId, RpcMethodEntry> m_methods{}; /**< @brief MethodId -> reflected method mapping table. */
 };
 
 #endif // SNAPI_GF_ENABLE_NETWORKING

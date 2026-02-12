@@ -1,5 +1,7 @@
 # anonymous_namespace{main.cpp}::Args
 
+Parsed command-line configuration for multiplayer example runtime mode.
+
 ## Public Members
 
 <div class="snapi-api-card" markdown="1">

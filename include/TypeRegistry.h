@@ -18,6 +18,10 @@
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @brief Heterogeneous hash functor for string-key lookups.
+ * @remarks Supports `std::string` and `std::string_view` without transient allocations.
+ */
 struct TransparentStringHash
 {
     using is_transparent = void;
@@ -33,6 +37,10 @@ struct TransparentStringHash
     }
 };
 
+/**
+ * @brief Heterogeneous equality functor for string-key lookups.
+ * @remarks Paired with TransparentStringHash for transparent unordered-map lookup.
+ */
 struct TransparentStringEqual
 {
     using is_transparent = void;
@@ -63,8 +71,8 @@ struct TransparentStringEqual
  */
 enum class EFieldFlagBits : uint32_t
 {
-    None = 0,
-    Replication = 1u << 0,
+    None = 0, /**< @brief No special field behavior flags. */
+    Replication = 1u << 0, /**< @brief Field is eligible for replication payload traversal. */
 };
 
 using FieldFlags = TFlags<EFieldFlagBits>;
@@ -78,12 +86,12 @@ struct EnableFlags<EFieldFlagBits> : std::true_type
  */
 enum class EMethodFlagBits : uint32_t
 {
-    None = 0,
-    RpcReliable = 1u << 0,
-    RpcUnreliable = 1u << 1,
-    RpcNetServer = 1u << 2,
-    RpcNetClient = 1u << 3,
-    RpcNetMulticast = 1u << 4,
+    None = 0, /**< @brief No special method behavior flags. */
+    RpcReliable = 1u << 0, /**< @brief Prefer reliable transport channel for RPC dispatch. */
+    RpcUnreliable = 1u << 1, /**< @brief Prefer unreliable transport channel for RPC dispatch. */
+    RpcNetServer = 1u << 2, /**< @brief Method is intended as server-target endpoint. */
+    RpcNetClient = 1u << 3, /**< @brief Method is intended as client-target endpoint. */
+    RpcNetMulticast = 1u << 4, /**< @brief Method is intended for server-initiated multicast dispatch. */
 };
 
 using MethodFlags = TFlags<EMethodFlagBits>;
@@ -94,7 +102,11 @@ struct EnableFlags<EMethodFlagBits> : std::true_type
 
 /**
  * @brief Reflection metadata for a field.
- * @remarks Getter/Setter use Variant for type-erased access.
+ * @remarks
+ * Field access supports three lanes:
+ * - Variant getter/setter for generic scripting/tooling pipelines
+ * - VariantView for non-owning fast paths
+ * - direct pointer accessors for hot serialization/replication code paths
  */
 struct FieldInfo
 {
@@ -111,7 +123,7 @@ struct FieldInfo
 
 /**
  * @brief Reflection metadata for a method.
- * @remarks Invoke uses Variant arguments and returns Variant.
+ * @remarks Invocation uses variant-packed arguments and variant return payload.
  */
 struct MethodInfo
 {
@@ -125,7 +137,7 @@ struct MethodInfo
 
 /**
  * @brief Reflection metadata for a constructor.
- * @remarks Construct returns a shared_ptr<void> for type-erased ownership.
+ * @remarks Construct callback returns owning `shared_ptr<void>` for type-erased instance creation.
  */
 struct ConstructorInfo
 {
@@ -135,7 +147,7 @@ struct ConstructorInfo
 
 /**
  * @brief Reflection metadata for a type.
- * @remarks Includes fields, methods, constructors, and base types.
+ * @remarks Central metadata object consumed by serialization, replication, RPC and tooling.
  */
 struct TypeInfo
 {
@@ -151,8 +163,15 @@ struct TypeInfo
 
 /**
  * @brief Global registry for reflected types.
- * @remarks Thread-safe registry used by serialization and scripting.
- * @note Types are keyed by TypeId.
+ * @remarks
+ * Canonical runtime metadata index keyed by deterministic `TypeId`.
+ *
+ * Read/write model:
+ * - normal mode: read/write operations use mutex protection
+ * - frozen mode (`Freeze(true)`): read operations use lock-free fast path and registrations are rejected
+ *
+ * This enables high-frequency lookup paths (replication/serialization) to avoid lock contention
+ * after startup metadata registration has completed.
  */
 class TypeRegistry
 {
@@ -167,19 +186,21 @@ public:
      * @brief Register a new type.
      * @param Info Type metadata.
      * @return Pointer to the stored TypeInfo or error.
-     * @remarks Fails if the type is already registered.
+     * @remarks Fails on duplicate id/name or when registry is frozen.
      */
     TExpected<TypeInfo*> Register(TypeInfo Info);
     /**
      * @brief Find a type by TypeId.
      * @param Id TypeId to lookup.
      * @return Pointer to TypeInfo or nullptr if not found.
+     * @remarks May trigger lazy auto-registration through TypeAutoRegistry on first miss.
      */
     const TypeInfo* Find(const TypeId& Id) const;
     /**
      * @brief Find a type by name.
      * @param Name Fully qualified type name.
      * @return Pointer to TypeInfo or nullptr if not found.
+     * @remarks Heterogeneous lookup via transparent string hash/equality.
      */
     const TypeInfo* FindByName(std::string_view Name) const;
     /**
@@ -187,20 +208,22 @@ public:
      * @param Type Derived type id.
      * @param Base Base type id.
      * @return True if Type is-a Base.
-     * @remarks Traverses registered base type chains.
+     * @remarks Traverses reflected base graph; requires base metadata to be registered.
      */
     bool IsA(const TypeId& Type, const TypeId& Base) const;
     /**
      * @brief Get all types derived from a base.
      * @param Base Base type id.
      * @return Vector of derived type infos.
-     * @remarks Includes indirect derivatives.
+     * @remarks Includes transitive derivatives in current registry snapshot.
      */
     std::vector<const TypeInfo*> Derived(const TypeId& Base) const;
     /**
      * @brief Enable or disable lock-free reads.
      * @param Enable True to freeze the registry (no further registration).
-     * @remarks When enabled, read operations skip locking.
+     * @remarks
+     * Freeze should be enabled only after expected metadata registration is complete.
+     * Unfreezing re-enables mutation and lock-based reads.
      */
     void Freeze(bool Enable);
     /**
@@ -210,10 +233,10 @@ public:
     bool IsFrozen() const;
 
 private:
-    mutable std::mutex m_mutex{}; /**< @brief Protects registry maps. */
-    std::atomic<bool> m_frozen{false}; /**< @brief If true, reads skip locking and registration is disabled. */
-    std::unordered_map<TypeId, TypeInfo, UuidHash> m_types{}; /**< @brief TypeId -> TypeInfo. */
-    std::unordered_map<std::string, TypeId, TransparentStringHash, TransparentStringEqual> m_nameToId{}; /**< @brief Name -> TypeId. */
+    mutable std::mutex m_mutex{}; /**< @brief Guards registry mutation and non-frozen lookups. */
+    std::atomic<bool> m_frozen{false}; /**< @brief Frozen state flag controlling read/write mode behavior. */
+    std::unordered_map<TypeId, TypeInfo, UuidHash> m_types{}; /**< @brief Primary metadata store keyed by TypeId. */
+    std::unordered_map<std::string, TypeId, TransparentStringHash, TransparentStringEqual> m_nameToId{}; /**< @brief Secondary name index for lookup by stable type name. */
 };
 
 } // namespace SnAPI::GameFramework

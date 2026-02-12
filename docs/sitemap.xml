@@ -121,6 +121,10 @@
          <lastmod>2026-02-12</lastmod>
     </url>
     <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/IComponent_8cpp/</loc>
+         <lastmod>2026-02-12</lastmod>
+    </url>
+    <url>
          <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/IComponent_8h/</loc>
          <lastmod>2026-02-12</lastmod>
     </url>
@@ -174,6 +178,14 @@
     </url>
     <url>
          <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/NetRpc_8h/</loc>
+         <lastmod>2026-02-12</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/NetworkSystem_8cpp/</loc>
+         <lastmod>2026-02-12</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/NetworkSystem_8h/</loc>
          <lastmod>2026-02-12</lastmod>
     </url>
     <url>

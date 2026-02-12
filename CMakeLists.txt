@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(SNAPI_GF_BUILD_TESTS "Build tests" ON)
 option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
-option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" OFF)
+option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" OFF)
 

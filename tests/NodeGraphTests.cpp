@@ -4,6 +4,10 @@
 
 using namespace SnAPI::GameFramework;
 
+/**
+ * @brief Test node that increments an external counter on tick.
+ * @remarks Validates node tick traversal over parent/child hierarchy.
+ */
 struct TickNode : public BaseNode
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TickNode";
@@ -23,6 +27,10 @@ struct TickNode : public BaseNode
     }
 };
 
+/**
+ * @brief Test component that increments an external counter on tick.
+ * @remarks Validates component tick invocation during node traversal.
+ */
 struct CounterComponent : public IComponent
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::CounterComponent";

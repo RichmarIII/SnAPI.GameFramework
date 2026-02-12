@@ -21,7 +21,9 @@ using ScriptInstanceId = uint64_t;
 
 /**
  * @brief Interface for a scripting backend (Lua, C#, etc).
- * @remarks Backends are expected to expose reflection-based access.
+ * @remarks
+ * Engine abstraction deliberately keeps transport and VM details outside GameFramework.
+ * Backends are expected to interoperate with Variant-based invocation and reflected type ids.
  */
 class IScriptEngine
 {
@@ -43,6 +45,7 @@ public:
      * @brief Load a script module from disk.
      * @param Path Module path.
      * @return Success or error.
+     * @remarks Module identity/path semantics are backend-defined.
      */
     virtual TExpected<void> LoadModule(const std::string& Path) = 0;
     /**
@@ -69,13 +72,14 @@ public:
      * @param Method Method name.
      * @param Args Argument list.
      * @return Variant result or error.
+     * @remarks Argument conversion and method binding behavior are backend-defined.
      */
     virtual TExpected<Variant> Invoke(ScriptInstanceId Instance, std::string_view Method, std::span<const Variant> Args) = 0;
 };
 
 /**
  * @brief Wrapper owning a scripting engine instance.
- * @remarks Provides convenience calls and shared ownership.
+ * @remarks Small orchestration wrapper for engine lifecycle and shared ownership semantics.
  */
 class ScriptRuntime
 {

@@ -7,6 +7,10 @@
 
 using namespace SnAPI::GameFramework;
 
+/**
+ * @brief Minimal base type used to validate field/method registration.
+ * @remarks Exercised by reflection inheritance and invocation tests.
+ */
 struct TestBase
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TestBase";
@@ -23,6 +27,9 @@ struct TestBase
     }
 };
 
+/**
+ * @brief Derived test type used to validate inherited metadata traversal.
+ */
 struct TestDerived : public TestBase
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TestDerived";
@@ -79,6 +86,9 @@ TEST_CASE("Reflection registers types and supports inheritance")
     REQUIRE(Ptr != nullptr);
 }
 
+/**
+ * @brief Reflection flags test type for field/method flag assertions.
+ */
 struct FlaggedType
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::FlaggedType";

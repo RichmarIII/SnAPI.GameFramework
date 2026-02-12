@@ -802,37 +802,47 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="typeid-snapigameframeworkvariantviewm_type"><code>TypeId SnAPI::GameFramework::VariantView::m_type</code><a class="headerlink" href="#typeid-snapigameframeworkvariantviewm_type" title="Permanent link">&para;</a></h3>
+<p>Reflected payload type id.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="const-void-snapigameframeworkvariantviewm_ptr"><code>const void* SnAPI::GameFramework::VariantView::m_ptr</code><a class="headerlink" href="#const-void-snapigameframeworkvariantviewm_ptr" title="Permanent link">&para;</a></h3>
+<p>Non-owning payload pointer.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkvariantviewm_isconst"><code>bool SnAPI::GameFramework::VariantView::m_isConst</code><a class="headerlink" href="#bool-snapigameframeworkvariantviewm_isconst" title="Permanent link">&para;</a></h3>
+<p>Constness gate for mutable borrowing.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="snapigameframeworkvariantviewvariantviewdefault"><code>SnAPI::GameFramework::VariantView::VariantView()=default</code><a class="headerlink" href="#snapigameframeworkvariantviewvariantviewdefault" title="Permanent link">&para;</a></h3>
+<p>Construct an empty invalid view.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="snapigameframeworkvariantviewvariantviewtypeid-type-const-void-ptr-bool-isconst"><code>SnAPI::GameFramework::VariantView::VariantView(TypeId Type, const void *Ptr, bool IsConst)</code><a class="headerlink" href="#snapigameframeworkvariantviewvariantviewtypeid-type-const-void-ptr-bool-isconst" title="Permanent link">&para;</a></h3>
+<p>Construct explicit typed view.</p>
 <p><strong>Parameters</strong></p>
 <ul>
 <li><code>Type</code>: </li>
-<li><code>Ptr</code>: </li>
+<li><code>Ptr</code>: Raw payload pointer.</li>
 <li><code>IsConst</code>:</li>
 </ul>
 </div>
 <div class="snapi-api-card">
 <h3 id="const-typeid-snapigameframeworkvariantviewtype-const"><code>const TypeId &amp; SnAPI::GameFramework::VariantView::Type() const</code><a class="headerlink" href="#const-typeid-snapigameframeworkvariantviewtype-const" title="Permanent link">&para;</a></h3>
+<p>Get reflected payload type id for this view.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkvariantviewisconst-const"><code>bool SnAPI::GameFramework::VariantView::IsConst() const</code><a class="headerlink" href="#bool-snapigameframeworkvariantviewisconst-const" title="Permanent link">&para;</a></h3>
+<p>Check if mutable access is disallowed.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="const-void-snapigameframeworkvariantviewborrowed-const"><code>const void * SnAPI::GameFramework::VariantView::Borrowed() const</code><a class="headerlink" href="#const-void-snapigameframeworkvariantviewborrowed-const" title="Permanent link">&para;</a></h3>
+<p>Borrow const payload pointer.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="void-snapigameframeworkvariantviewborrowedmutable"><code>void * SnAPI::GameFramework::VariantView::BorrowedMutable()</code><a class="headerlink" href="#void-snapigameframeworkvariantviewborrowedmutable" title="Permanent link">&para;</a></h3>
+<p>Borrow mutable payload pointer.</p>
+<p><strong>Returns:</strong> Mutable pointer when view is non-const, otherwise nullptr.</p>
 </div>
 
 

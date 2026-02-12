@@ -802,19 +802,19 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="typeid-snapigameframeworktcomponentstorage-t-m_typeid"><code>TypeId SnAPI::GameFramework::TComponentStorage&lt; T &gt;::m_typeId</code><a class="headerlink" href="#typeid-snapigameframeworktcomponentstorage-t-m_typeid" title="Permanent link">&para;</a></h3>
-<p>Component type id.</p>
+<p>Reflected type id for this storage specialization.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="tobjectpoolt-snapigameframeworktcomponentstorage-t-m_pool"><code>TObjectPool&lt;T&gt; SnAPI::GameFramework::TComponentStorage&lt; T &gt;::m_pool</code><a class="headerlink" href="#tobjectpoolt-snapigameframeworktcomponentstorage-t-m_pool" title="Permanent link">&para;</a></h3>
-<p>Pool storing component instances.</p>
+<p>Underlying component object pool with deferred destroy support.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdunordered_mapnodehandle-uuid-handlehash-snapigameframeworktcomponentstorage-t-m_index"><code>std::unordered_map&lt;NodeHandle, Uuid, HandleHash&gt; SnAPI::GameFramework::TComponentStorage&lt; T &gt;::m_index</code><a class="headerlink" href="#stdunordered_mapnodehandle-uuid-handlehash-snapigameframeworktcomponentstorage-t-m_index" title="Permanent link">&para;</a></h3>
-<p>Owner -&gt; component UUID.</p>
+<p>Owner-node handle -&gt; component UUID map.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvectoruuid-snapigameframeworktcomponentstorage-t-m_pendingdestroy"><code>std::vector&lt;Uuid&gt; SnAPI::GameFramework::TComponentStorage&lt; T &gt;::m_pendingDestroy</code><a class="headerlink" href="#stdvectoruuid-snapigameframeworktcomponentstorage-t-m_pendingdestroy" title="Permanent link">&para;</a></h3>
-<p>Components scheduled for deletion.</p>
+<p>Component ids scheduled for end-of-frame destroy flush.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
@@ -926,10 +926,18 @@
 <div class="snapi-api-card">
 <h3 id="void-snapigameframeworktcomponentstorage-t-endframe-override"><code>void SnAPI::GameFramework::TComponentStorage&lt; T &gt;::EndFrame() override</code><a class="headerlink" href="#void-snapigameframeworktcomponentstorage-t-endframe-override" title="Permanent link">&para;</a></h3>
 <p>Process pending destruction at end-of-frame.</p>
+<p><strong>Notes</strong></p>
+<ul>
+<li>Ordering is deterministic by pending queue insertion order.</li>
+</ul>
 </div>
 <div class="snapi-api-card">
 <h3 id="void-snapigameframeworktcomponentstorage-t-clear-override"><code>void SnAPI::GameFramework::TComponentStorage&lt; T &gt;::Clear() override</code><a class="headerlink" href="#void-snapigameframeworktcomponentstorage-t-clear-override" title="Permanent link">&para;</a></h3>
 <p>Clear all components immediately.</p>
+<p><strong>Notes</strong></p>
+<ul>
+<li>Immediate path bypasses deferred destroy semantics.</li>
+</ul>
 </div>
 
 

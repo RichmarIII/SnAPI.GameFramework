@@ -798,7 +798,13 @@
 
 
 <h1 id="snapigameframeworknodegraph">SnAPI::GameFramework::NodeGraph<a class="headerlink" href="#snapigameframeworknodegraph" title="Permanent link">&para;</a></h1>
-<p>A node that owns and manages a hierarchy of child nodes.</p>
+<p>Hierarchical runtime container for nodes/components.</p>
+<p>Core semantics:
+- Node/component identity is UUID-handle based.
+- Object lifetime is deferred-destruction by default (<code>DestroyNode</code> + <code>EndFrame</code>).
+- Component storage is type-partitioned (<code>TypeId -&gt; IComponentStorage</code>) and created lazily.
+- Graph tick methods evaluate relevance and then drive deterministic tree traversal.</p>
+<p>This class is the primary runtime backbone for world/level/prefab style object trees.</p>
 <h2 id="public-static-members">Public Static Members<a class="headerlink" href="#public-static-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="const-char-snapigameframeworknodegraphktypename"><code>const char* SnAPI::GameFramework::NodeGraph::kTypeName</code><a class="headerlink" href="#const-char-snapigameframeworknodegraphktypename" title="Permanent link">&para;</a></h3>
@@ -820,27 +826,27 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="stdshared_ptrtobjectpoolbasenode-snapigameframeworknodegraphm_nodepool"><code>std::shared_ptr&lt;TObjectPool&lt;BaseNode&gt; &gt; SnAPI::GameFramework::NodeGraph::m_nodePool</code><a class="headerlink" href="#stdshared_ptrtobjectpoolbasenode-snapigameframeworknodegraphm_nodepool" title="Permanent link">&para;</a></h3>
-<p>Pool for node storage.</p>
+<p>Owning node pool providing stable addresses and deferred destroy semantics.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdunordered_maptypeid-stdunique_ptricomponentstorage-uuidhash-snapigameframeworknodegraphm_storages"><code>std::unordered_map&lt;TypeId, std::unique_ptr&lt;IComponentStorage&gt;, UuidHash&gt; SnAPI::GameFramework::NodeGraph::m_storages</code><a class="headerlink" href="#stdunordered_maptypeid-stdunique_ptricomponentstorage-uuidhash-snapigameframeworknodegraphm_storages" title="Permanent link">&para;</a></h3>
-<p>Component storage by type id.</p>
+<p>Type-partitioned component storages created lazily on demand.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvectornodehandle-snapigameframeworknodegraphm_rootnodes"><code>std::vector&lt;NodeHandle&gt; SnAPI::GameFramework::NodeGraph::m_rootNodes</code><a class="headerlink" href="#stdvectornodehandle-snapigameframeworknodegraphm_rootnodes" title="Permanent link">&para;</a></h3>
-<p>Root nodes (no parent).</p>
+<p>Root traversal entry points (nodes without parent in this graph).</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvectornodehandle-snapigameframeworknodegraphm_pendingdestroy"><code>std::vector&lt;NodeHandle&gt; SnAPI::GameFramework::NodeGraph::m_pendingDestroy</code><a class="headerlink" href="#stdvectornodehandle-snapigameframeworknodegraphm_pendingdestroy" title="Permanent link">&para;</a></h3>
-<p>Nodes scheduled for deletion.</p>
+<p>Node handles queued for end-of-frame destruction.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="size_t-snapigameframeworknodegraphm_relevancecursor"><code>size_t SnAPI::GameFramework::NodeGraph::m_relevanceCursor</code><a class="headerlink" href="#size_t-snapigameframeworknodegraphm_relevancecursor" title="Permanent link">&para;</a></h3>
-<p>Reserved for incremental relevance updates.</p>
+<p>Cursor for incremental relevance sweeps when budgeted evaluation is enabled.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="size_t-snapigameframeworknodegraphm_relevancebudget"><code>size_t SnAPI::GameFramework::NodeGraph::m_relevanceBudget</code><a class="headerlink" href="#size_t-snapigameframeworknodegraphm_relevancebudget" title="Permanent link">&para;</a></h3>
-<p>Max relevance evaluations per tick (0 = unlimited).</p>
+<p>Per-tick relevance evaluation cap; 0 means evaluate all nodes.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">

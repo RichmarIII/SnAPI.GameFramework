@@ -18,7 +18,13 @@ namespace SnAPI::GameFramework
 /**
  * @brief Fluent builder for registering reflection metadata.
  * @tparam T Type to register.
- * @remarks Use in a single translation unit per type.
+ * @remarks
+ * Builder collects full reflected metadata for a type and commits into `TypeRegistry`.
+ *
+ * Best-practice lifecycle:
+ * 1. define fields/methods/constructors/base types
+ * 2. call `Register()` once in one translation unit (typically through `SNAPI_REFLECT_TYPE`)
+ * 3. let `TypeAutoRegistry` ensure-on-first-use resolve registration at runtime
  */
 template<typename T>
 class TTypeBuilder
@@ -42,7 +48,10 @@ public:
      * @brief Register a base type.
      * @tparam BaseT Base class type.
      * @return Reference to the builder for chaining.
-     * @remarks Base types are used for inheritance queries and serialization.
+     * @remarks
+     * Base metadata is used for:
+     * - `TypeRegistry::IsA`/`Derived`
+     * - inherited field/method traversal in serialization/replication/RPC lookup.
      */
     template<typename BaseT>
     TTypeBuilder& Base()
@@ -59,7 +68,13 @@ public:
      * @param Name Field name.
      * @param Member Pointer-to-member field.
      * @return Reference to the builder for chaining.
-     * @remarks Const fields are treated as read-only (setter fails).
+     * @remarks
+     * Member-pointer registration emits:
+     * - Variant getter/setter
+     * - direct pointer accessors
+     * - optional field flags (e.g., replication)
+     *
+     * Const member fields are reflected as read-only; setter returns error at runtime.
      */
     template<typename FieldT>
     TTypeBuilder& Field(const char* Name, FieldT T::*Member, FieldFlags Flags = {})
@@ -150,7 +165,9 @@ public:
      * @param Getter Mutable accessor returning FieldT&.
      * @param GetterConst Const accessor returning const FieldT&.
      * @return Reference to the builder for chaining.
-     * @remarks Use this to reflect private/protected storage via public accessors.
+     * @remarks
+     * Preferred for encapsulated/private storage where direct member reflection is not desired.
+     * Accessor references are treated as stable field storage references.
      */
     template<typename FieldT>
     TTypeBuilder& Field(
@@ -224,6 +241,7 @@ public:
      * @param Name Method name.
      * @param Method Pointer to member function.
      * @return Reference to the builder for chaining.
+     * @remarks Method flags can mark RPC intent and reliability semantics.
      */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...), MethodFlags Flags = {})
@@ -253,6 +271,7 @@ public:
      * @param Name Method name.
      * @param Method Pointer to const member function.
      * @return Reference to the builder for chaining.
+     * @remarks Constness is encoded in metadata and enforced through invoker binding.
      */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const, MethodFlags Flags = {})
@@ -279,7 +298,9 @@ public:
      * @brief Register a constructor signature.
      * @tparam Args Constructor argument types.
      * @return Reference to the builder for chaining.
-     * @remarks Constructors are used by serialization and scripting.
+     * @remarks
+     * Constructor metadata powers runtime creation by type id (serialization spawn paths,
+     * script/runtime factories, replication instantiation).
      */
     template<typename... Args>
     TTypeBuilder& Constructor()
@@ -300,7 +321,9 @@ public:
     /**
      * @brief Register the built TypeInfo into the global TypeRegistry.
      * @return Pointer to stored TypeInfo or error.
-     * @remarks Fails if the type is already registered.
+     * @remarks
+     * If `T` derives from `IComponent`, this also auto-registers component serialization
+     * in `ComponentSerializationRegistry`.
      */
     TExpected<TypeInfo*> Register()
     {

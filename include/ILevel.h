@@ -20,8 +20,10 @@ class NodeGraph;
 using NodeHandle = THandle<BaseNode>;
 
 /**
- * @brief Interface for level containers.
- * @remarks Levels are graphs nested under a world.
+ * @brief Contract for world-owned level containers.
+ * @remarks
+ * Levels are logical gameplay partitions that host one or more node graphs.
+ * In the default implementation, `Level` itself is a `NodeGraph`.
  */
 class ILevel
 {
@@ -46,7 +48,7 @@ public:
     virtual void LateTick(float DeltaSeconds) = 0;
     /**
      * @brief End-of-frame processing.
-     * @remarks Handles deferred destruction.
+     * @remarks Flushes deferred node/component destruction for level-owned graphs.
      */
     virtual void EndFrame() = 0;
 
@@ -54,6 +56,7 @@ public:
      * @brief Create a child node graph.
      * @param Name Graph name.
      * @return Handle to the created graph or error.
+     * @remarks Child graphs can be used for sub-scenes, prefabs, or streaming partitions.
      */
     virtual TExpected<NodeHandle> CreateGraph(std::string Name) = 0;
     /**

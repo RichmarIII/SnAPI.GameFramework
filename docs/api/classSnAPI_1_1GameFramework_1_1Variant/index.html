@@ -802,19 +802,19 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="typeid-snapigameframeworkvariantm_type"><code>TypeId SnAPI::GameFramework::Variant::m_type</code><a class="headerlink" href="#typeid-snapigameframeworkvariantm_type" title="Permanent link">&para;</a></h3>
-<p>Type id of the stored value.</p>
+<p>Reflected type id of stored payload.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdshared_ptrvoid-snapigameframeworkvariantm_storage"><code>std::shared_ptr&lt;void&gt; SnAPI::GameFramework::Variant::m_storage</code><a class="headerlink" href="#stdshared_ptrvoid-snapigameframeworkvariantm_storage" title="Permanent link">&para;</a></h3>
-<p>Owned value or referenced pointer.</p>
+<p>Owned object storage or non-owning reference wrapper pointer.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkvariantm_isref"><code>bool SnAPI::GameFramework::Variant::m_isRef</code><a class="headerlink" href="#bool-snapigameframeworkvariantm_isref" title="Permanent link">&para;</a></h3>
-<p>True if the variant holds a reference.</p>
+<p>Reference mode flag (<code>true</code> for non-owning reference payload).</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkvariantm_isconst"><code>bool SnAPI::GameFramework::Variant::m_isConst</code><a class="headerlink" href="#bool-snapigameframeworkvariantm_isconst" title="Permanent link">&para;</a></h3>
-<p>True if the reference is const.</p>
+<p>Const-reference qualifier for reference mode payloads.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
@@ -891,7 +891,7 @@
 <p><strong>Returns:</strong> Variant referencing the object.</p>
 <p><strong>Notes</strong></p>
 <ul>
-<li>Caller must ensure the referenced object outlives the Variant.</li>
+<li>Caller must guarantee lifetime; no ownership is transferred.</li>
 </ul>
 </div>
 <div class="snapi-api-card">
@@ -904,7 +904,7 @@
 <p><strong>Returns:</strong> Variant referencing the object as const.</p>
 <p><strong>Notes</strong></p>
 <ul>
-<li>Caller must ensure the referenced object outlives the Variant.</li>
+<li>Caller must guarantee lifetime; mutable extraction will fail by design.</li>
 </ul>
 </div>
 <h2 id="private-static-func">Private Static Func<a class="headerlink" href="#private-static-func" title="Permanent link">&para;</a></h2>

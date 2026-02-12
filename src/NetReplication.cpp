@@ -38,18 +38,26 @@ using SnAPI::Networking::ReplicationDelta;
 
 enum class ENetObjectKind : std::uint8_t
 {
-    Node = 0,
-    Component = 1,
+    Node = 0, /**< @brief Replicated entity represents a node object. */
+    Component = 1, /**< @brief Replicated entity represents a component object. */
 };
 
+/**
+ * @brief Replication payload header for node/component snapshots and updates.
+ * @remarks Carries object identity/type and parent-owner linkage context.
+ */
 struct NetReplicationHeader
 {
-    ENetObjectKind Kind{};
-    Uuid ObjectId{};
-    TypeId ObjectType{};
-    Uuid OwnerId{};
+    ENetObjectKind Kind{}; /**< @brief Replicated object kind. */
+    Uuid ObjectId{}; /**< @brief Replicated object identity UUID. */
+    TypeId ObjectType{}; /**< @brief Reflected object type id. */
+    Uuid OwnerId{}; /**< @brief Parent node UUID (for nodes) or owner node UUID (for components). */
 };
 
+/**
+ * @brief Streambuf that writes archive bytes directly to vector storage.
+ * @remarks Used to avoid extra copy layers during replication payload serialization.
+ */
 class VectorWriteStreambuf final : public std::streambuf
 {
 public:
@@ -83,9 +91,13 @@ protected:
     }
 
 private:
-    std::vector<uint8_t>& m_buffer;
+    std::vector<uint8_t>& m_buffer; /**< @brief Destination byte vector reference. */
 };
 
+/**
+ * @brief Streambuf view for reading from existing memory buffers.
+ * @remarks Non-owning and used by cereal input archive decode paths.
+ */
 class MemoryReadStreambuf final : public std::streambuf
 {
 public:
@@ -101,26 +113,37 @@ public:
     }
 };
 
+/**
+ * @brief Cached descriptor for one reflected replicated field.
+ * @remarks Stores direct codec pointer when available, or nested-type metadata fallback.
+ */
 struct ReplicatedField
 {
-    const FieldInfo* Field = nullptr;
-    const ValueCodecRegistry::CodecEntry* Codec = nullptr;
-    TypeId NestedType{};
-    bool HasNested = false;
+    const FieldInfo* Field = nullptr; /**< @brief Reflected field metadata pointer. */
+    const ValueCodecRegistry::CodecEntry* Codec = nullptr; /**< @brief Bound value codec when direct serialization is available. */
+    TypeId NestedType{}; /**< @brief Nested type id used for recursive reflected traversal when no codec exists. */
+    bool HasNested = false; /**< @brief True when nested traversal should be used for this field. */
 };
 
+/**
+ * @brief Cached replicated-field plan per reflected type.
+ * @remarks Invalidated when codec registry version changes.
+ */
 struct ReplicatedFieldCacheEntry
 {
-    uint32_t CodecVersion = 0;
-    bool TypeFound = true;
-    std::vector<ReplicatedField> Fields{};
+    uint32_t CodecVersion = 0; /**< @brief Value-codec registry version associated with this cache entry. */
+    bool TypeFound = true; /**< @brief False when type metadata was unavailable during cache build. */
+    std::vector<ReplicatedField> Fields{}; /**< @brief Flattened ordered replicated field descriptors (including bases). */
 };
 
+/**
+ * @brief Helper guard for cycle-safe reflected type traversal.
+ */
 struct TypeVisitGuard
 {
-    std::unordered_map<TypeId, bool, UuidHash>& Visited;
-    const TypeId& Type;
-    bool Inserted = false;
+    std::unordered_map<TypeId, bool, UuidHash>& Visited; /**< @brief Shared visited-type set for current traversal. */
+    const TypeId& Type; /**< @brief Type currently entering traversal. */
+    bool Inserted = false; /**< @brief True when this guard inserted a fresh visited entry. */
 
     TypeVisitGuard(std::unordered_map<TypeId, bool, UuidHash>& InVisited, const TypeId& InType)
         : Visited(InVisited)
@@ -130,8 +153,8 @@ struct TypeVisitGuard
     }
 };
 
-std::mutex g_replicatedFieldMutex;
-std::unordered_map<TypeId, std::shared_ptr<ReplicatedFieldCacheEntry>, UuidHash> g_replicatedFieldCache;
+std::mutex g_replicatedFieldMutex; /**< @brief Guards replicated-field cache map. */
+std::unordered_map<TypeId, std::shared_ptr<ReplicatedFieldCacheEntry>, UuidHash> g_replicatedFieldCache; /**< @brief TypeId -> replicated-field cache entry. */
 
 bool WriteUuid(NetByteWriter& Writer, const Uuid& Id)
 {

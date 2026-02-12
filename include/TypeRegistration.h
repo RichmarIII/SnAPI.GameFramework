@@ -14,7 +14,10 @@ namespace SnAPI::GameFramework
  * @brief Ensure a type is registered in TypeRegistry and return its TypeId pointer.
  * @tparam T Type with a stable TTypeNameV<T>.
  * @return Pointer to a stable TypeId on success, or error.
- * @remarks This is the "register on first use" path.
+ * @remarks
+ * This is the central "register-on-first-use" entrypoint:
+ * - fast path: return cached id if metadata already exists
+ * - slow path: invoke TypeAutoRegistry ensure callback and verify registration landed
  */
 template<typename T>
 inline TExpected<TypeId*> StaticType()
@@ -46,7 +49,7 @@ inline TExpected<TypeId*> StaticType()
 /**
  * @brief Ensure reflection registration for a type.
  * @tparam T Type with a stable TTypeNameV<T>.
- * @remarks Used by template APIs (CreateNode/AddComponent, etc).
+ * @remarks Convenience assert-checked wrapper used by template APIs (`CreateNode<T>`, `Add<T>`, ...).
  */
 template<typename T>
 inline void EnsureReflectionRegistered()

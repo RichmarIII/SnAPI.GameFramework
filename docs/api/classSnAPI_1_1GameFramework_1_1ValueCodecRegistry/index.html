@@ -822,10 +822,11 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="stdunordered_maptypeid-codecentry-uuidhash-snapigameframeworkvaluecodecregistrym_entries"><code>std::unordered_map&lt;TypeId, CodecEntry, UuidHash&gt; SnAPI::GameFramework::ValueCodecRegistry::m_entries</code><a class="headerlink" href="#stdunordered_maptypeid-codecentry-uuidhash-snapigameframeworkvaluecodecregistrym_entries" title="Permanent link">&para;</a></h3>
-<p>Codec map by TypeId.</p>
+<p>Runtime codec dispatch table keyed by reflected TypeId.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="uint32_t-snapigameframeworkvaluecodecregistrym_version"><code>uint32_t SnAPI::GameFramework::ValueCodecRegistry::m_version</code><a class="headerlink" href="#uint32_t-snapigameframeworkvaluecodecregistrym_version" title="Permanent link">&para;</a></h3>
+<p>Monotonic cache-invalidation version incremented on each registration.</p>
 </div>
 <h2 id="public-static-functions">Public Static Functions<a class="headerlink" href="#public-static-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">

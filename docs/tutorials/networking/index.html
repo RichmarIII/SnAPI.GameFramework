@@ -671,10 +671,38 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#8-add-connection-diagnostics-recommended" class="md-nav__link">
+  <a href="#8-connection-diagnostics-recommended" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8. Add Connection Diagnostics (Recommended)
+        8. Connection Diagnostics (Recommended)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Connection Diagnostics (Recommended)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#interpreting-packet-loss-correctly" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Interpreting packet loss correctly
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-reliable-vs-unreliable-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Reliable vs Unreliable Channels
       
     </span>
   </a>
@@ -682,10 +710,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#9-reflection-rpc-optional-but-powerful" class="md-nav__link">
+  <a href="#10-reliable-window-backpressure" class="md-nav__link">
     <span class="md-ellipsis">
       
-        9. Reflection RPC (Optional but Powerful)
+        10. Reliable Window Backpressure
       
     </span>
   </a>
@@ -693,10 +721,32 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#10-common-replication-problems" class="md-nav__link">
+  <a href="#11-reflection-rpc-optional-but-powerful" class="md-nav__link">
     <span class="md-ellipsis">
       
-        10. Common Replication Problems
+        11. Reflection RPC (Optional but Powerful)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-gameplay-rpc-dispatch-pattern-nodecomponent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        12. Gameplay RPC Dispatch Pattern (Node/Component)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-common-replication-problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        13. Common Replication Problems
       
     </span>
   </a>
@@ -962,8 +1012,9 @@
 <p>This page explains how SnAPI.GameFramework networking works with SnAPI.Networking.</p>
 <h2 id="1-big-picture">1. Big Picture<a class="headerlink" href="#1-big-picture" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>NetReplicationBridge</code> maps graph objects to replication entities.</li>
-<li><code>NetRpcBridge</code> maps reflected methods to RPC calls.</li>
+<li><code>World</code> owns <code>NetworkSystem</code> (session + replication bridge + RPC bridge wiring).</li>
+<li><code>NetReplicationBridge</code> maps graph objects to replication entities and applies spawn/update/despawn payloads.</li>
+<li><code>NetRpcBridge</code> maps reflected methods to network RPC calls.</li>
 <li>Reflection metadata (<code>FieldFlags</code>, <code>MethodFlags</code>) controls what is eligible.</li>
 </ul>
 <h2 id="2-replication-requires-two-things">2. Replication Requires Two Things<a class="headerlink" href="#2-replication-requires-two-things" title="Permanent link">&para;</a></h2>
@@ -1036,11 +1087,42 @@ Clients receive spawn/update automatically.</p>
 ./MultiplayerExample<span class="w"> </span>--client<span class="w"> </span>--host<span class="w"> </span>&lt;server-ip&gt;
 </code></pre></div>
 <p>This is the intended model for real deployment.</p>
-<h2 id="8-add-connection-diagnostics-recommended">8. Add Connection Diagnostics (Recommended)<a class="headerlink" href="#8-add-connection-diagnostics-recommended" title="Permanent link">&para;</a></h2>
+<h2 id="8-connection-diagnostics-recommended">8. Connection Diagnostics (Recommended)<a class="headerlink" href="#8-connection-diagnostics-recommended" title="Permanent link">&para;</a></h2>
 <p>Use <code>INetSessionListener</code> and periodic <code>DumpConnections(...)</code> logging.
 This helps catch pacing/reliability backpressure and disconnect reasons quickly.</p>
 <p>The multiplayer example includes this pattern (<code>SessionListener</code>, <code>PrintConnectionDump</code>).</p>
-<h2 id="9-reflection-rpc-optional-but-powerful">9. Reflection RPC (Optional but Powerful)<a class="headerlink" href="#9-reflection-rpc-optional-but-powerful" title="Permanent link">&para;</a></h2>
+<p>Important counters in dumps:</p>
+<ul>
+<li><code>pending_rel</code>: reliable messages queued/in-flight.</li>
+<li><code>pending_unrel</code>: queued/in-flight unreliable messages.</li>
+<li><code>pkt_sent</code>, <code>pkt_acked</code>, <code>pkt_lost</code>: transport packet stats, not direct gameplay event counts.</li>
+</ul>
+<h3 id="interpreting-packet-loss-correctly">Interpreting packet loss correctly<a class="headerlink" href="#interpreting-packet-loss-correctly" title="Permanent link">&para;</a></h3>
+<p>Seeing non-zero <code>pkt_lost</code> (especially right after connect) is normal on UDP-style transport.
+It does <strong>not</strong> automatically mean gameplay replication is broken.</p>
+<p>Use this rule of thumb:</p>
+<ul>
+<li><code>pending_rel</code> keeps climbing and never drains: reliable path is unhealthy.</li>
+<li><code>pending_rel</code> drains to <code>0</code> and gameplay looks correct: occasional packet loss is being recovered as designed.</li>
+</ul>
+<h2 id="9-reliable-vs-unreliable-channels">9. Reliable vs Unreliable Channels<a class="headerlink" href="#9-reliable-vs-unreliable-channels" title="Permanent link">&para;</a></h2>
+<p>Reliable and unreliable traffic are separate channel paths with separate queueing/ordering behavior.</p>
+<ul>
+<li>Reliable channels retry until acked.</li>
+<li>Unreliable sequenced traffic favors new state and may drop old state under loss/backpressure.</li>
+</ul>
+<p>This is why high-rate transform updates are usually unreliable-sequenced while gameplay-critical actions (spawn/ownership/authoritative state changes) stay reliable.</p>
+<h2 id="10-reliable-window-backpressure">10. Reliable Window Backpressure<a class="headerlink" href="#10-reliable-window-backpressure" title="Permanent link">&para;</a></h2>
+<p>SnAPI.Networking uses ACK-mask-based reliable tracking.
+To keep a reliable message ackable, sender-side in-flight reliable depth is window-limited.</p>
+<p>Behavior when pressure is high:</p>
+<ul>
+<li>new reliable payloads are queued/deferred,</li>
+<li>they are sent once earlier reliable payloads are acked,</li>
+<li>they are <strong>not</strong> silently dropped.</li>
+</ul>
+<p>Result: under sustained overload you get higher latency before delivery, not silent data loss.</p>
+<h2 id="11-reflection-rpc-optional-but-powerful">11. Reflection RPC (Optional but Powerful)<a class="headerlink" href="#11-reflection-rpc-optional-but-powerful" title="Permanent link">&para;</a></h2>
 <p>Mark methods for RPC in reflection metadata:</p>
 <div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">WeaponComponent</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">IComponent</span>
 <span class="p">{</span>
@@ -1073,7 +1155,29 @@ This helps catch pacing/reliability backpressure and disconnect reasons quickly.
 <span class="w">               </span><span class="n">Args</span><span class="p">);</span>
 </code></pre></div>
 <p><code>NetRpcBridge</code> resolves method metadata, serializes arguments via <code>ValueCodecRegistry</code>, and routes through SnAPI.Networking RPC.</p>
-<h2 id="10-common-replication-problems">10. Common Replication Problems<a class="headerlink" href="#10-common-replication-problems" title="Permanent link">&para;</a></h2>
+<h2 id="12-gameplay-rpc-dispatch-pattern-nodecomponent">12. Gameplay RPC Dispatch Pattern (Node/Component)<a class="headerlink" href="#12-gameplay-rpc-dispatch-pattern-nodecomponent" title="Permanent link">&para;</a></h2>
+<p>Recommended style is a gameplay-facing method that branches by role and forwards to reflected RPC endpoints:</p>
+<div class="highlight"><pre><span></span><code><span class="c1">// Simplified pseudo-code.</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">AudioSourceComponent::Play</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">IsClient</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">!</span><span class="n">IsServer</span><span class="p">())</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// client -&gt; server rpc</span>
+<span class="w">        </span><span class="n">SendRpcToServer</span><span class="p">(</span><span class="s">&quot;PlayServer&quot;</span><span class="p">);</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">IsServer</span><span class="p">())</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="n">PlayServer</span><span class="p">();</span><span class="w"> </span><span class="c1">// server path, then multicast</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="n">PlayClient</span><span class="p">();</span><span class="w"> </span><span class="c1">// local/offline fallback</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>For server-authoritative actions, server endpoint usually fan-outs via multicast endpoint (<code>PlayServer -&gt; PlayClient</code>).</p>
+<h2 id="13-common-replication-problems">13. Common Replication Problems<a class="headerlink" href="#13-common-replication-problems" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Objects never replicate:</li>
 <li>forgot <code>Replicated(true)</code> on node/component</li>

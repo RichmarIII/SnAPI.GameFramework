@@ -1,9 +1,13 @@
 # SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::VectorWriteStreambuf
 
+Streambuf that appends cereal output bytes directly into a vector.
+
 ## Private Members
 
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<uint8_t>& SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::VectorWriteStreambuf::m_buffer`
+
+Destination byte vector reference.
 </div>
 
 ## Public Functions

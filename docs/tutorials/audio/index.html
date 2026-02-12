@@ -666,10 +666,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-important-behavior" class="md-nav__link">
+  <a href="#5-networked-playback-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Important Behavior
+        5. Networked Playback Flow
       
     </span>
   </a>
@@ -677,10 +677,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-minimal-frame-pump" class="md-nav__link">
+  <a href="#6-what-actually-replicates" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Minimal Frame Pump
+        6. What Actually Replicates
       
     </span>
   </a>
@@ -688,10 +688,43 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-troubleshooting" class="md-nav__link">
+  <a href="#7-field-flags-vs-value-codec-nested-structs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Troubleshooting
+        7. Field Flags vs Value Codec (Nested Structs)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-important-runtime-notes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Important Runtime Notes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-minimal-frame-pump" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        9. Minimal Frame Pump
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Troubleshooting
       
     </span>
   </a>
@@ -930,6 +963,7 @@
 <h2 id="1-architecture">1. Architecture<a class="headerlink" href="#1-architecture" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>World</code> owns <code>AudioSystem</code>.</li>
+<li><code>World</code> also owns <code>NetworkSystem</code>, so audio gameplay RPC can route through world networking.</li>
 <li><code>AudioListenerComponent</code> writes listener transform each tick.</li>
 <li><code>AudioSourceComponent</code> controls emitter, sound loading, playback, and spatial settings.</li>
 </ul>
@@ -977,13 +1011,46 @@
 <span class="n">Source</span><span class="o">-&gt;</span><span class="n">UnloadSound</span><span class="p">();</span>
 </code></pre></div>
 <p><code>AudioSourceComponent</code> keeps emitter state synced with current settings and owner transform.</p>
-<h2 id="5-important-behavior">5. Important Behavior<a class="headerlink" href="#5-important-behavior" title="Permanent link">&para;</a></h2>
+<h2 id="5-networked-playback-flow">5. Networked Playback Flow<a class="headerlink" href="#5-networked-playback-flow" title="Permanent link">&para;</a></h2>
+<p><code>AudioSourceComponent</code> exposes gameplay methods (<code>Play</code>, <code>Stop</code>) and internally routes to RPC endpoints when networking is attached.</p>
+<p><code>Play()</code> flow:</p>
+<ol>
+<li>Client call: sends RPC to <code>PlayServer</code>.</li>
+<li>Server <code>PlayServer</code>: authoritatively triggers multicast RPC <code>PlayClient</code>.</li>
+<li><code>PlayClient</code>: executes playback on listening peers.</li>
+</ol>
+<p><code>Stop()</code> follows the same pattern (<code>Stop -&gt; StopServer -&gt; StopClient</code>).</p>
+<p>Dedicated server guard:</p>
+<ul>
+<li><code>PlayClient</code>/<code>StopClient</code> do not emit audio on non-listen dedicated server instances.</li>
+<li>Listen server will execute local playback plus multicast to clients.</li>
+</ul>
+<h2 id="6-what-actually-replicates">6. What Actually Replicates<a class="headerlink" href="#6-what-actually-replicates" title="Permanent link">&para;</a></h2>
+<p>By default in built-in reflection registration:</p>
+<ul>
+<li><code>AudioSourceComponent::Settings</code> is replication-visible as a container field.</li>
+<li>Inside <code>Settings</code>, only <code>SoundPath</code> is flagged for replication.</li>
+<li>Other settings (<code>Volume</code>, <code>Looping</code>, distances, etc.) are local unless you add replication flags for them.</li>
+</ul>
+<p>Important consequence:</p>
+<ul>
+<li>current default network payload for settings carries the path string (<code>SoundPath</code>), not the full settings struct.</li>
+<li>audio bytes are not replicated; clients must resolve/load the referenced asset locally.</li>
+</ul>
+<h2 id="7-field-flags-vs-value-codec-nested-structs">7. Field Flags vs Value Codec (Nested Structs)<a class="headerlink" href="#7-field-flags-vs-value-codec-nested-structs" title="Permanent link">&para;</a></h2>
+<p>Replication for a reflected field behaves as follows:</p>
+<ul>
+<li>if the field type has a registered value codec, that codec serializes the full field value.</li>
+<li>if no codec exists, replication walks nested reflected fields and serializes only nested fields marked with replication flags.</li>
+</ul>
+<p>For <code>AudioSourceComponent::Settings</code>, default behavior is nested-field traversal, so only flagged members replicate.</p>
+<h2 id="8-important-runtime-notes">8. Important Runtime Notes<a class="headerlink" href="#8-important-runtime-notes" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Source/listener components rely on owner node transform if <code>TransformComponent</code> exists.</li>
 <li>Audio system initialization is lazy (<code>Initialize()</code> called as needed).</li>
 <li>Audio components are ordinary reflected components, so they serialize like other components.</li>
 </ul>
-<h2 id="6-minimal-frame-pump">6. Minimal Frame Pump<a class="headerlink" href="#6-minimal-frame-pump" title="Permanent link">&para;</a></h2>
+<h2 id="9-minimal-frame-pump">9. Minimal Frame Pump<a class="headerlink" href="#9-minimal-frame-pump" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">Running</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">Dt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
@@ -993,14 +1060,29 @@
 <span class="p">}</span>
 </code></pre></div>
 <p>Listener/source updates happen through normal component ticking.</p>
-<h2 id="7-troubleshooting">7. Troubleshooting<a class="headerlink" href="#7-troubleshooting" title="Permanent link">&para;</a></h2>
+<h2 id="10-troubleshooting">10. Troubleshooting<a class="headerlink" href="#10-troubleshooting" title="Permanent link">&para;</a></h2>
 <ul>
-<li>No audio output:</li>
+<li>
+<p>No audio output:</p>
+<ul>
 <li>verify audio asset path in <code>Settings.SoundPath</code></li>
 <li>ensure listener exists and is active</li>
 <li>ensure source was loaded/played</li>
-<li>Spatial audio sounds wrong:</li>
+</ul>
+</li>
+<li>
+<p>Replicated play event arrives but no sound:</p>
+<ul>
+<li>ensure the client machine can resolve the same <code>SoundPath</code></li>
+<li>confirm the source node/component has <code>Replicated(true)</code> enabled</li>
+</ul>
+</li>
+<li>
+<p>Spatial audio sounds wrong:</p>
+<ul>
 <li>check transform values and distance parameters (<code>MinDistance</code>, <code>MaxDistance</code>, <code>Rolloff</code>)</li>
+</ul>
+</li>
 </ul>
 <p>Next: <a href="../testing/">Testing and Validation</a></p>
 

@@ -17,8 +17,11 @@ class NetworkSystem;
 #endif
 
 /**
- * @brief Interface for world containers.
- * @remarks Worlds are the root tick objects and own levels.
+ * @brief Root runtime container contract for gameplay sessions.
+ * @remarks
+ * A world is the top-level execution root that owns levels and optional subsystem
+ * integrations (audio/networking). Worlds drive frame lifecycle (`Tick`/`EndFrame`)
+ * and establish authoritative context for contained node graphs.
  */
 class IWorld
 {
@@ -43,7 +46,7 @@ public:
     virtual void LateTick(float DeltaSeconds) = 0;
     /**
      * @brief End-of-frame processing.
-     * @remarks Handles deferred destruction.
+     * @remarks Flushes deferred destruction queues and finalizes frame-consistent state transitions.
      */
     virtual void EndFrame() = 0;
 
@@ -51,12 +54,14 @@ public:
      * @brief Create a level as a child node.
      * @param Name Level name.
      * @return Handle to the created level or error.
+     * @remarks New levels are world-owned and participate in world tick traversal.
      */
     virtual TExpected<NodeHandle> CreateLevel(std::string Name) = 0;
     /**
      * @brief Access a level by handle.
      * @param Handle Level handle.
      * @return Reference wrapper or error.
+     * @remarks Returns typed level reference if handle resolves and is level-compatible.
      */
     virtual TExpectedRef<Level> LevelRef(NodeHandle Handle) = 0;
 
@@ -77,6 +82,7 @@ public:
     /**
      * @brief Access the networking subsystem for this world.
      * @return Reference to NetworkSystem.
+     * @remarks World networking owns session bridge wiring for replication/RPC.
      */
     virtual NetworkSystem& Networking() = 0;
     /**

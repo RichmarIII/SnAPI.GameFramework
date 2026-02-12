@@ -799,22 +799,26 @@
 
 <h1 id="snapigameframeworktyperegistry">SnAPI::GameFramework::TypeRegistry<a class="headerlink" href="#snapigameframeworktyperegistry" title="Permanent link">&para;</a></h1>
 <p>Global registry for reflected types.</p>
+<p>Read/write model:
+- normal mode: read/write operations use mutex protection
+- frozen mode (<code>Freeze(true)</code>): read operations use lock-free fast path and registrations are rejected</p>
+<p>This enables high-frequency lookup paths (replication/serialization) to avoid lock contention after startup metadata registration has completed.</p>
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="stdmutex-snapigameframeworktyperegistrym_mutex"><code>std::mutex SnAPI::GameFramework::TypeRegistry::m_mutex</code><a class="headerlink" href="#stdmutex-snapigameframeworktyperegistrym_mutex" title="Permanent link">&para;</a></h3>
-<p>Protects registry maps.</p>
+<p>Guards registry mutation and non-frozen lookups.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdatomicbool-snapigameframeworktyperegistrym_frozen"><code>std::atomic&lt;bool&gt; SnAPI::GameFramework::TypeRegistry::m_frozen</code><a class="headerlink" href="#stdatomicbool-snapigameframeworktyperegistrym_frozen" title="Permanent link">&para;</a></h3>
-<p>If true, reads skip locking and registration is disabled.</p>
+<p>Frozen state flag controlling read/write mode behavior.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdunordered_maptypeid-typeinfo-uuidhash-snapigameframeworktyperegistrym_types"><code>std::unordered_map&lt;TypeId, TypeInfo, UuidHash&gt; SnAPI::GameFramework::TypeRegistry::m_types</code><a class="headerlink" href="#stdunordered_maptypeid-typeinfo-uuidhash-snapigameframeworktyperegistrym_types" title="Permanent link">&para;</a></h3>
-<p>TypeId -&gt; TypeInfo.</p>
+<p>Primary metadata store keyed by TypeId.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdunordered_mapstdstring-typeid-transparentstringhash-transparentstringequal-snapigameframeworktyperegistrym_nametoid"><code>std::unordered_map&lt;std::string, TypeId, TransparentStringHash, TransparentStringEqual&gt; SnAPI::GameFramework::TypeRegistry::m_nameToId</code><a class="headerlink" href="#stdunordered_mapstdstring-typeid-transparentstringhash-transparentstringequal-snapigameframeworktyperegistrym_nametoid" title="Permanent link">&para;</a></h3>
-<p>Name -&gt; TypeId.</p>
+<p>Secondary name index for lookup by stable type name.</p>
 </div>
 <h2 id="public-static-functions">Public Static Functions<a class="headerlink" href="#public-static-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">

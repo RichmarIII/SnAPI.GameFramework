@@ -798,7 +798,14 @@
 
 
 <h1 id="snapigameframeworkbasenode">SnAPI::GameFramework::BaseNode<a class="headerlink" href="#snapigameframeworkbasenode" title="Permanent link">&para;</a></h1>
-<p>Default node implementation for the scene graph.</p>
+<p>Canonical concrete node implementation used by NodeGraph.</p>
+<p>Ownership model:
+- Node storage and lifetime are owned externally by <code>NodeGraph</code>/<code>TObjectPool</code>.
+- <code>m_ownerGraph</code> and <code>m_world</code> are non-owning pointers updated by graph/world code.
+- Pointer stability is tied to pool lifetime; handles remain the public identity boundary.</p>
+<p>Tick model:
+- Tree traversal is implemented in <code>TickTree</code>/<code>FixedTickTree</code>/<code>LateTickTree</code>.
+- Actual gameplay behavior lives in overridden hook methods (<code>Tick</code>, <code>FixedTick</code>, <code>LateTick</code>) and attached components.</p>
 <h2 id="public-static-members">Public Static Members<a class="headerlink" href="#public-static-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="const-char-snapigameframeworkbasenodektypename"><code>const char* SnAPI::GameFramework::BaseNode::kTypeName</code><a class="headerlink" href="#const-char-snapigameframeworkbasenodektypename" title="Permanent link">&para;</a></h3>
@@ -807,51 +814,51 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="nodehandle-snapigameframeworkbasenodem_self"><code>NodeHandle SnAPI::GameFramework::BaseNode::m_self</code><a class="headerlink" href="#nodehandle-snapigameframeworkbasenodem_self" title="Permanent link">&para;</a></h3>
-<p>Handle for this node.</p>
+<p>Stable runtime identity handle for this node.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="nodehandle-snapigameframeworkbasenodem_parent"><code>NodeHandle SnAPI::GameFramework::BaseNode::m_parent</code><a class="headerlink" href="#nodehandle-snapigameframeworkbasenodem_parent" title="Permanent link">&para;</a></h3>
-<p>Parent handle (null if root).</p>
+<p>Parent identity; null indicates this node is a root in its graph.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvectornodehandle-snapigameframeworkbasenodem_children"><code>std::vector&lt;NodeHandle&gt; SnAPI::GameFramework::BaseNode::m_children</code><a class="headerlink" href="#stdvectornodehandle-snapigameframeworkbasenodem_children" title="Permanent link">&para;</a></h3>
-<p>Child handles.</p>
+<p>Ordered child identity list used for deterministic traversal.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdstring-snapigameframeworkbasenodem_name"><code>std::string SnAPI::GameFramework::BaseNode::m_name</code><a class="headerlink" href="#stdstring-snapigameframeworkbasenodem_name" title="Permanent link">&para;</a></h3>
-<p>Display name.</p>
+<p>Human-readable/debug name (not required to be unique).</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkbasenodem_active"><code>bool SnAPI::GameFramework::BaseNode::m_active</code><a class="headerlink" href="#bool-snapigameframeworkbasenodem_active" title="Permanent link">&para;</a></h3>
-<p>Active state.</p>
+<p>Local execution gate used by tree traversal.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkbasenodem_replicated"><code>bool SnAPI::GameFramework::BaseNode::m_replicated</code><a class="headerlink" href="#bool-snapigameframeworkbasenodem_replicated" title="Permanent link">&para;</a></h3>
-<p>Replication flag.</p>
+<p>Runtime replication gate for networking bridges.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvectortypeid-snapigameframeworkbasenodem_componenttypes"><code>std::vector&lt;TypeId&gt; SnAPI::GameFramework::BaseNode::m_componentTypes</code><a class="headerlink" href="#stdvectortypeid-snapigameframeworkbasenodem_componenttypes" title="Permanent link">&para;</a></h3>
-<p>Component type ids present.</p>
+<p>Attached component type ids for introspection and fast feature checks.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvectoruint64_t-snapigameframeworkbasenodem_componentmask"><code>std::vector&lt;uint64_t&gt; SnAPI::GameFramework::BaseNode::m_componentMask</code><a class="headerlink" href="#stdvectoruint64_t-snapigameframeworkbasenodem_componentmask" title="Permanent link">&para;</a></h3>
-<p>Bitmask for component queries.</p>
+<p>Dense bitmask mirror of <code>m_componentTypes</code> for fast <code>Has&lt;T&gt;</code> checks.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="uint32_t-snapigameframeworkbasenodem_maskversion"><code>uint32_t SnAPI::GameFramework::BaseNode::m_maskVersion</code><a class="headerlink" href="#uint32_t-snapigameframeworkbasenodem_maskversion" title="Permanent link">&para;</a></h3>
-<p>Mask version for registry changes.</p>
+<p>Last component-type-registry version this mask was synchronized against.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="nodegraph-snapigameframeworkbasenodem_ownergraph"><code>NodeGraph* SnAPI::GameFramework::BaseNode::m_ownerGraph</code><a class="headerlink" href="#nodegraph-snapigameframeworkbasenodem_ownergraph" title="Permanent link">&para;</a></h3>
-<p>Owning graph (non-owning).</p>
+<p>Non-owning pointer to the graph that stores and ticks this node.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="iworld-snapigameframeworkbasenodem_world"><code>IWorld* SnAPI::GameFramework::BaseNode::m_world</code><a class="headerlink" href="#iworld-snapigameframeworkbasenodem_world" title="Permanent link">&para;</a></h3>
-<p>Owning world (non-owning).</p>
+<p>Non-owning pointer to world context for subsystem access and role queries.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="typeid-snapigameframeworkbasenodem_typeid"><code>TypeId SnAPI::GameFramework::BaseNode::m_typeId</code><a class="headerlink" href="#typeid-snapigameframeworkbasenodem_typeid" title="Permanent link">&para;</a></h3>
-<p>Reflected type id.</p>
+<p>Reflected type identity used by serialization/rpc/replication metadata lookups.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
@@ -977,6 +984,18 @@
 <ul>
 <li><code>Replicated</code>:</li>
 </ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkbasenodeisserver-const-override"><code>bool SnAPI::GameFramework::BaseNode::IsServer() const override</code><a class="headerlink" href="#bool-snapigameframeworkbasenodeisserver-const-override" title="Permanent link">&para;</a></h3>
+<p>True when this node executes with server authority.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkbasenodeisclient-const-override"><code>bool SnAPI::GameFramework::BaseNode::IsClient() const override</code><a class="headerlink" href="#bool-snapigameframeworkbasenodeisclient-const-override" title="Permanent link">&para;</a></h3>
+<p>True when this node executes in client context.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkbasenodeislistenserver-const-override"><code>bool SnAPI::GameFramework::BaseNode::IsListenServer() const override</code><a class="headerlink" href="#bool-snapigameframeworkbasenodeislistenserver-const-override" title="Permanent link">&para;</a></h3>
+<p>True when this node executes as listen-server.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="stdvector-typeid-snapigameframeworkbasenodecomponenttypes-override"><code>std::vector&lt; TypeId &gt; &amp; SnAPI::GameFramework::BaseNode::ComponentTypes() override</code><a class="headerlink" href="#stdvector-typeid-snapigameframeworkbasenodecomponenttypes-override" title="Permanent link">&para;</a></h3>

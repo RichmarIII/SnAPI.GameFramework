@@ -1,6 +1,6 @@
 # SnAPI::GameFramework::IWorld
 
-Interface for world containers.
+Root runtime container contract for gameplay sessions.
 
 ## Public Functions
 

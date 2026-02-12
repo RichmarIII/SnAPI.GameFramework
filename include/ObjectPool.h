@@ -17,7 +17,9 @@ namespace SnAPI::GameFramework
 /**
  * @brief Thread-safe object pool keyed by UUID handles.
  * @tparam T Base type stored in the pool.
- * @remarks Objects are stored as shared_ptr for stable addresses and ownership.
+ * @remarks
+ * Slot-based pool with UUID index and free-list reuse.
+ * Objects are stored as `shared_ptr` to preserve pointer stability while alive.
  * @note Destruction is deferred until EndFrame to keep handles valid within a frame.
  */
 template<typename T>
@@ -261,6 +263,7 @@ public:
      * @brief Destroy all objects that were marked for deletion.
      * @remarks Frees slots and clears pending lists.
      * @note Should be called at end of frame to keep handles stable.
+     * @note Destroyed UUID keys are removed from index and may be reused on future creates.
      */
     void EndFrame()
     {
@@ -325,7 +328,7 @@ public:
      * @brief Iterate over all live (non-pending) objects (const).
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Skips pending-destroy entries.
+     * @remarks Skips pending-destroy entries so "already removed this frame" objects are excluded.
      */
     template<typename Fn>
     void ForEach(const Fn& Func) const
@@ -346,7 +349,7 @@ public:
      * @brief Iterate over all objects including pending destroy (const).
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Includes objects marked for deletion.
+     * @remarks Includes objects marked for deletion but not yet flushed by EndFrame.
      */
     template<typename Fn>
     void ForEachAll(const Fn& Func) const
@@ -367,7 +370,7 @@ public:
      * @brief Iterate over all live (non-pending) objects (mutable).
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Skips pending-destroy entries.
+     * @remarks Skips pending-destroy entries so mutation ignores soon-to-be-destroyed objects.
      */
     template<typename Fn>
     void ForEach(const Fn& Func)
@@ -388,7 +391,7 @@ public:
      * @brief Iterate over all objects including pending destroy (mutable).
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Includes objects marked for deletion.
+     * @remarks Includes objects marked for deletion but not yet flushed by EndFrame.
      */
     template<typename Fn>
     void ForEachAll(const Fn& Func)
@@ -408,7 +411,7 @@ public:
 private:
     /**
      * @brief Internal storage entry.
-     * @remarks Uses shared_ptr to keep stable addresses.
+     * @remarks Shared ownership keeps object addresses stable for borrowed pointer usage.
      */
     struct Entry
     {

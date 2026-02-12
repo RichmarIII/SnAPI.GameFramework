@@ -21,7 +21,9 @@ typedef struct SnGfUuid
 
 /**
  * @brief Opaque handle to a Variant owned by the runtime.
- * @remarks Must be destroyed with sn_gf_variant_destroy.
+ * @remarks
+ * ABI consumers must treat this as move-by-value opaque token and release with
+ * `sn_gf_variant_destroy` when done.
  */
 typedef struct SnGfVariantHandle
 {
@@ -142,7 +144,7 @@ SNAPI_GAMEFRAMEWORK_API void sn_gf_variant_destroy(SnGfVariantHandle handle);
  * @param field Field handle.
  * @param outValue Output Variant handle.
  * @return Non-zero on success.
- * @remarks outValue must be destroyed with sn_gf_variant_destroy.
+ * @remarks On success, `outValue` receives ownership of an allocated variant handle.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_get_field(void* instance, SnGfUuid type, SnGfFieldHandle field, SnGfVariantHandle* outValue);
 /**
@@ -164,6 +166,7 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_set_field(void* instance, SnGfUuid type
  * @param argCount Argument count.
  * @param outResult Output Variant handle for the return value.
  * @return Non-zero on success.
+ * @remarks On success, `outResult` owns a variant handle that must be destroyed by caller.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_invoke(void* instance, SnGfUuid type, SnGfMethodHandle method, const SnGfVariantHandle* args, size_t argCount, SnGfVariantHandle* outResult);
 

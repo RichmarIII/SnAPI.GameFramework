@@ -26,6 +26,11 @@ Why this model helps:
 - No cross-translation-unit init ordering dependency for full metadata.
 - Pay-for-what-you-use behavior.
 
+### Linker/stripping note
+
+`SNAPI_REFLECT_TYPE` installs static registration glue in its translation unit.
+To guarantee that translation unit is linked in static library/plugin builds, ensure something in that unit is referenced by the final binary (or explicitly force-link the object/library according to your build system).
+
 ## 3. Defining Reflected Types
 
 ```cpp
@@ -82,6 +87,11 @@ auto EnsureResult = StaticType<EnemyNode>(); // returns TExpected<TypeId*>
 - `StaticTypeId<T>()` is deterministic and cached via function-local static.
 - `StaticType<T>()` ensures reflection registration exists before use.
 
+Hot path guidance:
+
+- prefer `StaticTypeId<T>()` over repeated `TypeIdFromName(...)`.
+- use `StaticType<T>()` when you need to force ensure-on-first-use behavior.
+
 ## 5. Value Serialization (`TValueCodec<T>`)
 
 Most primitive/trivial types already work.
@@ -128,7 +138,17 @@ struct TValueCodec<PackedVec2>
 };
 ```
 
-## 6. Graph/Level/World Serialization
+## 6. Replication + Nested Types + Value Codecs
+
+For a reflected field marked with `EFieldFlagBits::Replication`:
+
+- if a `TValueCodec<FieldType>` is registered, replication uses that codec for the field value.
+- if no codec is registered, replication recursively visits nested reflected fields and serializes only nested fields that also have replication flags.
+
+That means field flags are still important for nested structs.
+Example: if `Settings` is replicated but only `Settings.SoundPath` is flagged, only `SoundPath` replicates unless you provide a codec that serializes the whole `Settings` value.
+
+## 7. Graph/Level/World Serialization
 
 ### Graph to payload bytes
 
@@ -167,7 +187,7 @@ if (!LoadResult)
 
 The same pattern exists for `LevelSerializer` + `WorldSerializer` and their payload byte helpers.
 
-## 7. Component Serialization Registration
+## 8. Component Serialization Registration
 
 Why components are special:
 

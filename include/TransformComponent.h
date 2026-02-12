@@ -8,7 +8,10 @@ namespace SnAPI::GameFramework
 
 /**
  * @brief Basic transform component (position, rotation, scale).
- * @remarks Provided as a simple built-in component.
+ * @remarks
+ * Minimal spatial state component used by examples and built-in systems.
+ * Rotation interpretation is intentionally engine-policy dependent (Euler degrees/radians,
+ * local/world space) and should be treated as raw reflected data unless a system defines it.
  */
 class TransformComponent : public IComponent
 {

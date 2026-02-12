@@ -1,23 +1,32 @@
 # SnAPI::GameFramework::IComponent
 
-Base interface for components attached to nodes.
+Runtime contract for attachable node behavior/data units.
+
+Ownership and lifetime:
+- Stored/owned by typed component storages (`TComponentStorage<T>`).
+- Addressable by UUID (`ComponentHandle`) through `ObjectRegistry`.
+- Destruction is deferred to end-of-frame to keep handles stable within a frame.
+
+Execution context:
+- `OwnerNode()` and `World()` are resolved dynamically through handle/graph links.
+- Role helpers (`IsServer`/`IsClient`/`IsListenServer`) proxy world networking state.
 
 ## Private Members
 
 <div class="snapi-api-card" markdown="1">
 ### `NodeHandle SnAPI::GameFramework::IComponent::m_owner`
 
-Owning node handle.
+Owning node identity; resolved via ObjectRegistry when needed.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `Uuid SnAPI::GameFramework::IComponent::m_id`
 
-Component UUID.
+Stable component identity used for handles/replication/serialization.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::IComponent::m_replicated`
 
-Replication flag.
+Runtime replication gate for this component instance.
 </div>
 
 ## Public Functions
@@ -118,4 +127,39 @@ Set the component UUID.
 Get a handle for this component.
 
 **Returns:** ComponentHandle wrapping the UUID.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `BaseNode * SnAPI::GameFramework::IComponent::OwnerNode() const`
+
+Resolve the owning node pointer.
+
+**Returns:** Owning BaseNode pointer or nullptr.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `IWorld * SnAPI::GameFramework::IComponent::World() const`
+
+Resolve the owning world pointer.
+
+**Returns:** Owning world or nullptr.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::IComponent::IsServer() const`
+
+Check whether this component executes with server authority.
+
+**Returns:** True when server-authoritative.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::IComponent::IsClient() const`
+
+Check whether this component executes in a client context.
+
+**Returns:** True when client-side.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::IComponent::IsListenServer() const`
+
+Check whether this component executes as listen-server.
+
+**Returns:** True when both server and client role are active.
 </div>

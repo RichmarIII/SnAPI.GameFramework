@@ -1,5 +1,7 @@
 # AlwaysActivePolicy
 
+Example relevance policy that always keeps nodes active.
+
 ## Public Static Members
 
 <div class="snapi-api-card" markdown="1">

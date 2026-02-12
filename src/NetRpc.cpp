@@ -53,10 +53,14 @@ using SnAPI::Networking::TRpcCallResult;
 
 enum class ENetObjectKind : std::uint8_t
 {
-    Node = 0,
-    Component = 1,
+    Node = 0, /**< @brief Target object is a node. */
+    Component = 1, /**< @brief Target object is a component. */
 };
 
+/**
+ * @brief Streambuf that appends archive output directly into a byte vector.
+ * @remarks Avoids intermediate stringstream allocations during RPC payload encoding.
+ */
 class VectorWriteStreambuf final : public std::streambuf
 {
 public:
@@ -90,9 +94,13 @@ protected:
     }
 
 private:
-    std::vector<uint8_t>& m_buffer;
+    std::vector<uint8_t>& m_buffer; /**< @brief Destination byte buffer reference. */
 };
 
+/**
+ * @brief Streambuf view over immutable memory for cereal input archives.
+ * @remarks Non-owning view; caller retains byte-buffer lifetime responsibility.
+ */
 class MemoryReadStreambuf final : public std::streambuf
 {
 public:
@@ -108,6 +116,12 @@ public:
     }
 };
 
+/**
+ * @brief Write UUID bytes into network byte writer.
+ * @param Writer Destination writer.
+ * @param Id UUID to encode.
+ * @return True when write succeeds.
+ */
 bool WriteUuid(NetByteWriter& Writer, const Uuid& Id)
 {
     const auto& Bytes = Id.as_bytes();
@@ -119,6 +133,12 @@ bool WriteUuid(NetByteWriter& Writer, const Uuid& Id)
     return Writer.WriteBytes(ConstByteSpan(Data.data(), Data.size()));
 }
 
+/**
+ * @brief Read UUID bytes from network byte reader.
+ * @param Reader Source reader.
+ * @param Out Output UUID.
+ * @return True when read succeeds and full UUID is available.
+ */
 bool ReadUuid(NetByteReader& Reader, Uuid& Out)
 {
     std::array<Byte, 16> Data{};
@@ -130,6 +150,12 @@ bool ReadUuid(NetByteReader& Reader, Uuid& Out)
     return true;
 }
 
+/**
+ * @brief Encode variable-length payload with size prefix.
+ * @param Writer Destination writer.
+ * @param Payload Raw payload bytes.
+ * @return True on success.
+ */
 bool EncodePayload(NetByteWriter& Writer, const std::vector<Byte>& Payload)
 {
     if (Payload.size() > std::numeric_limits<std::uint32_t>::max())
@@ -141,6 +167,12 @@ bool EncodePayload(NetByteWriter& Writer, const std::vector<Byte>& Payload)
         && Writer.WriteBytes(ConstByteSpan(Payload.data(), Payload.size()));
 }
 
+/**
+ * @brief Decode size-prefixed payload bytes.
+ * @param Reader Source reader.
+ * @param OutPayload Destination byte vector.
+ * @return True on success.
+ */
 bool DecodePayload(NetByteReader& Reader, std::vector<Byte>& OutPayload)
 {
     std::uint32_t PayloadBytes = 0;
@@ -160,6 +192,12 @@ bool DecodePayload(NetByteReader& Reader, std::vector<Byte>& OutPayload)
     return Reader.ReadBytes(ByteSpan(OutPayload.data(), OutPayload.size()));
 }
 
+/**
+ * @brief Build deterministic networking method id from reflected signature.
+ * @param Owner Reflected owner type metadata.
+ * @param Method Reflected method metadata.
+ * @return Hashed method id.
+ */
 MethodId BuildMethodId(const TypeInfo& Owner, const MethodInfo& Method)
 {
     std::string Key;
@@ -182,6 +220,11 @@ MethodId BuildMethodId(const TypeInfo& Owner, const MethodInfo& Method)
     return SnAPI::Networking::NetHash::Hash32(Key);
 }
 
+/**
+ * @brief Check whether reflected method has any RPC role flags.
+ * @param Method Reflected method metadata.
+ * @return True if method is intended for network RPC usage.
+ */
 bool IsRpcMethod(const MethodInfo& Method)
 {
     return Method.Flags.Has(EMethodFlagBits::RpcNetServer)
@@ -189,6 +232,11 @@ bool IsRpcMethod(const MethodInfo& Method)
         || Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
 }
 
+/**
+ * @brief Derive transport RPC direction from reflected method flags.
+ * @param Method Reflected method metadata.
+ * @return RPC direction for transport call dispatch.
+ */
 SnAPI::Networking::ERpcDirection DirectionFor(const MethodInfo& Method)
 {
     if (Method.Flags.Has(EMethodFlagBits::RpcNetClient))
@@ -202,6 +250,12 @@ SnAPI::Networking::ERpcDirection DirectionFor(const MethodInfo& Method)
     return SnAPI::Networking::ERpcDirection::ToServer;
 }
 
+/**
+ * @brief Derive reliable/unreliable transport setting from method flags.
+ * @param Method Reflected method metadata.
+ * @param DefaultReliable Default fallback when no explicit reliability flag is set.
+ * @return True for reliable channel, false for unreliable.
+ */
 bool ReliableFor(const MethodInfo& Method, bool DefaultReliable = true)
 {
     if (Method.Flags.Has(EMethodFlagBits::RpcUnreliable))

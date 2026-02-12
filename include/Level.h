@@ -10,8 +10,11 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Level implementation that is also a NodeGraph.
- * @remarks Levels can be serialized and nested like any graph.
+ * @brief Concrete level implementation backed by NodeGraph.
+ * @remarks
+ * `Level` is a thin semantic layer over `NodeGraph` used by worlds to represent
+ * gameplay partitions. It preserves full graph capabilities (hierarchy, components,
+ * serialization) while satisfying `ILevel`.
  */
 class Level : public NodeGraph, public ILevel
 {
@@ -46,6 +49,7 @@ public:
     void LateTick(float DeltaSeconds) override;
     /**
      * @brief End-of-frame processing.
+     * @remarks Flushes deferred destruction for all nodes/components in this level graph.
      */
     void EndFrame() override;
 
@@ -53,6 +57,7 @@ public:
      * @brief Create a child node graph in this level.
      * @param Name Graph name.
      * @return Handle to the created graph or error.
+     * @remarks Child graph node is owned by this level and inherits its world context.
      */
     TExpected<NodeHandle> CreateGraph(std::string Name) override;
     /**

@@ -4,8 +4,9 @@ This page explains how SnAPI.GameFramework networking works with SnAPI.Networkin
 
 ## 1. Big Picture
 
-- `NetReplicationBridge` maps graph objects to replication entities.
-- `NetRpcBridge` maps reflected methods to RPC calls.
+- `World` owns `NetworkSystem` (session + replication bridge + RPC bridge wiring).
+- `NetReplicationBridge` maps graph objects to replication entities and applies spawn/update/despawn payloads.
+- `NetRpcBridge` maps reflected methods to network RPC calls.
 - Reflection metadata (`FieldFlags`, `MethodFlags`) controls what is eligible.
 
 ## 2. Replication Requires Two Things
@@ -99,14 +100,52 @@ Identity is preserved with object UUIDs and replication entity IDs carried in pa
 
 This is the intended model for real deployment.
 
-## 8. Add Connection Diagnostics (Recommended)
+## 8. Connection Diagnostics (Recommended)
 
 Use `INetSessionListener` and periodic `DumpConnections(...)` logging.
 This helps catch pacing/reliability backpressure and disconnect reasons quickly.
 
 The multiplayer example includes this pattern (`SessionListener`, `PrintConnectionDump`).
 
-## 9. Reflection RPC (Optional but Powerful)
+Important counters in dumps:
+
+- `pending_rel`: reliable messages queued/in-flight.
+- `pending_unrel`: queued/in-flight unreliable messages.
+- `pkt_sent`, `pkt_acked`, `pkt_lost`: transport packet stats, not direct gameplay event counts.
+
+### Interpreting packet loss correctly
+
+Seeing non-zero `pkt_lost` (especially right after connect) is normal on UDP-style transport.
+It does **not** automatically mean gameplay replication is broken.
+
+Use this rule of thumb:
+
+- `pending_rel` keeps climbing and never drains: reliable path is unhealthy.
+- `pending_rel` drains to `0` and gameplay looks correct: occasional packet loss is being recovered as designed.
+
+## 9. Reliable vs Unreliable Channels
+
+Reliable and unreliable traffic are separate channel paths with separate queueing/ordering behavior.
+
+- Reliable channels retry until acked.
+- Unreliable sequenced traffic favors new state and may drop old state under loss/backpressure.
+
+This is why high-rate transform updates are usually unreliable-sequenced while gameplay-critical actions (spawn/ownership/authoritative state changes) stay reliable.
+
+## 10. Reliable Window Backpressure
+
+SnAPI.Networking uses ACK-mask-based reliable tracking.
+To keep a reliable message ackable, sender-side in-flight reliable depth is window-limited.
+
+Behavior when pressure is high:
+
+- new reliable payloads are queued/deferred,
+- they are sent once earlier reliable payloads are acked,
+- they are **not** silently dropped.
+
+Result: under sustained overload you get higher latency before delivery, not silent data loss.
+
+## 11. Reflection RPC (Optional but Powerful)
 
 Mark methods for RPC in reflection metadata:
 
@@ -150,7 +189,34 @@ RpcBridge.Call(ConnectionHandle,
 
 `NetRpcBridge` resolves method metadata, serializes arguments via `ValueCodecRegistry`, and routes through SnAPI.Networking RPC.
 
-## 10. Common Replication Problems
+## 12. Gameplay RPC Dispatch Pattern (Node/Component)
+
+Recommended style is a gameplay-facing method that branches by role and forwards to reflected RPC endpoints:
+
+```cpp
+// Simplified pseudo-code.
+void AudioSourceComponent::Play()
+{
+    if (IsClient() && !IsServer())
+    {
+        // client -> server rpc
+        SendRpcToServer("PlayServer");
+        return;
+    }
+
+    if (IsServer())
+    {
+        PlayServer(); // server path, then multicast
+        return;
+    }
+
+    PlayClient(); // local/offline fallback
+}
+```
+
+For server-authoritative actions, server endpoint usually fan-outs via multicast endpoint (`PlayServer -> PlayClient`).
+
+## 13. Common Replication Problems
 
 - Objects never replicate:
   - forgot `Replicated(true)` on node/component

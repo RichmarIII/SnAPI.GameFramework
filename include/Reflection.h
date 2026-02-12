@@ -6,5 +6,9 @@
 
 /**
  * @brief Umbrella header for reflection facilities.
- * @remarks Include this to access TypeRegistry, TTypeBuilder, and Variant.
+ * @remarks
+ * Includes the core runtime reflection primitives:
+ * - `TypeRegistry` metadata store
+ * - `TTypeBuilder` registration builder
+ * - `Variant`/`VariantView` runtime value carriers
  */

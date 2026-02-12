@@ -45,6 +45,8 @@ Callback to deserialize a component instance.
 
 <div class="snapi-api-card" markdown="1">
 ### `std::mutex SnAPI::GameFramework::ComponentSerializationRegistry::m_mutex`
+
+Guards component serializer registry map updates/lookups.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, Entry, UuidHash> SnAPI::GameFramework::ComponentSerializationRegistry::m_entries`

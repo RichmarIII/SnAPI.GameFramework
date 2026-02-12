@@ -5,6 +5,7 @@ This page explains how audio is integrated into GameFramework through world-owne
 ## 1. Architecture
 
 - `World` owns `AudioSystem`.
+- `World` also owns `NetworkSystem`, so audio gameplay RPC can route through world networking.
 - `AudioListenerComponent` writes listener transform each tick.
 - `AudioSourceComponent` controls emitter, sound loading, playback, and spatial settings.
 
@@ -63,13 +64,52 @@ Source->UnloadSound();
 
 `AudioSourceComponent` keeps emitter state synced with current settings and owner transform.
 
-## 5. Important Behavior
+## 5. Networked Playback Flow
+
+`AudioSourceComponent` exposes gameplay methods (`Play`, `Stop`) and internally routes to RPC endpoints when networking is attached.
+
+`Play()` flow:
+
+1. Client call: sends RPC to `PlayServer`.
+2. Server `PlayServer`: authoritatively triggers multicast RPC `PlayClient`.
+3. `PlayClient`: executes playback on listening peers.
+
+`Stop()` follows the same pattern (`Stop -> StopServer -> StopClient`).
+
+Dedicated server guard:
+
+- `PlayClient`/`StopClient` do not emit audio on non-listen dedicated server instances.
+- Listen server will execute local playback plus multicast to clients.
+
+## 6. What Actually Replicates
+
+By default in built-in reflection registration:
+
+- `AudioSourceComponent::Settings` is replication-visible as a container field.
+- Inside `Settings`, only `SoundPath` is flagged for replication.
+- Other settings (`Volume`, `Looping`, distances, etc.) are local unless you add replication flags for them.
+
+Important consequence:
+
+- current default network payload for settings carries the path string (`SoundPath`), not the full settings struct.
+- audio bytes are not replicated; clients must resolve/load the referenced asset locally.
+
+## 7. Field Flags vs Value Codec (Nested Structs)
+
+Replication for a reflected field behaves as follows:
+
+- if the field type has a registered value codec, that codec serializes the full field value.
+- if no codec exists, replication walks nested reflected fields and serializes only nested fields marked with replication flags.
+
+For `AudioSourceComponent::Settings`, default behavior is nested-field traversal, so only flagged members replicate.
+
+## 8. Important Runtime Notes
 
 - Source/listener components rely on owner node transform if `TransformComponent` exists.
 - Audio system initialization is lazy (`Initialize()` called as needed).
 - Audio components are ordinary reflected components, so they serialize like other components.
 
-## 6. Minimal Frame Pump
+## 9. Minimal Frame Pump
 
 ```cpp
 while (Running)
@@ -83,13 +123,21 @@ while (Running)
 
 Listener/source updates happen through normal component ticking.
 
-## 7. Troubleshooting
+## 10. Troubleshooting
 
-- No audio output:
-  - verify audio asset path in `Settings.SoundPath`
-  - ensure listener exists and is active
-  - ensure source was loaded/played
-- Spatial audio sounds wrong:
-  - check transform values and distance parameters (`MinDistance`, `MaxDistance`, `Rolloff`)
+-  No audio output:
+
+      - verify audio asset path in `Settings.SoundPath`
+      - ensure listener exists and is active
+      - ensure source was loaded/played
+
+-  Replicated play event arrives but no sound:
+
+      - ensure the client machine can resolve the same `SoundPath`
+      - confirm the source node/component has `Replicated(true)` enabled
+
+-  Spatial audio sounds wrong:
+
+      - check transform values and distance parameters (`MinDistance`, `MaxDistance`, `Rolloff`)
 
 Next: [Testing and Validation](testing.md)

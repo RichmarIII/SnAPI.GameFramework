@@ -11,7 +11,7 @@ namespace SnAPI::GameFramework
 /**
  * @brief Namespace UUID for AssetPipeline ids.
  * @return Namespace UUID.
- * @remarks Used to generate deterministic ids from names.
+ * @remarks Shared namespace for deterministic UUIDv5 generation of asset kinds/payload type ids.
  */
 inline ::SnAPI::AssetPipeline::Uuid AssetPipelineNamespace()
 {
@@ -23,7 +23,7 @@ inline ::SnAPI::AssetPipeline::Uuid AssetPipelineNamespace()
  * @brief Generate a deterministic TypeId from a name.
  * @param Name Name string.
  * @return UUIDv5-based TypeId.
- * @remarks Uses AssetPipelineNamespace.
+ * @remarks Name stability is required for cooked asset compatibility.
  */
 inline ::SnAPI::AssetPipeline::TypeId AssetPipelineTypeIdFromName(std::string_view Name)
 {
@@ -34,7 +34,7 @@ inline ::SnAPI::AssetPipeline::TypeId AssetPipelineTypeIdFromName(std::string_vi
  * @brief Generate a deterministic AssetId from a name.
  * @param Name Name string.
  * @return UUIDv5-based AssetId.
- * @remarks Uses AssetPipelineNamespace.
+ * @remarks Name stability is required for deterministic asset identity.
  */
 inline ::SnAPI::AssetPipeline::AssetId AssetPipelineAssetIdFromName(std::string_view Name)
 {

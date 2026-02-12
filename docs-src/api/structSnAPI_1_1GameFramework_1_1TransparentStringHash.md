@@ -1,5 +1,7 @@
 # SnAPI::GameFramework::TransparentStringHash
 
+Heterogeneous hash functor for string-key lookups.
+
 ## Public Types
 
 <div class="snapi-api-card" markdown="1">

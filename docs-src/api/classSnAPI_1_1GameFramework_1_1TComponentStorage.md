@@ -7,22 +7,22 @@ Typed component storage for a specific component type.
 <div class="snapi-api-card" markdown="1">
 ### `TypeId SnAPI::GameFramework::TComponentStorage< T >::m_typeId`
 
-Component type id.
+Reflected type id for this storage specialization.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `TObjectPool<T> SnAPI::GameFramework::TComponentStorage< T >::m_pool`
 
-Pool storing component instances.
+Underlying component object pool with deferred destroy support.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<NodeHandle, Uuid, HandleHash> SnAPI::GameFramework::TComponentStorage< T >::m_index`
 
-Owner -> component UUID.
+Owner-node handle -> component UUID map.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<Uuid> SnAPI::GameFramework::TComponentStorage< T >::m_pendingDestroy`
 
-Components scheduled for deletion.
+Component ids scheduled for end-of-frame destroy flush.
 </div>
 
 ## Public Functions
@@ -157,9 +157,17 @@ Borrow the component instance (const).
 ### `void SnAPI::GameFramework::TComponentStorage< T >::EndFrame() override`
 
 Process pending destruction at end-of-frame.
+
+**Notes**
+
+- Ordering is deterministic by pending queue insertion order.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::TComponentStorage< T >::Clear() override`
 
 Clear all components immediately.
+
+**Notes**
+
+- Immediate path bypasses deferred destroy semantics.
 </div>

@@ -1,6 +1,15 @@
 # SnAPI::GameFramework::BaseNode
 
-Default node implementation for the scene graph.
+Canonical concrete node implementation used by NodeGraph.
+
+Ownership model:
+- Node storage and lifetime are owned externally by `NodeGraph`/`TObjectPool`.
+- `m_ownerGraph` and `m_world` are non-owning pointers updated by graph/world code.
+- Pointer stability is tied to pool lifetime; handles remain the public identity boundary.
+
+Tick model:
+- Tree traversal is implemented in `TickTree`/`FixedTickTree`/`LateTickTree`.
+- Actual gameplay behavior lives in overridden hook methods (`Tick`, `FixedTick`, `LateTick`) and attached components.
 
 ## Public Static Members
 
@@ -15,62 +24,62 @@ Stable type name used for reflection.
 <div class="snapi-api-card" markdown="1">
 ### `NodeHandle SnAPI::GameFramework::BaseNode::m_self`
 
-Handle for this node.
+Stable runtime identity handle for this node.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `NodeHandle SnAPI::GameFramework::BaseNode::m_parent`
 
-Parent handle (null if root).
+Parent identity; null indicates this node is a root in its graph.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<NodeHandle> SnAPI::GameFramework::BaseNode::m_children`
 
-Child handles.
+Ordered child identity list used for deterministic traversal.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::string SnAPI::GameFramework::BaseNode::m_name`
 
-Display name.
+Human-readable/debug name (not required to be unique).
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::BaseNode::m_active`
 
-Active state.
+Local execution gate used by tree traversal.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::BaseNode::m_replicated`
 
-Replication flag.
+Runtime replication gate for networking bridges.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<TypeId> SnAPI::GameFramework::BaseNode::m_componentTypes`
 
-Component type ids present.
+Attached component type ids for introspection and fast feature checks.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<uint64_t> SnAPI::GameFramework::BaseNode::m_componentMask`
 
-Bitmask for component queries.
+Dense bitmask mirror of `m_componentTypes` for fast `Has<T>` checks.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `uint32_t SnAPI::GameFramework::BaseNode::m_maskVersion`
 
-Mask version for registry changes.
+Last component-type-registry version this mask was synchronized against.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `NodeGraph* SnAPI::GameFramework::BaseNode::m_ownerGraph`
 
-Owning graph (non-owning).
+Non-owning pointer to the graph that stores and ticks this node.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `IWorld* SnAPI::GameFramework::BaseNode::m_world`
 
-Owning world (non-owning).
+Non-owning pointer to world context for subsystem access and role queries.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `TypeId SnAPI::GameFramework::BaseNode::m_typeId`
 
-Reflected type id.
+Reflected type identity used by serialization/rpc/replication metadata lookups.
 </div>
 
 ## Public Functions
@@ -225,6 +234,21 @@ Set whether the node is replicated over the network.
 **Parameters**
 
 - `Replicated`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::BaseNode::IsServer() const override`
+
+True when this node executes with server authority.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::BaseNode::IsClient() const override`
+
+True when this node executes in client context.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::BaseNode::IsListenServer() const override`
+
+True when this node executes as listen-server.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector< TypeId > & SnAPI::GameFramework::BaseNode::ComponentTypes() override`

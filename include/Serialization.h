@@ -36,7 +36,9 @@ class World;
 
 /**
  * @brief Context used during serialization/deserialization.
- * @remarks Provides access to the graph for handle resolution.
+ * @remarks
+ * Context is propagated into value codecs and reflection walkers so serializers can
+ * resolve graph-relative handles and object references deterministically.
  */
 struct TSerializationContext
 {
@@ -45,7 +47,15 @@ struct TSerializationContext
 
 /**
  * @brief Customization point for value serialization.
- * @remarks Specialize TValueCodec<T> to override Encode/Decode/DecodeInto for type T.
+ * @remarks
+ * Specialize `TValueCodec<T>` for packed/custom wire/storage formats.
+ *
+ * Default behavior includes:
+ * - common framework scalar/value types
+ * - UUID/handle binary encoding
+ * - trivially-copyable fallback for POD-like values
+ *
+ * For high-performance hot paths, prefer custom codecs to avoid generic reflection walk costs.
  */
 template<typename T>
 struct TValueCodec
@@ -218,7 +228,12 @@ struct TValueCodec
 
 /**
  * @brief Registry for value codecs used by reflection serialization.
- * @remarks Handles built-in and trivially copyable types.
+ * @remarks
+ * Dynamic registry that maps reflected `TypeId` to encode/decode callbacks.
+ * Consumers include:
+ * - payload serializers
+ * - replication field encode/decode
+ * - reflected RPC argument marshaling (indirectly through Variant/value conversions)
  */
 class ValueCodecRegistry
 {
@@ -266,7 +281,7 @@ public:
     /**
      * @brief Register a codec for type T.
      * @tparam T Type to register.
-     * @remarks Uses TValueCodec<T> implementations.
+     * @remarks Binds static `TValueCodec<T>` implementations into runtime type-id keyed map.
      */
     template<typename T>
     void Register()
@@ -296,6 +311,7 @@ public:
     /**
      * @brief Get the codec registry version.
      * @return Version counter incremented on registration.
+     * @remarks Used by caches to invalidate field-codec binding snapshots.
      */
     uint32_t Version() const
     {
@@ -350,8 +366,8 @@ private:
     template<typename T>
     static TExpected<void> DecodeIntoImpl(void* Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
 
-    std::unordered_map<TypeId, CodecEntry, UuidHash> m_entries{}; /**< @brief Codec map by TypeId. */
-    uint32_t m_version = 0;
+    std::unordered_map<TypeId, CodecEntry, UuidHash> m_entries{}; /**< @brief Runtime codec dispatch table keyed by reflected TypeId. */
+    uint32_t m_version = 0; /**< @brief Monotonic cache-invalidation version incremented on each registration. */
 };
 
 class ComponentSerializationRegistry
@@ -398,7 +414,8 @@ public:
     /**
      * @brief Register a component type using reflection serialization.
      * @tparam T Component type.
-     * @remarks Uses ComponentSerializationRegistry::SerializeByReflection.
+     * @remarks
+     * Installs create/create-with-id callbacks and reflection-driven (de)serialization callbacks.
      */
     template<typename T>
     void Register()
@@ -443,7 +460,9 @@ public:
      * @tparam T Component type.
      * @param Serialize Serialize callback.
      * @param Deserialize Deserialize callback.
-     * @remarks Creation uses NodeGraph::AddComponent for the type.
+     * @remarks
+     * Useful when component wants binary-optimized layout or versioned custom format while
+     * keeping default component construction semantics.
      */
     template<typename T>
     void RegisterCustom(SerializeFn Serialize, DeserializeFn Deserialize)
@@ -507,6 +526,7 @@ public:
      * @param OutBytes Output byte vector.
      * @param Context Serialization context.
      * @return Success or error.
+     * @remarks Produces raw component payload bytes suitable for graph payload embedding.
      */
     TExpected<void> Serialize(const TypeId& Type, const void* Instance, std::vector<uint8_t>& OutBytes, const TSerializationContext& Context) const;
     /**
@@ -517,6 +537,7 @@ public:
      * @param Size Byte count.
      * @param Context Serialization context.
      * @return Success or error.
+     * @remarks Caller is responsible for having instantiated the destination component first.
      */
     TExpected<void> Deserialize(const TypeId& Type, void* Instance, const uint8_t* Bytes, size_t Size, const TSerializationContext& Context) const;
 
@@ -553,13 +574,13 @@ private:
      */
     static TExpected<void> DeserializeByReflection(const TypeId& Type, void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
 
-    mutable std::mutex m_mutex{};
+    mutable std::mutex m_mutex{}; /**< @brief Guards component serializer registry map updates/lookups. */
     std::unordered_map<TypeId, Entry, UuidHash> m_entries{}; /**< @brief Registry map by TypeId. */
 };
 
 /**
  * @brief Serialized component data attached to a node.
- * @remarks Stores type id, UUID, and serialized bytes.
+ * @remarks Atomic component payload unit embedded inside `NodePayload`.
  */
 struct NodeComponentPayload
 {
@@ -570,7 +591,12 @@ struct NodeComponentPayload
 
 /**
  * @brief Serialized node data within a graph.
- * @remarks Includes node identity, state, components, and nested graph payload.
+ * @remarks
+ * Represents full node snapshot:
+ * - identity/type/name/state
+ * - optional node reflected field bytes
+ * - attached component payloads
+ * - optional nested graph payload
  */
 struct NodePayload
 {
@@ -589,7 +615,7 @@ struct NodePayload
 
 /**
  * @brief Serialized node graph payload.
- * @remarks Contains the graph name and all node payloads.
+ * @remarks Graph-level serialized representation consumed by NodeGraphSerializer.
  */
 struct NodeGraphPayload
 {
@@ -599,7 +625,7 @@ struct NodeGraphPayload
 
 /**
  * @brief Serialized level payload.
- * @remarks Wraps a NodeGraphPayload and level name.
+ * @remarks Level envelope around graph payload for explicit level identity.
  */
 struct LevelPayload
 {
@@ -609,7 +635,7 @@ struct LevelPayload
 
 /**
  * @brief Serialized world payload.
- * @remarks Wraps a NodeGraphPayload for the world.
+ * @remarks World envelope around root graph payload.
  */
 struct WorldPayload
 {
@@ -618,6 +644,7 @@ struct WorldPayload
 
 /**
  * @brief Serializer for NodeGraph to/from NodeGraphPayload.
+ * @remarks Reflection-driven serializer preserving UUID identity and hierarchy structure.
  */
 class NodeGraphSerializer
 {
@@ -642,6 +669,7 @@ public:
 
 /**
  * @brief Serializer for Level to/from LevelPayload.
+ * @remarks Delegates graph serialization to NodeGraphSerializer with level envelope semantics.
  */
 class LevelSerializer
 {
@@ -666,6 +694,7 @@ public:
 
 /**
  * @brief Serializer for World to/from WorldPayload.
+ * @remarks Delegates graph serialization to NodeGraphSerializer with world envelope semantics.
  */
 class WorldSerializer
 {

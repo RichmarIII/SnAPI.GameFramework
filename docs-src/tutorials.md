@@ -63,6 +63,10 @@ Run examples:
 - Replication has two gates:
   - The field must have `EFieldFlagBits::Replication`.
   - The owning node/component must have `Replicated(true)`.
+- Nested field replication depends on codec availability:
+  - with `TValueCodec<T>`, the full field value is codec-serialized.
+  - without a codec, only nested reflected fields marked for replication are serialized.
+- Transport `pkt_lost` counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with `pending_rel`.
 - Destruction is deferred to `EndFrame()` to keep handles stable during a frame.
 
 With that baseline, start with `Worlds and Graphs`.

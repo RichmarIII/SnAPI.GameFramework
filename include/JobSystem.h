@@ -9,7 +9,7 @@ namespace SnAPI::GameFramework
 /**
  * @brief Minimal job system facade for internal parallelism.
  * @remarks Currently single-threaded; ParallelFor executes serially.
- * @note Designed to be replaced with a true task system later.
+ * @note Designed as a stable integration seam for a future true task scheduler.
  */
 class JobSystem
 {
@@ -37,7 +37,7 @@ public:
      * @brief Execute a parallel-for workload.
      * @param Count Number of iterations.
      * @param Fn Function invoked per index.
-     * @remarks Currently runs serially on the calling thread.
+     * @remarks Current implementation is deterministic serial execution on calling thread.
      */
     void ParallelFor(size_t Count, const std::function<void(size_t)>& Fn) const
     {

@@ -896,8 +896,8 @@
 <p>Field-level flags for reflection metadata.</p>
 <p><strong>Values</strong></p>
 <ul>
-<li><code>None</code></li>
-<li><code>Replication</code></li>
+<li><code>None</code>: No special field behavior flags.</li>
+<li><code>Replication</code>: Field is eligible for replication payload traversal.</li>
 </ul>
 </div>
 <div class="snapi-api-card">
@@ -905,12 +905,12 @@
 <p>Method-level flags for reflection metadata.</p>
 <p><strong>Values</strong></p>
 <ul>
-<li><code>None</code></li>
-<li><code>RpcReliable</code></li>
-<li><code>RpcUnreliable</code></li>
-<li><code>RpcNetServer</code></li>
-<li><code>RpcNetClient</code></li>
-<li><code>RpcNetMulticast</code></li>
+<li><code>None</code>: No special method behavior flags.</li>
+<li><code>RpcReliable</code>: Prefer reliable transport channel for RPC dispatch.</li>
+<li><code>RpcUnreliable</code>: Prefer unreliable transport channel for RPC dispatch.</li>
+<li><code>RpcNetServer</code>: Method is intended as server-target endpoint.</li>
+<li><code>RpcNetClient</code>: Method is intended as client-target endpoint.</li>
+<li><code>RpcNetMulticast</code>: Method is intended for server-initiated multicast dispatch.</li>
 </ul>
 </div>
 <h2 id="type-aliases">Type Aliases<a class="headerlink" href="#type-aliases" title="Permanent link">&para;</a></h2>

@@ -12,6 +12,8 @@ Bit-flag helper for strongly-typed enums.
 
 <div class="snapi-api-card" markdown="1">
 ### `Underlying SnAPI::GameFramework::TFlags< Enum >::m_value`
+
+Raw underlying-bit storage for the wrapped enum flags.
 </div>
 
 ## Public Functions

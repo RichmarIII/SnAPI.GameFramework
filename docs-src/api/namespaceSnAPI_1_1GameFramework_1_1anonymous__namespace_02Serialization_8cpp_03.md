@@ -12,9 +12,13 @@
 
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, std::shared_ptr<SerializableFieldCacheEntry>, UuidHash> SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::g_serializableFieldCache`
+
+TypeId -> cached serializable field plan.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::mutex SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::g_serializableFieldMutex`
+
+Guards serializable field cache map.
 </div>
 
 ## Functions

@@ -9,7 +9,9 @@ namespace SnAPI::GameFramework
 
 /**
  * @brief Helper for registering reflected types with script bindings.
- * @remarks Currently validates that types are registered in TypeRegistry.
+ * @remarks
+ * Current implementation is a validation stub that ensures reflected metadata is present.
+ * Backends can extend this class/pattern to emit concrete VM bindings.
  */
 class ScriptBindings
 {

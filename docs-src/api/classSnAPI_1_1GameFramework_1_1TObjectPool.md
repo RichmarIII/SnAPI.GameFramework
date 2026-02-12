@@ -199,6 +199,7 @@ Destroy all objects that were marked for deletion.
 **Notes**
 
 - Should be called at end of frame to keep handles stable.
+- Destroyed UUID keys are removed from index and may be reused on future creates.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::TObjectPool< T >::Clear()`

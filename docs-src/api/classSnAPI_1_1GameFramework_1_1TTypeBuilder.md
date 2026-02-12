@@ -2,6 +2,11 @@
 
 Fluent builder for registering reflection metadata.
 
+Best-practice lifecycle:
+1. define fields/methods/constructors/base types
+2. call `Register()` once in one translation unit (typically through `SNAPI_REFLECT_TYPE`)
+3. let `TypeAutoRegistry` ensure-on-first-use resolve registration at runtime
+
 ## Private Members
 
 <div class="snapi-api-card" markdown="1">
@@ -32,6 +37,8 @@ Register a base type.
 ### `TTypeBuilder & SnAPI::GameFramework::TTypeBuilder< T >::Field(const char *Name, FieldT T::*Member, FieldFlags Flags={})`
 
 Register a field with getter/setter support.
+
+Const member fields are reflected as read-only; setter returns error at runtime.
 
 **Parameters**
 

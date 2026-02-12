@@ -103,8 +103,8 @@ Field-level flags for reflection metadata.
 
 **Values**
 
-- `None`
-- `Replication`
+- `None`: No special field behavior flags.
+- `Replication`: Field is eligible for replication payload traversal.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `enum EMethodFlagBits`
@@ -113,12 +113,12 @@ Method-level flags for reflection metadata.
 
 **Values**
 
-- `None`
-- `RpcReliable`
-- `RpcUnreliable`
-- `RpcNetServer`
-- `RpcNetClient`
-- `RpcNetMulticast`
+- `None`: No special method behavior flags.
+- `RpcReliable`: Prefer reliable transport channel for RPC dispatch.
+- `RpcUnreliable`: Prefer unreliable transport channel for RPC dispatch.
+- `RpcNetServer`: Method is intended as server-target endpoint.
+- `RpcNetClient`: Method is intended as client-target endpoint.
+- `RpcNetMulticast`: Method is intended for server-initiated multicast dispatch.
 </div>
 
 ## Type Aliases

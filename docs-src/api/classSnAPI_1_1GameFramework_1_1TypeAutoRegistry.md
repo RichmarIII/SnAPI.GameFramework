@@ -8,6 +8,10 @@ The intent is:
 
 This avoids relying on cross-TU static initialization order for the heavy TypeRegistry registration work.
 
+Contract:
+- ensure callbacks must be idempotent and thread-safe for repeated calls
+- registration collisions are tolerated only when callback identity matches
+
 ## Public Types
 
 <div class="snapi-api-card" markdown="1">
@@ -22,12 +26,18 @@ Should be idempotent.
 
 <div class="snapi-api-card" markdown="1">
 ### `std::mutex SnAPI::GameFramework::TypeAutoRegistry::m_mutex`
+
+Protects ensure callback and diagnostics maps.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, EnsureFn, UuidHash> SnAPI::GameFramework::TypeAutoRegistry::m_entries`
+
+TypeId -> ensure callback mapping.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, std::string, UuidHash> SnAPI::GameFramework::TypeAutoRegistry::m_names`
+
+Optional diagnostics map of TypeId -> human-readable type name.
 </div>
 
 ## Public Static Functions

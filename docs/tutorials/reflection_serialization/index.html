@@ -557,6 +557,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="2. Register-on-First-Use Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#linkerstripping-note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Linker/stripping note
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -593,15 +610,26 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-graphlevelworld-serialization" class="md-nav__link">
+  <a href="#6-replication-nested-types-value-codecs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Graph/Level/World Serialization
+        6. Replication + Nested Types + Value Codecs
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="6. Graph/Level/World Serialization">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-graphlevelworld-serialization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Graph/Level/World Serialization
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Graph/Level/World Serialization">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -632,10 +660,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-component-serialization-registration" class="md-nav__link">
+  <a href="#8-component-serialization-registration" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Component Serialization Registration
+        8. Component Serialization Registration
       
     </span>
   </a>
@@ -973,6 +1001,9 @@
 <li>No cross-translation-unit init ordering dependency for full metadata.</li>
 <li>Pay-for-what-you-use behavior.</li>
 </ul>
+<h3 id="linkerstripping-note">Linker/stripping note<a class="headerlink" href="#linkerstripping-note" title="Permanent link">&para;</a></h3>
+<p><code>SNAPI_REFLECT_TYPE</code> installs static registration glue in its translation unit.
+To guarantee that translation unit is linked in static library/plugin builds, ensure something in that unit is referenced by the final binary (or explicitly force-link the object/library according to your build system).</p>
 <h2 id="3-defining-reflected-types">3. Defining Reflected Types<a class="headerlink" href="#3-defining-reflected-types" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">EnemyNode</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseNode</span>
 <span class="p">{</span>
@@ -1023,6 +1054,11 @@
 <li><code>StaticTypeId&lt;T&gt;()</code> is deterministic and cached via function-local static.</li>
 <li><code>StaticType&lt;T&gt;()</code> ensures reflection registration exists before use.</li>
 </ul>
+<p>Hot path guidance:</p>
+<ul>
+<li>prefer <code>StaticTypeId&lt;T&gt;()</code> over repeated <code>TypeIdFromName(...)</code>.</li>
+<li>use <code>StaticType&lt;T&gt;()</code> when you need to force ensure-on-first-use behavior.</li>
+</ul>
 <h2 id="5-value-serialization-tvaluecodect">5. Value Serialization (<code>TValueCodec&lt;T&gt;</code>)<a class="headerlink" href="#5-value-serialization-tvaluecodect" title="Permanent link">&para;</a></h2>
 <p>Most primitive/trivial types already work.
 For custom packed formats, specialize <code>TValueCodec&lt;T&gt;</code>.</p>
@@ -1065,7 +1101,15 @@ For custom packed formats, specialize <code>TValueCodec&lt;T&gt;</code>.</p>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
 </code></pre></div>
-<h2 id="6-graphlevelworld-serialization">6. Graph/Level/World Serialization<a class="headerlink" href="#6-graphlevelworld-serialization" title="Permanent link">&para;</a></h2>
+<h2 id="6-replication-nested-types-value-codecs">6. Replication + Nested Types + Value Codecs<a class="headerlink" href="#6-replication-nested-types-value-codecs" title="Permanent link">&para;</a></h2>
+<p>For a reflected field marked with <code>EFieldFlagBits::Replication</code>:</p>
+<ul>
+<li>if a <code>TValueCodec&lt;FieldType&gt;</code> is registered, replication uses that codec for the field value.</li>
+<li>if no codec is registered, replication recursively visits nested reflected fields and serializes only nested fields that also have replication flags.</li>
+</ul>
+<p>That means field flags are still important for nested structs.
+Example: if <code>Settings</code> is replicated but only <code>Settings.SoundPath</code> is flagged, only <code>SoundPath</code> replicates unless you provide a codec that serializes the whole <code>Settings</code> value.</p>
+<h2 id="7-graphlevelworld-serialization">7. Graph/Level/World Serialization<a class="headerlink" href="#7-graphlevelworld-serialization" title="Permanent link">&para;</a></h2>
 <h3 id="graph-to-payload-bytes">Graph to payload bytes<a class="headerlink" href="#graph-to-payload-bytes" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><span class="n">NodeGraph</span><span class="w"> </span><span class="n">Graph</span><span class="p">(</span><span class="s">&quot;Gameplay&quot;</span><span class="p">);</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">PayloadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeGraphSerializer</span><span class="o">::</span><span class="n">Serialize</span><span class="p">(</span><span class="n">Graph</span><span class="p">);</span>
@@ -1096,7 +1140,7 @@ For custom packed formats, specialize <code>TValueCodec&lt;T&gt;</code>.</p>
 <span class="p">}</span>
 </code></pre></div>
 <p>The same pattern exists for <code>LevelSerializer</code> + <code>WorldSerializer</code> and their payload byte helpers.</p>
-<h2 id="7-component-serialization-registration">7. Component Serialization Registration<a class="headerlink" href="#7-component-serialization-registration" title="Permanent link">&para;</a></h2>
+<h2 id="8-component-serialization-registration">8. Component Serialization Registration<a class="headerlink" href="#8-component-serialization-registration" title="Permanent link">&para;</a></h2>
 <p>Why components are special:</p>
 <ul>
 <li>Components are created dynamically by type id during graph/world deserialization.</li>

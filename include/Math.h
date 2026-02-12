@@ -7,7 +7,8 @@ namespace SnAPI::GameFramework
 
 /**
  * @brief Simple 3D vector type.
- * @remarks Lightweight math utility used by core components.
+ * @remarks Lightweight POD vector used across transform/audio/replication payloads.
+ * @note No implicit normalization or unit assumptions are enforced.
  */
 struct Vec3
 {
@@ -34,6 +35,7 @@ struct Vec3
      * @brief Add another vector in-place.
      * @param Other Vector to add.
      * @return Reference to this vector.
+     * @remarks Component-wise addition.
      */
     Vec3& operator+=(const Vec3& Other)
     {
@@ -47,6 +49,7 @@ struct Vec3
      * @brief Subtract another vector in-place.
      * @param Other Vector to subtract.
      * @return Reference to this vector.
+     * @remarks Component-wise subtraction.
      */
     Vec3& operator-=(const Vec3& Other)
     {
@@ -60,6 +63,7 @@ struct Vec3
      * @brief Multiply by a scalar in-place.
      * @param Scalar Scalar multiplier.
      * @return Reference to this vector.
+     * @remarks Component-wise scalar multiplication.
      */
     Vec3& operator*=(float Scalar)
     {

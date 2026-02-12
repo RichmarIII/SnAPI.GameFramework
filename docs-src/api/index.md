@@ -4,7 +4,7 @@ This section is generated from Doxygen XML output and rendered inside MkDocs.
 
 - **Namespaces:** 13
 - **Types:** 86
-- **Files:** 68
+- **Files:** 71
 
 ## Quick Index
 

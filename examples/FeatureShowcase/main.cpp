@@ -9,6 +9,10 @@
 
 using namespace SnAPI::GameFramework;
 
+/**
+ * @brief Example relevance policy that always keeps nodes active.
+ * @remarks Used to demonstrate relevance component plumbing without culling logic.
+ */
 struct AlwaysActivePolicy
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::AlwaysActivePolicy";

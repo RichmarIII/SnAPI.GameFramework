@@ -799,6 +799,10 @@
 
 <h1 id="snapigameframeworkttypebuilder">SnAPI::GameFramework::TTypeBuilder<a class="headerlink" href="#snapigameframeworkttypebuilder" title="Permanent link">&para;</a></h1>
 <p>Fluent builder for registering reflection metadata.</p>
+<p>Best-practice lifecycle:
+1. define fields/methods/constructors/base types
+2. call <code>Register()</code> once in one translation unit (typically through <code>SNAPI_REFLECT_TYPE</code>)
+3. let <code>TypeAutoRegistry</code> ensure-on-first-use resolve registration at runtime</p>
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="typeinfo-snapigameframeworkttypebuilder-t-m_info"><code>TypeInfo SnAPI::GameFramework::TTypeBuilder&lt; T &gt;::m_info</code><a class="headerlink" href="#typeinfo-snapigameframeworkttypebuilder-t-m_info" title="Permanent link">&para;</a></h3>
@@ -821,6 +825,7 @@
 <div class="snapi-api-card">
 <h3 id="ttypebuilder-snapigameframeworkttypebuilder-t-fieldconst-char-name-fieldt-tmember-fieldflags-flags"><code>TTypeBuilder &amp; SnAPI::GameFramework::TTypeBuilder&lt; T &gt;::Field(const char *Name, FieldT T::*Member, FieldFlags Flags={})</code><a class="headerlink" href="#ttypebuilder-snapigameframeworkttypebuilder-t-fieldconst-char-name-fieldt-tmember-fieldflags-flags" title="Permanent link">&para;</a></h3>
 <p>Register a field with getter/setter support.</p>
+<p>Const member fields are reflected as read-only; setter returns error at runtime.</p>
 <p><strong>Parameters</strong></p>
 <ul>
 <li><code>Name</code>: Field name.</li>

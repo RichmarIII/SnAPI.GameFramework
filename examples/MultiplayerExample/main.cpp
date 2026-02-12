@@ -23,6 +23,10 @@ using namespace SnAPI::Networking;
 namespace
 {
 
+/**
+ * @brief Parsed command-line configuration for multiplayer example runtime mode.
+ * @remarks Determines server/client role, transport endpoints, and cube spawn count.
+ */
 struct Args
 {
     bool Server = false;
@@ -79,6 +83,10 @@ const char* DisconnectReasonToString(EDisconnectReason Reason)
     }
 }
 
+/**
+ * @brief Session listener that logs high-signal connection lifecycle events.
+ * @remarks Used to make transport/replication behavior visible during manual testing.
+ */
 struct SessionListener final : public INetSessionListener
 {
     explicit SessionListener(std::string LabelValue, NetSession* SessionValue = nullptr)
@@ -215,6 +223,10 @@ bool ParseArgs(int argc, char** argv, Args& Out)
     return true;
 }
 
+/**
+ * @brief Example component whose transform fields are marked for replication.
+ * @remarks Demonstrates reflection-flag-driven property replication in the sample.
+ */
 struct ReplicatedTransformComponent final : public IComponent
 {
     static constexpr const char* kTypeName =
@@ -267,6 +279,10 @@ std::shared_ptr<UdpTransportAsio> MakeUdpTransport(const NetEndpoint& Local)
     return Transport;
 }
 
+/**
+ * @brief Server-side animated cube state driving replicated transform updates.
+ * @remarks Not replicated directly; server writes into ReplicatedTransformComponent each frame.
+ */
 struct MovingCube
 {
     ReplicatedTransformComponent* Transform = nullptr;

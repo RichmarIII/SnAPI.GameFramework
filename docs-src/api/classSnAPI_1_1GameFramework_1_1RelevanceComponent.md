@@ -15,22 +15,22 @@ Stable type name for reflection.
 <div class="snapi-api-card" markdown="1">
 ### `TypeId SnAPI::GameFramework::RelevanceComponent::m_policyId`
 
-Policy type id.
+Reflected type id of current policy object.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::shared_ptr<void> SnAPI::GameFramework::RelevanceComponent::m_policyData`
 
-Type-erased policy instance.
+Owned type-erased policy instance payload.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::RelevanceComponent::m_active`
 
-Last computed active state.
+Last computed relevance active state applied to node gating.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `float SnAPI::GameFramework::RelevanceComponent::m_lastScore`
 
-Last computed score.
+Last computed score used for diagnostics/future prioritization.
 </div>
 
 ## Public Functions

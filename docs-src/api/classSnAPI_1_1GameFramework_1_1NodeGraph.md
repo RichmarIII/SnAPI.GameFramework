@@ -1,6 +1,14 @@
 # SnAPI::GameFramework::NodeGraph
 
-A node that owns and manages a hierarchy of child nodes.
+Hierarchical runtime container for nodes/components.
+
+Core semantics:
+- Node/component identity is UUID-handle based.
+- Object lifetime is deferred-destruction by default (`DestroyNode` + `EndFrame`).
+- Component storage is type-partitioned (`TypeId -> IComponentStorage`) and created lazily.
+- Graph tick methods evaluate relevance and then drive deterministic tree traversal.
+
+This class is the primary runtime backbone for world/level/prefab style object trees.
 
 ## Public Static Members
 
@@ -30,32 +38,32 @@ Stable type name for reflection.
 <div class="snapi-api-card" markdown="1">
 ### `std::shared_ptr<TObjectPool<BaseNode> > SnAPI::GameFramework::NodeGraph::m_nodePool`
 
-Pool for node storage.
+Owning node pool providing stable addresses and deferred destroy semantics.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, std::unique_ptr<IComponentStorage>, UuidHash> SnAPI::GameFramework::NodeGraph::m_storages`
 
-Component storage by type id.
+Type-partitioned component storages created lazily on demand.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<NodeHandle> SnAPI::GameFramework::NodeGraph::m_rootNodes`
 
-Root nodes (no parent).
+Root traversal entry points (nodes without parent in this graph).
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<NodeHandle> SnAPI::GameFramework::NodeGraph::m_pendingDestroy`
 
-Nodes scheduled for deletion.
+Node handles queued for end-of-frame destruction.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `size_t SnAPI::GameFramework::NodeGraph::m_relevanceCursor`
 
-Reserved for incremental relevance updates.
+Cursor for incremental relevance sweeps when budgeted evaluation is enabled.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `size_t SnAPI::GameFramework::NodeGraph::m_relevanceBudget`
 
-Max relevance evaluations per tick (0 = unlimited).
+Per-tick relevance evaluation cap; 0 means evaluate all nodes.
 </div>
 
 ## Public Functions

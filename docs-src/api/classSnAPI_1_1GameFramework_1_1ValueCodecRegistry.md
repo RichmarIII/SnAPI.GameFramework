@@ -35,10 +35,12 @@ Decode-into function signature.
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, CodecEntry, UuidHash> SnAPI::GameFramework::ValueCodecRegistry::m_entries`
 
-Codec map by TypeId.
+Runtime codec dispatch table keyed by reflected TypeId.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `uint32_t SnAPI::GameFramework::ValueCodecRegistry::m_version`
+
+Monotonic cache-invalidation version incremented on each registration.
 </div>
 
 ## Public Static Functions

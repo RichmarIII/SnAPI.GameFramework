@@ -1,6 +1,6 @@
 # SnAPI::GameFramework::ILevel
 
-Interface for level containers.
+Contract for world-owned level containers.
 
 ## Public Functions
 

@@ -798,7 +798,11 @@
 
 
 <h1 id="snapigameframeworkworld">SnAPI::GameFramework::World<a class="headerlink" href="#snapigameframeworkworld" title="Permanent link">&para;</a></h1>
-<p>World implementation that is also a NodeGraph.</p>
+<p>Concrete world root that owns levels and subsystems.</p>
+<p>Responsibility boundaries:
+- world controls frame lifecycle and end-of-frame flush
+- levels are represented as child nodes/graphs under the world
+- nodes/components can query world context through <code>Owner()-&gt;World()</code></p>
 <h2 id="public-static-members">Public Static Members<a class="headerlink" href="#public-static-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="const-char-snapigameframeworkworldktypename"><code>const char* SnAPI::GameFramework::World::kTypeName</code><a class="headerlink" href="#const-char-snapigameframeworkworldktypename" title="Permanent link">&para;</a></h3>
@@ -807,7 +811,7 @@
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="jobsystem-snapigameframeworkworldm_jobsystem"><code>JobSystem SnAPI::GameFramework::World::m_jobSystem</code><a class="headerlink" href="#jobsystem-snapigameframeworkworldm_jobsystem" title="Permanent link">&para;</a></h3>
-<p>Internal job system.</p>
+<p>World-scoped job dispatch facade for framework/runtime tasks.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">

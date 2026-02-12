@@ -26,9 +26,19 @@ class NodeGraphSerializer;
 class NetReplicationBridge;
 
 /**
- * @brief A node that owns and manages a hierarchy of child nodes.
- * @remarks NodeGraph itself is a node and can be nested.
- * @note All nodes and components are stored with UUID handles.
+ * @brief Hierarchical runtime container for nodes/components.
+ * @remarks
+ * `NodeGraph` is both:
+ * - a node (it derives from `BaseNode`, so graphs can be nested), and
+ * - a storage/orchestration owner for descendant nodes and their component storages.
+ *
+ * Core semantics:
+ * - Node/component identity is UUID-handle based.
+ * - Object lifetime is deferred-destruction by default (`DestroyNode` + `EndFrame`).
+ * - Component storage is type-partitioned (`TypeId -> IComponentStorage`) and created lazily.
+ * - Graph tick methods evaluate relevance and then drive deterministic tree traversal.
+ *
+ * This class is the primary runtime backbone for world/level/prefab style object trees.
  */
 class NodeGraph : public BaseNode
 {
@@ -43,20 +53,24 @@ public:
     /**
      * @brief Move construct a graph.
      * @param Other Graph to move from.
-     * @remarks Rebinds owner pointers on nodes/components.
+     * @remarks
+     * Rebinds non-owning owner pointers in moved nodes/components so borrowed access
+     * remains valid after move.
      */
     NodeGraph(NodeGraph&& Other) noexcept;
     /**
      * @brief Move assign a graph.
      * @param Other Graph to move from.
      * @return Reference to this graph.
-     * @remarks Rebinds owner pointers on nodes/components.
+     * @remarks Same ownership-rebinding guarantees as move construction.
      */
     NodeGraph& operator=(NodeGraph&& Other) noexcept;
 
     /**
      * @brief Construct an empty graph with default name.
-     * @remarks Initializes the internal node pool.
+     * @remarks
+     * Initializes node pool and reflection type identity. Graph starts detached from world
+     * unless explicitly attached by owning systems.
      */
     NodeGraph()
         : m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
@@ -66,6 +80,7 @@ public:
     /**
      * @brief Construct an empty graph with a name.
      * @param Name Graph name.
+     * @remarks Same semantics as default constructor with explicit debug/display name.
      */
     explicit NodeGraph(std::string Name)
         : BaseNode(std::move(Name))
@@ -75,7 +90,7 @@ public:
     }
     /**
      * @brief Destructor.
-     * @remarks Clears nodes/components and unregisters them from ObjectRegistry.
+     * @remarks Performs full teardown (`Clear`) and unregisters all live objects.
      */
     ~NodeGraph() override;
 
@@ -85,7 +100,13 @@ public:
      * @param Name Node name.
      * @param args Constructor arguments for T.
      * @return Handle to the created node or error.
-     * @remarks Registers the node in ObjectRegistry and adds it to root nodes.
+     * @remarks
+     * Registration path:
+     * 1. ensures reflection metadata for `T`
+     * 2. allocates node in pool
+     * 3. assigns identity/name/type/owner pointers
+     * 4. registers in `ObjectRegistry`
+     * 5. inserts into root list
      */
     template<typename T = BaseNode, typename... Args>
     TExpected<NodeHandle> CreateNode(std::string Name, Args&&... args)
@@ -120,7 +141,7 @@ public:
      * @param Name Node name.
      * @param args Constructor arguments for T.
      * @return Handle to the created node or error.
-     * @remarks Used by serialization to preserve identity.
+     * @remarks Used by replication/serialization restore paths where identity must match source.
      */
     template<typename T = BaseNode, typename... Args>
     TExpected<NodeHandle> CreateNodeWithId(const Uuid& Id, std::string Name, Args&&... args)
@@ -153,7 +174,9 @@ public:
      * @param Type Reflected type id.
      * @param Name Node name.
      * @return Handle to the created node or error.
-     * @remarks Requires a registered default constructor.
+     * @remarks
+     * Requires reflected type metadata and a zero-arg constructor entry.
+     * This path is used by dynamic/runtime-created types without compile-time `T`.
      */
     TExpected<NodeHandle> CreateNode(const TypeId& Type, std::string Name)
     {
@@ -217,7 +240,7 @@ public:
      * @param Name Node name.
      * @param Id UUID to assign.
      * @return Handle to the created node or error.
-     * @remarks Used by serialization to preserve identity.
+     * @remarks Runtime-typed + identity-preserving creation path.
      */
     TExpected<NodeHandle> CreateNode(const TypeId& Type, std::string Name, const Uuid& Id)
     {
@@ -279,7 +302,9 @@ public:
      * @brief Destroy a node at end-of-frame.
      * @param Handle Node handle to destroy.
      * @return Success or error.
-     * @remarks The handle remains valid until EndFrame.
+     * @remarks
+     * Schedules deferred destruction through pool semantics. Borrowed pointers/handles remain
+     * resolvable until `EndFrame`, then become invalid.
      */
     TExpected<void> DestroyNode(NodeHandle Handle)
     {
@@ -297,7 +322,9 @@ public:
      * @param Parent Parent handle.
      * @param Child Child handle.
      * @return Success or error.
-     * @remarks Updates both parent/child lists and root set.
+     * @remarks
+     * Updates hierarchy bookkeeping and removes child from root set.
+     * World pointer is propagated from parent to child.
      */
     TExpected<void> AttachChild(NodeHandle Parent, NodeHandle Child)
     {
@@ -329,7 +356,7 @@ public:
      * @brief Detach a child node from its parent.
      * @param Child Child handle.
      * @return Success or error.
-     * @remarks Detached nodes become root nodes.
+     * @remarks Detached nodes become roots in this graph.
      */
     TExpected<void> DetachChild(NodeHandle Child)
     {
@@ -353,28 +380,32 @@ public:
     /**
      * @brief Tick the graph (relevance + node tree).
      * @param DeltaSeconds Time since last tick.
-     * @remarks Evaluates relevance before ticking roots.
+     * @remarks Evaluates relevance state first, then traverses active root trees.
      */
     void Tick(float DeltaSeconds) override;
     /**
      * @brief Fixed-step tick for the graph.
      * @param DeltaSeconds Fixed time step.
+     * @remarks Mirrors `Tick` ordering with fixed-step component/node hooks.
      */
     void FixedTick(float DeltaSeconds) override;
     /**
      * @brief Late tick for the graph.
      * @param DeltaSeconds Time since last tick.
+     * @remarks Mirrors `Tick` ordering with late-update hooks.
      */
     void LateTick(float DeltaSeconds) override;
 
     /**
      * @brief Process end-of-frame destruction for nodes/components.
-     * @remarks Unregisters objects and clears pending lists.
+     * @remarks
+     * Flushes deferred destruction queues in component storages and node pool, performs
+     * object-registry unregister, and compacts pending state.
      */
     void EndFrame();
     /**
      * @brief Remove all nodes/components immediately.
-     * @remarks Unregisters everything and clears internal storage.
+     * @remarks Immediate hard reset; invalidates all borrowed pointers/handles.
      */
     void Clear();
 
@@ -408,6 +439,7 @@ public:
     /**
      * @brief Set the relevance evaluation budget.
      * @param Budget Max number of nodes evaluated per tick (0 = unlimited).
+     * @remarks Allows incremental relevance evaluation on large graphs.
      */
     void RelevanceBudget(size_t Budget)
     {
@@ -426,7 +458,9 @@ private:
      * @param Owner Owner node handle.
      * @param args Constructor arguments.
      * @return Reference wrapper or error.
-     * @remarks Registers the component type on the node.
+     * @remarks
+     * Ensures reflection metadata, allocates component in typed storage, and updates node
+     * type/mask bookkeeping for fast component queries.
      */
     template<typename T, typename... Args>
     TExpectedRef<T> AddComponent(NodeHandle Owner, Args&&... args)
@@ -454,7 +488,7 @@ private:
      * @param Id Component UUID.
      * @param args Constructor arguments.
      * @return Reference wrapper or error.
-     * @remarks Used by serialization to preserve identity.
+     * @remarks Identity-preserving add path used by deserialization/replication restore.
      */
     template<typename T, typename... Args>
     TExpectedRef<T> AddComponentWithId(NodeHandle Owner, const Uuid& Id, Args&&... args)
@@ -509,7 +543,9 @@ private:
      * @brief Remove a component of type T from a node.
      * @tparam T Component type.
      * @param Owner Owner node handle.
-     * @remarks Removal is deferred until EndFrame.
+     * @remarks
+     * Component storage handles deferred destroy; node mask/type bookkeeping is updated
+     * immediately so feature queries reflect removal this frame.
      */
     template<typename T>
     void RemoveComponent(NodeHandle Owner)
@@ -549,7 +585,7 @@ private:
 
     /**
      * @brief Evaluate relevance policies to enable/disable nodes.
-     * @remarks Limited by RelevanceBudget.
+     * @remarks Honors `RelevanceBudget` when non-zero.
      */
     void EvaluateRelevance();
     /**
@@ -562,17 +598,21 @@ private:
      * @brief Register a component type on a node's type list/mask.
      * @param Node Node to update.
      * @param Type Component type id.
+     * @remarks Synchronizes both sparse type list and dense bitmask.
      */
     void RegisterComponentOnNode(BaseNode& Node, const TypeId& Type);
     /**
      * @brief Unregister a component type from a node's type list/mask.
      * @param Node Node to update.
      * @param Type Component type id.
+     * @remarks Clears sparse and dense bookkeeping for the given type.
      */
     void UnregisterComponentOnNode(BaseNode& Node, const TypeId& Type);
     /**
      * @brief Rebind owner graph pointers after move.
-     * @remarks Updates nodes and component storages to point at this graph.
+     * @remarks
+     * Rewrites non-owning back-pointers inside moved content so node/component APIs resolve
+     * against the new graph instance.
      */
     void RebindOwnerGraph();
 
@@ -652,12 +692,12 @@ private:
         return Store ? Store->Borrowed(Owner) : nullptr;
     }
 
-    std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief Pool for node storage. */
-    std::unordered_map<TypeId, std::unique_ptr<IComponentStorage>, UuidHash> m_storages{}; /**< @brief Component storage by type id. */
-    std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root nodes (no parent). */
-    std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Nodes scheduled for deletion. */
-    size_t m_relevanceCursor = 0; /**< @brief Reserved for incremental relevance updates. */
-    size_t m_relevanceBudget = 0; /**< @brief Max relevance evaluations per tick (0 = unlimited). */
+    std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief Owning node pool providing stable addresses and deferred destroy semantics. */
+    std::unordered_map<TypeId, std::unique_ptr<IComponentStorage>, UuidHash> m_storages{}; /**< @brief Type-partitioned component storages created lazily on demand. */
+    std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root traversal entry points (nodes without parent in this graph). */
+    std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Node handles queued for end-of-frame destruction. */
+    size_t m_relevanceCursor = 0; /**< @brief Cursor for incremental relevance sweeps when budgeted evaluation is enabled. */
+    size_t m_relevanceBudget = 0; /**< @brief Per-tick relevance evaluation cap; 0 means evaluate all nodes. */
 };
 
 } // namespace SnAPI::GameFramework

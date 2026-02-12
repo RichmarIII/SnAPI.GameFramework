@@ -17,6 +17,10 @@ using namespace SnAPI::Networking;
 namespace
 {
 
+/**
+ * @brief In-memory loopback datagram transport used for deterministic replication tests.
+ * @remarks Provides a controllable no-socket transport for two-session pumping.
+ */
 class TestDatagramTransport final : public INetDatagramTransport
 {
 public:
@@ -63,6 +67,9 @@ private:
     std::mutex m_mutex{};
 };
 
+/**
+ * @brief Replicated test node type for spawn/update verification.
+ */
 struct ReplicatedNode final : public BaseNode
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ReplicatedNode";
@@ -70,6 +77,9 @@ struct ReplicatedNode final : public BaseNode
     int Health = 0;
 };
 
+/**
+ * @brief Replicated test component type for spawn/update verification.
+ */
 struct ReplicatedComponent final : public IComponent
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ReplicatedComponent";
@@ -101,6 +111,9 @@ void RegisterReplicationTestTypes()
     Registered = true;
 }
 
+/**
+ * @brief Helper payload bundle used by spawn-header decode tests.
+ */
 struct ReplicationPayload
 {
     ReplicationEntityState Entity{};

@@ -15,15 +15,15 @@ Stable type name for reflection.
 <div class="snapi-api-card" markdown="1">
 ### `std::string SnAPI::GameFramework::ScriptComponent::ScriptModule`
 
-Script module path or name.
+Backend-defined module identifier/path used for loading.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::string SnAPI::GameFramework::ScriptComponent::ScriptType`
 
-Script type/class name.
+Backend-defined type/class identifier instantiated from module.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `ScriptInstanceId SnAPI::GameFramework::ScriptComponent::Instance`
 
-Runtime instance id.
+Live runtime instance id (0 indicates not currently bound).
 </div>

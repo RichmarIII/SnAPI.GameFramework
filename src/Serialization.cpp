@@ -68,6 +68,10 @@ namespace SnAPI::GameFramework
 
 namespace
 {
+/**
+ * @brief Streambuf that appends cereal output bytes directly into a vector.
+ * @remarks Eliminates intermediate stream copies for payload serialization.
+ */
 class VectorWriteStreambuf final : public std::streambuf
 {
 public:
@@ -101,9 +105,13 @@ protected:
     }
 
 private:
-    std::vector<uint8_t>& m_buffer;
+    std::vector<uint8_t>& m_buffer; /**< @brief Destination byte vector reference. */
 };
 
+/**
+ * @brief Streambuf adapter exposing immutable memory as input stream.
+ * @remarks Non-owning view used by cereal binary input archive decode paths.
+ */
 class MemoryReadStreambuf final : public std::streambuf
 {
 public:
@@ -189,24 +197,24 @@ namespace
 {
 struct SerializableField
 {
-    const FieldInfo* Field = nullptr;
-    const ValueCodecRegistry::CodecEntry* Codec = nullptr;
-    TypeId NestedType{};
-    bool HasNested = false;
+    const FieldInfo* Field = nullptr; /**< @brief Reflected field metadata pointer. */
+    const ValueCodecRegistry::CodecEntry* Codec = nullptr; /**< @brief Value codec pointer when direct codec serialization is available. */
+    TypeId NestedType{}; /**< @brief Nested reflected type id for recursive traversal fallback. */
+    bool HasNested = false; /**< @brief True when nested reflected traversal is required. */
 };
 
 struct SerializableFieldCacheEntry
 {
-    uint32_t CodecVersion = 0;
-    bool TypeFound = true;
-    std::vector<SerializableField> Fields;
+    uint32_t CodecVersion = 0; /**< @brief Value-codec registry version used to build this cache. */
+    bool TypeFound = true; /**< @brief False when type metadata was not registered at build time. */
+    std::vector<SerializableField> Fields; /**< @brief Flattened ordered field plan for serializer traversal. */
 };
 
 struct TypeVisitGuard
 {
-    std::unordered_map<TypeId, bool, UuidHash>& Visited;
-    TypeId Type{};
-    bool Inserted = false;
+    std::unordered_map<TypeId, bool, UuidHash>& Visited; /**< @brief Shared visited-type set for recursion/cycle detection. */
+    TypeId Type{}; /**< @brief Type currently being traversed. */
+    bool Inserted = false; /**< @brief True when this guard inserted new visited entry. */
 
     TypeVisitGuard(std::unordered_map<TypeId, bool, UuidHash>& InVisited, const TypeId& InType)
         : Visited(InVisited)
@@ -224,8 +232,8 @@ struct TypeVisitGuard
     }
 };
 
-std::unordered_map<TypeId, std::shared_ptr<SerializableFieldCacheEntry>, UuidHash> g_serializableFieldCache;
-std::mutex g_serializableFieldMutex;
+std::unordered_map<TypeId, std::shared_ptr<SerializableFieldCacheEntry>, UuidHash> g_serializableFieldCache; /**< @brief TypeId -> cached serializable field plan. */
+std::mutex g_serializableFieldMutex; /**< @brief Guards serializable field cache map. */
 
 void BuildSerializableFields(
     const TypeId& Type,

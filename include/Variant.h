@@ -15,7 +15,7 @@ namespace SnAPI::GameFramework
 /**
  * @brief Type-erased value container used by reflection and scripting.
  * @remarks Stores either an owned value or a reference with constness tracking.
- * @note Type identity is tracked via TypeIdFromName.
+ * @note Type identity is tracked by deterministic reflected `TypeId`.
  */
 class Variant
 {
@@ -44,7 +44,7 @@ public:
      * @tparam T Value type.
      * @param Value Value to store (moved or copied).
      * @return Variant owning the value.
-     * @remarks Stores value on the heap via shared_ptr.
+     * @remarks Stores value on heap via shared ownership to preserve copyable variant semantics.
      */
     template<typename T>
     static Variant FromValue(T Value)
@@ -63,7 +63,7 @@ public:
      * @tparam T Referenced type.
      * @param Value Reference to the object.
      * @return Variant referencing the object.
-     * @note Caller must ensure the referenced object outlives the Variant.
+     * @note Caller must guarantee lifetime; no ownership is transferred.
      */
     template<typename T>
     static Variant FromRef(T& Value)
@@ -81,7 +81,7 @@ public:
      * @tparam T Referenced type.
      * @param Value Const reference to the object.
      * @return Variant referencing the object as const.
-     * @note Caller must ensure the referenced object outlives the Variant.
+     * @note Caller must guarantee lifetime; mutable extraction will fail by design.
      */
     template<typename T>
     static Variant FromConstRef(const T& Value)
@@ -133,7 +133,7 @@ public:
     /**
      * @brief Borrow the underlying pointer (mutable).
      * @return Pointer to stored value or reference.
-     * @remarks Use with care; type safety is the caller's responsibility.
+     * @remarks Low-level escape hatch for performance-critical internals; caller is responsible for type safety.
      */
     void* Borrowed()
     {
@@ -164,7 +164,7 @@ public:
      * @brief Get a mutable reference to the stored value.
      * @tparam T Expected type.
      * @return Reference wrapper on success; error otherwise.
-     * @remarks Fails if the variant holds a const reference.
+     * @remarks Fails on type mismatch or when backing storage is const-referenced.
      */
     template<typename T>
     TExpected<std::reference_wrapper<T>> AsRef()
@@ -219,20 +219,29 @@ private:
         return Type;
     }
 
-    TypeId m_type{}; /**< @brief Type id of the stored value. */
-    std::shared_ptr<void> m_storage{}; /**< @brief Owned value or referenced pointer. */
-    bool m_isRef = false; /**< @brief True if the variant holds a reference. */
-    bool m_isConst = false; /**< @brief True if the reference is const. */
+    TypeId m_type{}; /**< @brief Reflected type id of stored payload. */
+    std::shared_ptr<void> m_storage{}; /**< @brief Owned object storage or non-owning reference wrapper pointer. */
+    bool m_isRef = false; /**< @brief Reference mode flag (`true` for non-owning reference payload). */
+    bool m_isConst = false; /**< @brief Const-reference qualifier for reference mode payloads. */
 };
 
 /**
  * @brief Non-owning view into a Variant-like value.
- * @remarks Avoids heap allocations for hot-path reflection use.
+ * @remarks
+ * Lightweight read/write view used to avoid allocating/copying `Variant` in hot paths
+ * (serialization/replication field traversal).
  */
 class VariantView
 {
 public:
+    /** @brief Construct an empty invalid view. */
     VariantView() = default;
+    /**
+     * @brief Construct explicit typed view.
+     * @param Type Reflected payload type id.
+     * @param Ptr Raw payload pointer.
+     * @param IsConst Whether mutable access is disallowed.
+     */
     VariantView(TypeId Type, const void* Ptr, bool IsConst)
         : m_type(std::move(Type))
         , m_ptr(Ptr)
@@ -240,30 +249,37 @@ public:
     {
     }
 
+    /** @brief Get reflected payload type id for this view. */
     const TypeId& Type() const
     {
         return m_type;
     }
 
+    /** @brief Check if mutable access is disallowed. */
     bool IsConst() const
     {
         return m_isConst;
     }
 
+    /** @brief Borrow const payload pointer. */
     const void* Borrowed() const
     {
         return m_ptr;
     }
 
+    /**
+     * @brief Borrow mutable payload pointer.
+     * @return Mutable pointer when view is non-const, otherwise nullptr.
+     */
     void* BorrowedMutable()
     {
         return m_isConst ? nullptr : const_cast<void*>(m_ptr);
     }
 
 private:
-    TypeId m_type{};
-    const void* m_ptr = nullptr;
-    bool m_isConst = true;
+    TypeId m_type{}; /**< @brief Reflected payload type id. */
+    const void* m_ptr = nullptr; /**< @brief Non-owning payload pointer. */
+    bool m_isConst = true; /**< @brief Constness gate for mutable borrowing. */
 };
 
 } // namespace SnAPI::GameFramework

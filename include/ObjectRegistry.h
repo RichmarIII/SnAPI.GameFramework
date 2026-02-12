@@ -29,6 +29,7 @@ enum class EObjectKind
  * @brief Global registry mapping UUIDs to live object pointers.
  * @remarks Used by THandle to resolve UUIDs to objects at runtime.
  * @note Objects must be registered/unregistered by their owning systems.
+ * @note Registry stores non-owning pointers; lifetime is managed externally.
  */
 class ObjectRegistry
 {
@@ -75,7 +76,7 @@ public:
      * @tparam T Object type.
      * @param Id UUID of the object.
      * @param Object Pointer to the object.
-     * @remarks Use for non-node/component objects you want to reference by handle.
+     * @remarks Type identity for `Other` entries is exact `type_index` (no inheritance matching).
      */
     template<typename T>
     void Register(const Uuid& Id, T* Object)
@@ -99,7 +100,7 @@ public:
      * @tparam T Expected type.
      * @param Id UUID to resolve.
      * @return Pointer to the object, or nullptr if not found/type mismatch.
-     * @remarks Node and Component are handled by kind; Other uses exact type_index.
+     * @remarks Node/Component entries resolve by object kind; Other entries require exact type match.
      */
     template<typename T>
     T* Resolve(const Uuid& Id) const

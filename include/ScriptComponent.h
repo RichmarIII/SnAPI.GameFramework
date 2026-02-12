@@ -10,7 +10,12 @@ namespace SnAPI::GameFramework
 
 /**
  * @brief Component that binds a node to a script instance.
- * @remarks Stores module/type identifiers and the runtime instance id.
+ * @remarks
+ * Data-only binding contract used by scripting integration layers.
+ * Engine glue is expected to:
+ * - resolve `ScriptModule` + `ScriptType`
+ * - create/destroy `Instance`
+ * - drive scripted lifecycle callbacks as desired
  */
 class ScriptComponent : public IComponent
 {
@@ -18,9 +23,9 @@ public:
     /** @brief Stable type name for reflection. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::ScriptComponent";
 
-    std::string ScriptModule; /**< @brief Script module path or name. */
-    std::string ScriptType; /**< @brief Script type/class name. */
-    ScriptInstanceId Instance = 0; /**< @brief Runtime instance id. */
+    std::string ScriptModule; /**< @brief Backend-defined module identifier/path used for loading. */
+    std::string ScriptType; /**< @brief Backend-defined type/class identifier instantiated from module. */
+    ScriptInstanceId Instance = 0; /**< @brief Live runtime instance id (0 indicates not currently bound). */
 };
 
 } // namespace SnAPI::GameFramework

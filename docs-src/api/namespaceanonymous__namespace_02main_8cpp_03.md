@@ -48,6 +48,13 @@
 - `ExpectedTint`:
 </div>
 <div class="snapi-api-card" markdown="1">
+### `void anonymous_namespace{main.cpp}::InitializeWorkingDirectory(const char *ExeArgv0)`
+
+**Parameters**
+
+- `ExeArgv0`:
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `std::string anonymous_namespace{main.cpp}::EndpointToString(const NetEndpoint &Endpoint)`
 
 **Parameters**

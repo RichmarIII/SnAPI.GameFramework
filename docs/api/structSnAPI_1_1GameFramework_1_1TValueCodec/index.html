@@ -799,6 +799,11 @@
 
 <h1 id="snapigameframeworktvaluecodec">SnAPI::GameFramework::TValueCodec<a class="headerlink" href="#snapigameframeworktvaluecodec" title="Permanent link">&para;</a></h1>
 <p>Customization point for value serialization.</p>
+<p>Default behavior includes:
+- common framework scalar/value types
+- UUID/handle binary encoding
+- trivially-copyable fallback for POD-like values</p>
+<p>For high-performance hot paths, prefer custom codecs to avoid generic reflection walk costs.</p>
 <h2 id="public-static-functions">Public Static Functions<a class="headerlink" href="#public-static-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="static-texpected-void-snapigameframeworktvaluecodec-t-encodeconst-t-value-cerealbinaryoutputarchive-archive-const-tserializationcontext-context"><code>static TExpected&lt; void &gt; SnAPI::GameFramework::TValueCodec&lt; T &gt;::Encode(const T &amp;Value, cereal::BinaryOutputArchive &amp;Archive, const TSerializationContext &amp;Context)</code><a class="headerlink" href="#static-texpected-void-snapigameframeworktvaluecodec-t-encodeconst-t-value-cerealbinaryoutputarchive-archive-const-tserializationcontext-context" title="Permanent link">&para;</a></h3>

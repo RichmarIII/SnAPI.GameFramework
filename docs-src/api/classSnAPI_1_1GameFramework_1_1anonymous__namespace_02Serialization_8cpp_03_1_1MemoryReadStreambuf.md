@@ -1,5 +1,7 @@
 # SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::MemoryReadStreambuf
 
+Streambuf adapter exposing immutable memory as input stream.
+
 ## Public Functions
 
 <div class="snapi-api-card" markdown="1">

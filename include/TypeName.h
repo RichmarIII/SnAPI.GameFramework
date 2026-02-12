@@ -11,7 +11,7 @@ namespace SnAPI::GameFramework
 template<typename T>
 struct TTypeName
 {
-    static constexpr const char* Value = T::kTypeName;
+    static constexpr const char* Value = T::kTypeName; /**< @brief Stable fully-qualified type name used for deterministic TypeId generation. */
 };
 
 /**

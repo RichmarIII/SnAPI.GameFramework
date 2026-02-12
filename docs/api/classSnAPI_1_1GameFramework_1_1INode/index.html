@@ -798,7 +798,14 @@
 
 
 <h1 id="snapigameframeworkinode">SnAPI::GameFramework::INode<a class="headerlink" href="#snapigameframeworkinode" title="Permanent link">&para;</a></h1>
-<p>Abstract node interface for the scene graph.</p>
+<p>Abstract runtime contract for graph nodes.</p>
+<p>Semantics:
+- A node is identity-first (<code>Handle</code> / <code>Id</code>) and hierarchy-aware (<code>Parent</code> / <code>Children</code>).
+- Runtime ownership is external: <code>NodeGraph</code> controls insertion/removal and lifecycle.
+- <code>World</code> association is optional for detached/prefab graphs, but world-backed behavior (networking/audio subsystems, authoritative role queries, tick-tree participation) depends on a valid <code>World()</code> pointer.</p>
+<p>Implementers:
+- <code>BaseNode</code> is the canonical implementation and should be preferred.
+- Implementing <code>INode</code> directly is valid but requires preserving all invariants described on each accessor/mutator below.</p>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="virtual-snapigameframeworkinodeinodedefault"><code>virtual SnAPI::GameFramework::INode::~INode()=default</code><a class="headerlink" href="#virtual-snapigameframeworkinodeinodedefault" title="Permanent link">&para;</a></h3>
@@ -939,6 +946,21 @@
 <ul>
 <li><code>Replicated</code>:</li>
 </ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="virtual-bool-snapigameframeworkinodeisserver-const-0"><code>virtual bool SnAPI::GameFramework::INode::IsServer() const =0</code><a class="headerlink" href="#virtual-bool-snapigameframeworkinodeisserver-const-0" title="Permanent link">&para;</a></h3>
+<p>Check whether this node is executing with server authority.</p>
+<p><strong>Returns:</strong> True when server-authoritative.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="virtual-bool-snapigameframeworkinodeisclient-const-0"><code>virtual bool SnAPI::GameFramework::INode::IsClient() const =0</code><a class="headerlink" href="#virtual-bool-snapigameframeworkinodeisclient-const-0" title="Permanent link">&para;</a></h3>
+<p>Check whether this node is executing in a client context.</p>
+<p><strong>Returns:</strong> True when client-side.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="virtual-bool-snapigameframeworkinodeislistenserver-const-0"><code>virtual bool SnAPI::GameFramework::INode::IsListenServer() const =0</code><a class="headerlink" href="#virtual-bool-snapigameframeworkinodeislistenserver-const-0" title="Permanent link">&para;</a></h3>
+<p>Check whether this node is executing as a listen-server.</p>
+<p><strong>Returns:</strong> True when both server and client role are active.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="virtual-stdvector-typeid-snapigameframeworkinodecomponenttypes0"><code>virtual std::vector&lt; TypeId &gt; &amp; SnAPI::GameFramework::INode::ComponentTypes()=0</code><a class="headerlink" href="#virtual-stdvector-typeid-snapigameframeworkinodecomponenttypes0" title="Permanent link">&para;</a></h3>

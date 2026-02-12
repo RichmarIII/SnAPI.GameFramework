@@ -145,7 +145,12 @@ public:
 /**
  * @brief Typed component storage for a specific component type.
  * @tparam T Component type.
- * @remarks Manages component pool and owner mapping.
+ * @remarks
+ * Maintains one-component-per-owner invariant for type `T` and coordinates:
+ * - pool allocation/deferred destroy
+ * - owner-node to component-id indexing
+ * - object registry registration/unregistration
+ * - lifecycle callbacks (`OnCreate`/`OnDestroy`)
  */
 template<typename T>
 class TComponentStorage final : public IComponentStorage
@@ -190,7 +195,7 @@ public:
      * @param Id Component UUID.
      * @param args Constructor arguments.
      * @return Reference wrapper or error.
-     * @remarks Used by serialization to preserve identity.
+     * @remarks Used by deserialization/replication restore paths to preserve identity continuity.
      */
     template<typename... Args>
     TExpectedRef<T> AddWithId(NodeHandle Owner, const Uuid& Id, Args&&... args)
@@ -251,7 +256,8 @@ public:
     /**
      * @brief Remove a component from a node.
      * @param Owner Node handle.
-     * @remarks Removal is deferred until EndFrame.
+     * @remarks
+     * Index mapping is removed immediately; physical destruction and OnDestroy happen during EndFrame.
      */
     void Remove(NodeHandle Owner) override
     {
@@ -359,6 +365,7 @@ public:
     /**
      * @brief Process pending destruction at end-of-frame.
      * @remarks Calls OnDestroy and unregisters components.
+     * @note Ordering is deterministic by pending queue insertion order.
      */
     void EndFrame() override
     {
@@ -377,6 +384,7 @@ public:
     /**
      * @brief Clear all components immediately.
      * @remarks Calls OnDestroy and clears internal mappings.
+     * @note Immediate path bypasses deferred destroy semantics.
      */
     void Clear() override
     {
@@ -390,10 +398,10 @@ public:
     }
 
 private:
-    TypeId m_typeId = StaticTypeId<T>(); /**< @brief Component type id. */
-    TObjectPool<T> m_pool{}; /**< @brief Pool storing component instances. */
-    std::unordered_map<NodeHandle, Uuid, HandleHash> m_index{}; /**< @brief Owner -> component UUID. */
-    std::vector<Uuid> m_pendingDestroy{}; /**< @brief Components scheduled for deletion. */
+    TypeId m_typeId = StaticTypeId<T>(); /**< @brief Reflected type id for this storage specialization. */
+    TObjectPool<T> m_pool{}; /**< @brief Underlying component object pool with deferred destroy support. */
+    std::unordered_map<NodeHandle, Uuid, HandleHash> m_index{}; /**< @brief Owner-node handle -> component UUID map. */
+    std::vector<Uuid> m_pendingDestroy{}; /**< @brief Component ids scheduled for end-of-frame destroy flush. */
 };
 
 } // namespace SnAPI::GameFramework

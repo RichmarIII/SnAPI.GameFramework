@@ -798,19 +798,26 @@
 
 
 <h1 id="snapigameframeworkicomponent">SnAPI::GameFramework::IComponent<a class="headerlink" href="#snapigameframeworkicomponent" title="Permanent link">&para;</a></h1>
-<p>Base interface for components attached to nodes.</p>
+<p>Runtime contract for attachable node behavior/data units.</p>
+<p>Ownership and lifetime:
+- Stored/owned by typed component storages (<code>TComponentStorage&lt;T&gt;</code>).
+- Addressable by UUID (<code>ComponentHandle</code>) through <code>ObjectRegistry</code>.
+- Destruction is deferred to end-of-frame to keep handles stable within a frame.</p>
+<p>Execution context:
+- <code>OwnerNode()</code> and <code>World()</code> are resolved dynamically through handle/graph links.
+- Role helpers (<code>IsServer</code>/<code>IsClient</code>/<code>IsListenServer</code>) proxy world networking state.</p>
 <h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="nodehandle-snapigameframeworkicomponentm_owner"><code>NodeHandle SnAPI::GameFramework::IComponent::m_owner</code><a class="headerlink" href="#nodehandle-snapigameframeworkicomponentm_owner" title="Permanent link">&para;</a></h3>
-<p>Owning node handle.</p>
+<p>Owning node identity; resolved via ObjectRegistry when needed.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="uuid-snapigameframeworkicomponentm_id"><code>Uuid SnAPI::GameFramework::IComponent::m_id</code><a class="headerlink" href="#uuid-snapigameframeworkicomponentm_id" title="Permanent link">&para;</a></h3>
-<p>Component UUID.</p>
+<p>Stable component identity used for handles/replication/serialization.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkicomponentm_replicated"><code>bool SnAPI::GameFramework::IComponent::m_replicated</code><a class="headerlink" href="#bool-snapigameframeworkicomponentm_replicated" title="Permanent link">&para;</a></h3>
-<p>Replication flag.</p>
+<p>Runtime replication gate for this component instance.</p>
 </div>
 <h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
@@ -892,6 +899,31 @@
 <h3 id="componenthandle-snapigameframeworkicomponenthandle-const"><code>ComponentHandle SnAPI::GameFramework::IComponent::Handle() const</code><a class="headerlink" href="#componenthandle-snapigameframeworkicomponenthandle-const" title="Permanent link">&para;</a></h3>
 <p>Get a handle for this component.</p>
 <p><strong>Returns:</strong> ComponentHandle wrapping the UUID.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="basenode-snapigameframeworkicomponentownernode-const"><code>BaseNode * SnAPI::GameFramework::IComponent::OwnerNode() const</code><a class="headerlink" href="#basenode-snapigameframeworkicomponentownernode-const" title="Permanent link">&para;</a></h3>
+<p>Resolve the owning node pointer.</p>
+<p><strong>Returns:</strong> Owning BaseNode pointer or nullptr.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="iworld-snapigameframeworkicomponentworld-const"><code>IWorld * SnAPI::GameFramework::IComponent::World() const</code><a class="headerlink" href="#iworld-snapigameframeworkicomponentworld-const" title="Permanent link">&para;</a></h3>
+<p>Resolve the owning world pointer.</p>
+<p><strong>Returns:</strong> Owning world or nullptr.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentisserver-const"><code>bool SnAPI::GameFramework::IComponent::IsServer() const</code><a class="headerlink" href="#bool-snapigameframeworkicomponentisserver-const" title="Permanent link">&para;</a></h3>
+<p>Check whether this component executes with server authority.</p>
+<p><strong>Returns:</strong> True when server-authoritative.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentisclient-const"><code>bool SnAPI::GameFramework::IComponent::IsClient() const</code><a class="headerlink" href="#bool-snapigameframeworkicomponentisclient-const" title="Permanent link">&para;</a></h3>
+<p>Check whether this component executes in a client context.</p>
+<p><strong>Returns:</strong> True when client-side.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentislistenserver-const"><code>bool SnAPI::GameFramework::IComponent::IsListenServer() const</code><a class="headerlink" href="#bool-snapigameframeworkicomponentislistenserver-const" title="Permanent link">&para;</a></h3>
+<p>Check whether this component executes as listen-server.</p>
+<p><strong>Returns:</strong> True when both server and client role are active.</p>
 </div>
 
 

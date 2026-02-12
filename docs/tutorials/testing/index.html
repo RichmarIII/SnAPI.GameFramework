@@ -930,7 +930,7 @@ ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span 
 <li><code>tests/NodeGraphTests.cpp</code></li>
 <li>node + component ticking through graph hierarchy</li>
 <li><code>tests/ReflectionTests.cpp</code></li>
-<li>type registration, inheritance, field/method flags</li>
+<li>type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags</li>
 <li><code>tests/SerializationTests.cpp</code></li>
 <li>graph serialization round-trip, cross-graph handle resolution, custom <code>TValueCodec</code></li>
 <li><code>tests/LevelWorldSerializationTests.cpp</code></li>
@@ -939,6 +939,8 @@ ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span 
 <li>relevance policy gating tick</li>
 <li><code>tests/NetReplicationTests.cpp</code></li>
 <li>replication spawn/update ordering and session integration</li>
+<li><code>tests/WorldNetworkingTests.cpp</code></li>
+<li>world-owned networking system wiring, replication/rpc bridge integration</li>
 </ul>
 <h2 id="3-run-integration-examples">3. Run Integration Examples<a class="headerlink" href="#3-run-integration-examples" title="Permanent link">&para;</a></h2>
 <p>Unit tests are necessary but not sufficient for gameplay systems.
@@ -963,7 +965,11 @@ Also run these binaries:</p>
 <p>If you change networking/replication code:</p>
 <ul>
 <li>run <code>NetReplicationTests</code></li>
+<li>run <code>WorldNetworkingTests</code></li>
 <li>run multiplayer example across two processes/devices</li>
+<li>watch connection dumps:</li>
+<li><code>pending_rel</code> should not grow forever</li>
+<li>non-zero <code>pkt_lost</code> alone is not a failure if reliable backlog drains and gameplay state remains correct</li>
 </ul>
 <p>If you change component lifecycle code:</p>
 <ul>

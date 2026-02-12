@@ -1,5 +1,7 @@
 # anonymous_namespace{main.cpp}::MovingCube
 
+Server-side animated cube state driving replicated transform updates.
+
 ## Public Members
 
 <div class="snapi-api-card" markdown="1">

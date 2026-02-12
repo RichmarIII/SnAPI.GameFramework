@@ -14,9 +14,19 @@ class BaseNode;
 class IWorld;
 
 /**
- * @brief Base interface for components attached to nodes.
- * @remarks Components are owned by a NodeGraph and referenced by ComponentHandle.
- * @note Components are destroyed at end-of-frame to keep handles stable.
+ * @brief Runtime contract for attachable node behavior/data units.
+ * @remarks
+ * Components are identity-bearing objects with independent lifecycle hooks that are
+ * attached to nodes by graph-managed storage.
+ *
+ * Ownership and lifetime:
+ * - Stored/owned by typed component storages (`TComponentStorage<T>`).
+ * - Addressable by UUID (`ComponentHandle`) through `ObjectRegistry`.
+ * - Destruction is deferred to end-of-frame to keep handles stable within a frame.
+ *
+ * Execution context:
+ * - `OwnerNode()` and `World()` are resolved dynamically through handle/graph links.
+ * - Role helpers (`IsServer`/`IsClient`/`IsListenServer`) proxy world networking state.
  */
 class IComponent
 {
@@ -28,34 +38,37 @@ public:
 
     /**
      * @brief Called immediately after component creation.
-     * @remarks Override to initialize component state.
+     * @remarks Runs once after storage/owner identity is assigned and registration is complete.
      */
     virtual void OnCreate() {}
     /**
      * @brief Called just before component destruction.
-     * @remarks Override to release resources.
+     * @remarks Runs during end-of-frame destroy flush or immediate clear path.
      */
     virtual void OnDestroy() {}
     /**
      * @brief Per-frame update hook.
      * @param DeltaSeconds Time since last tick.
+     * @remarks Called from owning node traversal when node/component are active.
      */
     virtual void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Fixed-step update hook.
      * @param DeltaSeconds Fixed time step.
+     * @remarks Intended for deterministic simulation work.
      */
     virtual void FixedTick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Late update hook.
      * @param DeltaSeconds Time since last tick.
+     * @remarks Invoked after regular per-frame tick traversal.
      */
     virtual void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
 
     /**
      * @brief Set the owning node handle.
      * @param InOwner Owner node handle.
-     * @remarks Set by the owning NodeGraph.
+     * @remarks Storage-managed setter; identity linkage should generally be mutated only by graph/storage code.
      */
     void Owner(NodeHandle InOwner)
     {
@@ -83,6 +96,7 @@ public:
     /**
      * @brief Set whether the component is replicated over the network.
      * @param Replicated New replicated state.
+     * @remarks Runtime gate: even replicated fields are skipped when false.
      */
     void Replicated(bool Replicated)
     {
@@ -101,7 +115,7 @@ public:
     /**
      * @brief Set the component UUID.
      * @param Id New UUID value.
-     * @remarks Set by the owning NodeGraph/component storage.
+     * @remarks Identity mutation; component registry/bookkeeping must stay in sync.
      */
     void Id(Uuid Id)
     {
@@ -120,12 +134,14 @@ public:
     /**
      * @brief Resolve the owning node pointer.
      * @return Owning BaseNode pointer or nullptr.
+     * @remarks Non-owning borrowed pointer; do not cache across frame/lifecycle boundaries.
      */
     BaseNode* OwnerNode() const;
 
     /**
      * @brief Resolve the owning world pointer.
      * @return Owning world or nullptr.
+     * @remarks Returns null for detached/prefab graphs not currently world-attached.
      */
     IWorld* World() const;
 
@@ -148,9 +164,9 @@ public:
     bool IsListenServer() const;
 
 private:
-    NodeHandle m_owner{}; /**< @brief Owning node handle. */
-    Uuid m_id{}; /**< @brief Component UUID. */
-    bool m_replicated = false; /**< @brief Replication flag. */
+    NodeHandle m_owner{}; /**< @brief Owning node identity; resolved via ObjectRegistry when needed. */
+    Uuid m_id{}; /**< @brief Stable component identity used for handles/replication/serialization. */
+    bool m_replicated = false; /**< @brief Runtime replication gate for this component instance. */
 };
 
 } // namespace SnAPI::GameFramework

@@ -10,6 +10,9 @@ using namespace SnAPI::GameFramework;
 
 namespace SnAPI::GameFramework
 {
+/**
+ * @brief Custom value type used to verify TValueCodec forwarding behavior.
+ */
 struct CustomPackedValue
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::CustomPackedValue";
@@ -45,6 +48,9 @@ struct TValueCodec<CustomPackedValue>
 };
 } // namespace SnAPI::GameFramework
 
+/**
+ * @brief Simple component containing a node-handle link used for serialization tests.
+ */
 struct LinkComponent : public IComponent
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::LinkComponent";
@@ -53,12 +59,18 @@ struct LinkComponent : public IComponent
 
 namespace
 {
+/**
+ * @brief Base node type used to validate inherited node field serialization.
+ */
 struct BaseStatsNode : public BaseNode
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::BaseStatsNode";
     int m_baseValue = 0;
 };
 
+/**
+ * @brief Derived node type used to validate base+derived field round-trip behavior.
+ */
 struct DerivedStatsNode : public BaseStatsNode
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::DerivedStatsNode";
@@ -67,6 +79,9 @@ struct DerivedStatsNode : public BaseStatsNode
     NodeHandle m_target{};
 };
 
+/**
+ * @brief Cross-graph handle component used for reference remap tests.
+ */
 struct CrossRefComponent : public IComponent
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::CrossRefComponent";

@@ -2,27 +2,33 @@
 
 Global registry for reflected types.
 
+Read/write model:
+- normal mode: read/write operations use mutex protection
+- frozen mode (`Freeze(true)`): read operations use lock-free fast path and registrations are rejected
+
+This enables high-frequency lookup paths (replication/serialization) to avoid lock contention after startup metadata registration has completed.
+
 ## Private Members
 
 <div class="snapi-api-card" markdown="1">
 ### `std::mutex SnAPI::GameFramework::TypeRegistry::m_mutex`
 
-Protects registry maps.
+Guards registry mutation and non-frozen lookups.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::atomic<bool> SnAPI::GameFramework::TypeRegistry::m_frozen`
 
-If true, reads skip locking and registration is disabled.
+Frozen state flag controlling read/write mode behavior.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<TypeId, TypeInfo, UuidHash> SnAPI::GameFramework::TypeRegistry::m_types`
 
-TypeId -> TypeInfo.
+Primary metadata store keyed by TypeId.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::unordered_map<std::string, TypeId, TransparentStringHash, TransparentStringEqual> SnAPI::GameFramework::TypeRegistry::m_nameToId`
 
-Name -> TypeId.
+Secondary name index for lookup by stable type name.
 </div>
 
 ## Public Static Functions

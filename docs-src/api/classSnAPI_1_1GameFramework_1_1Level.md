@@ -1,6 +1,6 @@
 # SnAPI::GameFramework::Level
 
-Level implementation that is also a NodeGraph.
+Concrete level implementation backed by NodeGraph.
 
 ## Public Static Members
 

@@ -8,6 +8,7 @@ namespace SnAPI::GameFramework
 /**
  * @brief Bit-flag helper for strongly-typed enums.
  * @tparam Enum Enum type that defines bit values.
+ * @remarks Lightweight value-type wrapper around enum underlying integer bits.
  */
 template<typename Enum>
 class TFlags
@@ -104,7 +105,7 @@ public:
     }
 
 private:
-    Underlying m_value = 0;
+    Underlying m_value = 0; /**< @brief Raw underlying-bit storage for the wrapped enum flags. */
 };
 
 /**

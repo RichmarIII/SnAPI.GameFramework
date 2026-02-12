@@ -7,22 +7,22 @@ Type-erased value container used by reflection and scripting.
 <div class="snapi-api-card" markdown="1">
 ### `TypeId SnAPI::GameFramework::Variant::m_type`
 
-Type id of the stored value.
+Reflected type id of stored payload.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::shared_ptr<void> SnAPI::GameFramework::Variant::m_storage`
 
-Owned value or referenced pointer.
+Owned object storage or non-owning reference wrapper pointer.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Variant::m_isRef`
 
-True if the variant holds a reference.
+Reference mode flag (`true` for non-owning reference payload).
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Variant::m_isConst`
 
-True if the reference is const.
+Const-reference qualifier for reference mode payloads.
 </div>
 
 ## Public Functions
@@ -129,7 +129,7 @@ Create a variant that references a mutable object.
 
 **Notes**
 
-- Caller must ensure the referenced object outlives the Variant.
+- Caller must guarantee lifetime; no ownership is transferred.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `static Variant SnAPI::GameFramework::Variant::FromConstRef(const T &Value)`
@@ -144,7 +144,7 @@ Create a variant that references a const object.
 
 **Notes**
 
-- Caller must ensure the referenced object outlives the Variant.
+- Caller must guarantee lifetime; mutable extraction will fail by design.
 </div>
 
 ## Private Static Func

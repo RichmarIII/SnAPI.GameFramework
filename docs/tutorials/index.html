@@ -933,6 +933,10 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 <li>Replication has two gates:</li>
 <li>The field must have <code>EFieldFlagBits::Replication</code>.</li>
 <li>The owning node/component must have <code>Replicated(true)</code>.</li>
+<li>Nested field replication depends on codec availability:</li>
+<li>with <code>TValueCodec&lt;T&gt;</code>, the full field value is codec-serialized.</li>
+<li>without a codec, only nested reflected fields marked for replication are serialized.</li>
+<li>Transport <code>pkt_lost</code> counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with <code>pending_rel</code>.</li>
 <li>Destruction is deferred to <code>EndFrame()</code> to keep handles stable during a frame.</li>
 </ul>
 <p>With that baseline, start with <code>Worlds and Graphs</code>.</p>

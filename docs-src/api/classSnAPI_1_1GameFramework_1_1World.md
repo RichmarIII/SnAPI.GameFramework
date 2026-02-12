@@ -1,6 +1,11 @@
 # SnAPI::GameFramework::World
 
-World implementation that is also a NodeGraph.
+Concrete world root that owns levels and subsystems.
+
+Responsibility boundaries:
+- world controls frame lifecycle and end-of-frame flush
+- levels are represented as child nodes/graphs under the world
+- nodes/components can query world context through `Owner()->World()`
 
 ## Public Static Members
 
@@ -15,7 +20,7 @@ Stable type name for reflection.
 <div class="snapi-api-card" markdown="1">
 ### `JobSystem SnAPI::GameFramework::World::m_jobSystem`
 
-Internal job system.
+World-scoped job dispatch facade for framework/runtime tasks.
 </div>
 
 ## Public Functions
