@@ -998,7 +998,12 @@
 <span class="p">}</span>
 </code></pre></div>
 <h2 id="4-frame-lifecycle">4. Frame Lifecycle<a class="headerlink" href="#4-frame-lifecycle" title="Permanent link">&para;</a></h2>
-<p>Tick order is tree-driven from graph roots.</p>
+<p>Tick order is tree-driven from graph roots.
+<code>World</code> also runs subsystem work during frame lifecycle:</p>
+<ul>
+<li>networking session pumping in <code>Tick</code> + <code>EndFrame</code></li>
+<li>audio system update in <code>Tick</code></li>
+</ul>
 <p>Typical frame loop:</p>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">RunFrame</span><span class="p">(</span><span class="n">World</span><span class="o">&amp;</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">DeltaSeconds</span><span class="p">)</span>
 <span class="p">{</span>
@@ -1014,6 +1019,8 @@
 <li>Handles remain valid until <code>EndFrame()</code>.</li>
 <li>This prevents mid-frame invalidation bugs.</li>
 </ul>
+<p>If you prefer less boilerplate in apps/examples, use <code>GameRuntime</code> and call <code>Runtime.Update(DeltaSeconds)</code>.
+<code>GameRuntime</code> orchestrates world lifecycle phases while <code>World</code> owns subsystem ticking/pumping.</p>
 <h2 id="5-standalone-graphs-prefab-style">5. Standalone Graphs (Prefab-Style)<a class="headerlink" href="#5-standalone-graphs-prefab-style" title="Permanent link">&para;</a></h2>
 <p>Standalone graphs are valid data containers:</p>
 <div class="highlight"><pre><span></span><code><span class="n">NodeGraph</span><span class="w"> </span><span class="n">PrefabGraph</span><span class="p">(</span><span class="s">&quot;EnemyPrefab&quot;</span><span class="p">);</span>

@@ -913,6 +913,7 @@
 <h2 id="runtime-model">Runtime Model<a class="headerlink" href="#runtime-model" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>World</code> is the runtime root and owns subsystems (jobs, audio, networking bridges).</li>
+<li><code>World</code> is also responsible for subsystem frame work (networking pump + audio update).</li>
 <li><code>Level</code> and <code>NodeGraph</code> are nodes, so graphs can be nested.</li>
 <li><code>BaseNode</code> owns hierarchy relationships and component type bookkeeping.</li>
 <li><code>IComponent</code> adds behavior and state to nodes without changing node types.</li>
@@ -935,11 +936,14 @@
 <ul>
 <li>Field replication is driven by reflection flags.</li>
 <li>RPC routing is driven by reflection method metadata.</li>
+<li><code>INode::CallRPC(...)</code> and <code>IComponent::CallRPC(...)</code> provide gameplay-facing routing helpers over reflected RPC endpoints.</li>
+<li><code>NetworkSystem</code> owns session/transport lifecycle (owner-only), then wires replication and RPC services.</li>
 <li><code>NetReplicationBridge</code> and <code>NetRpcBridge</code> coordinate with SnAPI.Networking services.</li>
 </ul>
 <h2 id="audio-model">Audio Model<a class="headerlink" href="#audio-model" title="Permanent link">&para;</a></h2>
 <ul>
 <li>World-level <code>AudioSystem</code> owns runtime backend state.</li>
+<li><code>World::Tick(...)</code> performs audio system frame update.</li>
 <li><code>AudioSourceComponent</code> and <code>AudioListenerComponent</code> bridge node state to audio playback/listening.</li>
 </ul>
 

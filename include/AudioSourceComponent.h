@@ -15,9 +15,6 @@ namespace SnAPI::GameFramework
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
 class AudioSystem;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-class NetworkSystem;
-#endif
 
 /**
  * @brief Component that drives a SnAPI.Audio emitter.
@@ -162,10 +159,6 @@ protected:
 private:
     /** @brief Resolve world audio subsystem for this component instance. */
     AudioSystem* ResolveAudioSystem() const;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    /** @brief Resolve world networking subsystem for role/RPC dispatch decisions. */
-    NetworkSystem* ResolveNetworkSystem() const;
-#endif
     /** @brief Lazily create/validate emitter handle. */
     void EnsureEmitter();
     /** @brief Push owner transform into audio emitter state. */

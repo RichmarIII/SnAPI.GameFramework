@@ -100,13 +100,13 @@ The returned world can be traversed normally (`Levels()`, `CreateNode`, `NodePoo
 ## 6. Common Failure Cases
 
 - `Type not registered` on load:
-  - `RegisterBuiltinTypes()` was not called early enough.
-  - The type’s reflection macro was never linked/referenced.
+    - `RegisterBuiltinTypes()` was not called early enough.
+    - The type’s reflection macro was never linked/referenced.
 - `Failed to load world from AssetManager`:
-  - payload serializers/factories were not registered.
-  - payload type/schema mismatch.
+    - payload serializers/factories were not registered.
+    - payload type/schema mismatch.
 - Objects deserialize but links are missing:
-  - verify handles/UUID fields were reflected and serialized.
+    - verify handles/UUID fields were reflected and serialized.
 
 ## 7. Compression Notes
 

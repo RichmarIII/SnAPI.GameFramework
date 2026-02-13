@@ -586,6 +586,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#8-role-helpers-and-callrpc" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        8. Role Helpers and CallRPC(...)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -1046,6 +1057,34 @@
 <li><code>Component-&gt;Replicated(true)</code></li>
 </ul>
 <p>Without those runtime flags, replication payloads for that object are skipped.</p>
+<h2 id="8-role-helpers-and-callrpc">8. Role Helpers and <code>CallRPC(...)</code><a class="headerlink" href="#8-role-helpers-and-callrpc" title="Permanent link">&para;</a></h2>
+<p>Both <code>INode</code> and <code>IComponent</code> expose:</p>
+<ul>
+<li><code>IsServer()</code></li>
+<li><code>IsClient()</code></li>
+<li><code>IsListenServer()</code></li>
+<li><code>CallRPC("ReflectedMethodName", args...)</code></li>
+</ul>
+<p>Example pattern for a server-authoritative action:</p>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">WeaponComponent::StartFire</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;StartFireServer&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">StartFireClient</span><span class="p">();</span>
+<span class="p">}</span>
+
+<span class="kt">void</span><span class="w"> </span><span class="nf">WeaponComponent::StartFireServer</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;StartFireClient&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">StartFireClient</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>This keeps gameplay call sites small while preserving server/client/multicast routing via reflection method flags.</p>
 <p>Next: <a href="../reflection_serialization/">Reflection and Serialization</a></p>
 
 

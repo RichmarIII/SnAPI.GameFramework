@@ -217,6 +217,7 @@ public:
         }
         Component->Owner(Owner);
         Component->Id(Id);
+        Component->TypeKey(StaticTypeId<T>());
         ObjectRegistry::Instance().RegisterComponent(Id, Component);
         m_index.emplace(Owner, Id);
         Component->OnCreate();

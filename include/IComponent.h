@@ -1,6 +1,9 @@
 #pragma once
 
+#include <initializer_list>
+#include <span>
 #include <string>
+#include <string_view>
 
 #include "Handle.h"
 #include "Handles.h"
@@ -12,6 +15,7 @@ namespace SnAPI::GameFramework
 class NodeGraph;
 class BaseNode;
 class IWorld;
+class Variant;
 
 /**
  * @brief Runtime contract for attachable node behavior/data units.
@@ -123,6 +127,27 @@ public:
     }
 
     /**
+     * @brief Get the reflected type id for this component.
+     * @return TypeId value.
+     * @remarks
+     * Required for reflection RPC/serialization lookup when working through
+     * erased `IComponent` pointers.
+     */
+    const TypeId& TypeKey() const
+    {
+        return m_typeId;
+    }
+
+    /**
+     * @brief Set the reflected type id for this component.
+     * @param Id Reflected component type id.
+     */
+    void TypeKey(const TypeId& Id)
+    {
+        m_typeId = Id;
+    }
+
+    /**
      * @brief Get a handle for this component.
      * @return ComponentHandle wrapping the UUID.
      */
@@ -163,9 +188,28 @@ public:
      */
     bool IsListenServer() const;
 
+    /**
+     * @brief Dispatch a reflected RPC method for this component.
+     * @param MethodName Reflected method name.
+     * @param Args Variant-packed arguments.
+     * @return True when dispatch succeeded (local invoke or queued network call).
+     * @remarks
+     * Routing is derived from reflected method flags:
+     * - `RpcNetServer`: server invokes locally; clients forward to server.
+     * - `RpcNetClient`: clients invoke locally; server forwards to one client.
+     * - `RpcNetMulticast`: server forwards to multicast channel; clients invoke locally.
+     */
+    bool CallRPC(std::string_view MethodName, std::span<const Variant> Args = {});
+
+    /**
+     * @brief Initializer-list convenience overload for `CallRPC`.
+     */
+    bool CallRPC(std::string_view MethodName, std::initializer_list<Variant> Args);
+
 private:
     NodeHandle m_owner{}; /**< @brief Owning node identity; resolved via ObjectRegistry when needed. */
     Uuid m_id{}; /**< @brief Stable component identity used for handles/replication/serialization. */
+    TypeId m_typeId{}; /**< @brief Reflected concrete component type id used by RPC/serialization paths. */
     bool m_replicated = false; /**< @brief Runtime replication gate for this component instance. */
 };
 

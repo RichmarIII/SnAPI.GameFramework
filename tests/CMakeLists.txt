@@ -1,5 +1,6 @@
 add_executable(GameFrameworkTests
     HandleTests.cpp
+    GameRuntimeTests.cpp
     LevelWorldSerializationTests.cpp
     ReflectionTests.cpp
     NetReplicationTests.cpp

@@ -925,22 +925,40 @@ ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span 
 <h2 id="2-what-is-already-covered">2. What Is Already Covered<a class="headerlink" href="#2-what-is-already-covered" title="Permanent link">&para;</a></h2>
 <p>Current tests include:</p>
 <ul>
-<li><code>tests/HandleTests.cpp</code></li>
+<li><code>tests/HandleTests.cpp</code><ul>
 <li>handle validity and end-of-frame deletion behavior</li>
-<li><code>tests/NodeGraphTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/NodeGraphTests.cpp</code><ul>
 <li>node + component ticking through graph hierarchy</li>
-<li><code>tests/ReflectionTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/ReflectionTests.cpp</code><ul>
 <li>type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags</li>
-<li><code>tests/SerializationTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/SerializationTests.cpp</code><ul>
 <li>graph serialization round-trip, cross-graph handle resolution, custom <code>TValueCodec</code></li>
-<li><code>tests/LevelWorldSerializationTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/LevelWorldSerializationTests.cpp</code><ul>
 <li>level/world serialization round-trips</li>
-<li><code>tests/RelevanceTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/RelevanceTests.cpp</code><ul>
 <li>relevance policy gating tick</li>
-<li><code>tests/NetReplicationTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/NetReplicationTests.cpp</code><ul>
 <li>replication spawn/update ordering and session integration</li>
-<li><code>tests/WorldNetworkingTests.cpp</code></li>
+</ul>
+</li>
+<li><code>tests/WorldNetworkingTests.cpp</code><ul>
 <li>world-owned networking system wiring, replication/rpc bridge integration</li>
+<li><code>INode::CallRPC</code> / <code>IComponent::CallRPC</code> role-based routing behavior</li>
+<li>component <code>TypeKey</code> assignment for reflection RPC dispatch</li>
+</ul>
+</li>
 </ul>
 <h2 id="3-run-integration-examples">3. Run Integration Examples<a class="headerlink" href="#3-run-integration-examples" title="Permanent link">&para;</a></h2>
 <p>Unit tests are necessary but not sufficient for gameplay systems.
@@ -966,10 +984,13 @@ Also run these binaries:</p>
 <ul>
 <li>run <code>NetReplicationTests</code></li>
 <li>run <code>WorldNetworkingTests</code></li>
+<li>validate <code>CallRPC(...)</code> routes correctly for server/client/listen-server roles</li>
 <li>run multiplayer example across two processes/devices</li>
-<li>watch connection dumps:</li>
+<li>watch connection dumps:<ul>
 <li><code>pending_rel</code> should not grow forever</li>
 <li>non-zero <code>pkt_lost</code> alone is not a failure if reliable backlog drains and gameplay state remains correct</li>
+</ul>
+</li>
 </ul>
 <p>If you change component lifecycle code:</p>
 <ul>

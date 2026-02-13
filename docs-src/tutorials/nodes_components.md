@@ -143,4 +143,37 @@ You also need:
 
 Without those runtime flags, replication payloads for that object are skipped.
 
+## 8. Role Helpers and `CallRPC(...)`
+
+Both `INode` and `IComponent` expose:
+
+- `IsServer()`
+- `IsClient()`
+- `IsListenServer()`
+- `CallRPC("ReflectedMethodName", args...)`
+
+Example pattern for a server-authoritative action:
+
+```cpp
+void WeaponComponent::StartFire()
+{
+    if (CallRPC("StartFireServer"))
+    {
+        return;
+    }
+    StartFireClient();
+}
+
+void WeaponComponent::StartFireServer()
+{
+    if (CallRPC("StartFireClient"))
+    {
+        return;
+    }
+    StartFireClient();
+}
+```
+
+This keeps gameplay call sites small while preserving server/client/multicast routing via reflection method flags.
+
 Next: [Reflection and Serialization](reflection_serialization.md)

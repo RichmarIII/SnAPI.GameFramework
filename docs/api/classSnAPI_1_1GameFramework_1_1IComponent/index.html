@@ -816,6 +816,10 @@
 <p>Stable component identity used for handles/replication/serialization.</p>
 </div>
 <div class="snapi-api-card">
+<h3 id="typeid-snapigameframeworkicomponentm_typeid"><code>TypeId SnAPI::GameFramework::IComponent::m_typeId</code><a class="headerlink" href="#typeid-snapigameframeworkicomponentm_typeid" title="Permanent link">&para;</a></h3>
+<p>Reflected concrete component type id used by RPC/serialization paths.</p>
+</div>
+<div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkicomponentm_replicated"><code>bool SnAPI::GameFramework::IComponent::m_replicated</code><a class="headerlink" href="#bool-snapigameframeworkicomponentm_replicated" title="Permanent link">&para;</a></h3>
 <p>Runtime replication gate for this component instance.</p>
 </div>
@@ -896,6 +900,19 @@
 </ul>
 </div>
 <div class="snapi-api-card">
+<h3 id="const-typeid-snapigameframeworkicomponenttypekey-const"><code>const TypeId &amp; SnAPI::GameFramework::IComponent::TypeKey() const</code><a class="headerlink" href="#const-typeid-snapigameframeworkicomponenttypekey-const" title="Permanent link">&para;</a></h3>
+<p>Get the reflected type id for this component.</p>
+<p><strong>Returns:</strong> TypeId value.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkicomponenttypekeyconst-typeid-id"><code>void SnAPI::GameFramework::IComponent::TypeKey(const TypeId &amp;Id)</code><a class="headerlink" href="#void-snapigameframeworkicomponenttypekeyconst-typeid-id" title="Permanent link">&para;</a></h3>
+<p>Set the reflected type id for this component.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Id</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
 <h3 id="componenthandle-snapigameframeworkicomponenthandle-const"><code>ComponentHandle SnAPI::GameFramework::IComponent::Handle() const</code><a class="headerlink" href="#componenthandle-snapigameframeworkicomponenthandle-const" title="Permanent link">&para;</a></h3>
 <p>Get a handle for this component.</p>
 <p><strong>Returns:</strong> ComponentHandle wrapping the UUID.</p>
@@ -924,6 +941,25 @@
 <h3 id="bool-snapigameframeworkicomponentislistenserver-const"><code>bool SnAPI::GameFramework::IComponent::IsListenServer() const</code><a class="headerlink" href="#bool-snapigameframeworkicomponentislistenserver-const" title="Permanent link">&para;</a></h3>
 <p>Check whether this component executes as listen-server.</p>
 <p><strong>Returns:</strong> True when both server and client role are active.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentcallrpcstdstring_view-methodname-stdspan-const-variant-args"><code>bool SnAPI::GameFramework::IComponent::CallRPC(std::string_view MethodName, std::span&lt; const Variant &gt; Args={})</code><a class="headerlink" href="#bool-snapigameframeworkicomponentcallrpcstdstring_view-methodname-stdspan-const-variant-args" title="Permanent link">&para;</a></h3>
+<p>Dispatch a reflected RPC method for this component.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>MethodName</code>: Reflected method name.</li>
+<li><code>Args</code>: Variant-packed arguments.</li>
+</ul>
+<p><strong>Returns:</strong> True when dispatch succeeded (local invoke or queued network call).</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentcallrpcstdstring_view-methodname-stdinitializer_list-variant-args"><code>bool SnAPI::GameFramework::IComponent::CallRPC(std::string_view MethodName, std::initializer_list&lt; Variant &gt; Args)</code><a class="headerlink" href="#bool-snapigameframeworkicomponentcallrpcstdstring_view-methodname-stdinitializer_list-variant-args" title="Permanent link">&para;</a></h3>
+<p>Initializer-list convenience overload for <code>CallRPC</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>MethodName</code>: </li>
+<li><code>Args</code>:</li>
+</ul>
 </div>
 
 

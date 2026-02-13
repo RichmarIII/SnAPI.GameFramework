@@ -25,7 +25,16 @@ World::World(std::string Name)
 
 void World::Tick(float DeltaSeconds)
 {
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (auto* Session = m_networkSystem.Session())
+    {
+        Session->Pump(SnAPI::Networking::Clock::now());
+    }
+#endif
     NodeGraph::Tick(DeltaSeconds);
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    m_audioSystem.Update(DeltaSeconds);
+#endif
 }
 
 void World::FixedTick(float DeltaSeconds)
@@ -41,6 +50,12 @@ void World::LateTick(float DeltaSeconds)
 void World::EndFrame()
 {
     NodeGraph::EndFrame();
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (auto* Session = m_networkSystem.Session())
+    {
+        Session->Pump(SnAPI::Networking::Clock::now());
+    }
+#endif
 }
 
 TExpected<NodeHandle> World::CreateLevel(std::string Name)

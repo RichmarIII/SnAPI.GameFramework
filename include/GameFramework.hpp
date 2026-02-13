@@ -11,6 +11,7 @@
 #include "AudioSystem.h"
 #include "ComponentStorage.h"
 #include "Expected.h"
+#include "GameRuntime.h"
 #include "Handle.h"
 #include "IComponent.h"
 #include "ILevel.h"

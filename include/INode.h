@@ -1,5 +1,8 @@
 #pragma once
 
+#include <initializer_list>
+#include <span>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -11,6 +14,7 @@ namespace SnAPI::GameFramework
 
 class NodeGraph;
 class IWorld;
+class Variant;
 
 /**
  * @brief Abstract runtime contract for graph nodes.
@@ -196,6 +200,24 @@ public:
      * @return True when both server and client role are active.
      */
     virtual bool IsListenServer() const = 0;
+
+    /**
+     * @brief Dispatch a reflected RPC method for this node.
+     * @param MethodName Reflected method name.
+     * @param Args Variant-packed arguments.
+     * @return True when dispatch succeeded (local invoke or queued network call).
+     * @remarks
+     * Routing is derived from reflected method flags:
+     * - `RpcNetServer`: server invokes locally; clients forward to server.
+     * - `RpcNetClient`: clients invoke locally; server forwards to one client.
+     * - `RpcNetMulticast`: server forwards to multicast channel; clients invoke locally.
+     */
+    bool CallRPC(std::string_view MethodName, std::span<const Variant> Args = {});
+
+    /**
+     * @brief Initializer-list convenience overload for `CallRPC`.
+     */
+    bool CallRPC(std::string_view MethodName, std::initializer_list<Variant> Args);
 
     /**
      * @brief Access the list of component type ids.

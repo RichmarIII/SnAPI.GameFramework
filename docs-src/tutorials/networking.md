@@ -4,9 +4,12 @@ This page explains how SnAPI.GameFramework networking works with SnAPI.Networkin
 
 ## 1. Big Picture
 
-- `World` owns `NetworkSystem` (session + replication bridge + RPC bridge wiring).
+- `World` owns `NetworkSystem` (session + transport + replication bridge + RPC bridge wiring).
+- `NetworkSystem` is owner-only for network runtime resources (no external session attach path).
 - `NetReplicationBridge` maps graph objects to replication entities and applies spawn/update/despawn payloads.
 - `NetRpcBridge` maps reflected methods to network RPC calls.
+- `INode::CallRPC(...)` and `IComponent::CallRPC(...)` are gameplay-facing helpers that route by reflected method flags + network role.
+- `World::Tick` / `World::EndFrame` pump networking; `GameRuntime::Update` orchestrates world lifecycle phases.
 - Reflection metadata (`FieldFlags`, `MethodFlags`) controls what is eligible.
 
 ## 2. Replication Requires Two Things
@@ -15,8 +18,8 @@ A field replicates only when **both** are true:
 
 1. the field is marked with `EFieldFlagBits::Replication`
 2. the owning runtime object has replication enabled:
-   - `Node->Replicated(true)`
-   - `Component->Replicated(true)`
+    - `Node->Replicated(true)`
+    - `Component->Replicated(true)`
 
 ## 3. Define a Replicated Component
 
@@ -38,22 +41,30 @@ SNAPI_REFLECT_TYPE(ReplicatedTransformComponent, (TTypeBuilder<ReplicatedTransfo
     .Register()));
 ```
 
-## 4. Server Setup
+## 4. Server Setup (Recommended `GameRuntime` Path)
 
 ```cpp
-NetSession ServerSession(Config);
-ServerSession.Role(ESessionRole::Server);
+GameRuntime Runtime;
+GameRuntimeSettings Settings{};
+Settings.WorldName = "ServerWorld";
+Settings.Tick.EnableFixedTick = false;
 
-auto Replication = ReplicationService::Create(ServerSession);
+GameRuntimeNetworkingSettings Net{};
+Net.Role = ESessionRole::Server;
+Net.Net = Config;
+Net.BindAddress = "0.0.0.0";
+Net.BindPort = 7777;
+Net.AutoConnect = false;
+Settings.Networking = Net;
 
-NodeGraph ServerGraph("ServerGraph");
-NetReplicationBridge ServerBridge(ServerGraph);
+auto InitResult = Runtime.Init(Settings);
+if (!InitResult)
+{
+    // handle error
+}
 
-Replication->EntityProvider(&ServerBridge);
-Replication->InterestProvider(&ServerBridge);
-Replication->PriorityProvider(&ServerBridge);
-
-auto NodeResult = ServerGraph.CreateNode("Cube_0");
+auto& ServerWorld = Runtime.World();
+auto NodeResult = ServerWorld.CreateNode("Cube_0");
 auto* Node = NodeResult->Borrowed();
 Node->Replicated(true);
 
@@ -62,24 +73,40 @@ auto* Transform = &*TransformResult;
 Transform->Replicated(true);
 ```
 
-During runtime, update server-side fields and pump session.
+During runtime, update server-side fields and call `Runtime.Update(DeltaSeconds)`.
 Clients receive spawn/update automatically.
+
+There is no separate `AttachSession(...)` step in GameFramework anymore.
+The world networking subsystem owns and configures session/transport from `Settings.Networking`.
 
 ## 5. Client Setup
 
 ```cpp
-NetSession ClientSession(Config);
-ClientSession.Role(ESessionRole::Client);
+GameRuntime Runtime;
+GameRuntimeSettings Settings{};
+Settings.WorldName = "ClientWorld";
+Settings.Tick.EnableFixedTick = false;
 
-auto Replication = ReplicationService::Create(ClientSession);
+GameRuntimeNetworkingSettings Net{};
+Net.Role = ESessionRole::Client;
+Net.Net = Config;
+Net.BindAddress = "0.0.0.0";
+Net.BindPort = 0; // ephemeral local port
+Net.ConnectAddress = "127.0.0.1";
+Net.ConnectPort = 7777;
+Net.AutoConnect = true;
+Settings.Networking = Net;
 
-NodeGraph ClientGraph("ClientGraph");
-NetReplicationBridge ClientBridge(ClientGraph);
+auto InitResult = Runtime.Init(Settings);
+if (!InitResult)
+{
+    // handle error
+}
 
-Replication->Receiver(&ClientBridge);
+auto& ClientWorld = Runtime.World();
 ```
 
-As packets arrive, client graph objects are created/updated by the bridge.
+As packets arrive, client world objects are created/updated by the bridge.
 
 ## 6. Why Nodes Appear on Client Without Spawn RPC
 
@@ -169,62 +196,85 @@ SNAPI_REFLECT_COMPONENT(WeaponComponent, (TTypeBuilder<WeaponComponent>(WeaponCo
     .Register()));
 ```
 
-Bind bridge to `RpcService`:
+Use world-owned RPC bridge + service:
 
 ```cpp
-auto Rpc = RpcService::Create(Session);
-NetRpcBridge RpcBridge(&Graph);
-RpcBridge.Bind(*Rpc, 1);
+auto* Session = WorldInstance.Networking().Session();
+auto* RpcBridge = WorldInstance.Networking().RpcBridge();
+auto Rpc = WorldInstance.Networking().Rpc();
+
+if (!Session || !RpcBridge || !Rpc)
+{
+    return;
+}
 ```
 
 Call by reflected method name:
 
 ```cpp
 std::array<Variant, 1> Args{Variant::FromValue(true)};
-RpcBridge.Call(ConnectionHandle,
-               *WeaponComponentPtr,
-               "ServerSetFiring",
-               Args);
+RpcBridge->Call(ConnectionHandle,
+                *WeaponComponentPtr,
+                "ServerSetFiring",
+                Args);
 ```
 
 `NetRpcBridge` resolves method metadata, serializes arguments via `ValueCodecRegistry`, and routes through SnAPI.Networking RPC.
 
-## 12. Gameplay RPC Dispatch Pattern (Node/Component)
+## 12. Gameplay RPC Dispatch Pattern (`CallRPC`)
 
-Recommended style is a gameplay-facing method that branches by role and forwards to reflected RPC endpoints:
+Most gameplay code should avoid touching `NetRpcBridge` directly.
+Use `INode::CallRPC(...)` / `IComponent::CallRPC(...)` from your gameplay methods:
 
 ```cpp
-// Simplified pseudo-code.
 void AudioSourceComponent::Play()
 {
-    if (IsClient() && !IsServer())
+    if (CallRPC("PlayServer"))
     {
-        // client -> server rpc
-        SendRpcToServer("PlayServer");
         return;
     }
+    PlayClient();
+}
 
-    if (IsServer())
+void AudioSourceComponent::PlayServer()
+{
+    m_playRequested = true;
+    if (CallRPC("PlayClient"))
     {
-        PlayServer(); // server path, then multicast
         return;
     }
-
-    PlayClient(); // local/offline fallback
+    PlayClient();
 }
 ```
 
-For server-authoritative actions, server endpoint usually fan-outs via multicast endpoint (`PlayServer -> PlayClient`).
+`CallRPC(...)` behavior:
 
-## 13. Common Replication Problems
+- resolves reflected methods by name + argument type list (including base types)
+- routes using method flags:
+    - `RpcNetServer`: server invokes locally, client forwards to server
+    - `RpcNetClient`: client invokes locally, server forwards to client
+    - `RpcNetMulticast`: server multicasts, clients invoke locally
+- returns `true` when the call was handled (local invoke or queued network call)
+- returns `false` when method/route cannot be resolved so caller can apply local fallback behavior
+
+For components, `TypeKey` is assigned automatically during `Add<T>()` / `AddWithId<T>()`, so component call sites do not need to pass type ids manually.
+
+## 13. Common Replication and RPC Problems
 
 - Objects never replicate:
-  - forgot `Replicated(true)` on node/component
-  - forgot `EFieldFlagBits::Replication` on fields
+    - forgot `Replicated(true)` on node/component
+    - forgot `EFieldFlagBits::Replication` on fields
+
+- `CallRPC(...)` returns false unexpectedly:
+    - method name/signature does not match reflected metadata
+    - method exists but is missing RPC flags
+    - client path has no active primary connection/session
+
 - Initial spawn works, then updates stop:
-  - inspect connection dumps for pending reliable growth/disconnect reasons
-  - check pacing/MTU settings in `NetConfig`
+    - inspect connection dumps for pending reliable growth/disconnect reasons
+    - check pacing/MTU settings in `NetConfig`
+
 - Type not found on remote:
-  - ensure reflected type macro is linked and `RegisterBuiltinTypes()` ran
+    - ensure reflected type macro is linked and `RegisterBuiltinTypes()` ran
 
 Next: [Audio Components](audio.md)

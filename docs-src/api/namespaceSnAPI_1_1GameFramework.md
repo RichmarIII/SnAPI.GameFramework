@@ -5,6 +5,8 @@
 - **Namespace:** SnAPI::GameFramework::detail
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{AssetPipelineFactories.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{AssetPipelineSerializers.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{IComponent.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{INode.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{TypeRegistry.cpp}
@@ -16,6 +18,9 @@
 - **Type:** SnAPI::GameFramework::TExpectedRef
 - **Type:** SnAPI::GameFramework::TFlags
 - **Type:** SnAPI::GameFramework::EnableFlags
+- **Type:** SnAPI::GameFramework::GameRuntimeTickSettings
+- **Type:** SnAPI::GameFramework::GameRuntimeSettings
+- **Type:** SnAPI::GameFramework::GameRuntime
 - **Type:** SnAPI::GameFramework::THandle
 - **Type:** SnAPI::GameFramework::HandleHash
 - **Type:** SnAPI::GameFramework::IComponent

@@ -627,10 +627,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-server-setup" class="md-nav__link">
+  <a href="#4-server-setup-recommended-gameruntime-path" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Server Setup
+        4. Server Setup (Recommended GameRuntime Path)
       
     </span>
   </a>
@@ -732,10 +732,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#12-gameplay-rpc-dispatch-pattern-nodecomponent" class="md-nav__link">
+  <a href="#12-gameplay-rpc-dispatch-pattern-callrpc" class="md-nav__link">
     <span class="md-ellipsis">
       
-        12. Gameplay RPC Dispatch Pattern (Node/Component)
+        12. Gameplay RPC Dispatch Pattern (CallRPC)
       
     </span>
   </a>
@@ -743,10 +743,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#13-common-replication-problems" class="md-nav__link">
+  <a href="#13-common-replication-and-rpc-problems" class="md-nav__link">
     <span class="md-ellipsis">
       
-        13. Common Replication Problems
+        13. Common Replication and RPC Problems
       
     </span>
   </a>
@@ -1012,18 +1012,23 @@
 <p>This page explains how SnAPI.GameFramework networking works with SnAPI.Networking.</p>
 <h2 id="1-big-picture">1. Big Picture<a class="headerlink" href="#1-big-picture" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>World</code> owns <code>NetworkSystem</code> (session + replication bridge + RPC bridge wiring).</li>
+<li><code>World</code> owns <code>NetworkSystem</code> (session + transport + replication bridge + RPC bridge wiring).</li>
+<li><code>NetworkSystem</code> is owner-only for network runtime resources (no external session attach path).</li>
 <li><code>NetReplicationBridge</code> maps graph objects to replication entities and applies spawn/update/despawn payloads.</li>
 <li><code>NetRpcBridge</code> maps reflected methods to network RPC calls.</li>
+<li><code>INode::CallRPC(...)</code> and <code>IComponent::CallRPC(...)</code> are gameplay-facing helpers that route by reflected method flags + network role.</li>
+<li><code>World::Tick</code> / <code>World::EndFrame</code> pump networking; <code>GameRuntime::Update</code> orchestrates world lifecycle phases.</li>
 <li>Reflection metadata (<code>FieldFlags</code>, <code>MethodFlags</code>) controls what is eligible.</li>
 </ul>
 <h2 id="2-replication-requires-two-things">2. Replication Requires Two Things<a class="headerlink" href="#2-replication-requires-two-things" title="Permanent link">&para;</a></h2>
 <p>A field replicates only when <strong>both</strong> are true:</p>
 <ol>
 <li>the field is marked with <code>EFieldFlagBits::Replication</code></li>
-<li>the owning runtime object has replication enabled:</li>
+<li>the owning runtime object has replication enabled:<ul>
 <li><code>Node-&gt;Replicated(true)</code></li>
 <li><code>Component-&gt;Replicated(true)</code></li>
+</ul>
+</li>
 </ol>
 <h2 id="3-define-a-replicated-component">3. Define a Replicated Component<a class="headerlink" href="#3-define-a-replicated-component" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">ReplicatedTransformComponent</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">IComponent</span>
@@ -1042,20 +1047,28 @@
 <span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
 </code></pre></div>
-<h2 id="4-server-setup">4. Server Setup<a class="headerlink" href="#4-server-setup" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="n">NetSession</span><span class="w"> </span><span class="nf">ServerSession</span><span class="p">(</span><span class="n">Config</span><span class="p">);</span>
-<span class="n">ServerSession</span><span class="p">.</span><span class="n">Role</span><span class="p">(</span><span class="n">ESessionRole</span><span class="o">::</span><span class="n">Server</span><span class="p">);</span>
+<h2 id="4-server-setup-recommended-gameruntime-path">4. Server Setup (Recommended <code>GameRuntime</code> Path)<a class="headerlink" href="#4-server-setup-recommended-gameruntime-path" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
+<span class="n">GameRuntimeSettings</span><span class="w"> </span><span class="n">Settings</span><span class="p">{};</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;ServerWorld&quot;</span><span class="p">;</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">EnableFixedTick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">Replication</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReplicationService</span><span class="o">::</span><span class="n">Create</span><span class="p">(</span><span class="n">ServerSession</span><span class="p">);</span>
+<span class="n">GameRuntimeNetworkingSettings</span><span class="w"> </span><span class="n">Net</span><span class="p">{};</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">Role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ESessionRole</span><span class="o">::</span><span class="n">Server</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">Net</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Config</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">BindAddress</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;0.0.0.0&quot;</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">BindPort</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7777</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">AutoConnect</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">Networking</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Net</span><span class="p">;</span>
 
-<span class="n">NodeGraph</span><span class="w"> </span><span class="n">ServerGraph</span><span class="p">(</span><span class="s">&quot;ServerGraph&quot;</span><span class="p">);</span>
-<span class="n">NetReplicationBridge</span><span class="w"> </span><span class="nf">ServerBridge</span><span class="p">(</span><span class="n">ServerGraph</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">InitResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">InitResult</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="c1">// handle error</span>
+<span class="p">}</span>
 
-<span class="n">Replication</span><span class="o">-&gt;</span><span class="n">EntityProvider</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ServerBridge</span><span class="p">);</span>
-<span class="n">Replication</span><span class="o">-&gt;</span><span class="n">InterestProvider</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ServerBridge</span><span class="p">);</span>
-<span class="n">Replication</span><span class="o">-&gt;</span><span class="n">PriorityProvider</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ServerBridge</span><span class="p">);</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">NodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ServerGraph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Cube_0&quot;</span><span class="p">);</span>
+<span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">ServerWorld</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">();</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">NodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ServerWorld</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Cube_0&quot;</span><span class="p">);</span>
 <span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Node</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
 <span class="n">Node</span><span class="o">-&gt;</span><span class="n">Replicated</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
 
@@ -1063,20 +1076,35 @@
 <span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;*</span><span class="n">TransformResult</span><span class="p">;</span>
 <span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Replicated</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
 </code></pre></div>
-<p>During runtime, update server-side fields and pump session.
+<p>During runtime, update server-side fields and call <code>Runtime.Update(DeltaSeconds)</code>.
 Clients receive spawn/update automatically.</p>
+<p>There is no separate <code>AttachSession(...)</code> step in GameFramework anymore.
+The world networking subsystem owns and configures session/transport from <code>Settings.Networking</code>.</p>
 <h2 id="5-client-setup">5. Client Setup<a class="headerlink" href="#5-client-setup" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="n">NetSession</span><span class="w"> </span><span class="nf">ClientSession</span><span class="p">(</span><span class="n">Config</span><span class="p">);</span>
-<span class="n">ClientSession</span><span class="p">.</span><span class="n">Role</span><span class="p">(</span><span class="n">ESessionRole</span><span class="o">::</span><span class="n">Client</span><span class="p">);</span>
+<div class="highlight"><pre><span></span><code><span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
+<span class="n">GameRuntimeSettings</span><span class="w"> </span><span class="n">Settings</span><span class="p">{};</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;ClientWorld&quot;</span><span class="p">;</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">EnableFixedTick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">Replication</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ReplicationService</span><span class="o">::</span><span class="n">Create</span><span class="p">(</span><span class="n">ClientSession</span><span class="p">);</span>
+<span class="n">GameRuntimeNetworkingSettings</span><span class="w"> </span><span class="n">Net</span><span class="p">{};</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">Role</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ESessionRole</span><span class="o">::</span><span class="n">Client</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">Net</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Config</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">BindAddress</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;0.0.0.0&quot;</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">BindPort</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="c1">// ephemeral local port</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">ConnectAddress</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;127.0.0.1&quot;</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">ConnectPort</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">7777</span><span class="p">;</span>
+<span class="n">Net</span><span class="p">.</span><span class="n">AutoConnect</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">Networking</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Net</span><span class="p">;</span>
 
-<span class="n">NodeGraph</span><span class="w"> </span><span class="n">ClientGraph</span><span class="p">(</span><span class="s">&quot;ClientGraph&quot;</span><span class="p">);</span>
-<span class="n">NetReplicationBridge</span><span class="w"> </span><span class="nf">ClientBridge</span><span class="p">(</span><span class="n">ClientGraph</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">InitResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">InitResult</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="c1">// handle error</span>
+<span class="p">}</span>
 
-<span class="n">Replication</span><span class="o">-&gt;</span><span class="n">Receiver</span><span class="p">(</span><span class="o">&amp;</span><span class="n">ClientBridge</span><span class="p">);</span>
+<span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">ClientWorld</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">();</span>
 </code></pre></div>
-<p>As packets arrive, client graph objects are created/updated by the bridge.</p>
+<p>As packets arrive, client world objects are created/updated by the bridge.</p>
 <h2 id="6-why-nodes-appear-on-client-without-spawn-rpc">6. Why Nodes Appear on Client Without Spawn RPC<a class="headerlink" href="#6-why-nodes-appear-on-client-without-spawn-rpc" title="Permanent link">&para;</a></h2>
 <p>Node/component creation is part of replication spawn payload handling (<code>OnSpawn</code>), not a separate explicit gameplay RPC call.</p>
 <p>That is why you can see client objects appear even when you only configured replication.</p>
@@ -1142,51 +1170,89 @@ To keep a reliable message ackable, sender-side in-flight reliable depth is wind
 <span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
 </code></pre></div>
-<p>Bind bridge to <code>RpcService</code>:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">Rpc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">RpcService</span><span class="o">::</span><span class="n">Create</span><span class="p">(</span><span class="n">Session</span><span class="p">);</span>
-<span class="n">NetRpcBridge</span><span class="w"> </span><span class="nf">RpcBridge</span><span class="p">(</span><span class="o">&amp;</span><span class="n">Graph</span><span class="p">);</span>
-<span class="n">RpcBridge</span><span class="p">.</span><span class="n">Bind</span><span class="p">(</span><span class="o">*</span><span class="n">Rpc</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">);</span>
+<p>Use world-owned RPC bridge + service:</p>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Session</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">Networking</span><span class="p">().</span><span class="n">Session</span><span class="p">();</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">RpcBridge</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">Networking</span><span class="p">().</span><span class="n">RpcBridge</span><span class="p">();</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">Rpc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">Networking</span><span class="p">().</span><span class="n">Rpc</span><span class="p">();</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Session</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">RpcBridge</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">Rpc</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
 </code></pre></div>
 <p>Call by reflected method name:</p>
 <div class="highlight"><pre><span></span><code><span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="n">Variant</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Args</span><span class="p">{</span><span class="n">Variant</span><span class="o">::</span><span class="n">FromValue</span><span class="p">(</span><span class="nb">true</span><span class="p">)};</span>
-<span class="n">RpcBridge</span><span class="p">.</span><span class="n">Call</span><span class="p">(</span><span class="n">ConnectionHandle</span><span class="p">,</span>
-<span class="w">               </span><span class="o">*</span><span class="n">WeaponComponentPtr</span><span class="p">,</span>
-<span class="w">               </span><span class="s">&quot;ServerSetFiring&quot;</span><span class="p">,</span>
-<span class="w">               </span><span class="n">Args</span><span class="p">);</span>
+<span class="n">RpcBridge</span><span class="o">-&gt;</span><span class="n">Call</span><span class="p">(</span><span class="n">ConnectionHandle</span><span class="p">,</span>
+<span class="w">                </span><span class="o">*</span><span class="n">WeaponComponentPtr</span><span class="p">,</span>
+<span class="w">                </span><span class="s">&quot;ServerSetFiring&quot;</span><span class="p">,</span>
+<span class="w">                </span><span class="n">Args</span><span class="p">);</span>
 </code></pre></div>
 <p><code>NetRpcBridge</code> resolves method metadata, serializes arguments via <code>ValueCodecRegistry</code>, and routes through SnAPI.Networking RPC.</p>
-<h2 id="12-gameplay-rpc-dispatch-pattern-nodecomponent">12. Gameplay RPC Dispatch Pattern (Node/Component)<a class="headerlink" href="#12-gameplay-rpc-dispatch-pattern-nodecomponent" title="Permanent link">&para;</a></h2>
-<p>Recommended style is a gameplay-facing method that branches by role and forwards to reflected RPC endpoints:</p>
-<div class="highlight"><pre><span></span><code><span class="c1">// Simplified pseudo-code.</span>
-<span class="kt">void</span><span class="w"> </span><span class="nf">AudioSourceComponent::Play</span><span class="p">()</span>
+<h2 id="12-gameplay-rpc-dispatch-pattern-callrpc">12. Gameplay RPC Dispatch Pattern (<code>CallRPC</code>)<a class="headerlink" href="#12-gameplay-rpc-dispatch-pattern-callrpc" title="Permanent link">&para;</a></h2>
+<p>Most gameplay code should avoid touching <code>NetRpcBridge</code> directly.
+Use <code>INode::CallRPC(...)</code> / <code>IComponent::CallRPC(...)</code> from your gameplay methods:</p>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">AudioSourceComponent::Play</span><span class="p">()</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">IsClient</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="o">!</span><span class="n">IsServer</span><span class="p">())</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;PlayServer&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// client -&gt; server rpc</span>
-<span class="w">        </span><span class="n">SendRpcToServer</span><span class="p">(</span><span class="s">&quot;PlayServer&quot;</span><span class="p">);</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">PlayClient</span><span class="p">();</span>
+<span class="p">}</span>
 
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">IsServer</span><span class="p">())</span>
+<span class="kt">void</span><span class="w"> </span><span class="nf">AudioSourceComponent::PlayServer</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">m_playRequested</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;PlayClient&quot;</span><span class="p">))</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="n">PlayServer</span><span class="p">();</span><span class="w"> </span><span class="c1">// server path, then multicast</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="n">PlayClient</span><span class="p">();</span><span class="w"> </span><span class="c1">// local/offline fallback</span>
+<span class="w">    </span><span class="n">PlayClient</span><span class="p">();</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>For server-authoritative actions, server endpoint usually fan-outs via multicast endpoint (<code>PlayServer -&gt; PlayClient</code>).</p>
-<h2 id="13-common-replication-problems">13. Common Replication Problems<a class="headerlink" href="#13-common-replication-problems" title="Permanent link">&para;</a></h2>
+<p><code>CallRPC(...)</code> behavior:</p>
 <ul>
-<li>Objects never replicate:</li>
+<li>resolves reflected methods by name + argument type list (including base types)</li>
+<li>routes using method flags:<ul>
+<li><code>RpcNetServer</code>: server invokes locally, client forwards to server</li>
+<li><code>RpcNetClient</code>: client invokes locally, server forwards to client</li>
+<li><code>RpcNetMulticast</code>: server multicasts, clients invoke locally</li>
+</ul>
+</li>
+<li>returns <code>true</code> when the call was handled (local invoke or queued network call)</li>
+<li>returns <code>false</code> when method/route cannot be resolved so caller can apply local fallback behavior</li>
+</ul>
+<p>For components, <code>TypeKey</code> is assigned automatically during <code>Add&lt;T&gt;()</code> / <code>AddWithId&lt;T&gt;()</code>, so component call sites do not need to pass type ids manually.</p>
+<h2 id="13-common-replication-and-rpc-problems">13. Common Replication and RPC Problems<a class="headerlink" href="#13-common-replication-and-rpc-problems" title="Permanent link">&para;</a></h2>
+<ul>
+<li>
+<p>Objects never replicate:</p>
+<ul>
 <li>forgot <code>Replicated(true)</code> on node/component</li>
 <li>forgot <code>EFieldFlagBits::Replication</code> on fields</li>
-<li>Initial spawn works, then updates stop:</li>
+</ul>
+</li>
+<li>
+<p><code>CallRPC(...)</code> returns false unexpectedly:</p>
+<ul>
+<li>method name/signature does not match reflected metadata</li>
+<li>method exists but is missing RPC flags</li>
+<li>client path has no active primary connection/session</li>
+</ul>
+</li>
+<li>
+<p>Initial spawn works, then updates stop:</p>
+<ul>
 <li>inspect connection dumps for pending reliable growth/disconnect reasons</li>
 <li>check pacing/MTU settings in <code>NetConfig</code></li>
-<li>Type not found on remote:</li>
+</ul>
+</li>
+<li>
+<p>Type not found on remote:</p>
+<ul>
 <li>ensure reflected type macro is linked and <code>RegisterBuiltinTypes()</code> ran</li>
+</ul>
+</li>
 </ul>
 <p>Next: <a href="../audio/">Audio Components</a></p>
 

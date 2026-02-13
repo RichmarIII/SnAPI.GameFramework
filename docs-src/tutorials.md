@@ -60,12 +60,14 @@ Run examples:
 - Handles are identity; pointers are borrowed views.
 - Reflection metadata is lazy-registered on first use.
 - Serialization and networking both read reflection metadata.
+- Gameplay RPC call sites can stay small with `INode::CallRPC(...)` / `IComponent::CallRPC(...)`.
 - Replication has two gates:
-  - The field must have `EFieldFlagBits::Replication`.
-  - The owning node/component must have `Replicated(true)`.
+    - The field must have `EFieldFlagBits::Replication`.
+    - The owning node/component must have `Replicated(true)`.
 - Nested field replication depends on codec availability:
-  - with `TValueCodec<T>`, the full field value is codec-serialized.
-  - without a codec, only nested reflected fields marked for replication are serialized.
+    - with `TValueCodec<T>`, the full field value is codec-serialized.
+    - without a codec, only nested reflected fields marked for replication are serialized.
+- `World` owns subsystem runtime (networking/audio), and `GameRuntime` orchestrates world update phases.
 - Transport `pkt_lost` counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with `pending_rel`.
 - Destruction is deferred to `EndFrame()` to keep handles stable during a frame.
 

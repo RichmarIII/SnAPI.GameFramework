@@ -81,6 +81,10 @@ void BuildScene()
 ## 4. Frame Lifecycle
 
 Tick order is tree-driven from graph roots.
+`World` also runs subsystem work during frame lifecycle:
+
+- networking session pumping in `Tick` + `EndFrame`
+- audio system update in `Tick`
 
 Typical frame loop:
 
@@ -99,6 +103,9 @@ Why `EndFrame()` matters:
 - `DestroyNode()` and component `Remove<T>()` are deferred.
 - Handles remain valid until `EndFrame()`.
 - This prevents mid-frame invalidation bugs.
+
+If you prefer less boilerplate in apps/examples, use `GameRuntime` and call `Runtime.Update(DeltaSeconds)`.
+`GameRuntime` orchestrates world lifecycle phases while `World` owns subsystem ticking/pumping.
 
 ## 5. Standalone Graphs (Prefab-Style)
 

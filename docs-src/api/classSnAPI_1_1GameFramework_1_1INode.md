@@ -204,6 +204,28 @@ Check whether this node is executing as a listen-server.
 **Returns:** True when both server and client role are active.
 </div>
 <div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::INode::CallRPC(std::string_view MethodName, std::span< const Variant > Args={})`
+
+Dispatch a reflected RPC method for this node.
+
+**Parameters**
+
+- `MethodName`: Reflected method name.
+- `Args`: Variant-packed arguments.
+
+**Returns:** True when dispatch succeeded (local invoke or queued network call).
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::INode::CallRPC(std::string_view MethodName, std::initializer_list< Variant > Args)`
+
+Initializer-list convenience overload for `CallRPC`.
+
+**Parameters**
+
+- `MethodName`: 
+- `Args`:
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `virtual std::vector< TypeId > & SnAPI::GameFramework::INode::ComponentTypes()=0`
 
 Access the list of component type ids.

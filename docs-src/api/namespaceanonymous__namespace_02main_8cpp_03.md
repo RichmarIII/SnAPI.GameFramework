@@ -106,11 +106,16 @@
 ### `NetConfig anonymous_namespace{main.cpp}::MakeNetConfig()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::shared_ptr< UdpTransportAsio > anonymous_namespace{main.cpp}::MakeUdpTransport(const NetEndpoint &Local)`
+### `UdpTransportConfig anonymous_namespace{main.cpp}::MakeUdpTransportConfig()`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `GameRuntimeSettings anonymous_namespace{main.cpp}::MakeRuntimeSettings(const Args &Parsed, bool ServerMode, SessionListener *Listener)`
 
 **Parameters**
 
-- `Local`:
+- `Parsed`: 
+- `ServerMode`: 
+- `Listener`:
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void anonymous_namespace{main.cpp}::DrawCube(float Size)`

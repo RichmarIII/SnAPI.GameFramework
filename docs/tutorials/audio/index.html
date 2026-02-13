@@ -964,6 +964,7 @@
 <ul>
 <li><code>World</code> owns <code>AudioSystem</code>.</li>
 <li><code>World</code> also owns <code>NetworkSystem</code>, so audio gameplay RPC can route through world networking.</li>
+<li><code>World::Tick(...)</code> performs the per-frame <code>AudioSystem::Update(...)</code>.</li>
 <li><code>AudioListenerComponent</code> writes listener transform each tick.</li>
 <li><code>AudioSourceComponent</code> controls emitter, sound loading, playback, and spatial settings.</li>
 </ul>
@@ -982,6 +983,7 @@
 <ul>
 <li><code>OnCreate()</code> initializes audio system lazily.</li>
 <li>Each tick, listener transform is pushed to <code>AudioEngine</code>.</li>
+<li>The audio backend frame update itself is handled once by <code>World::Tick(...)</code>.</li>
 </ul>
 <h2 id="3-add-a-source-to-an-actor-node">3. Add a Source to an Actor Node<a class="headerlink" href="#3-add-a-source-to-an-actor-node" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Speaker&quot;</span><span class="p">);</span>
@@ -1012,11 +1014,20 @@
 </code></pre></div>
 <p><code>AudioSourceComponent</code> keeps emitter state synced with current settings and owner transform.</p>
 <h2 id="5-networked-playback-flow">5. Networked Playback Flow<a class="headerlink" href="#5-networked-playback-flow" title="Permanent link">&para;</a></h2>
-<p><code>AudioSourceComponent</code> exposes gameplay methods (<code>Play</code>, <code>Stop</code>) and internally routes to RPC endpoints when networking is attached.</p>
+<p><code>AudioSourceComponent</code> exposes gameplay methods (<code>Play</code>, <code>Stop</code>) and internally routes through <code>IComponent::CallRPC(...)</code> when networking is attached.</p>
+<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">AudioSourceComponent::Play</span><span class="p">()</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;PlayServer&quot;</span><span class="p">))</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="n">PlayClient</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div>
 <p><code>Play()</code> flow:</p>
 <ol>
-<li>Client call: sends RPC to <code>PlayServer</code>.</li>
-<li>Server <code>PlayServer</code>: authoritatively triggers multicast RPC <code>PlayClient</code>.</li>
+<li>Client call: <code>CallRPC("PlayServer")</code> forwards to server.</li>
+<li>Server <code>PlayServer</code>: <code>CallRPC("PlayClient")</code> multicasts.</li>
 <li><code>PlayClient</code>: executes playback on listening peers.</li>
 </ol>
 <p><code>Stop()</code> follows the same pattern (<code>Stop -&gt; StopServer -&gt; StopClient</code>).</p>
@@ -1059,7 +1070,8 @@
 <span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Listener/source updates happen through normal component ticking.</p>
+<p>Listener/source updates happen through normal component ticking.
+Audio backend update is world-owned, not component-owned.</p>
 <h2 id="10-troubleshooting">10. Troubleshooting<a class="headerlink" href="#10-troubleshooting" title="Permanent link">&para;</a></h2>
 <ul>
 <li>

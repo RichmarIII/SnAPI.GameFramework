@@ -1007,14 +1007,20 @@
 <p>The returned world can be traversed normally (<code>Levels()</code>, <code>CreateNode</code>, <code>NodePool().ForEach</code>, etc.).</p>
 <h2 id="6-common-failure-cases">6. Common Failure Cases<a class="headerlink" href="#6-common-failure-cases" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>Type not registered</code> on load:</li>
+<li><code>Type not registered</code> on load:<ul>
 <li><code>RegisterBuiltinTypes()</code> was not called early enough.</li>
 <li>The type’s reflection macro was never linked/referenced.</li>
-<li><code>Failed to load world from AssetManager</code>:</li>
+</ul>
+</li>
+<li><code>Failed to load world from AssetManager</code>:<ul>
 <li>payload serializers/factories were not registered.</li>
 <li>payload type/schema mismatch.</li>
-<li>Objects deserialize but links are missing:</li>
+</ul>
+</li>
+<li>Objects deserialize but links are missing:<ul>
 <li>verify handles/UUID fields were reflected and serialized.</li>
+</ul>
+</li>
 </ul>
 <h2 id="7-compression-notes">7. Compression Notes<a class="headerlink" href="#7-compression-notes" title="Permanent link">&para;</a></h2>
 <p>Compression behavior is primarily configured in SnAPI.AssetPipeline (writer settings and optional per-entry overrides).

@@ -12,8 +12,47 @@ NetworkSystem::NetworkSystem(NodeGraph& Graph)
 {
 }
 
-bool NetworkSystem::AttachSession(SnAPI::Networking::NetSession& Session,
-                                  SnAPI::Networking::RpcTargetId TargetIdValue)
+Result NetworkSystem::InitializeOwnedSession(const NetworkBootstrapSettings& Settings)
+{
+    ShutdownOwnedSession();
+
+    m_ownedSession = std::make_unique<SnAPI::Networking::NetSession>(Settings.Net);
+    m_ownedSession->Role(Settings.Role);
+    for (auto* Listener : Settings.SessionListeners)
+    {
+        if (Listener)
+        {
+            m_ownedSession->AddListener(Listener);
+        }
+    }
+
+    m_transport = std::make_shared<SnAPI::Networking::UdpTransportAsio>(Settings.Transport);
+    if (!m_transport->Open(SnAPI::Networking::NetEndpoint{Settings.BindAddress, Settings.BindPort}))
+    {
+        ShutdownOwnedSession();
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Failed to open UDP transport"));
+    }
+    m_ownedSession->RegisterTransport(m_transport);
+
+    if (Settings.AutoConnect
+        && (Settings.Role == SnAPI::Networking::ESessionRole::Client
+            || Settings.Role == SnAPI::Networking::ESessionRole::ServerAndClient))
+    {
+        m_ownedSession->OpenConnection(m_transport->Handle(),
+                                       SnAPI::Networking::NetEndpoint{Settings.ConnectAddress, Settings.ConnectPort});
+    }
+
+    if (!WireSession(*m_ownedSession, Settings.RpcTargetId))
+    {
+        ShutdownOwnedSession();
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Failed to wire owned session into world networking"));
+    }
+
+    return Ok();
+}
+
+bool NetworkSystem::WireSession(SnAPI::Networking::NetSession& Session,
+                                SnAPI::Networking::RpcTargetId TargetIdValue)
 {
     if (m_session && m_session != &Session)
     {
@@ -31,6 +70,10 @@ bool NetworkSystem::AttachSession(SnAPI::Networking::NetSession& Session,
             m_replication.reset();
             m_rpc.reset();
             return false;
+        }
+        if (m_graph)
+        {
+            m_rpcBridge = std::make_unique<NetRpcBridge>(m_graph);
         }
     }
 
@@ -51,6 +94,25 @@ bool NetworkSystem::AttachSession(SnAPI::Networking::NetSession& Session,
     }
 
     return true;
+}
+
+void NetworkSystem::ShutdownOwnedSession()
+{
+    m_session = nullptr;
+    m_replication.reset();
+    m_rpc.reset();
+    m_transport.reset();
+    m_ownedSession.reset();
+
+    // Reset RPC bridge binding state so a new session can bind cleanly.
+    if (m_graph)
+    {
+        m_rpcBridge = std::make_unique<NetRpcBridge>(m_graph);
+    }
+    else
+    {
+        m_rpcBridge.reset();
+    }
 }
 
 bool NetworkSystem::IsServer() const
@@ -106,4 +168,3 @@ std::optional<SnAPI::Networking::NetConnectionHandle> NetworkSystem::PrimaryConn
 } // namespace SnAPI::GameFramework
 
 #endif // SNAPI_GF_ENABLE_NETWORKING
-

@@ -4,20 +4,14 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-#include "NetworkSystem.h"
-#include "StaticTypeId.h"
-#include "Variant.h"
-#endif
 #include "NodeGraph.h"
 #include "TransformComponent.h"
+#include "Variant.h"
 #include "World.h"
 
 #include <AudioEngine.h>
 #include <Types.h>
 #include <Eigen/Geometry>
-#include <array>
-#include <span>
 
 namespace SnAPI::GameFramework
 {
@@ -52,23 +46,6 @@ AudioSystem* AudioListenerComponent::ResolveAudioSystem() const
     return &WorldPtr->Audio();
 }
 
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-NetworkSystem* AudioListenerComponent::ResolveNetworkSystem() const
-{
-    auto* OwnerNode = this->OwnerNode();
-    if (!OwnerNode)
-    {
-        return nullptr;
-    }
-    auto* WorldPtr = OwnerNode->World();
-    if (!WorldPtr)
-    {
-        return nullptr;
-    }
-    return &WorldPtr->Networking();
-}
-#endif
-
 void AudioListenerComponent::OnCreate()
 {
     if (auto* Audio = ResolveAudioSystem())
@@ -79,54 +56,20 @@ void AudioListenerComponent::OnCreate()
 
 void AudioListenerComponent::SetActive(bool ActiveValue)
 {
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    auto* Network = ResolveNetworkSystem();
-    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
-    if (Network && Network->Session() && Network->Rpc() && Bridge)
+    if (CallRPC("SetActiveServer", {Variant::FromValue(ActiveValue)}))
     {
-        if (IsClient() && !IsServer())
-        {
-            auto Connection = Network->PrimaryConnection();
-            if (Connection)
-            {
-                const std::array<Variant, 1> Args{Variant::FromValue(ActiveValue)};
-                if (Bridge->Call(*Connection,
-                                 *this,
-                                 StaticTypeId<AudioListenerComponent>(),
-                                 "SetActiveServer",
-                                 std::span<const Variant>(Args)) != 0)
-                {
-                    return;
-                }
-            }
-        }
-        else if (IsServer())
-        {
-            SetActiveServer(ActiveValue);
-            return;
-        }
+        return;
     }
-#endif
     SetActiveClient(ActiveValue);
 }
 
 void AudioListenerComponent::SetActiveServer(bool ActiveValue)
 {
     m_active = ActiveValue;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    auto* Network = ResolveNetworkSystem();
-    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
-    if (Network && Network->Session() && Network->Rpc() && Bridge && IsServer())
+    if (CallRPC("SetActiveClient", {Variant::FromValue(ActiveValue)}))
     {
-        const std::array<Variant, 1> Args{Variant::FromValue(ActiveValue)};
-        (void)Bridge->Call(0,
-                           *this,
-                           StaticTypeId<AudioListenerComponent>(),
-                           "SetActiveClient",
-                           std::span<const Variant>(Args));
         return;
     }
-#endif
     SetActiveClient(ActiveValue);
 }
 
@@ -179,7 +122,6 @@ void AudioListenerComponent::Tick(float DeltaSeconds)
     Listener.Velocity = ToAudioVector(Velocity);
 
     Engine->SetListenerTransform(Listener);
-    Audio->Update(DeltaSeconds);
 }
 
 } // namespace SnAPI::GameFramework

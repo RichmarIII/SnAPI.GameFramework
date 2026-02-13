@@ -4,19 +4,12 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-#include "NetworkSystem.h"
-#include "StaticTypeId.h"
-#include "Variant.h"
-#endif
 #include "NodeGraph.h"
 #include "TransformComponent.h"
 #include "World.h"
 
 #include <Types.h>
-#include <array>
 #include <exception>
-#include <span>
 
 namespace SnAPI::GameFramework
 {
@@ -42,23 +35,6 @@ AudioSystem* AudioSourceComponent::ResolveAudioSystem() const
     }
     return &WorldPtr->Audio();
 }
-
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-NetworkSystem* AudioSourceComponent::ResolveNetworkSystem() const
-{
-    auto* OwnerNode = this->OwnerNode();
-    if (!OwnerNode)
-    {
-        return nullptr;
-    }
-    auto* WorldPtr = OwnerNode->World();
-    if (!WorldPtr)
-    {
-        return nullptr;
-    }
-    return &WorldPtr->Networking();
-}
-#endif
 
 void AudioSourceComponent::OnCreate()
 {
@@ -89,54 +65,20 @@ void AudioSourceComponent::Tick(float DeltaSeconds)
 
 void AudioSourceComponent::Play()
 {
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    auto* Network = ResolveNetworkSystem();
-    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
-    if (Network && Network->Session() && Network->Rpc() && Bridge)
+    if (CallRPC("PlayServer"))
     {
-        if (IsClient() && !IsServer())
-        {
-            auto Connection = Network->PrimaryConnection();
-            if (Connection)
-            {
-                const std::array<Variant, 0> Args{};
-                if (Bridge->Call(*Connection,
-                                 *this,
-                                 StaticTypeId<AudioSourceComponent>(),
-                                 "PlayServer",
-                                 std::span<const Variant>(Args)) != 0)
-                {
-                    return;
-                }
-            }
-        }
-        else if (IsServer())
-        {
-            PlayServer();
-            return;
-        }
+        return;
     }
-#endif
     PlayClient();
 }
 
 void AudioSourceComponent::PlayServer()
 {
     m_playRequested = true;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    auto* Network = ResolveNetworkSystem();
-    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
-    if (Network && Network->Session() && Network->Rpc() && Bridge && IsServer())
+    if (CallRPC("PlayClient"))
     {
-        const std::array<Variant, 0> Args{};
-        (void)Bridge->Call(0,
-                           *this,
-                           StaticTypeId<AudioSourceComponent>(),
-                           "PlayClient",
-                           std::span<const Variant>(Args));
         return;
     }
-#endif
     PlayClient();
 }
 
@@ -152,87 +94,42 @@ void AudioSourceComponent::PlayClient()
         return;
     }
 
-    try
+    EnsureEmitter();
+    if (!IsLoaded() || m_loadedPath != m_settings.SoundPath || m_loadedStreaming != m_settings.Streaming)
     {
-        EnsureEmitter();
-        if (!IsLoaded() || m_loadedPath != m_settings.SoundPath || m_loadedStreaming != m_settings.Streaming)
+        if (!LoadSound(m_settings.SoundPath, m_settings.Streaming))
         {
-            if (!LoadSound(m_settings.SoundPath, m_settings.Streaming))
-            {
-                return;
-            }
+            return;
         }
+    }
 
-        if (auto* Audio = ResolveAudioSystem())
+    if (auto* Audio = ResolveAudioSystem())
+    {
+        if (auto* Engine = Audio->Engine(); Engine && m_emitter.IsValid() && m_sound.IsValid())
         {
-            if (auto* Engine = Audio->Engine(); Engine && m_emitter.IsValid() && m_sound.IsValid())
-            {
-                Engine->SetLooping(m_emitter, m_settings.Looping);
-                Engine->Play(m_emitter, m_sound);
-                m_playRequested = false;
-            }
+            Engine->SetLooping(m_emitter, m_settings.Looping);
+            Engine->Play(m_emitter, m_sound);
+            m_playRequested = false;
         }
-    }
-    catch (const std::exception&)
-    {
-        m_playRequested = false;
-    }
-    catch (...)
-    {
-        m_playRequested = false;
     }
 }
 
 void AudioSourceComponent::Stop()
 {
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    auto* Network = ResolveNetworkSystem();
-    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
-    if (Network && Network->Session() && Network->Rpc() && Bridge)
+    if (CallRPC("StopServer"))
     {
-        if (IsClient() && !IsServer())
-        {
-            auto Connection = Network->PrimaryConnection();
-            if (Connection)
-            {
-                const std::array<Variant, 0> Args{};
-                if (Bridge->Call(*Connection,
-                                 *this,
-                                 StaticTypeId<AudioSourceComponent>(),
-                                 "StopServer",
-                                 std::span<const Variant>(Args)) != 0)
-                {
-                    return;
-                }
-            }
-        }
-        else if (IsServer())
-        {
-            StopServer();
-            return;
-        }
+        return;
     }
-#endif
     StopClient();
 }
 
 void AudioSourceComponent::StopServer()
 {
     m_playRequested = false;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    auto* Network = ResolveNetworkSystem();
-    auto* Bridge = Network ? Network->RpcBridge() : nullptr;
-    if (Network && Network->Session() && Network->Rpc() && Bridge && IsServer())
+    if (CallRPC("StopClient"))
     {
-        const std::array<Variant, 0> Args{};
-        (void)Bridge->Call(0,
-                           *this,
-                           StaticTypeId<AudioSourceComponent>(),
-                           "StopClient",
-                           std::span<const Variant>(Args));
         return;
     }
-#endif
     StopClient();
 }
 

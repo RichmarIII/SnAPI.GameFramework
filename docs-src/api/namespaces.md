@@ -5,6 +5,8 @@
 - [SnAPI::GameFramework](namespaceSnAPI_1_1GameFramework.md)
 - [SnAPI::GameFramework::anonymous_namespace{AssetPipelineFactories.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02AssetPipelineFactories_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{AssetPipelineSerializers.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02AssetPipelineSerializers_8cpp_03.md)
+- [SnAPI::GameFramework::anonymous_namespace{IComponent.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02IComponent_8cpp_03.md)
+- [SnAPI::GameFramework::anonymous_namespace{INode.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02INode_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02ScriptABI_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02Serialization_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{TypeRegistry.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02TypeRegistry_8cpp_03.md)

@@ -6,6 +6,7 @@ This page explains how audio is integrated into GameFramework through world-owne
 
 - `World` owns `AudioSystem`.
 - `World` also owns `NetworkSystem`, so audio gameplay RPC can route through world networking.
+- `World::Tick(...)` performs the per-frame `AudioSystem::Update(...)`.
 - `AudioListenerComponent` writes listener transform each tick.
 - `AudioSourceComponent` controls emitter, sound loading, playback, and spatial settings.
 
@@ -28,6 +29,7 @@ What happens:
 
 - `OnCreate()` initializes audio system lazily.
 - Each tick, listener transform is pushed to `AudioEngine`.
+- The audio backend frame update itself is handled once by `World::Tick(...)`.
 
 ## 3. Add a Source to an Actor Node
 
@@ -66,12 +68,23 @@ Source->UnloadSound();
 
 ## 5. Networked Playback Flow
 
-`AudioSourceComponent` exposes gameplay methods (`Play`, `Stop`) and internally routes to RPC endpoints when networking is attached.
+`AudioSourceComponent` exposes gameplay methods (`Play`, `Stop`) and internally routes through `IComponent::CallRPC(...)` when networking is attached.
+
+```cpp
+void AudioSourceComponent::Play()
+{
+    if (CallRPC("PlayServer"))
+    {
+        return;
+    }
+    PlayClient();
+}
+```
 
 `Play()` flow:
 
-1. Client call: sends RPC to `PlayServer`.
-2. Server `PlayServer`: authoritatively triggers multicast RPC `PlayClient`.
+1. Client call: `CallRPC("PlayServer")` forwards to server.
+2. Server `PlayServer`: `CallRPC("PlayClient")` multicasts.
 3. `PlayClient`: executes playback on listening peers.
 
 `Stop()` follows the same pattern (`Stop -> StopServer -> StopClient`).
@@ -122,22 +135,20 @@ while (Running)
 ```
 
 Listener/source updates happen through normal component ticking.
+Audio backend update is world-owned, not component-owned.
 
 ## 10. Troubleshooting
 
--  No audio output:
+- No audio output:
+    - verify audio asset path in `Settings.SoundPath`
+    - ensure listener exists and is active
+    - ensure source was loaded/played
 
-      - verify audio asset path in `Settings.SoundPath`
-      - ensure listener exists and is active
-      - ensure source was loaded/played
+- Replicated play event arrives but no sound:
+    - ensure the client machine can resolve the same `SoundPath`
+    - confirm the source node/component has `Replicated(true)` enabled
 
--  Replicated play event arrives but no sound:
-
-      - ensure the client machine can resolve the same `SoundPath`
-      - confirm the source node/component has `Replicated(true)` enabled
-
--  Spatial audio sounds wrong:
-
-      - check transform values and distance parameters (`MinDistance`, `MaxDistance`, `Rolloff`)
+- Spatial audio sounds wrong:
+    - check transform values and distance parameters (`MinDistance`, `MaxDistance`, `Rolloff`)
 
 Next: [Testing and Validation](testing.md)

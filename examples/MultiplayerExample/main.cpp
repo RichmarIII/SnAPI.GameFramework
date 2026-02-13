@@ -14,9 +14,6 @@
 
 #include "GameFramework.hpp"
 
-#include "NetSession.h"
-#include "Transport/UdpTransportAsio.h"
-
 using namespace SnAPI::GameFramework;
 using namespace SnAPI::Networking;
 
@@ -266,17 +263,41 @@ NetConfig MakeNetConfig()
     return Config;
 }
 
-std::shared_ptr<UdpTransportAsio> MakeUdpTransport(const NetEndpoint& Local)
+UdpTransportConfig MakeUdpTransportConfig()
 {
     UdpTransportConfig TransportConfig{};
     TransportConfig.MaxDatagramBytes = 2048;
     TransportConfig.NonBlocking = true;
-    auto Transport = std::make_shared<UdpTransportAsio>(TransportConfig);
-    if (!Transport->Open(Local))
+    return TransportConfig;
+}
+
+GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed, bool ServerMode, SessionListener* Listener)
+{
+    GameRuntimeSettings Settings{};
+    Settings.WorldName = ServerMode ? "ServerWorld" : "ClientWorld";
+    Settings.RegisterBuiltins = false;
+    Settings.Tick.EnableFixedTick = false;
+    Settings.Tick.EnableLateTick = true;
+    Settings.Tick.EnableEndFrame = true;
+
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    GameRuntimeNetworkingSettings NetSettings{};
+    NetSettings.Role = ServerMode ? ESessionRole::Server : ESessionRole::Client;
+    NetSettings.Net = MakeNetConfig();
+    NetSettings.Transport = MakeUdpTransportConfig();
+    NetSettings.BindAddress = Parsed.Bind;
+    NetSettings.BindPort = ServerMode ? Parsed.Port : 0;
+    NetSettings.ConnectAddress = Parsed.Host;
+    NetSettings.ConnectPort = Parsed.Port;
+    NetSettings.AutoConnect = !ServerMode;
+    if (Listener)
     {
-        return nullptr;
+        NetSettings.SessionListeners.push_back(Listener);
     }
-    return Transport;
+    Settings.Networking = NetSettings;
+#endif
+
+    return Settings;
 }
 
 /**
@@ -350,32 +371,30 @@ int RunServer(const Args& Parsed)
 {
     RegisterExampleTypes();
 
-    NetSession Session(MakeNetConfig());
-    Session.Role(ESessionRole::Server);
-    SessionListener Listener("Server", &Session);
-    Session.AddListener(&Listener);
-
-    auto Transport = MakeUdpTransport(NetEndpoint{Parsed.Bind, Parsed.Port});
-    if (!Transport)
+    SessionListener Listener("Server");
+    GameRuntime Runtime;
+    auto InitResult = Runtime.Init(MakeRuntimeSettings(Parsed, true, &Listener));
+    if (!InitResult)
     {
-        std::cerr << "Failed to open UDP transport\n";
+        std::cerr << "Failed to initialize runtime: " << InitResult.error().Message << "\n";
         return 1;
     }
-    Session.RegisterTransport(Transport);
 
-    World Graph("ServerWorld");
-    if (!Graph.Networking().AttachSession(Session))
+    auto* Session = Runtime.World().Networking().Session();
+    if (!Session)
     {
-        std::cerr << "Failed to attach world networking\n";
+        std::cerr << "Runtime networking session is not available\n";
         return 1;
     }
+    Listener.SessionRef = Session;
+    auto& Graph = Runtime.World();
 
     std::vector<MovingCube> Cubes;
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     AudioSourceComponent* ReplicatedAudio = nullptr;
 #endif
     const int Grid = static_cast<int>(std::ceil(std::sqrt(static_cast<float>(Parsed.CubeCount))));
-    const float Spacing = 4.0f;
+    constexpr float Spacing = 4.0f;
     const float Offset = (Grid - 1) * Spacing * 0.5f;
 
     for (int i = 0; i < Parsed.CubeCount; ++i)
@@ -408,25 +427,20 @@ int RunServer(const Args& Parsed)
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     {
-        auto AudioNodeResult = Graph.CreateNode("ReplicatedAudio");
-        if (AudioNodeResult)
+        if (auto AudioNodeResult = Graph.CreateNode("ReplicatedAudio"))
         {
-            auto* AudioNode = AudioNodeResult->Borrowed();
-            if (AudioNode)
+            if (auto* AudioNode = AudioNodeResult->Borrowed())
             {
                 AudioNode->Replicated(true);
-                auto TransformResult = AudioNode->Add<ReplicatedTransformComponent>();
-                if (TransformResult)
+                if (auto Transform = AudioNode->Add<ReplicatedTransformComponent>())
                 {
-                    auto* Transform = &*TransformResult;
                     Transform->Replicated(true);
                     Transform->Position = Vec3(0.0f, 0.0f, 0.0f);
                 }
 
-                auto AudioResult = AudioNode->Add<AudioSourceComponent>();
-                if (AudioResult)
+                if (auto Audio = AudioNode->Add<AudioSourceComponent>())
                 {
-                    ReplicatedAudio = &*AudioResult;
+                    ReplicatedAudio = &*Audio;
                     ReplicatedAudio->Replicated(true);
                     auto& Settings = ReplicatedAudio->EditSettings();
                     Settings.SoundPath = "sound.wav";
@@ -466,22 +480,20 @@ int RunServer(const Args& Parsed)
                 continue;
             }
             const float Angle = TimeSeconds + Cube.Phase;
-            const float Radius = 1.5f;
+            constexpr float Radius = 1.5f;
             Cube.Transform->Position = Vec3(
                 Cube.Center.X + std::cos(Angle) * Radius,
                 Cube.Center.Y,
                 Cube.Center.Z + std::sin(Angle) * Radius);
         }
 
-        Session.Pump(Now);
-        Graph.Tick(DeltaSeconds);
+        Runtime.Update(DeltaSeconds);
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
         if (ReplicatedAudio && TimeSeconds >= NextSoundTime)
         {
-            const auto Dumps = Session.DumpConnections(Now);
-            const bool HasReadyConnection = std::any_of(Dumps.begin(),
-                                                        Dumps.end(),
+            const auto Dumps = Session->DumpConnections(Now);
+            const bool HasReadyConnection = std::ranges::any_of(Dumps,
                                                         [](const NetConnectionDump& Dump) {
                                                             return Dump.HandshakeComplete;
                                                         });
@@ -496,8 +508,7 @@ int RunServer(const Args& Parsed)
 
         if (Now >= NextLog)
         {
-            const auto Dumps = Session.DumpConnections(Now);
-            for (const auto& Dump : Dumps)
+            for (const auto Dumps = Session->DumpConnections(Now); const auto& Dump : Dumps)
             {
                 PrintConnectionDump("Server", Dump, TimeSeconds);
             }
@@ -512,26 +523,22 @@ int RunClient(const Args& Parsed)
 {
     RegisterExampleTypes();
 
-    NetSession Session(MakeNetConfig());
-    Session.Role(ESessionRole::Client);
-    SessionListener Listener("Client", &Session);
-    Session.AddListener(&Listener);
-
-    auto Transport = MakeUdpTransport(NetEndpoint{Parsed.Bind, 0});
-    if (!Transport)
+    SessionListener Listener("Client");
+    GameRuntime Runtime;
+    if (auto InitResult = Runtime.Init(MakeRuntimeSettings(Parsed, false, &Listener)); !InitResult)
     {
-        std::cerr << "Failed to open UDP transport\n";
+        std::cerr << "Failed to initialize runtime: " << InitResult.error().Message << "\n";
         return 1;
     }
-    Session.RegisterTransport(Transport);
-    Session.OpenConnection(Transport->Handle(), NetEndpoint{Parsed.Host, Parsed.Port});
 
-    World Graph("ClientWorld");
-    if (!Graph.Networking().AttachSession(Session))
+    auto* Session = Runtime.World().Networking().Session();
+    if (!Session)
     {
-        std::cerr << "Failed to attach world networking\n";
+        std::cerr << "Runtime networking session is not available\n";
         return 1;
     }
+    Listener.SessionRef = Session;
+    auto& Graph = Runtime.World();
 
     if (!glfwInit())
     {
@@ -559,12 +566,11 @@ int RunClient(const Args& Parsed)
         const float DeltaSeconds = std::chrono::duration<float>(Now - Previous).count();
         Previous = Now;
         const float TimeSeconds = std::chrono::duration<float>(Now - Start).count();
-        Session.Pump(Now);
-        Graph.Tick(DeltaSeconds);
+        Runtime.Update(DeltaSeconds);
 
         if (Now >= NextLog)
         {
-            const auto Dumps = Session.DumpConnections(Now);
+            const auto Dumps = Session->DumpConnections(Now);
             for (const auto& Dump : Dumps)
             {
                 PrintConnectionDump("Client", Dump, TimeSeconds);
@@ -599,6 +605,11 @@ int RunClient(const Args& Parsed)
 
         glfwSwapBuffers(Window);
         glfwPollEvents();
+    }
+
+    if (const auto Connection = Graph.Networking().PrimaryConnection())
+    {
+        Session->CloseConnection(*Connection);
     }
 
     glfwDestroyWindow(Window);

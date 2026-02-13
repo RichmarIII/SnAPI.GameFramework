@@ -17,21 +17,23 @@ The main test binary is `GameFrameworkTests` (Catch2).
 Current tests include:
 
 - `tests/HandleTests.cpp`
-  - handle validity and end-of-frame deletion behavior
+    - handle validity and end-of-frame deletion behavior
 - `tests/NodeGraphTests.cpp`
-  - node + component ticking through graph hierarchy
+    - node + component ticking through graph hierarchy
 - `tests/ReflectionTests.cpp`
-  - type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags
+    - type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags
 - `tests/SerializationTests.cpp`
-  - graph serialization round-trip, cross-graph handle resolution, custom `TValueCodec`
+    - graph serialization round-trip, cross-graph handle resolution, custom `TValueCodec`
 - `tests/LevelWorldSerializationTests.cpp`
-  - level/world serialization round-trips
+    - level/world serialization round-trips
 - `tests/RelevanceTests.cpp`
-  - relevance policy gating tick
+    - relevance policy gating tick
 - `tests/NetReplicationTests.cpp`
-  - replication spawn/update ordering and session integration
+    - replication spawn/update ordering and session integration
 - `tests/WorldNetworkingTests.cpp`
-  - world-owned networking system wiring, replication/rpc bridge integration
+    - world-owned networking system wiring, replication/rpc bridge integration
+    - `INode::CallRPC` / `IComponent::CallRPC` role-based routing behavior
+    - component `TypeKey` assignment for reflection RPC dispatch
 
 ## 3. Run Integration Examples
 
@@ -63,10 +65,11 @@ If you change networking/replication code:
 
 - run `NetReplicationTests`
 - run `WorldNetworkingTests`
+- validate `CallRPC(...)` routes correctly for server/client/listen-server roles
 - run multiplayer example across two processes/devices
 - watch connection dumps:
-  - `pending_rel` should not grow forever
-  - non-zero `pkt_lost` alone is not a failure if reliable backlog drains and gameplay state remains correct
+    - `pending_rel` should not grow forever
+    - non-zero `pkt_lost` alone is not a failure if reliable backlog drains and gameplay state remains correct
 
 If you change component lifecycle code:
 

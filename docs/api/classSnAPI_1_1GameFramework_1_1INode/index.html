@@ -963,6 +963,25 @@
 <p><strong>Returns:</strong> True when both server and client role are active.</p>
 </div>
 <div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkinodecallrpcstdstring_view-methodname-stdspan-const-variant-args"><code>bool SnAPI::GameFramework::INode::CallRPC(std::string_view MethodName, std::span&lt; const Variant &gt; Args={})</code><a class="headerlink" href="#bool-snapigameframeworkinodecallrpcstdstring_view-methodname-stdspan-const-variant-args" title="Permanent link">&para;</a></h3>
+<p>Dispatch a reflected RPC method for this node.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>MethodName</code>: Reflected method name.</li>
+<li><code>Args</code>: Variant-packed arguments.</li>
+</ul>
+<p><strong>Returns:</strong> True when dispatch succeeded (local invoke or queued network call).</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkinodecallrpcstdstring_view-methodname-stdinitializer_list-variant-args"><code>bool SnAPI::GameFramework::INode::CallRPC(std::string_view MethodName, std::initializer_list&lt; Variant &gt; Args)</code><a class="headerlink" href="#bool-snapigameframeworkinodecallrpcstdstring_view-methodname-stdinitializer_list-variant-args" title="Permanent link">&para;</a></h3>
+<p>Initializer-list convenience overload for <code>CallRPC</code>.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>MethodName</code>: </li>
+<li><code>Args</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
 <h3 id="virtual-stdvector-typeid-snapigameframeworkinodecomponenttypes0"><code>virtual std::vector&lt; TypeId &gt; &amp; SnAPI::GameFramework::INode::ComponentTypes()=0</code><a class="headerlink" href="#virtual-stdvector-typeid-snapigameframeworkinodecomponenttypes0" title="Permanent link">&para;</a></h3>
 <p>Access the list of component type ids.</p>
 <p><strong>Returns:</strong> Mutable reference to the type id list.</p>

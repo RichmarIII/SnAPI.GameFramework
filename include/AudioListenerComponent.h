@@ -9,15 +9,13 @@ namespace SnAPI::GameFramework
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
 class AudioSystem;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-class NetworkSystem;
-#endif
 
 /**
  * @brief Component that drives the shared SnAPI.Audio listener.
  * @remarks
  * Uses owning node transform as listener pose source and pushes updates into
- * world audio system each tick when active.
+ * world audio system listener state each tick when active.
+ * The actual audio engine frame update is performed by `World`.
  *
  * Networking-enabled behavior mirrors AudioSource:
  * - Gameplay entry (`SetActive`) routes by role.
@@ -81,10 +79,6 @@ public:
 private:
     /** @brief Resolve world audio subsystem, if available. */
     AudioSystem* ResolveAudioSystem() const;
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    /** @brief Resolve world networking subsystem, if available. */
-    NetworkSystem* ResolveNetworkSystem() const;
-#endif
     bool m_active = true; /**< @brief Local listener activation gate. */
     Vec3 m_lastPosition{}; /**< @brief Last listener position pushed to backend (change detection). */
     bool m_hasLastPosition = false; /**< @brief True once listener position cache has been initialized. */

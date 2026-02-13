@@ -49,6 +49,11 @@ public:
     /**
      * @brief Per-frame tick.
      * @param DeltaSeconds Time since last tick.
+     * @remarks
+     * When networking is enabled and a session is attached, this pumps the
+     * session before graph traversal.
+     * When audio is enabled, this updates the world audio subsystem after
+     * node/component tick traversal.
      */
     void Tick(float DeltaSeconds) override;
     /**
@@ -63,7 +68,10 @@ public:
     void LateTick(float DeltaSeconds) override;
     /**
      * @brief End-of-frame processing.
-     * @remarks Executes graph end-frame flush and subsystem post-frame maintenance.
+     * @remarks
+     * Executes graph end-frame flush and subsystem post-frame maintenance.
+     * When networking is enabled and a session is attached, this pumps the
+     * session again to flush post-tick outbound traffic.
      */
     void EndFrame() override;
 
