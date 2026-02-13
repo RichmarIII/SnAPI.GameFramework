@@ -5,11 +5,12 @@ This guide is written for a complete beginner who wants to understand how SnAPI.
 You will build a mental model in this order:
 
 1. Runtime structure (`World -> Level -> NodeGraph -> Node -> Component`)
-2. Reflection registration (how types become visible to the engine)
-3. Serialization and asset packaging
-4. Networking replication + RPC
-5. Audio components
-6. Testing and validation
+2. Physics ownership and simulation flow
+3. Reflection registration (how types become visible to the engine)
+4. Serialization and asset packaging
+5. Networking replication + RPC
+6. Audio components
+7. Testing and validation
 
 If you work through the pages in sequence, you will be able to read the examples in `examples/` and understand why each system is there.
 
@@ -49,11 +50,13 @@ Run examples:
 
 1. [Worlds and Graphs](tutorials/worlds_graphs.md)
 2. [Nodes and Components](tutorials/nodes_components.md)
-3. [Reflection and Serialization](tutorials/reflection_serialization.md)
-4. [AssetPipeline Integration](tutorials/assetpipeline.md)
-5. [Networking Replication and RPC](tutorials/networking.md)
-6. [Audio Components](tutorials/audio.md)
-7. [Testing and Validation](tutorials/testing.md)
+3. [Physics System and Components](tutorials/physics.md)
+4. [Physics Queries and Events](tutorials/physics_queries_events.md)
+5. [Reflection and Serialization](tutorials/reflection_serialization.md)
+6. [AssetPipeline Integration](tutorials/assetpipeline.md)
+7. [Networking Replication and RPC](tutorials/networking.md)
+8. [Audio Components](tutorials/audio.md)
+9. [Testing and Validation](tutorials/testing.md)
 
 ## Core Ideas You Should Keep In Mind
 
@@ -67,7 +70,13 @@ Run examples:
 - Nested field replication depends on codec availability:
     - with `TValueCodec<T>`, the full field value is codec-serialized.
     - without a codec, only nested reflected fields marked for replication are serialized.
-- `World` owns subsystem runtime (networking/audio), and `GameRuntime` orchestrates world update phases.
+- `World` owns subsystem runtime (networking/audio/physics), and `GameRuntime` orchestrates world update phases.
+- Physics stepping can be configured:
+    - fixed tick (`World::FixedTick`) for deterministic gameplay behavior.
+    - variable tick (`World::Tick`) for simple real-time simulation paths.
+- `RigidBodyComponent` sync direction depends on body type:
+    - dynamic bodies usually pull transforms from physics.
+    - static/kinematic bodies usually push transforms to physics.
 - Transport `pkt_lost` counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with `pending_rel`.
 - Destruction is deferred to `EndFrame()` to keep handles stable during a frame.
 

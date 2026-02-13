@@ -429,6 +429,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#physics-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Physics Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#audio-model" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -455,6 +466,10 @@
   
     
     
+      
+        
+      
+        
       
         
       
@@ -560,6 +575,62 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics System and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/physics_queries_events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Queries and Events
   
 
     
@@ -904,16 +975,17 @@
 
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>SnAPI.GameFramework is built around three main axes:</p>
+<p>SnAPI.GameFramework is built around four main axes:</p>
 <ol>
 <li><strong>Runtime hierarchy</strong>: <code>World -&gt; Level -&gt; NodeGraph -&gt; BaseNode</code></li>
 <li><strong>Type metadata</strong>: <code>TypeRegistry</code>, <code>TTypeBuilder</code>, and cached <code>TypeId</code></li>
 <li><strong>Data transport</strong>: reflection serialization, asset payloads, and network replication</li>
+<li><strong>World-owned simulation systems</strong>: networking, audio, and physics adapters</li>
 </ol>
 <h2 id="runtime-model">Runtime Model<a class="headerlink" href="#runtime-model" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>World</code> is the runtime root and owns subsystems (jobs, audio, networking bridges).</li>
-<li><code>World</code> is also responsible for subsystem frame work (networking pump + audio update).</li>
+<li><code>World</code> is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system).</li>
+<li><code>World</code> is also responsible for subsystem frame work (networking pump + audio update + optional physics step).</li>
 <li><code>Level</code> and <code>NodeGraph</code> are nodes, so graphs can be nested.</li>
 <li><code>BaseNode</code> owns hierarchy relationships and component type bookkeeping.</li>
 <li><code>IComponent</code> adds behavior and state to nodes without changing node types.</li>
@@ -939,6 +1011,29 @@
 <li><code>INode::CallRPC(...)</code> and <code>IComponent::CallRPC(...)</code> provide gameplay-facing routing helpers over reflected RPC endpoints.</li>
 <li><code>NetworkSystem</code> owns session/transport lifecycle (owner-only), then wires replication and RPC services.</li>
 <li><code>NetReplicationBridge</code> and <code>NetRpcBridge</code> coordinate with SnAPI.Networking services.</li>
+</ul>
+<h2 id="physics-model">Physics Model<a class="headerlink" href="#physics-model" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>World</code> owns <code>PhysicsSystem</code>, which wraps <code>SnAPI::Physics::PhysicsRuntime</code> + one world scene.</li>
+<li>Physics bootstrap is configured through <code>GameRuntimeSettings::Physics</code> (<code>PhysicsBootstrapSettings</code>).</li>
+<li>Tick policy is configurable:<ul>
+<li>fixed stepping in <code>World::FixedTick(...)</code></li>
+<li>variable stepping in <code>World::Tick(...)</code></li>
+<li>or manual stepping by disabling both and calling <code>World::Physics().Step(...)</code>.</li>
+</ul>
+</li>
+<li>Component adapters:<ul>
+<li><code>ColliderComponent</code> stores shape/material/filter settings.</li>
+<li><code>RigidBodyComponent</code> creates/synchronizes backend bodies for owner nodes.</li>
+<li><code>CharacterMovementController</code> provides movement + grounded probe behavior using physics queries.</li>
+</ul>
+</li>
+<li>Direct scene access is available (<code>World::Physics().Scene()</code>) for domain APIs:<ul>
+<li>rigid body domain (<code>Rigid()</code>)</li>
+<li>query domain (<code>Query()</code>)</li>
+<li>event draining (<code>DrainEvents(...)</code>).</li>
+</ul>
+</li>
 </ul>
 <h2 id="audio-model">Audio Model<a class="headerlink" href="#audio-model" title="Permanent link">&para;</a></h2>
 <ul>

@@ -17,7 +17,7 @@ namespace
 {
 SnAPI::Audio::Vector3F ToAudioVector(const Vec3& Value)
 {
-    return SnAPI::Audio::Vector3F(Value.X, Value.Y, Value.Z);
+    return SnAPI::Audio::Vector3F(Value.x(), Value.y(), Value.z());
 }
 } // namespace
 

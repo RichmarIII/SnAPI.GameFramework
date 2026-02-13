@@ -15,6 +15,9 @@ class AudioSystem;
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 class NetworkSystem;
 #endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+class PhysicsSystem;
+#endif
 
 /**
  * @brief Root runtime container contract for gameplay sessions.
@@ -90,6 +93,19 @@ public:
      * @return Const reference to NetworkSystem.
      */
     virtual const NetworkSystem& Networking() const = 0;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    /**
+     * @brief Access the physics subsystem for this world.
+     * @return Reference to PhysicsSystem.
+     */
+    virtual PhysicsSystem& Physics() = 0;
+    /**
+     * @brief Access the physics subsystem for this world (const).
+     * @return Const reference to PhysicsSystem.
+     */
+    virtual const PhysicsSystem& Physics() const = 0;
 #endif
 };
 

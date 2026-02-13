@@ -23,15 +23,28 @@ World::World(std::string Name)
     BaseNode::World(this);
 }
 
-void World::Tick(float DeltaSeconds)
+World::~World()
+{
+    // Ensure component OnDestroy paths run while world subsystems still exist.
+    NodeGraph::Clear();
+    BaseNode::World(nullptr);
+}
+
+void World::Tick(const float DeltaSeconds)
 {
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (auto* Session = m_networkSystem.Session())
     {
-        Session->Pump(SnAPI::Networking::Clock::now());
+        Session->Pump(Networking::Clock::now());
     }
 #endif
     NodeGraph::Tick(DeltaSeconds);
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    if (m_physicsSystem.IsInitialized() && m_physicsSystem.TickInVariableTick())
+    {
+        (void)m_physicsSystem.Step(DeltaSeconds);
+    }
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     m_audioSystem.Update(DeltaSeconds);
 #endif
@@ -40,9 +53,15 @@ void World::Tick(float DeltaSeconds)
 void World::FixedTick(float DeltaSeconds)
 {
     NodeGraph::FixedTick(DeltaSeconds);
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    if (m_physicsSystem.IsInitialized() && m_physicsSystem.TickInFixedTick())
+    {
+        (void)m_physicsSystem.Step(DeltaSeconds);
+    }
+#endif
 }
 
-void World::LateTick(float DeltaSeconds)
+void World::LateTick(const float DeltaSeconds)
 {
     NodeGraph::LateTick(DeltaSeconds);
 }
@@ -50,12 +69,6 @@ void World::LateTick(float DeltaSeconds)
 void World::EndFrame()
 {
     NodeGraph::EndFrame();
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-    if (auto* Session = m_networkSystem.Session())
-    {
-        Session->Pump(SnAPI::Networking::Clock::now());
-    }
-#endif
 }
 
 TExpected<NodeHandle> World::CreateLevel(std::string Name)
@@ -113,6 +126,18 @@ NetworkSystem& World::Networking()
 const NetworkSystem& World::Networking() const
 {
     return m_networkSystem;
+}
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+PhysicsSystem& World::Physics()
+{
+    return m_physicsSystem;
+}
+
+const PhysicsSystem& World::Physics() const
+{
+    return m_physicsSystem;
 }
 #endif
 

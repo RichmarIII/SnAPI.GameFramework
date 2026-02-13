@@ -370,6 +370,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -582,6 +586,62 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics System and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../physics_queries_events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Queries and Events
   
 
     
@@ -926,7 +986,7 @@
 
 
 <h1 id="worlds-and-graphs">Worlds and Graphs<a class="headerlink" href="#worlds-and-graphs" title="Permanent link">&para;</a></h1>
-<p>This page explains the runtime object model. If this is clear, everything else (serialization, replication, audio) becomes much easier.</p>
+<p>This page explains the runtime object model. If this is clear, everything else (physics, serialization, replication, audio) becomes much easier.</p>
 <h2 id="1-runtime-hierarchy">1. Runtime Hierarchy<a class="headerlink" href="#1-runtime-hierarchy" title="Permanent link">&para;</a></h2>
 <p>SnAPI.GameFramework is centered around node graphs:</p>
 <ul>
@@ -1002,6 +1062,7 @@
 <code>World</code> also runs subsystem work during frame lifecycle:</p>
 <ul>
 <li>networking session pumping in <code>Tick</code> + <code>EndFrame</code></li>
+<li>optional physics stepping in <code>Tick</code> and/or <code>FixedTick</code> (based on physics settings)</li>
 <li>audio system update in <code>Tick</code></li>
 </ul>
 <p>Typical frame loop:</p>
@@ -1037,7 +1098,7 @@
 <div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SomeComponent</span><span class="p">.</span><span class="n">Owner</span><span class="p">().</span><span class="n">Borrowed</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">OwnerNode</span><span class="o">-&gt;</span><span class="n">World</span><span class="p">())</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="c1">// OwnerNode-&gt;World()-&gt;Audio(), etc.</span>
+<span class="w">    </span><span class="c1">// OwnerNode-&gt;World()-&gt;Audio(), OwnerNode-&gt;World()-&gt;Physics(), etc.</span>
 <span class="p">}</span>
 </code></pre></div>
 <h2 id="7-common-mistakes">7. Common Mistakes<a class="headerlink" href="#7-common-mistakes" title="Permanent link">&para;</a></h2>

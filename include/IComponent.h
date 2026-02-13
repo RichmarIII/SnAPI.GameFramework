@@ -89,6 +89,27 @@ public:
     }
 
     /**
+     * @brief Check if this component is active for tick execution.
+     * @return True when tick hooks are enabled.
+     */
+    bool Active() const
+    {
+        return m_active;
+    }
+
+    /**
+     * @brief Set component active state for tick execution.
+     * @param ActiveValue New active state.
+     * @remarks
+     * Active=false suppresses Tick/FixedTick/LateTick dispatch while the
+     * component remains attached and replicated/serializable.
+     */
+    void Active(bool ActiveValue)
+    {
+        m_active = ActiveValue;
+    }
+
+    /**
      * @brief Check if the component is replicated over the network.
      * @return True if replicated.
      */
@@ -210,6 +231,7 @@ private:
     NodeHandle m_owner{}; /**< @brief Owning node identity; resolved via ObjectRegistry when needed. */
     Uuid m_id{}; /**< @brief Stable component identity used for handles/replication/serialization. */
     TypeId m_typeId{}; /**< @brief Reflected concrete component type id used by RPC/serialization paths. */
+    bool m_active = true; /**< @brief Runtime tick gate for this component instance. */
     bool m_replicated = false; /**< @brief Runtime replication gate for this component instance. */
 };
 

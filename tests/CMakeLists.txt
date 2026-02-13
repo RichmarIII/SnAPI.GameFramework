@@ -5,6 +5,7 @@ add_executable(GameFrameworkTests
     ReflectionTests.cpp
     NetReplicationTests.cpp
     NodeGraphTests.cpp
+    PhysicsIntegrationTests.cpp
     RelevanceTests.cpp
     SerializationTests.cpp
     WorldNetworkingTests.cpp

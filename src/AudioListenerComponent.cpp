@@ -19,14 +19,15 @@ namespace
 {
 SnAPI::Audio::Vector3F ToAudioVector(const Vec3& Value)
 {
-    return SnAPI::Audio::Vector3F(Value.X, Value.Y, Value.Z);
+    return SnAPI::Audio::Vector3F(Value.x(), Value.y(), Value.z());
 }
 
 SnAPI::Audio::QuaternionF ToAudioQuaternion(const Vec3& EulerRadians)
 {
-    const Eigen::AngleAxisf Pitch(EulerRadians.X, SnAPI::Audio::Vector3F::UnitX());
-    const Eigen::AngleAxisf Yaw(EulerRadians.Y, SnAPI::Audio::Vector3F::UnitY());
-    const Eigen::AngleAxisf Roll(EulerRadians.Z, SnAPI::Audio::Vector3F::UnitZ());
+    using AudioScalar = typename SnAPI::Audio::Vector3F::Scalar;
+    const Eigen::AngleAxis<AudioScalar> Pitch(EulerRadians.x(), SnAPI::Audio::Vector3F::UnitX());
+    const Eigen::AngleAxis<AudioScalar> Yaw(EulerRadians.y(), SnAPI::Audio::Vector3F::UnitY());
+    const Eigen::AngleAxis<AudioScalar> Roll(EulerRadians.z(), SnAPI::Audio::Vector3F::UnitZ());
     return Yaw * Pitch * Roll;
 }
 } // namespace

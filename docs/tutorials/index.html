@@ -448,6 +448,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -538,6 +542,62 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics System and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="physics_queries_events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Queries and Events
   
 
     
@@ -886,6 +946,7 @@
 <p>You will build a mental model in this order:</p>
 <ol>
 <li>Runtime structure (<code>World -&gt; Level -&gt; NodeGraph -&gt; Node -&gt; Component</code>)</li>
+<li>Physics ownership and simulation flow</li>
 <li>Reflection registration (how types become visible to the engine)</li>
 <li>Serialization and asset packaging</li>
 <li>Networking replication + RPC</li>
@@ -919,6 +980,8 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 <ol>
 <li><a href="worlds_graphs/">Worlds and Graphs</a></li>
 <li><a href="nodes_components/">Nodes and Components</a></li>
+<li><a href="physics/">Physics System and Components</a></li>
+<li><a href="physics_queries_events/">Physics Queries and Events</a></li>
 <li><a href="reflection_serialization/">Reflection and Serialization</a></li>
 <li><a href="assetpipeline/">AssetPipeline Integration</a></li>
 <li><a href="networking/">Networking Replication and RPC</a></li>
@@ -941,7 +1004,17 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 <li>without a codec, only nested reflected fields marked for replication are serialized.</li>
 </ul>
 </li>
-<li><code>World</code> owns subsystem runtime (networking/audio), and <code>GameRuntime</code> orchestrates world update phases.</li>
+<li><code>World</code> owns subsystem runtime (networking/audio/physics), and <code>GameRuntime</code> orchestrates world update phases.</li>
+<li>Physics stepping can be configured:<ul>
+<li>fixed tick (<code>World::FixedTick</code>) for deterministic gameplay behavior.</li>
+<li>variable tick (<code>World::Tick</code>) for simple real-time simulation paths.</li>
+</ul>
+</li>
+<li><code>RigidBodyComponent</code> sync direction depends on body type:<ul>
+<li>dynamic bodies usually pull transforms from physics.</li>
+<li>static/kinematic bodies usually push transforms to physics.</li>
+</ul>
+</li>
 <li>Transport <code>pkt_lost</code> counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with <code>pending_rel</code>.</li>
 <li>Destruction is deferred to <code>EndFrame()</code> to keep handles stable during a frame.</li>
 </ul>

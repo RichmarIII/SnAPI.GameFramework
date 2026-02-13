@@ -30,6 +30,9 @@ struct GameRuntimeTickSettings
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 using GameRuntimeNetworkingSettings = NetworkBootstrapSettings;
 #endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+using GameRuntimePhysicsSettings = PhysicsBootstrapSettings;
+#endif
 
 /**
  * @brief High-level runtime settings for bootstrap and update policy.
@@ -41,6 +44,9 @@ struct GameRuntimeSettings
     GameRuntimeTickSettings Tick{}; /**< @brief Tick/lifecycle policy for `Update`. */
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     std::optional<GameRuntimeNetworkingSettings> Networking{}; /**< @brief Optional networking bootstrap; nullopt = offline/local runtime. */
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    std::optional<GameRuntimePhysicsSettings> Physics{}; /**< @brief Optional physics bootstrap; nullopt = no world physics scene. */
 #endif
 };
 

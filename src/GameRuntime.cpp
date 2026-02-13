@@ -29,6 +29,18 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
     m_world = std::make_unique<class World>(std::move(WorldName));
 
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    if (m_settings.Physics)
+    {
+        auto InitPhysics = m_world->Physics().Initialize(*m_settings.Physics);
+        if (!InitPhysics)
+        {
+            Shutdown();
+            return std::unexpected(InitPhysics.error());
+        }
+    }
+#endif
+
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (m_settings.Networking)
     {
@@ -50,6 +62,12 @@ void GameRuntime::Shutdown()
     if (m_world)
     {
         m_world->Networking().ShutdownOwnedSession();
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    if (m_world)
+    {
+        m_world->Physics().Shutdown();
     }
 #endif
     m_world.reset();

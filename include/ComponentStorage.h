@@ -289,7 +289,7 @@ public:
             return;
         }
         auto* Component = m_pool.Borrowed(It->second);
-        if (Component)
+        if (Component && Component->Active())
         {
             Component->Tick(DeltaSeconds);
         }
@@ -308,7 +308,7 @@ public:
             return;
         }
         auto* Component = m_pool.Borrowed(It->second);
-        if (Component)
+        if (Component && Component->Active())
         {
             Component->FixedTick(DeltaSeconds);
         }
@@ -327,7 +327,7 @@ public:
             return;
         }
         auto* Component = m_pool.Borrowed(It->second);
-        if (Component)
+        if (Component && Component->Active())
         {
             Component->LateTick(DeltaSeconds);
         }

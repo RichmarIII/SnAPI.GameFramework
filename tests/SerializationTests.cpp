@@ -171,9 +171,9 @@ TEST_CASE("NodeGraph serialization round-trips with components and handles")
     REQUIRE(LoadedA != nullptr);
     auto TransformLoaded = LoadedA->Component<TransformComponent>();
     REQUIRE(TransformLoaded);
-    REQUIRE(TransformLoaded->Position.X == Catch::Approx(4.0f));
-    REQUIRE(TransformLoaded->Position.Y == Catch::Approx(5.0f));
-    REQUIRE(TransformLoaded->Position.Z == Catch::Approx(6.0f));
+    REQUIRE(TransformLoaded->Position.x() == Catch::Approx(4.0f));
+    REQUIRE(TransformLoaded->Position.y() == Catch::Approx(5.0f));
+    REQUIRE(TransformLoaded->Position.z() == Catch::Approx(6.0f));
 
     auto LinkLoaded = LoadedA->Component<LinkComponent>();
     REQUIRE(LinkLoaded);
@@ -227,9 +227,9 @@ TEST_CASE("NodeGraph serialization round-trips node fields across inheritance")
     REQUIRE(LoadedActor != nullptr);
     REQUIRE(LoadedActor->m_baseValue == 7);
     REQUIRE(LoadedActor->m_health == 42);
-    REQUIRE(LoadedActor->m_spawn.X == Catch::Approx(1.0f));
-    REQUIRE(LoadedActor->m_spawn.Y == Catch::Approx(2.0f));
-    REQUIRE(LoadedActor->m_spawn.Z == Catch::Approx(3.0f));
+    REQUIRE(LoadedActor->m_spawn.x() == Catch::Approx(1.0f));
+    REQUIRE(LoadedActor->m_spawn.y() == Catch::Approx(2.0f));
+    REQUIRE(LoadedActor->m_spawn.z() == Catch::Approx(3.0f));
 
     auto* LoadedTarget = LoadedActor->m_target.Borrowed();
     REQUIRE(LoadedTarget != nullptr);

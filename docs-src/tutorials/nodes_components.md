@@ -176,4 +176,39 @@ void WeaponComponent::StartFireServer()
 
 This keeps gameplay call sites small while preserving server/client/multicast routing via reflection method flags.
 
-Next: [Reflection and Serialization](reflection_serialization.md)
+## 9. Built-In Physics Components
+
+GameFramework includes physics-ready components:
+
+- `ColliderComponent`
+    - Shape and material/filter data (box/sphere/capsule, friction, restitution, layer, mask, trigger).
+- `RigidBodyComponent`
+    - Creates backend body from node transform + collider settings and syncs transform each fixed tick.
+- `CharacterMovementController`
+    - Movement/jump helper that drives a sibling `RigidBodyComponent` and performs grounded ray probes.
+
+Minimal setup:
+
+```cpp
+auto ActorResult = Graph.CreateNode("PhysicsActor");
+auto* Actor = ActorResult->Borrowed();
+if (!Actor)
+{
+    return;
+}
+
+auto Transform = Actor->Add<TransformComponent>();
+Transform->Position = Vec3{0.0f, 2.0f, 0.0f};
+
+auto Collider = Actor->Add<ColliderComponent>();
+Collider->EditSettings().Shape = 1; // box
+Collider->EditSettings().HalfExtent = Vec3{0.5f, 0.5f, 0.5f};
+
+auto Body = Actor->Add<RigidBodyComponent>();
+Body->EditSettings().BodyType = 2; // dynamic
+Body->RecreateBody();              // apply edited settings immediately
+```
+
+For full physics flow (world bootstrap, stepping policy, character movement, queries/events), continue to the physics tutorials.
+
+Next: [Physics System and Components](physics.md)

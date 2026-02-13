@@ -61,9 +61,9 @@ TEST_CASE("Level serialization round-trips with nested graphs")
 
     auto LoadedTransform = LoadedNode->Component<TransformComponent>();
     REQUIRE(LoadedTransform);
-    REQUIRE(LoadedTransform->Position.X == Catch::Approx(7.0f));
-    REQUIRE(LoadedTransform->Position.Y == Catch::Approx(8.0f));
-    REQUIRE(LoadedTransform->Position.Z == Catch::Approx(9.0f));
+    REQUIRE(LoadedTransform->Position.x() == Catch::Approx(7.0f));
+    REQUIRE(LoadedTransform->Position.y() == Catch::Approx(8.0f));
+    REQUIRE(LoadedTransform->Position.z() == Catch::Approx(9.0f));
 }
 
 TEST_CASE("World serialization round-trips levels")

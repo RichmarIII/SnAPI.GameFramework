@@ -370,6 +370,10 @@
       
         
       
+        
+      
+        
+      
     
     
     
@@ -458,6 +462,62 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics System and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../physics_queries_events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Queries and Events
   
 
     
@@ -959,6 +1019,12 @@ ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span 
 <li>component <code>TypeKey</code> assignment for reflection RPC dispatch</li>
 </ul>
 </li>
+<li><code>tests/PhysicsIntegrationTests.cpp</code><ul>
+<li>runtime physics bootstrap through <code>GameRuntimeSettings::Physics</code></li>
+<li>rigid body simulation updates transform over fixed ticks</li>
+<li><code>CharacterMovementController</code> movement/jump integration with rigid body</li>
+</ul>
+</li>
 </ul>
 <h2 id="3-run-integration-examples">3. Run Integration Examples<a class="headerlink" href="#3-run-integration-examples" title="Permanent link">&para;</a></h2>
 <p>Unit tests are necessary but not sufficient for gameplay systems.
@@ -992,6 +1058,21 @@ Also run these binaries:</p>
 </ul>
 </li>
 </ul>
+<p>If you change physics code:</p>
+<ul>
+<li>run <code>PhysicsIntegrationTests</code></li>
+<li>verify world physics bootstrap still succeeds in runtime init</li>
+<li>verify stepping policy (<code>TickInFixedTick</code> / <code>TickInVariableTick</code>) matches expected update path</li>
+<li>verify rigid body transform sync behavior:<ul>
+<li>dynamic bodies pull from physics</li>
+<li>static/kinematic bodies push to physics</li>
+</ul>
+</li>
+<li>verify grounded probe and jump behavior if character movement logic changed</li>
+</ul>
+<p>Fast physics-only test command:</p>
+<div class="highlight"><pre><span></span><code>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Physics|CharacterMovementController&quot;</span>
+</code></pre></div>
 <p>If you change component lifecycle code:</p>
 <ul>
 <li>run <code>NodeGraphTests</code> and <code>HandleTests</code></li>

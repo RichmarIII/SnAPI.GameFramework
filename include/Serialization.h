@@ -82,7 +82,10 @@ struct TValueCodec
         }
         else if constexpr (std::is_same_v<T, Vec3>)
         {
-            Archive(Value.X, Value.Y, Value.Z);
+            const auto X = Value.x();
+            const auto Y = Value.y();
+            const auto Z = Value.z();
+            Archive(X, Y, Z);
             return Ok();
         }
         else if constexpr (std::is_same_v<T, NodeHandle>)
@@ -136,11 +139,12 @@ struct TValueCodec
         }
         else if constexpr (std::is_same_v<T, Vec3>)
         {
-            float X = 0.0f;
-            float Y = 0.0f;
-            float Z = 0.0f;
+            using Scalar = typename Vec3::Scalar;
+            Scalar X = Scalar(0);
+            Scalar Y = Scalar(0);
+            Scalar Z = Scalar(0);
             Archive(X, Y, Z);
-            return Vec3{X, Y, Z};
+            return Vec3(X, Y, Z);
         }
         else if constexpr (std::is_same_v<T, NodeHandle>)
         {
@@ -193,7 +197,12 @@ struct TValueCodec
         }
         else if constexpr (std::is_same_v<T, Vec3>)
         {
-            Archive(Value.X, Value.Y, Value.Z);
+            using Scalar = typename Vec3::Scalar;
+            Scalar X = Value.x();
+            Scalar Y = Value.y();
+            Scalar Z = Value.z();
+            Archive(X, Y, Z);
+            Value = Vec3(X, Y, Z);
             return Ok();
         }
         else if constexpr (std::is_same_v<T, NodeHandle>)

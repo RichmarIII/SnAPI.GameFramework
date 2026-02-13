@@ -222,9 +222,9 @@ TEST_CASE("NetReplicationBridge spawns nodes and components")
     auto* ClientComponent = dynamic_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientComponent != nullptr);
     REQUIRE(ClientComponent->Value == 42);
-    REQUIRE(ClientComponent->Offset.X == 1.0f);
-    REQUIRE(ClientComponent->Offset.Y == 2.0f);
-    REQUIRE(ClientComponent->Offset.Z == 3.0f);
+    REQUIRE(ClientComponent->Offset.x() == 1.0f);
+    REQUIRE(ClientComponent->Offset.y() == 2.0f);
+    REQUIRE(ClientComponent->Offset.z() == 3.0f);
 }
 
 TEST_CASE("NetReplicationBridge updates replicated fields")
@@ -293,9 +293,9 @@ TEST_CASE("NetReplicationBridge updates replicated fields")
     auto* ClientComponent = dynamic_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientComponent != nullptr);
     REQUIRE(ClientComponent->Value == 18);
-    REQUIRE(ClientComponent->Offset.X == 4.0f);
-    REQUIRE(ClientComponent->Offset.Y == 5.0f);
-    REQUIRE(ClientComponent->Offset.Z == 6.0f);
+    REQUIRE(ClientComponent->Offset.x() == 4.0f);
+    REQUIRE(ClientComponent->Offset.y() == 5.0f);
+    REQUIRE(ClientComponent->Offset.z() == 6.0f);
 }
 
 TEST_CASE("NetReplicationBridge resolves pending parents and components")
@@ -487,7 +487,7 @@ TEST_CASE("ReplicationService replicates node/component snapshots over a session
 
     REQUIRE(ClientNode->Health == 11);
     REQUIRE(ClientComponent->Value == 15);
-    REQUIRE(ClientComponent->Offset.X == 5.0f);
-    REQUIRE(ClientComponent->Offset.Y == 6.0f);
-    REQUIRE(ClientComponent->Offset.Z == 7.0f);
+    REQUIRE(ClientComponent->Offset.x() == 5.0f);
+    REQUIRE(ClientComponent->Offset.y() == 6.0f);
+    REQUIRE(ClientComponent->Offset.z() == 7.0f);
 }

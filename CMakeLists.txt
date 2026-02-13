@@ -21,6 +21,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stduuid)
 
+# SnAPI.Math integration (required)
+set(SNAPI_GF_MATH_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Math")
+if (SNAPI_GF_MATH_SOURCE_DIR)
+    FetchContent_Declare(
+        SnAPI.Math
+        SOURCE_DIR ${SNAPI_GF_MATH_SOURCE_DIR}
+    )
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Math/CMakeLists.txt")
+    FetchContent_Declare(
+        SnAPI.Math
+        SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Math
+    )
+else()
+    FetchContent_Declare(
+        SnAPI.Math
+        GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.Math.git
+        GIT_TAG master
+    )
+endif()
+FetchContent_MakeAvailable(SnAPI.Math)
+
 set(SNAPI_GF_SOURCES
     src/AudioListenerComponent.cpp
     src/AudioSourceComponent.cpp
@@ -29,6 +50,8 @@ set(SNAPI_GF_SOURCES
     src/AssetPipelineFactories.cpp
     src/AssetPipelineSerializers.cpp
     src/BaseNode.cpp
+    src/CharacterMovementController.cpp
+    src/ColliderComponent.cpp
     src/GameFramework.cpp
     src/GameRuntime.cpp
     src/IComponent.cpp
@@ -36,8 +59,10 @@ set(SNAPI_GF_SOURCES
     src/Level.cpp
     src/NodeGraph.cpp
     src/NetworkSystem.cpp
+    src/PhysicsSystem.cpp
     src/NetReplication.cpp
     src/NetRpc.cpp
+    src/RigidBodyComponent.cpp
     src/Serialization.cpp
     src/ScriptABI.cpp
     src/TypeAutoRegistry.cpp
@@ -52,7 +77,7 @@ target_include_directories(SnAPI.GameFramework PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(SnAPI.GameFramework PUBLIC stduuid)
+target_link_libraries(SnAPI.GameFramework PUBLIC stduuid SnAPI.Math)
 
 target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GAMEFRAMEWORK_BUILD_DLL)
 
@@ -197,6 +222,33 @@ endif()
 FetchContent_MakeAvailable(SnAPI.Networking)
 target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Networking)
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_NETWORKING)
+
+# SnAPI.Physics integration (required)
+set(SNAPI_PHYSICS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SNAPI_PHYSICS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SNAPI_PHYSICS_BACKEND_JOLT ON CACHE BOOL "" FORCE)
+
+set(SNAPI_GF_PHYSICS_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Physics")
+if (SNAPI_GF_PHYSICS_SOURCE_DIR)
+    FetchContent_Declare(
+        SnAPI.Physics
+        SOURCE_DIR ${SNAPI_GF_PHYSICS_SOURCE_DIR}
+    )
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Physics/CMakeLists.txt")
+    FetchContent_Declare(
+        SnAPI.Physics
+        SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Physics
+    )
+else()
+    FetchContent_Declare(
+        SnAPI.Physics
+        GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.Physics.git
+        GIT_TAG master
+    )
+endif()
+FetchContent_MakeAvailable(SnAPI.Physics)
+target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Physics)
+target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PHYSICS)
 
 # SWIG bindings (optional)
 if (SNAPI_GF_ENABLE_SWIG)

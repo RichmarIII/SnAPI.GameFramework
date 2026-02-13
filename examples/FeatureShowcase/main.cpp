@@ -112,9 +112,9 @@ bool ValidateDemoNode(
         std::cerr << "Demo node fields mismatch on " << NodeName << std::endl;
         return false;
     }
-    if (Node->m_spawn.X != ExpectedSpawn.X ||
-        Node->m_spawn.Y != ExpectedSpawn.Y ||
-        Node->m_spawn.Z != ExpectedSpawn.Z)
+    if (Node->m_spawn.x() != ExpectedSpawn.x() ||
+        Node->m_spawn.y() != ExpectedSpawn.y() ||
+        Node->m_spawn.z() != ExpectedSpawn.z())
     {
         std::cerr << "Demo node spawn mismatch on " << NodeName << std::endl;
         return false;
@@ -133,9 +133,9 @@ bool ValidateDemoNode(
     }
     if (StatsResult->m_score != ExpectedScore ||
         StatsResult->m_label != ExpectedLabel ||
-        StatsResult->m_tint.X != ExpectedTint.X ||
-        StatsResult->m_tint.Y != ExpectedTint.Y ||
-        StatsResult->m_tint.Z != ExpectedTint.Z)
+        StatsResult->m_tint.x() != ExpectedTint.x() ||
+        StatsResult->m_tint.y() != ExpectedTint.y() ||
+        StatsResult->m_tint.z() != ExpectedTint.z())
     {
         std::cerr << "Demo component mismatch on " << NodeName << std::endl;
         return false;

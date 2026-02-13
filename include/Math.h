@@ -1,125 +1,38 @@
 #pragma once
 
-#include <cmath>
+#include <SnAPI/Math/Types.h>
 
 namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Simple 3D vector type.
- * @remarks Lightweight POD vector used across transform/audio/replication payloads.
- * @note No implicit normalization or unit assumptions are enforced.
+ * @brief Canonical scalar type used by GameFramework math aliases.
+ * @remarks Controlled globally through `SNAPI_MATH_USES_DOUBLE`.
  */
-struct Vec3
-{
-    float X = 0.0f; /**< @brief X component. */
-    float Y = 0.0f; /**< @brief Y component. */
-    float Z = 0.0f; /**< @brief Z component. */
-
-    /** @brief Construct a zero vector. */
-    constexpr Vec3() = default;
-    /**
-     * @brief Construct a vector from components.
-     * @param InX X component.
-     * @param InY Y component.
-     * @param InZ Z component.
-     */
-    constexpr Vec3(float InX, float InY, float InZ)
-        : X(InX)
-        , Y(InY)
-        , Z(InZ)
-    {
-    }
-
-    /**
-     * @brief Add another vector in-place.
-     * @param Other Vector to add.
-     * @return Reference to this vector.
-     * @remarks Component-wise addition.
-     */
-    Vec3& operator+=(const Vec3& Other)
-    {
-        X += Other.X;
-        Y += Other.Y;
-        Z += Other.Z;
-        return *this;
-    }
-
-    /**
-     * @brief Subtract another vector in-place.
-     * @param Other Vector to subtract.
-     * @return Reference to this vector.
-     * @remarks Component-wise subtraction.
-     */
-    Vec3& operator-=(const Vec3& Other)
-    {
-        X -= Other.X;
-        Y -= Other.Y;
-        Z -= Other.Z;
-        return *this;
-    }
-
-    /**
-     * @brief Multiply by a scalar in-place.
-     * @param Scalar Scalar multiplier.
-     * @return Reference to this vector.
-     * @remarks Component-wise scalar multiplication.
-     */
-    Vec3& operator*=(float Scalar)
-    {
-        X *= Scalar;
-        Y *= Scalar;
-        Z *= Scalar;
-        return *this;
-    }
-};
+using Scalar = SnAPI::Math::Scalar;
 
 /**
- * @brief Vector addition.
- * @param Left Left-hand vector.
- * @param Right Right-hand vector.
- * @return Sum of the two vectors.
+ * @brief Canonical 3D vector type used across runtime and serialization.
+ * @remarks Alias of `SnAPI::Math::Vec3`.
  */
-inline Vec3 operator+(Vec3 Left, const Vec3& Right)
-{
-    Left += Right;
-    return Left;
-}
+using Vec3 = SnAPI::Math::Vec3;
 
 /**
- * @brief Vector subtraction.
- * @param Left Left-hand vector.
- * @param Right Right-hand vector.
- * @return Difference of the two vectors.
+ * @brief Canonical quaternion type used for interop with systems that need quaternion rotation.
+ * @remarks Alias of `SnAPI::Math::Quat`.
  */
-inline Vec3 operator-(Vec3 Left, const Vec3& Right)
-{
-    Left -= Right;
-    return Left;
-}
+using Quat = SnAPI::Math::Quat;
 
 /**
- * @brief Scalar multiplication (vector * scalar).
- * @param Left Vector.
- * @param Scalar Scalar multiplier.
- * @return Scaled vector.
+ * @brief Canonical transform type (position + quaternion rotation).
+ * @remarks Alias of `SnAPI::Math::Transform`.
  */
-inline Vec3 operator*(Vec3 Left, float Scalar)
-{
-    Left *= Scalar;
-    return Left;
-}
+using Transform = SnAPI::Math::Transform;
 
 /**
- * @brief Scalar multiplication (scalar * vector).
- * @param Scalar Scalar multiplier.
- * @param Right Vector.
- * @return Scaled vector.
+ * @brief Canonical AABB type.
+ * @remarks Alias of `SnAPI::Math::Aabb`.
  */
-inline Vec3 operator*(float Scalar, Vec3 Right)
-{
-    Right *= Scalar;
-    return Right;
-}
+using Aabb = SnAPI::Math::Aabb;
 
 } // namespace SnAPI::GameFramework

@@ -13,6 +13,9 @@
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 #include "NetworkSystem.h"
 #endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+#include "PhysicsSystem.h"
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -24,6 +27,7 @@ namespace SnAPI::GameFramework
  * - derives from `NodeGraph` for hierarchical node traversal
  * - implements `IWorld` for level/subsystem contracts
  * - owns subsystem instances (job system, optional audio, optional networking)
+ *   and optional physics
  *
  * Responsibility boundaries:
  * - world controls frame lifecycle and end-of-frame flush
@@ -45,6 +49,11 @@ public:
      * @param Name World name.
      */
     explicit World(std::string Name);
+    ~World() override;
+    World(const World&) = delete;
+    World& operator=(const World&) = delete;
+    World(World&&) noexcept = default;
+    World& operator=(World&&) noexcept = default;
 
     /**
      * @brief Per-frame tick.
@@ -127,6 +136,19 @@ public:
     const NetworkSystem& Networking() const override;
 #endif
 
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    /**
+     * @brief Access world physics subsystem.
+     * @return Reference to PhysicsSystem.
+     */
+    PhysicsSystem& Physics() override;
+    /**
+     * @brief Access world physics subsystem (const).
+     * @return Const reference to PhysicsSystem.
+     */
+    const PhysicsSystem& Physics() const override;
+#endif
+
 private:
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
 #if defined(SNAPI_GF_ENABLE_AUDIO)
@@ -134,6 +156,9 @@ private:
 #endif
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     NetworkSystem m_networkSystem; /**< @brief World-scoped networking subsystem with replication/RPC bridges. */
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    PhysicsSystem m_physicsSystem{}; /**< @brief World-scoped physics subsystem. */
 #endif
 };
 

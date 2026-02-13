@@ -34,6 +34,10 @@ Current tests include:
     - world-owned networking system wiring, replication/rpc bridge integration
     - `INode::CallRPC` / `IComponent::CallRPC` role-based routing behavior
     - component `TypeKey` assignment for reflection RPC dispatch
+- `tests/PhysicsIntegrationTests.cpp`
+    - runtime physics bootstrap through `GameRuntimeSettings::Physics`
+    - rigid body simulation updates transform over fixed ticks
+    - `CharacterMovementController` movement/jump integration with rigid body
 
 ## 3. Run Integration Examples
 
@@ -70,6 +74,22 @@ If you change networking/replication code:
 - watch connection dumps:
     - `pending_rel` should not grow forever
     - non-zero `pkt_lost` alone is not a failure if reliable backlog drains and gameplay state remains correct
+
+If you change physics code:
+
+- run `PhysicsIntegrationTests`
+- verify world physics bootstrap still succeeds in runtime init
+- verify stepping policy (`TickInFixedTick` / `TickInVariableTick`) matches expected update path
+- verify rigid body transform sync behavior:
+    - dynamic bodies pull from physics
+    - static/kinematic bodies push to physics
+- verify grounded probe and jump behavior if character movement logic changed
+
+Fast physics-only test command:
+
+```bash
+ctest --test-dir build/debug --output-on-failure -R "Physics|CharacterMovementController"
+```
 
 If you change component lifecycle code:
 

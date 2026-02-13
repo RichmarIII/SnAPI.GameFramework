@@ -1,6 +1,6 @@
 # Worlds and Graphs
 
-This page explains the runtime object model. If this is clear, everything else (serialization, replication, audio) becomes much easier.
+This page explains the runtime object model. If this is clear, everything else (physics, serialization, replication, audio) becomes much easier.
 
 ## 1. Runtime Hierarchy
 
@@ -84,6 +84,7 @@ Tick order is tree-driven from graph roots.
 `World` also runs subsystem work during frame lifecycle:
 
 - networking session pumping in `Tick` + `EndFrame`
+- optional physics stepping in `Tick` and/or `FixedTick` (based on physics settings)
 - audio system update in `Tick`
 
 Typical frame loop:
@@ -131,7 +132,7 @@ This is how systems are accessed from gameplay code:
 auto* OwnerNode = SomeComponent.Owner().Borrowed();
 if (OwnerNode && OwnerNode->World())
 {
-    // OwnerNode->World()->Audio(), etc.
+    // OwnerNode->World()->Audio(), OwnerNode->World()->Physics(), etc.
 }
 ```
 

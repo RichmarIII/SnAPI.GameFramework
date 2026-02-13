@@ -40,6 +40,21 @@ Construct a world with a name.
 - `Name`:
 </div>
 <div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::World::~World() override`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::World::World(const World &)=delete`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `World & SnAPI::GameFramework::World::operator=(const World &)=delete`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::World::World(World &&) noexcept=default`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `World & SnAPI::GameFramework::World::operator=(World &&) noexcept=default`
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::World::Tick(float DeltaSeconds) override`
 
 Per-frame tick.

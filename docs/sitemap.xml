@@ -81,6 +81,22 @@
          <lastmod>2026-02-13</lastmod>
     </url>
     <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/CharacterMovementController_8cpp/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/CharacterMovementController_8h/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/ColliderComponent_8cpp/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/ColliderComponent_8h/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
          <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/ComponentStorage_8h/</loc>
          <lastmod>2026-02-13</lastmod>
     </url>
@@ -217,11 +233,27 @@
          <lastmod>2026-02-13</lastmod>
     </url>
     <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/PhysicsSystem_8cpp/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/PhysicsSystem_8h/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
          <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/Reflection_8h/</loc>
          <lastmod>2026-02-13</lastmod>
     </url>
     <url>
          <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/Relevance_8h/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/RigidBodyComponent_8cpp/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/api/RigidBodyComponent_8h/</loc>
          <lastmod>2026-02-13</lastmod>
     </url>
     <url>
@@ -754,6 +786,14 @@
     </url>
     <url>
          <loc>https://richmarIII.github.io/SnAPI.GameFramework/tutorials/nodes_components/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/tutorials/physics/</loc>
+         <lastmod>2026-02-13</lastmod>
+    </url>
+    <url>
+         <loc>https://richmarIII.github.io/SnAPI.GameFramework/tutorials/physics_queries_events/</loc>
          <lastmod>2026-02-13</lastmod>
     </url>
     <url>

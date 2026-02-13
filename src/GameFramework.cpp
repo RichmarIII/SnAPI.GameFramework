@@ -9,6 +9,11 @@
 #include "ScriptComponent.h"
 #include "TransformComponent.h"
 #include "TypeAutoRegistration.h"
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+#include "CharacterMovementController.h"
+#include "ColliderComponent.h"
+#include "RigidBodyComponent.h"
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 #include "AudioListenerComponent.h"
 #include "AudioSourceComponent.h"
@@ -39,9 +44,9 @@ SNAPI_REFLECT_TYPE(World, (TTypeBuilder<World>(World::kTypeName)
     .Register()));
 
 SNAPI_REFLECT_TYPE(TransformComponent, (TTypeBuilder<TransformComponent>(TransformComponent::kTypeName)
-    .Field("Position", &TransformComponent::Position)
-    .Field("Rotation", &TransformComponent::Rotation)
-    .Field("Scale", &TransformComponent::Scale)
+    .Field("Position", &TransformComponent::Position, EFieldFlagBits::Replication)
+    .Field("Rotation", &TransformComponent::Rotation, EFieldFlagBits::Replication)
+    .Field("Scale", &TransformComponent::Scale, EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
 
@@ -104,6 +109,77 @@ SNAPI_REFLECT_TYPE(AudioListenerComponent, (TTypeBuilder<AudioListenerComponent>
 
 #endif // SNAPI_GF_ENABLE_AUDIO
 
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+
+SNAPI_REFLECT_TYPE(ColliderComponent::Settings, (TTypeBuilder<ColliderComponent::Settings>(ColliderComponent::Settings::kTypeName)
+    .Field("Shape", &ColliderComponent::Settings::Shape)
+    .Field("HalfExtent", &ColliderComponent::Settings::HalfExtent)
+    .Field("Radius", &ColliderComponent::Settings::Radius)
+    .Field("HalfHeight", &ColliderComponent::Settings::HalfHeight)
+    .Field("LocalPosition", &ColliderComponent::Settings::LocalPosition)
+    .Field("LocalRotation", &ColliderComponent::Settings::LocalRotation)
+    .Field("Density", &ColliderComponent::Settings::Density)
+    .Field("Friction", &ColliderComponent::Settings::Friction)
+    .Field("Restitution", &ColliderComponent::Settings::Restitution)
+    .Field("Layer", &ColliderComponent::Settings::Layer)
+    .Field("Mask", &ColliderComponent::Settings::Mask)
+    .Field("IsTrigger", &ColliderComponent::Settings::IsTrigger)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(ColliderComponent, (TTypeBuilder<ColliderComponent>(ColliderComponent::kTypeName)
+    .Field("Settings",
+           &ColliderComponent::EditSettings,
+           &ColliderComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(RigidBodyComponent::Settings, (TTypeBuilder<RigidBodyComponent::Settings>(RigidBodyComponent::Settings::kTypeName)
+    .Field("BodyType", &RigidBodyComponent::Settings::BodyType)
+    .Field("Mass", &RigidBodyComponent::Settings::Mass)
+    .Field("LinearDamping", &RigidBodyComponent::Settings::LinearDamping)
+    .Field("AngularDamping", &RigidBodyComponent::Settings::AngularDamping)
+    .Field("EnableCcd", &RigidBodyComponent::Settings::EnableCcd)
+    .Field("StartActive", &RigidBodyComponent::Settings::StartActive)
+    .Field("InitialLinearVelocity", &RigidBodyComponent::Settings::InitialLinearVelocity)
+    .Field("InitialAngularVelocity", &RigidBodyComponent::Settings::InitialAngularVelocity)
+    .Field("SyncFromPhysics", &RigidBodyComponent::Settings::SyncFromPhysics)
+    .Field("SyncToPhysics", &RigidBodyComponent::Settings::SyncToPhysics)
+    .Field("AutoDeactivateWhenSleeping", &RigidBodyComponent::Settings::AutoDeactivateWhenSleeping)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(RigidBodyComponent, (TTypeBuilder<RigidBodyComponent>(RigidBodyComponent::kTypeName)
+    .Field("Settings",
+           &RigidBodyComponent::EditSettings,
+           &RigidBodyComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(CharacterMovementController::Settings, (TTypeBuilder<CharacterMovementController::Settings>(CharacterMovementController::Settings::kTypeName)
+    .Field("MoveForce", &CharacterMovementController::Settings::MoveForce)
+    .Field("JumpImpulse", &CharacterMovementController::Settings::JumpImpulse)
+    .Field("GroundProbeStartOffset", &CharacterMovementController::Settings::GroundProbeStartOffset)
+    .Field("GroundProbeDistance", &CharacterMovementController::Settings::GroundProbeDistance)
+    .Field("GroundMask", &CharacterMovementController::Settings::GroundMask)
+    .Field("ConsumeInputEachTick", &CharacterMovementController::Settings::ConsumeInputEachTick)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(CharacterMovementController, (TTypeBuilder<CharacterMovementController>(CharacterMovementController::kTypeName)
+    .Field("Settings",
+           &CharacterMovementController::EditSettings,
+           &CharacterMovementController::GetSettings)
+    .Method("SetMoveInput", &CharacterMovementController::SetMoveInput)
+    .Method("AddMoveInput", &CharacterMovementController::AddMoveInput)
+    .Method("Jump", &CharacterMovementController::Jump)
+    .Constructor<>()
+    .Register()));
+
+#endif // SNAPI_GF_ENABLE_PHYSICS
+
 void RegisterBuiltinTypes()
 {
     TypeInfo VoidInfo;
@@ -134,8 +210,21 @@ void RegisterBuiltinTypes()
     RegisterPlain(TTypeNameV<Vec3>, sizeof(Vec3), alignof(Vec3));
     RegisterPlain(TTypeNameV<NodeHandle>, sizeof(NodeHandle), alignof(NodeHandle));
     RegisterPlain(TTypeNameV<ComponentHandle>, sizeof(ComponentHandle), alignof(ComponentHandle));
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    RegisterPlain(TTypeNameV<ECollisionFilterBits>, sizeof(ECollisionFilterBits), alignof(ECollisionFilterBits));
+    RegisterPlain(TTypeNameV<CollisionFilterFlags>, sizeof(CollisionFilterFlags), alignof(CollisionFilterFlags));
+    RegisterPlain(TTypeNameV<SnAPI::Physics::EBodyType>, sizeof(SnAPI::Physics::EBodyType), alignof(SnAPI::Physics::EBodyType));
+    RegisterPlain(TTypeNameV<SnAPI::Physics::EShapeType>, sizeof(SnAPI::Physics::EShapeType), alignof(SnAPI::Physics::EShapeType));
+#endif
 
     RegisterSerializationDefaults();
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    auto& ValueRegistry = ValueCodecRegistry::Instance();
+    ValueRegistry.Register<ECollisionFilterBits>();
+    ValueRegistry.Register<CollisionFilterFlags>();
+    ValueRegistry.Register<SnAPI::Physics::EBodyType>();
+    ValueRegistry.Register<SnAPI::Physics::EShapeType>();
+#endif
 }
 
 } // namespace SnAPI::GameFramework
