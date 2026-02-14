@@ -12,6 +12,7 @@ option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" OFF)
 
 include(FetchContent)
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 
 # stduuid
 FetchContent_Declare(
@@ -249,6 +250,37 @@ endif()
 FetchContent_MakeAvailable(SnAPI.Physics)
 target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Physics)
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PHYSICS)
+
+# SnAPI.Renderer integration (required when source is available)
+set(SNAPI_RENDERER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SNAPI_GF_RENDERER_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Renderer")
+
+set(SNAPI_GF_RENDERER_ROOT "")
+if (SNAPI_GF_RENDERER_SOURCE_DIR)
+    set(SNAPI_GF_RENDERER_ROOT ${SNAPI_GF_RENDERER_SOURCE_DIR})
+elseif (EXISTS "/mnt/Apps/Dev/Repositories/SnAPI.Renderer/CMakeLists.txt")
+    set(SNAPI_GF_RENDERER_ROOT "/mnt/Apps/Dev/Repositories/SnAPI.Renderer")
+endif()
+
+if (SNAPI_GF_RENDERER_ROOT)
+    if (TARGET lz4)
+        set(SLANG_USE_SYSTEM_LZ4 ON CACHE BOOL "" FORCE)
+    endif()
+    FetchContent_Declare(
+        SnAPI.Renderer
+        SOURCE_DIR ${SNAPI_GF_RENDERER_ROOT}
+    )
+    FetchContent_MakeAvailable(SnAPI.Renderer)
+
+    if (TARGET SnAPI.Renderer)
+        target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Renderer)
+        target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_RENDERER)
+    else()
+        message(FATAL_ERROR "SnAPI.Renderer source was found, but target SnAPI.Renderer was not created.")
+    endif()
+else()
+    message(WARNING "SnAPI.Renderer source not found; set SNAPI_GF_RENDERER_SOURCE_DIR to enable renderer integration.")
+endif()
 
 # SWIG bindings (optional)
 if (SNAPI_GF_ENABLE_SWIG)
