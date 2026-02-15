@@ -12,7 +12,7 @@
 namespace SnAPI::Graphics
 {
 class ICamera;
-struct Mesh;
+class IRenderObject;
 class Material;
 class MaterialInstance;
 class VulkanGraphicsAPI;
@@ -146,18 +146,18 @@ public:
     SnAPI::Graphics::ICamera* ActiveCamera() const;
 
     /**
-     * @brief Register a mesh for renderer draw submission.
-     * @param Mesh Weak mesh reference.
-     * @return True when mesh registration request was submitted.
+     * @brief Register a render object for renderer draw submission.
+     * @param RenderObject Weak render object reference.
+     * @return True when render-object registration request was submitted.
      */
-    bool RegisterMesh(const std::weak_ptr<SnAPI::Graphics::Mesh>& Mesh);
+    bool RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject);
 
     /**
-     * @brief Populate default material instances for a mesh.
-     * @param Mesh Mesh to update.
+     * @brief Populate default material instances for a render object.
+     * @param RenderObject Render object to update.
      * @return True when default materials were assigned.
      */
-    bool ApplyDefaultMaterials(SnAPI::Graphics::Mesh& Mesh);
+    bool ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& RenderObject);
 
     /**
      * @brief Access the lazily-created default GBuffer material.
@@ -172,13 +172,13 @@ public:
     std::shared_ptr<SnAPI::Graphics::Material> DefaultShadowMaterial();
 
     /**
-     * @brief Configure standard world pass visibility for a mesh.
-     * @param Mesh Mesh to configure.
+     * @brief Configure standard world pass visibility for a render object.
+     * @param RenderObject Render object to configure.
      * @param Visible True to enable gbuffer rendering.
      * @param CastShadows True to enable shadow pass rendering.
      * @return True when renderer was initialized and pass state was applied.
      */
-    bool ConfigureMeshPasses(SnAPI::Graphics::Mesh& Mesh, bool Visible, bool CastShadows);
+    bool ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, bool Visible, bool CastShadows);
 
     /**
      * @brief Force swapchain recreation for the owned window.
@@ -263,7 +263,7 @@ private:
     float m_lastWindowWidth = 0.0f; /**< @brief Last known window width used for resize detection. */
     float m_lastWindowHeight = 0.0f; /**< @brief Last known window height used for resize detection. */
     bool m_hasWindowSizeSnapshot = false; /**< @brief True after first window-size sample. */
-    std::vector<std::weak_ptr<SnAPI::Graphics::Mesh>> m_registeredMeshes{}; /**< @brief Registered meshes that need end-of-frame state snapshots. */
+    std::vector<std::weak_ptr<SnAPI::Graphics::IRenderObject>> m_registeredRenderObjects{}; /**< @brief Registered render objects that need end-of-frame state snapshots. */
     bool m_initialized = false; /**< @brief True when backend lifecycle is active through this subsystem. */
 };
 

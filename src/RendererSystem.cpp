@@ -21,6 +21,7 @@
 #include <HiZPass.hpp>
 #include <ICamera.hpp>
 #include <IGraphicsAPI.hpp>
+#include <IRenderObject.hpp>
 #include <LightManager.hpp>
 #include <MeshManager.hpp>
 #include <FontLibrary.hpp>
@@ -120,7 +121,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
-    m_registeredMeshes = std::move(Other.m_registeredMeshes);
+    m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
     m_initialized = Other.m_initialized;
 
     Other.m_graphics = nullptr;
@@ -131,7 +132,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
-    Other.m_registeredMeshes.clear();
+    Other.m_registeredRenderObjects.clear();
     Other.m_initialized = false;
 }
 
@@ -161,7 +162,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
-    m_registeredMeshes = std::move(Other.m_registeredMeshes);
+    m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
     m_initialized = Other.m_initialized;
 
     Other.m_graphics = nullptr;
@@ -172,7 +173,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
-    Other.m_registeredMeshes.clear();
+    Other.m_registeredRenderObjects.clear();
     Other.m_initialized = false;
     return *this;
 }
@@ -206,6 +207,7 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_lastWindowWidth = 0.0f;
         m_lastWindowHeight = 0.0f;
         m_hasWindowSizeSnapshot = false;
+        m_registeredRenderObjects.clear();
     };
 
     ResetState();
@@ -257,6 +259,7 @@ bool RendererSystem::InitializeUnlocked()
     m_lightManager.reset();
     ResetPassPointers();
     m_passGraphRegistered = false;
+    m_registeredRenderObjects.clear();
 
     if (!m_settings.CreateGraphicsApi)
     {
@@ -407,32 +410,32 @@ SnAPI::Graphics::ICamera* RendererSystem::ActiveCamera() const
     return m_graphics ? m_graphics->ActiveCamera() : nullptr;
 }
 
-bool RendererSystem::RegisterMesh(const std::weak_ptr<SnAPI::Graphics::Mesh>& Mesh)
+bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     std::lock_guard<std::mutex> Lock(m_mutex);
-    const auto SharedMesh = Mesh.lock();
-    if (!m_graphics || !SharedMesh)
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject)
     {
         return false;
     }
 
-    m_graphics->RegisterMesh(SharedMesh);
+    m_graphics->RegisterRenderObject(SharedRenderObject);
 
-    const auto* MeshPtr = SharedMesh.get();
-    const bool AlreadyTracked = std::ranges::any_of(m_registeredMeshes,
-                                                    [MeshPtr](const std::weak_ptr<SnAPI::Graphics::Mesh>& Existing) {
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    const bool AlreadyTracked = std::ranges::any_of(m_registeredRenderObjects,
+                                                    [RenderObjectPtr](const std::weak_ptr<SnAPI::Graphics::IRenderObject>& Existing) {
                                                         const auto ExistingShared = Existing.lock();
-                                                        return ExistingShared && ExistingShared.get() == MeshPtr;
+                                                        return ExistingShared && ExistingShared.get() == RenderObjectPtr;
                                                     });
     if (!AlreadyTracked)
     {
-        m_registeredMeshes.emplace_back(SharedMesh);
+        m_registeredRenderObjects.emplace_back(SharedRenderObject);
     }
     return true;
 }
 
-bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::Mesh& Mesh)
+bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     std::lock_guard<std::mutex> Lock(m_mutex);
@@ -447,8 +450,8 @@ bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::Mesh& Mesh)
         return false;
     }
 
-    Meshes->PopulateMaterialInstances(Mesh, m_defaultGBufferMaterial);
-    Meshes->PopulateShadowMaterialInstances(Mesh, m_defaultShadowMaterial);
+    Meshes->PopulateMaterialInstances(RenderObject, m_defaultGBufferMaterial);
+    Meshes->PopulateShadowMaterialInstances(RenderObject, m_defaultShadowMaterial);
     return true;
 }
 
@@ -472,7 +475,7 @@ std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultShadowMaterial
     return m_defaultShadowMaterial;
 }
 
-bool RendererSystem::ConfigureMeshPasses(SnAPI::Graphics::Mesh& Mesh, const bool Visible, const bool CastShadows)
+bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, const bool Visible, const bool CastShadows)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     std::lock_guard<std::mutex> Lock(m_mutex);
@@ -483,13 +486,13 @@ bool RendererSystem::ConfigureMeshPasses(SnAPI::Graphics::Mesh& Mesh, const bool
 
     if (auto* GBufferPass = m_graphics->GetRenderPass(SnAPI::Graphics::ERenderPassType::GBuffer))
     {
-        Mesh.EnablePass(GBufferPass->ID(), Visible);
+        RenderObject.EnablePass(GBufferPass->ID(), Visible);
     }
     if (auto* ShadowPass = m_graphics->GetRenderPass(SnAPI::Graphics::ERenderPassType::Shadow))
     {
-        Mesh.EnablePass(ShadowPass->ID(), Visible && CastShadows);
+        RenderObject.EnablePass(ShadowPass->ID(), Visible && CastShadows);
     }
-    Mesh.SetCastsShadows(CastShadows);
+    RenderObject.SetCastsShadows(CastShadows);
     return true;
 }
 
@@ -590,17 +593,17 @@ void RendererSystem::EndFrame()
         Camera->SaveFrameState();
     }
 
-    SNAPI_GF_PROFILE_SCOPE("Renderer.SaveMeshFrameState", "Rendering");
-    for (auto It = m_registeredMeshes.begin(); It != m_registeredMeshes.end();)
+    SNAPI_GF_PROFILE_SCOPE("Renderer.SaveRenderObjectFrameState", "Rendering");
+    for (auto It = m_registeredRenderObjects.begin(); It != m_registeredRenderObjects.end();)
     {
-        if (auto Mesh = It->lock())
+        if (auto RenderObject = It->lock())
         {
-            Mesh->SaveFrameState();
+            RenderObject->SaveFrameState();
             ++It;
         }
         else
         {
-            It = m_registeredMeshes.erase(It);
+            It = m_registeredRenderObjects.erase(It);
         }
     }
 }
@@ -631,7 +634,7 @@ void RendererSystem::ShutdownUnlocked()
     m_lastWindowWidth = 0.0f;
     m_lastWindowHeight = 0.0f;
     m_hasWindowSizeSnapshot = false;
-    m_registeredMeshes.clear();
+    m_registeredRenderObjects.clear();
     m_initialized = false;
 }
 

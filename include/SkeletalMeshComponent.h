@@ -10,6 +10,7 @@
 namespace SnAPI::Graphics
 {
 struct Mesh;
+class MeshRenderObject;
 } // namespace SnAPI::Graphics
 
 namespace SnAPI::GameFramework
@@ -74,12 +75,13 @@ public:
 private:
     RendererSystem* ResolveRendererSystem() const;
     bool EnsureMeshLoaded();
-    void SyncMeshTransform(SnAPI::Graphics::Mesh& Mesh) const;
-    void ApplyMeshRenderingState(SnAPI::Graphics::Mesh& Mesh);
-    void ApplyAutoPlay(SnAPI::Graphics::Mesh& Mesh);
+    void SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const;
+    void ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject);
+    void ApplyAutoPlay(SnAPI::Graphics::MeshRenderObject& RenderObject);
 
     Settings m_settings{}; /**< @brief Mesh/render/animation settings. */
-    std::shared_ptr<SnAPI::Graphics::Mesh> m_mesh{}; /**< @brief Component-owned mesh instance. */
+    std::shared_ptr<SnAPI::Graphics::Mesh> m_meshAsset{}; /**< @brief Shared mesh asset reference. */
+    std::shared_ptr<SnAPI::Graphics::MeshRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     std::string m_lastAutoPlayAnimation{}; /**< @brief Last animation name used for auto-play state tracking. */
     bool m_lastAutoPlayLoop = true; /**< @brief Last loop setting used for auto-play state tracking. */

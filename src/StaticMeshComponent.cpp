@@ -11,6 +11,7 @@
 #include <LinearAlgebra.hpp>
 #include <Mesh.hpp>
 #include <MeshManager.hpp>
+#include <MeshRenderObject.hpp>
 
 #include "BaseNode.h"
 #include "IWorld.h"
@@ -31,7 +32,7 @@ bool IsFiniteQuat(const Quat& Value)
     return std::isfinite(Value.x()) && std::isfinite(Value.y()) && std::isfinite(Value.z()) && std::isfinite(Value.w());
 }
 
-SnAPI::Matrix4 ComposeRendererLocalTransform(const TransformComponent& Transform)
+SnAPI::Matrix4 ComposeRendererWorldTransform(const TransformComponent& Transform)
 {
     const SnAPI::Vector3D Position{
         static_cast<SnAPI::Vector3D::Scalar>(Transform.Position.x()),
@@ -56,11 +57,11 @@ SnAPI::Matrix4 ComposeRendererLocalTransform(const TransformComponent& Transform
         Rotation = SnAPI::Quaternion::Identity();
     }
 
-    auto LocalTransform = SnAPI::Transform3D::Identity();
-    LocalTransform.translate(Position);
-    LocalTransform.rotate(Rotation);
-    LocalTransform.scale(Scale);
-    return LocalTransform.matrix();
+    auto WorldTransform = SnAPI::Transform3D::Identity();
+    WorldTransform.translate(Position);
+    WorldTransform.rotate(Rotation);
+    WorldTransform.scale(Scale);
+    return WorldTransform.matrix();
 }
 } // namespace
 
@@ -78,16 +79,17 @@ void StaticMeshComponent::SetSharedMaterialInstances(std::shared_ptr<SnAPI::Grap
     m_sharedGBufferInstance = std::move(GBufferInstance);
     m_sharedShadowInstance = std::move(ShadowInstance);
 
-    if (m_mesh)
+    if (m_renderObject)
     {
-        ApplySharedMaterialInstances(*m_mesh);
+        ApplySharedMaterialInstances(*m_renderObject);
     }
 }
 
 void StaticMeshComponent::ClearMesh()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    m_mesh.reset();
+    m_meshAsset.reset();
+    m_renderObject.reset();
     m_loadedPath.clear();
     m_registered = false;
     m_passStateInitialized = false;
@@ -126,7 +128,7 @@ void StaticMeshComponent::Tick(float DeltaSeconds)
         return;
     }
 
-    if (!m_mesh)
+    if (!m_renderObject)
     {
         ClearMesh();
         return;
@@ -134,9 +136,9 @@ void StaticMeshComponent::Tick(float DeltaSeconds)
 
     if (m_settings.SyncFromTransform)
     {
-        SyncMeshTransform(*m_mesh);
+        SyncRenderObjectTransform(*m_renderObject);
     }
-    ApplyMeshRenderingState(*m_mesh);
+    ApplyRenderObjectState(*m_renderObject);
 }
 
 RendererSystem* StaticMeshComponent::ResolveRendererSystem() const
@@ -171,7 +173,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         return false;
     }
 
-    if (m_mesh)
+    if (m_renderObject)
     {
         return true;
     }
@@ -189,24 +191,25 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         return false;
     }
 
-    auto Mesh = std::make_shared<SnAPI::Graphics::Mesh>(*SourceMesh); //TODO: We need to eventually treat this as an asset, not and instance
-    if (!Mesh)
+    auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>(SourceMesh);
+    if (!RenderObject)
     {
         return false;
     }
 
-    m_mesh = std::move(Mesh);
+    m_meshAsset = SourceMesh;
+    m_renderObject = std::move(RenderObject);
     m_loadedPath = m_settings.MeshPath;
     m_registered = false;
 
-    (void)Renderer->ApplyDefaultMaterials(*m_mesh);
-    ApplySharedMaterialInstances(*m_mesh);
-    ApplyMeshRenderingState(*m_mesh);
+    (void)Renderer->ApplyDefaultMaterials(*m_renderObject);
+    ApplySharedMaterialInstances(*m_renderObject);
+    ApplyRenderObjectState(*m_renderObject);
 
     return true;
 }
 
-void StaticMeshComponent::SyncMeshTransform(SnAPI::Graphics::Mesh& Mesh) const
+void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     auto* Owner = OwnerNode();
@@ -228,10 +231,10 @@ void StaticMeshComponent::SyncMeshTransform(SnAPI::Graphics::Mesh& Mesh) const
         return;
     }
 
-    Mesh.LocalTransform = ComposeRendererLocalTransform(*TransformResult);
+    RenderObject.SetWorldTransform(ComposeRendererWorldTransform(*TransformResult));
 }
 
-void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::Mesh& Mesh) const
+void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::MeshRenderObject& RenderObject) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!m_sharedGBufferInstance && !m_sharedShadowInstance)
@@ -239,20 +242,26 @@ void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::Mesh& Me
         return;
     }
 
-    for (std::size_t SubMeshIndex = 0; SubMeshIndex < Mesh.SubMeshes.size(); ++SubMeshIndex)
+    const auto& MeshAsset = RenderObject.MeshAsset();
+    if (!MeshAsset)
+    {
+        return;
+    }
+
+    for (std::size_t SubMeshIndex = 0; SubMeshIndex < MeshAsset->SubMeshes.size(); ++SubMeshIndex)
     {
         if (m_sharedGBufferInstance)
         {
-            Mesh.SetMaterialInstance(static_cast<std::uint32_t>(SubMeshIndex), m_sharedGBufferInstance);
+            RenderObject.SetMaterialInstance(static_cast<std::uint32_t>(SubMeshIndex), m_sharedGBufferInstance);
         }
         if (m_sharedShadowInstance)
         {
-            Mesh.SetShadowMaterialInstance(static_cast<std::uint32_t>(SubMeshIndex), m_sharedShadowInstance);
+            RenderObject.SetShadowMaterialInstance(static_cast<std::uint32_t>(SubMeshIndex), m_sharedShadowInstance);
         }
     }
 }
 
-void StaticMeshComponent::ApplyMeshRenderingState(SnAPI::Graphics::Mesh& Mesh)
+void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     auto* Renderer = ResolveRendererSystem();
@@ -266,7 +275,7 @@ void StaticMeshComponent::ApplyMeshRenderingState(SnAPI::Graphics::Mesh& Mesh)
                                || m_lastCastShadows != m_settings.CastShadows;
     if (PassStateChanged)
     {
-        if (Renderer->ConfigureMeshPasses(Mesh, m_settings.Visible, m_settings.CastShadows))
+        if (Renderer->ConfigureRenderObjectPasses(RenderObject, m_settings.Visible, m_settings.CastShadows))
         {
             m_passStateInitialized = true;
             m_lastVisible = m_settings.Visible;
@@ -282,7 +291,7 @@ void StaticMeshComponent::ApplyMeshRenderingState(SnAPI::Graphics::Mesh& Mesh)
 
     if (!m_registered)
     {
-        if (Renderer->RegisterMesh(m_mesh))
+        if (Renderer->RegisterRenderObject(m_renderObject))
         {
             m_registered = true;
         }
