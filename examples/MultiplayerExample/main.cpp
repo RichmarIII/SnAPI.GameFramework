@@ -1,26 +1,36 @@
-#if !defined(GL_GLEXT_PROTOTYPES)
-#define GL_GLEXT_PROTOTYPES
-#endif
-#include <GLFW/glfw3.h>
-
-#include <array>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
-#include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <memory>
+#include <optional>
+#include <limits>
 #include <random>
 #include <string>
 #include <string_view>
 #include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
-#include <algorithm>
-
 #include "GameFramework.hpp"
+#include "VulkanGraphicsAPI.hpp"
+#include <MeshManager.hpp>
+#if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
+    defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
+#include <SnAPI/Profiler/Profiler.h>
+#endif
+
+#if !defined(SNAPI_GF_ENABLE_RENDERER)
+int main(int, char**)
+{
+    std::cerr << "MultiplayerExample requires SNAPI_GF_ENABLE_RENDERER\n";
+    return 1;
+}
+#else
+
+#include <SDL3/SDL.h>
 
 using namespace SnAPI::GameFramework;
 using namespace SnAPI::Networking;
@@ -28,9 +38,198 @@ using namespace SnAPI::Networking;
 namespace
 {
 
+constexpr std::string_view kCubeMeshPath = "assets/cube.obj";
+constexpr std::string_view kGroundMeshPath = "assets/ground.obj";
+constexpr float kEarthSurfaceY = 6360e3f + 10.0f;
+
+#if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
+    defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
+std::optional<bool> ParseProfilerBooleanEnv(const char* Value)
+{
+    if (Value == nullptr || Value[0] == '\0')
+    {
+        return std::nullopt;
+    }
+
+    const std::string_view Raw(Value);
+    if (Raw == "1" || Raw == "true" || Raw == "TRUE" || Raw == "on" || Raw == "ON")
+    {
+        return true;
+    }
+    if (Raw == "0" || Raw == "false" || Raw == "FALSE" || Raw == "off" || Raw == "OFF")
+    {
+        return false;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::uint64_t> ParseProfilerUnsignedEnv(const char* Name)
+{
+    const char* Raw = std::getenv(Name);
+    if (Raw == nullptr || Raw[0] == '\0')
+    {
+        return std::nullopt;
+    }
+
+    char* End = nullptr;
+    const unsigned long long Parsed = std::strtoull(Raw, &End, 10);
+    if (End == Raw || End == nullptr || End[0] != '\0')
+    {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint64_t>(Parsed);
+}
+
+enum class EExampleProfilerMode
+{
+    RawReplay,
+    Stream,
+};
+
+bool EqualsIgnoreCase(const std::string_view Left, const std::string_view Right)
+{
+    if (Left.size() != Right.size())
+    {
+        return false;
+    }
+
+    for (std::size_t Index = 0; Index < Left.size(); ++Index)
+    {
+        const unsigned char LeftChar = static_cast<unsigned char>(Left[Index]);
+        const unsigned char RightChar = static_cast<unsigned char>(Right[Index]);
+
+        const unsigned char LeftLower =
+            (LeftChar >= 'A' && LeftChar <= 'Z') ? static_cast<unsigned char>(LeftChar + ('a' - 'A')) : LeftChar;
+        const unsigned char RightLower =
+            (RightChar >= 'A' && RightChar <= 'Z') ? static_cast<unsigned char>(RightChar + ('a' - 'A')) : RightChar;
+
+        if (LeftLower != RightLower)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+EExampleProfilerMode ResolveExampleProfilerMode()
+{
+    const char* RawMode = std::getenv("SNAPI_MULTIPLAYER_PROFILER_MODE");
+    if (RawMode == nullptr || RawMode[0] == '\0')
+    {
+        return EExampleProfilerMode::RawReplay;
+    }
+
+    const std::string_view ModeValue(RawMode);
+    if (EqualsIgnoreCase(ModeValue, "stream") || EqualsIgnoreCase(ModeValue, "udp"))
+    {
+        return EExampleProfilerMode::Stream;
+    }
+    return EExampleProfilerMode::RawReplay;
+}
+
+void ConfigureProfilerStreamForMultiplayerExample()
+{
+    auto RuntimeProfilerConfig = SnAPI::Profiler::Profiler::Get().GetConfig();
+    RuntimeProfilerConfig.PreserveOverflowEvents = true;
+    if (const auto ParsedPreserve = ParseProfilerBooleanEnv(std::getenv("SNAPI_GF_PROFILER_PRESERVE_OVERFLOW_EVENTS")))
+    {
+        RuntimeProfilerConfig.PreserveOverflowEvents = *ParsedPreserve;
+    }
+
+    if (const auto EventCapacity = ParseProfilerUnsignedEnv("SNAPI_GF_PROFILER_EVENT_BUFFER_CAPACITY"))
+    {
+        RuntimeProfilerConfig.PerThreadEventBufferCapacity = static_cast<std::uint32_t>(std::min<std::uint64_t>(
+            std::max<std::uint64_t>(*EventCapacity, 2),
+            static_cast<std::uint64_t>(std::numeric_limits<std::uint32_t>::max())));
+    }
+
+    SnAPI::Profiler::Profiler::Get().Configure(RuntimeProfilerConfig);
+
+    const EExampleProfilerMode DefaultMode = ResolveExampleProfilerMode();
+
+    auto RawConfig = SnAPI::Profiler::Profiler::Get().GetRawTraceConfig();
+    RawConfig.Mode = DefaultMode == EExampleProfilerMode::RawReplay
+                         ? SnAPI::Profiler::RawTraceMode::Record
+                         : SnAPI::Profiler::RawTraceMode::Disabled;
+    RawConfig.CaptureOnly = DefaultMode == EExampleProfilerMode::RawReplay;
+
+    if (const char* TraceModeValue = std::getenv("SNAPI_GF_PROFILER_TRACE_MODE");
+        TraceModeValue != nullptr && TraceModeValue[0] != '\0')
+    {
+        const std::string_view ModeValue(TraceModeValue);
+        if (EqualsIgnoreCase(ModeValue, "record") || EqualsIgnoreCase(ModeValue, "capture") ||
+            EqualsIgnoreCase(ModeValue, "on") || EqualsIgnoreCase(ModeValue, "enabled"))
+        {
+            RawConfig.Mode = SnAPI::Profiler::RawTraceMode::Record;
+        }
+        else if (EqualsIgnoreCase(ModeValue, "off") || EqualsIgnoreCase(ModeValue, "disabled") ||
+                 EqualsIgnoreCase(ModeValue, "none"))
+        {
+            RawConfig.Mode = SnAPI::Profiler::RawTraceMode::Disabled;
+        }
+    }
+
+    if (const char* TracePath = std::getenv("SNAPI_GF_PROFILER_TRACE_PATH");
+        TracePath != nullptr && TracePath[0] != '\0')
+    {
+        RawConfig.Path = TracePath;
+    }
+
+    if (const auto CaptureOnlyOverride = ParseProfilerBooleanEnv(std::getenv("SNAPI_GF_PROFILER_TRACE_CAPTURE_ONLY")))
+    {
+        RawConfig.CaptureOnly = *CaptureOnlyOverride;
+    }
+
+    SnAPI::Profiler::Profiler::Get().ConfigureRawTrace(RawConfig);
+
+    auto StreamConfig = SnAPI::Profiler::Profiler::Get().GetRealtimeStreamConfig();
+
+    // MultiplayerExample defaults to raw replay capture; stream mode can be enabled explicitly.
+    StreamConfig.Enabled = DefaultMode == EExampleProfilerMode::Stream;
+    StreamConfig.SendFullSnapshot = DefaultMode == EExampleProfilerMode::Stream;
+    if (const std::optional<bool> ParsedEnable =
+            ParseProfilerBooleanEnv(std::getenv("SNAPI_GF_PROFILER_STREAM_ENABLE")))
+    {
+        StreamConfig.Enabled = *ParsedEnable;
+    }
+
+    if (const auto ParsedSendFull = ParseProfilerBooleanEnv(std::getenv("SNAPI_GF_PROFILER_STREAM_SEND_FULL")))
+    {
+        StreamConfig.SendFullSnapshot = *ParsedSendFull;
+    }
+
+    if (const auto MaxPayload = ParseProfilerUnsignedEnv("SNAPI_GF_PROFILER_STREAM_MAX_UDP_PAYLOAD_BYTES"))
+    {
+        StreamConfig.MaxUdpPayloadBytes = static_cast<std::size_t>(std::min<std::uint64_t>(
+            std::max<std::uint64_t>(*MaxPayload, 1200),
+            static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())));
+    }
+
+    if (const auto ChunkPayload = ParseProfilerUnsignedEnv("SNAPI_GF_PROFILER_STREAM_CHUNK_PAYLOAD_BYTES"))
+    {
+        StreamConfig.ChunkPayloadBytes = static_cast<std::size_t>(std::min<std::uint64_t>(
+            std::max<std::uint64_t>(*ChunkPayload, 512),
+            static_cast<std::uint64_t>(std::numeric_limits<std::size_t>::max())));
+    }
+
+    if (const auto Chunking = ParseProfilerBooleanEnv(std::getenv("SNAPI_GF_PROFILER_STREAM_ENABLE_CHUNKING")))
+    {
+        StreamConfig.EnablePayloadChunking = *Chunking;
+    }
+
+    if (RawConfig.Mode == SnAPI::Profiler::RawTraceMode::Record && RawConfig.CaptureOnly)
+    {
+        StreamConfig.Enabled = false;
+    }
+
+    SnAPI::Profiler::Profiler::Get().ConfigureRealtimeStream(StreamConfig);
+}
+#endif
+
 /**
  * @brief Parsed command-line configuration for multiplayer example runtime mode.
- * @remarks Determines server/client role, transport endpoints, and cube spawn count.
  */
 struct Args
 {
@@ -42,7 +241,11 @@ struct Args
     std::string Host = "127.0.0.1";
     std::string Bind = "0.0.0.0";
     std::uint16_t Port = 7777;
-    int CubeCount = 16; // Maximum concurrent cubes on server.
+    int CubeCount = 256;
+    float FixedHz = 60.0f;
+    int MaxFixedSteps = 2;
+    std::optional<std::uint32_t> MaxSubStepping{};
+    bool CubeShadows = true;
 };
 
 void InitializeWorkingDirectory(const char* ExeArgv0)
@@ -78,7 +281,7 @@ std::string EndpointToString(const NetEndpoint& Endpoint)
     return Endpoint.Address + ":" + std::to_string(Endpoint.Port);
 }
 
-const char* DisconnectReasonToString(EDisconnectReason Reason)
+const char* DisconnectReasonToString(const EDisconnectReason Reason)
 {
     switch (Reason)
     {
@@ -93,7 +296,6 @@ const char* DisconnectReasonToString(EDisconnectReason Reason)
 
 /**
  * @brief Session listener that logs high-signal connection lifecycle events.
- * @remarks Used to make transport/replication behavior visible during manual testing.
  */
 struct SessionListener final : public INetSessionListener
 {
@@ -148,7 +350,7 @@ struct SessionListener final : public INetSessionListener
 
 void PrintConnectionDump(const std::string& Label,
                          const NetConnectionDump& Dump,
-                         float TimeSeconds)
+                         const float TimeSeconds)
 {
     std::cout << "[" << Label << "] t=" << TimeSeconds
               << " handle=" << Dump.Handle
@@ -179,16 +381,19 @@ void PrintUsage(const char* Exe)
 {
     std::cout
         << "Usage:\n"
-        << "  " << Exe << " --server [--bind <addr>] [--port <port>] [--count <max-live>] [--no-reset-sim]\n"
-        << "  " << Exe << " --client [--host <addr>] [--bind <addr>] [--port <port>] [--no-interp]\n"
-        << "  " << Exe << " --local [--count <max-live>] [--no-interp] [--no-reset-sim]\n";
+        << "  " << Exe
+        << " --server [--bind <addr>] [--port <port>] [--count <max-live>] [--fixed-hz <hz>] [--max-fixed-steps <n>] [--substeps <n>] [--cube-shadows] [--no-reset-sim]\n"
+        << "  " << Exe
+        << " --client [--host <addr>] [--bind <addr>] [--port <port>] [--fixed-hz <hz>] [--max-fixed-steps <n>] [--substeps <n>] [--cube-shadows] [--no-interp]\n"
+        << "  " << Exe
+        << " --local [--count <max-live>] [--fixed-hz <hz>] [--max-fixed-steps <n>] [--substeps <n>] [--cube-shadows] [--no-interp] [--no-reset-sim]\n";
 }
 
-bool ParseArgs(int argc, char** argv, Args& Out)
+bool ParseArgs(const int argc, char** argv, Args& Out)
 {
     for (int i = 1; i < argc; ++i)
     {
-        std::string_view Arg = argv[i];
+        const std::string_view Arg = argv[i];
         if (Arg == "--server")
         {
             Out.Server = true;
@@ -217,6 +422,34 @@ bool ParseArgs(int argc, char** argv, Args& Out)
         {
             Out.CubeCount = std::max(1, std::stoi(argv[++i]));
         }
+        else if (Arg == "--fixed-hz" && i + 1 < argc)
+        {
+            Out.FixedHz = std::max(1.0f, std::stof(argv[++i]));
+        }
+        else if (Arg == "--max-fixed-steps" && i + 1 < argc)
+        {
+            Out.MaxFixedSteps = std::max(1, std::stoi(argv[++i]));
+        }
+        else if (Arg == "--substeps" && i + 1 < argc)
+        {
+            const int Requested = std::stoi(argv[++i]);
+            if (Requested <= 0)
+            {
+                Out.MaxSubStepping.reset();
+            }
+            else
+            {
+                Out.MaxSubStepping = static_cast<std::uint32_t>(Requested);
+            }
+        }
+        else if (Arg == "--cube-shadows")
+        {
+            Out.CubeShadows = true;
+        }
+        else if (Arg == "--no-cube-shadows")
+        {
+            Out.CubeShadows = false;
+        }
         else if (Arg == "--no-interp")
         {
             Out.DisableInterpolation = true;
@@ -241,12 +474,7 @@ bool ParseArgs(int argc, char** argv, Args& Out)
     }
 
     const int ModeCount = (Out.Server ? 1 : 0) + (Out.Client ? 1 : 0) + (Out.Local ? 1 : 0);
-    if (ModeCount != 1)
-    {
-        return false;
-    }
-
-    return true;
+    return ModeCount == 1;
 }
 
 void RegisterExampleTypes()
@@ -264,12 +492,16 @@ NetConfig MakeNetConfig()
 {
     NetConfig Config{};
     Config.Threading.UseInternalThreads = true;
-    Config.Pacing.MaxBytesPerSecond = 9'125'000;
-    Config.Pacing.BurstBytes = 100 * 1024 * 1024 ;
-    Config.Pacing.MaxBytesPerPump = 256 * 1024 * 1024;
+
+    // 25 Mbit/s target budget.
+    Config.Pacing.MaxBytesPerSecond = 300'125'000;
+    Config.Pacing.BurstBytes = 160 * 1024 * 1024;
+    Config.Pacing.MaxBytesPerPump = 800 * 1024 * 1024;
+
     Config.Reliability.ResendTimeout = Milliseconds{300};
     Config.Reliability.MaxAttempts = 32;
     Config.Queues.MaxReliablePendingBytes = 100 * 1024 * 1024;
+
     Config.Replication.MaxEntitiesPerPump = 0; // 0 = no per-pump entity cap
     Config.KeepAlive.Timeout = Milliseconds{20000};
     return Config;
@@ -284,11 +516,13 @@ UdpTransportConfig MakeUdpTransportConfig()
 }
 
 GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
-                                        bool ServerMode,
+                                        const bool ServerMode,
                                         SessionListener* Listener,
-                                        bool EnableNetworking)
+                                        const bool EnableNetworking,
+                                        const bool EnableWindow)
 {
     GameRuntimeSettings Settings{};
+
     if (EnableNetworking)
     {
         Settings.WorldName = ServerMode ? "ServerWorld" : "ClientWorld";
@@ -297,10 +531,12 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
     {
         Settings.WorldName = "LocalWorld";
     }
+
     Settings.RegisterBuiltins = false;
     Settings.Tick.EnableFixedTick = true;
-    Settings.Tick.FixedDeltaSeconds = 1.0f / 60.0f;
-    Settings.Tick.MaxFixedStepsPerUpdate = 4;
+    Settings.Tick.FixedDeltaSeconds = 1.0f / std::max(1.0f, Parsed.FixedHz);
+    // A higher catch-up budget avoids visible slow-motion when frames occasionally exceed the fixed-step budget.
+    Settings.Tick.MaxFixedStepsPerUpdate = static_cast<std::size_t>(std::max(Parsed.MaxFixedSteps, 1));
     Settings.Tick.EnableLateTick = true;
     Settings.Tick.EnableEndFrame = true;
 
@@ -337,7 +573,35 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
                                   512ull * 1024ull * 1024ull));
     PhysicsSettings.TickInFixedTick = true;
     PhysicsSettings.TickInVariableTick = false;
+    PhysicsSettings.EnableFloatingOrigin = true;
+    PhysicsSettings.AutoRebaseFloatingOrigin = true;
+    PhysicsSettings.FloatingOriginRebaseDistance = 512.0;
+    PhysicsSettings.InitializeFloatingOriginFromFirstBody = false;
+    PhysicsSettings.InitialFloatingOrigin = Vec3(0.0, kEarthSurfaceY, 0.0);
+    PhysicsSettings.ThreadCount = 8;
+    PhysicsSettings.MaxSubStepping = Parsed.MaxSubStepping;
     Settings.Physics = PhysicsSettings;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (EnableWindow)
+    {
+        GameRuntimeRendererSettings RendererSettings{};
+        RendererSettings.CreateGraphicsApi = true;
+        RendererSettings.CreateWindow = true;
+        RendererSettings.WindowTitle = EnableNetworking ? "MultiplayerExample" : "MultiplayerExample (Local)";
+        RendererSettings.WindowWidth = 1280.0f;
+        RendererSettings.WindowHeight = 720.0f;
+        RendererSettings.FullScreen = false;
+        RendererSettings.Resizable = true;
+        RendererSettings.Visible = true;
+        RendererSettings.CreateDefaultLighting = true;
+        RendererSettings.RegisterDefaultPassGraph = true;
+        RendererSettings.CreateDefaultMaterials = true;
+        RendererSettings.CreateDefaultEnvironmentProbe = true;
+        RendererSettings.DefaultEnvironmentProbeY = 6360e3f + 1000.0f;
+        Settings.Renderer = RendererSettings;
+    }
 #endif
 
     return Settings;
@@ -347,6 +611,7 @@ struct CubeSlot
 {
     NodeHandle Handle{};
     TransformComponent* Transform = nullptr;
+    StaticMeshComponent* Mesh = nullptr;
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     RigidBodyComponent* Body = nullptr;
     Vec3 ParkPosition{};
@@ -354,6 +619,73 @@ struct CubeSlot
     bool Active = false;
     float SpawnedAtSeconds = 0.0f;
 };
+
+struct CubeSharedMaterials
+{
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> GBuffer{};
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> Shadow{};
+};
+
+CubeSharedMaterials BuildSharedCubeMaterialInstances(World& Graph, const bool CubeShadows)
+{
+    CubeSharedMaterials Shared{};
+
+    auto* Meshes = SnAPI::Graphics::MeshManager::Instance();
+    if (!Meshes)
+    {
+        return Shared;
+    }
+
+    const auto LoadedMesh = Meshes->Load(std::string(kCubeMeshPath));
+    const auto SourceMesh = LoadedMesh.lock();
+    if (!SourceMesh)
+    {
+        return Shared;
+    }
+
+    const auto GBufferMaterial = Graph.Renderer().DefaultGBufferMaterial();
+    if (!GBufferMaterial)
+    {
+        return Shared;
+    }
+
+    std::size_t MaterialIndex = 0;
+    if (!SourceMesh->SubMeshes.empty())
+    {
+        MaterialIndex = static_cast<std::size_t>(SourceMesh->SubMeshes[0].MaterialIndex);
+    }
+
+    if (!SourceMesh->Materials.empty())
+    {
+        if (MaterialIndex >= SourceMesh->Materials.size())
+        {
+            MaterialIndex = 0;
+        }
+        Shared.GBuffer = Meshes->CreateMaterialInstanceFromMeshMaterial(SourceMesh->Materials[MaterialIndex], GBufferMaterial);
+    }
+    else
+    {
+        Shared.GBuffer = GBufferMaterial->CreateMaterialInstance();
+    }
+
+    if (CubeShadows)
+    {
+        const auto ShadowMaterial = Graph.Renderer().DefaultShadowMaterial();
+        if (ShadowMaterial)
+        {
+            if (!SourceMesh->Materials.empty())
+            {
+                Shared.Shadow = Meshes->CreateMaterialInstanceFromMeshMaterial(SourceMesh->Materials[MaterialIndex], ShadowMaterial);
+            }
+            else
+            {
+                Shared.Shadow = ShadowMaterial->CreateMaterialInstance();
+            }
+        }
+    }
+
+    return Shared;
+}
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 void SpawnPhysicsGround(World& Graph)
@@ -372,30 +704,50 @@ void SpawnPhysicsGround(World& Graph)
 
     if (auto Transform = GroundNode->Add<TransformComponent>())
     {
-        Transform->Position = Vec3(0.0f, -1.0f, 0.0f);
+        Transform->Replicated(true);
+        Transform->Position = Vec3(0.0f, kEarthSurfaceY - 1.0f, 0.0f);
+        Transform->Scale = Vec3(128.0f, 2.0f, 128.0f);
     }
 
     if (auto Collider = GroundNode->Add<ColliderComponent>())
     {
+        Collider->Replicated(true);
         auto& Settings = Collider->EditSettings();
         Settings.Shape = SnAPI::Physics::EShapeType::Box;
         Settings.HalfExtent = Vec3(64.0f, 1.0f, 64.0f);
         Settings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
         Settings.Mask = kCollisionMaskAll;
-        Settings.Friction = 0.65f;
-        Settings.Restitution = 0.80f;
+        Settings.Friction = 0.55f;
+        Settings.Restitution = 0.2f;
     }
 
     if (auto RigidBody = GroundNode->Add<RigidBodyComponent>())
     {
+        RigidBody->Replicated(true);
         auto& Settings = RigidBody->EditSettings();
         Settings.BodyType = SnAPI::Physics::EBodyType::Static;
         Settings.SyncToPhysics = true;
         (void)RigidBody->RecreateBody();
     }
+
+    if (auto Mesh = GroundNode->Add<StaticMeshComponent>())
+    {
+        Mesh->Replicated(true);
+        auto& Settings = Mesh->EditSettings();
+        Settings.MeshPath = std::string(kGroundMeshPath);
+        Settings.Visible = true;
+        Settings.CastShadows = true;
+        Settings.SyncFromTransform = true;
+        Settings.RegisterWithRenderer = true;
+    }
 }
 
-bool CreateCubeSlot(World& Graph, int CubeIndex, CubeSlot& OutSlot)
+bool CreateCubeSlot(World& Graph,
+                    const int CubeIndex,
+                    CubeSlot& OutSlot,
+                    const bool CubeShadows,
+                    const std::shared_ptr<SnAPI::Graphics::MaterialInstance>& SharedGBufferInstance,
+                    const std::shared_ptr<SnAPI::Graphics::MaterialInstance>& SharedShadowInstance)
 {
     auto NodeResult = Graph.CreateNode("Cube_" + std::to_string(CubeIndex));
     if (!NodeResult)
@@ -408,6 +760,7 @@ bool CreateCubeSlot(World& Graph, int CubeIndex, CubeSlot& OutSlot)
     {
         return false;
     }
+
     auto TransformResult = Node->Add<TransformComponent>();
     if (!TransformResult)
     {
@@ -421,12 +774,25 @@ bool CreateCubeSlot(World& Graph, int CubeIndex, CubeSlot& OutSlot)
     const int ParkZIndex = CubeIndex / ParkColumns;
     const float ParkX = (static_cast<float>(ParkXIndex) - (static_cast<float>(ParkColumns) * 0.5f)) * ParkSpacing;
     const float ParkZ = static_cast<float>(ParkZIndex) * ParkSpacing;
-    OutSlot.ParkPosition = Vec3(ParkX, -1000.0f, ParkZ);
-    // Delay first replication of this slot until first activation to avoid a large
-    // reliable spawn burst when a client initially joins.
+    OutSlot.ParkPosition = Vec3(ParkX, kEarthSurfaceY - 1000.0f, ParkZ);
+
+    // Delay initial replication for pooled slots.
     Transform->Replicated(false);
     Transform->Position = OutSlot.ParkPosition;
     Transform->Scale = Vec3(0.0f, 0.0f, 0.0f);
+
+    if (auto Mesh = Node->Add<StaticMeshComponent>())
+    {
+        Mesh->Replicated(false);
+        auto& Settings = Mesh->EditSettings();
+        Settings.MeshPath = std::string(kCubeMeshPath);
+        Settings.Visible = true;
+        Settings.CastShadows = CubeShadows;
+        Settings.SyncFromTransform = true;
+        Settings.RegisterWithRenderer = true;
+        Mesh->SetSharedMaterialInstances(SharedGBufferInstance, SharedShadowInstance);
+        OutSlot.Mesh = &*Mesh;
+    }
 
     if (auto Collider = Node->Add<ColliderComponent>())
     {
@@ -434,9 +800,9 @@ bool CreateCubeSlot(World& Graph, int CubeIndex, CubeSlot& OutSlot)
         Settings.Shape = SnAPI::Physics::EShapeType::Box;
         Settings.HalfExtent = Vec3(0.5f, 0.5f, 0.5f);
         Settings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldDynamic);
-        Settings.Mask = CollisionMaskFlags(ECollisionFilterBits::WorldStatic); // ground only (keeps high-count stress tests stable)
+        Settings.Mask = CollisionMaskFlags(ECollisionFilterBits::WorldStatic); // ground only
         Settings.Friction = 0.55f;
-        Settings.Restitution = 0.62f;
+        Settings.Restitution = 0.2f;
     }
 
     if (auto RigidBody = Node->Add<RigidBodyComponent>())
@@ -449,7 +815,7 @@ bool CreateCubeSlot(World& Graph, int CubeIndex, CubeSlot& OutSlot)
         Settings.EnableCcd = true;
         Settings.StartActive = false;
         (void)RigidBody->RecreateBody();
-        (void)RigidBody->Teleport(OutSlot.ParkPosition, Vec3{}, true);
+        (void)RigidBody->Teleport(OutSlot.ParkPosition, Quat::Identity(), true);
         OutSlot.Body = &*RigidBody;
     }
 
@@ -460,7 +826,7 @@ bool CreateCubeSlot(World& Graph, int CubeIndex, CubeSlot& OutSlot)
     return true;
 }
 
-void ActivateCubeSlot(CubeSlot& Slot, float TimeSeconds, std::mt19937& Rng, float SpawnHalfExtent)
+void ActivateCubeSlot(CubeSlot& Slot, const float TimeSeconds, std::mt19937& Rng, const float SpawnHalfExtent)
 {
     if (!Slot.Transform || !Slot.Body)
     {
@@ -468,7 +834,7 @@ void ActivateCubeSlot(CubeSlot& Slot, float TimeSeconds, std::mt19937& Rng, floa
     }
 
     std::uniform_real_distribution<float> SpawnXZ(-SpawnHalfExtent, SpawnHalfExtent);
-    std::uniform_real_distribution<float> SpawnY(8.0f, 12.0f);
+    std::uniform_real_distribution<float> SpawnYOffset(8.0f, 12.0f);
     std::uniform_real_distribution<float> InitialVX(-2.5f, 2.5f);
     std::uniform_real_distribution<float> InitialVY(0.0f, 3.0f);
     std::uniform_real_distribution<float> InitialVZ(-2.5f, 2.5f);
@@ -478,11 +844,15 @@ void ActivateCubeSlot(CubeSlot& Slot, float TimeSeconds, std::mt19937& Rng, floa
     {
         Slot.Transform->Replicated(true);
     }
+    if (Slot.Mesh && !Slot.Mesh->Replicated())
+    {
+        Slot.Mesh->Replicated(true);
+    }
 
-    const Vec3 SpawnPosition = Vec3(SpawnXZ(Rng), SpawnY(Rng), SpawnXZ(Rng));
+    const Vec3 SpawnPosition = Vec3(SpawnXZ(Rng), kEarthSurfaceY + SpawnYOffset(Rng), SpawnXZ(Rng));
     Slot.Transform->Scale = Vec3(1.0f, 1.0f, 1.0f);
 
-    (void)Slot.Body->Teleport(SpawnPosition, Vec3{}, true);
+    (void)Slot.Body->Teleport(SpawnPosition, Quat::Identity(), true);
     (void)Slot.Body->SetVelocity(Vec3(InitialVX(Rng), InitialVY(Rng), InitialVZ(Rng)),
                                  Vec3(InitialAngular(Rng), InitialAngular(Rng), InitialAngular(Rng)));
 
@@ -490,7 +860,7 @@ void ActivateCubeSlot(CubeSlot& Slot, float TimeSeconds, std::mt19937& Rng, floa
     Slot.SpawnedAtSeconds = TimeSeconds;
 }
 
-void DeactivateCubeSlot(CubeSlot& Slot, float TimeSeconds)
+void DeactivateCubeSlot(CubeSlot& Slot, const float TimeSeconds)
 {
     if (!Slot.Transform || !Slot.Body)
     {
@@ -499,7 +869,7 @@ void DeactivateCubeSlot(CubeSlot& Slot, float TimeSeconds)
         return;
     }
 
-    (void)Slot.Body->Teleport(Slot.ParkPosition, Vec3{}, true);
+    (void)Slot.Body->Teleport(Slot.ParkPosition, Quat::Identity(), true);
     Slot.Transform->Scale = Vec3(0.0f, 0.0f, 0.0f);
     Slot.Transform->Position = Slot.ParkPosition;
     Slot.Active = false;
@@ -507,741 +877,57 @@ void DeactivateCubeSlot(CubeSlot& Slot, float TimeSeconds)
 }
 #endif
 
-float WrapRadians(float Value)
+CameraComponent* CreateViewCamera(World& Graph)
 {
-    constexpr float kPi = 3.14159265358979323846f;
-    constexpr float kTwoPi = 6.28318530717958647692f;
-    while (Value > kPi)
+    auto CameraNodeResult = Graph.CreateNode("ViewCamera");
+    if (!CameraNodeResult)
     {
-        Value -= kTwoPi;
+        return nullptr;
     }
-    while (Value < -kPi)
+
+    auto* CameraNode = CameraNodeResult->Borrowed();
+    if (!CameraNode)
     {
-        Value += kTwoPi;
+        return nullptr;
     }
-    return Value;
-}
 
-float SmoothAngleRadians(float Current, float Target, float Alpha)
-{
-    const float Delta = WrapRadians(Target - Current);
-    return WrapRadians(Current + Delta * Alpha);
-}
-
-float RadiansToDegrees(float Radians)
-{
-    return Radians * (180.0f / 3.14159265358979323846f);
-}
-
-struct Mat4
-{
-    std::array<float, 16> Data{};
-};
-
-Mat4 IdentityMatrix()
-{
-    Mat4 Result{};
-    Result.Data = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 0.0f, 1.0f
-    };
-    return Result;
-}
-
-Mat4 Multiply(const Mat4& A, const Mat4& B)
-{
-    Mat4 Result{};
-    for (int Column = 0; Column < 4; ++Column)
+    if (auto Transform = CameraNode->Add<TransformComponent>())
     {
-        for (int Row = 0; Row < 4; ++Row)
+        Transform->Position = Vec3(0.0f, kEarthSurfaceY + 8.0f, 50.0f);
+        Transform->Rotation =
+            SnAPI::Math::AngleAxis3D(-SnAPI::Math::SLinearAlgebra::DegreesToRadians(25.0f), SnAPI::Math::Vector3::UnitX());
+    }
+
+    auto CameraResult = CameraNode->Add<CameraComponent>();
+    if (!CameraResult)
+    {
+        return nullptr;
+    }
+
+    auto* Camera = &*CameraResult;
+    auto& Settings = Camera->EditSettings();
+    Settings.Active = true;
+    Settings.SyncFromTransform = true;
+    Settings.FovDegrees = 60.0f;
+    Settings.NearClip = 0.05f;
+    Settings.FarClip = 800.0f;
+    Settings.Aspect = 16.0f / 9.0f;
+
+    return Camera;
+}
+
+void PollRendererEvents(World& Graph, CameraComponent* Camera, bool& Running)
+{
+    (void)Graph;
+    (void)Camera;
+
+    SDL_Event Event{};
+    while (SDL_PollEvent(&Event))
+    {
+        if (Event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED || Event.type == SDL_EVENT_QUIT)
         {
-            Result.Data[Column * 4 + Row] =
-                A.Data[0 * 4 + Row] * B.Data[Column * 4 + 0] +
-                A.Data[1 * 4 + Row] * B.Data[Column * 4 + 1] +
-                A.Data[2 * 4 + Row] * B.Data[Column * 4 + 2] +
-                A.Data[3 * 4 + Row] * B.Data[Column * 4 + 3];
-        }
-    }
-    return Result;
-}
-
-Mat4 TranslationMatrix(const Vec3& Translation)
-{
-    Mat4 Result = IdentityMatrix();
-    Result.Data[12] = Translation.x();
-    Result.Data[13] = Translation.y();
-    Result.Data[14] = Translation.z();
-    return Result;
-}
-
-Mat4 ScaleMatrix(const Vec3& Scale)
-{
-    Mat4 Result{};
-    Result.Data = {
-        Scale.x(), 0.0f,    0.0f,    0.0f,
-        0.0f,    Scale.y(), 0.0f,    0.0f,
-        0.0f,    0.0f,    Scale.z(), 0.0f,
-        0.0f,    0.0f,    0.0f,    1.0f
-    };
-    return Result;
-}
-
-Mat4 RotationXMatrix(float Radians)
-{
-    const float C = std::cos(Radians);
-    const float S = std::sin(Radians);
-    Mat4 Result = IdentityMatrix();
-    Result.Data[5] = C;
-    Result.Data[6] = S;
-    Result.Data[9] = -S;
-    Result.Data[10] = C;
-    return Result;
-}
-
-Mat4 RotationYMatrix(float Radians)
-{
-    const float C = std::cos(Radians);
-    const float S = std::sin(Radians);
-    Mat4 Result = IdentityMatrix();
-    Result.Data[0] = C;
-    Result.Data[2] = -S;
-    Result.Data[8] = S;
-    Result.Data[10] = C;
-    return Result;
-}
-
-Mat4 RotationZMatrix(float Radians)
-{
-    const float C = std::cos(Radians);
-    const float S = std::sin(Radians);
-    Mat4 Result = IdentityMatrix();
-    Result.Data[0] = C;
-    Result.Data[1] = S;
-    Result.Data[4] = -S;
-    Result.Data[5] = C;
-    return Result;
-}
-
-Mat4 PerspectiveMatrix(float FovDegrees, float Aspect, float Near, float Far)
-{
-    const float FovRadians = FovDegrees * 3.14159265358979323846f / 180.0f;
-    const float F = 1.0f / std::tan(FovRadians * 0.5f);
-    Mat4 Result{};
-    Result.Data = {
-        F / Aspect, 0.0f, 0.0f,                             0.0f,
-        0.0f,       F,    0.0f,                             0.0f,
-        0.0f,       0.0f, (Far + Near) / (Near - Far),    -1.0f,
-        0.0f,       0.0f, (2.0f * Far * Near) / (Near - Far), 0.0f
-    };
-    return Result;
-}
-
-Mat4 BuildViewMatrix()
-{
-    Mat4 View = IdentityMatrix();
-    View = Multiply(View, TranslationMatrix(Vec3(0.0f, -2.0f, -30.0f)));
-    View = Multiply(View, RotationXMatrix(20.0f * 3.14159265358979323846f / 180.0f));
-    return View;
-}
-
-Mat4 BuildModelMatrix(const Vec3& Position, const Vec3& Rotation, const Vec3& Scale)
-{
-    Mat4 Model = IdentityMatrix();
-    Model = Multiply(Model, TranslationMatrix(Position));
-    // Keep render Euler composition aligned with RigidBodyComponent's
-    // Euler<->quaternion conversion convention (ZYX).
-    Model = Multiply(Model, RotationZMatrix(Rotation.z()));
-    Model = Multiply(Model, RotationYMatrix(Rotation.y()));
-    Model = Multiply(Model, RotationXMatrix(Rotation.x()));
-    Model = Multiply(Model, ScaleMatrix(Scale));
-    return Model;
-}
-
-void AppendMatrix(std::vector<float>& Buffer, const Mat4& Matrix)
-{
-    Buffer.insert(Buffer.end(), Matrix.Data.begin(), Matrix.Data.end());
-}
-
-struct InstancedCubeRenderer
-{
-    GLuint Program = 0;
-    GLuint VertexBuffer = 0;
-    GLuint InstanceBuffer = 0;
-    GLint ViewProjectionUniform = -1;
-    GLint LightDirectionUniform = -1;
-    GLint CubeColorUniform = -1;
-    bool Ready = false;
-};
-
-GLuint CompileShader(GLenum Type, const char* Source)
-{
-    const GLuint Shader = glCreateShader(Type);
-    if (Shader == 0)
-    {
-        return 0;
-    }
-
-    glShaderSource(Shader, 1, &Source, nullptr);
-    glCompileShader(Shader);
-
-    GLint CompileStatus = GL_FALSE;
-    glGetShaderiv(Shader, GL_COMPILE_STATUS, &CompileStatus);
-    if (CompileStatus == GL_TRUE)
-    {
-        return Shader;
-    }
-
-    GLint LogLength = 0;
-    glGetShaderiv(Shader, GL_INFO_LOG_LENGTH, &LogLength);
-    if (LogLength > 0)
-    {
-        std::string Log(static_cast<size_t>(LogLength), '\0');
-        glGetShaderInfoLog(Shader, LogLength, nullptr, Log.data());
-        std::cerr << "Shader compile failed: " << Log << "\n";
-    }
-    glDeleteShader(Shader);
-    return 0;
-}
-
-GLuint LinkProgram(GLuint VertexShader, GLuint FragmentShader)
-{
-    const GLuint Program = glCreateProgram();
-    if (Program == 0)
-    {
-        return 0;
-    }
-
-    glAttachShader(Program, VertexShader);
-    glAttachShader(Program, FragmentShader);
-    glBindAttribLocation(Program, 0, "aPosition");
-    glBindAttribLocation(Program, 1, "aNormal");
-    glBindAttribLocation(Program, 2, "aModelCol0");
-    glBindAttribLocation(Program, 3, "aModelCol1");
-    glBindAttribLocation(Program, 4, "aModelCol2");
-    glBindAttribLocation(Program, 5, "aModelCol3");
-    glLinkProgram(Program);
-
-    GLint LinkStatus = GL_FALSE;
-    glGetProgramiv(Program, GL_LINK_STATUS, &LinkStatus);
-    if (LinkStatus == GL_TRUE)
-    {
-        return Program;
-    }
-
-    GLint LogLength = 0;
-    glGetProgramiv(Program, GL_INFO_LOG_LENGTH, &LogLength);
-    if (LogLength > 0)
-    {
-        std::string Log(static_cast<size_t>(LogLength), '\0');
-        glGetProgramInfoLog(Program, LogLength, nullptr, Log.data());
-        std::cerr << "Program link failed: " << Log << "\n";
-    }
-    glDeleteProgram(Program);
-    return 0;
-}
-
-bool InitInstancedCubeRenderer(InstancedCubeRenderer& Renderer)
-{
-    const char* VertexShaderSource = R"(
-        #version 120
-        attribute vec3 aPosition;
-        attribute vec3 aNormal;
-        attribute vec4 aModelCol0;
-        attribute vec4 aModelCol1;
-        attribute vec4 aModelCol2;
-        attribute vec4 aModelCol3;
-
-        uniform mat4 uViewProjection;
-
-        varying vec3 vNormal;
-
-        void main()
-        {
-            mat4 Model = mat4(aModelCol0, aModelCol1, aModelCol2, aModelCol3);
-            vec4 WorldPosition = Model * vec4(aPosition, 1.0);
-            vNormal = normalize(mat3(Model) * aNormal);
-            gl_Position = uViewProjection * WorldPosition;
-        }
-    )";
-
-    const char* FragmentShaderSource = R"(
-        #version 120
-        uniform vec3 uLightDirection;
-        uniform vec3 uCubeColor;
-        varying vec3 vNormal;
-
-        void main()
-        {
-            vec3 Normal = normalize(vNormal);
-            float NdotL = max(dot(Normal, normalize(uLightDirection)), 0.0);
-            float Diffuse = 0.75 * NdotL;
-            float Ambient = 0.25;
-            vec3 Lit = uCubeColor * (Ambient + Diffuse);
-            gl_FragColor = vec4(Lit, 1.0);
-        }
-    )";
-
-    const GLuint VertexShader = CompileShader(GL_VERTEX_SHADER, VertexShaderSource);
-    if (VertexShader == 0)
-    {
-        return false;
-    }
-
-    const GLuint FragmentShader = CompileShader(GL_FRAGMENT_SHADER, FragmentShaderSource);
-    if (FragmentShader == 0)
-    {
-        glDeleteShader(VertexShader);
-        return false;
-    }
-
-    Renderer.Program = LinkProgram(VertexShader, FragmentShader);
-    glDeleteShader(VertexShader);
-    glDeleteShader(FragmentShader);
-    if (Renderer.Program == 0)
-    {
-        return false;
-    }
-
-    Renderer.ViewProjectionUniform = glGetUniformLocation(Renderer.Program, "uViewProjection");
-    Renderer.LightDirectionUniform = glGetUniformLocation(Renderer.Program, "uLightDirection");
-    Renderer.CubeColorUniform = glGetUniformLocation(Renderer.Program, "uCubeColor");
-    if (Renderer.ViewProjectionUniform < 0 || Renderer.LightDirectionUniform < 0 || Renderer.CubeColorUniform < 0)
-    {
-        glDeleteProgram(Renderer.Program);
-        Renderer.Program = 0;
-        return false;
-    }
-
-    constexpr float CubeVertices[] = {
-        // +Z
-        -0.5f, -0.5f,  0.5f, 0.0f, 0.0f, 1.0f,
-         0.5f, -0.5f,  0.5f, 0.0f, 0.0f, 1.0f,
-         0.5f,  0.5f,  0.5f, 0.0f, 0.0f, 1.0f,
-        -0.5f, -0.5f,  0.5f, 0.0f, 0.0f, 1.0f,
-         0.5f,  0.5f,  0.5f, 0.0f, 0.0f, 1.0f,
-        -0.5f,  0.5f,  0.5f, 0.0f, 0.0f, 1.0f,
-
-        // -Z
-         0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
-        -0.5f,  0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
-         0.5f, -0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
-        -0.5f,  0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
-         0.5f,  0.5f, -0.5f, 0.0f, 0.0f, -1.0f,
-
-        // -X
-        -0.5f, -0.5f, -0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f, -0.5f, -0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f, -1.0f, 0.0f, 0.0f,
-        -0.5f,  0.5f, -0.5f, -1.0f, 0.0f, 0.0f,
-
-        // +X
-         0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 0.0f,
-         0.5f, -0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
-         0.5f,  0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
-         0.5f, -0.5f,  0.5f, 1.0f, 0.0f, 0.0f,
-         0.5f,  0.5f, -0.5f, 1.0f, 0.0f, 0.0f,
-         0.5f,  0.5f,  0.5f, 1.0f, 0.0f, 0.0f,
-
-        // +Y
-        -0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 0.0f,
-         0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f, 0.0f, 1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-        -0.5f,  0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-
-        // -Y
-        -0.5f, -0.5f, -0.5f, 0.0f, -1.0f, 0.0f,
-         0.5f, -0.5f, -0.5f, 0.0f, -1.0f, 0.0f,
-         0.5f, -0.5f,  0.5f, 0.0f, -1.0f, 0.0f,
-        -0.5f, -0.5f, -0.5f, 0.0f, -1.0f, 0.0f,
-         0.5f, -0.5f,  0.5f, 0.0f, -1.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f, 0.0f, -1.0f, 0.0f
-    };
-
-    glGenBuffers(1, &Renderer.VertexBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, Renderer.VertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(CubeVertices), CubeVertices, GL_STATIC_DRAW);
-
-    glGenBuffers(1, &Renderer.InstanceBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, Renderer.InstanceBuffer);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(float) * 16, nullptr, GL_STREAM_DRAW);
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    Renderer.Ready = (Renderer.VertexBuffer != 0 && Renderer.InstanceBuffer != 0);
-    if (!Renderer.Ready)
-    {
-        if (Renderer.VertexBuffer != 0)
-        {
-            glDeleteBuffers(1, &Renderer.VertexBuffer);
-            Renderer.VertexBuffer = 0;
-        }
-        if (Renderer.InstanceBuffer != 0)
-        {
-            glDeleteBuffers(1, &Renderer.InstanceBuffer);
-            Renderer.InstanceBuffer = 0;
-        }
-        if (Renderer.Program != 0)
-        {
-            glDeleteProgram(Renderer.Program);
-            Renderer.Program = 0;
-        }
-    }
-
-    return Renderer.Ready;
-}
-
-void ShutdownInstancedCubeRenderer(InstancedCubeRenderer& Renderer)
-{
-    if (Renderer.InstanceBuffer != 0)
-    {
-        glDeleteBuffers(1, &Renderer.InstanceBuffer);
-        Renderer.InstanceBuffer = 0;
-    }
-    if (Renderer.VertexBuffer != 0)
-    {
-        glDeleteBuffers(1, &Renderer.VertexBuffer);
-        Renderer.VertexBuffer = 0;
-    }
-    if (Renderer.Program != 0)
-    {
-        glDeleteProgram(Renderer.Program);
-        Renderer.Program = 0;
-    }
-    Renderer.Ready = false;
-}
-
-void DrawInstancedCubes(const InstancedCubeRenderer& Renderer,
-                        const Mat4& ViewProjection,
-                        const std::vector<float>& InstanceMatrices,
-                        const float ColorR,
-                        const float ColorG,
-                        const float ColorB)
-{
-    if (!Renderer.Ready || InstanceMatrices.empty())
-    {
-        return;
-    }
-
-    const GLsizei InstanceCount = static_cast<GLsizei>(InstanceMatrices.size() / 16u);
-
-    glUseProgram(Renderer.Program);
-    glUniformMatrix4fv(Renderer.ViewProjectionUniform, 1, GL_FALSE, ViewProjection.Data.data());
-    glUniform3f(Renderer.LightDirectionUniform, 20.0f, 28.0f, 18.0f);
-    glUniform3f(Renderer.CubeColorUniform, ColorR, ColorG, ColorB);
-
-    glBindBuffer(GL_ARRAY_BUFFER, Renderer.VertexBuffer);
-    glEnableVertexAttribArray(0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, reinterpret_cast<const void*>(0));
-    glVertexAttribPointer(1,
-                          3,
-                          GL_FLOAT,
-                          GL_FALSE,
-                          sizeof(float) * 6,
-                          reinterpret_cast<const void*>(sizeof(float) * 3));
-
-    glBindBuffer(GL_ARRAY_BUFFER, Renderer.InstanceBuffer);
-    glBufferData(GL_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(InstanceMatrices.size() * sizeof(float)),
-                 InstanceMatrices.data(),
-                 GL_STREAM_DRAW);
-
-    constexpr GLsizei MatrixStride = sizeof(float) * 16;
-    for (GLuint Column = 0; Column < 4; ++Column)
-    {
-        const GLuint AttributeIndex = 2 + Column;
-        glEnableVertexAttribArray(AttributeIndex);
-        glVertexAttribPointer(AttributeIndex,
-                              4,
-                              GL_FLOAT,
-                              GL_FALSE,
-                              MatrixStride,
-                              reinterpret_cast<const void*>(static_cast<std::uintptr_t>(sizeof(float) * Column * 4)));
-        glVertexAttribDivisor(AttributeIndex, 1);
-    }
-
-    glDrawArraysInstanced(GL_TRIANGLES, 0, 36, InstanceCount);
-
-    for (GLuint Column = 0; Column < 4; ++Column)
-    {
-        const GLuint AttributeIndex = 2 + Column;
-        glVertexAttribDivisor(AttributeIndex, 0);
-        glDisableVertexAttribArray(AttributeIndex);
-    }
-    glDisableVertexAttribArray(1);
-    glDisableVertexAttribArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glUseProgram(0);
-}
-
-bool HasInstancingSupport()
-{
-    int Major = 0;
-    int Minor = 0;
-    if (const GLubyte* Version = glGetString(GL_VERSION); Version != nullptr)
-    {
-        (void)std::sscanf(reinterpret_cast<const char*>(Version), "%d.%d", &Major, &Minor);
-    }
-
-    if (Major > 3 || (Major == 3 && Minor >= 3))
-    {
-        return true;
-    }
-
-    return glfwExtensionSupported("GL_ARB_draw_instanced")
-        && glfwExtensionSupported("GL_ARB_instanced_arrays");
-}
-
-void DrawCube(float Size)
-{
-    const float Half = Size * 0.5f;
-    glBegin(GL_QUADS);
-    // Front
-    glNormal3f(0.0f, 0.0f, 1.0f);
-    glVertex3f(-Half, -Half, Half);
-    glVertex3f(Half, -Half, Half);
-    glVertex3f(Half, Half, Half);
-    glVertex3f(-Half, Half, Half);
-    // Back
-    glNormal3f(0.0f, 0.0f, -1.0f);
-    glVertex3f(Half, -Half, -Half);
-    glVertex3f(-Half, -Half, -Half);
-    glVertex3f(-Half, Half, -Half);
-    glVertex3f(Half, Half, -Half);
-    // Left
-    glNormal3f(-1.0f, 0.0f, 0.0f);
-    glVertex3f(-Half, -Half, -Half);
-    glVertex3f(-Half, -Half, Half);
-    glVertex3f(-Half, Half, Half);
-    glVertex3f(-Half, Half, -Half);
-    // Right
-    glNormal3f(1.0f, 0.0f, 0.0f);
-    glVertex3f(Half, -Half, Half);
-    glVertex3f(Half, -Half, -Half);
-    glVertex3f(Half, Half, -Half);
-    glVertex3f(Half, Half, Half);
-    // Top
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-Half, Half, Half);
-    glVertex3f(Half, Half, Half);
-    glVertex3f(Half, Half, -Half);
-    glVertex3f(-Half, Half, -Half);
-    // Bottom
-    glNormal3f(0.0f, -1.0f, 0.0f);
-    glVertex3f(-Half, -Half, -Half);
-    glVertex3f(Half, -Half, -Half);
-    glVertex3f(Half, -Half, Half);
-    glVertex3f(-Half, -Half, Half);
-    glEnd();
-}
-
-void DrawGroundPlane(float HalfSize, float Y)
-{
-    glBegin(GL_QUADS);
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glVertex3f(-HalfSize, Y, -HalfSize);
-    glVertex3f(HalfSize, Y, -HalfSize);
-    glVertex3f(HalfSize, Y, HalfSize);
-    glVertex3f(-HalfSize, Y, HalfSize);
-    glEnd();
-}
-
-void SetupCamera(int Width, int Height)
-{
-    const float Aspect = (Height > 0) ? static_cast<float>(Width) / static_cast<float>(Height) : 1.0f;
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    const float Near = 1.0f;
-    const float Far = 200.0f;
-    const float FovRadians = 60.0f * 3.1415926f / 180.0f;
-    const float Top = std::tan(FovRadians * 0.5f) * Near;
-    const float Right = Top * Aspect;
-    glFrustum(-Right, Right, -Top, Top, Near, Far);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glTranslatef(0.0f, -2.0f, -30.0f);
-    glRotatef(20.0f, 1.0f, 0.0f, 0.0f);
-}
-
-void RenderWorldScene(GLFWwindow* Window,
-                      World& Graph,
-                      float DeltaSeconds,
-                      bool UseInterpolation,
-                      std::unordered_map<Uuid, Vec3, UuidHash>& SmoothedPositions,
-                      std::unordered_map<Uuid, Vec3, UuidHash>& SmoothedRotations,
-                      std::unordered_set<Uuid, UuidHash>& SeenNodeIds,
-                      const InstancedCubeRenderer* CubeRenderer)
-{
-    int Width = 0;
-    int Height = 0;
-    glfwGetFramebufferSize(Window, &Width, &Height);
-    glViewport(0, 0, Width, Height);
-
-    glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    SetupCamera(Width, Height);
-    const GLfloat LightPosition[] = {20.0f, 28.0f, 18.0f, 1.0f};
-    const GLfloat LightDiffuse[] = {0.90f, 0.90f, 0.85f, 1.0f};
-    const GLfloat LightSpecular[] = {0.20f, 0.20f, 0.20f, 1.0f};
-    const GLfloat AmbientModel[] = {0.22f, 0.22f, 0.25f, 1.0f};
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-    glLightfv(GL_LIGHT0, GL_POSITION, LightPosition);
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, LightDiffuse);
-    glLightfv(GL_LIGHT0, GL_SPECULAR, LightSpecular);
-    glLightModelfv(GL_LIGHT_MODEL_AMBIENT, AmbientModel);
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-    glShadeModel(GL_SMOOTH);
-    glEnable(GL_NORMALIZE);
-
-    glColor3f(0.30f, 0.45f, 0.32f);
-    DrawGroundPlane(64.0f, 0.0f);
-
-    const float Aspect = (Height > 0) ? static_cast<float>(Width) / static_cast<float>(Height) : 1.0f;
-    const Mat4 Projection = PerspectiveMatrix(60.0f, Aspect, 1.0f, 200.0f);
-    const Mat4 View = BuildViewMatrix();
-    const Mat4 ViewProjection = Multiply(Projection, View);
-    std::vector<float> AwakeInstanceMatrices;
-    std::vector<float> SleepingInstanceMatrices;
-    if (CubeRenderer && CubeRenderer->Ready)
-    {
-        const std::size_t ReserveCount = SmoothedPositions.size() * 16u;
-        AwakeInstanceMatrices.reserve(ReserveCount);
-        SleepingInstanceMatrices.reserve(ReserveCount / 4u);
-    }
-
-    constexpr float PositionLerpSpeed = 16.0f;
-    constexpr float RotationLerpSpeed = 20.0f;
-    const float PositionAlpha = UseInterpolation
-        ? std::clamp(DeltaSeconds * PositionLerpSpeed, 0.0f, 1.0f)
-        : 1.0f;
-    const float RotationAlpha = UseInterpolation
-        ? std::clamp(DeltaSeconds * RotationLerpSpeed, 0.0f, 1.0f)
-        : 1.0f;
-    SeenNodeIds.clear();
-
-    Graph.NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
-        auto TransformResult = Node.Component<TransformComponent>();
-        if (!TransformResult)
-        {
+            Running = false;
             return;
-        }
-        if (Node.Name() == "Ground")
-        {
-            return;
-        }
-        const auto& Transform = *TransformResult;
-        const float MaxScaleAxis = std::max({std::abs(Transform.Scale.x()),
-                                             std::abs(Transform.Scale.y()),
-                                             std::abs(Transform.Scale.z())});
-        if (MaxScaleAxis <= 0.0001f)
-        {
-            return;
-        }
-        SeenNodeIds.insert(Node.Id());
-
-        auto [It, Inserted] = SmoothedPositions.emplace(Node.Id(), Transform.Position);
-        Vec3& Smoothed = It->second;
-        if (Inserted || !UseInterpolation)
-        {
-            Smoothed = Transform.Position;
-        }
-        else
-        {
-            Smoothed.x() += (Transform.Position.x() - Smoothed.x()) * PositionAlpha;
-            Smoothed.y() += (Transform.Position.y() - Smoothed.y()) * PositionAlpha;
-            Smoothed.z() += (Transform.Position.z() - Smoothed.z()) * PositionAlpha;
-        }
-
-        auto [RotIt, RotInserted] = SmoothedRotations.emplace(Node.Id(), Transform.Rotation);
-        Vec3& SmoothedRotation = RotIt->second;
-        if (RotInserted || !UseInterpolation)
-        {
-            SmoothedRotation = Transform.Rotation;
-        }
-        else
-        {
-            SmoothedRotation.x() = SmoothAngleRadians(SmoothedRotation.x(), Transform.Rotation.x(), RotationAlpha);
-            SmoothedRotation.y() = SmoothAngleRadians(SmoothedRotation.y(), Transform.Rotation.y(), RotationAlpha);
-            SmoothedRotation.z() = SmoothAngleRadians(SmoothedRotation.z(), Transform.Rotation.z(), RotationAlpha);
-        }
-
-        bool Sleeping = false;
-        if (auto RigidBodyResult = Node.Component<RigidBodyComponent>())
-        {
-            Sleeping = RigidBodyResult->IsSleeping();
-        }
-
-        if (CubeRenderer && CubeRenderer->Ready)
-        {
-            const Mat4 Model = BuildModelMatrix(Smoothed, SmoothedRotation, Transform.Scale);
-            if (Sleeping)
-            {
-                AppendMatrix(SleepingInstanceMatrices, Model);
-            }
-            else
-            {
-                AppendMatrix(AwakeInstanceMatrices, Model);
-            }
-        }
-        else
-        {
-            glPushMatrix();
-            glTranslatef(Smoothed.x(), Smoothed.y(), Smoothed.z());
-            glRotatef(RadiansToDegrees(SmoothedRotation.z()), 0.0f, 0.0f, 1.0f);
-            glRotatef(RadiansToDegrees(SmoothedRotation.y()), 0.0f, 1.0f, 0.0f);
-            glRotatef(RadiansToDegrees(SmoothedRotation.x()), 1.0f, 0.0f, 0.0f);
-            glScalef(Transform.Scale.x(), Transform.Scale.y(), Transform.Scale.z());
-            if (Sleeping)
-            {
-                glColor3f(0.92f, 0.22f, 0.24f);
-            }
-            else
-            {
-                glColor3f(0.40f, 0.80f, 0.90f);
-            }
-            DrawCube(1.0f);
-            glPopMatrix();
-        }
-    });
-
-    if (CubeRenderer && CubeRenderer->Ready)
-    {
-        DrawInstancedCubes(*CubeRenderer, ViewProjection, AwakeInstanceMatrices, 0.40f, 0.80f, 0.90f);
-        DrawInstancedCubes(*CubeRenderer, ViewProjection, SleepingInstanceMatrices, 0.92f, 0.22f, 0.24f);
-    }
-
-    for (auto It = SmoothedPositions.begin(); It != SmoothedPositions.end();)
-    {
-        if (SeenNodeIds.contains(It->first))
-        {
-            ++It;
-        }
-        else
-        {
-            It = SmoothedPositions.erase(It);
-        }
-    }
-
-    for (auto It = SmoothedRotations.begin(); It != SmoothedRotations.end();)
-    {
-        if (SeenNodeIds.contains(It->first))
-        {
-            ++It;
-        }
-        else
-        {
-            It = SmoothedRotations.erase(It);
         }
     }
 }
@@ -1290,18 +976,25 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     const bool NetworkingEnabled = ModeHasNetworking(Mode);
     const bool WindowEnabled = ModeHasWindow(Mode);
     const bool ServerRole = ModeUsesServerRole(Mode);
+
     SessionListener Listener(ModeLabel(Mode));
 
     GameRuntime Runtime;
     if (auto InitResult = Runtime.Init(MakeRuntimeSettings(Parsed,
                                                             ServerRole,
                                                             NetworkingEnabled ? &Listener : nullptr,
-                                                            NetworkingEnabled));
+                                                            NetworkingEnabled,
+                                                            WindowEnabled));
         !InitResult)
     {
         std::cerr << "Failed to initialize runtime: " << InitResult.error().Message << "\n";
         return 1;
     }
+
+#if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
+    defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
+    ConfigureProfilerStreamForMultiplayerExample();
+#endif
 
     auto& Graph = Runtime.World();
 
@@ -1334,98 +1027,65 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     return 1;
 #endif
 
+    CameraComponent* Camera = nullptr;
+    if (WindowEnabled)
+    {
+        if (!Graph.Renderer().IsInitialized() || !Graph.Renderer().HasOpenWindow())
+        {
+            std::cerr << "Renderer window was not initialized\n";
+            return 1;
+        }
+
+        Camera = CreateViewCamera(Graph);
+        if (!Camera)
+        {
+            std::cerr << "Failed to create view camera\n";
+            return 1;
+        }
+
+        (void)Graph.Renderer().LoadDefaultFont("/usr/share/fonts/TTF/Arial.TTF", 20);
+    }
+
     std::vector<CubeSlot> CubeSlots;
     CubeSlots.reserve(static_cast<size_t>(std::max(Parsed.CubeCount, 1)));
+    CubeSharedMaterials SharedCubeMaterials{};
+    if (WindowEnabled && Graph.Renderer().IsInitialized())
+    {
+        SharedCubeMaterials = BuildSharedCubeMaterialInstances(Graph, Parsed.CubeShadows);
+    }
     std::mt19937 Rng(static_cast<std::uint32_t>(Clock::now().time_since_epoch().count()));
     for (int i = 0; i < Parsed.CubeCount; ++i)
     {
         CubeSlot Slot{};
-        if (CreateCubeSlot(Graph, i, Slot))
+        if (CreateCubeSlot(Graph,
+                           i,
+                           Slot,
+                           Parsed.CubeShadows,
+                           SharedCubeMaterials.GBuffer,
+                           SharedCubeMaterials.Shadow))
         {
             CubeSlots.push_back(Slot);
-        }
-    }
-
-#if defined(SNAPI_GF_ENABLE_AUDIO)
-    AudioSourceComponent* ReplicatedAudio = nullptr;
-    if (NetworkingEnabled && ServerRole)
-    {
-        if (auto AudioNodeResult = Graph.CreateNode("ReplicatedAudio"))
-        {
-            if (auto* AudioNode = AudioNodeResult->Borrowed())
-            {
-                AudioNode->Replicated(true);
-                if (auto Transform = AudioNode->Add<TransformComponent>())
-                {
-                    Transform->Replicated(true);
-                    Transform->Position = Vec3(0.0f, 0.0f, 0.0f);
-                }
-
-                if (auto Audio = AudioNode->Add<AudioSourceComponent>())
-                {
-                    ReplicatedAudio = &*Audio;
-                    ReplicatedAudio->Replicated(true);
-                    auto& Settings = ReplicatedAudio->EditSettings();
-                    Settings.SoundPath = "sound.wav";
-                    Settings.Streaming = false;
-                    Settings.AutoPlay = false;
-                    Settings.Looping = false;
-                    Settings.Volume = 1.0f;
-                    Settings.SpatialGain = 1.0f;
-                    Settings.MinDistance = 1.0f;
-                    Settings.MaxDistance = 64.0f;
-                    Settings.Rolloff = 1.0f;
-                }
-            }
-        }
-    }
-#endif
-
-    GLFWwindow* Window = nullptr;
-    InstancedCubeRenderer CubeRenderer{};
-    if (WindowEnabled)
-    {
-        if (!glfwInit())
-        {
-            std::cerr << "Failed to initialize GLFW\n";
-            return 1;
-        }
-
-        const char* Title = (Mode == ERunMode::Local)
-            ? "MultiplayerExample (Local)"
-            : "MultiplayerExample";
-        Window = glfwCreateWindow(1024, 768, Title, nullptr, nullptr);
-        if (!Window)
-        {
-            glfwTerminate();
-            std::cerr << "Failed to create window\n";
-            return 1;
-        }
-        glfwMakeContextCurrent(Window);
-        glfwSwapInterval(1);
-        glEnable(GL_DEPTH_TEST);
-
-        if (HasInstancingSupport() && InitInstancedCubeRenderer(CubeRenderer))
-        {
-            std::cout << "[" << ModeLabel(Mode) << "] Rendering mode: instanced cubes\n";
-        }
-        else
-        {
-            std::cout << "[" << ModeLabel(Mode) << "] Rendering mode: fallback immediate cubes\n";
-            ShutdownInstancedCubeRenderer(CubeRenderer);
         }
     }
 
     if (Mode == ERunMode::Server)
     {
         std::cout << "Server listening on " << Parsed.Bind << ":" << Parsed.Port
-                  << ", reset=" << (Parsed.ResetSimulation ? "on" : "off") << "\n";
+                  << ", reset=" << (Parsed.ResetSimulation ? "on" : "off")
+                  << ", fixed_hz=" << Parsed.FixedHz
+                  << ", max_fixed_steps=" << Parsed.MaxFixedSteps
+                  << ", cube_shadows=" << (Parsed.CubeShadows ? "on" : "off")
+                  << ", substeps=" << (Parsed.MaxSubStepping ? std::to_string(*Parsed.MaxSubStepping) : std::string("auto")) << "\n";
     }
     else if (Mode == ERunMode::Local)
     {
         std::cout << "Local mode: networking disabled, cubes=" << Parsed.CubeCount
                   << ", interp=" << (Parsed.DisableInterpolation ? "off" : "on")
-                  << ", reset=" << (Parsed.ResetSimulation ? "on" : "off") << "\n";
+                  << ", reset=" << (Parsed.ResetSimulation ? "on" : "off")
+                  << ", fixed_hz=" << Parsed.FixedHz
+                  << ", max_fixed_steps=" << Parsed.MaxFixedSteps
+                  << ", cube_shadows=" << (Parsed.CubeShadows ? "on" : "off")
+                  << ", substeps=" << (Parsed.MaxSubStepping ? std::to_string(*Parsed.MaxSubStepping) : std::string("auto")) << "\n";
     }
 
     float SpawnAccumulator = 0.0f;
@@ -1434,25 +1094,22 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     constexpr int MaxActivationsPerFrame = 64;
     const float SpawnIntervalSeconds = CubeLifetimeSeconds / static_cast<float>(std::max(Parsed.CubeCount, 1));
     const float SpawnHalfExtent = std::max(10.0f, std::sqrt(static_cast<float>(std::max(Parsed.CubeCount, 1))) * 1.5f);
-    constexpr float TargetFrameSeconds = 1.0f / 60.0f;
 
     const auto Start = Clock::now();
     auto Previous = Start;
     auto NextLog = Start;
     auto NextPerfLog = Start + std::chrono::seconds(1);
     std::uint32_t FramesSincePerfLog = 0;
-    const bool UseInterpolation = !Parsed.DisableInterpolation;
-    std::unordered_map<Uuid, Vec3, UuidHash> SmoothedPositions;
-    std::unordered_map<Uuid, Vec3, UuidHash> SmoothedRotations;
-    std::unordered_set<Uuid, UuidHash> SeenNodeIds;
 
-#if defined(SNAPI_GF_ENABLE_AUDIO)
-    float NextSoundTime = 0.0f;
-#endif
-    while (!Window || !glfwWindowShouldClose(Window))
+    bool Running = true;
+    while (Running)
     {
-        const auto FrameBegin = Clock::now();
-        const auto Now = FrameBegin;
+        if (WindowEnabled && !Graph.Renderer().HasOpenWindow())
+        {
+            break;
+        }
+
+        const auto Now = Clock::now();
         const float DeltaSeconds = std::chrono::duration<float>(Now - Previous).count();
         Previous = Now;
         const float TimeSeconds = std::chrono::duration<float>(Now - Start).count();
@@ -1484,7 +1141,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             int ActivationsThisFrame = 0;
             while (SpawnAccumulator >= SpawnIntervalSeconds && ActivationsThisFrame < MaxActivationsPerFrame)
             {
-                auto SlotIt = std::find_if(CubeSlots.begin(), CubeSlots.end(), [&](const CubeSlot& Slot) {
+                auto SlotIt = std::ranges::find_if(CubeSlots, [&](const CubeSlot& Slot) {
                     if (Slot.Active)
                     {
                         return false;
@@ -1506,21 +1163,15 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             }
         }
 
-        Runtime.Update(DeltaSeconds);
-
-#if defined(SNAPI_GF_ENABLE_AUDIO)
-        if (ReplicatedAudio && Session && Graph.IsServer() && TimeSeconds >= NextSoundTime)
+        if (WindowEnabled)
         {
-            const auto Dumps = Session->DumpConnections(Now);
-            const bool HasReadyConnection = std::ranges::any_of(Dumps, [](const NetConnectionDump& Dump) {
-                return Dump.HandshakeComplete;
-            });
-            if (HasReadyConnection)
-            {
-                NextSoundTime = TimeSeconds + 5.0f;
-            }
+            const float SafeDelta = std::max(DeltaSeconds, 0.0001f);
+            const int Fps = static_cast<int>(std::round(1.0f / SafeDelta));
+            const std::string FpsText = "FPS: " + std::to_string(Fps);
+            (void)Graph.Renderer().QueueText(FpsText, 16.0f, 16.0f);
         }
-#endif
+
+        Runtime.Update(DeltaSeconds);
 
         if (Session && Now >= NextLog)
         {
@@ -1531,38 +1182,26 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             NextLog = Now + std::chrono::seconds(1);
         }
 
-        if (Window)
+        if (WindowEnabled)
         {
-            RenderWorldScene(Window,
-                             Graph,
-                             DeltaSeconds,
-                             UseInterpolation,
-                             SmoothedPositions,
-                             SmoothedRotations,
-                             SeenNodeIds,
-                             CubeRenderer.Ready ? &CubeRenderer : nullptr);
+            PollRendererEvents(Graph, Camera, Running);
 
             ++FramesSincePerfLog;
             if (Now >= NextPerfLog)
             {
+                const auto ActiveCubes = std::count_if(CubeSlots.begin(), CubeSlots.end(), [](const CubeSlot& Slot) {
+                    return Slot.Active;
+                });
+
                 std::cout << "[" << ModeLabel(Mode) << "Perf] fps=" << FramesSincePerfLog
-                          << " rendered_nodes=" << SeenNodeIds.size()
-                          << " interp=" << (UseInterpolation ? "on" : "off") << "\n";
+                          << " active_cubes=" << ActiveCubes
+                          << " total_cubes=" << CubeSlots.size()
+                          << " interp=" << (Parsed.DisableInterpolation ? "off" : "on")
+                          << " fixed_hz=" << Parsed.FixedHz
+                          << " substeps=" << (Parsed.MaxSubStepping ? std::to_string(*Parsed.MaxSubStepping) : std::string("auto")) << "\n";
+
                 FramesSincePerfLog = 0;
                 NextPerfLog = Now + std::chrono::seconds(1);
-            }
-
-            glfwSwapBuffers(Window);
-            glfwPollEvents();
-        }
-        else
-        {
-            const auto FrameEnd = Clock::now();
-            const float FrameWorkSeconds = std::chrono::duration<float>(FrameEnd - FrameBegin).count();
-            const float SleepSeconds = TargetFrameSeconds - FrameWorkSeconds;
-            if (SleepSeconds > 0.0f)
-            {
-                std::this_thread::sleep_for(std::chrono::duration<float>(SleepSeconds));
             }
         }
     }
@@ -1577,12 +1216,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     }
 #endif
 
-    if (Window)
-    {
-        ShutdownInstancedCubeRenderer(CubeRenderer);
-        glfwDestroyWindow(Window);
-        glfwTerminate();
-    }
     return 0;
 }
 
@@ -1611,3 +1244,5 @@ int main(int argc, char** argv)
 
     return RunMode(Parsed, ERunMode::Client);
 }
+
+#endif // SNAPI_GF_ENABLE_RENDERER

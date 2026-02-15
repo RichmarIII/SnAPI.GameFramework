@@ -2,6 +2,7 @@
 
 #include "BaseNode.h"
 #include "IWorld.h"
+#include "Profiling.h"
 #include "TypeRegistry.h"
 #include "Variant.h"
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
@@ -83,11 +84,13 @@ bool InvokeLocal(void* Instance, const MethodInfo& Method, std::span<const Varia
 
 BaseNode* IComponent::OwnerNode() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Components");
     return m_owner.Borrowed();
 }
 
 IWorld* IComponent::World() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Components");
     auto* Node = OwnerNode();
     if (!Node)
     {
@@ -98,6 +101,7 @@ IWorld* IComponent::World() const
 
 bool IComponent::IsServer() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (auto* WorldPtr = World())
     {
@@ -109,6 +113,7 @@ bool IComponent::IsServer() const
 
 bool IComponent::IsClient() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (auto* WorldPtr = World())
     {
@@ -120,6 +125,7 @@ bool IComponent::IsClient() const
 
 bool IComponent::IsListenServer() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (auto* WorldPtr = World())
     {
@@ -131,11 +137,13 @@ bool IComponent::IsListenServer() const
 
 bool IComponent::CallRPC(std::string_view MethodName, std::initializer_list<Variant> Args)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return CallRPC(MethodName, std::span<const Variant>(Args.begin(), Args.size()));
 }
 
 bool IComponent::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     TypeId MethodOwner{};
     const MethodInfo* Method = FindRpcMethod(TypeKey(), MethodName, Args, MethodOwner);
     if (!Method)

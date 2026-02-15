@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
+#include "Profiling.h"
+
 #include "ObjectRegistry.h"
 #include "Serialization.h"
 
@@ -395,20 +397,24 @@ bool NetRpcCodec::DecodeResponse(NetByteReader& Reader, NetRpcResponse& Response
 NetRpcBridge::NetRpcBridge(NodeGraph* Graph)
     : m_graph(Graph)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
 }
 
 void NetRpcBridge::Graph(NodeGraph* Graph)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     m_graph = Graph;
 }
 
 NodeGraph* NetRpcBridge::Graph() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return m_graph;
 }
 
 bool NetRpcBridge::Bind(SnAPI::Networking::RpcService& Service, RpcTargetId TargetIdValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (m_rpc == &Service && m_targetId == TargetIdValue)
     {
         RegisterGraphTypes();
@@ -447,6 +453,7 @@ bool NetRpcBridge::Bind(SnAPI::Networking::RpcService& Service, RpcTargetId Targ
 
 void NetRpcBridge::RegisterType(const TypeId& Type)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     const auto* Info = TypeRegistry::Instance().Find(Type);
     if (!Info)
     {
@@ -472,6 +479,7 @@ void NetRpcBridge::RegisterType(const TypeId& Type)
 
 void NetRpcBridge::RegisterGraphTypes()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_graph)
     {
         return;
@@ -501,6 +509,7 @@ SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
                                             CompletionFn Completion,
                                             RpcCallOptions Options)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     TypeId OwnerType{};
     const MethodInfo* Method = FindRpcMethod(Target.TypeKey(), MethodName, Args, OwnerType);
     if (!Method)
@@ -530,6 +539,7 @@ SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
                                             CompletionFn Completion,
                                             RpcCallOptions Options)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     TypeId OwnerType{};
     const MethodInfo* Method = FindRpcMethod(TargetType, MethodName, Args, OwnerType);
     if (!Method)
@@ -561,6 +571,7 @@ SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
                                             CompletionFn Completion,
                                             RpcCallOptions Options)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     const auto* Info = TypeRegistry::Instance().Find(MethodOwnerType);
     if (!Info)
     {
@@ -588,16 +599,19 @@ SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
 
 NetRpcResponse NetRpcBridge::InvokeServer(NetConnectionHandle Handle, const NetRpcRequest& RequestValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return HandleRequest(Handle, RequestValue);
 }
 
 NetRpcResponse NetRpcBridge::InvokeClient(NetConnectionHandle Handle, const NetRpcRequest& RequestValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return HandleRequest(Handle, RequestValue);
 }
 
 NetRpcResponse NetRpcBridge::InvokeMulticast(NetConnectionHandle Handle, const NetRpcRequest& RequestValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return HandleRequest(Handle, RequestValue);
 }
 
@@ -606,6 +620,7 @@ const MethodInfo* NetRpcBridge::FindRpcMethod(const TypeId& Type,
                                               std::span<const Variant> Args,
                                               TypeId& OutOwnerType) const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     const auto* Info = TypeRegistry::Instance().Find(Type);
     if (!Info)
     {
@@ -649,6 +664,7 @@ const MethodInfo* NetRpcBridge::FindRpcMethod(const TypeId& Type,
 NetRpcResponse NetRpcBridge::HandleRequest(NetConnectionHandle,
                                            const NetRpcRequest& RequestValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     NetRpcResponse Response{};
     if (!m_graph)
     {
@@ -739,6 +755,7 @@ RpcId NetRpcBridge::CallInternal(NetConnectionHandle Handle,
                                  CompletionFn Completion,
                                  RpcCallOptions Options)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_rpc)
     {
         if (Completion)

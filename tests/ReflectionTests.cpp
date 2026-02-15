@@ -219,3 +219,49 @@ TEST_CASE("AudioSourceComponent settings fields are marked for replication")
     REQUIRE_FALSE(HasReplicatedStreaming);
 }
 #endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+TEST_CASE("Renderer components expose replicated settings fields")
+{
+    RegisterBuiltinTypes();
+
+    auto* CameraInfo = TypeRegistry::Instance().Find(StaticTypeId<CameraComponent>());
+    REQUIRE(CameraInfo);
+    bool CameraHasReplicatedSettings = false;
+    for (const auto& Field : CameraInfo->Fields)
+    {
+        if (Field.Name == "Settings")
+        {
+            CameraHasReplicatedSettings = Field.Flags.Has(EFieldFlagBits::Replication);
+            break;
+        }
+    }
+    REQUIRE(CameraHasReplicatedSettings);
+
+    auto* StaticMeshInfo = TypeRegistry::Instance().Find(StaticTypeId<StaticMeshComponent>());
+    REQUIRE(StaticMeshInfo);
+    bool StaticMeshHasReplicatedSettings = false;
+    for (const auto& Field : StaticMeshInfo->Fields)
+    {
+        if (Field.Name == "Settings")
+        {
+            StaticMeshHasReplicatedSettings = Field.Flags.Has(EFieldFlagBits::Replication);
+            break;
+        }
+    }
+    REQUIRE(StaticMeshHasReplicatedSettings);
+
+    auto* SkeletalMeshInfo = TypeRegistry::Instance().Find(StaticTypeId<SkeletalMeshComponent>());
+    REQUIRE(SkeletalMeshInfo);
+    bool SkeletalHasReplicatedSettings = false;
+    for (const auto& Field : SkeletalMeshInfo->Fields)
+    {
+        if (Field.Name == "Settings")
+        {
+            SkeletalHasReplicatedSettings = Field.Flags.Has(EFieldFlagBits::Replication);
+            break;
+        }
+    }
+    REQUIRE(SkeletalHasReplicatedSettings);
+}
+#endif

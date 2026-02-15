@@ -11,6 +11,7 @@
 #include "IComponent.h"
 #include "ObjectPool.h"
 #include "ObjectRegistry.h"
+#include "Profiling.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
@@ -302,14 +303,39 @@ public:
      */
     void FixedTickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
-        auto It = m_index.find(Owner);
+        SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTickComponent", "Components");
+
+        auto It = m_index.end();
+        {
+            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.Lookup", "Components");
+            It = m_index.find(Owner);
+        }
         if (It == m_index.end())
         {
             return;
         }
-        auto* Component = m_pool.Borrowed(It->second);
-        if (Component && Component->Active())
+
+        T* Component = nullptr;
         {
+            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.ResolveInstance", "Components");
+            Component = m_pool.Borrowed(It->second);
+        }
+        if (!Component)
+        {
+            return;
+        }
+
+        {
+            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.ActiveCheck", "Components");
+            if (!Component->Active())
+            {
+                return;
+            }
+        }
+
+        {
+            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.Dispatch", "Components");
+            SNAPI_GF_PROFILE_SCOPE(TTypeNameV<T>, "Components");
             Component->FixedTick(DeltaSeconds);
         }
     }

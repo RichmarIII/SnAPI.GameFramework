@@ -99,7 +99,7 @@ public:
     /** @brief Set current linear/angular velocity. */
     bool SetVelocity(const Vec3& Linear, const Vec3& Angular = Vec3{});
     /** @brief Teleport body and owner transform without rebuilding body state. */
-    bool Teleport(const Vec3& Position, const Vec3& Rotation = Vec3{}, bool ResetVelocity = false);
+    bool Teleport(const Vec3& Position, const Quat& Rotation = Quat::Identity(), bool ResetVelocity = false);
 private:
     PhysicsSystem* ResolvePhysicsSystem() const;
 
@@ -115,6 +115,9 @@ private:
     SnAPI::Physics::BodyHandle m_bodyHandle{}; /**< @brief Active backend body handle. */
     std::uint64_t m_sleepListenerToken = 0; /**< @brief PhysicsSystem listener token for body sleep/wake routing. */
     bool m_isSleeping = false; /**< @brief Last known backend sleep state for the bound body. */
+    mutable bool m_hasLastSyncedTransform = false; /**< @brief Whether transform delta cache is initialized for SyncFromPhysics. */
+    mutable SnAPI::Physics::Vec3 m_lastSyncedPhysicsPosition = SnAPI::Physics::Vec3::Zero(); /**< @brief Last synced physics-space position. */
+    mutable SnAPI::Physics::Quat m_lastSyncedPhysicsRotation = SnAPI::Physics::Quat::Identity(); /**< @brief Last synced physics-space rotation. */
 };
 
 } // namespace SnAPI::GameFramework

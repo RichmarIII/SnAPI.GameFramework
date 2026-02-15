@@ -98,7 +98,47 @@ cmake --build build
 -DSNAPI_GF_BUILD_EXAMPLES=ON/OFF
 -DSNAPI_GF_ENABLE_LUA=ON/OFF
 -DSNAPI_GF_ENABLE_SWIG=ON/OFF
+-DSNAPI_GF_ENABLE_PROFILER=ON/OFF
 ```
+
+### Realtime Profiler Stream (GameRuntime startup helper)
+
+When profiler integration is enabled, `GameRuntime::Init(...)` auto-configures profiler UDP streaming.
+
+- Default behavior: enabled in debug builds, disabled in release builds.
+- Default endpoint: `127.0.0.1:17777` (compatible with `SnAPI.Profiler/tools/web`).
+
+Environment overrides:
+
+```bash
+SNAPI_GF_PROFILER_STREAM_ENABLE=1|0
+SNAPI_GF_PROFILER_STREAM_HOST=127.0.0.1
+SNAPI_GF_PROFILER_STREAM_PORT=17777
+SNAPI_GF_PROFILER_STREAM_MAX_SCOPES=256
+SNAPI_GF_PROFILER_STREAM_MAX_RELATIONSHIPS=256
+SNAPI_GF_PROFILER_STREAM_MAX_CATEGORIES=64
+SNAPI_GF_PROFILER_STREAM_MAX_THREADS=32
+SNAPI_GF_PROFILER_STREAM_SEND_FULL=1|0
+SNAPI_GF_PROFILER_STREAM_MAX_UDP_PAYLOAD_BYTES=61440
+SNAPI_GF_PROFILER_STREAM_ENABLE_CHUNKING=1|0
+SNAPI_GF_PROFILER_STREAM_CHUNK_PAYLOAD_BYTES=14336
+
+SNAPI_GF_PROFILER_EVENT_BUFFER_CAPACITY=16384
+SNAPI_GF_PROFILER_MAX_SCOPE_DEPTH=256
+SNAPI_GF_PROFILER_HISTORY_CAPACITY=240
+SNAPI_GF_PROFILER_MAX_EVENTS_PER_THREAD_PER_FRAME=0
+SNAPI_GF_PROFILER_PRESERVE_OVERFLOW_EVENTS=1|0
+
+SNAPI_GF_PROFILER_TRACE_MODE=record|off
+SNAPI_GF_PROFILER_TRACE_PATH=./snapi-profiler-replay.trace
+SNAPI_GF_PROFILER_TRACE_CAPTURE_ONLY=1|0
+```
+
+Notes:
+
+- `SNAPI_GF_PROFILER_TRACE_MODE=record` enables raw trace capture (`SNAPTRC1`).
+- `SNAPI_GF_PROFILER_TRACE_CAPTURE_ONLY=1` disables in-process frame aggregation and realtime UDP stream to minimize runtime overhead while recording raw events.
+- `examples/MultiplayerExample` defaults to raw replay capture; set `SNAPI_MULTIPLAYER_PROFILER_MODE=stream` to prefer live UDP streaming.
 
 ### Local AssetPipeline (recommended for dev)
 ```bash
@@ -619,3 +659,12 @@ cmake -S . -B build -DSNAPI_GF_BUILD_EXAMPLES=ON
 cmake --build build
 ./build/examples/FeatureShowcase/FeatureShowcase
 ```
+
+## Pre-Refactor Checkpoint (2026-02-15)
+
+This repository is part of the cross-module checkpoint taken before the planned renderer-side
+`IRenderObject` refactor.
+
+- This commit is intended as a rollback-safe baseline.
+- Public behavior documented here reflects the pre-refactor state.
+- Follow-up docs updates will track the refactor once merged.

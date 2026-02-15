@@ -95,3 +95,10 @@ ctest --test-dir build/debug --output-on-failure
     <p>Attach listeners and sources powered by SnAPI.Audio.</p>
   </a>
 </div>
+
+## Checkpoint Context (2026-02-15)
+
+These docs describe the pre-refactor baseline across SnAPI modules.
+
+- Behavior and examples here align with the checkpoint commit taken before the renderer-side `IRenderObject` refactor.
+- If you are validating post-refactor behavior, compare against newer docs/commits after this date.

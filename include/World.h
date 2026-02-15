@@ -16,6 +16,9 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include "PhysicsSystem.h"
 #endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "RendererSystem.h"
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -149,6 +152,19 @@ public:
     const PhysicsSystem& Physics() const override;
 #endif
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    /**
+     * @brief Access world renderer subsystem.
+     * @return Reference to RendererSystem.
+     */
+    RendererSystem& Renderer() override;
+    /**
+     * @brief Access world renderer subsystem (const).
+     * @return Const reference to RendererSystem.
+     */
+    const RendererSystem& Renderer() const override;
+#endif
+
 private:
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
 #if defined(SNAPI_GF_ENABLE_AUDIO)
@@ -159,6 +175,9 @@ private:
 #endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     PhysicsSystem m_physicsSystem{}; /**< @brief World-scoped physics subsystem. */
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    RendererSystem m_rendererSystem{}; /**< @brief World-scoped renderer subsystem. */
 #endif
 };
 

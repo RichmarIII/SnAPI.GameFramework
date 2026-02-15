@@ -5,6 +5,7 @@
 #include <span>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "BaseNode.h"
@@ -308,13 +309,31 @@ public:
      */
     TExpected<void> DestroyNode(NodeHandle Handle)
     {
-        auto* Node = Handle.Borrowed();
+        if (Handle.IsNull())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is null"));
+        }
+
+        if (m_pendingDestroyIds.contains(Handle.Id))
+        {
+            return Ok();
+        }
+
+        auto* Node = m_nodePool->Borrowed(Handle);
         if (!Node)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
         }
+
+        auto DestroyResult = m_nodePool->DestroyLater(Handle);
+        if (!DestroyResult)
+        {
+            return std::unexpected(DestroyResult.error());
+        }
+
         m_pendingDestroy.push_back(Handle);
-        return m_nodePool->DestroyLater(Handle);
+        m_pendingDestroyIds.emplace(Handle.Id);
+        return Ok();
     }
 
     /**
@@ -595,6 +614,14 @@ private:
      */
     bool IsNodeActive(NodeHandle Handle);
     /**
+     * @brief Check whether an already-resolved node is active for ticking.
+     * @param Node Node reference.
+     * @return True if node is active and relevant.
+     * @remarks
+     * Fast-path variant used by tree traversal to avoid repeated handle registry lookups.
+     */
+    bool IsNodeActive(const BaseNode& Node) const;
+    /**
      * @brief Register a component type on a node's type list/mask.
      * @param Node Node to update.
      * @param Type Component type id.
@@ -696,6 +723,7 @@ private:
     std::unordered_map<TypeId, std::unique_ptr<IComponentStorage>, UuidHash> m_storages{}; /**< @brief Type-partitioned component storages created lazily on demand. */
     std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root traversal entry points (nodes without parent in this graph). */
     std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Node handles queued for end-of-frame destruction. */
+    std::unordered_set<Uuid, UuidHash> m_pendingDestroyIds{}; /**< @brief Fast lookup for nodes already queued for deferred destruction. */
     size_t m_relevanceCursor = 0; /**< @brief Cursor for incremental relevance sweeps when budgeted evaluation is enabled. */
     size_t m_relevanceBudget = 0; /**< @brief Per-tick relevance evaluation cap; 0 means evaluate all nodes. */
 };

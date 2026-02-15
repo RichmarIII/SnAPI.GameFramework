@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
+#include "Profiling.h"
+
 #include "AudioSystem.h"
 #include "BaseNode.h"
 #include "NodeGraph.h"
@@ -11,7 +13,6 @@
 
 #include <AudioEngine.h>
 #include <Types.h>
-#include <Eigen/Geometry>
 
 namespace SnAPI::GameFramework
 {
@@ -22,18 +23,28 @@ SnAPI::Audio::Vector3F ToAudioVector(const Vec3& Value)
     return SnAPI::Audio::Vector3F(Value.x(), Value.y(), Value.z());
 }
 
-SnAPI::Audio::QuaternionF ToAudioQuaternion(const Vec3& EulerRadians)
+SnAPI::Audio::QuaternionF ToAudioQuaternion(const Quat& Rotation)
 {
-    using AudioScalar = typename SnAPI::Audio::Vector3F::Scalar;
-    const Eigen::AngleAxis<AudioScalar> Pitch(EulerRadians.x(), SnAPI::Audio::Vector3F::UnitX());
-    const Eigen::AngleAxis<AudioScalar> Yaw(EulerRadians.y(), SnAPI::Audio::Vector3F::UnitY());
-    const Eigen::AngleAxis<AudioScalar> Roll(EulerRadians.z(), SnAPI::Audio::Vector3F::UnitZ());
-    return Yaw * Pitch * Roll;
+    SnAPI::Audio::QuaternionF Out = SnAPI::Audio::QuaternionF::Identity();
+    Out.x() = static_cast<SnAPI::Audio::QuaternionF::Scalar>(Rotation.x());
+    Out.y() = static_cast<SnAPI::Audio::QuaternionF::Scalar>(Rotation.y());
+    Out.z() = static_cast<SnAPI::Audio::QuaternionF::Scalar>(Rotation.z());
+    Out.w() = static_cast<SnAPI::Audio::QuaternionF::Scalar>(Rotation.w());
+    if (Out.squaredNorm() > 0.0f)
+    {
+        Out.normalize();
+    }
+    else
+    {
+        Out = SnAPI::Audio::QuaternionF::Identity();
+    }
+    return Out;
 }
 } // namespace
 
 AudioSystem* AudioListenerComponent::ResolveAudioSystem() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     auto* OwnerNode = this->OwnerNode();
     if (!OwnerNode)
     {
@@ -49,6 +60,7 @@ AudioSystem* AudioListenerComponent::ResolveAudioSystem() const
 
 void AudioListenerComponent::OnCreate()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (auto* Audio = ResolveAudioSystem())
     {
         Audio->Initialize();
@@ -57,6 +69,7 @@ void AudioListenerComponent::OnCreate()
 
 void AudioListenerComponent::SetActive(bool ActiveValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (CallRPC("SetActiveServer", {Variant::FromValue(ActiveValue)}))
     {
         return;
@@ -66,6 +79,7 @@ void AudioListenerComponent::SetActive(bool ActiveValue)
 
 void AudioListenerComponent::SetActiveServer(bool ActiveValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_active = ActiveValue;
     if (CallRPC("SetActiveClient", {Variant::FromValue(ActiveValue)}))
     {
@@ -76,11 +90,13 @@ void AudioListenerComponent::SetActiveServer(bool ActiveValue)
 
 void AudioListenerComponent::SetActiveClient(bool ActiveValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_active = ActiveValue;
 }
 
 void AudioListenerComponent::Tick(float DeltaSeconds)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (!m_active)
     {
         return;
@@ -99,7 +115,7 @@ void AudioListenerComponent::Tick(float DeltaSeconds)
     }
 
     Vec3 Position{};
-    Vec3 Rotation{};
+    Quat Rotation = Quat::Identity();
     if (auto* OwnerNode = this->OwnerNode())
     {
         if (auto TransformResult = OwnerNode->Component<TransformComponent>())

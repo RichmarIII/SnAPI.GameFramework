@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
+#include "Profiling.h"
+
 #include <AudioDeviceSpec.h>
 #include <AudioEngine.h>
 #include <MiniaudioDevice.h>
@@ -10,17 +12,20 @@ namespace SnAPI::GameFramework
 {
 AudioSystem::~AudioSystem()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     Shutdown();
 }
 
 AudioSystem::AudioSystem(AudioSystem&& Other) noexcept
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     std::lock_guard<std::mutex> Lock(Other.m_mutex);
     m_engine = std::move(Other.m_engine);
 }
 
 AudioSystem& AudioSystem::operator=(AudioSystem&& Other) noexcept
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (this == &Other)
     {
         return *this;
@@ -32,6 +37,7 @@ AudioSystem& AudioSystem::operator=(AudioSystem&& Other) noexcept
 
 bool AudioSystem::Initialize(const SnAPI::Audio::AudioDeviceSpec& Spec)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     std::lock_guard<std::mutex> Lock(m_mutex);
     if (m_engine && m_engine->IsInitialized())
     {
@@ -47,12 +53,14 @@ bool AudioSystem::Initialize(const SnAPI::Audio::AudioDeviceSpec& Spec)
 
 bool AudioSystem::Initialize()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     const SnAPI::Audio::AudioDeviceSpec Spec{};
     return Initialize(Spec);
 }
 
 void AudioSystem::Shutdown()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     std::lock_guard<std::mutex> Lock(m_mutex);
     if (m_engine)
     {
@@ -62,24 +70,28 @@ void AudioSystem::Shutdown()
 
 bool AudioSystem::IsInitialized() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     std::lock_guard<std::mutex> Lock(m_mutex);
     return m_engine && m_engine->IsInitialized();
 }
 
 SnAPI::Audio::AudioEngine* AudioSystem::Engine()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     std::lock_guard<std::mutex> Lock(m_mutex);
     return m_engine.get();
 }
 
 const SnAPI::Audio::AudioEngine* AudioSystem::Engine() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     std::lock_guard<std::mutex> Lock(m_mutex);
     return m_engine.get();
 }
 
 void AudioSystem::Update(float DeltaSeconds)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     (void)DeltaSeconds;
     SnAPI::Audio::AudioEngine* EnginePtr = nullptr;
     {

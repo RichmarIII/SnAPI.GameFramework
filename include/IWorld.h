@@ -18,6 +18,9 @@ class NetworkSystem;
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 class PhysicsSystem;
 #endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+class RendererSystem;
+#endif
 
 /**
  * @brief Root runtime container contract for gameplay sessions.
@@ -106,6 +109,19 @@ public:
      * @return Const reference to PhysicsSystem.
      */
     virtual const PhysicsSystem& Physics() const = 0;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    /**
+     * @brief Access the renderer subsystem for this world.
+     * @return Reference to RendererSystem.
+     */
+    virtual RendererSystem& Renderer() = 0;
+    /**
+     * @brief Access the renderer subsystem for this world (const).
+     * @return Const reference to RendererSystem.
+     */
+    virtual const RendererSystem& Renderer() const = 0;
 #endif
 };
 

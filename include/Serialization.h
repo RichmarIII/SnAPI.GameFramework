@@ -88,6 +88,15 @@ struct TValueCodec
             Archive(X, Y, Z);
             return Ok();
         }
+        else if constexpr (std::is_same_v<T, Quat>)
+        {
+            const auto X = Value.x();
+            const auto Y = Value.y();
+            const auto Z = Value.z();
+            const auto W = Value.w();
+            Archive(X, Y, Z, W);
+            return Ok();
+        }
         else if constexpr (std::is_same_v<T, NodeHandle>)
         {
             const auto& Bytes = Value.Id.as_bytes();
@@ -146,6 +155,21 @@ struct TValueCodec
             Archive(X, Y, Z);
             return Vec3(X, Y, Z);
         }
+        else if constexpr (std::is_same_v<T, Quat>)
+        {
+            using Scalar = typename Quat::Scalar;
+            Scalar X = Scalar(0);
+            Scalar Y = Scalar(0);
+            Scalar Z = Scalar(0);
+            Scalar W = Scalar(1);
+            Archive(X, Y, Z, W);
+            Quat Rotation = Quat::Identity();
+            Rotation.x() = X;
+            Rotation.y() = Y;
+            Rotation.z() = Z;
+            Rotation.w() = W;
+            return Rotation;
+        }
         else if constexpr (std::is_same_v<T, NodeHandle>)
         {
             std::array<uint8_t, 16> Data{};
@@ -203,6 +227,20 @@ struct TValueCodec
             Scalar Z = Value.z();
             Archive(X, Y, Z);
             Value = Vec3(X, Y, Z);
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<T, Quat>)
+        {
+            using Scalar = typename Quat::Scalar;
+            Scalar X = Value.x();
+            Scalar Y = Value.y();
+            Scalar Z = Value.z();
+            Scalar W = Value.w();
+            Archive(X, Y, Z, W);
+            Value.x() = X;
+            Value.y() = Y;
+            Value.z() = Z;
+            Value.w() = W;
             return Ok();
         }
         else if constexpr (std::is_same_v<T, NodeHandle>)

@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
+#include "Profiling.h"
+
 namespace SnAPI::GameFramework
 {
 
@@ -10,10 +12,12 @@ NetworkSystem::NetworkSystem(NodeGraph& Graph)
     , m_replicationBridge(std::make_unique<NetReplicationBridge>(Graph))
     , m_rpcBridge(std::make_unique<NetRpcBridge>(&Graph))
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
 }
 
 Result NetworkSystem::InitializeOwnedSession(const NetworkBootstrapSettings& Settings)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     ShutdownOwnedSession();
 
     m_ownedSession = std::make_unique<SnAPI::Networking::NetSession>(Settings.Net);
@@ -54,6 +58,7 @@ Result NetworkSystem::InitializeOwnedSession(const NetworkBootstrapSettings& Set
 bool NetworkSystem::WireSession(SnAPI::Networking::NetSession& Session,
                                 SnAPI::Networking::RpcTargetId TargetIdValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (m_session && m_session != &Session)
     {
         return false;
@@ -98,6 +103,7 @@ bool NetworkSystem::WireSession(SnAPI::Networking::NetSession& Session,
 
 void NetworkSystem::ShutdownOwnedSession()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     m_session = nullptr;
     m_replication.reset();
     m_rpc.reset();
@@ -117,6 +123,7 @@ void NetworkSystem::ShutdownOwnedSession()
 
 bool NetworkSystem::IsServer() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_session)
     {
         return true;
@@ -126,6 +133,7 @@ bool NetworkSystem::IsServer() const
 
 bool NetworkSystem::IsClient() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_session)
     {
         return false;
@@ -135,6 +143,7 @@ bool NetworkSystem::IsClient() const
 
 bool NetworkSystem::IsListenServer() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_session)
     {
         return false;
@@ -144,6 +153,7 @@ bool NetworkSystem::IsListenServer() const
 
 std::vector<SnAPI::Networking::NetConnectionHandle> NetworkSystem::Connections() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_session)
     {
         return {};
@@ -153,6 +163,7 @@ std::vector<SnAPI::Networking::NetConnectionHandle> NetworkSystem::Connections()
 
 std::optional<SnAPI::Networking::NetConnectionHandle> NetworkSystem::PrimaryConnection() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_session)
     {
         return std::nullopt;

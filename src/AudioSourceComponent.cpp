@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
+#include "Profiling.h"
+
 #include "AudioSystem.h"
 #include "BaseNode.h"
 #include "NodeGraph.h"
@@ -23,6 +25,7 @@ SnAPI::Audio::Vector3F ToAudioVector(const Vec3& Value)
 
 AudioSystem* AudioSourceComponent::ResolveAudioSystem() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     auto* OwnerNode = this->OwnerNode();
     if (!OwnerNode)
     {
@@ -38,6 +41,7 @@ AudioSystem* AudioSourceComponent::ResolveAudioSystem() const
 
 void AudioSourceComponent::OnCreate()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     EnsureEmitter();
     if (m_settings.AutoPlay)
     {
@@ -47,6 +51,7 @@ void AudioSourceComponent::OnCreate()
 
 void AudioSourceComponent::OnDestroy()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     // Component teardown must avoid World()/Networking() virtual dispatch during graph shutdown.
     m_playRequested = false;
     m_sound = {};
@@ -58,6 +63,7 @@ void AudioSourceComponent::OnDestroy()
 
 void AudioSourceComponent::Tick(float DeltaSeconds)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     EnsureEmitter();
     RefreshPlaybackState();
     UpdateEmitterTransform(DeltaSeconds);
@@ -65,6 +71,7 @@ void AudioSourceComponent::Tick(float DeltaSeconds)
 
 void AudioSourceComponent::Play()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (CallRPC("PlayServer"))
     {
         return;
@@ -74,6 +81,7 @@ void AudioSourceComponent::Play()
 
 void AudioSourceComponent::PlayServer()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_playRequested = true;
     if (CallRPC("PlayClient"))
     {
@@ -84,6 +92,7 @@ void AudioSourceComponent::PlayServer()
 
 void AudioSourceComponent::PlayClient()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_playRequested = true;
     if (IsServer() && !IsListenServer())
     {
@@ -116,6 +125,7 @@ void AudioSourceComponent::PlayClient()
 
 void AudioSourceComponent::Stop()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (CallRPC("StopServer"))
     {
         return;
@@ -125,6 +135,7 @@ void AudioSourceComponent::Stop()
 
 void AudioSourceComponent::StopServer()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_playRequested = false;
     if (CallRPC("StopClient"))
     {
@@ -135,6 +146,7 @@ void AudioSourceComponent::StopServer()
 
 void AudioSourceComponent::StopClient()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_playRequested = false;
     if (IsServer() && !IsListenServer())
     {
@@ -161,17 +173,20 @@ void AudioSourceComponent::StopClient()
 
 bool AudioSourceComponent::IsPlaying() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     const auto* Emitter = m_emitter.TryGet();
     return Emitter && Emitter->IsPlaying();
 }
 
 bool AudioSourceComponent::IsLoaded() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     return m_sound.IsValid();
 }
 
 bool AudioSourceComponent::LoadSound(const std::string& Path, bool StreamingMode)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (Path.empty())
     {
         return false;
@@ -224,6 +239,7 @@ bool AudioSourceComponent::LoadSound(const std::string& Path, bool StreamingMode
 
 void AudioSourceComponent::UnloadSound()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     auto* Audio = ResolveAudioSystem();
     auto* Engine = Audio ? Audio->Engine() : nullptr;
     if (Engine && m_sound.IsValid())
@@ -237,6 +253,7 @@ void AudioSourceComponent::UnloadSound()
 
 void AudioSourceComponent::EnsureEmitter()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     try
     {
         auto* Audio = ResolveAudioSystem();
@@ -273,6 +290,7 @@ void AudioSourceComponent::EnsureEmitter()
 
 void AudioSourceComponent::RefreshPlaybackState()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (!m_emitter.IsValid())
     {
         return;
@@ -314,6 +332,7 @@ void AudioSourceComponent::RefreshPlaybackState()
 
 void AudioSourceComponent::UpdateEmitterTransform(float DeltaSeconds)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
     auto* Audio = ResolveAudioSystem();
     auto* Engine = Audio ? Audio->Engine() : nullptr;
     if (!Engine || !m_emitter.IsValid())

@@ -91,6 +91,42 @@ TEST_CASE("GameRuntime initializes and steps physics through world fixed tick")
     REQUIRE(FallingTransform->Position.y() < InitialY - 0.5f);
 }
 
+TEST_CASE("Physics bootstrap MaxSubStepping overrides scene collision steps")
+{
+    GameRuntime Runtime;
+    GameRuntimeSettings Settings{};
+    Settings.WorldName = "PhysicsSubSteppingWorld";
+    Settings.RegisterBuiltins = true;
+    Settings.Tick.EnableFixedTick = true;
+    Settings.Tick.FixedDeltaSeconds = 1.0f / 60.0f;
+    Settings.Tick.MaxFixedStepsPerUpdate = 2;
+
+    GameRuntimePhysicsSettings PhysicsSettings{};
+    PhysicsSettings.Scene.CollisionSteps = 1;
+    PhysicsSettings.MaxSubStepping = 4;
+    Settings.Physics = PhysicsSettings;
+
+    REQUIRE(Runtime.Init(Settings));
+    CHECK(Runtime.World().Physics().Settings().Scene.CollisionSteps == 4u);
+}
+
+TEST_CASE("Physics bootstrap rejects MaxSubStepping of zero")
+{
+    GameRuntime Runtime;
+    GameRuntimeSettings Settings{};
+    Settings.WorldName = "PhysicsInvalidSubSteppingWorld";
+    Settings.RegisterBuiltins = true;
+    Settings.Tick.EnableFixedTick = true;
+    Settings.Tick.FixedDeltaSeconds = 1.0f / 60.0f;
+    Settings.Tick.MaxFixedStepsPerUpdate = 2;
+
+    GameRuntimePhysicsSettings PhysicsSettings{};
+    PhysicsSettings.MaxSubStepping = 0;
+    Settings.Physics = PhysicsSettings;
+
+    REQUIRE_FALSE(Runtime.Init(Settings));
+}
+
 TEST_CASE("CharacterMovementController drives rigid body movement")
 {
     GameRuntime Runtime;
@@ -207,7 +243,7 @@ TEST_CASE("RigidBodyComponent deactivates on sleep and reactivates on wake event
     CHECK(DynamicBody->Active());
 }
 
-TEST_CASE("RigidBodyComponent keeps Euler convention stable through physics sync")
+TEST_CASE("RigidBodyComponent keeps quaternion orientation stable through physics sync")
 {
     GameRuntime Runtime;
     GameRuntimeSettings Settings{};
@@ -235,7 +271,8 @@ TEST_CASE("RigidBodyComponent keeps Euler convention stable through physics sync
     REQUIRE(TransformResult);
     TransformResult->Position = Vec3{0.0f, 2.0f, 0.0f};
     const Vec3 ExpectedEuler{0.35f, -0.50f, 1.10f};
-    TransformResult->Rotation = ExpectedEuler;
+    const Quat ExpectedRotation = ComposeRotationZyx(ExpectedEuler).normalized();
+    TransformResult->Rotation = ExpectedRotation;
 
     auto Collider = Node->Add<ColliderComponent>();
     REQUIRE(Collider);
@@ -254,9 +291,10 @@ TEST_CASE("RigidBodyComponent keeps Euler convention stable through physics sync
         Runtime.Update(1.0f / 60.0f);
     }
 
-    const SnAPI::Math::Quaternion Expected = ComposeRotationZyx(ExpectedEuler).normalized();
-    const SnAPI::Math::Quaternion Actual = ComposeRotationZyx(TransformResult->Rotation).normalized();
-    const float Dot = std::abs(Expected.dot(Actual));
+    const Quat Actual = TransformResult->Rotation.squaredNorm() > 0.0f
+                            ? TransformResult->Rotation.normalized()
+                            : Quat::Identity();
+    const float Dot = std::abs(ExpectedRotation.dot(Actual));
     CHECK(Dot > 0.999f);
 }
 

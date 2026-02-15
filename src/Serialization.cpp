@@ -1100,6 +1100,7 @@ void RegisterSerializationDefaults()
     ValueRegistry.Register<std::vector<uint8_t>>();
     ValueRegistry.Register<Uuid>();
     ValueRegistry.Register<Vec3>();
+    ValueRegistry.Register<Quat>();
     ValueRegistry.Register<NodeHandle>();
     ValueRegistry.Register<ComponentHandle>();
 

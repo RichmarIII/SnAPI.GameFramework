@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
+#include "Profiling.h"
+
 #include <cmath>
 #include <cstdint>
 
@@ -45,12 +47,17 @@ SnAPI::Physics::Vec3 ToPhysicsVec3(const Vec3& Value)
 
 void CharacterMovementController::FixedTick(float DeltaSeconds)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     if (DeltaSeconds <= 0.0f)
     {
         return;
     }
 
-    auto* Owner = OwnerNode();
+    BaseNode* Owner = nullptr;
+    {
+        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ResolveOwner", "Gameplay");
+        Owner = OwnerNode();
+    }
     if (!Owner)
     {
         m_jumpRequested = false;
@@ -58,7 +65,10 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
         return;
     }
 
-    auto RigidResult = Owner->Component<RigidBodyComponent>();
+    auto RigidResult = [&]() {
+        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ResolveRigidBody", "Gameplay");
+        return Owner->Component<RigidBodyComponent>();
+    }();
     if (!RigidResult)
     {
         m_jumpRequested = false;
@@ -75,31 +85,41 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
     }
 
     float VerticalVelocity = 0.0f;
-    if (auto TransformResult = Owner->Component<TransformComponent>())
     {
-        if (m_hasLastPosition)
+        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.SampleVerticalVelocity", "Gameplay");
+        if (auto TransformResult = Owner->Component<TransformComponent>())
         {
-            VerticalVelocity = (TransformResult->Position.y() - m_lastPosition.y()) / DeltaSeconds;
+            if (m_hasLastPosition)
+            {
+                VerticalVelocity = (TransformResult->Position.y() - m_lastPosition.y()) / DeltaSeconds;
+            }
+            m_lastPosition = TransformResult->Position;
+            m_hasLastPosition = true;
         }
-        m_lastPosition = TransformResult->Position;
-        m_hasLastPosition = true;
     }
 
-    m_grounded = RefreshGroundedState();
-
-    Vec3 Move = m_moveInput;
-    Move.y() = 0.0f;
-    const Vec3 Direction = NormalizeOrZero(Move);
-    if (LengthSquared(Direction) > Scalar(0))
     {
-        constexpr float kMoveSpeedScale = 0.1f;
-        Vec3 TargetVelocity = Direction * (m_settings.MoveForce * kMoveSpeedScale);
-        TargetVelocity.y() = VerticalVelocity;
-        (void)RigidBody.SetVelocity(TargetVelocity);
+        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.RefreshGroundedState", "Gameplay");
+        m_grounded = RefreshGroundedState();
+    }
+
+    {
+        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ApplyMoveInput", "Gameplay");
+        Vec3 Move = m_moveInput;
+        Move.y() = 0.0f;
+        const Vec3 Direction = NormalizeOrZero(Move);
+        if (LengthSquared(Direction) > Scalar(0))
+        {
+            constexpr float kMoveSpeedScale = 0.1f;
+            Vec3 TargetVelocity = Direction * (m_settings.MoveForce * kMoveSpeedScale);
+            TargetVelocity.y() = VerticalVelocity;
+            (void)RigidBody.SetVelocity(TargetVelocity);
+        }
     }
 
     if (m_jumpRequested && m_grounded)
     {
+        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ApplyJump", "Gameplay");
         (void)RigidBody.ApplyForce(Vec3{0.0f, m_settings.JumpImpulse, 0.0f}, true);
         m_grounded = false;
     }
@@ -113,21 +133,25 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
 
 void CharacterMovementController::SetMoveInput(const Vec3& Input)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     m_moveInput = Input;
 }
 
 void CharacterMovementController::AddMoveInput(const Vec3& Input)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     m_moveInput += Input;
 }
 
 void CharacterMovementController::Jump()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     m_jumpRequested = true;
 }
 
 bool CharacterMovementController::RefreshGroundedState()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     auto* Owner = OwnerNode();
     if (!Owner)
     {

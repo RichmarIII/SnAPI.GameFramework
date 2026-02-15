@@ -81,3 +81,10 @@ Run examples:
 - Destruction is deferred to `EndFrame()` to keep handles stable during a frame.
 
 With that baseline, start with `Worlds and Graphs`.
+
+## Checkpoint Context (2026-02-15)
+
+These docs describe the pre-refactor baseline across SnAPI modules.
+
+- Behavior and examples here align with the checkpoint commit taken before the renderer-side `IRenderObject` refactor.
+- If you are validating post-refactor behavior, compare against newer docs/commits after this date.

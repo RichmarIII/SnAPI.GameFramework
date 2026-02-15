@@ -33,6 +33,9 @@ using GameRuntimeNetworkingSettings = NetworkBootstrapSettings;
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 using GameRuntimePhysicsSettings = PhysicsBootstrapSettings;
 #endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+using GameRuntimeRendererSettings = RendererBootstrapSettings;
+#endif
 
 /**
  * @brief High-level runtime settings for bootstrap and update policy.
@@ -47,6 +50,9 @@ struct GameRuntimeSettings
 #endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     std::optional<GameRuntimePhysicsSettings> Physics{}; /**< @brief Optional physics bootstrap; nullopt = no world physics scene. */
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    std::optional<GameRuntimeRendererSettings> Renderer{}; /**< @brief Optional renderer bootstrap; nullopt = no world renderer backend. */
 #endif
 };
 

@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
+#include "Profiling.h"
+
 #include "ComponentStorage.h"
 #include "IComponent.h"
 #include "ObjectRegistry.h"
@@ -511,20 +513,24 @@ TExpected<void> DeserializeReplicatedFields(const TypeId& Type,
 NetReplicationBridge::NetReplicationBridge(NodeGraph& Graph)
     : m_graph(&Graph)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
 }
 
 NodeGraph& NetReplicationBridge::Graph()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return *m_graph;
 }
 
 const NodeGraph& NetReplicationBridge::Graph() const
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return *m_graph;
 }
 
 void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& OutEntities)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     OutEntities.clear();
     m_entityRefs.clear();
 
@@ -610,6 +616,7 @@ bool NetReplicationBridge::BuildSnapshot(EntityId EntityIdValue,
                                          SnAPI::Networking::TypeId,
                                          std::vector<Byte>& OutSnapshot)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     auto It = m_entityRefs.find(EntityIdValue);
     if (It == m_entityRefs.end())
     {
@@ -680,6 +687,7 @@ bool NetReplicationBridge::BuildDelta(EntityId EntityIdValue,
                                       ConstByteSpan Baseline,
                                       ReplicationDelta& OutDelta)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     std::vector<Byte> Snapshot;
     if (!BuildSnapshot(EntityIdValue, TypeIdValue, Snapshot))
     {
@@ -699,6 +707,7 @@ bool NetReplicationBridge::Interested(NetConnectionHandle,
                                       EntityId,
                                       SnAPI::Networking::TypeId)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return true;
 }
 
@@ -706,6 +715,7 @@ std::uint32_t NetReplicationBridge::Score(NetConnectionHandle,
                                           EntityId,
                                           SnAPI::Networking::TypeId)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return 0;
 }
 
@@ -714,6 +724,7 @@ void NetReplicationBridge::OnSpawn(NetConnectionHandle,
                                    SnAPI::Networking::TypeId,
                                    ConstByteSpan Payload)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     (void)EntityIdValue;
     (void)ApplyPayload(EntityIdValue, Payload);
 }
@@ -723,6 +734,7 @@ void NetReplicationBridge::OnUpdate(NetConnectionHandle,
                                     SnAPI::Networking::TypeId,
                                     ConstByteSpan Payload)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     (void)EntityIdValue;
     (void)ApplyPayload(EntityIdValue, Payload);
 }
@@ -730,6 +742,7 @@ void NetReplicationBridge::OnUpdate(NetConnectionHandle,
 void NetReplicationBridge::OnDespawn(NetConnectionHandle,
                                      EntityId EntityIdValue)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_graph)
     {
         return;
@@ -774,6 +787,7 @@ void NetReplicationBridge::OnSnapshot(NetConnectionHandle,
                                       SnAPI::Networking::TypeId,
                                       ConstByteSpan Payload)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     (void)EntityIdValue;
     (void)ApplyPayload(EntityIdValue, Payload);
 }
@@ -781,6 +795,7 @@ void NetReplicationBridge::OnSnapshot(NetConnectionHandle,
 bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
                                         ConstByteSpan Payload)
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_graph)
     {
         return false;
@@ -907,6 +922,7 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
 
 void NetReplicationBridge::ResolvePendingAttachments()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_graph || m_pendingParents.empty())
     {
         return;
@@ -936,6 +952,7 @@ void NetReplicationBridge::ResolvePendingAttachments()
 
 void NetReplicationBridge::ResolvePendingComponents()
 {
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
     if (!m_graph || m_pendingComponents.empty())
     {
         return;

@@ -10,9 +10,15 @@ option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" OFF)
+option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
 
 include(FetchContent)
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
+
+# Use double-precision math across SnAPI modules.
+set(SNAPI_MATH_USES_DOUBLE ON CACHE BOOL "" FORCE)
+# Keep Eigen alignment policy consistent across all fetched targets in this build.
+add_compile_definitions(EIGEN_MAX_ALIGN_BYTES=0 EIGEN_MAX_STATIC_ALIGN_BYTES=0)
 
 # stduuid
 FetchContent_Declare(
@@ -43,6 +49,42 @@ else()
 endif()
 FetchContent_MakeAvailable(SnAPI.Math)
 
+# SnAPI.Profiler integration (optional)
+if (SNAPI_GF_ENABLE_PROFILER)
+    set(SNAPI_GF_EFFECTIVE_PROFILER_SOURCE_DIR "")
+    set(SNAPI_PROFILER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(SNAPI_PROFILER_ENABLE_DASHBOARD_TARGETS ON CACHE BOOL "" FORCE)
+    set(SNAPI_GF_PROFILER_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Profiler")
+    if (SNAPI_GF_PROFILER_SOURCE_DIR)
+        set(SNAPI_GF_EFFECTIVE_PROFILER_SOURCE_DIR ${SNAPI_GF_PROFILER_SOURCE_DIR})
+        FetchContent_Declare(
+            SnAPI.Profiler
+            SOURCE_DIR ${SNAPI_GF_PROFILER_SOURCE_DIR}
+        )
+    elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Profiler/CMakeLists.txt")
+        set(SNAPI_GF_EFFECTIVE_PROFILER_SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Profiler)
+        FetchContent_Declare(
+            SnAPI.Profiler
+            SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Profiler
+        )
+    else()
+        FetchContent_Declare(
+            SnAPI.Profiler
+            GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.Profiler.git
+            GIT_TAG master
+        )
+    endif()
+    FetchContent_MakeAvailable(SnAPI.Profiler)
+    if (TARGET SnAPI.Profiler)
+        # SnAPI.Profiler is consumed by shared objects (for example SnAPI.Renderer).
+        set_target_properties(SnAPI.Profiler PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+
+    if (NOT SNAPI_GF_EFFECTIVE_PROFILER_SOURCE_DIR)
+        FetchContent_GetProperties(SnAPI.Profiler SOURCE_DIR SNAPI_GF_EFFECTIVE_PROFILER_SOURCE_DIR)
+    endif()
+endif()
+
 set(SNAPI_GF_SOURCES
     src/AudioListenerComponent.cpp
     src/AudioSourceComponent.cpp
@@ -52,6 +94,7 @@ set(SNAPI_GF_SOURCES
     src/AssetPipelineSerializers.cpp
     src/BaseNode.cpp
     src/CharacterMovementController.cpp
+    src/CameraComponent.cpp
     src/ColliderComponent.cpp
     src/GameFramework.cpp
     src/GameRuntime.cpp
@@ -63,7 +106,10 @@ set(SNAPI_GF_SOURCES
     src/PhysicsSystem.cpp
     src/NetReplication.cpp
     src/NetRpc.cpp
+    src/RendererSystem.cpp
     src/RigidBodyComponent.cpp
+    src/SkeletalMeshComponent.cpp
+    src/StaticMeshComponent.cpp
     src/Serialization.cpp
     src/ScriptABI.cpp
     src/TypeAutoRegistry.cpp
@@ -79,6 +125,13 @@ target_include_directories(SnAPI.GameFramework PUBLIC
 )
 
 target_link_libraries(SnAPI.GameFramework PUBLIC stduuid SnAPI.Math)
+
+if (SNAPI_GF_ENABLE_PROFILER)
+    target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Profiler)
+    target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PROFILER=1)
+else()
+    target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PROFILER=0)
+endif()
 
 target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GAMEFRAMEWORK_BUILD_DLL)
 
@@ -142,6 +195,7 @@ set(SNAPI_BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(SNAPI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SNAPI_BUILD_PLUGINS OFF CACHE BOOL "" FORCE)
 set(SNAPI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_OPENEXR OFF CACHE BOOL "" FORCE)
 
 set(SNAPI_GF_ASSETPipeline_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.AssetPipeline")
 if (SNAPI_GF_ASSETPipeline_SOURCE_DIR)

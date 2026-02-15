@@ -18,6 +18,11 @@
 #include "AudioListenerComponent.h"
 #include "AudioSourceComponent.h"
 #endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "CameraComponent.h"
+#include "SkeletalMeshComponent.h"
+#include "StaticMeshComponent.h"
+#endif
 #include "TypeRegistry.h"
 #include "World.h"
 
@@ -180,6 +185,71 @@ SNAPI_REFLECT_TYPE(CharacterMovementController, (TTypeBuilder<CharacterMovementC
 
 #endif // SNAPI_GF_ENABLE_PHYSICS
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+
+SNAPI_REFLECT_TYPE(CameraComponent::Settings, (TTypeBuilder<CameraComponent::Settings>(CameraComponent::Settings::kTypeName)
+    .Field("NearClip", &CameraComponent::Settings::NearClip)
+    .Field("FarClip", &CameraComponent::Settings::FarClip)
+    .Field("FovDegrees", &CameraComponent::Settings::FovDegrees)
+    .Field("Aspect", &CameraComponent::Settings::Aspect)
+    .Field("Active", &CameraComponent::Settings::Active)
+    .Field("SyncFromTransform", &CameraComponent::Settings::SyncFromTransform)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(CameraComponent, (TTypeBuilder<CameraComponent>(CameraComponent::kTypeName)
+    .Field("Settings",
+           &CameraComponent::EditSettings,
+           &CameraComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Method("SetActive", &CameraComponent::SetActive)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(StaticMeshComponent::Settings, (TTypeBuilder<StaticMeshComponent::Settings>(StaticMeshComponent::Settings::kTypeName)
+    .Field("MeshPath", &StaticMeshComponent::Settings::MeshPath, EFieldFlagBits::Replication)
+    .Field("Visible", &StaticMeshComponent::Settings::Visible, EFieldFlagBits::Replication)
+    .Field("CastShadows", &StaticMeshComponent::Settings::CastShadows, EFieldFlagBits::Replication)
+    .Field("SyncFromTransform", &StaticMeshComponent::Settings::SyncFromTransform)
+    .Field("RegisterWithRenderer", &StaticMeshComponent::Settings::RegisterWithRenderer)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(StaticMeshComponent, (TTypeBuilder<StaticMeshComponent>(StaticMeshComponent::kTypeName)
+    .Field("Settings",
+           &StaticMeshComponent::EditSettings,
+           &StaticMeshComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Method("ReloadMesh", &StaticMeshComponent::ReloadMesh)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(SkeletalMeshComponent::Settings, (TTypeBuilder<SkeletalMeshComponent::Settings>(SkeletalMeshComponent::Settings::kTypeName)
+    .Field("MeshPath", &SkeletalMeshComponent::Settings::MeshPath, EFieldFlagBits::Replication)
+    .Field("Visible", &SkeletalMeshComponent::Settings::Visible, EFieldFlagBits::Replication)
+    .Field("CastShadows", &SkeletalMeshComponent::Settings::CastShadows, EFieldFlagBits::Replication)
+    .Field("SyncFromTransform", &SkeletalMeshComponent::Settings::SyncFromTransform)
+    .Field("RegisterWithRenderer", &SkeletalMeshComponent::Settings::RegisterWithRenderer)
+    .Field("AutoPlayAnimations", &SkeletalMeshComponent::Settings::AutoPlayAnimations)
+    .Field("LoopAnimations", &SkeletalMeshComponent::Settings::LoopAnimations)
+    .Field("AnimationName", &SkeletalMeshComponent::Settings::AnimationName)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(SkeletalMeshComponent, (TTypeBuilder<SkeletalMeshComponent>(SkeletalMeshComponent::kTypeName)
+    .Field("Settings",
+           &SkeletalMeshComponent::EditSettings,
+           &SkeletalMeshComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Method("ReloadMesh", &SkeletalMeshComponent::ReloadMesh)
+    .Method("PlayAnimation", &SkeletalMeshComponent::PlayAnimation)
+    .Method("PlayAllAnimations", &SkeletalMeshComponent::PlayAllAnimations)
+    .Method("StopAnimations", &SkeletalMeshComponent::StopAnimations)
+    .Constructor<>()
+    .Register()));
+
+#endif // SNAPI_GF_ENABLE_RENDERER
+
 void RegisterBuiltinTypes()
 {
     TypeInfo VoidInfo;
@@ -208,6 +278,7 @@ void RegisterBuiltinTypes()
     RegisterPlain(TTypeNameV<std::vector<uint8_t>>, sizeof(std::vector<uint8_t>), alignof(std::vector<uint8_t>));
     RegisterPlain(TTypeNameV<Uuid>, sizeof(Uuid), alignof(Uuid));
     RegisterPlain(TTypeNameV<Vec3>, sizeof(Vec3), alignof(Vec3));
+    RegisterPlain(TTypeNameV<Quat>, sizeof(Quat), alignof(Quat));
     RegisterPlain(TTypeNameV<NodeHandle>, sizeof(NodeHandle), alignof(NodeHandle));
     RegisterPlain(TTypeNameV<ComponentHandle>, sizeof(ComponentHandle), alignof(ComponentHandle));
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
