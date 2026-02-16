@@ -659,13 +659,39 @@ CubeSharedMaterials BuildSharedCubeMaterialInstances(World& Graph, const bool Cu
         MaterialIndex = static_cast<std::size_t>(SourceMesh->SubMeshes[0].MaterialIndex);
     }
 
+    SnAPI::Graphics::VertexSourceMaterial SourceMaterial{};
+    bool HasSourceMaterial = false;
     if (!SourceMesh->Materials.empty())
     {
         if (MaterialIndex >= SourceMesh->Materials.size())
         {
             MaterialIndex = 0;
         }
-        Shared.GBuffer = Meshes->CreateMaterialInstanceFromMeshMaterial(SourceMesh->Materials[MaterialIndex], GBufferMaterial);
+
+        const auto& MeshMaterial = SourceMesh->Materials[MaterialIndex];
+        SourceMaterial.Name = MeshMaterial.Name;
+        SourceMaterial.DiffuseTexturePath = MeshMaterial.DiffuseTexturePath;
+        SourceMaterial.NormalTexturePath = MeshMaterial.NormalTexturePath;
+        SourceMaterial.MaterialTexturePath = MeshMaterial.MaterialTexturePath;
+        SourceMaterial.EmissiveTexturePath = MeshMaterial.EmissiveTexturePath;
+        SourceMaterial.BaseColor = SnAPI::Vector4DF{
+            MeshMaterial.BaseColor[0],
+            MeshMaterial.BaseColor[1],
+            MeshMaterial.BaseColor[2],
+            MeshMaterial.BaseColor[3]
+        };
+        SourceMaterial.EmissiveColor = SnAPI::Vector4DF{
+            MeshMaterial.EmissiveColor[0],
+            MeshMaterial.EmissiveColor[1],
+            MeshMaterial.EmissiveColor[2],
+            MeshMaterial.EmissiveColor[3]
+        };
+        SourceMaterial.Roughness = MeshMaterial.Roughness;
+        SourceMaterial.Metallic = MeshMaterial.Metallic;
+        SourceMaterial.Occlusion = MeshMaterial.Occlusion;
+        HasSourceMaterial = true;
+
+        Shared.GBuffer = Meshes->CreateMaterialInstanceFromSourceMaterial(SourceMaterial, GBufferMaterial);
     }
     else
     {
@@ -677,9 +703,9 @@ CubeSharedMaterials BuildSharedCubeMaterialInstances(World& Graph, const bool Cu
         const auto ShadowMaterial = Graph.Renderer().DefaultShadowMaterial();
         if (ShadowMaterial)
         {
-            if (!SourceMesh->Materials.empty())
+            if (HasSourceMaterial)
             {
-                Shared.Shadow = Meshes->CreateMaterialInstanceFromMeshMaterial(SourceMesh->Materials[MaterialIndex], ShadowMaterial);
+                Shared.Shadow = Meshes->CreateMaterialInstanceFromSourceMaterial(SourceMaterial, ShadowMaterial);
             }
             else
             {
