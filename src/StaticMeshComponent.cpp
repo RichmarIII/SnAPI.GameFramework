@@ -9,7 +9,6 @@
 #include <cmath>
 
 #include <LinearAlgebra.hpp>
-#include <Mesh.hpp>
 #include <MeshManager.hpp>
 #include <MeshRenderObject.hpp>
 
@@ -88,7 +87,6 @@ void StaticMeshComponent::SetSharedMaterialInstances(std::shared_ptr<SnAPI::Grap
 void StaticMeshComponent::ClearMesh()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    m_meshAsset.reset();
     m_renderObject.reset();
     m_loadedPath.clear();
     m_registered = false;
@@ -197,7 +195,6 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         return false;
     }
 
-    m_meshAsset = SourceMesh;
     m_renderObject = std::move(RenderObject);
     m_loadedPath = m_settings.MeshPath;
     m_registered = false;
@@ -209,7 +206,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
     return true;
 }
 
-void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const
+void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     auto* Owner = OwnerNode();
@@ -234,7 +231,7 @@ void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderO
     RenderObject.SetWorldTransform(ComposeRendererWorldTransform(*TransformResult));
 }
 
-void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::MeshRenderObject& RenderObject) const
+void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!m_sharedGBufferInstance && !m_sharedShadowInstance)
@@ -242,13 +239,13 @@ void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::MeshRend
         return;
     }
 
-    const auto& MeshAsset = RenderObject.GetMeshAsset();
-    if (!MeshAsset)
+    const auto& Source = RenderObject.VertexStreamSource();
+    if (!Source)
     {
         return;
     }
 
-    for (std::size_t SubMeshIndex = 0; SubMeshIndex < MeshAsset->SubMeshes.size(); ++SubMeshIndex)
+    for (std::size_t SubMeshIndex = 0; SubMeshIndex < Source->SubMeshCount(); ++SubMeshIndex)
     {
         if (m_sharedGBufferInstance)
         {
@@ -261,7 +258,7 @@ void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::MeshRend
     }
 }
 
-void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject)
+void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::IRenderObject& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     auto* Renderer = ResolveRendererSystem();

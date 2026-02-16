@@ -9,9 +9,8 @@
 
 namespace SnAPI::Graphics
 {
-struct Mesh;
 class MaterialInstance;
-class MeshRenderObject;
+class IRenderObject;
 } // namespace SnAPI::Graphics
 
 namespace SnAPI::GameFramework
@@ -73,13 +72,12 @@ public:
 private:
     RendererSystem* ResolveRendererSystem() const;
     bool EnsureMeshLoaded();
-    void SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const;
-    void ApplySharedMaterialInstances(SnAPI::Graphics::MeshRenderObject& RenderObject) const;
-    void ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject);
+    void SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const;
+    void ApplySharedMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject) const;
+    void ApplyRenderObjectState(SnAPI::Graphics::IRenderObject& RenderObject);
 
     Settings m_settings{}; /**< @brief Mesh/render settings. */
-    std::shared_ptr<SnAPI::Graphics::Mesh> m_meshAsset{}; /**< @brief Shared mesh asset reference. */
-    std::shared_ptr<SnAPI::Graphics::MeshRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
+    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     bool m_registered = false; /**< @brief True when current mesh has been registered with renderer. */
     bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */

@@ -7,7 +7,6 @@
 #include <cmath>
 
 #include <LinearAlgebra.hpp>
-#include <Mesh.hpp>
 #include <MeshManager.hpp>
 #include <MeshRenderObject.hpp>
 
@@ -73,7 +72,6 @@ bool SkeletalMeshComponent::ReloadMesh()
 void SkeletalMeshComponent::ClearMesh()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    m_meshAsset.reset();
     m_renderObject.reset();
     m_loadedPath.clear();
     m_lastAutoPlayAnimation.clear();
@@ -233,7 +231,6 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
         return false;
     }
 
-    m_meshAsset = SourceMesh;
     m_renderObject = std::move(RenderObject);
     m_loadedPath = m_settings.MeshPath;
     m_lastAutoPlayAnimation.clear();
