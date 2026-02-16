@@ -242,7 +242,7 @@ void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::MeshRend
         return;
     }
 
-    const auto& MeshAsset = RenderObject.MeshAsset();
+    const auto& MeshAsset = RenderObject.GetMeshAsset();
     if (!MeshAsset)
     {
         return;
