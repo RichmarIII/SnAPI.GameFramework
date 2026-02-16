@@ -7,6 +7,7 @@ The framework uses:
 - **Component‑based composition** (Unity‑style behaviors).
 - **Stable UUID handles** for cross‑graph/cross‑asset references.
 - **Reflection‑driven serialization** (C++23, template‑centric).
+- **World-owned subsystem adapters** (networking, audio, physics, renderer).
 - **End‑of‑frame deletion** to avoid dangling handles during a frame.
 - **Relevance system** to cull work for inactive/out‑of‑budget nodes.
 
@@ -23,6 +24,7 @@ This repository targets C++23 and is intended to be multi‑platform.
 - [Quick Start](#quick-start)
 - [Nodes and NodeGraphs](#nodes-and-nodegraphs)
 - [Components](#components)
+- [Renderer Integration (optional module)](#renderer-integration-optional-module)
 - [Handles (UUID‑based)](#handles-uuid-based)
 - [Reflection System](#reflection-system)
 - [Serialization](#serialization)
@@ -83,6 +85,7 @@ This repository targets C++23 and is intended to be multi‑platform.
 ### Dependencies (FetchContent)
 - [stduuid](https://github.com/mariusbancila/stduuid) (UUIDs)
 - [SnAPI.AssetPipeline](https://github.com/RichmarIII/SnAPI.AssetPipeline) (required)
+- [SnAPI.Renderer](https://github.com/RichmarIII/SnAPI.Renderer) (auto-enabled when source is available)
 - Lua (optional, for scripting support)
 - Catch2 (tests)
 
@@ -99,7 +102,16 @@ cmake --build build
 -DSNAPI_GF_ENABLE_LUA=ON/OFF
 -DSNAPI_GF_ENABLE_SWIG=ON/OFF
 -DSNAPI_GF_ENABLE_PROFILER=ON/OFF
+-DSNAPI_GF_RENDERER_SOURCE_DIR=/absolute/path/to/SnAPI.Renderer
 ```
+
+Renderer notes:
+
+- Renderer integration is compiled in only when `SnAPI.Renderer` source is found and target `SnAPI.Renderer` is created.
+- Resolution order is:
+  - `SNAPI_GF_RENDERER_SOURCE_DIR`
+  - local fallback `/mnt/Apps/Dev/Repositories/SnAPI.Renderer`
+  - otherwise renderer module is skipped with a CMake warning.
 
 ### Realtime Profiler Stream (GameRuntime startup helper)
 
@@ -139,6 +151,7 @@ Notes:
 - `SNAPI_GF_PROFILER_TRACE_MODE=record` enables raw trace capture (`SNAPTRC1`).
 - `SNAPI_GF_PROFILER_TRACE_CAPTURE_ONLY=1` disables in-process frame aggregation and realtime UDP stream to minimize runtime overhead while recording raw events.
 - `examples/MultiplayerExample` defaults to raw replay capture; set `SNAPI_MULTIPLAYER_PROFILER_MODE=stream` to prefer live UDP streaming.
+- `SNAPI_GF_PROFILER_PRESERVE_OVERFLOW_EVENTS=1` preserves ring overflow events for fidelity but can be very expensive under heavy scope volume (extra lock/vector work on overflow). Keep it `0` unless you specifically need overflow recovery.
 
 ### Local AssetPipeline (recommended for dev)
 ```bash
@@ -153,7 +166,7 @@ cmake -S . -B build \
 - `include/` public headers (flat include tree)
 - `src/` library implementation
 - `tests/` unit tests (Catch2)
-- `examples/` example apps (FeatureShowcase)
+- `examples/` example apps (`FeatureShowcase`, `WorldPerfBenchmark`, `MultiplayerExample`)
 
 ---
 
@@ -324,6 +337,105 @@ ComponentSerializationRegistry::Instance().RegisterCustom<DamageComponent>(
         return Ok();
     });
 ```
+
+---
+
+## Renderer Integration (optional module)
+
+When renderer integration is available (`SNAPI_GF_ENABLE_RENDERER`), `World` exposes a full renderer subsystem:
+
+- `World::Renderer()` returns world-owned `RendererSystem`.
+- `GameRuntimeSettings::Renderer` controls bootstrap.
+- `World::EndFrame()` submits/presents renderer frame work.
+
+### Bootstrap through `GameRuntime`
+
+```cpp
+GameRuntime Runtime;
+GameRuntimeSettings Settings{};
+Settings.WorldName = "RenderWorld";
+Settings.RegisterBuiltins = true;
+Settings.Tick.EnableFixedTick = true;
+Settings.Tick.FixedDeltaSeconds = 1.0f / 60.0f;
+
+GameRuntimeRendererSettings Renderer{};
+Renderer.WindowTitle = "SnAPI.GameFramework";
+Renderer.CreateWindow = true;
+Renderer.CreateDefaultLighting = true;
+Renderer.RegisterDefaultPassGraph = true;
+Renderer.CreateDefaultMaterials = true;
+Renderer.EnableSsao = true;
+Renderer.EnableSsr = true;
+Renderer.EnableBloom = true;
+Renderer.EnableAtmosphere = true;
+
+Settings.Renderer = Renderer;
+
+auto Init = Runtime.Init(Settings);
+if (!Init)
+{
+    // handle error
+}
+```
+
+If `Settings.Renderer` is `std::nullopt`, runtime runs without renderer backend.
+
+### Built-In Renderer Components
+
+Available when renderer integration is compiled in:
+
+- `CameraComponent`
+  - Owns a renderer camera.
+  - Can sync from `TransformComponent`.
+  - Can mark itself as active world camera.
+- `StaticMeshComponent`
+  - Loads mesh asset data.
+  - Creates per-instance render object state.
+  - Supports pass/shadow toggles and shared material overrides.
+- `SkeletalMeshComponent`
+  - Same mesh/render-object model with rigid animation controls.
+
+Minimal setup:
+
+```cpp
+auto Actor = WorldInstance.CreateNode<BaseNode>("Visual").value();
+auto* Node = Actor.Borrowed();
+if (!Node)
+{
+    return;
+}
+
+auto Transform = Node->Add<TransformComponent>();
+Transform->Position = Vec3{0.0f, 0.0f, 0.0f};
+
+auto Mesh = Node->Add<StaticMeshComponent>();
+Mesh->EditSettings().MeshPath = "assets/cube.obj";
+Mesh->EditSettings().Visible = true;
+Mesh->EditSettings().CastShadows = true;
+```
+
+### Post-Refactor Render Architecture
+
+Render-side instance ownership changed:
+
+- `Mesh` is now an asset data holder (vertices/indices/material slots/animation tracks).
+- `MeshRenderObject` (via `IRenderObject`) owns per-instance runtime state:
+  - world + previous transforms
+  - per-submesh material instances
+  - per-pass visibility flags
+  - shadow/culling toggles
+  - per-instance animation playback state
+
+This allows many components/nodes to share one mesh asset and one vertex stream set while preserving independent per-instance render behavior.
+
+### RendererSystem Utility APIs
+
+`RendererSystem` also supports:
+
+- `SetActiveCamera(...)`
+- `QueueText(...)` and `LoadDefaultFont(...)`
+- `RecreateSwapChain()`
+- `DefaultGBufferMaterial()` / `DefaultShadowMaterial()`
 
 ---
 
@@ -653,18 +765,24 @@ The example app lives in `examples/FeatureShowcase` and demonstrates:
 - Serialization to payloads and `.snpak` packs
 - Loading assets via AssetManager
 
+`examples/MultiplayerExample` demonstrates:
+
+- networking + replication with renderer-backed world
+- camera + mesh component usage in a live scene
+- profiler defaults for raw replay capture mode with optional live stream override
+
 Build and run:
 ```bash
 cmake -S . -B build -DSNAPI_GF_BUILD_EXAMPLES=ON
 cmake --build build
 ./build/examples/FeatureShowcase/FeatureShowcase
+./build/examples/MultiplayerExample/MultiplayerExample --local
 ```
 
-## Pre-Refactor Checkpoint (2026-02-15)
+## Renderer Refactor Status (2026-02-15)
 
-This repository is part of the cross-module checkpoint taken before the planned renderer-side
-`IRenderObject` refactor.
+This documentation now reflects the integrated renderer refactor:
 
-- This commit is intended as a rollback-safe baseline.
-- Public behavior documented here reflects the pre-refactor state.
-- Follow-up docs updates will track the refactor once merged.
+- mesh runtime state moved from mesh assets to render objects (`IRenderObject` / `MeshRenderObject`)
+- `StaticMeshComponent` and `SkeletalMeshComponent` now use per-instance render objects
+- world renderer lifecycle is documented and routed through `RendererSystem`

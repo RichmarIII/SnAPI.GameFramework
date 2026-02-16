@@ -211,4 +211,38 @@ Body->RecreateBody();              // apply edited settings immediately
 
 For full physics flow (world bootstrap, stepping policy, character movement, queries/events), continue to the physics tutorials.
 
-Next: [Physics System and Components](physics.md)
+## 10. Built-In Renderer Components
+
+When renderer integration is compiled in (`SNAPI_GF_ENABLE_RENDERER`), GameFramework also provides renderer bridge components:
+
+- `CameraComponent`
+    - Owns a renderer camera and can become world active camera.
+    - Can pull pose from sibling `TransformComponent` each tick.
+- `StaticMeshComponent`
+    - Loads mesh asset data and creates per-instance render-object state.
+    - Supports visibility/shadow toggles and shared material instance overrides.
+- `SkeletalMeshComponent`
+    - Same asset/render-object pattern with rigid animation playback helpers.
+
+Minimal setup:
+
+```cpp
+auto VisualResult = Graph.CreateNode("VisualActor");
+auto* Visual = VisualResult->Borrowed();
+if (!Visual)
+{
+    return;
+}
+
+auto T = Visual->Add<TransformComponent>();
+T->Position = Vec3{0.0f, 0.0f, 0.0f};
+
+auto Mesh = Visual->Add<StaticMeshComponent>();
+Mesh->EditSettings().MeshPath = "assets/cube.obj";
+Mesh->EditSettings().Visible = true;
+Mesh->EditSettings().CastShadows = true;
+```
+
+For renderer bootstrap, camera ownership, and the post-refactor `Mesh` vs `MeshRenderObject` model, read the renderer tutorial next.
+
+Next: [Renderer Integration and Mesh Components](renderer.md)

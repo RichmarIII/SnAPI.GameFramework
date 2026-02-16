@@ -9,7 +9,7 @@ title: SnAPI.GameFramework
     <p>
       A data-driven game framework centered around Node graphs, reflection metadata,
       serialization pipelines, and network-aware gameplay systems.
-      It integrates directly with SnAPI.AssetPipeline, SnAPI.Networking, SnAPI.Audio, and SnAPI.Physics.
+      It integrates directly with SnAPI.AssetPipeline, SnAPI.Networking, SnAPI.Audio, SnAPI.Physics, and SnAPI.Renderer.
     </p>
     <div class="snapi-actions">
       <a class="md-button md-button--primary" href="tutorials/">Get Started</a>
@@ -23,6 +23,7 @@ title: SnAPI.GameFramework
       <span class="snapi-badge">Replication + RPC</span>
       <span class="snapi-badge">Physics Simulation</span>
       <span class="snapi-badge">Audio Components</span>
+      <span class="snapi-badge">Renderer Integration</span>
     </div>
     <div class="snapi-hero__features">
       <strong>What you get</strong>
@@ -38,6 +39,10 @@ title: SnAPI.GameFramework
         <li>Reflection-powered graph, level, and world serialization with schema-versioned payloads.</li>
         <li>Custom value codec extension points (`TValueCodec<T>`) for packed/high-performance data formats.</li>
         <li>World-owned `PhysicsSystem` adapter over SnAPI.Physics with backend routing and coupling support.</li>
+        <li>World-owned `RendererSystem` adapter over SnAPI.Renderer with optional default pass graph/window bootstrap.</li>
+        <li>Built-in renderer components: `CameraComponent`, `StaticMeshComponent`, and `SkeletalMeshComponent`.</li>
+        <li>Post-refactor render architecture where mesh assets are shared data and per-instance render state uses `IRenderObject`/`MeshRenderObject`.</li>
+        <li>Component-level pass visibility/shadow toggles and per-instance material overrides for renderer-backed gameplay objects.</li>
         <li>Built-in `ColliderComponent`, `RigidBodyComponent`, and `CharacterMovementController` for fast gameplay iteration.</li>
         <li>Configurable physics stepping policy (fixed tick, variable tick, or fully manual step) per world runtime settings.</li>
         <li>Direct access to query/event APIs (`Raycast`, `Sweep`, `Overlap`, collision/trigger events) through world physics scene.</li>
@@ -70,6 +75,10 @@ ctest --test-dir build/debug --output-on-failure
     <h3>Nodes and Components</h3>
     <p>Create gameplay objects, add components, and drive lifecycle events.</p>
   </a>
+  <a class="snapi-card" href="tutorials/renderer/">
+    <h3>Renderer Integration</h3>
+    <p>Bootstrap world renderer, cameras, and mesh components with the new render-object flow.</p>
+  </a>
   <a class="snapi-card" href="tutorials/reflection_serialization/">
     <h3>Reflection and Serialization</h3>
     <p>Use TTypeBuilder metadata and reflection-driven serializers.</p>
@@ -96,9 +105,6 @@ ctest --test-dir build/debug --output-on-failure
   </a>
 </div>
 
-## Checkpoint Context (2026-02-15)
+## Renderer Refactor Context (2026-02-15)
 
-These docs describe the pre-refactor baseline across SnAPI modules.
-
-- Behavior and examples here align with the checkpoint commit taken before the renderer-side `IRenderObject` refactor.
-- If you are validating post-refactor behavior, compare against newer docs/commits after this date.
+These docs and examples include the renderer-side `IRenderObject` / `MeshRenderObject` model and are aligned with the post-refactor integration in `SnAPI.GameFramework`.

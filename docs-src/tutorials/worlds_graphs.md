@@ -86,6 +86,7 @@ Tick order is tree-driven from graph roots.
 - networking session pumping in `Tick` + `EndFrame`
 - optional physics stepping in `Tick` and/or `FixedTick` (based on physics settings)
 - audio system update in `Tick`
+- renderer submit/present in `EndFrame` (when renderer integration is enabled)
 
 Typical frame loop:
 
@@ -104,6 +105,7 @@ Why `EndFrame()` matters:
 - `DestroyNode()` and component `Remove<T>()` are deferred.
 - Handles remain valid until `EndFrame()`.
 - This prevents mid-frame invalidation bugs.
+- Renderer frame submission also happens from world `EndFrame()`, so skipping it can stall visual updates.
 
 If you prefer less boilerplate in apps/examples, use `GameRuntime` and call `Runtime.Update(DeltaSeconds)`.
 `GameRuntime` orchestrates world lifecycle phases while `World` owns subsystem ticking/pumping.
@@ -132,7 +134,7 @@ This is how systems are accessed from gameplay code:
 auto* OwnerNode = SomeComponent.Owner().Borrowed();
 if (OwnerNode && OwnerNode->World())
 {
-    // OwnerNode->World()->Audio(), OwnerNode->World()->Physics(), etc.
+    // OwnerNode->World()->Audio(), OwnerNode->World()->Physics(), OwnerNode->World()->Renderer(), etc.
 }
 ```
 

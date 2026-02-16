@@ -56,6 +56,11 @@ Root traversal entry points (nodes without parent in this graph).
 Node handles queued for end-of-frame destruction.
 </div>
 <div class="snapi-api-card" markdown="1">
+### `std::unordered_set<Uuid, UuidHash> SnAPI::GameFramework::NodeGraph::m_pendingDestroyIds`
+
+Fast lookup for nodes already queued for deferred destruction.
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `size_t SnAPI::GameFramework::NodeGraph::m_relevanceCursor`
 
 Cursor for incremental relevance sweeps when budgeted evaluation is enabled.
@@ -370,6 +375,17 @@ Check whether a node is active for ticking.
 **Parameters**
 
 - `Handle`: 
+
+**Returns:** True if node is active and relevant.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::NodeGraph::IsNodeActive(const BaseNode &Node) const`
+
+Check whether an already-resolved node is active for ticking.
+
+**Parameters**
+
+- `Node`: Node reference.
 
 **Returns:** True if node is active and relevant.
 </div>

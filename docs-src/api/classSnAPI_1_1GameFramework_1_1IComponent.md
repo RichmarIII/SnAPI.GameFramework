@@ -29,6 +29,11 @@ Stable component identity used for handles/replication/serialization.
 Reflected concrete component type id used by RPC/serialization paths.
 </div>
 <div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::IComponent::m_active`
+
+Runtime tick gate for this component instance.
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::IComponent::m_replicated`
 
 Runtime replication gate for this component instance.
@@ -93,6 +98,22 @@ Set the owning node handle.
 Get the owning node handle.
 
 **Returns:** Owner node handle.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `bool SnAPI::GameFramework::IComponent::Active() const`
+
+Check if this component is active for tick execution.
+
+**Returns:** True when tick hooks are enabled.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::IComponent::Active(bool ActiveValue)`
+
+Set component active state for tick execution.
+
+**Parameters**
+
+- `ActiveValue`: New active state.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::IComponent::Replicated() const`

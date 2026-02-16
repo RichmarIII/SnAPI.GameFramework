@@ -1,6 +1,6 @@
 # SnAPI::GameFramework::TransformComponent
 
-Basic transform component (position, rotation, scale).
+Basic transform component (position, quaternion rotation, scale).
 
 ## Public Static Members
 
@@ -18,9 +18,9 @@ Stable type name for reflection.
 Local position.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `Vec3 SnAPI::GameFramework::TransformComponent::Rotation`
+### `& SnAPI::GameFramework::TransformComponent::Rotation`
 
-Local rotation (implementation-defined units).
+Local rotation as quaternion.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `Vec3 SnAPI::GameFramework::TransformComponent::Scale`

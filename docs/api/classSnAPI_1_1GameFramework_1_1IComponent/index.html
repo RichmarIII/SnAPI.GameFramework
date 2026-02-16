@@ -368,6 +368,8 @@
       
         
       
+        
+      
     
     
     
@@ -458,6 +460,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -880,6 +910,10 @@
 <p>Reflected concrete component type id used by RPC/serialization paths.</p>
 </div>
 <div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentm_active"><code>bool SnAPI::GameFramework::IComponent::m_active</code><a class="headerlink" href="#bool-snapigameframeworkicomponentm_active" title="Permanent link">&para;</a></h3>
+<p>Runtime tick gate for this component instance.</p>
+</div>
+<div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkicomponentm_replicated"><code>bool SnAPI::GameFramework::IComponent::m_replicated</code><a class="headerlink" href="#bool-snapigameframeworkicomponentm_replicated" title="Permanent link">&para;</a></h3>
 <p>Runtime replication gate for this component instance.</p>
 </div>
@@ -932,6 +966,19 @@
 <h3 id="nodehandle-snapigameframeworkicomponentowner-const"><code>NodeHandle SnAPI::GameFramework::IComponent::Owner() const</code><a class="headerlink" href="#nodehandle-snapigameframeworkicomponentowner-const" title="Permanent link">&para;</a></h3>
 <p>Get the owning node handle.</p>
 <p><strong>Returns:</strong> Owner node handle.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkicomponentactive-const"><code>bool SnAPI::GameFramework::IComponent::Active() const</code><a class="headerlink" href="#bool-snapigameframeworkicomponentactive-const" title="Permanent link">&para;</a></h3>
+<p>Check if this component is active for tick execution.</p>
+<p><strong>Returns:</strong> True when tick hooks are enabled.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkicomponentactivebool-activevalue"><code>void SnAPI::GameFramework::IComponent::Active(bool ActiveValue)</code><a class="headerlink" href="#void-snapigameframeworkicomponentactivebool-activevalue" title="Permanent link">&para;</a></h3>
+<p>Set component active state for tick execution.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ActiveValue</code>: New active state.</li>
+</ul>
 </div>
 <div class="snapi-api-card">
 <h3 id="bool-snapigameframeworkicomponentreplicated-const"><code>bool SnAPI::GameFramework::IComponent::Replicated() const</code><a class="headerlink" href="#bool-snapigameframeworkicomponentreplicated-const" title="Permanent link">&para;</a></h3>

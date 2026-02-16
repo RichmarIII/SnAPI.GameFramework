@@ -29,7 +29,6 @@
 - **Type:** SnAPI::GameFramework::IWorld
 - **Type:** SnAPI::GameFramework::JobSystem
 - **Type:** SnAPI::GameFramework::Level
-- **Type:** SnAPI::GameFramework::Vec3
 - **Type:** SnAPI::GameFramework::NodeGraph
 - **Type:** SnAPI::GameFramework::TObjectPool
 - **Type:** SnAPI::GameFramework::ObjectRegistry
@@ -154,6 +153,31 @@ Handle type for components.
 ### `using SnAPI::GameFramework::MethodInvoker = std::function<TExpected<Variant>(void* Instance, std::span<const Variant> Args)>`
 
 Function type for reflected method invocation.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `using SnAPI::GameFramework::Scalar = SnAPI::Math::Scalar`
+
+Canonical scalar type used by GameFramework math aliases.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `using SnAPI::GameFramework::Vec3 = SnAPI::Math::Vec3`
+
+Canonical 3D vector type used across runtime and serialization.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `using SnAPI::GameFramework::Quat = SnAPI::Math::Quat`
+
+Canonical quaternion type used for interop with systems that need quaternion rotation.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `using SnAPI::GameFramework::Transform = SnAPI::Math::Transform`
+
+Canonical transform type (position + quaternion rotation).
+</div>
+<div class="snapi-api-card" markdown="1">
+### `using SnAPI::GameFramework::Aabb = SnAPI::Math::Aabb`
+
+Canonical AABB type.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `using SnAPI::GameFramework::ScriptInstanceId = uint64_t`
@@ -404,54 +428,6 @@ Create a MethodInvoker for a const member function.
 **Returns:** Callable MethodInvoker.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `Vec3 SnAPI::GameFramework::operator+(Vec3 Left, const Vec3 &Right)`
-
-Vector addition.
-
-**Parameters**
-
-- `Left`: Left-hand vector.
-- `Right`: Right-hand vector.
-
-**Returns:** Sum of the two vectors.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `Vec3 SnAPI::GameFramework::operator-(Vec3 Left, const Vec3 &Right)`
-
-Vector subtraction.
-
-**Parameters**
-
-- `Left`: Left-hand vector.
-- `Right`: Right-hand vector.
-
-**Returns:** Difference of the two vectors.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `Vec3 SnAPI::GameFramework::operator*(Vec3 Left, float Scalar)`
-
-Scalar multiplication (vector * scalar).
-
-**Parameters**
-
-- `Left`: Vector.
-- `Scalar`: Scalar multiplier.
-
-**Returns:** Scaled vector.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `Vec3 SnAPI::GameFramework::operator*(float Scalar, Vec3 Right)`
-
-Scalar multiplication (scalar * vector).
-
-**Parameters**
-
-- `Scalar`: Scalar multiplier.
-- `Right`: Vector.
-
-**Returns:** Scaled vector.
-</div>
-<div class="snapi-api-card" markdown="1">
 ### `TExpected< void > SnAPI::GameFramework::SerializeNodeGraphPayload(const NodeGraphPayload &Payload, std::vector< uint8_t > &OutBytes)`
 
 Serialize a NodeGraphPayload to bytes.
@@ -637,10 +613,10 @@ Register the GameFramework AssetPipeline plugin.
 ### `SnAPI::GameFramework::Base< NodeGraph >() .Constructor<>() .Register()))`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `SnAPI::GameFramework::Field("Position", &TransformComponent::Position) .Field("Rotation"`
+### `SnAPI::GameFramework::Field("Position", &TransformComponent::Position, EFieldFlagBits::Replication) .Field("Rotation"`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `&TransformComponent::Rotation SnAPI::GameFramework::Field("Scale", &TransformComponent::Scale) .Constructor<>() .Register()))`
+### `EFieldFlagBits::Replication SnAPI::GameFramework::Field("Scale", &TransformComponent::Scale, EFieldFlagBits::Replication) .Constructor<>() .Register()))`
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `SnAPI::GameFramework::Field("ScriptModule", &ScriptComponent::ScriptModule) .Field("ScriptType"`

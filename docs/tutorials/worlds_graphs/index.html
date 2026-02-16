@@ -374,6 +374,8 @@
       
         
       
+        
+      
     
     
     
@@ -586,6 +588,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -1064,6 +1094,7 @@
 <li>networking session pumping in <code>Tick</code> + <code>EndFrame</code></li>
 <li>optional physics stepping in <code>Tick</code> and/or <code>FixedTick</code> (based on physics settings)</li>
 <li>audio system update in <code>Tick</code></li>
+<li>renderer submit/present in <code>EndFrame</code> (when renderer integration is enabled)</li>
 </ul>
 <p>Typical frame loop:</p>
 <div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">RunFrame</span><span class="p">(</span><span class="n">World</span><span class="o">&amp;</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">DeltaSeconds</span><span class="p">)</span>
@@ -1079,6 +1110,7 @@
 <li><code>DestroyNode()</code> and component <code>Remove&lt;T&gt;()</code> are deferred.</li>
 <li>Handles remain valid until <code>EndFrame()</code>.</li>
 <li>This prevents mid-frame invalidation bugs.</li>
+<li>Renderer frame submission also happens from world <code>EndFrame()</code>, so skipping it can stall visual updates.</li>
 </ul>
 <p>If you prefer less boilerplate in apps/examples, use <code>GameRuntime</code> and call <code>Runtime.Update(DeltaSeconds)</code>.
 <code>GameRuntime</code> orchestrates world lifecycle phases while <code>World</code> owns subsystem ticking/pumping.</p>
@@ -1098,7 +1130,7 @@
 <div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SomeComponent</span><span class="p">.</span><span class="n">Owner</span><span class="p">().</span><span class="n">Borrowed</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">OwnerNode</span><span class="o">-&gt;</span><span class="n">World</span><span class="p">())</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="c1">// OwnerNode-&gt;World()-&gt;Audio(), OwnerNode-&gt;World()-&gt;Physics(), etc.</span>
+<span class="w">    </span><span class="c1">// OwnerNode-&gt;World()-&gt;Audio(), OwnerNode-&gt;World()-&gt;Physics(), OwnerNode-&gt;World()-&gt;Renderer(), etc.</span>
 <span class="p">}</span>
 </code></pre></div>
 <h2 id="7-common-mistakes">7. Common Mistakes<a class="headerlink" href="#7-common-mistakes" title="Permanent link">&para;</a></h2>

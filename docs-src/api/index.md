@@ -2,9 +2,9 @@
 
 This section is generated from Doxygen XML output and rendered inside MkDocs.
 
-- **Namespaces:** 15
-- **Types:** 89
-- **Files:** 82
+- **Namespaces:** 14
+- **Types:** 84
+- **Files:** 92
 
 ## Quick Index
 

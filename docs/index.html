@@ -346,6 +346,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#renderer-refactor-context-2026-02-15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renderer Refactor Context (2026-02-15)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -416,6 +427,8 @@
   
     
     
+      
+        
       
         
       
@@ -525,6 +538,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -931,7 +972,7 @@
     <p>
       A data-driven game framework centered around Node graphs, reflection metadata,
       serialization pipelines, and network-aware gameplay systems.
-      It integrates directly with SnAPI.AssetPipeline, SnAPI.Networking, SnAPI.Audio, and SnAPI.Physics.
+      It integrates directly with SnAPI.AssetPipeline, SnAPI.Networking, SnAPI.Audio, SnAPI.Physics, and SnAPI.Renderer.
     </p>
     <div class="snapi-actions">
       <a class="md-button md-button--primary" href="tutorials/">Get Started</a>
@@ -945,6 +986,7 @@
       <span class="snapi-badge">Replication + RPC</span>
       <span class="snapi-badge">Physics Simulation</span>
       <span class="snapi-badge">Audio Components</span>
+      <span class="snapi-badge">Renderer Integration</span>
     </div>
     <div class="snapi-hero__features">
       <strong>What you get</strong>
@@ -960,6 +1002,10 @@
         <li>Reflection-powered graph, level, and world serialization with schema-versioned payloads.</li>
         <li>Custom value codec extension points (`TValueCodec<T>`) for packed/high-performance data formats.</li>
         <li>World-owned `PhysicsSystem` adapter over SnAPI.Physics with backend routing and coupling support.</li>
+        <li>World-owned `RendererSystem` adapter over SnAPI.Renderer with optional default pass graph/window bootstrap.</li>
+        <li>Built-in renderer components: `CameraComponent`, `StaticMeshComponent`, and `SkeletalMeshComponent`.</li>
+        <li>Post-refactor render architecture where mesh assets are shared data and per-instance render state uses `IRenderObject`/`MeshRenderObject`.</li>
+        <li>Component-level pass visibility/shadow toggles and per-instance material overrides for renderer-backed gameplay objects.</li>
         <li>Built-in `ColliderComponent`, `RigidBodyComponent`, and `CharacterMovementController` for fast gameplay iteration.</li>
         <li>Configurable physics stepping policy (fixed tick, variable tick, or fully manual step) per world runtime settings.</li>
         <li>Direct access to query/event APIs (`Raycast`, `Sweep`, `Overlap`, collision/trigger events) through world physics scene.</li>
@@ -988,6 +1034,10 @@ ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span 
     <h3>Nodes and Components</h3>
     <p>Create gameplay objects, add components, and drive lifecycle events.</p>
   </a>
+  <a class="snapi-card" href="tutorials/renderer/">
+    <h3>Renderer Integration</h3>
+    <p>Bootstrap world renderer, cameras, and mesh components with the new render-object flow.</p>
+  </a>
   <a class="snapi-card" href="tutorials/reflection_serialization/">
     <h3>Reflection and Serialization</h3>
     <p>Use TTypeBuilder metadata and reflection-driven serializers.</p>
@@ -1013,6 +1063,9 @@ ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span 
     <p>Attach listeners and sources powered by SnAPI.Audio.</p>
   </a>
 </div>
+
+<h2 id="renderer-refactor-context-2026-02-15">Renderer Refactor Context (2026-02-15)<a class="headerlink" href="#renderer-refactor-context-2026-02-15" title="Permanent link">&para;</a></h2>
+<p>These docs and examples include the renderer-side <code>IRenderObject</code> / <code>MeshRenderObject</code> model and are aligned with the post-refactor integration in <code>SnAPI.GameFramework</code>.</p>
 
 
 

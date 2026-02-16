@@ -5,11 +5,11 @@ SnAPI.GameFramework is built around four main axes:
 1. **Runtime hierarchy**: `World -> Level -> NodeGraph -> BaseNode`
 2. **Type metadata**: `TypeRegistry`, `TTypeBuilder`, and cached `TypeId`
 3. **Data transport**: reflection serialization, asset payloads, and network replication
-4. **World-owned simulation systems**: networking, audio, and physics adapters
+4. **World-owned simulation systems**: networking, audio, physics, and renderer adapters
 
 ## Runtime Model
 
-- `World` is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system).
+- `World` is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system, renderer system).
 - `World` is also responsible for subsystem frame work (networking pump + audio update + optional physics step).
 - `Level` and `NodeGraph` are nodes, so graphs can be nested.
 - `BaseNode` owns hierarchy relationships and component type bookkeeping.
@@ -53,6 +53,18 @@ SnAPI.GameFramework is built around four main axes:
     - rigid body domain (`Rigid()`)
     - query domain (`Query()`)
     - event draining (`DrainEvents(...)`).
+
+## Rendering Model
+
+- `World` owns one `RendererSystem` when renderer integration is compiled in.
+- `World::EndFrame()` delegates to `RendererSystem::EndFrame()` after graph `EndFrame()`.
+- `RendererSystem` owns renderer bootstrap/lifecycle and optional default pass graph creation.
+- `CameraComponent` manages world active camera selection and transform sync.
+- `StaticMeshComponent` and `SkeletalMeshComponent` are renderer bridge components for scene nodes.
+- Mesh asset data and per-instance runtime render state are intentionally separated:
+  - `Mesh` is shared asset data.
+  - `MeshRenderObject` (via `IRenderObject`) stores per-instance materials, pass flags, transforms, and animation state.
+- This split prevents per-instance mesh duplication and allows many nodes to share one mesh/vertex stream set while keeping independent render behavior.
 
 ## Audio Model
 

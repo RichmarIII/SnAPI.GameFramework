@@ -132,7 +132,11 @@ EExampleProfilerMode ResolveExampleProfilerMode()
 void ConfigureProfilerStreamForMultiplayerExample()
 {
     auto RuntimeProfilerConfig = SnAPI::Profiler::Profiler::Get().GetConfig();
-    RuntimeProfilerConfig.PreserveOverflowEvents = true;
+    // Preserve-overflow has high runtime cost when scope volume exceeds the ring budget.
+    // Keep it opt-in for MultiplayerExample so profiling overhead stays predictable.
+    RuntimeProfilerConfig.PreserveOverflowEvents = false;
+    RuntimeProfilerConfig.PerThreadEventBufferCapacity =
+        std::max<std::uint32_t>(RuntimeProfilerConfig.PerThreadEventBufferCapacity, 131072u);
     if (const auto ParsedPreserve = ParseProfilerBooleanEnv(std::getenv("SNAPI_GF_PROFILER_PRESERVE_OVERFLOW_EVENTS")))
     {
         RuntimeProfilerConfig.PreserveOverflowEvents = *ParsedPreserve;

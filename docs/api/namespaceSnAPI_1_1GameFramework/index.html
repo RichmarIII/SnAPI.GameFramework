@@ -368,6 +368,8 @@
       
         
       
+        
+      
     
     
     
@@ -458,6 +460,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -887,7 +917,6 @@
 <li><strong>Type:</strong> SnAPI::GameFramework::IWorld</li>
 <li><strong>Type:</strong> SnAPI::GameFramework::JobSystem</li>
 <li><strong>Type:</strong> SnAPI::GameFramework::Level</li>
-<li><strong>Type:</strong> SnAPI::GameFramework::Vec3</li>
 <li><strong>Type:</strong> SnAPI::GameFramework::NodeGraph</li>
 <li><strong>Type:</strong> SnAPI::GameFramework::TObjectPool</li>
 <li><strong>Type:</strong> SnAPI::GameFramework::ObjectRegistry</li>
@@ -999,6 +1028,26 @@
 <div class="snapi-api-card">
 <h3 id="using-snapigameframeworkmethodinvoker-stdfunctiontexpectedvariantvoid-instance-stdspanconst-variant-args"><code>using SnAPI::GameFramework::MethodInvoker = std::function&lt;TExpected&lt;Variant&gt;(void* Instance, std::span&lt;const Variant&gt; Args)&gt;</code><a class="headerlink" href="#using-snapigameframeworkmethodinvoker-stdfunctiontexpectedvariantvoid-instance-stdspanconst-variant-args" title="Permanent link">&para;</a></h3>
 <p>Function type for reflected method invocation.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworkscalar-snapimathscalar"><code>using SnAPI::GameFramework::Scalar = SnAPI::Math::Scalar</code><a class="headerlink" href="#using-snapigameframeworkscalar-snapimathscalar" title="Permanent link">&para;</a></h3>
+<p>Canonical scalar type used by GameFramework math aliases.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworkvec3-snapimathvec3"><code>using SnAPI::GameFramework::Vec3 = SnAPI::Math::Vec3</code><a class="headerlink" href="#using-snapigameframeworkvec3-snapimathvec3" title="Permanent link">&para;</a></h3>
+<p>Canonical 3D vector type used across runtime and serialization.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworkquat-snapimathquat"><code>using SnAPI::GameFramework::Quat = SnAPI::Math::Quat</code><a class="headerlink" href="#using-snapigameframeworkquat-snapimathquat" title="Permanent link">&para;</a></h3>
+<p>Canonical quaternion type used for interop with systems that need quaternion rotation.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworktransform-snapimathtransform"><code>using SnAPI::GameFramework::Transform = SnAPI::Math::Transform</code><a class="headerlink" href="#using-snapigameframeworktransform-snapimathtransform" title="Permanent link">&para;</a></h3>
+<p>Canonical transform type (position + quaternion rotation).</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworkaabb-snapimathaabb"><code>using SnAPI::GameFramework::Aabb = SnAPI::Math::Aabb</code><a class="headerlink" href="#using-snapigameframeworkaabb-snapimathaabb" title="Permanent link">&para;</a></h3>
+<p>Canonical AABB type.</p>
 </div>
 <div class="snapi-api-card">
 <h3 id="using-snapigameframeworkscriptinstanceid-uint64_t"><code>using SnAPI::GameFramework::ScriptInstanceId = uint64_t</code><a class="headerlink" href="#using-snapigameframeworkscriptinstanceid-uint64_t" title="Permanent link">&para;</a></h3>
@@ -1193,46 +1242,6 @@
 <p><strong>Returns:</strong> Callable MethodInvoker.</p>
 </div>
 <div class="snapi-api-card">
-<h3 id="vec3-snapigameframeworkoperatorvec3-left-const-vec3-right"><code>Vec3 SnAPI::GameFramework::operator+(Vec3 Left, const Vec3 &amp;Right)</code><a class="headerlink" href="#vec3-snapigameframeworkoperatorvec3-left-const-vec3-right" title="Permanent link">&para;</a></h3>
-<p>Vector addition.</p>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Left</code>: Left-hand vector.</li>
-<li><code>Right</code>: Right-hand vector.</li>
-</ul>
-<p><strong>Returns:</strong> Sum of the two vectors.</p>
-</div>
-<div class="snapi-api-card">
-<h3 id="vec3-snapigameframeworkoperator-vec3-left-const-vec3-right"><code>Vec3 SnAPI::GameFramework::operator-(Vec3 Left, const Vec3 &amp;Right)</code><a class="headerlink" href="#vec3-snapigameframeworkoperator-vec3-left-const-vec3-right" title="Permanent link">&para;</a></h3>
-<p>Vector subtraction.</p>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Left</code>: Left-hand vector.</li>
-<li><code>Right</code>: Right-hand vector.</li>
-</ul>
-<p><strong>Returns:</strong> Difference of the two vectors.</p>
-</div>
-<div class="snapi-api-card">
-<h3 id="vec3-snapigameframeworkoperatorvec3-left-float-scalar"><code>Vec3 SnAPI::GameFramework::operator*(Vec3 Left, float Scalar)</code><a class="headerlink" href="#vec3-snapigameframeworkoperatorvec3-left-float-scalar" title="Permanent link">&para;</a></h3>
-<p>Scalar multiplication (vector * scalar).</p>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Left</code>: Vector.</li>
-<li><code>Scalar</code>: Scalar multiplier.</li>
-</ul>
-<p><strong>Returns:</strong> Scaled vector.</p>
-</div>
-<div class="snapi-api-card">
-<h3 id="vec3-snapigameframeworkoperatorfloat-scalar-vec3-right"><code>Vec3 SnAPI::GameFramework::operator*(float Scalar, Vec3 Right)</code><a class="headerlink" href="#vec3-snapigameframeworkoperatorfloat-scalar-vec3-right" title="Permanent link">&para;</a></h3>
-<p>Scalar multiplication (scalar * vector).</p>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Scalar</code>: Scalar multiplier.</li>
-<li><code>Right</code>: Vector.</li>
-</ul>
-<p><strong>Returns:</strong> Scaled vector.</p>
-</div>
-<div class="snapi-api-card">
 <h3 id="texpected-void-snapigameframeworkserializenodegraphpayloadconst-nodegraphpayload-payload-stdvector-uint8_t-outbytes"><code>TExpected&lt; void &gt; SnAPI::GameFramework::SerializeNodeGraphPayload(const NodeGraphPayload &amp;Payload, std::vector&lt; uint8_t &gt; &amp;OutBytes)</code><a class="headerlink" href="#texpected-void-snapigameframeworkserializenodegraphpayloadconst-nodegraphpayload-payload-stdvector-uint8_t-outbytes" title="Permanent link">&para;</a></h3>
 <p>Serialize a NodeGraphPayload to bytes.</p>
 <p><strong>Parameters</strong></p>
@@ -1386,10 +1395,10 @@
 <h3 id="snapigameframeworkbase-nodegraph-constructor-register"><code>SnAPI::GameFramework::Base&lt; NodeGraph &gt;() .Constructor&lt;&gt;() .Register()))</code><a class="headerlink" href="#snapigameframeworkbase-nodegraph-constructor-register" title="Permanent link">&para;</a></h3>
 </div>
 <div class="snapi-api-card">
-<h3 id="snapigameframeworkfieldposition-transformcomponentposition-fieldrotation"><code>SnAPI::GameFramework::Field("Position", &amp;TransformComponent::Position) .Field("Rotation"</code><a class="headerlink" href="#snapigameframeworkfieldposition-transformcomponentposition-fieldrotation" title="Permanent link">&para;</a></h3>
+<h3 id="snapigameframeworkfieldposition-transformcomponentposition-efieldflagbitsreplication-fieldrotation"><code>SnAPI::GameFramework::Field("Position", &amp;TransformComponent::Position, EFieldFlagBits::Replication) .Field("Rotation"</code><a class="headerlink" href="#snapigameframeworkfieldposition-transformcomponentposition-efieldflagbitsreplication-fieldrotation" title="Permanent link">&para;</a></h3>
 </div>
 <div class="snapi-api-card">
-<h3 id="transformcomponentrotation-snapigameframeworkfieldscale-transformcomponentscale-constructor-register"><code>&amp;TransformComponent::Rotation SnAPI::GameFramework::Field("Scale", &amp;TransformComponent::Scale) .Constructor&lt;&gt;() .Register()))</code><a class="headerlink" href="#transformcomponentrotation-snapigameframeworkfieldscale-transformcomponentscale-constructor-register" title="Permanent link">&para;</a></h3>
+<h3 id="efieldflagbitsreplication-snapigameframeworkfieldscale-transformcomponentscale-efieldflagbitsreplication-constructor-register"><code>EFieldFlagBits::Replication SnAPI::GameFramework::Field("Scale", &amp;TransformComponent::Scale, EFieldFlagBits::Replication) .Constructor&lt;&gt;() .Register()))</code><a class="headerlink" href="#efieldflagbitsreplication-snapigameframeworkfieldscale-transformcomponentscale-efieldflagbitsreplication-constructor-register" title="Permanent link">&para;</a></h3>
 </div>
 <div class="snapi-api-card">
 <h3 id="snapigameframeworkfieldscriptmodule-scriptcomponentscriptmodule-fieldscripttype"><code>SnAPI::GameFramework::Field("ScriptModule", &amp;ScriptComponent::ScriptModule) .Field("ScriptType"</code><a class="headerlink" href="#snapigameframeworkfieldscriptmodule-scriptcomponentscriptmodule-fieldscripttype" title="Permanent link">&para;</a></h3>

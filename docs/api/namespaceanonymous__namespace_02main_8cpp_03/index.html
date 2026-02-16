@@ -368,6 +368,8 @@
       
         
       
+        
+      
     
     
     
@@ -458,6 +460,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -858,13 +888,6 @@
 
 
 <h1 id="anonymous_namespacemaincpp">anonymous_namespace{main.cpp}<a class="headerlink" href="#anonymous_namespacemaincpp" title="Permanent link">&para;</a></h1>
-<h2 id="contents">Contents<a class="headerlink" href="#contents" title="Permanent link">&para;</a></h2>
-<ul>
-<li><strong>Type:</strong> anonymous_namespace{main.cpp}::Args</li>
-<li><strong>Type:</strong> anonymous_namespace{main.cpp}::SessionListener</li>
-<li><strong>Type:</strong> anonymous_namespace{main.cpp}::ReplicatedTransformComponent</li>
-<li><strong>Type:</strong> anonymous_namespace{main.cpp}::MovingCube</li>
-</ul>
 <h2 id="type-aliases">Type Aliases<a class="headerlink" href="#type-aliases" title="Permanent link">&para;</a></h2>
 <div class="snapi-api-card">
 <h3 id="using-anonymous_namespacemaincppclock-stdchronosteady_clock"><code>using anonymous_namespace{main.cpp}::Clock = std::chrono::steady_clock</code><a class="headerlink" href="#using-anonymous_namespacemaincppclock-stdchronosteady_clock" title="Permanent link">&para;</a></h3>
@@ -900,105 +923,6 @@
 <li><code>ExpectedScore</code>: </li>
 <li><code>ExpectedLabel</code>: </li>
 <li><code>ExpectedTint</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="void-anonymous_namespacemaincppinitializeworkingdirectoryconst-char-exeargv0"><code>void anonymous_namespace{main.cpp}::InitializeWorkingDirectory(const char *ExeArgv0)</code><a class="headerlink" href="#void-anonymous_namespacemaincppinitializeworkingdirectoryconst-char-exeargv0" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>ExeArgv0</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="stdstring-anonymous_namespacemaincppendpointtostringconst-netendpoint-endpoint"><code>std::string anonymous_namespace{main.cpp}::EndpointToString(const NetEndpoint &amp;Endpoint)</code><a class="headerlink" href="#stdstring-anonymous_namespacemaincppendpointtostringconst-netendpoint-endpoint" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Endpoint</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="const-char-anonymous_namespacemaincppdisconnectreasontostringedisconnectreason-reason"><code>const char * anonymous_namespace{main.cpp}::DisconnectReasonToString(EDisconnectReason Reason)</code><a class="headerlink" href="#const-char-anonymous_namespacemaincppdisconnectreasontostringedisconnectreason-reason" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Reason</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="void-anonymous_namespacemaincppprintconnectiondumpconst-stdstring-label-const-netconnectiondump-dump-float-timeseconds"><code>void anonymous_namespace{main.cpp}::PrintConnectionDump(const std::string &amp;Label, const NetConnectionDump &amp;Dump, float TimeSeconds)</code><a class="headerlink" href="#void-anonymous_namespacemaincppprintconnectiondumpconst-stdstring-label-const-netconnectiondump-dump-float-timeseconds" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Label</code>: </li>
-<li><code>Dump</code>: </li>
-<li><code>TimeSeconds</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="void-anonymous_namespacemaincppprintusageconst-char-exe"><code>void anonymous_namespace{main.cpp}::PrintUsage(const char *Exe)</code><a class="headerlink" href="#void-anonymous_namespacemaincppprintusageconst-char-exe" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Exe</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="bool-anonymous_namespacemaincppparseargsint-argc-char-argv-args-out"><code>bool anonymous_namespace{main.cpp}::ParseArgs(int argc, char **argv, Args &amp;Out)</code><a class="headerlink" href="#bool-anonymous_namespacemaincppparseargsint-argc-char-argv-args-out" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>argc</code>: </li>
-<li><code>argv</code>: </li>
-<li><code>Out</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="anonymous_namespacemaincppfieldposition-replicatedtransformcomponentposition-efieldflagbitsreplication-fieldrotation"><code>anonymous_namespace{main.cpp}::Field("Position", &amp;ReplicatedTransformComponent::Position, EFieldFlagBits::Replication) .Field("Rotation"</code><a class="headerlink" href="#anonymous_namespacemaincppfieldposition-replicatedtransformcomponentposition-efieldflagbitsreplication-fieldrotation" title="Permanent link">&para;</a></h3>
-</div>
-<div class="snapi-api-card">
-<h3 id="efieldflagbitsreplication-anonymous_namespacemaincppfieldscale-replicatedtransformcomponentscale-efieldflagbitsreplication-constructor-register"><code>EFieldFlagBits::Replication anonymous_namespace{main.cpp}::Field("Scale", &amp;ReplicatedTransformComponent::Scale, EFieldFlagBits::Replication) .Constructor&lt;&gt;() .Register()))</code><a class="headerlink" href="#efieldflagbitsreplication-anonymous_namespacemaincppfieldscale-replicatedtransformcomponentscale-efieldflagbitsreplication-constructor-register" title="Permanent link">&para;</a></h3>
-</div>
-<div class="snapi-api-card">
-<h3 id="void-anonymous_namespacemaincppregisterexampletypes"><code>void anonymous_namespace{main.cpp}::RegisterExampleTypes()</code><a class="headerlink" href="#void-anonymous_namespacemaincppregisterexampletypes" title="Permanent link">&para;</a></h3>
-</div>
-<div class="snapi-api-card">
-<h3 id="netconfig-anonymous_namespacemaincppmakenetconfig"><code>NetConfig anonymous_namespace{main.cpp}::MakeNetConfig()</code><a class="headerlink" href="#netconfig-anonymous_namespacemaincppmakenetconfig" title="Permanent link">&para;</a></h3>
-</div>
-<div class="snapi-api-card">
-<h3 id="udptransportconfig-anonymous_namespacemaincppmakeudptransportconfig"><code>UdpTransportConfig anonymous_namespace{main.cpp}::MakeUdpTransportConfig()</code><a class="headerlink" href="#udptransportconfig-anonymous_namespacemaincppmakeudptransportconfig" title="Permanent link">&para;</a></h3>
-</div>
-<div class="snapi-api-card">
-<h3 id="gameruntimesettings-anonymous_namespacemaincppmakeruntimesettingsconst-args-parsed-bool-servermode-sessionlistener-listener"><code>GameRuntimeSettings anonymous_namespace{main.cpp}::MakeRuntimeSettings(const Args &amp;Parsed, bool ServerMode, SessionListener *Listener)</code><a class="headerlink" href="#gameruntimesettings-anonymous_namespacemaincppmakeruntimesettingsconst-args-parsed-bool-servermode-sessionlistener-listener" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Parsed</code>: </li>
-<li><code>ServerMode</code>: </li>
-<li><code>Listener</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="void-anonymous_namespacemaincppdrawcubefloat-size"><code>void anonymous_namespace{main.cpp}::DrawCube(float Size)</code><a class="headerlink" href="#void-anonymous_namespacemaincppdrawcubefloat-size" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Size</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="void-anonymous_namespacemaincppsetupcameraint-width-int-height"><code>void anonymous_namespace{main.cpp}::SetupCamera(int Width, int Height)</code><a class="headerlink" href="#void-anonymous_namespacemaincppsetupcameraint-width-int-height" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Width</code>: </li>
-<li><code>Height</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="int-anonymous_namespacemaincpprunserverconst-args-parsed"><code>int anonymous_namespace{main.cpp}::RunServer(const Args &amp;Parsed)</code><a class="headerlink" href="#int-anonymous_namespacemaincpprunserverconst-args-parsed" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Parsed</code>:</li>
-</ul>
-</div>
-<div class="snapi-api-card">
-<h3 id="int-anonymous_namespacemaincpprunclientconst-args-parsed"><code>int anonymous_namespace{main.cpp}::RunClient(const Args &amp;Parsed)</code><a class="headerlink" href="#int-anonymous_namespacemaincpprunclientconst-args-parsed" title="Permanent link">&para;</a></h3>
-<p><strong>Parameters</strong></p>
-<ul>
-<li><code>Parsed</code>:</li>
 </ul>
 </div>
 <div class="snapi-api-card">

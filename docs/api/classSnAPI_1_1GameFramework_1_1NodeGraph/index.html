@@ -368,6 +368,8 @@
       
         
       
+        
+      
     
     
     
@@ -458,6 +460,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -901,6 +931,10 @@
 <p>Node handles queued for end-of-frame destruction.</p>
 </div>
 <div class="snapi-api-card">
+<h3 id="stdunordered_setuuid-uuidhash-snapigameframeworknodegraphm_pendingdestroyids"><code>std::unordered_set&lt;Uuid, UuidHash&gt; SnAPI::GameFramework::NodeGraph::m_pendingDestroyIds</code><a class="headerlink" href="#stdunordered_setuuid-uuidhash-snapigameframeworknodegraphm_pendingdestroyids" title="Permanent link">&para;</a></h3>
+<p>Fast lookup for nodes already queued for deferred destruction.</p>
+</div>
+<div class="snapi-api-card">
 <h3 id="size_t-snapigameframeworknodegraphm_relevancecursor"><code>size_t SnAPI::GameFramework::NodeGraph::m_relevanceCursor</code><a class="headerlink" href="#size_t-snapigameframeworknodegraphm_relevancecursor" title="Permanent link">&para;</a></h3>
 <p>Cursor for incremental relevance sweeps when budgeted evaluation is enabled.</p>
 </div>
@@ -1160,6 +1194,15 @@
 <p><strong>Parameters</strong></p>
 <ul>
 <li><code>Handle</code>: </li>
+</ul>
+<p><strong>Returns:</strong> True if node is active and relevant.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworknodegraphisnodeactiveconst-basenode-node-const"><code>bool SnAPI::GameFramework::NodeGraph::IsNodeActive(const BaseNode &amp;Node) const</code><a class="headerlink" href="#bool-snapigameframeworknodegraphisnodeactiveconst-basenode-node-const" title="Permanent link">&para;</a></h3>
+<p>Check whether an already-resolved node is active for ticking.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Node</code>: Node reference.</li>
 </ul>
 <p><strong>Returns:</strong> True if node is active and relevant.</p>
 </div>

@@ -91,6 +91,17 @@ Fast physics-only test command:
 ctest --test-dir build/debug --output-on-failure -R "Physics|CharacterMovementController"
 ```
 
+If you change renderer integration code:
+
+- build with renderer source configured (`SNAPI_GF_RENDERER_SOURCE_DIR=...`)
+- run `MultiplayerExample --local` and verify:
+    - window/bootstrap succeeds
+    - camera is active and scene is visible
+    - static/skeletal mesh components render with expected pass/shadow behavior
+- verify no visual regression in frame lifecycle:
+    - `World::EndFrame()` still drives renderer submit/present
+    - temporal effects remain stable (no previous-frame state regressions)
+
 If you change component lifecycle code:
 
 - run `NodeGraphTests` and `HandleTests`

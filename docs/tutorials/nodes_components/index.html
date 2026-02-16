@@ -16,7 +16,7 @@
         <link rel="prev" href="../worlds_graphs/">
       
       
-        <link rel="next" href="../physics/">
+        <link rel="next" href="../renderer/">
       
       
         
@@ -374,6 +374,8 @@
       
         
       
+        
+      
     
     
     
@@ -612,10 +614,49 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#10-built-in-renderer-components" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        10. Built-In Renderer Components
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1192,7 +1233,42 @@
 <span class="n">Body</span><span class="o">-&gt;</span><span class="n">RecreateBody</span><span class="p">();</span><span class="w">              </span><span class="c1">// apply edited settings immediately</span>
 </code></pre></div>
 <p>For full physics flow (world bootstrap, stepping policy, character movement, queries/events), continue to the physics tutorials.</p>
-<p>Next: <a href="../physics/">Physics System and Components</a></p>
+<h2 id="10-built-in-renderer-components">10. Built-In Renderer Components<a class="headerlink" href="#10-built-in-renderer-components" title="Permanent link">&para;</a></h2>
+<p>When renderer integration is compiled in (<code>SNAPI_GF_ENABLE_RENDERER</code>), GameFramework also provides renderer bridge components:</p>
+<ul>
+<li><code>CameraComponent</code><ul>
+<li>Owns a renderer camera and can become world active camera.</li>
+<li>Can pull pose from sibling <code>TransformComponent</code> each tick.</li>
+</ul>
+</li>
+<li><code>StaticMeshComponent</code><ul>
+<li>Loads mesh asset data and creates per-instance render-object state.</li>
+<li>Supports visibility/shadow toggles and shared material instance overrides.</li>
+</ul>
+</li>
+<li><code>SkeletalMeshComponent</code><ul>
+<li>Same asset/render-object pattern with rigid animation playback helpers.</li>
+</ul>
+</li>
+</ul>
+<p>Minimal setup:</p>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">VisualResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;VisualActor&quot;</span><span class="p">);</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Visual</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">VisualResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Visual</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">auto</span><span class="w"> </span><span class="n">T</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Visual</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="n">T</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
+
+<span class="k">auto</span><span class="w"> </span><span class="n">Mesh</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Visual</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">StaticMeshComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">MeshPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;assets/cube.obj&quot;</span><span class="p">;</span>
+<span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Visible</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">CastShadows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+</code></pre></div>
+<p>For renderer bootstrap, camera ownership, and the post-refactor <code>Mesh</code> vs <code>MeshRenderObject</code> model, read the renderer tutorial next.</p>
+<p>Next: <a href="../renderer/">Renderer Integration and Mesh Components</a></p>
 
 
 

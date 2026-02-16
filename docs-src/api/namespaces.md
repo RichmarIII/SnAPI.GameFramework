@@ -11,7 +11,6 @@
 - [SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02Serialization_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{TypeRegistry.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02TypeRegistry_8cpp_03.md)
 - [SnAPI::GameFramework::detail](namespaceSnAPI_1_1GameFramework_1_1detail.md)
-- [SnAPI::Networking](namespaceSnAPI_1_1Networking.md)
 - [anonymous_namespace{main.cpp}](namespaceanonymous__namespace_02main_8cpp_03.md)
 - [cereal](namespacecereal.md)
 - [std](namespacestd.md)

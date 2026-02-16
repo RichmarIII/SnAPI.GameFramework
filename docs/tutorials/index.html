@@ -390,6 +390,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#renderer-refactor-context-2026-02-15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Renderer Refactor Context (2026-02-15)
+      
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -433,6 +444,8 @@
   
     
     
+      
+        
       
         
       
@@ -542,6 +555,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -946,6 +987,7 @@
 <p>You will build a mental model in this order:</p>
 <ol>
 <li>Runtime structure (<code>World -&gt; Level -&gt; NodeGraph -&gt; Node -&gt; Component</code>)</li>
+<li>Renderer ownership and render-object flow</li>
 <li>Physics ownership and simulation flow</li>
 <li>Reflection registration (how types become visible to the engine)</li>
 <li>Serialization and asset packaging</li>
@@ -980,6 +1022,7 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 <ol>
 <li><a href="worlds_graphs/">Worlds and Graphs</a></li>
 <li><a href="nodes_components/">Nodes and Components</a></li>
+<li><a href="renderer/">Renderer Integration and Mesh Components</a></li>
 <li><a href="physics/">Physics System and Components</a></li>
 <li><a href="physics_queries_events/">Physics Queries and Events</a></li>
 <li><a href="reflection_serialization/">Reflection and Serialization</a></li>
@@ -1004,7 +1047,9 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 <li>without a codec, only nested reflected fields marked for replication are serialized.</li>
 </ul>
 </li>
-<li><code>World</code> owns subsystem runtime (networking/audio/physics), and <code>GameRuntime</code> orchestrates world update phases.</li>
+<li><code>World</code> owns subsystem runtime (networking/audio/physics/renderer), and <code>GameRuntime</code> orchestrates world update phases.</li>
+<li>Renderer follows the same world-owned subsystem pattern (<code>World::Renderer()</code>), and render submit/present is driven by <code>World::EndFrame()</code>.</li>
+<li>Mesh assets are data-only; per-instance render behavior lives on render objects (<code>MeshRenderObject</code> via <code>IRenderObject</code>).</li>
 <li>Physics stepping can be configured:<ul>
 <li>fixed tick (<code>World::FixedTick</code>) for deterministic gameplay behavior.</li>
 <li>variable tick (<code>World::Tick</code>) for simple real-time simulation paths.</li>
@@ -1017,8 +1062,11 @@ cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 </li>
 <li>Transport <code>pkt_lost</code> counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with <code>pending_rel</code>.</li>
 <li>Destruction is deferred to <code>EndFrame()</code> to keep handles stable during a frame.</li>
+<li><code>CameraComponent</code>, <code>StaticMeshComponent</code>, and <code>SkeletalMeshComponent</code> are only available when renderer integration is compiled in.</li>
 </ul>
 <p>With that baseline, start with <code>Worlds and Graphs</code>.</p>
+<h2 id="renderer-refactor-context-2026-02-15">Renderer Refactor Context (2026-02-15)<a class="headerlink" href="#renderer-refactor-context-2026-02-15" title="Permanent link">&para;</a></h2>
+<p>Renderer docs/tutorials here track the post-refactor model where <code>Mesh</code> is asset data and runtime instance state is represented by <code>IRenderObject</code>/<code>MeshRenderObject</code>.</p>
 
 
 

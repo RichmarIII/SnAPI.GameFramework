@@ -440,6 +440,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#rendering-model" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rendering Model
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#audio-model" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -466,6 +477,8 @@
   
     
     
+      
+        
       
         
       
@@ -575,6 +588,34 @@
     
   
     Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration and Mesh Components
   
 
     
@@ -980,11 +1021,11 @@
 <li><strong>Runtime hierarchy</strong>: <code>World -&gt; Level -&gt; NodeGraph -&gt; BaseNode</code></li>
 <li><strong>Type metadata</strong>: <code>TypeRegistry</code>, <code>TTypeBuilder</code>, and cached <code>TypeId</code></li>
 <li><strong>Data transport</strong>: reflection serialization, asset payloads, and network replication</li>
-<li><strong>World-owned simulation systems</strong>: networking, audio, and physics adapters</li>
+<li><strong>World-owned simulation systems</strong>: networking, audio, physics, and renderer adapters</li>
 </ol>
 <h2 id="runtime-model">Runtime Model<a class="headerlink" href="#runtime-model" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>World</code> is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system).</li>
+<li><code>World</code> is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system, renderer system).</li>
 <li><code>World</code> is also responsible for subsystem frame work (networking pump + audio update + optional physics step).</li>
 <li><code>Level</code> and <code>NodeGraph</code> are nodes, so graphs can be nested.</li>
 <li><code>BaseNode</code> owns hierarchy relationships and component type bookkeeping.</li>
@@ -1034,6 +1075,18 @@
 <li>event draining (<code>DrainEvents(...)</code>).</li>
 </ul>
 </li>
+</ul>
+<h2 id="rendering-model">Rendering Model<a class="headerlink" href="#rendering-model" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>World</code> owns one <code>RendererSystem</code> when renderer integration is compiled in.</li>
+<li><code>World::EndFrame()</code> delegates to <code>RendererSystem::EndFrame()</code> after graph <code>EndFrame()</code>.</li>
+<li><code>RendererSystem</code> owns renderer bootstrap/lifecycle and optional default pass graph creation.</li>
+<li><code>CameraComponent</code> manages world active camera selection and transform sync.</li>
+<li><code>StaticMeshComponent</code> and <code>SkeletalMeshComponent</code> are renderer bridge components for scene nodes.</li>
+<li>Mesh asset data and per-instance runtime render state are intentionally separated:</li>
+<li><code>Mesh</code> is shared asset data.</li>
+<li><code>MeshRenderObject</code> (via <code>IRenderObject</code>) stores per-instance materials, pass flags, transforms, and animation state.</li>
+<li>This split prevents per-instance mesh duplication and allows many nodes to share one mesh/vertex stream set while keeping independent render behavior.</li>
 </ul>
 <h2 id="audio-model">Audio Model<a class="headerlink" href="#audio-model" title="Permanent link">&para;</a></h2>
 <ul>
