@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include "GameThreading.h"
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -61,7 +62,7 @@ public:
     static void Register()
     {
         const TypeId PolicyId = StaticTypeId<PolicyT>();
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         if (m_policies.find(PolicyId) != m_policies.end())
         {
             return;
@@ -76,7 +77,7 @@ public:
      */
     static const PolicyInfo* Find(const TypeId& PolicyId)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_policies.find(PolicyId);
         if (It == m_policies.end())
         {
@@ -100,7 +101,7 @@ private:
         return Typed->Evaluate(Context);
     }
 
-    static inline std::mutex m_mutex{}; /**< @brief Protects policy map. */
+    static inline GameMutex m_mutex{}; /**< @brief Protects policy map. */
     static inline std::unordered_map<TypeId, PolicyInfo, UuidHash> m_policies{}; /**< @brief Policy map by TypeId. */
 };
 

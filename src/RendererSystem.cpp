@@ -1,4 +1,5 @@
 #include "RendererSystem.h"
+#include "GameThreading.h"
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
@@ -104,7 +105,7 @@ RendererSystem::~RendererSystem()
 
 RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
 {
-    std::lock_guard<std::mutex> Lock(Other.m_mutex);
+    GameLockGuard Lock(Other.m_mutex);
     m_settings = std::move(Other.m_settings);
     m_graphics = Other.m_graphics;
     m_window = std::move(Other.m_window);
@@ -178,6 +179,24 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     return *this;
 }
 
+TaskHandle RendererSystem::EnqueueTask(WorkTask InTask, CompletionTask OnComplete)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    return m_taskQueue.EnqueueTask(std::move(InTask), std::move(OnComplete));
+}
+
+void RendererSystem::EnqueueThreadTask(std::function<void()> InTask)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    m_taskQueue.EnqueueThreadTask(std::move(InTask));
+}
+
+void RendererSystem::ExecuteQueuedTasks()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    m_taskQueue.ExecuteQueuedTasks(*this, m_mutex);
+}
+
 bool RendererSystem::Initialize()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
@@ -187,7 +206,7 @@ bool RendererSystem::Initialize()
 bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (m_initialized && m_graphics)
     {
         return true;
@@ -353,49 +372,49 @@ void RendererSystem::ApplyOutOfMemoryFallbackSettings()
 void RendererSystem::Shutdown()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     ShutdownUnlocked();
 }
 
 bool RendererSystem::IsInitialized() const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_initialized && m_graphics != nullptr;
 }
 
 SnAPI::Graphics::VulkanGraphicsAPI* RendererSystem::Graphics()
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_graphics;
 }
 
 const SnAPI::Graphics::VulkanGraphicsAPI* RendererSystem::Graphics() const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_graphics;
 }
 
 SnAPI::Graphics::WindowBase* RendererSystem::Window()
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_window.get();
 }
 
 const SnAPI::Graphics::WindowBase* RendererSystem::Window() const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_window.get();
 }
 
 bool RendererSystem::HasOpenWindow() const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_window && m_window->IsOpen();
 }
 
 bool RendererSystem::SetActiveCamera(SnAPI::Graphics::ICamera* Camera)
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics)
     {
         return false;
@@ -406,14 +425,14 @@ bool RendererSystem::SetActiveCamera(SnAPI::Graphics::ICamera* Camera)
 
 SnAPI::Graphics::ICamera* RendererSystem::ActiveCamera() const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_graphics ? m_graphics->ActiveCamera() : nullptr;
 }
 
 bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     const auto SharedRenderObject = RenderObject.lock();
     if (!m_graphics || !SharedRenderObject)
     {
@@ -438,7 +457,7 @@ bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::I
 bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics || !EnsureDefaultMaterials())
     {
         return false;
@@ -457,7 +476,7 @@ bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& Rende
 
 std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultGBufferMaterial()
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics || !EnsureDefaultMaterials())
     {
         return {};
@@ -467,7 +486,7 @@ std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultGBufferMateria
 
 std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultShadowMaterial()
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics || !EnsureDefaultMaterials())
     {
         return {};
@@ -478,7 +497,7 @@ std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultShadowMaterial
 bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, const bool Visible, const bool CastShadows)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics)
     {
         return false;
@@ -499,14 +518,14 @@ bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject&
 bool RendererSystem::RecreateSwapChain()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return RecreateSwapChainForCurrentWindowUnlocked();
 }
 
 bool RendererSystem::LoadDefaultFont(const std::string& FontPath, const std::uint32_t FontSize)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics)
     {
         return false;
@@ -531,7 +550,7 @@ bool RendererSystem::LoadDefaultFont(const std::string& FontPath, const std::uin
 bool RendererSystem::QueueText(std::string Text, const float X, const float Y)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics || Text.empty())
     {
         return false;
@@ -547,14 +566,16 @@ bool RendererSystem::QueueText(std::string Text, const float X, const float Y)
 
 bool RendererSystem::HasDefaultFont() const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return IsFontRenderable(m_defaultFont);
 }
 
 void RendererSystem::EndFrame()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
+    GameLockGuard Lock(m_mutex);
     if (!m_graphics)
     {
         return;

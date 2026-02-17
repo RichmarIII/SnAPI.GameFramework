@@ -1,12 +1,17 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
+#include "GameThreading.h"
 #include "IWorld.h"
 #include "JobSystem.h"
 #include "Level.h"
 #include "NodeGraph.h"
+#if defined(SNAPI_GF_ENABLE_INPUT)
+#include "InputSystem.h"
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 #include "AudioSystem.h"
 #endif
@@ -29,17 +34,20 @@ namespace SnAPI::GameFramework
  * `World` is the top-level runtime orchestration object:
  * - derives from `NodeGraph` for hierarchical node traversal
  * - implements `IWorld` for level/subsystem contracts
- * - owns subsystem instances (job system, optional audio, optional networking)
- *   and optional physics
+ * - owns subsystem instances (job system + optional input/audio/networking/
+ *   physics/renderer adapters)
  *
  * Responsibility boundaries:
  * - world controls frame lifecycle and end-of-frame flush
  * - levels are represented as child nodes/graphs under the world
  * - nodes/components can query world context through `Owner()->World()`
  */
-class World : public NodeGraph, public IWorld
+class World : public NodeGraph, public IWorld, public ITaskDispatcher
 {
 public:
+    using WorkTask = std::function<void(World&)>;
+    using CompletionTask = std::function<void(const TaskHandle&)>;
+
     /** @brief Stable type name for reflection. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::World";
 
@@ -59,9 +67,30 @@ public:
     World& operator=(World&&) noexcept = default;
 
     /**
+     * @brief Enqueue work on the world (game) thread.
+     * @param InTask Work callback executed on world-thread affinity.
+     * @param OnComplete Optional completion callback marshaled to caller dispatcher.
+     * @return Task handle for wait/cancel polling.
+     */
+    TaskHandle EnqueueTask(WorkTask InTask, CompletionTask OnComplete = {});
+
+    /**
+     * @brief Enqueue a generic thread task for dispatcher marshalling.
+     * @param InTask Callback to execute on the world thread.
+     */
+    void EnqueueThreadTask(std::function<void()> InTask) override;
+
+    /**
+     * @brief Execute all queued tasks on the world thread.
+     */
+    void ExecuteQueuedTasks();
+
+    /**
      * @brief Per-frame tick.
      * @param DeltaSeconds Time since last tick.
      * @remarks
+     * When input is enabled and initialized, this pumps one input frame before
+     * node tick traversal so gameplay code can consume current frame state.
      * When networking is enabled and a session is attached, this pumps the
      * session before graph traversal.
      * When audio is enabled, this updates the world audio subsystem after
@@ -112,6 +141,19 @@ public:
      * @remarks Current implementation is minimal but provides a stable integration point.
      */
     JobSystem& Jobs();
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    /**
+     * @brief Access the input system for this world.
+     * @return Reference to InputSystem.
+     */
+    InputSystem& Input() override;
+    /**
+     * @brief Access the input system for this world (const).
+     * @return Const reference to InputSystem.
+     */
+    const InputSystem& Input() const override;
+#endif
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     /**
@@ -166,7 +208,12 @@ public:
 #endif
 
 private:
+    mutable GameMutex m_threadMutex{}; /**< @brief World-thread affinity guard for queued task execution. */
+    TSystemTaskQueue<World> m_taskQueue{}; /**< @brief Cross-thread task handoff queue for world-thread callbacks. */
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    InputSystem m_inputSystem{}; /**< @brief World-scoped input subsystem instance. */
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     AudioSystem m_audioSystem{}; /**< @brief World-scoped audio subsystem instance. */
 #endif

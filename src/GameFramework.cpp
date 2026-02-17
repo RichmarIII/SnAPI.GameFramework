@@ -12,6 +12,9 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include "CharacterMovementController.h"
 #include "ColliderComponent.h"
+#if defined(SNAPI_GF_ENABLE_INPUT)
+#include "InputComponent.h"
+#endif
 #include "RigidBodyComponent.h"
 #endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
@@ -183,6 +186,41 @@ SNAPI_REFLECT_TYPE(CharacterMovementController, (TTypeBuilder<CharacterMovementC
     .Constructor<>()
     .Register()));
 
+#if defined(SNAPI_GF_ENABLE_INPUT)
+
+SNAPI_REFLECT_TYPE(InputComponent::Settings, (TTypeBuilder<InputComponent::Settings>(InputComponent::Settings::kTypeName)
+    .Field("MovementEnabled", &InputComponent::Settings::MovementEnabled)
+    .Field("JumpEnabled", &InputComponent::Settings::JumpEnabled)
+    .Field("KeyboardEnabled", &InputComponent::Settings::KeyboardEnabled)
+    .Field("GamepadEnabled", &InputComponent::Settings::GamepadEnabled)
+    .Field("RequireInputFocus", &InputComponent::Settings::RequireInputFocus)
+    .Field("NormalizeMove", &InputComponent::Settings::NormalizeMove)
+    .Field("ClearMoveWhenUnavailable", &InputComponent::Settings::ClearMoveWhenUnavailable)
+    .Field("MoveScale", &InputComponent::Settings::MoveScale)
+    .Field("GamepadDeadzone", &InputComponent::Settings::GamepadDeadzone)
+    .Field("InvertGamepadY", &InputComponent::Settings::InvertGamepadY)
+    .Field("MoveForwardKey", &InputComponent::Settings::MoveForwardKey)
+    .Field("MoveBackwardKey", &InputComponent::Settings::MoveBackwardKey)
+    .Field("MoveLeftKey", &InputComponent::Settings::MoveLeftKey)
+    .Field("MoveRightKey", &InputComponent::Settings::MoveRightKey)
+    .Field("JumpKey", &InputComponent::Settings::JumpKey)
+    .Field("MoveGamepadXAxis", &InputComponent::Settings::MoveGamepadXAxis)
+    .Field("MoveGamepadYAxis", &InputComponent::Settings::MoveGamepadYAxis)
+    .Field("JumpGamepadButton", &InputComponent::Settings::JumpGamepadButton)
+    .Field("PreferredGamepad", &InputComponent::Settings::PreferredGamepad)
+    .Field("UseAnyGamepadWhenPreferredMissing", &InputComponent::Settings::UseAnyGamepadWhenPreferredMissing)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(InputComponent, (TTypeBuilder<InputComponent>(InputComponent::kTypeName)
+    .Field("Settings",
+           &InputComponent::EditSettings,
+           &InputComponent::GetSettings)
+    .Constructor<>()
+    .Register()));
+
+#endif // SNAPI_GF_ENABLE_INPUT
+
 #endif // SNAPI_GF_ENABLE_PHYSICS
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
@@ -287,14 +325,28 @@ void RegisterBuiltinTypes()
     RegisterPlain(TTypeNameV<SnAPI::Physics::EBodyType>, sizeof(SnAPI::Physics::EBodyType), alignof(SnAPI::Physics::EBodyType));
     RegisterPlain(TTypeNameV<SnAPI::Physics::EShapeType>, sizeof(SnAPI::Physics::EShapeType), alignof(SnAPI::Physics::EShapeType));
 #endif
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    RegisterPlain(TTypeNameV<SnAPI::Input::EKey>, sizeof(SnAPI::Input::EKey), alignof(SnAPI::Input::EKey));
+    RegisterPlain(TTypeNameV<SnAPI::Input::EGamepadAxis>, sizeof(SnAPI::Input::EGamepadAxis), alignof(SnAPI::Input::EGamepadAxis));
+    RegisterPlain(TTypeNameV<SnAPI::Input::EGamepadButton>, sizeof(SnAPI::Input::EGamepadButton), alignof(SnAPI::Input::EGamepadButton));
+    RegisterPlain(TTypeNameV<SnAPI::Input::DeviceId>, sizeof(SnAPI::Input::DeviceId), alignof(SnAPI::Input::DeviceId));
+#endif
 
     RegisterSerializationDefaults();
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
+#if defined(SNAPI_GF_ENABLE_PHYSICS) || defined(SNAPI_GF_ENABLE_INPUT)
     auto& ValueRegistry = ValueCodecRegistry::Instance();
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
     ValueRegistry.Register<ECollisionFilterBits>();
     ValueRegistry.Register<CollisionFilterFlags>();
     ValueRegistry.Register<SnAPI::Physics::EBodyType>();
     ValueRegistry.Register<SnAPI::Physics::EShapeType>();
+#endif
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    ValueRegistry.Register<SnAPI::Input::EKey>();
+    ValueRegistry.Register<SnAPI::Input::EGamepadAxis>();
+    ValueRegistry.Register<SnAPI::Input::EGamepadButton>();
+    ValueRegistry.Register<SnAPI::Input::DeviceId>();
 #endif
 }
 

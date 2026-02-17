@@ -1,4 +1,5 @@
 #include "PhysicsSystem.h"
+#include "GameThreading.h"
 #include "Profiling.h"
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
@@ -15,7 +16,7 @@ namespace SnAPI::GameFramework
 PhysicsSystem::PhysicsSystem(PhysicsSystem&& Other) noexcept
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(Other.m_mutex);
+    GameLockGuard Lock(Other.m_mutex);
     m_scene = std::move(Other.m_scene);
     m_settings = std::move(Other.m_settings);
     m_pendingEvents = std::move(Other.m_pendingEvents);
@@ -75,7 +76,7 @@ Error PhysicsSystem::MapPhysicsError(const SnAPI::Physics::Error& ErrorValue)
 Result PhysicsSystem::Initialize(const PhysicsBootstrapSettings& Settings)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
 
     m_scene.reset();
     m_settings = Settings;
@@ -122,7 +123,7 @@ Result PhysicsSystem::Initialize(const PhysicsBootstrapSettings& Settings)
 void PhysicsSystem::Shutdown()
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     m_scene.reset();
     m_pendingEvents.clear();
     m_eventListeners.clear();
@@ -137,13 +138,15 @@ void PhysicsSystem::Shutdown()
 bool PhysicsSystem::IsInitialized() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return static_cast<bool>(m_scene);
 }
 
 Result PhysicsSystem::Step(float DeltaSeconds)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
     if (DeltaSeconds <= 0.0f)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "DeltaSeconds must be > 0"));
@@ -159,7 +162,7 @@ Result PhysicsSystem::Step(float DeltaSeconds)
     std::vector<PendingBodySleepDispatch> BodySleepDispatches{};
     {
         SNAPI_GF_PROFILE_SCOPE("Physics.Step.LockedPhase", "Physics");
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         if (!m_scene)
         {
             return std::unexpected(MakeError(EErrorCode::NotReady, "Physics scene is not initialized"));
@@ -285,10 +288,28 @@ Result PhysicsSystem::Step(float DeltaSeconds)
     return Ok();
 }
 
+TaskHandle PhysicsSystem::EnqueueTask(WorkTask InTask, CompletionTask OnComplete)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Physics");
+    return m_taskQueue.EnqueueTask(std::move(InTask), std::move(OnComplete));
+}
+
+void PhysicsSystem::EnqueueThreadTask(std::function<void()> InTask)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Physics");
+    m_taskQueue.EnqueueThreadTask(std::move(InTask));
+}
+
+void PhysicsSystem::ExecuteQueuedTasks()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Physics");
+    m_taskQueue.ExecuteQueuedTasks(*this, m_mutex);
+}
+
 std::uint32_t PhysicsSystem::DrainEvents(std::span<SnAPI::Physics::PhysicsEvent> OutEvents)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     const std::size_t Count = std::min<std::size_t>(OutEvents.size(), m_pendingEvents.size());
     for (std::size_t Index = 0; Index < Count; ++Index)
     {
@@ -306,7 +327,7 @@ std::uint32_t PhysicsSystem::DrainEvents(std::span<SnAPI::Physics::PhysicsEvent>
 PhysicsSystem::PhysicsEventListenerToken PhysicsSystem::AddEventListener(PhysicsEventListener Listener)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     const PhysicsEventListenerToken Token = m_nextEventListenerToken++;
     m_eventListeners.emplace(Token, std::move(Listener));
     return Token;
@@ -315,7 +336,7 @@ PhysicsSystem::PhysicsEventListenerToken PhysicsSystem::AddEventListener(Physics
 bool PhysicsSystem::RemoveEventListener(const PhysicsEventListenerToken Token)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_eventListeners.erase(Token) > 0;
 }
 
@@ -328,7 +349,7 @@ PhysicsSystem::BodySleepListenerToken PhysicsSystem::AddBodySleepListener(const 
         return 0;
     }
 
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     const BodySleepListenerToken Token = m_nextBodySleepListenerToken++;
     m_bodySleepListeners.emplace(Token, BodySleepListenerEntry{BodyHandle.Value(), std::move(Listener)});
     m_bodySleepListenerTokensByBody[BodyHandle.Value()].push_back(Token);
@@ -338,7 +359,7 @@ PhysicsSystem::BodySleepListenerToken PhysicsSystem::AddBodySleepListener(const 
 bool PhysicsSystem::RemoveBodySleepListener(const BodySleepListenerToken Token)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     const auto EntryIt = m_bodySleepListeners.find(Token);
     if (EntryIt == m_bodySleepListeners.end())
     {
@@ -365,14 +386,14 @@ bool PhysicsSystem::RemoveBodySleepListener(const BodySleepListenerToken Token)
 SnAPI::Physics::IPhysicsScene* PhysicsSystem::Scene()
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_scene.get();
 }
 
 const SnAPI::Physics::IPhysicsScene* PhysicsSystem::Scene() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_scene.get();
 }
 
@@ -380,7 +401,7 @@ SnAPI::Physics::Vec3 PhysicsSystem::WorldToPhysicsPosition(const SnAPI::Physics:
                                                            const bool AllowInitializeOrigin)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_settings.EnableFloatingOrigin)
     {
         return WorldPosition;
@@ -403,7 +424,7 @@ SnAPI::Physics::Vec3 PhysicsSystem::WorldToPhysicsPosition(const SnAPI::Physics:
 SnAPI::Physics::Vec3 PhysicsSystem::PhysicsToWorldPosition(const SnAPI::Physics::Vec3& PhysicsPosition) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_settings.EnableFloatingOrigin)
     {
         return PhysicsPosition;
@@ -457,7 +478,7 @@ bool PhysicsSystem::RebaseFloatingOriginUnlocked(const SnAPI::Physics::Vec3& New
 bool PhysicsSystem::EnsureFloatingOriginNear(const SnAPI::Physics::Vec3& WorldAnchor)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (!m_settings.EnableFloatingOrigin)
     {
         return false;
@@ -494,21 +515,21 @@ bool PhysicsSystem::EnsureFloatingOriginNear(const SnAPI::Physics::Vec3& WorldAn
 bool PhysicsSystem::RebaseFloatingOrigin(const SnAPI::Physics::Vec3& NewWorldOrigin)
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return RebaseFloatingOriginUnlocked(NewWorldOrigin);
 }
 
 SnAPI::Physics::Vec3 PhysicsSystem::FloatingOriginWorld() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_floatingOriginWorld;
 }
 
 bool PhysicsSystem::HasFloatingOrigin() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Physics");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_hasFloatingOrigin;
 }
 

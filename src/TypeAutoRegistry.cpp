@@ -1,4 +1,5 @@
 #include "TypeAutoRegistry.h"
+#include "GameThreading.h"
 
 #include "Assert.h"
 
@@ -18,7 +19,7 @@ void TypeAutoRegistry::Register(const TypeId& Id, std::string_view Name, EnsureF
         return;
     }
 
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     auto It = m_entries.find(Id);
     if (It != m_entries.end())
     {
@@ -35,7 +36,7 @@ Result TypeAutoRegistry::Ensure(const TypeId& Id) const
 {
     EnsureFn Fn = nullptr;
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Id);
         if (It == m_entries.end() || !It->second)
         {
@@ -49,7 +50,7 @@ Result TypeAutoRegistry::Ensure(const TypeId& Id) const
 
 bool TypeAutoRegistry::Has(const TypeId& Id) const
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_entries.find(Id) != m_entries.end();
 }
 

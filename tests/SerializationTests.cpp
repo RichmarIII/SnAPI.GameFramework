@@ -236,7 +236,7 @@ TEST_CASE("NodeGraph serialization round-trips node fields across inheritance")
     REQUIRE(LoadedTarget->Name() == "Target");
 }
 
-TEST_CASE("Node handles resolve across graphs after deserialization")
+TEST_CASE("Cross-graph node handles use explicit UUID slow resolve after deserialization")
 {
     RegisterBuiltinTypes();
 
@@ -295,9 +295,14 @@ TEST_CASE("Node handles resolve across graphs after deserialization")
 
     REQUIRE(NodeGraphSerializer::Deserialize(PayloadBRoundTrip.value(), LoadedB));
 
-    auto* ResolvedTarget = LoadedRef->Target.Borrowed();
+    auto* ResolvedTarget = LoadedRef->Target.BorrowedSlowByUuid();
     REQUIRE(ResolvedTarget != nullptr);
     REQUIRE(ResolvedTarget->Name() == "TargetNode");
+
+    auto RehydratedHandle = LoadedB.NodeHandleByIdSlow(LoadedRef->Target.Id);
+    REQUIRE(RehydratedHandle);
+    LoadedRef->Target = RehydratedHandle.value();
+    REQUIRE(LoadedRef->Target.Borrowed() == ResolvedTarget);
 }
 
 TEST_CASE("ValueCodecRegistry forwards to TValueCodec specializations")

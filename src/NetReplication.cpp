@@ -1,4 +1,5 @@
 #include "NetReplication.h"
+#include "GameThreading.h"
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
@@ -155,7 +156,7 @@ struct TypeVisitGuard
     }
 };
 
-std::mutex g_replicatedFieldMutex; /**< @brief Guards replicated-field cache map. */
+GameMutex g_replicatedFieldMutex; /**< @brief Guards replicated-field cache map. */
 std::unordered_map<TypeId, std::shared_ptr<ReplicatedFieldCacheEntry>, UuidHash> g_replicatedFieldCache; /**< @brief TypeId -> replicated-field cache entry. */
 
 bool WriteUuid(NetByteWriter& Writer, const Uuid& Id)
@@ -264,7 +265,7 @@ std::shared_ptr<const ReplicatedFieldCacheEntry> GetReplicatedFieldCache(const T
     auto& ValueRegistry = ValueCodecRegistry::Instance();
     const uint32_t Version = ValueRegistry.Version();
     {
-        std::lock_guard<std::mutex> Lock(g_replicatedFieldMutex);
+        GameLockGuard Lock(g_replicatedFieldMutex);
         auto It = g_replicatedFieldCache.find(Type);
         if (It != g_replicatedFieldCache.end() && It->second->CodecVersion == Version)
         {
@@ -285,7 +286,7 @@ std::shared_ptr<const ReplicatedFieldCacheEntry> GetReplicatedFieldCache(const T
     }
 
     {
-        std::lock_guard<std::mutex> Lock(g_replicatedFieldMutex);
+        GameLockGuard Lock(g_replicatedFieldMutex);
         g_replicatedFieldCache[Type] = Entry;
     }
 

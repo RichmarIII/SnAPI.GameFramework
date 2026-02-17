@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <algorithm>
 #include <cmath>
 
 #include "GameFramework.hpp"
@@ -188,6 +189,100 @@ TEST_CASE("CharacterMovementController drives rigid body movement")
 
     // Jump path is force/grounded dependent; ensure simulation remained stable and finite.
     REQUIRE(PlayerTransform->Position.y() > -10.0f);
+}
+
+TEST_CASE("CharacterMovementController jump works with floating-origin world coordinates")
+{
+    constexpr Vec3::Scalar kFloatingOriginY =
+        static_cast<Vec3::Scalar>(6360e3) + static_cast<Vec3::Scalar>(10.0);
+
+    GameRuntime Runtime;
+    GameRuntimeSettings Settings{};
+    Settings.WorldName = "PhysicsFloatingOriginCharacterWorld";
+    Settings.RegisterBuiltins = true;
+    Settings.Tick.EnableFixedTick = true;
+    Settings.Tick.FixedDeltaSeconds = 1.0f / 60.0f;
+    Settings.Tick.MaxFixedStepsPerUpdate = 2;
+
+    GameRuntimePhysicsSettings PhysicsSettings{};
+    PhysicsSettings.TickInFixedTick = true;
+    PhysicsSettings.TickInVariableTick = false;
+    PhysicsSettings.EnableFloatingOrigin = true;
+    PhysicsSettings.AutoRebaseFloatingOrigin = true;
+    PhysicsSettings.InitializeFloatingOriginFromFirstBody = false;
+    PhysicsSettings.InitialFloatingOrigin = Vec3{0.0f, kFloatingOriginY, 0.0f};
+    Settings.Physics = PhysicsSettings;
+
+    REQUIRE(Runtime.Init(Settings));
+    REQUIRE(Runtime.World().Physics().IsInitialized());
+
+    auto GroundNodeResult = Runtime.World().CreateNode<BaseNode>("Ground");
+    REQUIRE(GroundNodeResult);
+    auto* GroundNode = GroundNodeResult->Borrowed();
+    REQUIRE(GroundNode != nullptr);
+
+    auto GroundTransform = GroundNode->Add<TransformComponent>();
+    REQUIRE(GroundTransform);
+    GroundTransform->Position = Vec3{0.0f, kFloatingOriginY - 1.0f, 0.0f};
+
+    auto GroundCollider = GroundNode->Add<ColliderComponent>();
+    REQUIRE(GroundCollider);
+    GroundCollider->EditSettings().Shape = SnAPI::Physics::EShapeType::Box;
+    GroundCollider->EditSettings().HalfExtent = Vec3{30.0f, 1.0f, 30.0f};
+    GroundCollider->EditSettings().Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+
+    auto GroundBody = GroundNode->Add<RigidBodyComponent>();
+    REQUIRE(GroundBody);
+    GroundBody->EditSettings().BodyType = SnAPI::Physics::EBodyType::Static;
+    REQUIRE(GroundBody->RecreateBody());
+
+    auto PlayerNodeResult = Runtime.World().CreateNode<BaseNode>("Player");
+    REQUIRE(PlayerNodeResult);
+    auto* PlayerNode = PlayerNodeResult->Borrowed();
+    REQUIRE(PlayerNode != nullptr);
+
+    auto PlayerTransform = PlayerNode->Add<TransformComponent>();
+    REQUIRE(PlayerTransform);
+    PlayerTransform->Position = Vec3{0.0f, kFloatingOriginY + 1.0f, 0.0f};
+
+    auto PlayerCollider = PlayerNode->Add<ColliderComponent>();
+    REQUIRE(PlayerCollider);
+    PlayerCollider->EditSettings().Shape = SnAPI::Physics::EShapeType::Box;
+    PlayerCollider->EditSettings().HalfExtent = Vec3{0.4f, 0.9f, 0.4f};
+    PlayerCollider->EditSettings().Layer = CollisionLayerFlags(ECollisionFilterBits::WorldDynamic);
+
+    auto PlayerBody = PlayerNode->Add<RigidBodyComponent>();
+    REQUIRE(PlayerBody);
+    PlayerBody->EditSettings().BodyType = SnAPI::Physics::EBodyType::Dynamic;
+    PlayerBody->EditSettings().Mass = 70.0f;
+    REQUIRE(PlayerBody->RecreateBody());
+
+    auto Movement = PlayerNode->Add<CharacterMovementController>();
+    REQUIRE(Movement);
+    Movement->EditSettings().GroundProbeStartOffset = 0.15f;
+    Movement->EditSettings().GroundProbeDistance = 1.35f;
+    Movement->EditSettings().JumpImpulse = 6.0f;
+
+    for (int i = 0; i < 45; ++i)
+    {
+        Runtime.Update(1.0f / 60.0f);
+    }
+
+    const Vec3::Scalar YBeforeJump = PlayerTransform->Position.y();
+    const bool GroundedBeforeJump = Movement->IsGrounded();
+    Movement->Jump();
+    Vec3::Scalar MaxYAfterJump = YBeforeJump;
+    for (int i = 0; i < 20; ++i)
+    {
+        Runtime.Update(1.0f / 60.0f);
+        MaxYAfterJump = std::max(MaxYAfterJump, PlayerTransform->Position.y());
+    }
+
+    INFO("GroundedBeforeJump=" << GroundedBeforeJump);
+    INFO("YBeforeJump=" << YBeforeJump);
+    INFO("MaxYAfterJump=" << MaxYAfterJump);
+    INFO("YAfterJumpWindow=" << PlayerTransform->Position.y());
+    REQUIRE(MaxYAfterJump > YBeforeJump + static_cast<Vec3::Scalar>(0.05));
 }
 
 TEST_CASE("RigidBodyComponent deactivates on sleep and reactivates on wake events")

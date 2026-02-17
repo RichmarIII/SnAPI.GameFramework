@@ -84,13 +84,11 @@ bool InvokeLocal(void* Instance, const MethodInfo& Method, std::span<const Varia
 
 bool INode::CallRPC(std::string_view MethodName, std::initializer_list<Variant> Args)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Networking");
     return CallRPC(MethodName, std::span<const Variant>(Args.begin(), Args.size()));
 }
 
 bool INode::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Networking");
     TypeId MethodOwner{};
     const MethodInfo* Method = FindRpcMethod(TypeKey(), MethodName, Args, MethodOwner);
     if (!Method)

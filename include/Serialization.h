@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include "GameThreading.h"
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -176,7 +177,20 @@ struct TValueCodec
             Archive(Data);
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
-            return NodeHandle(Uuid(Bytes));
+            const Uuid Id(Bytes);
+            if (Context.Graph)
+            {
+                auto HandleResult = Context.Graph->NodeHandleByIdSlow(Id);
+                if (HandleResult)
+                {
+                    return HandleResult.value();
+                }
+            }
+            if (auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Id))
+            {
+                return Node->Handle();
+            }
+            return NodeHandle(Id);
         }
         else if constexpr (std::is_same_v<T, ComponentHandle>)
         {
@@ -184,7 +198,12 @@ struct TValueCodec
             Archive(Data);
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
-            return ComponentHandle(Uuid(Bytes));
+            const Uuid Id(Bytes);
+            if (auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(Id))
+            {
+                return Component->Handle();
+            }
+            return ComponentHandle(Id);
         }
         else if constexpr (std::is_trivially_copyable_v<T>)
         {
@@ -249,7 +268,24 @@ struct TValueCodec
             Archive(Data);
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
-            Value = NodeHandle(Uuid(Bytes));
+            const Uuid Id(Bytes);
+            if (Context.Graph)
+            {
+                auto HandleResult = Context.Graph->NodeHandleByIdSlow(Id);
+                if (HandleResult)
+                {
+                    Value = HandleResult.value();
+                    return Ok();
+                }
+            }
+            if (auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Id))
+            {
+                Value = Node->Handle();
+            }
+            else
+            {
+                Value = NodeHandle(Id);
+            }
             return Ok();
         }
         else if constexpr (std::is_same_v<T, ComponentHandle>)
@@ -258,7 +294,15 @@ struct TValueCodec
             Archive(Data);
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
-            Value = ComponentHandle(Uuid(Bytes));
+            const Uuid Id(Bytes);
+            if (auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(Id))
+            {
+                Value = Component->Handle();
+            }
+            else
+            {
+                Value = ComponentHandle(Id);
+            }
             return Ok();
         }
         else if constexpr (std::is_trivially_copyable_v<T>)
@@ -469,7 +513,7 @@ public:
     {
         const TypeId Type = StaticTypeId<T>();
         {
-            std::lock_guard<std::mutex> Lock(m_mutex);
+            GameLockGuard Lock(m_mutex);
             if (m_entries.find(Type) != m_entries.end())
             {
                 return;
@@ -498,7 +542,7 @@ public:
         EntryValue.Deserialize = [Type](void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context) -> TExpected<void> {
             return DeserializeByReflection(Type, Instance, Archive, Context);
         };
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         m_entries[Type] = std::move(EntryValue);
     }
 
@@ -534,7 +578,7 @@ public:
         };
         EntryValue.Serialize = std::move(Serialize);
         EntryValue.Deserialize = std::move(Deserialize);
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         m_entries[Type] = std::move(EntryValue);
     }
 
@@ -545,7 +589,7 @@ public:
      */
     bool Has(const TypeId& Type) const
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         return m_entries.find(Type) != m_entries.end();
     }
 
@@ -621,7 +665,7 @@ private:
      */
     static TExpected<void> DeserializeByReflection(const TypeId& Type, void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context);
 
-    mutable std::mutex m_mutex{}; /**< @brief Guards component serializer registry map updates/lookups. */
+    mutable GameMutex m_mutex{}; /**< @brief Guards component serializer registry map updates/lookups. */
     std::unordered_map<TypeId, Entry, UuidHash> m_entries{}; /**< @brief Registry map by TypeId. */
 };
 

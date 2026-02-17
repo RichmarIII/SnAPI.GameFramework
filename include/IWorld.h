@@ -9,6 +9,9 @@ namespace SnAPI::GameFramework
 {
 
 class Level;
+#if defined(SNAPI_GF_ENABLE_INPUT)
+class InputSystem;
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 class AudioSystem;
 #endif
@@ -26,8 +29,9 @@ class RendererSystem;
  * @brief Root runtime container contract for gameplay sessions.
  * @remarks
  * A world is the top-level execution root that owns levels and optional subsystem
- * integrations (audio/networking). Worlds drive frame lifecycle (`Tick`/`EndFrame`)
- * and establish authoritative context for contained node graphs.
+ * integrations (input/audio/networking/physics/renderer). Worlds drive frame
+ * lifecycle (`Tick`/`EndFrame`) and establish authoritative context for
+ * contained node graphs.
  */
 class IWorld
 {
@@ -70,6 +74,19 @@ public:
      * @remarks Returns typed level reference if handle resolves and is level-compatible.
      */
     virtual TExpectedRef<Level> LevelRef(NodeHandle Handle) = 0;
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    /**
+     * @brief Access the input subsystem for this world.
+     * @return Reference to InputSystem.
+     */
+    virtual InputSystem& Input() = 0;
+    /**
+     * @brief Access the input subsystem for this world (const).
+     * @return Const reference to InputSystem.
+     */
+    virtual const InputSystem& Input() const = 0;
+#endif
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     /**

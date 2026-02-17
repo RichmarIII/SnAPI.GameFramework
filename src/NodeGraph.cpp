@@ -6,17 +6,23 @@
 namespace SnAPI::GameFramework
 {
 
+bool NodeGraph::StorageNodeActivePredicate(void* UserData, const BaseNode& Node)
+{
+    auto* Graph = static_cast<NodeGraph*>(UserData);
+    return Graph != nullptr && Graph->IsNodeActive(Node);
+}
+
 NodeGraph::NodeGraph(NodeGraph&& Other) noexcept
     : BaseNode(std::move(Other))
     , m_nodePool(std::move(Other.m_nodePool))
     , m_storages(std::move(Other.m_storages))
+    , m_storageOrder(std::move(Other.m_storageOrder))
     , m_rootNodes(std::move(Other.m_rootNodes))
     , m_pendingDestroy(std::move(Other.m_pendingDestroy))
-    , m_pendingDestroyIds(std::move(Other.m_pendingDestroyIds))
     , m_relevanceCursor(Other.m_relevanceCursor)
     , m_relevanceBudget(Other.m_relevanceBudget)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     RebindOwnerGraph();
     Other.m_relevanceCursor = 0;
     Other.m_relevanceBudget = 0;
@@ -24,13 +30,13 @@ NodeGraph::NodeGraph(NodeGraph&& Other) noexcept
 
 NodeGraph::~NodeGraph()
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     Clear();
 }
 
 NodeGraph& NodeGraph::operator=(NodeGraph&& Other) noexcept
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     if (this == &Other)
     {
         return *this;
@@ -38,9 +44,9 @@ NodeGraph& NodeGraph::operator=(NodeGraph&& Other) noexcept
     BaseNode::operator=(std::move(Other));
     m_nodePool = std::move(Other.m_nodePool);
     m_storages = std::move(Other.m_storages);
+    m_storageOrder = std::move(Other.m_storageOrder);
     m_rootNodes = std::move(Other.m_rootNodes);
     m_pendingDestroy = std::move(Other.m_pendingDestroy);
-    m_pendingDestroyIds = std::move(Other.m_pendingDestroyIds);
     m_relevanceCursor = Other.m_relevanceCursor;
     m_relevanceBudget = Other.m_relevanceBudget;
     RebindOwnerGraph();
@@ -51,19 +57,19 @@ NodeGraph& NodeGraph::operator=(NodeGraph&& Other) noexcept
 
 void NodeGraph::Tick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.EvaluateRelevance", "SceneGraph");
+        
         EvaluateRelevance();
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.Tick.RootTraversal", "SceneGraph");
+        
         for (const auto& Handle : m_rootNodes)
         {
             BaseNode* Node = nullptr;
             {
-                SNAPI_GF_PROFILE_SCOPE("NodeGraph.Tick.ResolveRoot", "SceneGraph");
+                
                 Node = m_nodePool->Borrowed(Handle);
             }
             if (!Node)
@@ -71,22 +77,32 @@ void NodeGraph::Tick(float DeltaSeconds)
                 continue;
             }
 
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.TickTree", "SceneGraph");
+            
             Node->TickTree(DeltaSeconds);
+        }
+    }
+
+    {
+        for (IComponentStorage* Storage : m_storageOrder)
+        {
+            if (Storage)
+            {
+                Storage->TickAll(&StorageNodeActivePredicate, this, DeltaSeconds);
+            }
         }
     }
 }
 
 void NodeGraph::FixedTick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.FixedTick.RootTraversal", "SceneGraph");
+        
         for (const auto& Handle : m_rootNodes)
         {
             BaseNode* Node = nullptr;
             {
-                SNAPI_GF_PROFILE_SCOPE("NodeGraph.FixedTick.ResolveRoot", "SceneGraph");
+                
                 Node = m_nodePool->Borrowed(Handle);
             }
             if (!Node)
@@ -94,22 +110,32 @@ void NodeGraph::FixedTick(float DeltaSeconds)
                 continue;
             }
 
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.FixedTickTree", "SceneGraph");
+            
             Node->FixedTickTree(DeltaSeconds);
+        }
+    }
+
+    {
+        for (IComponentStorage* Storage : m_storageOrder)
+        {
+            if (Storage)
+            {
+                Storage->FixedTickAll(&StorageNodeActivePredicate, this, DeltaSeconds);
+            }
         }
     }
 }
 
 void NodeGraph::LateTick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.LateTick.RootTraversal", "SceneGraph");
+        
         for (const auto& Handle : m_rootNodes)
         {
             BaseNode* Node = nullptr;
             {
-                SNAPI_GF_PROFILE_SCOPE("NodeGraph.LateTick.ResolveRoot", "SceneGraph");
+                
                 Node = m_nodePool->Borrowed(Handle);
             }
             if (!Node)
@@ -117,17 +143,27 @@ void NodeGraph::LateTick(float DeltaSeconds)
                 continue;
             }
 
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.LateTickTree", "SceneGraph");
+            
             Node->LateTickTree(DeltaSeconds);
+        }
+    }
+
+    {
+        for (IComponentStorage* Storage : m_storageOrder)
+        {
+            if (Storage)
+            {
+                Storage->LateTickAll(&StorageNodeActivePredicate, this, DeltaSeconds);
+            }
         }
     }
 }
 
 void NodeGraph::EndFrame()
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.DestroyPending", "SceneGraph");
+        
     for (const auto& Handle : m_pendingDestroy)
     {
         auto* Node = m_nodePool->Borrowed(Handle);
@@ -135,46 +171,40 @@ void NodeGraph::EndFrame()
         {
             continue;
         }
-        for (const auto& Type : Node->ComponentTypes())
+        for (IComponentStorage* Storage : Node->ComponentStorages())
         {
-            auto It = m_storages.find(Type);
-            if (It != m_storages.end())
+            if (Storage)
             {
-                It->second->Remove(Handle);
+                Storage->Remove(Handle);
             }
         }
         if (!Node->Parent().IsNull())
         {
-            if (auto* Parent = Node->Parent().Borrowed())
+            if (auto* Parent = m_nodePool->Borrowed(Node->Parent()))
             {
                 Parent->RemoveChild(Handle);
             }
         }
         else
         {
-            for (auto It = m_rootNodes.begin(); It != m_rootNodes.end(); ++It)
-            {
-                if (*It == Handle)
-                {
-                    m_rootNodes.erase(It);
-                    break;
-                }
-            }
+            m_rootNodes.erase(std::remove(m_rootNodes.begin(), m_rootNodes.end(), Handle), m_rootNodes.end());
         }
     }
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.ComponentEndFrame", "SceneGraph");
-    for (auto& [Type, Storage] : m_storages)
+        
+    for (IComponentStorage* Storage : m_storageOrder)
     {
-        (void)Type;
-        Storage->EndFrame();
+        if (Storage)
+        {
+            Storage->EndFrame();
+        }
     }
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.RegistryUnregister", "SceneGraph");
+        
     for (const auto& Handle : m_pendingDestroy)
     {
         ObjectRegistry::Instance().Unregister(Handle.Id);
@@ -182,173 +212,166 @@ void NodeGraph::EndFrame()
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.NodePoolEndFrame", "SceneGraph");
+        
     m_nodePool->EndFrame();
     }
     m_pendingDestroy.clear();
-    m_pendingDestroyIds.clear();
 }
 
 void NodeGraph::Clear()
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     const size_t Budget = m_relevanceBudget;
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.StorageClear", "SceneGraph");
-    for (auto& [Type, Storage] : m_storages)
+        
+    for (IComponentStorage* Storage : m_storageOrder)
     {
-        (void)Type;
-        Storage->Clear();
+        if (Storage)
+        {
+            Storage->Clear();
+        }
     }
     }
 
     if (m_nodePool)
     {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.NodePoolClear", "SceneGraph");
+        
         m_nodePool->ForEachAll([&](const NodeHandle& Handle, BaseNode&) {
             ObjectRegistry::Instance().Unregister(Handle.Id);
         });
         m_nodePool->Clear();
     }
     m_storages.clear();
+    m_storageOrder.clear();
     m_rootNodes.clear();
     m_pendingDestroy.clear();
-    m_pendingDestroyIds.clear();
     m_relevanceCursor = 0;
     m_relevanceBudget = Budget;
 }
 
-void NodeGraph::TickComponents(NodeHandle Owner, float DeltaSeconds)
+void NodeGraph::TickComponents(BaseNode& Owner, float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
-    auto* Node = m_nodePool->Borrowed(Owner);
-    if (!Node)
+    
+    const NodeHandle OwnerHandle = Owner.Handle();
+    
+    for (IComponentStorage* Storage : Owner.ComponentStorages())
     {
-        return;
-    }
-
-    SNAPI_GF_PROFILE_SCOPE("NodeGraph.Tick.ComponentTraversal", "SceneGraph");
-    for (const auto& Type : Node->ComponentTypes())
-    {
-        auto It = m_storages.end();
-        {
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.Tick.ComponentLookup", "SceneGraph");
-            It = m_storages.find(Type);
-        }
-        if (It == m_storages.end())
+        if (!Storage)
         {
             continue;
         }
 
         {
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.Tick.ComponentDispatch", "SceneGraph");
-            It->second->TickComponent(Owner, DeltaSeconds);
+            
+            Storage->TickComponent(OwnerHandle, DeltaSeconds);
         }
     }
 }
 
-void NodeGraph::FixedTickComponents(NodeHandle Owner, float DeltaSeconds)
+void NodeGraph::FixedTickComponents(BaseNode& Owner, float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
-    auto* Node = m_nodePool->Borrowed(Owner);
-    if (!Node)
+    
+    const NodeHandle OwnerHandle = Owner.Handle();
+    
+    for (IComponentStorage* Storage : Owner.ComponentStorages())
     {
-        return;
-    }
-    SNAPI_GF_PROFILE_SCOPE("NodeGraph.FixedTick.ComponentTraversal", "SceneGraph");
-    for (const auto& Type : Node->ComponentTypes())
-    {
-        auto It = m_storages.end();
-        {
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.FixedTick.ComponentLookup", "SceneGraph");
-            It = m_storages.find(Type);
-        }
-        if (It == m_storages.end())
+        if (!Storage)
         {
             continue;
         }
 
         {
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.FixedTick.ComponentDispatch", "SceneGraph");
-            It->second->FixedTickComponent(Owner, DeltaSeconds);
+            
+            Storage->FixedTickComponent(OwnerHandle, DeltaSeconds);
         }
     }
 }
 
-void NodeGraph::LateTickComponents(NodeHandle Owner, float DeltaSeconds)
+void NodeGraph::LateTickComponents(BaseNode& Owner, float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
-    auto* Node = m_nodePool->Borrowed(Owner);
-    if (!Node)
+    
+    const NodeHandle OwnerHandle = Owner.Handle();
+    
+    for (IComponentStorage* Storage : Owner.ComponentStorages())
     {
-        return;
-    }
-
-    SNAPI_GF_PROFILE_SCOPE("NodeGraph.LateTick.ComponentTraversal", "SceneGraph");
-    for (const auto& Type : Node->ComponentTypes())
-    {
-        auto It = m_storages.end();
-        {
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.LateTick.ComponentLookup", "SceneGraph");
-            It = m_storages.find(Type);
-        }
-        if (It == m_storages.end())
+        if (!Storage)
         {
             continue;
         }
 
         {
-            SNAPI_GF_PROFILE_SCOPE("NodeGraph.LateTick.ComponentDispatch", "SceneGraph");
-            It->second->LateTickComponent(Owner, DeltaSeconds);
+            
+            Storage->LateTickComponent(OwnerHandle, DeltaSeconds);
         }
     }
 }
 
 void NodeGraph::EvaluateRelevance()
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
     static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
-    size_t Evaluated = 0;
-    m_nodePool->ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.EvaluateRelevance.Node", "SceneGraph");
-        if (m_relevanceBudget > 0 && Evaluated >= m_relevanceBudget)
-        {
-            return;
-        }
+    auto* StorageBase = Storage(RelevanceType);
+    if (!StorageBase)
+    {
+        m_relevanceCursor = 0;
+        return;
+    }
 
-        const auto& NodeTypes = Node.ComponentTypes();
-        if (std::find(NodeTypes.begin(), NodeTypes.end(), RelevanceType) == NodeTypes.end())
-        {
-            return;
-        }
+    auto* RelevanceStorage = static_cast<TComponentStorage<RelevanceComponent>*>(StorageBase);
+    const std::size_t Count = RelevanceStorage->DenseSize();
+    if (Count == 0)
+    {
+        m_relevanceCursor = 0;
+        return;
+    }
 
-        auto* RelevanceStorage = Storage(RelevanceType);
-        if (!RelevanceStorage)
-        {
-            return;
-        }
+    const std::size_t Budget = (m_relevanceBudget == 0) ? Count : std::min(m_relevanceBudget, Count);
+    const std::size_t Cursor = m_relevanceCursor % Count;
 
-        auto* Component = static_cast<RelevanceComponent*>(RelevanceStorage->Borrowed(Handle));
+    std::size_t Evaluated = 0;
+    while (Evaluated < Budget)
+    {
+        const std::size_t DenseIndex = (Cursor + Evaluated) % Count;
+        NodeHandle Handle = RelevanceStorage->DenseOwner(DenseIndex);
+        RelevanceComponent* Component = RelevanceStorage->DenseComponent(DenseIndex);
         if (!Component)
         {
-            return;
+            ++Evaluated;
+            continue;
+        }
+
+        auto* Node = m_nodePool->Borrowed(Handle);
+        if (!Node || Node->PendingDestroy())
+        {
+            ++Evaluated;
+            continue;
         }
 
         const auto* PolicyInfo = RelevancePolicyRegistry::Find(Component->PolicyId());
         if (!PolicyInfo || !Component->PolicyData())
         {
-            return;
+            ++Evaluated;
+            continue;
         }
+
         RelevanceContext Context{Handle, *this};
         const bool Active = PolicyInfo->Evaluate(Component->PolicyData().get(), Context);
         Component->Active(Active);
         ++Evaluated;
-    });
+    }
+
+    if (m_relevanceBudget == 0 || Budget >= Count)
+    {
+        m_relevanceCursor = 0;
+    }
+    else
+    {
+        m_relevanceCursor = (Cursor + Evaluated) % Count;
+    }
 }
 
 bool NodeGraph::IsNodeActive(NodeHandle Handle)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     auto* Node = m_nodePool->Borrowed(Handle);
     if (!Node)
     {
@@ -359,8 +382,8 @@ bool NodeGraph::IsNodeActive(NodeHandle Handle)
 
 bool NodeGraph::IsNodeActive(const BaseNode& Node) const
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
-    if (m_pendingDestroyIds.contains(Node.Id()))
+    
+    if (Node.PendingDestroy())
     {
         return false;
     }
@@ -370,16 +393,16 @@ bool NodeGraph::IsNodeActive(const BaseNode& Node) const
     }
 
     static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
-    const auto& NodeTypes = Node.ComponentTypes();
-    if (std::find(NodeTypes.begin(), NodeTypes.end(), RelevanceType) == NodeTypes.end())
+    static const uint32_t RelevanceTypeIndex = ComponentTypeRegistry::TypeIndex(RelevanceType);
+    const auto& Mask = Node.ComponentMask();
+    const std::size_t Word = RelevanceTypeIndex / 64u;
+    const std::size_t Bit = RelevanceTypeIndex % 64u;
+    if (Word >= Mask.size() || (Mask[Word] & (1ull << Bit)) == 0)
     {
         return true;
     }
 
-    const auto* Relevance = [&]() -> const RelevanceComponent* {
-        SNAPI_GF_PROFILE_SCOPE("NodeGraph.IsNodeActive.ResolveRelevance", "SceneGraph");
-        return static_cast<const RelevanceComponent*>(BorrowedComponent(Node.Handle(), RelevanceType));
-    }();
+    const auto* Relevance = Node.RelevanceState();
     if (!Relevance)
     {
         return true;
@@ -387,9 +410,9 @@ bool NodeGraph::IsNodeActive(const BaseNode& Node) const
     return Relevance->Active();
 }
 
-void NodeGraph::RegisterComponentOnNode(BaseNode& Node, const TypeId& Type)
+void NodeGraph::RegisterComponentOnNode(BaseNode& Node, const TypeId& Type, IComponentStorage& Storage)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     const uint32_t TypeIndex = ComponentTypeRegistry::TypeIndex(Type);
     const uint32_t Version = ComponentTypeRegistry::Version();
     if (Node.MaskVersion() != Version)
@@ -405,19 +428,40 @@ void NodeGraph::RegisterComponentOnNode(BaseNode& Node, const TypeId& Type)
     }
     Node.ComponentMask()[Word] |= (1ull << Bit);
 
-    for (const auto& Existing : Node.ComponentTypes())
+    auto& Types = Node.ComponentTypes();
+    auto& Storages = Node.ComponentStorages();
+    if (Storages.size() < Types.size())
     {
-        if (Existing == Type)
+        Storages.resize(Types.size(), nullptr);
+    }
+
+    for (size_t Index = 0; Index < Types.size(); ++Index)
+    {
+        if (Types[Index] == Type)
         {
+            Storages[Index] = &Storage;
+            static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
+            if (Type == RelevanceType)
+            {
+                Node.RelevanceState(static_cast<RelevanceComponent*>(Storage.Borrowed(Node.Handle())));
+            }
             return;
         }
     }
-    Node.ComponentTypes().push_back(Type);
+
+    Types.push_back(Type);
+    Storages.push_back(&Storage);
+
+    static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
+    if (Type == RelevanceType)
+    {
+        Node.RelevanceState(static_cast<RelevanceComponent*>(Storage.Borrowed(Node.Handle())));
+    }
 }
 
 void NodeGraph::UnregisterComponentOnNode(BaseNode& Node, const TypeId& Type)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     const uint32_t TypeIndex = ComponentTypeRegistry::TypeIndex(Type);
     const size_t Word = TypeIndex / 64u;
     const size_t Bit = TypeIndex % 64u;
@@ -427,19 +471,32 @@ void NodeGraph::UnregisterComponentOnNode(BaseNode& Node, const TypeId& Type)
     }
 
     auto& Types = Node.ComponentTypes();
-    for (auto It = Types.begin(); It != Types.end(); ++It)
+    auto& Storages = Node.ComponentStorages();
+    for (size_t Index = 0; Index < Types.size(); ++Index)
     {
-        if (*It == Type)
+        if (Types[Index] == Type)
         {
-            Types.erase(It);
+            auto TypeIt = Types.begin() + static_cast<std::vector<TypeId>::difference_type>(Index);
+            Types.erase(TypeIt);
+            if (Index < Storages.size())
+            {
+                auto StorageIt = Storages.begin() + static_cast<std::vector<IComponentStorage*>::difference_type>(Index);
+                Storages.erase(StorageIt);
+            }
             break;
         }
+    }
+
+    static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
+    if (Type == RelevanceType)
+    {
+        Node.RelevanceState(nullptr);
     }
 }
 
 void NodeGraph::RebindOwnerGraph()
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
+    
     if (!m_nodePool)
     {
         return;

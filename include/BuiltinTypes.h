@@ -12,6 +12,9 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include <Physics.h>
 #endif
+#if defined(SNAPI_GF_ENABLE_INPUT)
+#include <Input.h>
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -39,6 +42,12 @@ SNAPI_DEFINE_TYPE_NAME(ECollisionFilterBits, "SnAPI::GameFramework::ECollisionFi
 SNAPI_DEFINE_TYPE_NAME(CollisionFilterFlags, "SnAPI::GameFramework::CollisionFilterFlags")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Physics::EBodyType, "SnAPI::Physics::EBodyType")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Physics::EShapeType, "SnAPI::Physics::EShapeType")
+#endif
+#if defined(SNAPI_GF_ENABLE_INPUT)
+SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EKey, "SnAPI::Input::EKey")
+SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EGamepadAxis, "SnAPI::Input::EGamepadAxis")
+SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EGamepadButton, "SnAPI::Input::EGamepadButton")
+SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::DeviceId, "SnAPI::Input::DeviceId")
 #endif
 
 } // namespace SnAPI::GameFramework

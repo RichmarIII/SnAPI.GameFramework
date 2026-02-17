@@ -1,4 +1,5 @@
 #include "TypeRegistry.h"
+#include "GameThreading.h"
 
 #include "TypeAutoRegistry.h"
 
@@ -13,7 +14,7 @@ TypeRegistry& TypeRegistry::Instance()
 
 TExpected<TypeInfo*> TypeRegistry::Register(TypeInfo Info)
 {
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (m_frozen.load(std::memory_order_acquire))
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type registry is frozen"));
@@ -33,7 +34,7 @@ const TypeInfo* TypeRegistry::Find(const TypeId& Id) const
     if (!m_frozen.load(std::memory_order_acquire))
     {
         {
-            std::lock_guard<std::mutex> Lock(m_mutex);
+            GameLockGuard Lock(m_mutex);
             auto It = m_types.find(Id);
             if (It != m_types.end())
             {
@@ -44,7 +45,7 @@ const TypeInfo* TypeRegistry::Find(const TypeId& Id) const
         // Not found: attempt lazy registration without holding the registry lock.
         (void)TypeAutoRegistry::Instance().Ensure(Id);
 
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_types.find(Id);
         return It != m_types.end() ? &It->second : nullptr;
     }
@@ -61,7 +62,7 @@ const TypeInfo* TypeRegistry::FindByName(std::string_view Name) const
     if (!m_frozen.load(std::memory_order_acquire))
     {
         {
-            std::lock_guard<std::mutex> Lock(m_mutex);
+            GameLockGuard Lock(m_mutex);
             auto It = m_nameToId.find(Name);
             if (It != m_nameToId.end())
             {
@@ -76,7 +77,7 @@ const TypeInfo* TypeRegistry::FindByName(std::string_view Name) const
         // Name not found: derive TypeId deterministically and attempt lazy registration.
         (void)TypeAutoRegistry::Instance().Ensure(TypeIdFromName(Name));
 
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_nameToId.find(Name);
         if (It == m_nameToId.end())
         {
@@ -131,7 +132,7 @@ bool TypeRegistry::IsA(const TypeId& Type, const TypeId& Base) const
 {
     if (!m_frozen.load(std::memory_order_acquire))
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         return IsAUnlocked(m_types, Type, Base);
     }
     return IsAUnlocked(m_types, Type, Base);
@@ -142,7 +143,7 @@ std::vector<const TypeInfo*> TypeRegistry::Derived(const TypeId& Base) const
     std::vector<const TypeInfo*> Result;
     if (!m_frozen.load(std::memory_order_acquire))
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         for (const auto& [Id, Info] : m_types)
         {
             if (Id == Base)

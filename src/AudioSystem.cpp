@@ -1,4 +1,5 @@
 #include "AudioSystem.h"
+#include "GameThreading.h"
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
@@ -19,7 +20,7 @@ AudioSystem::~AudioSystem()
 AudioSystem::AudioSystem(AudioSystem&& Other) noexcept
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
-    std::lock_guard<std::mutex> Lock(Other.m_mutex);
+    GameLockGuard Lock(Other.m_mutex);
     m_engine = std::move(Other.m_engine);
 }
 
@@ -38,7 +39,7 @@ AudioSystem& AudioSystem::operator=(AudioSystem&& Other) noexcept
 bool AudioSystem::Initialize(const SnAPI::Audio::AudioDeviceSpec& Spec)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (m_engine && m_engine->IsInitialized())
     {
         return true;
@@ -61,7 +62,7 @@ bool AudioSystem::Initialize()
 void AudioSystem::Shutdown()
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     if (m_engine)
     {
         m_engine->Shutdown();
@@ -71,37 +72,57 @@ void AudioSystem::Shutdown()
 bool AudioSystem::IsInitialized() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_engine && m_engine->IsInitialized();
 }
 
 SnAPI::Audio::AudioEngine* AudioSystem::Engine()
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_engine.get();
 }
 
 const SnAPI::Audio::AudioEngine* AudioSystem::Engine() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
-    std::lock_guard<std::mutex> Lock(m_mutex);
+    GameLockGuard Lock(m_mutex);
     return m_engine.get();
 }
 
 void AudioSystem::Update(float DeltaSeconds)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
     (void)DeltaSeconds;
     SnAPI::Audio::AudioEngine* EnginePtr = nullptr;
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         EnginePtr = m_engine.get();
     }
     if (EnginePtr && EnginePtr->IsInitialized())
     {
         EnginePtr->Update(DeltaSeconds);
     }
+}
+
+TaskHandle AudioSystem::EnqueueTask(WorkTask InTask, CompletionTask OnComplete)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
+    return m_taskQueue.EnqueueTask(std::move(InTask), std::move(OnComplete));
+}
+
+void AudioSystem::EnqueueThreadTask(std::function<void()> InTask)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
+    m_taskQueue.EnqueueThreadTask(std::move(InTask));
+}
+
+void AudioSystem::ExecuteQueuedTasks()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Audio");
+    m_taskQueue.ExecuteQueuedTasks(*this, m_mutex);
 }
 
 } // namespace SnAPI::GameFramework

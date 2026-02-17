@@ -12,14 +12,12 @@ namespace SnAPI::GameFramework
 
 void BaseNode::TickTree(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
     if (!m_ownerGraph)
     {
         Tick(DeltaSeconds);
         return;
     }
     const bool IsActive = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.Tick.ActiveCheck", "SceneGraph");
         return m_ownerGraph->IsNodeActive(*this);
     }();
     if (!IsActive)
@@ -28,29 +26,27 @@ void BaseNode::TickTree(float DeltaSeconds)
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.Tick", "SceneGraph");
     Tick(DeltaSeconds);
-    }
-    {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.TickComponents", "SceneGraph");
-    m_ownerGraph->TickComponents(m_self, DeltaSeconds);
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.TickChildTraversal", "SceneGraph");
-        for (const auto& Child : m_children)
+        for (size_t ChildIndex = 0; ChildIndex < m_children.size(); ++ChildIndex)
         {
-            BaseNode* ChildNode = nullptr;
+            BaseNode* ChildNode = (ChildIndex < m_childNodes.size()) ? m_childNodes[ChildIndex] : nullptr;
+            if (!ChildNode)
             {
-                SNAPI_GF_PROFILE_SCOPE("BaseNode.TickChild.Resolve", "SceneGraph");
-                ChildNode = m_ownerGraph->NodePool().Borrowed(Child);
+                ChildNode = m_ownerGraph->NodePool().Borrowed(m_children[ChildIndex]);
+                if (m_childNodes.size() < m_children.size())
+                {
+                    m_childNodes.resize(m_children.size(), nullptr);
+                }
+                m_childNodes[ChildIndex] = ChildNode;
             }
             if (!ChildNode)
             {
                 continue;
             }
 
-            SNAPI_GF_PROFILE_SCOPE("BaseNode.TickChild", "SceneGraph");
             ChildNode->TickTree(DeltaSeconds);
         }
     }
@@ -58,16 +54,13 @@ void BaseNode::TickTree(float DeltaSeconds)
 
 void BaseNode::FixedTickTree(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
     if (!m_ownerGraph)
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTick.NoGraph", "SceneGraph");
         FixedTick(DeltaSeconds);
         return;
     }
 
     const bool IsActive = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTick.ActiveCheck", "SceneGraph");
         return m_ownerGraph->IsNodeActive(*this);
     }();
     if (!IsActive)
@@ -76,26 +69,24 @@ void BaseNode::FixedTickTree(float DeltaSeconds)
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTick", "SceneGraph");
         FixedTick(DeltaSeconds);
-    }
-    {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTickComponents", "SceneGraph");
-        m_ownerGraph->FixedTickComponents(m_self, DeltaSeconds);
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTickChildTraversal", "SceneGraph");
-        for (const auto& Child : m_children)
+        for (size_t ChildIndex = 0; ChildIndex < m_children.size(); ++ChildIndex)
         {
-            BaseNode* ChildNode = nullptr;
+            BaseNode* ChildNode = (ChildIndex < m_childNodes.size()) ? m_childNodes[ChildIndex] : nullptr;
+            if (!ChildNode)
             {
-                SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTickChild.Resolve", "SceneGraph");
-                ChildNode = m_ownerGraph->NodePool().Borrowed(Child);
+                ChildNode = m_ownerGraph->NodePool().Borrowed(m_children[ChildIndex]);
+                if (m_childNodes.size() < m_children.size())
+                {
+                    m_childNodes.resize(m_children.size(), nullptr);
+                }
+                m_childNodes[ChildIndex] = ChildNode;
             }
             if (ChildNode)
             {
-                SNAPI_GF_PROFILE_SCOPE("BaseNode.FixedTickChild", "SceneGraph");
                 ChildNode->FixedTickTree(DeltaSeconds);
             }
         }
@@ -104,7 +95,6 @@ void BaseNode::FixedTickTree(float DeltaSeconds)
 
 void BaseNode::LateTickTree(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("SceneGraph");
     if (!m_ownerGraph)
     {
         LateTick(DeltaSeconds);
@@ -112,7 +102,6 @@ void BaseNode::LateTickTree(float DeltaSeconds)
     }
 
     const bool IsActive = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.LateTick.ActiveCheck", "SceneGraph");
         return m_ownerGraph->IsNodeActive(*this);
     }();
     if (!IsActive)
@@ -121,29 +110,27 @@ void BaseNode::LateTickTree(float DeltaSeconds)
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.LateTick", "SceneGraph");
     LateTick(DeltaSeconds);
-    }
-    {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.LateTickComponents", "SceneGraph");
-    m_ownerGraph->LateTickComponents(m_self, DeltaSeconds);
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("BaseNode.LateTickChildTraversal", "SceneGraph");
-        for (const auto& Child : m_children)
+        for (size_t ChildIndex = 0; ChildIndex < m_children.size(); ++ChildIndex)
         {
-            BaseNode* ChildNode = nullptr;
+            BaseNode* ChildNode = (ChildIndex < m_childNodes.size()) ? m_childNodes[ChildIndex] : nullptr;
+            if (!ChildNode)
             {
-                SNAPI_GF_PROFILE_SCOPE("BaseNode.LateTickChild.Resolve", "SceneGraph");
-                ChildNode = m_ownerGraph->NodePool().Borrowed(Child);
+                ChildNode = m_ownerGraph->NodePool().Borrowed(m_children[ChildIndex]);
+                if (m_childNodes.size() < m_children.size())
+                {
+                    m_childNodes.resize(m_children.size(), nullptr);
+                }
+                m_childNodes[ChildIndex] = ChildNode;
             }
             if (!ChildNode)
             {
                 continue;
             }
 
-            SNAPI_GF_PROFILE_SCOPE("BaseNode.LateTickChild", "SceneGraph");
             ChildNode->LateTickTree(DeltaSeconds);
         }
     }
@@ -151,7 +138,6 @@ void BaseNode::LateTickTree(float DeltaSeconds)
 
 bool BaseNode::IsServer() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Networking");
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (m_world)
     {
@@ -163,7 +149,6 @@ bool BaseNode::IsServer() const
 
 bool BaseNode::IsClient() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Networking");
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (m_world)
     {
@@ -175,7 +160,6 @@ bool BaseNode::IsClient() const
 
 bool BaseNode::IsListenServer() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Networking");
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (m_world)
     {

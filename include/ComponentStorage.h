@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
 #include <mutex>
+#include "GameThreading.h"
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -36,7 +39,7 @@ public:
      */
     static uint32_t TypeIndex(const TypeId& Id)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_typeToIndex.find(Id);
         if (It != m_typeToIndex.end())
         {
@@ -55,7 +58,7 @@ public:
      */
     static uint32_t Version()
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         return m_version;
     }
 
@@ -65,13 +68,13 @@ public:
      */
     static size_t WordCount()
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         size_t BitCount = m_typeToIndex.size();
         return (BitCount + 63u) / 64u;
     }
 
 private:
-    static inline std::mutex m_mutex{}; /**< @brief Protects registry state. */
+    static inline GameMutex m_mutex{}; /**< @brief Protects registry state. */
     static inline std::unordered_map<TypeId, uint32_t, UuidHash> m_typeToIndex{}; /**< @brief TypeId -> bit index. */
     static inline uint32_t m_version = 0; /**< @brief Version counter. */
 };
@@ -83,6 +86,14 @@ private:
 class IComponentStorage
 {
 public:
+    /**
+     * @brief Node-activity callback signature used by storage-driven ticking.
+     * @param UserData Opaque pointer provided by caller.
+     * @param Node Owner node candidate.
+     * @return True when the node should execute component tick hooks.
+     */
+    using NodeActivePredicate = bool(*)(void* UserData, const BaseNode& Node);
+
     /** @brief Virtual destructor. */
     virtual ~IComponentStorage() = default;
     /**
@@ -120,6 +131,27 @@ public:
      * @param DeltaSeconds Time since last tick.
      */
     virtual void LateTickComponent(NodeHandle Owner, float DeltaSeconds) = 0;
+    /**
+     * @brief Tick all stored components in dense storage order.
+     * @param NodeIsActive Callback used to gate owner-node activity/relevance.
+     * @param UserData Opaque callback context.
+     * @param DeltaSeconds Time since last tick.
+     */
+    virtual void TickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) = 0;
+    /**
+     * @brief Fixed-step tick all stored components in dense storage order.
+     * @param NodeIsActive Callback used to gate owner-node activity/relevance.
+     * @param UserData Opaque callback context.
+     * @param DeltaSeconds Fixed time step.
+     */
+    virtual void FixedTickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) = 0;
+    /**
+     * @brief Late tick all stored components in dense storage order.
+     * @param NodeIsActive Callback used to gate owner-node activity/relevance.
+     * @param UserData Opaque callback context.
+     * @param DeltaSeconds Time since last tick.
+     */
+    virtual void LateTickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) = 0;
     /**
      * @brief Borrow a component instance (mutable).
      * @param Owner Node handle.
@@ -211,16 +243,25 @@ public:
             return std::unexpected(HandleResult.error());
         }
         auto Handle = HandleResult.value();
-        auto* Component = m_pool.Borrowed(Handle.Id);
+        auto* Component = m_pool.Borrowed(Handle);
         if (!Component)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError, "Component creation failed"));
         }
         Component->Owner(Owner);
         Component->Id(Id);
+        Component->RuntimeIdentity(Handle.RuntimePoolToken, Handle.RuntimeIndex, Handle.RuntimeGeneration);
         Component->TypeKey(StaticTypeId<T>());
-        ObjectRegistry::Instance().RegisterComponent(Id, Component);
-        m_index.emplace(Owner, Id);
+        ObjectRegistry::Instance().RegisterComponent(
+            Id,
+            Component,
+            Handle.RuntimePoolToken,
+            Handle.RuntimeIndex,
+            Handle.RuntimeGeneration);
+        const std::size_t DenseIndex = m_dense.size();
+        m_ownerToDense.emplace(Owner.Id, DenseIndex);
+        m_dense.push_back(ComponentEntry{Owner, Owner.Borrowed(), Id, Component});
+        SetSparseOwnerIndex(Owner, DenseIndex);
         Component->OnCreate();
         return *Component;
     }
@@ -232,12 +273,18 @@ public:
      */
     TExpectedRef<T> Component(NodeHandle Owner)
     {
-        auto It = m_index.find(Owner);
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex))
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Component not found"));
         }
-        auto* Component = m_pool.Borrowed(It->second);
+        if (DenseIndex >= m_dense.size())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Component index is out of range"));
+        }
+
+        auto& Entry = m_dense[DenseIndex];
+        auto* Component = ResolveComponent(Entry);
         if (!Component)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Component missing"));
@@ -252,7 +299,8 @@ public:
      */
     bool Has(NodeHandle Owner) const override
     {
-        return m_index.find(Owner) != m_index.end();
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        return ResolveDenseIndex(Owner, DenseIndex) && DenseIndex < m_dense.size();
     }
 
     /**
@@ -263,18 +311,36 @@ public:
      */
     void Remove(NodeHandle Owner) override
     {
-        auto It = m_index.find(Owner);
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex))
         {
             return;
         }
-        Uuid Id = It->second;
-        m_index.erase(It);
-        if (!m_pool.DestroyLater(Id))
+
+        if (DenseIndex >= m_dense.size())
         {
+            m_ownerToDense.erase(Owner.Id);
+            ClearSparseOwnerIndex(Owner);
             return;
         }
-        m_pendingDestroy.push_back(Id);
+
+        ComponentEntry RemovedEntry = m_dense[DenseIndex];
+        const Uuid Id = RemovedEntry.Id;
+        m_ownerToDense.erase(RemovedEntry.Owner.Id);
+        ClearSparseOwnerIndex(RemovedEntry.Owner);
+
+        if (DenseIndex + 1 < m_dense.size())
+        {
+            m_dense[DenseIndex] = std::move(m_dense.back());
+            m_ownerToDense[m_dense[DenseIndex].Owner.Id] = DenseIndex;
+            SetSparseOwnerIndex(m_dense[DenseIndex].Owner, DenseIndex);
+        }
+        m_dense.pop_back();
+
+        if (m_pool.DestroyLater(Id))
+        {
+            m_pendingDestroy.push_back(PendingDestroyEntry{Id, RemovedEntry.Component});
+        }
     }
 
     /**
@@ -284,12 +350,13 @@ public:
      */
     void TickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
-        auto It = m_index.find(Owner);
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex) || DenseIndex >= m_dense.size())
         {
             return;
         }
-        auto* Component = m_pool.Borrowed(It->second);
+
+        auto* Component = ResolveComponent(m_dense[DenseIndex]);
         if (Component && Component->Active())
         {
             Component->Tick(DeltaSeconds);
@@ -303,41 +370,21 @@ public:
      */
     void FixedTickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
-        SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTickComponent", "Components");
-
-        auto It = m_index.end();
-        {
-            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.Lookup", "Components");
-            It = m_index.find(Owner);
-        }
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex) || DenseIndex >= m_dense.size())
         {
             return;
         }
-
-        T* Component = nullptr;
-        {
-            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.ResolveInstance", "Components");
-            Component = m_pool.Borrowed(It->second);
-        }
+        T* Component = ResolveComponent(m_dense[DenseIndex]);
         if (!Component)
         {
             return;
         }
-
+        if (!Component->Active())
         {
-            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.ActiveCheck", "Components");
-            if (!Component->Active())
-            {
-                return;
-            }
+            return;
         }
-
-        {
-            SNAPI_GF_PROFILE_SCOPE("ComponentStorage.FixedTick.Dispatch", "Components");
-            SNAPI_GF_PROFILE_SCOPE(TTypeNameV<T>, "Components");
-            Component->FixedTick(DeltaSeconds);
-        }
+        Component->FixedTick(DeltaSeconds);
     }
 
     /**
@@ -347,14 +394,123 @@ public:
      */
     void LateTickComponent(NodeHandle Owner, float DeltaSeconds) override
     {
-        auto It = m_index.find(Owner);
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex) || DenseIndex >= m_dense.size())
         {
             return;
         }
-        auto* Component = m_pool.Borrowed(It->second);
+
+        auto* Component = ResolveComponent(m_dense[DenseIndex]);
         if (Component && Component->Active())
         {
+            Component->LateTick(DeltaSeconds);
+        }
+    }
+
+    /**
+     * @brief Tick all components in dense storage order.
+     * @param NodeIsActive Owner-node activity predicate.
+     * @param UserData Opaque predicate context.
+     * @param DeltaSeconds Time since last tick.
+     * @remarks
+     * This is the hot-path runtime update mode: dense linear traversal with
+     * no per-owner hash lookup once entries are built.
+     */
+    void TickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) override
+    {
+        for (auto& Entry : m_dense)
+        {
+            T* Component = ResolveComponent(Entry);
+            if (!Component || !Component->Active())
+            {
+                continue;
+            }
+
+            BaseNode* OwnerNode = Entry.OwnerNode;
+            if (!OwnerNode)
+            {
+                OwnerNode = Entry.Owner.Borrowed();
+                Entry.OwnerNode = OwnerNode;
+            }
+            if (!OwnerNode)
+            {
+                continue;
+            }
+            if (NodeIsActive && !NodeIsActive(UserData, *OwnerNode))
+            {
+                continue;
+            }
+
+            Component->Tick(DeltaSeconds);
+        }
+    }
+
+    /**
+     * @brief Fixed-step tick all components in dense storage order.
+     * @param NodeIsActive Owner-node activity predicate.
+     * @param UserData Opaque predicate context.
+     * @param DeltaSeconds Fixed time step.
+     */
+    void FixedTickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) override
+    {
+        for (auto& Entry : m_dense)
+        {
+            T* Component = ResolveComponent(Entry);
+            if (!Component || !Component->Active())
+            {
+                continue;
+            }
+
+            BaseNode* OwnerNode = Entry.OwnerNode;
+            if (!OwnerNode)
+            {
+                OwnerNode = Entry.Owner.Borrowed();
+                Entry.OwnerNode = OwnerNode;
+            }
+            if (!OwnerNode)
+            {
+                continue;
+            }
+            if (NodeIsActive && !NodeIsActive(UserData, *OwnerNode))
+            {
+                continue;
+            }
+
+            Component->FixedTick(DeltaSeconds);
+        }
+    }
+
+    /**
+     * @brief Late tick all components in dense storage order.
+     * @param NodeIsActive Owner-node activity predicate.
+     * @param UserData Opaque predicate context.
+     * @param DeltaSeconds Time since last tick.
+     */
+    void LateTickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) override
+    {
+        for (auto& Entry : m_dense)
+        {
+            T* Component = ResolveComponent(Entry);
+            if (!Component || !Component->Active())
+            {
+                continue;
+            }
+
+            BaseNode* OwnerNode = Entry.OwnerNode;
+            if (!OwnerNode)
+            {
+                OwnerNode = Entry.Owner.Borrowed();
+                Entry.OwnerNode = OwnerNode;
+            }
+            if (!OwnerNode)
+            {
+                continue;
+            }
+            if (NodeIsActive && !NodeIsActive(UserData, *OwnerNode))
+            {
+                continue;
+            }
+
             Component->LateTick(DeltaSeconds);
         }
     }
@@ -366,12 +522,12 @@ public:
      */
     void* Borrowed(NodeHandle Owner) override
     {
-        auto It = m_index.find(Owner);
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex) || DenseIndex >= m_dense.size())
         {
             return nullptr;
         }
-        return m_pool.Borrowed(It->second);
+        return ResolveComponent(m_dense[DenseIndex]);
     }
 
     /**
@@ -381,12 +537,12 @@ public:
      */
     const void* Borrowed(NodeHandle Owner) const override
     {
-        auto It = m_index.find(Owner);
-        if (It == m_index.end())
+        std::size_t DenseIndex = kInvalidDenseIndex;
+        if (!ResolveDenseIndex(Owner, DenseIndex) || DenseIndex >= m_dense.size())
         {
             return nullptr;
         }
-        return m_pool.Borrowed(It->second);
+        return ResolveComponent(m_dense[DenseIndex]);
     }
 
     /**
@@ -396,13 +552,17 @@ public:
      */
     void EndFrame() override
     {
-        for (const auto& Id : m_pendingDestroy)
+        for (const auto& Pending : m_pendingDestroy)
         {
-            if (auto* Component = m_pool.Borrowed(Id))
+            if (Pending.Component)
             {
-                Component->OnDestroy();
+                Pending.Component->OnDestroy();
             }
-            ObjectRegistry::Instance().Unregister(Id);
+        }
+
+        for (const auto& Pending : m_pendingDestroy)
+        {
+            ObjectRegistry::Instance().Unregister(Pending.Id);
         }
         m_pendingDestroy.clear();
         m_pool.EndFrame();
@@ -419,16 +579,160 @@ public:
             Component.OnDestroy();
             ObjectRegistry::Instance().Unregister(Handle.Id);
         });
-        m_index.clear();
+        m_ownerToDense.clear();
+        m_sparseOwnerToDense.clear();
+        m_sparseOwnerGeneration.clear();
+        m_dense.clear();
         m_pendingDestroy.clear();
         m_pool.Clear();
     }
 
+    /**
+     * @brief Number of dense entries currently stored.
+     */
+    std::size_t DenseSize() const
+    {
+        return m_dense.size();
+    }
+
+    /**
+     * @brief Borrow owner handle at dense index.
+     * @param Index Dense index.
+     * @return Owner handle or null handle when out-of-range.
+     */
+    NodeHandle DenseOwner(std::size_t Index) const
+    {
+        if (Index >= m_dense.size())
+        {
+            return NodeHandle{};
+        }
+        return m_dense[Index].Owner;
+    }
+
+    /**
+     * @brief Borrow component pointer at dense index.
+     * @param Index Dense index.
+     * @return Component pointer or nullptr when out-of-range/missing.
+     */
+    T* DenseComponent(std::size_t Index)
+    {
+        if (Index >= m_dense.size())
+        {
+            return nullptr;
+        }
+        return ResolveComponent(m_dense[Index]);
+    }
+
 private:
+    static constexpr std::size_t kInvalidDenseIndex = std::numeric_limits<std::size_t>::max();
+
+    struct ComponentEntry
+    {
+        NodeHandle Owner{};
+        BaseNode* OwnerNode = nullptr;
+        Uuid Id{};
+        T* Component = nullptr;
+    };
+
+    struct PendingDestroyEntry
+    {
+        Uuid Id{};
+        T* Component = nullptr;
+    };
+
+    bool ResolveDenseIndex(NodeHandle Owner, std::size_t& OutIndex) const
+    {
+        return TryResolveDenseIndexFromSparse(Owner, OutIndex);
+    }
+
+    bool TryResolveDenseIndexFromSparse(NodeHandle Owner, std::size_t& OutIndex) const
+    {
+        if (!Owner.HasRuntimeKey())
+        {
+            return false;
+        }
+
+        const std::size_t SparseIndex = static_cast<std::size_t>(Owner.RuntimeIndex);
+        if (SparseIndex >= m_sparseOwnerToDense.size())
+        {
+            return false;
+        }
+
+        const std::size_t DenseIndex = m_sparseOwnerToDense[SparseIndex];
+        if (DenseIndex == kInvalidDenseIndex || DenseIndex >= m_dense.size())
+        {
+            return false;
+        }
+
+        const auto& Entry = m_dense[DenseIndex];
+        if (Entry.Owner.Id != Owner.Id)
+        {
+            return false;
+        }
+        if (SparseIndex < m_sparseOwnerGeneration.size()
+            && m_sparseOwnerGeneration[SparseIndex] != Owner.RuntimeGeneration)
+        {
+            return false;
+        }
+
+        OutIndex = DenseIndex;
+        return true;
+    }
+
+    void SetSparseOwnerIndex(NodeHandle Owner, std::size_t DenseIndex)
+    {
+        if (!Owner.HasRuntimeKey())
+        {
+            return;
+        }
+
+        const std::size_t SparseIndex = static_cast<std::size_t>(Owner.RuntimeIndex);
+        if (SparseIndex >= m_sparseOwnerToDense.size())
+        {
+            m_sparseOwnerToDense.resize(SparseIndex + 1, kInvalidDenseIndex);
+            m_sparseOwnerGeneration.resize(SparseIndex + 1, 0);
+        }
+
+        m_sparseOwnerToDense[SparseIndex] = DenseIndex;
+        m_sparseOwnerGeneration[SparseIndex] = Owner.RuntimeGeneration;
+    }
+
+    void ClearSparseOwnerIndex(NodeHandle Owner)
+    {
+        if (!Owner.HasRuntimeKey())
+        {
+            return;
+        }
+
+        const std::size_t SparseIndex = static_cast<std::size_t>(Owner.RuntimeIndex);
+        if (SparseIndex >= m_sparseOwnerToDense.size())
+        {
+            return;
+        }
+        m_sparseOwnerToDense[SparseIndex] = kInvalidDenseIndex;
+        if (SparseIndex < m_sparseOwnerGeneration.size())
+        {
+            m_sparseOwnerGeneration[SparseIndex] = 0;
+        }
+    }
+
+    T* ResolveComponent(ComponentEntry& Entry)
+    {
+        return Entry.Component;
+    }
+
+    const T* ResolveComponent(const ComponentEntry& Entry) const
+    {
+        return Entry.Component;
+    }
+
     TypeId m_typeId = StaticTypeId<T>(); /**< @brief Reflected type id for this storage specialization. */
     TObjectPool<T> m_pool{}; /**< @brief Underlying component object pool with deferred destroy support. */
-    std::unordered_map<NodeHandle, Uuid, HandleHash> m_index{}; /**< @brief Owner-node handle -> component UUID map. */
-    std::vector<Uuid> m_pendingDestroy{}; /**< @brief Component ids scheduled for end-of-frame destroy flush. */
+    std::unordered_map<Uuid, std::size_t, UuidHash> m_ownerToDense{}; /**< @brief Owner-node UUID -> dense-entry index. */
+    std::vector<std::size_t> m_sparseOwnerToDense{}; /**< @brief Runtime owner slot index -> dense-entry index (sparse-set style fast path). */
+    std::vector<uint32_t> m_sparseOwnerGeneration{}; /**< @brief Generation mirror for sparse owner slots to reject stale handles. */
+    std::vector<ComponentEntry> m_dense{}; /**< @brief Dense component entries for cache-friendly linear traversal. */
+    std::vector<PendingDestroyEntry> m_pendingDestroy{}; /**< @brief Components scheduled for end-of-frame destroy flush. */
 };
 
 } // namespace SnAPI::GameFramework

@@ -2,8 +2,6 @@
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
-#include "Profiling.h"
-
 #include <SnAPI/Math/LinearAlgebra.h>
 #include <cmath>
 
@@ -32,7 +30,7 @@ SnAPI::Physics::Vec3 WorldToPhysicsPosition(PhysicsSystem* PhysicsSystemPtr,
                                             const Vec3& WorldPosition,
                                             const bool AllowInitializeOrigin)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.WorldToPhysicsPosition", "Physics");
+    
     if (!PhysicsSystemPtr)
     {
         return ToPhysicsVec3(WorldPosition);
@@ -43,7 +41,7 @@ SnAPI::Physics::Vec3 WorldToPhysicsPosition(PhysicsSystem* PhysicsSystemPtr,
 
 Vec3 PhysicsToWorldPosition(const PhysicsSystem* PhysicsSystemPtr, const SnAPI::Physics::Vec3& PhysicsPosition)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.PhysicsToWorldPosition", "Physics");
+    
     if (!PhysicsSystemPtr)
     {
         return FromPhysicsVec3(PhysicsPosition);
@@ -54,7 +52,7 @@ Vec3 PhysicsToWorldPosition(const PhysicsSystem* PhysicsSystemPtr, const SnAPI::
 
 SnAPI::Physics::Quat EulerToQuat(const Vec3& Euler)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.ColliderEulerToQuat", "Physics");
+    
     const SnAPI::Math::Quaternion Rotation = SnAPI::Math::AngleAxis3D(Euler.z(), SnAPI::Math::Vector3::UnitZ())
                                            * SnAPI::Math::AngleAxis3D(Euler.y(), SnAPI::Math::Vector3::UnitY())
                                            * SnAPI::Math::AngleAxis3D(Euler.x(), SnAPI::Math::Vector3::UnitX());
@@ -63,19 +61,19 @@ SnAPI::Physics::Quat EulerToQuat(const Vec3& Euler)
 
 SnAPI::Physics::Quat ToPhysicsQuat(const Quat& Rotation)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.ToPhysicsQuat", "Physics");
+    
     return SnAPI::Physics::MakeQuatXYZW(Rotation.x(), Rotation.y(), Rotation.z(), Rotation.w());
 }
 
 Quat FromPhysicsQuat(const SnAPI::Physics::Quat& Rotation)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.FromPhysicsQuat", "Physics");
+    
     Quat Out = Quat::Identity();
     Out.x() = static_cast<Quat::Scalar>(Rotation.x());
     Out.y() = static_cast<Quat::Scalar>(Rotation.y());
     Out.z() = static_cast<Quat::Scalar>(Rotation.z());
     Out.w() = static_cast<Quat::Scalar>(Rotation.w());
-    if (Out.squaredNorm() > Quat::Scalar(0))
+    if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
     {
         Out.normalize();
     }
@@ -90,7 +88,7 @@ Physics::Transform ReadOwnerTransform(BaseNode* Owner,
                                      PhysicsSystem* PhysicsSystemPtr,
                                      const bool AllowInitializeOrigin)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.ReadOwnerTransform", "Physics");
+    
     Physics::Transform Out = Physics::IdentityTransform();
     if (!Owner)
     {
@@ -98,7 +96,7 @@ Physics::Transform ReadOwnerTransform(BaseNode* Owner,
     }
 
     auto TransformResult = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.ReadOwnerTransform.OwnerComponent", "Physics");
+        
         return Owner->Component<TransformComponent>();
     }();
     if (!TransformResult)
@@ -107,11 +105,11 @@ Physics::Transform ReadOwnerTransform(BaseNode* Owner,
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.ReadOwnerTransform.SetPosition", "Physics");
+        
         Physics::SetTransformPosition(Out, WorldToPhysicsPosition(PhysicsSystemPtr, TransformResult->Position, AllowInitializeOrigin));
     }
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.ReadOwnerTransform.SetRotation", "Physics");
+        
         Physics::SetTransformRotation(Out, ToPhysicsQuat(TransformResult->Rotation));
     }
     return Out;
@@ -122,20 +120,20 @@ void WriteOwnerTransform(BaseNode* Owner,
                          const Physics::Quat& PhysicsRotation,
                          const PhysicsSystem* PhysicsSystemPtr)
 {
-    SNAPI_GF_PROFILE_SCOPE("RigidBody.WriteOwnerTransform", "Physics");
+    
     if (!Owner)
     {
         return;
     }
 
     auto TransformResult = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.WriteOwnerTransform.OwnerComponent", "Physics");
+        
         return Owner->Component<TransformComponent>();
     }();
     if (!TransformResult)
     {
         const auto AddedResult = [&]() {
-            SNAPI_GF_PROFILE_SCOPE("RigidBody.WriteOwnerTransform.AddTransformComponent", "Physics");
+            
             return Owner->Add<TransformComponent>();
         }();
         if (!AddedResult)
@@ -146,12 +144,12 @@ void WriteOwnerTransform(BaseNode* Owner,
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.WriteOwnerTransform.Position", "Physics");
+        
         const Vec3 WorldPosition = PhysicsToWorldPosition(PhysicsSystemPtr, PhysicsPosition);
         TransformResult->Position = WorldPosition;
     }
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.WriteOwnerTransform.Rotation", "Physics");
+        
         TransformResult->Rotation = FromPhysicsQuat(PhysicsRotation);
     }
 }
@@ -209,7 +207,6 @@ Physics::ColliderDesc BuildColliderDesc(BaseNode* Owner)
 
 PhysicsSystem* RigidBodyComponent::ResolvePhysicsSystem() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -227,24 +224,20 @@ PhysicsSystem* RigidBodyComponent::ResolvePhysicsSystem() const
 
 void RigidBodyComponent::OnCreate()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     CreateBody();
 }
 
 void RigidBodyComponent::OnDestroy()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     DestroyBody();
 }
 
 void RigidBodyComponent::FixedTick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     (void)DeltaSeconds;
 
     if (!m_bodyHandle.IsValid())
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.FixedTick.CreateBodyIfMissing", "Physics");
         if (!CreateBody())
         {
             return;
@@ -253,19 +246,16 @@ void RigidBodyComponent::FixedTick(float DeltaSeconds)
 
     if (m_settings.BodyType == Physics::EBodyType::Dynamic)
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.FixedTick.SyncFromPhysics", "Physics");
         SyncFromPhysics();
     }
     else
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.FixedTick.SyncToPhysics", "Physics");
         SyncToPhysics();
     }
 }
 
 bool RigidBodyComponent::CreateBody()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (m_bodyHandle.IsValid())
     {
         return true;
@@ -323,7 +313,6 @@ bool RigidBodyComponent::CreateBody()
 
 void RigidBodyComponent::DestroyBody()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     UnbindPhysicsEvents();
     if (!m_bodyHandle.IsValid())
     {
@@ -333,7 +322,7 @@ void RigidBodyComponent::DestroyBody()
     auto* Physics = ResolvePhysicsSystem();
     if (auto* Scene = Physics ? Physics->Scene() : nullptr)
     {
-        (void)Scene->Rigid().DestroyBody(m_bodyHandle);
+        Scene->Rigid().DestroyBody(m_bodyHandle);
     }
 
     m_bodyHandle = {};
@@ -344,21 +333,18 @@ void RigidBodyComponent::DestroyBody()
 
 bool RigidBodyComponent::RecreateBody()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     DestroyBody();
     return CreateBody();
 }
 
 bool RigidBodyComponent::ApplyForce(const Vec3& Force, const bool AsImpulse)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     const auto Mode = AsImpulse ? Physics::EForceMode::Impulse : Physics::EForceMode::Force;
     return ApplyForce(Force, Mode);
 }
 
 bool RigidBodyComponent::ApplyForce(const Vec3& Force, SnAPI::Physics::EForceMode Mode)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (!m_bodyHandle.IsValid() && !CreateBody())
     {
         return false;
@@ -386,7 +372,6 @@ bool RigidBodyComponent::ApplyForce(const Vec3& Force, SnAPI::Physics::EForceMod
 
 bool RigidBodyComponent::SetVelocity(const Vec3& Linear, const Vec3& Angular)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (!m_bodyHandle.IsValid() && !CreateBody())
     {
         return false;
@@ -414,7 +399,6 @@ bool RigidBodyComponent::SetVelocity(const Vec3& Linear, const Vec3& Angular)
 
 bool RigidBodyComponent::Teleport(const Vec3& Position, const Quat& Rotation, const bool ResetVelocity)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (!m_bodyHandle.IsValid() && !CreateBody())
     {
         return false;
@@ -476,7 +460,6 @@ bool RigidBodyComponent::Teleport(const Vec3& Position, const Quat& Rotation, co
 
 void RigidBodyComponent::BindPhysicsEvents()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (m_sleepListenerToken != 0 || !m_bodyHandle.IsValid())
     {
         return;
@@ -495,14 +478,12 @@ void RigidBodyComponent::BindPhysicsEvents()
 
 void RigidBodyComponent::UnbindPhysicsEvents()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (m_sleepListenerToken == 0)
     {
         return;
     }
 
-    auto* Physics = ResolvePhysicsSystem();
-    if (Physics)
+    if (auto* Physics = ResolvePhysicsSystem())
     {
         (void)Physics->RemoveBodySleepListener(m_sleepListenerToken);
     }
@@ -511,7 +492,6 @@ void RigidBodyComponent::UnbindPhysicsEvents()
 
 void RigidBodyComponent::HandlePhysicsEvent(const SnAPI::Physics::PhysicsEvent& Event)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (!m_bodyHandle.IsValid())
     {
         return;
@@ -538,7 +518,6 @@ void RigidBodyComponent::HandlePhysicsEvent(const SnAPI::Physics::PhysicsEvent& 
 
 void RigidBodyComponent::UpdateSleepDrivenActivity(const bool Sleeping)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     m_isSleeping = Sleeping;
     if (!m_settings.AutoDeactivateWhenSleeping || m_settings.BodyType != Physics::EBodyType::Dynamic)
     {
@@ -551,46 +530,44 @@ void RigidBodyComponent::UpdateSleepDrivenActivity(const bool Sleeping)
 
 bool RigidBodyComponent::SyncFromPhysics() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
     if (!m_settings.SyncFromPhysics)
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.EarlyOut.Disabled", "Physics");
         return false;
     }
     if (!m_bodyHandle.IsValid())
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.EarlyOut.InvalidBody", "Physics");
+        
         return false;
     }
 
     auto* Physics = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.ResolvePhysicsSystem", "Physics");
+        
         return ResolvePhysicsSystem();
     }();
     auto* Scene = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.Scene", "Physics");
+        
         return Physics ? Physics->Scene() : nullptr;
     }();
     if (!Scene)
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.EarlyOut.NoScene", "Physics");
+        
         return false;
     }
 
     auto TransformResult = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.BodyTransform", "Physics");
+        
         return Scene->Rigid().BodyTransform(m_bodyHandle);
     }();
     if (!TransformResult)
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.EarlyOut.NoBodyTransform", "Physics");
+        
         return false;
     }
 
     SnAPI::Physics::Vec3 PhysicsPosition{};
     SnAPI::Physics::Quat PhysicsRotation{};
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.ExtractTransform", "Physics");
+        
         PhysicsPosition = SnAPI::Physics::TransformPosition(TransformResult.value());
         PhysicsRotation = SnAPI::Physics::TransformRotation(TransformResult.value());
     }
@@ -600,12 +577,12 @@ bool RigidBodyComponent::SyncFromPhysics() const
     constexpr double RotationDotThreshold = 0.999999995; // ~0.0002 rad (~0.011 deg)
     if (m_hasLastSyncedTransform)
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.DeltaCheck", "Physics");
+        
         const double PositionDeltaSq = (PhysicsPosition - m_lastSyncedPhysicsPosition).squaredNorm();
         const double RotationDot = std::abs(static_cast<double>(PhysicsRotation.dot(m_lastSyncedPhysicsRotation)));
         if (PositionDeltaSq <= PositionEpsilonSq && RotationDot >= RotationDotThreshold)
         {
-            SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.EarlyOut.NoTransformDelta", "Physics");
+            
             return true;
         }
     }
@@ -615,7 +592,7 @@ bool RigidBodyComponent::SyncFromPhysics() const
     m_hasLastSyncedTransform = true;
 
     {
-        SNAPI_GF_PROFILE_SCOPE("RigidBody.SyncFromPhysics.WriteOwnerTransform", "Physics");
+        
         WriteOwnerTransform(OwnerNode(), PhysicsPosition, PhysicsRotation, Physics);
     }
     return true;
@@ -623,7 +600,7 @@ bool RigidBodyComponent::SyncFromPhysics() const
 
 bool RigidBodyComponent::SyncToPhysics() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Physics");
+    
     if (!m_settings.SyncToPhysics || !m_bodyHandle.IsValid())
     {
         return false;

@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
 #include <memory>
+#include "GameThreading.h"
 #include <mutex>
 #include <functional>
 #include <span>
@@ -43,9 +44,11 @@ struct PhysicsBootstrapSettings
 /**
  * @brief World-owned adapter over SnAPI.Physics runtime/scene.
  */
-class PhysicsSystem final
+class PhysicsSystem final : public ITaskDispatcher
 {
 public:
+    using WorkTask = std::function<void(PhysicsSystem&)>;
+    using CompletionTask = std::function<void(const TaskHandle&)>;
     using PhysicsEventListener = std::function<void(const SnAPI::Physics::PhysicsEvent&)>;
     using PhysicsEventListenerToken = std::uint64_t;
     using BodySleepListener = std::function<void(const SnAPI::Physics::PhysicsEvent&)>;
@@ -85,6 +88,25 @@ public:
      * @return Success or error.
      */
     Result Step(float DeltaSeconds);
+
+    /**
+     * @brief Enqueue work on the physics system thread.
+     * @param InTask Work callback executed on physics-thread affinity.
+     * @param OnComplete Optional completion callback marshaled to caller dispatcher.
+     * @return Task handle for wait/cancel polling.
+     */
+    TaskHandle EnqueueTask(WorkTask InTask, CompletionTask OnComplete = {});
+
+    /**
+     * @brief Enqueue a generic thread task for dispatcher marshalling.
+     * @param InTask Callback to execute on this system thread.
+     */
+    void EnqueueThreadTask(std::function<void()> InTask) override;
+
+    /**
+     * @brief Execute all queued tasks on the physics thread.
+     */
+    void ExecuteQueuedTasks();
 
     /**
      * @brief Drain physics events from the active scene.
@@ -204,7 +226,8 @@ private:
     static Error MapPhysicsError(const SnAPI::Physics::Error& ErrorValue);
     bool RebaseFloatingOriginUnlocked(const SnAPI::Physics::Vec3& NewWorldOrigin);
 
-    mutable std::mutex m_mutex{}; /**< @brief Guards runtime/scene/settings state transitions. */
+    mutable GameMutex m_mutex{}; /**< @brief Physics-system thread affinity guard. */
+    TSystemTaskQueue<PhysicsSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
     SnAPI::Physics::PhysicsRuntime m_runtime{}; /**< @brief Owned backend registry/runtime facade. */
     std::unique_ptr<SnAPI::Physics::IPhysicsScene> m_scene{}; /**< @brief Active world scene instance. */
     PhysicsBootstrapSettings m_settings{}; /**< @brief Active settings snapshot. */

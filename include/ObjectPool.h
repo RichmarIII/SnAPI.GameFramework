@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <limits>
 #include <memory>
+#include "GameThreading.h"
 #include <mutex>
 #include <type_traits>
 #include <unordered_map>
@@ -19,7 +22,8 @@ namespace SnAPI::GameFramework
  * @tparam T Base type stored in the pool.
  * @remarks
  * Slot-based pool with UUID index and free-list reuse.
- * Objects are stored as `shared_ptr` to preserve pointer stability while alive.
+ * Objects are heap-stable while alive. Standard create paths use `unique_ptr`;
+ * shared ownership is used only when inserting pre-owned shared instances.
  * @note Destruction is deferred until EndFrame to keep handles valid within a frame.
  */
 template<typename T>
@@ -34,7 +38,23 @@ public:
     /**
      * @brief Construct an empty pool.
      */
-    TObjectPool() = default;
+    TObjectPool()
+        : m_runtimePoolToken(ObjectRegistry::Instance().AcquireRuntimePoolToken())
+    {
+    }
+
+    /**
+     * @brief Destroy the pool and release runtime lookup token.
+     */
+    ~TObjectPool()
+    {
+        ObjectRegistry::Instance().ReleaseRuntimePoolToken(m_runtimePoolToken);
+    }
+
+    TObjectPool(const TObjectPool&) = delete;
+    TObjectPool& operator=(const TObjectPool&) = delete;
+    TObjectPool(TObjectPool&&) = delete;
+    TObjectPool& operator=(TObjectPool&&) = delete;
 
     /**
      * @brief Create a new object with a generated UUID.
@@ -62,7 +82,7 @@ public:
     TExpected<Handle> CreateWithId(const Uuid& Id, Args&&... args)
     {
         static_assert(std::is_base_of_v<T, U>, "Pool type mismatch");
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         if (Id.is_nil())
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Nil uuid"));
@@ -72,12 +92,20 @@ public:
             return std::unexpected(MakeError(EErrorCode::AlreadyExists, "Uuid already in pool"));
         }
         size_t Index = AllocateSlot();
+        auto RuntimeIndex = RuntimeIndexFromSlot(Index);
+        if (!RuntimeIndex)
+        {
+            m_freeList.push_back(Index);
+            return std::unexpected(RuntimeIndex.error());
+        }
         Entry& EntryRef = m_entries[Index];
+        EntryRef.Generation = NextGeneration(EntryRef.Generation);
         EntryRef.Id = Id;
-        EntryRef.m_object = std::make_shared<U>(std::forward<Args>(args)...);
+        EntryRef.m_uniqueObject = std::make_unique<U>(std::forward<Args>(args)...);
+        EntryRef.m_sharedObject.reset();
         EntryRef.m_pendingDestroy = false;
         m_index.emplace(Id, Index);
-        return Handle(Id);
+        return Handle(Id, m_runtimePoolToken, RuntimeIndex.value(), EntryRef.Generation);
     }
 
     /**
@@ -104,7 +132,7 @@ public:
      */
     TExpected<Handle> CreateFromSharedWithId(std::shared_ptr<T> Object, const Uuid& Id)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         if (!Object)
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null object"));
@@ -118,12 +146,20 @@ public:
             return std::unexpected(MakeError(EErrorCode::AlreadyExists, "Uuid already in pool"));
         }
         size_t Index = AllocateSlot();
+        auto RuntimeIndex = RuntimeIndexFromSlot(Index);
+        if (!RuntimeIndex)
+        {
+            m_freeList.push_back(Index);
+            return std::unexpected(RuntimeIndex.error());
+        }
         Entry& EntryRef = m_entries[Index];
+        EntryRef.Generation = NextGeneration(EntryRef.Generation);
         EntryRef.Id = Id;
-        EntryRef.m_object = std::move(Object);
+        EntryRef.m_sharedObject = std::move(Object);
+        EntryRef.m_uniqueObject.reset();
         EntryRef.m_pendingDestroy = false;
         m_index.emplace(Id, Index);
-        return Handle(Id);
+        return Handle(Id, m_runtimePoolToken, RuntimeIndex.value(), EntryRef.Generation);
     }
 
     /**
@@ -133,7 +169,18 @@ public:
      */
     bool IsValid(const Handle& HandleRef) const
     {
-        return IsValid(HandleRef.Id);
+        GameLockGuard Lock(m_mutex);
+        size_t Index = 0;
+        if (!ResolveIndexLocked(HandleRef, Index))
+        {
+            return false;
+        }
+        const Entry& EntryRef = m_entries[Index];
+        if (!EntryRef.m_object || EntryRef.m_pendingDestroy)
+        {
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -143,18 +190,42 @@ public:
      */
     bool IsValid(const Uuid& Id) const
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_index.find(Id);
         if (It == m_index.end())
         {
             return false;
         }
         const Entry& EntryRef = m_entries[It->second];
-        if (!EntryRef.m_object || EntryRef.m_pendingDestroy)
+        if (!ObjectPtr(EntryRef) || EntryRef.m_pendingDestroy)
         {
             return false;
         }
         return true;
+    }
+
+    /**
+     * @brief Resolve a UUID to a runtime-key handle (slow path).
+     * @param Id UUID to resolve.
+     * @return Runtime-key handle or error if missing/pending destroy.
+     * @remarks
+     * Explicit persistence bridge used to convert UUID identities into fast runtime
+     * handles. Avoid in hot loops.
+     */
+    TExpected<Handle> HandleByIdSlow(const Uuid& Id) const
+    {
+        GameLockGuard Lock(m_mutex);
+        auto It = m_index.find(Id);
+        if (It == m_index.end())
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Handle not found"));
+        }
+        const Entry& EntryRef = m_entries[It->second];
+        if (!ObjectPtr(EntryRef) || EntryRef.m_pendingDestroy)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Object missing"));
+        }
+        return MakeHandle(It->second, EntryRef);
     }
 
     /**
@@ -165,7 +236,19 @@ public:
      */
     T* Borrowed(const Handle& HandleRef)
     {
-        return Borrowed(HandleRef.Id);
+        GameLockGuard Lock(m_mutex);
+        size_t Index = 0;
+        if (!ResolveIndexLocked(HandleRef, Index))
+        {
+            return nullptr;
+        }
+        Entry& EntryRef = m_entries[Index];
+        T* Object = ObjectPtr(EntryRef);
+        if (!Object || EntryRef.m_pendingDestroy)
+        {
+            return nullptr;
+        }
+        return Object;
     }
 
     /**
@@ -176,18 +259,19 @@ public:
      */
     T* Borrowed(const Uuid& Id)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_index.find(Id);
         if (It == m_index.end())
         {
             return nullptr;
         }
         Entry& EntryRef = m_entries[It->second];
-        if (!EntryRef.m_object || EntryRef.m_pendingDestroy)
+        T* Object = ObjectPtr(EntryRef);
+        if (!Object || EntryRef.m_pendingDestroy)
         {
             return nullptr;
         }
-        return EntryRef.m_object.get();
+        return Object;
     }
 
     /**
@@ -197,7 +281,19 @@ public:
      */
     const T* Borrowed(const Handle& HandleRef) const
     {
-        return Borrowed(HandleRef.Id);
+        GameLockGuard Lock(m_mutex);
+        size_t Index = 0;
+        if (!ResolveIndexLocked(HandleRef, Index))
+        {
+            return nullptr;
+        }
+        const Entry& EntryRef = m_entries[Index];
+        T* Object = ObjectPtr(EntryRef);
+        if (!Object || EntryRef.m_pendingDestroy)
+        {
+            return nullptr;
+        }
+        return Object;
     }
 
     /**
@@ -207,18 +303,19 @@ public:
      */
     const T* Borrowed(const Uuid& Id) const
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_index.find(Id);
         if (It == m_index.end())
         {
             return nullptr;
         }
         const Entry& EntryRef = m_entries[It->second];
-        if (!EntryRef.m_object || EntryRef.m_pendingDestroy)
+        T* Object = ObjectPtr(EntryRef);
+        if (!Object || EntryRef.m_pendingDestroy)
         {
             return nullptr;
         }
-        return EntryRef.m_object.get();
+        return Object;
     }
 
     /**
@@ -229,7 +326,24 @@ public:
      */
     TExpected<void> DestroyLater(const Handle& HandleRef)
     {
-        return DestroyLater(HandleRef.Id);
+        GameLockGuard Lock(m_mutex);
+        size_t Index = 0;
+        if (!ResolveIndexLocked(HandleRef, Index))
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Handle not found"));
+        }
+
+        Entry& EntryRef = m_entries[Index];
+        if (!ObjectPtr(EntryRef))
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Object missing"));
+        }
+        if (!EntryRef.m_pendingDestroy)
+        {
+            EntryRef.m_pendingDestroy = true;
+            m_pendingDestroy.push_back(Index);
+        }
+        return Ok();
     }
 
     /**
@@ -240,14 +354,14 @@ public:
      */
     TExpected<void> DestroyLater(const Uuid& Id)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_index.find(Id);
         if (It == m_index.end())
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Handle not found"));
         }
         Entry& EntryRef = m_entries[It->second];
-        if (!EntryRef.m_object)
+        if (!ObjectPtr(EntryRef))
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Object missing"));
         }
@@ -267,7 +381,7 @@ public:
      */
     void EndFrame()
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         for (size_t Index : m_pendingDestroy)
         {
             if (Index >= m_entries.size())
@@ -276,7 +390,8 @@ public:
             }
             Entry& EntryRef = m_entries[Index];
             m_index.erase(EntryRef.Id);
-            EntryRef.m_object.reset();
+            EntryRef.m_uniqueObject.reset();
+            EntryRef.m_sharedObject.reset();
             EntryRef.m_pendingDestroy = false;
             EntryRef.Id = Uuid{};
             m_freeList.push_back(Index);
@@ -291,7 +406,7 @@ public:
      */
     void Clear()
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         m_entries.clear();
         m_index.clear();
         m_freeList.clear();
@@ -305,7 +420,13 @@ public:
      */
     bool IsPendingDestroy(const Handle& HandleRef) const
     {
-        return IsPendingDestroy(HandleRef.Id);
+        GameLockGuard Lock(m_mutex);
+        size_t Index = 0;
+        if (!ResolveIndexLocked(HandleRef, Index))
+        {
+            return false;
+        }
+        return m_entries[Index].m_pendingDestroy;
     }
 
     /**
@@ -315,7 +436,7 @@ public:
      */
     bool IsPendingDestroy(const Uuid& Id) const
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_index.find(Id);
         if (It == m_index.end())
         {
@@ -333,15 +454,16 @@ public:
     template<typename Fn>
     void ForEach(const Fn& Func) const
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         for (size_t Index = 0; Index < m_entries.size(); ++Index)
         {
             const Entry& EntryRef = m_entries[Index];
-            if (!EntryRef.m_object || EntryRef.m_pendingDestroy)
+            T* Object = ObjectPtr(EntryRef);
+            if (!Object || EntryRef.m_pendingDestroy)
             {
                 continue;
             }
-            Func(Handle(EntryRef.Id), *EntryRef.m_object);
+            Func(MakeHandle(Index, EntryRef), *Object);
         }
     }
 
@@ -354,15 +476,16 @@ public:
     template<typename Fn>
     void ForEachAll(const Fn& Func) const
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         for (size_t Index = 0; Index < m_entries.size(); ++Index)
         {
             const Entry& EntryRef = m_entries[Index];
-            if (!EntryRef.m_object)
+            T* Object = ObjectPtr(EntryRef);
+            if (!Object)
             {
                 continue;
             }
-            Func(Handle(EntryRef.Id), *EntryRef.m_object);
+            Func(MakeHandle(Index, EntryRef), *Object);
         }
     }
 
@@ -375,15 +498,16 @@ public:
     template<typename Fn>
     void ForEach(const Fn& Func)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         for (size_t Index = 0; Index < m_entries.size(); ++Index)
         {
             Entry& EntryRef = m_entries[Index];
-            if (!EntryRef.m_object || EntryRef.m_pendingDestroy)
+            T* Object = ObjectPtr(EntryRef);
+            if (!Object || EntryRef.m_pendingDestroy)
             {
                 continue;
             }
-            Func(Handle(EntryRef.Id), *EntryRef.m_object);
+            Func(MakeHandle(Index, EntryRef), *Object);
         }
     }
 
@@ -396,15 +520,16 @@ public:
     template<typename Fn>
     void ForEachAll(const Fn& Func)
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         for (size_t Index = 0; Index < m_entries.size(); ++Index)
         {
             Entry& EntryRef = m_entries[Index];
-            if (!EntryRef.m_object)
+            T* Object = ObjectPtr(EntryRef);
+            if (!Object)
             {
                 continue;
             }
-            Func(Handle(EntryRef.Id), *EntryRef.m_object);
+            Func(MakeHandle(Index, EntryRef), *Object);
         }
     }
 
@@ -416,9 +541,97 @@ private:
     struct Entry
     {
         Uuid Id{}; /**< @brief UUID key for this entry. */
-        std::shared_ptr<T> m_object{}; /**< @brief Stored object pointer. */
+        uint32_t Generation = 0; /**< @brief Slot generation used for stale-handle rejection. */
+        std::unique_ptr<T> m_uniqueObject{}; /**< @brief Standard ownership path for pool-created objects. */
+        std::shared_ptr<T> m_sharedObject{}; /**< @brief Shared ownership path for externally-owned inserts. */
         bool m_pendingDestroy = false; /**< @brief True when scheduled for deletion. */
     };
+
+    static T* ObjectPtr(Entry& EntryRef)
+    {
+        if (EntryRef.m_uniqueObject)
+        {
+            return EntryRef.m_uniqueObject.get();
+        }
+        return EntryRef.m_sharedObject.get();
+    }
+
+    static T* ObjectPtr(const Entry& EntryRef)
+    {
+        if (EntryRef.m_uniqueObject)
+        {
+            return EntryRef.m_uniqueObject.get();
+        }
+        return EntryRef.m_sharedObject.get();
+    }
+
+    /**
+     * @brief Return a runtime slot index usable by `THandle`.
+     * @param Index Slot index in `m_entries`.
+     * @return Runtime index value or error when pool exceeds handle index range.
+     */
+    TExpected<uint32_t> RuntimeIndexFromSlot(size_t Index) const
+    {
+        if (Index > static_cast<size_t>(std::numeric_limits<uint32_t>::max()) - 1)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Object pool index exceeded runtime handle range"));
+        }
+        return static_cast<uint32_t>(Index);
+    }
+
+    /**
+     * @brief Increment slot generation while reserving zero as invalid.
+     * @param Previous Previous generation value.
+     * @return Next non-zero generation.
+     */
+    static uint32_t NextGeneration(uint32_t Previous)
+    {
+        uint32_t Next = Previous + 1;
+        if (Next == 0)
+        {
+            Next = 1;
+        }
+        return Next;
+    }
+
+    /**
+     * @brief Build a handle for a live entry.
+     * @param Index Slot index.
+     * @param EntryRef Entry payload.
+     * @return Handle containing UUID plus runtime key when index fits.
+     */
+    Handle MakeHandle(size_t Index, const Entry& EntryRef) const
+    {
+        if (Index > static_cast<size_t>(std::numeric_limits<uint32_t>::max()) - 1)
+        {
+            return Handle(EntryRef.Id);
+        }
+        return Handle(EntryRef.Id, m_runtimePoolToken, static_cast<uint32_t>(Index), EntryRef.Generation);
+    }
+
+    /**
+     * @brief Resolve a handle to an entry index with runtime-key fast path.
+     * @param HandleRef Handle to resolve.
+     * @param OutIndex Resolved index on success.
+     * @return True when handle resolves to a currently indexed entry.
+     */
+    bool ResolveIndexLocked(const Handle& HandleRef, size_t& OutIndex) const
+    {
+        if (HandleRef.HasRuntimeKey() && HandleRef.RuntimePoolToken == m_runtimePoolToken)
+        {
+            const size_t Candidate = static_cast<size_t>(HandleRef.RuntimeIndex);
+            if (Candidate < m_entries.size())
+            {
+                const Entry& EntryRef = m_entries[Candidate];
+                if (EntryRef.Generation == HandleRef.RuntimeGeneration && EntryRef.Id == HandleRef.Id)
+                {
+                    OutIndex = Candidate;
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 
     /**
      * @brief Allocate a storage slot, reusing free slots if possible.
@@ -438,11 +651,12 @@ private:
         return Index;
     }
 
-    mutable std::mutex m_mutex{}; /**< @brief Protects pool state. */
+    mutable GameMutex m_mutex{}; /**< @brief Protects pool state. */
     std::vector<Entry> m_entries{}; /**< @brief Dense storage for entries. */
     std::unordered_map<Uuid, size_t, UuidHash> m_index{}; /**< @brief UUID -> entry index. */
     std::vector<size_t> m_freeList{}; /**< @brief Reusable entry indices. */
     std::vector<size_t> m_pendingDestroy{}; /**< @brief Indices scheduled for deletion. */
+    uint32_t m_runtimePoolToken = ObjectRegistry::kInvalidRuntimePoolToken; /**< @brief Runtime token used for direct handle resolution. */
 };
 
 } // namespace SnAPI::GameFramework

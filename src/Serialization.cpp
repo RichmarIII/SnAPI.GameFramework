@@ -1,4 +1,5 @@
 #include "Serialization.h"
+#include "GameThreading.h"
 
 #include <array>
 #include <cstring>
@@ -233,7 +234,7 @@ struct TypeVisitGuard
 };
 
 std::unordered_map<TypeId, std::shared_ptr<SerializableFieldCacheEntry>, UuidHash> g_serializableFieldCache; /**< @brief TypeId -> cached serializable field plan. */
-std::mutex g_serializableFieldMutex; /**< @brief Guards serializable field cache map. */
+GameMutex g_serializableFieldMutex; /**< @brief Guards serializable field cache map. */
 
 void BuildSerializableFields(
     const TypeId& Type,
@@ -281,7 +282,7 @@ std::shared_ptr<const SerializableFieldCacheEntry> GetSerializableFieldCache(con
     auto& ValueRegistry = ValueCodecRegistry::Instance();
     const uint32_t Version = ValueRegistry.Version();
     {
-        std::lock_guard<std::mutex> Lock(g_serializableFieldMutex);
+        GameLockGuard Lock(g_serializableFieldMutex);
         auto It = g_serializableFieldCache.find(Type);
         if (It != g_serializableFieldCache.end() && It->second->CodecVersion == Version)
         {
@@ -302,7 +303,7 @@ std::shared_ptr<const SerializableFieldCacheEntry> GetSerializableFieldCache(con
     }
 
     {
-        std::lock_guard<std::mutex> Lock(g_serializableFieldMutex);
+        GameLockGuard Lock(g_serializableFieldMutex);
         g_serializableFieldCache[Type] = Entry;
     }
 
@@ -566,7 +567,7 @@ TExpected<void*> ComponentSerializationRegistry::Create(NodeGraph& Graph, NodeHa
 {
     CreateFn CreateValue;
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -576,7 +577,7 @@ TExpected<void*> ComponentSerializationRegistry::Create(NodeGraph& Graph, NodeHa
     if (!CreateValue)
     {
         (void)TypeAutoRegistry::Instance().Ensure(Type);
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -594,7 +595,7 @@ TExpected<void*> ComponentSerializationRegistry::CreateWithId(NodeGraph& Graph, 
 {
     CreateWithIdFn CreateValue;
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -604,7 +605,7 @@ TExpected<void*> ComponentSerializationRegistry::CreateWithId(NodeGraph& Graph, 
     if (!CreateValue)
     {
         (void)TypeAutoRegistry::Instance().Ensure(Type);
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -622,7 +623,7 @@ TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, co
 {
     SerializeFn SerializeValue;
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -632,7 +633,7 @@ TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, co
     if (!SerializeValue)
     {
         (void)TypeAutoRegistry::Instance().Ensure(Type);
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -666,7 +667,7 @@ TExpected<void> ComponentSerializationRegistry::Deserialize(const TypeId& Type, 
 {
     DeserializeFn DeserializeValue;
     {
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -676,7 +677,7 @@ TExpected<void> ComponentSerializationRegistry::Deserialize(const TypeId& Type, 
     if (!DeserializeValue)
     {
         (void)TypeAutoRegistry::Instance().Ensure(Type);
-        std::lock_guard<std::mutex> Lock(m_mutex);
+        GameLockGuard Lock(m_mutex);
         auto It = m_entries.find(Type);
         if (It != m_entries.end())
         {
@@ -826,7 +827,9 @@ TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload
     TSerializationContext Context;
     Context.Graph = &Graph;
     std::vector<NodeHandle> CreatedHandles;
+    std::unordered_map<Uuid, NodeHandle, UuidHash> HandlesById{};
     CreatedHandles.reserve(Payload.Nodes.size());
+    HandlesById.reserve(Payload.Nodes.size());
     for (const auto& NodeData : Payload.Nodes)
     {
         TypeId Type = NodeData.NodeType;
@@ -843,6 +846,7 @@ TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload
         }
         NodeHandle Handle = HandleResult.value();
         CreatedHandles.push_back(Handle);
+        HandlesById.emplace(Handle.Id, Handle);
         if (auto* Node = Handle.Borrowed())
         {
             Node->Active(NodeData.Active);
@@ -854,8 +858,18 @@ TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload
         const auto& NodeData = Payload.Nodes[Index];
         if (!NodeData.ParentId.is_nil())
         {
-            NodeHandle Parent(NodeData.ParentId);
-            NodeHandle Child = NodeData.NodeId.is_nil() ? CreatedHandles[Index] : NodeHandle(NodeData.NodeId);
+            auto ParentIt = HandlesById.find(NodeData.ParentId);
+            if (ParentIt == HandlesById.end())
+            {
+                return std::unexpected(MakeError(EErrorCode::NotFound, "Parent handle missing"));
+            }
+            auto ChildIt = HandlesById.find(CreatedHandles[Index].Id);
+            if (ChildIt == HandlesById.end())
+            {
+                return std::unexpected(MakeError(EErrorCode::NotFound, "Child handle missing"));
+            }
+            NodeHandle Parent = ParentIt->second;
+            NodeHandle Child = ChildIt->second;
             auto AttachResult = Graph.AttachChild(Parent, Child);
             if (!AttachResult)
             {
@@ -867,7 +881,12 @@ TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload
     for (size_t Index = 0; Index < Payload.Nodes.size(); ++Index)
     {
         const auto& NodeData = Payload.Nodes[Index];
-        NodeHandle Owner = NodeData.NodeId.is_nil() ? CreatedHandles[Index] : NodeHandle(NodeData.NodeId);
+        auto OwnerIt = HandlesById.find(CreatedHandles[Index].Id);
+        if (OwnerIt == HandlesById.end())
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner handle missing"));
+        }
+        NodeHandle Owner = OwnerIt->second;
 
         if (NodeData.HasNodeData && !NodeData.NodeBytes.empty())
         {

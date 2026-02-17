@@ -15,6 +15,8 @@ namespace SnAPI::GameFramework
 
 class NodeGraph;
 class IWorld;
+class IComponentStorage;
+class RelevanceComponent;
 
 /**
  * @brief Canonical concrete node implementation used by NodeGraph.
@@ -32,8 +34,8 @@ class IWorld;
  *
  * Tick model:
  * - Tree traversal is implemented in `TickTree`/`FixedTickTree`/`LateTickTree`.
- * - Actual gameplay behavior lives in overridden hook methods (`Tick`, `FixedTick`, `LateTick`)
- *   and attached components.
+ * - Actual node behavior lives in overridden hook methods (`Tick`, `FixedTick`, `LateTick`).
+ * - Attached component hooks are dispatched by `NodeGraph` storage-driven phases after node traversal.
  */
 class BaseNode : public INode
 {
@@ -115,7 +117,7 @@ public:
      */
     void Id(Uuid Id) override
     {
-        m_self = NodeHandle(std::move(Id));
+        m_self.Id = std::move(Id);
     }
 
     /**
@@ -179,6 +181,20 @@ public:
     void AddChild(NodeHandle Child) override
     {
         m_children.push_back(Child);
+        m_childNodes.push_back(nullptr);
+    }
+
+    /**
+     * @brief Add a child with a resolved pointer cache entry.
+     * @param Child Child handle.
+     * @param ChildNode Resolved child node pointer.
+     * @remarks
+     * Internal fast-path used by `NodeGraph` to avoid first-frame resolve cost.
+     */
+    void AddChildResolved(NodeHandle Child, BaseNode* ChildNode)
+    {
+        m_children.push_back(Child);
+        m_childNodes.push_back(ChildNode);
     }
 
     /**
@@ -190,11 +206,17 @@ public:
      */
     void RemoveChild(NodeHandle Child) override
     {
-        for (auto It = m_children.begin(); It != m_children.end(); ++It)
+        for (size_t Index = 0; Index < m_children.size(); ++Index)
         {
-            if (*It == Child)
+            if (m_children[Index] == Child)
             {
-                m_children.erase(It);
+                auto ChildIt = m_children.begin() + static_cast<std::vector<NodeHandle>::difference_type>(Index);
+                m_children.erase(ChildIt);
+                if (Index < m_childNodes.size())
+                {
+                    auto CacheIt = m_childNodes.begin() + static_cast<std::vector<BaseNode*>::difference_type>(Index);
+                    m_childNodes.erase(CacheIt);
+                }
                 return;
             }
         }
@@ -244,6 +266,28 @@ public:
     }
 
     /**
+     * @brief Check whether this node is queued for deferred destruction.
+     * @return True when destruction has been scheduled but not yet flushed.
+     * @remarks
+     * Used by hot-path activity checks to avoid UUID set lookups while preserving
+     * end-of-frame deferred destruction semantics.
+     */
+    bool PendingDestroy() const
+    {
+        return m_pendingDestroy;
+    }
+
+    /**
+     * @brief Mark whether this node is queued for deferred destruction.
+     * @param Pending New pending-destroy state.
+     * @remarks Managed by `NodeGraph::DestroyNode`/`EndFrame` lifecycle paths.
+     */
+    void PendingDestroy(bool Pending)
+    {
+        m_pendingDestroy = Pending;
+    }
+
+    /**
      * @brief True when this node executes with server authority.
      * @remarks Derived from world networking role; false when unbound to a world/session.
      */
@@ -276,6 +320,56 @@ public:
     const std::vector<TypeId>& ComponentTypes() const override
     {
         return m_componentTypes;
+    }
+
+    /**
+     * @brief Access attached component storages for this node.
+     * @remarks
+     * This is a hot-path cache used by tick traversal to avoid per-frame
+     * type-id map lookups in NodeGraph.
+     */
+    std::vector<IComponentStorage*>& ComponentStorages()
+    {
+        return m_componentStorages;
+    }
+
+    /**
+     * @brief Access attached component storages for this node (const).
+     */
+    const std::vector<IComponentStorage*>& ComponentStorages() const
+    {
+        return m_componentStorages;
+    }
+
+    /**
+     * @brief Get cached relevance component pointer for this node.
+     * @return Relevance component pointer or nullptr.
+     * @remarks
+     * Populated by NodeGraph bookkeeping when a RelevanceComponent is attached.
+     * This cache avoids per-frame storage lookups in `IsNodeActive` hot paths.
+     */
+    RelevanceComponent* RelevanceState()
+    {
+        return m_relevanceComponent;
+    }
+
+    /**
+     * @brief Get cached relevance component pointer for this node (const).
+     * @return Relevance component pointer or nullptr.
+     */
+    const RelevanceComponent* RelevanceState() const
+    {
+        return m_relevanceComponent;
+    }
+
+    /**
+     * @brief Set cached relevance component pointer for this node.
+     * @param Relevance Relevance component pointer.
+     * @remarks Updated by NodeGraph component registration/unregistration paths.
+     */
+    void RelevanceState(RelevanceComponent* Relevance)
+    {
+        m_relevanceComponent = Relevance;
     }
 
     /**
@@ -400,8 +494,11 @@ public:
      * @param DeltaSeconds Time since last tick.
      * @remarks
      * Traversal semantics:
-     * 1. if node is active, run `Tick` and attached component tick
+     * 1. if node is active, run `Tick`
      * 2. recurse into child nodes in stored order
+     *
+     * Component tick hooks are not dispatched here; they are executed by the
+     * owning graph's storage-driven tick phase.
      */
     void TickTree(float DeltaSeconds) override;
     /**
@@ -421,10 +518,14 @@ private:
     NodeHandle m_self{}; /**< @brief Stable runtime identity handle for this node. */
     NodeHandle m_parent{}; /**< @brief Parent identity; null indicates this node is a root in its graph. */
     std::vector<NodeHandle> m_children{}; /**< @brief Ordered child identity list used for deterministic traversal. */
+    std::vector<BaseNode*> m_childNodes{}; /**< @brief Child pointer cache aligned with `m_children` to reduce handle resolves. */
     std::string m_name{"Node"}; /**< @brief Human-readable/debug name (not required to be unique). */
     bool m_active = true; /**< @brief Local execution gate used by tree traversal. */
     bool m_replicated = false; /**< @brief Runtime replication gate for networking bridges. */
+    bool m_pendingDestroy = false; /**< @brief True when this node has been scheduled for end-of-frame destruction. */
     std::vector<TypeId> m_componentTypes{}; /**< @brief Attached component type ids for introspection and fast feature checks. */
+    std::vector<IComponentStorage*> m_componentStorages{}; /**< @brief Attached component storage cache aligned with m_componentTypes. */
+    RelevanceComponent* m_relevanceComponent = nullptr; /**< @brief Cached relevance component pointer for hot-path activation checks. */
     std::vector<uint64_t> m_componentMask{}; /**< @brief Dense bitmask mirror of `m_componentTypes` for fast `Has<T>` checks. */
     uint32_t m_maskVersion = 0; /**< @brief Last component-type-registry version this mask was synchronized against. */
     NodeGraph* m_ownerGraph = nullptr; /**< @brief Non-owning pointer to the graph that stores and ticks this node. */

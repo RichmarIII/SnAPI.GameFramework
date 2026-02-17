@@ -66,7 +66,7 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const TransformComponent& Transform
 
 bool StaticMeshComponent::ReloadMesh()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     ClearMesh();
     return EnsureMeshLoaded();
 }
@@ -74,7 +74,7 @@ bool StaticMeshComponent::ReloadMesh()
 void StaticMeshComponent::SetSharedMaterialInstances(std::shared_ptr<SnAPI::Graphics::MaterialInstance> GBufferInstance,
                                                      std::shared_ptr<SnAPI::Graphics::MaterialInstance> ShadowInstance)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     m_sharedGBufferInstance = std::move(GBufferInstance);
     m_sharedShadowInstance = std::move(ShadowInstance);
 
@@ -86,7 +86,7 @@ void StaticMeshComponent::SetSharedMaterialInstances(std::shared_ptr<SnAPI::Grap
 
 void StaticMeshComponent::ClearMesh()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     m_renderObject.reset();
     m_loadedPath.clear();
     m_registered = false;
@@ -95,19 +95,19 @@ void StaticMeshComponent::ClearMesh()
 
 void StaticMeshComponent::OnCreate()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     (void)EnsureMeshLoaded();
 }
 
 void StaticMeshComponent::OnDestroy()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     ClearMesh();
 }
 
 void StaticMeshComponent::Tick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     (void)DeltaSeconds;
 
     if (m_settings.MeshPath.empty())
@@ -141,7 +141,7 @@ void StaticMeshComponent::Tick(float DeltaSeconds)
 
 RendererSystem* StaticMeshComponent::ResolveRendererSystem() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -159,7 +159,7 @@ RendererSystem* StaticMeshComponent::ResolveRendererSystem() const
 
 bool StaticMeshComponent::EnsureMeshLoaded()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (m_settings.MeshPath.empty())
     {
         return false;
@@ -208,7 +208,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
 
 void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -233,7 +233,7 @@ void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::IRenderObje
 
 void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject) const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (!m_sharedGBufferInstance && !m_sharedShadowInstance)
     {
         return;
@@ -260,7 +260,7 @@ void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::IRenderO
 
 void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::IRenderObject& RenderObject)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     auto* Renderer = ResolveRendererSystem();
     if (!Renderer || !Renderer->IsInitialized())
     {

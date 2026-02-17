@@ -5,15 +5,26 @@ SnAPI.GameFramework is built around four main axes:
 1. **Runtime hierarchy**: `World -> Level -> NodeGraph -> BaseNode`
 2. **Type metadata**: `TypeRegistry`, `TTypeBuilder`, and cached `TypeId`
 3. **Data transport**: reflection serialization, asset payloads, and network replication
-4. **World-owned simulation systems**: networking, audio, physics, and renderer adapters
+4. **World-owned simulation systems**: input, networking, audio, physics, and renderer adapters
 
 ## Runtime Model
 
-- `World` is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system, renderer system).
-- `World` is also responsible for subsystem frame work (networking pump + audio update + optional physics step).
+- `World` is the runtime root and owns subsystems (jobs, input, audio, networking bridges, physics system, renderer system).
+- `World` is also responsible for subsystem frame work (input pump + networking pump + audio update + optional physics step).
 - `Level` and `NodeGraph` are nodes, so graphs can be nested.
 - `BaseNode` owns hierarchy relationships and component type bookkeeping.
 - `IComponent` adds behavior and state to nodes without changing node types.
+
+## Input Model
+
+- `World` owns one `InputSystem` when input integration is compiled in.
+- `InputSystem` wraps `SnAPI::Input::InputRuntime` + `InputContext` lifecycle.
+- `InputSystem::Initialize(...)` registers configured backend factories (SDL3/HIDAPI/libusb) and creates one active backend context.
+- `World::Tick(...)` pumps `InputSystem` before node tick traversal.
+- Gameplay code can consume normalized frame state through:
+  - `World::Input().Snapshot()`
+  - `World::Input().Events()`
+  - `World::Input().Actions()`
 
 ## Reflection Model
 

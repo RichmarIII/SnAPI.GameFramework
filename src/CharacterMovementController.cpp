@@ -2,8 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
-#include "Profiling.h"
-
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -20,6 +20,8 @@ namespace SnAPI::GameFramework
 namespace
 {
 using Scalar = SnAPI::Math::Scalar;
+constexpr float kJumpBufferSeconds = 0.12f;
+constexpr float kGroundCoyoteSeconds = 0.08f;
 
 Scalar LengthSquared(const Vec3& Value)
 {
@@ -38,16 +40,37 @@ Vec3 NormalizeOrZero(const Vec3& Value)
     return Value * InvLen;
 }
 
-SnAPI::Physics::Vec3 ToPhysicsVec3(const Vec3& Value)
+float GroundProbeHalfHeight(BaseNode* Owner)
 {
-    return Value;
+    if (!Owner)
+    {
+        return 0.0f;
+    }
+
+    auto ColliderResult = Owner->Component<ColliderComponent>();
+    if (!ColliderResult)
+    {
+        return 0.5f;
+    }
+
+    const auto& Settings = ColliderResult->GetSettings();
+    const float LocalYOffset = static_cast<float>(std::abs(Settings.LocalPosition.y()));
+    switch (Settings.Shape)
+    {
+    case SnAPI::Physics::EShapeType::Sphere:
+        return std::max(0.0f, Settings.Radius) + LocalYOffset;
+    case SnAPI::Physics::EShapeType::Capsule:
+        return std::max(0.0f, Settings.HalfHeight + Settings.Radius) + LocalYOffset;
+    case SnAPI::Physics::EShapeType::Box:
+    default:
+        return std::max(0.0f, static_cast<float>(Settings.HalfExtent.y())) + LocalYOffset;
+    }
 }
 
 } // namespace
 
 void CharacterMovementController::FixedTick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     if (DeltaSeconds <= 0.0f)
     {
         return;
@@ -55,23 +78,25 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
 
     BaseNode* Owner = nullptr;
     {
-        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ResolveOwner", "Gameplay");
         Owner = OwnerNode();
     }
     if (!Owner)
     {
         m_jumpRequested = false;
+        m_jumpBufferSecondsRemaining = 0.0f;
+        m_groundCoyoteSecondsRemaining = 0.0f;
         m_hasLastPosition = false;
         return;
     }
 
     auto RigidResult = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ResolveRigidBody", "Gameplay");
         return Owner->Component<RigidBodyComponent>();
     }();
     if (!RigidResult)
     {
         m_jumpRequested = false;
+        m_jumpBufferSecondsRemaining = 0.0f;
+        m_groundCoyoteSecondsRemaining = 0.0f;
         m_hasLastPosition = false;
         return;
     }
@@ -80,51 +105,94 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
     if (!RigidBody.HasBody() && !RigidBody.CreateBody())
     {
         m_jumpRequested = false;
+        m_jumpBufferSecondsRemaining = 0.0f;
+        m_groundCoyoteSecondsRemaining = 0.0f;
         m_hasLastPosition = false;
         return;
     }
 
-    float VerticalVelocity = 0.0f;
+    if (m_jumpRequested)
     {
-        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.SampleVerticalVelocity", "Gameplay");
-        if (auto TransformResult = Owner->Component<TransformComponent>())
+        m_jumpBufferSecondsRemaining = kJumpBufferSeconds;
+        m_jumpRequested = false;
+    }
+
+    float VerticalVelocity = 0.0f;
+    bool HasPositionSample = false;
+    Vec3 PositionSample = Vec3::Zero();
+    {
+        auto* WorldPtr = Owner->World();
+        auto* Physics = WorldPtr ? &WorldPtr->Physics() : nullptr;
+        auto* Scene = Physics ? Physics->Scene() : nullptr;
+        if (Scene && RigidBody.HasBody())
+        {
+            auto BodyTransformResult = Scene->Rigid().BodyTransform(RigidBody.PhysicsBodyHandle());
+            if (BodyTransformResult)
+            {
+                const SnAPI::Physics::Vec3 BodyPhysicsPosition = SnAPI::Physics::TransformPosition(*BodyTransformResult);
+                PositionSample = Physics ? Physics->PhysicsToWorldPosition(BodyPhysicsPosition) : BodyPhysicsPosition;
+                HasPositionSample = true;
+            }
+        }
+
+        if (!HasPositionSample)
+        {
+            if (auto TransformResult = Owner->Component<TransformComponent>())
+            {
+                PositionSample = TransformResult->Position;
+                HasPositionSample = true;
+            }
+        }
+
+        if (HasPositionSample)
         {
             if (m_hasLastPosition)
             {
-                VerticalVelocity = (TransformResult->Position.y() - m_lastPosition.y()) / DeltaSeconds;
+                VerticalVelocity = (PositionSample.y() - m_lastPosition.y()) / DeltaSeconds;
             }
-            m_lastPosition = TransformResult->Position;
+            m_lastPosition = PositionSample;
             m_hasLastPosition = true;
+        }
+        else
+        {
+            m_hasLastPosition = false;
         }
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.RefreshGroundedState", "Gameplay");
         m_grounded = RefreshGroundedState();
+        if (m_grounded)
+        {
+            m_groundCoyoteSecondsRemaining = kGroundCoyoteSeconds;
+        }
+        else if (m_groundCoyoteSecondsRemaining > 0.0f)
+        {
+            m_groundCoyoteSecondsRemaining = std::max(0.0f, m_groundCoyoteSecondsRemaining - DeltaSeconds);
+        }
     }
 
     {
-        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ApplyMoveInput", "Gameplay");
         Vec3 Move = m_moveInput;
         Move.y() = 0.0f;
         const Vec3 Direction = NormalizeOrZero(Move);
-        if (LengthSquared(Direction) > Scalar(0))
-        {
-            constexpr float kMoveSpeedScale = 0.1f;
-            Vec3 TargetVelocity = Direction * (m_settings.MoveForce * kMoveSpeedScale);
-            TargetVelocity.y() = VerticalVelocity;
-            (void)RigidBody.SetVelocity(TargetVelocity);
-        }
+        constexpr float kMoveSpeedScale = 0.1f;
+        Vec3 TargetVelocity = Direction * (m_settings.MoveForce * kMoveSpeedScale);
+        TargetVelocity.y() = VerticalVelocity;
+        (void)RigidBody.SetVelocity(TargetVelocity);
     }
 
-    if (m_jumpRequested && m_grounded)
+    if (m_jumpBufferSecondsRemaining > 0.0f && (m_grounded || m_groundCoyoteSecondsRemaining > 0.0f))
     {
-        SNAPI_GF_PROFILE_SCOPE("CharacterMovement.ApplyJump", "Gameplay");
-        (void)RigidBody.ApplyForce(Vec3{0.0f, m_settings.JumpImpulse, 0.0f}, true);
+        (void)RigidBody.ApplyForce(Vec3{0.0f, m_settings.JumpImpulse, 0.0f}, SnAPI::Physics::EForceMode::VelocityChange);
+        m_jumpBufferSecondsRemaining = 0.0f;
+        m_groundCoyoteSecondsRemaining = 0.0f;
         m_grounded = false;
     }
 
-    m_jumpRequested = false;
+    if (m_jumpBufferSecondsRemaining > 0.0f)
+    {
+        m_jumpBufferSecondsRemaining = std::max(0.0f, m_jumpBufferSecondsRemaining - DeltaSeconds);
+    }
     if (m_settings.ConsumeInputEachTick)
     {
         m_moveInput = Vec3::Zero();
@@ -133,25 +201,21 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
 
 void CharacterMovementController::SetMoveInput(const Vec3& Input)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     m_moveInput = Input;
 }
 
 void CharacterMovementController::AddMoveInput(const Vec3& Input)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     m_moveInput += Input;
 }
 
 void CharacterMovementController::Jump()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     m_jumpRequested = true;
 }
 
 bool CharacterMovementController::RefreshGroundedState()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -174,6 +238,7 @@ bool CharacterMovementController::RefreshGroundedState()
 
     SnAPI::Physics::CollisionMask Mask = static_cast<SnAPI::Physics::CollisionMask>(m_settings.GroundMask.Value());
     auto ColliderResult = Owner->Component<ColliderComponent>();
+    const float HalfHeight = GroundProbeHalfHeight(Owner);
     if (ColliderResult)
     {
         const std::uint32_t Layer = CollisionLayerToIndex(ColliderResult->GetSettings().Layer);
@@ -181,15 +246,32 @@ bool CharacterMovementController::RefreshGroundedState()
     }
 
     SnAPI::Physics::RaycastRequest Request{};
-    Request.Origin = ToPhysicsVec3(TransformResult->Position + Vec3{0.0f, m_settings.GroundProbeStartOffset, 0.0f});
+    const float StartOffset = std::max(0.0f, m_settings.GroundProbeStartOffset);
+    const float ProbeDepth = std::max(0.0f, m_settings.GroundProbeDistance);
+    const SnAPI::Physics::Vec3 WorldOrigin = TransformResult->Position + Vec3{0.0f, HalfHeight + StartOffset, 0.0f};
+    Request.Origin = Physics ? Physics->WorldToPhysicsPosition(WorldOrigin, false) : WorldOrigin;
     Request.Direction = SnAPI::Physics::Vec3{0.0f, -1.0f, 0.0f};
-    Request.Distance = m_settings.GroundProbeDistance;
+    Request.Distance = (HalfHeight * 2.0f) + StartOffset + ProbeDepth;
     Request.Mask = Mask;
-    Request.Mode = SnAPI::Physics::EQueryMode::ClosestHit;
+    Request.Mode = SnAPI::Physics::EQueryMode::AllHits;
 
-    SnAPI::Physics::RaycastHit Hit{};
-    const std::uint32_t HitCount = Scene->Query().Raycast(Request, std::span<SnAPI::Physics::RaycastHit>(&Hit, 1));
-    return HitCount > 0;
+    SnAPI::Physics::BodyHandle SelfBody{};
+    if (auto RigidBodyResult = Owner->Component<RigidBodyComponent>(); RigidBodyResult && RigidBodyResult->HasBody())
+    {
+        SelfBody = RigidBodyResult->PhysicsBodyHandle();
+    }
+
+    std::array<SnAPI::Physics::RaycastHit, 8> Hits{};
+    const std::uint32_t HitCount = Scene->Query().Raycast(Request, std::span<SnAPI::Physics::RaycastHit>(Hits));
+    for (std::uint32_t Index = 0; Index < HitCount && Index < Hits.size(); ++Index)
+    {
+        if (SelfBody.IsValid() && Hits[Index].Body == SelfBody)
+        {
+            continue;
+        }
+        return true;
+    }
+    return false;
 }
 
 } // namespace SnAPI::GameFramework

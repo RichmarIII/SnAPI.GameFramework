@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include "GameThreading.h"
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -233,7 +234,7 @@ public:
     bool IsFrozen() const;
 
 private:
-    mutable std::mutex m_mutex{}; /**< @brief Guards registry mutation and non-frozen lookups. */
+    mutable GameMutex m_mutex{}; /**< @brief Guards registry mutation and non-frozen lookups. */
     std::atomic<bool> m_frozen{false}; /**< @brief Frozen state flag controlling read/write mode behavior. */
     std::unordered_map<TypeId, TypeInfo, UuidHash> m_types{}; /**< @brief Primary metadata store keyed by TypeId. */
     std::unordered_map<std::string, TypeId, TransparentStringHash, TransparentStringEqual> m_nameToId{}; /**< @brief Secondary name index for lookup by stable type name. */

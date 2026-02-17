@@ -20,6 +20,8 @@
 #include "IComponent.h"
 #include "ILevel.h"
 #include "INode.h"
+#include "InputComponent.h"
+#include "InputSystem.h"
 #include "IWorld.h"
 #include "JobSystem.h"
 #include "Level.h"

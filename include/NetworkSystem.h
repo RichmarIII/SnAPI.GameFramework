@@ -3,12 +3,14 @@
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "Expected.h"
+#include "GameThreading.h"
 #include "NetSession.h"
 #include "Services/ReplicationService.h"
 #include "Services/RpcService.h"
@@ -53,14 +55,35 @@ struct NetworkBootstrapSettings
  * - Owns networking session/transport lifecycle.
  * - Service/bridge objects are owned by this subsystem once attached.
  */
-class NetworkSystem final
+class NetworkSystem final : public ITaskDispatcher
 {
 public:
+    using WorkTask = std::function<void(NetworkSystem&)>;
+    using CompletionTask = std::function<void(const TaskHandle&)>;
     /**
      * @brief Construct the system for a graph/world.
      * @param Graph Graph used for replication and RPC target resolution.
      */
     explicit NetworkSystem(NodeGraph& Graph);
+
+    /**
+     * @brief Enqueue work on the networking system thread.
+     * @param InTask Work callback executed on networking-thread affinity.
+     * @param OnComplete Optional completion callback marshaled to caller dispatcher.
+     * @return Task handle for wait/cancel polling.
+     */
+    TaskHandle EnqueueTask(WorkTask InTask, CompletionTask OnComplete = {});
+
+    /**
+     * @brief Enqueue a generic thread task for dispatcher marshalling.
+     * @param InTask Callback to execute on this system thread.
+     */
+    void EnqueueThreadTask(std::function<void()> InTask) override;
+
+    /**
+     * @brief Execute all queued tasks on the networking thread.
+     */
+    void ExecuteQueuedTasks();
 
     /**
      * @brief Initialize and own a session + UDP transport for this world.
@@ -164,6 +187,8 @@ private:
     bool WireSession(SnAPI::Networking::NetSession& Session,
                      SnAPI::Networking::RpcTargetId TargetIdValue);
 
+    mutable GameMutex m_threadMutex{}; /**< @brief Networking-system thread affinity guard. */
+    TSystemTaskQueue<NetworkSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
     NodeGraph* m_graph = nullptr; /**< @brief Non-owning graph context used by replication/rpc bridges. */
     SnAPI::Networking::NetSession* m_session = nullptr; /**< @brief Attached session pointer (owned). */
     std::unique_ptr<SnAPI::Networking::NetSession> m_ownedSession{}; /**< @brief Owned session for bootstrap path. */

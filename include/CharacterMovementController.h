@@ -29,9 +29,9 @@ public:
         static constexpr const char* kTypeName = "SnAPI::GameFramework::CharacterMovementController::Settings";
 
         float MoveForce = 35.0f; /**< @brief Horizontal acceleration-like value (m/s^2) applied via velocity-change each fixed tick. */
-        float JumpImpulse = 4.5f; /**< @brief Upward impulse applied when grounded and jump requested. */
-        float GroundProbeStartOffset = 0.1f; /**< @brief Upward offset from transform position for ground probe origin. */
-        float GroundProbeDistance = 1.2f; /**< @brief Downward probe distance used for grounded checks. */
+        float JumpImpulse = 4.5f; /**< @brief Upward velocity delta applied when grounded and jump requested. */
+        float GroundProbeStartOffset = 0.1f; /**< @brief Extra upward offset above collider top used for grounded ray origin. */
+        float GroundProbeDistance = 1.2f; /**< @brief Extra downward reach below collider bottom used for grounded checks. */
         CollisionMaskFlags GroundMask = kCollisionMaskAll; /**< @brief Collision mask for ground probe query. */
         bool ConsumeInputEachTick = false; /**< @brief Clear movement input after each fixed tick when true. */
     };
@@ -77,6 +77,8 @@ private:
     Vec3 m_lastPosition{}; /**< @brief Previous world position sample for vertical velocity estimation. */
     bool m_hasLastPosition = false; /**< @brief True when `m_lastPosition` contains a valid sample. */
     bool m_jumpRequested = false; /**< @brief Deferred jump trigger processed on fixed tick. */
+    float m_jumpBufferSecondsRemaining = 0.0f; /**< @brief Jump request hold window to absorb tick-order/input timing jitter. */
+    float m_groundCoyoteSecondsRemaining = 0.0f; /**< @brief Short post-ground grace window that keeps jump responsive on transient probe misses. */
     bool m_grounded = false; /**< @brief Cached grounded state from latest probe. */
 };
 

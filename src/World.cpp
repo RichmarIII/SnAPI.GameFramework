@@ -14,7 +14,7 @@ World::World()
     , m_networkSystem(*this)
 #endif
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     TypeKey(StaticTypeId<World>());
     BaseNode::World(this);
 }
@@ -25,43 +25,67 @@ World::World(std::string Name)
     , m_networkSystem(*this)
 #endif
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     TypeKey(StaticTypeId<World>());
     BaseNode::World(this);
 }
 
 World::~World()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     // Ensure component OnDestroy paths run while world subsystems still exist.
     NodeGraph::Clear();
     BaseNode::World(nullptr);
 }
 
+TaskHandle World::EnqueueTask(WorkTask InTask, CompletionTask OnComplete)
+{
+    return m_taskQueue.EnqueueTask(std::move(InTask), std::move(OnComplete));
+}
+
+void World::EnqueueThreadTask(std::function<void()> InTask)
+{
+    
+    m_taskQueue.EnqueueThreadTask(std::move(InTask));
+}
+
+void World::ExecuteQueuedTasks()
+{
+    m_taskQueue.ExecuteQueuedTasks(*this, m_threadMutex);
+}
+
 void World::Tick(const float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    if (m_inputSystem.IsInitialized())
+    {
+        (void)m_inputSystem.Pump();
+    }
+#endif
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
+    m_networkSystem.ExecuteQueuedTasks();
     if (auto* Session = m_networkSystem.Session())
     {
-        SNAPI_GF_PROFILE_SCOPE("World.NetworkPump", "Networking");
+        
         Session->Pump(Networking::Clock::now());
     }
 #endif
     {
-        SNAPI_GF_PROFILE_SCOPE("World.NodeGraphTick", "SceneGraph");
+        
         NodeGraph::Tick(DeltaSeconds);
     }
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     if (m_physicsSystem.IsInitialized() && m_physicsSystem.TickInVariableTick())
     {
-        SNAPI_GF_PROFILE_SCOPE("World.PhysicsVariableStep", "Physics");
-        //(void)m_physicsSystem.Step(DeltaSeconds);
+        
+        (void)m_physicsSystem.Step(DeltaSeconds);
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     {
-        SNAPI_GF_PROFILE_SCOPE("World.AudioUpdate", "Audio");
+        
         m_audioSystem.Update(DeltaSeconds);
     }
 #endif
@@ -69,14 +93,16 @@ void World::Tick(const float DeltaSeconds)
 
 void World::FixedTick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
     {
-        SNAPI_GF_PROFILE_SCOPE("World.NodeGraphFixedTick", "SceneGraph");
+        
         NodeGraph::FixedTick(DeltaSeconds);
     }
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     const bool RunPhysicsFixedStep = [&]() {
-        SNAPI_GF_PROFILE_SCOPE("World.PhysicsFixedStepGate", "Physics");
+        
         return m_physicsSystem.IsInitialized() && m_physicsSystem.TickInFixedTick();
     }();
     if (RunPhysicsFixedStep)
@@ -87,7 +113,7 @@ void World::FixedTick(float DeltaSeconds)
             if (const auto* ActiveCamera = m_rendererSystem.ActiveCamera())
             {
                 {
-                    SNAPI_GF_PROFILE_SCOPE("World.PhysicsFloatingOriginCheck", "Physics");
+                    
                     const auto CameraPos = ActiveCamera->Position();
                     const SnAPI::Physics::Vec3 AnchorWorld{
                         static_cast<SnAPI::Physics::Vec3::Scalar>(CameraPos.x()),
@@ -98,7 +124,7 @@ void World::FixedTick(float DeltaSeconds)
             }
 #endif
         }
-        SNAPI_GF_PROFILE_SCOPE("World.PhysicsFixedStep", "Physics");
+        
         (void)m_physicsSystem.Step(DeltaSeconds);
     }
 #endif
@@ -106,23 +132,30 @@ void World::FixedTick(float DeltaSeconds)
 
 void World::LateTick(const float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
     {
-        SNAPI_GF_PROFILE_SCOPE("World.NodeGraphLateTick", "SceneGraph");
+        
         NodeGraph::LateTick(DeltaSeconds);
     }
 }
 
 void World::EndFrame()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+
+    TaskDispatcherScope DispatcherScope(*this);
+    ExecuteQueuedTasks();
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    m_networkSystem.ExecuteQueuedTasks();
+#endif
     {
-        SNAPI_GF_PROFILE_SCOPE("World.NodeGraphEndFrame", "SceneGraph");
+        
         NodeGraph::EndFrame();
     }
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     {
-        SNAPI_GF_PROFILE_SCOPE("World.RenderEndFrame", "Rendering");
+        
         m_rendererSystem.EndFrame();
     }
 #endif
@@ -130,13 +163,13 @@ void World::EndFrame()
 
 TExpected<NodeHandle> World::CreateLevel(std::string Name)
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return CreateNode<Level>(std::move(Name));
 }
 
 TExpectedRef<Level> World::LevelRef(NodeHandle Handle)
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     if (auto* Node = Handle.Borrowed())
     {
         if (auto* LevelPtr = dynamic_cast<class Level*>(Node))
@@ -149,7 +182,7 @@ TExpectedRef<Level> World::LevelRef(NodeHandle Handle)
 
 std::vector<NodeHandle> World::Levels() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     std::vector<NodeHandle> Result;
     NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
         if (dynamic_cast<Level*>(&Node))
@@ -162,20 +195,34 @@ std::vector<NodeHandle> World::Levels() const
 
 JobSystem& World::Jobs()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_jobSystem;
 }
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+InputSystem& World::Input()
+{
+    
+    return m_inputSystem;
+}
+
+const InputSystem& World::Input() const
+{
+    
+    return m_inputSystem;
+}
+#endif
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 AudioSystem& World::Audio()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_audioSystem;
 }
 
 const AudioSystem& World::Audio() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_audioSystem;
 }
 #endif
@@ -183,13 +230,13 @@ const AudioSystem& World::Audio() const
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 NetworkSystem& World::Networking()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_networkSystem;
 }
 
 const NetworkSystem& World::Networking() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_networkSystem;
 }
 #endif
@@ -197,13 +244,13 @@ const NetworkSystem& World::Networking() const
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 PhysicsSystem& World::Physics()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_physicsSystem;
 }
 
 const PhysicsSystem& World::Physics() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_physicsSystem;
 }
 #endif
@@ -211,13 +258,13 @@ const PhysicsSystem& World::Physics() const
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 RendererSystem& World::Renderer()
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_rendererSystem;
 }
 
 const RendererSystem& World::Renderer() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("World");
+    
     return m_rendererSystem;
 }
 #endif

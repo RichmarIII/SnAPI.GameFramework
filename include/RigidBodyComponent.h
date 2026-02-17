@@ -45,6 +45,13 @@ public:
         bool AutoDeactivateWhenSleeping = true; /**< @brief Toggle component tick activity from physics sleep/wake events (dynamic bodies only). */
     };
 
+    RigidBodyComponent() = default;
+    ~RigidBodyComponent() override = default;
+    explicit RigidBodyComponent(const Settings& Settings)
+    {
+        m_settings = Settings;
+    }
+
     /** @brief Access settings (const). */
     const Settings& GetSettings() const
     {

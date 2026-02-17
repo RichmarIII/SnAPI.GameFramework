@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mutex>
+#include "GameThreading.h"
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -58,7 +59,7 @@ public:
     bool Has(const TypeId& Id) const;
 
 private:
-    mutable std::mutex m_mutex{}; /**< @brief Protects ensure callback and diagnostics maps. */
+    mutable GameMutex m_mutex{}; /**< @brief Protects ensure callback and diagnostics maps. */
     std::unordered_map<TypeId, EnsureFn, UuidHash> m_entries{}; /**< @brief TypeId -> ensure callback mapping. */
     std::unordered_map<TypeId, std::string, UuidHash> m_names{}; /**< @brief Optional diagnostics map of TypeId -> human-readable type name. */
 };

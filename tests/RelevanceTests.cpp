@@ -32,6 +32,33 @@ SNAPI_REFLECT_TYPE(RelevanceTickNode, (TTypeBuilder<RelevanceTickNode>(Relevance
     .Register()));
 
 /**
+ * @brief Tick-counting component used to verify relevance-gated component ticking.
+ */
+struct RelevanceCounterComponent : public IComponent
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::RelevanceCounterComponent";
+    int* Counter = nullptr;
+
+    RelevanceCounterComponent() = default;
+
+    explicit RelevanceCounterComponent(int* InCounter)
+        : Counter(InCounter)
+    {
+    }
+
+    void Tick(float) override
+    {
+        if (Counter)
+        {
+            ++(*Counter);
+        }
+    }
+};
+
+SNAPI_REFLECT_TYPE(RelevanceCounterComponent, (TTypeBuilder<RelevanceCounterComponent>(RelevanceCounterComponent::kTypeName)
+    .Register()));
+
+/**
  * @brief Policy that always returns inactive to force relevance culling.
  */
 struct AlwaysInactivePolicy
@@ -48,6 +75,7 @@ TEST_CASE("Relevance can disable node ticking")
 {
     NodeGraph Graph;
     int Ticks = 0;
+    int ComponentTicks = 0;
 
     auto NodeResult = Graph.CreateNode<RelevanceTickNode>("Node", &Ticks);
     REQUIRE(NodeResult);
@@ -57,8 +85,11 @@ TEST_CASE("Relevance can disable node ticking")
     auto RelResult = Node->Add<RelevanceComponent>();
     REQUIRE(RelResult);
     RelResult->Policy(AlwaysInactivePolicy{});
+    auto ComponentResult = Node->Add<RelevanceCounterComponent>(&ComponentTicks);
+    REQUIRE(ComponentResult);
 
     Graph.Tick(0.016f);
 
     REQUIRE(Ticks == 0);
+    REQUIRE(ComponentTicks == 0);
 }

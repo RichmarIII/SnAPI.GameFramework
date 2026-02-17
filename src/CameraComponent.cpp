@@ -58,19 +58,16 @@ SnAPI::QuaternionF ToRendererRotation(const Quat& Rotation)
 
 void CameraComponent::CameraDeleter::operator()(SnAPI::Graphics::CameraBase* Camera) const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     delete Camera;
 }
 
 SnAPI::Graphics::CameraBase* CameraComponent::Camera()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     return m_camera.get();
 }
 
 const SnAPI::Graphics::CameraBase* CameraComponent::Camera() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     return m_camera.get();
 }
 
@@ -78,7 +75,6 @@ CameraComponent::~CameraComponent() = default;
 
 void CameraComponent::SetActive(const bool Active)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     m_settings.Active = Active;
     auto* Renderer = ResolveRendererSystem();
     if (!Renderer || !m_camera || !Renderer->IsInitialized())
@@ -98,7 +94,6 @@ void CameraComponent::SetActive(const bool Active)
 
 void CameraComponent::OnCreate()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     EnsureCamera();
     ApplyCameraSettings();
     SyncFromTransform();
@@ -111,7 +106,6 @@ void CameraComponent::OnCreate()
 
 void CameraComponent::OnDestroy()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (auto* Renderer = ResolveRendererSystem(); Renderer && Renderer->IsInitialized() && Renderer->ActiveCamera() == m_camera.get())
     {
         (void)Renderer->SetActiveCamera(nullptr);
@@ -121,7 +115,6 @@ void CameraComponent::OnDestroy()
 
 void CameraComponent::Tick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     (void)DeltaSeconds;
     EnsureCamera();
     ApplyCameraSettings();
@@ -148,7 +141,6 @@ void CameraComponent::Tick(float DeltaSeconds)
 
 void CameraComponent::LateTick(float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     (void)DeltaSeconds;
     EnsureCamera();
     ApplyCameraSettings();
@@ -175,7 +167,6 @@ void CameraComponent::LateTick(float DeltaSeconds)
 
 RendererSystem* CameraComponent::ResolveRendererSystem() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -193,7 +184,6 @@ RendererSystem* CameraComponent::ResolveRendererSystem() const
 
 void CameraComponent::EnsureCamera()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!m_camera)
     {
         m_camera.reset(new SnAPI::Graphics::CameraBase());
@@ -202,7 +192,6 @@ void CameraComponent::EnsureCamera()
 
 void CameraComponent::ApplyCameraSettings()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!m_camera)
     {
         return;
@@ -221,7 +210,6 @@ void CameraComponent::ApplyCameraSettings()
 
 void CameraComponent::SyncFromTransform()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!m_camera || !m_settings.SyncFromTransform)
     {
         return;

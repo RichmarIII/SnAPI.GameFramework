@@ -99,6 +99,8 @@ set(SNAPI_GF_SOURCES
     src/GameFramework.cpp
     src/GameRuntime.cpp
     src/IComponent.cpp
+    src/InputComponent.cpp
+    src/InputSystem.cpp
     src/INode.cpp
     src/Level.cpp
     src/NodeGraph.cpp
@@ -305,6 +307,54 @@ FetchContent_MakeAvailable(SnAPI.Physics)
 target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Physics)
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PHYSICS)
 
+# SnAPI.Input integration (required)
+set(SNAPI_INPUT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SNAPI_INPUT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SNAPI_INPUT_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+if (NOT DEFINED SNAPI_INPUT_ENABLE_BACKEND_SDL3)
+    set(SNAPI_INPUT_ENABLE_BACKEND_SDL3 ON CACHE BOOL "Build SnAPI.Input SDL3 backend")
+endif()
+if (NOT DEFINED SNAPI_INPUT_ENABLE_BACKEND_HIDAPI)
+    set(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI ON CACHE BOOL "Build SnAPI.Input HIDAPI backend")
+endif()
+if (SNAPI_INPUT_ENABLE_BACKEND_SDL3 AND SNAPI_INPUT_ENABLE_BACKEND_HIDAPI)
+    # SDL3 statically embeds HIDAPI symbols; standalone HIDAPI backend links hidapi as well.
+    # Disable SDL's internal HIDAPI path to avoid duplicate symbols (e.g. hid_version/hid_version_str).
+    set(SDL_HIDAPI OFF CACHE BOOL "" FORCE)
+    set(SDL_HIDAPI_JOYSTICK OFF CACHE BOOL "" FORCE)
+endif()
+
+set(SNAPI_GF_INPUT_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Input")
+if (SNAPI_GF_INPUT_SOURCE_DIR)
+    FetchContent_Declare(
+        SnAPI.Input
+        SOURCE_DIR ${SNAPI_GF_INPUT_SOURCE_DIR}
+    )
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Input/CMakeLists.txt")
+    FetchContent_Declare(
+        SnAPI.Input
+        SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.Input
+    )
+else()
+    FetchContent_Declare(
+        SnAPI.Input
+        GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.Input.git
+        GIT_TAG master
+    )
+endif()
+FetchContent_MakeAvailable(SnAPI.Input)
+target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Input)
+if (TARGET SnAPI.Input.Backend.SDL3)
+    target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Input.Backend.SDL3)
+endif()
+if (TARGET SnAPI.Input.HID.Backend.HIDAPI)
+    target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Input.HID.Backend.HIDAPI)
+endif()
+if (TARGET SnAPI.Input.USB.Backend.LIBUSB)
+    target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Input.USB.Backend.LIBUSB)
+endif()
+target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_INPUT)
+
 # SnAPI.Renderer integration (required when source is available)
 set(SNAPI_RENDERER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SNAPI_GF_RENDERER_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Renderer")
@@ -312,8 +362,8 @@ set(SNAPI_GF_RENDERER_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Rendere
 set(SNAPI_GF_RENDERER_ROOT "")
 if (SNAPI_GF_RENDERER_SOURCE_DIR)
     set(SNAPI_GF_RENDERER_ROOT ${SNAPI_GF_RENDERER_SOURCE_DIR})
-elseif (EXISTS "/mnt/Apps/Dev/Repositories/SnAPI.Renderer/CMakeLists.txt")
-    set(SNAPI_GF_RENDERER_ROOT "/mnt/Apps/Dev/Repositories/SnAPI.Renderer")
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Renderer/CMakeLists.txt")
+    set(SNAPI_GF_RENDERER_ROOT "/mnt/Dev/CodeProjects/SnAPI.Renderer")
 endif()
 
 if (SNAPI_GF_RENDERER_ROOT)

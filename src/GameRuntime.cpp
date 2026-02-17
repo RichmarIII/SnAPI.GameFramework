@@ -284,6 +284,18 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
     m_world = std::make_unique<class World>(std::move(WorldName));
 
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    if (m_settings.Input)
+    {
+        auto InitInput = m_world->Input().Initialize(*m_settings.Input);
+        if (!InitInput)
+        {
+            Shutdown();
+            return std::unexpected(InitInput.error());
+        }
+    }
+#endif
+
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     if (m_settings.Physics)
     {
@@ -341,6 +353,12 @@ void GameRuntime::Shutdown()
     if (m_world)
     {
         m_world->Renderer().Shutdown();
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    if (m_world)
+    {
+        m_world->Input().Shutdown();
     }
 #endif
     m_world.reset();

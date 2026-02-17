@@ -64,14 +64,14 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const TransformComponent& Transform
 
 bool SkeletalMeshComponent::ReloadMesh()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     ClearMesh();
     return EnsureMeshLoaded();
 }
 
 void SkeletalMeshComponent::ClearMesh()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     m_renderObject.reset();
     m_loadedPath.clear();
     m_lastAutoPlayAnimation.clear();
@@ -83,7 +83,7 @@ void SkeletalMeshComponent::ClearMesh()
 
 bool SkeletalMeshComponent::PlayAnimation(const std::string& Name, const bool Loop, const float StartTime)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (!m_renderObject)
     {
         if (!EnsureMeshLoaded())
@@ -102,7 +102,7 @@ bool SkeletalMeshComponent::PlayAnimation(const std::string& Name, const bool Lo
 
 bool SkeletalMeshComponent::PlayAllAnimations(const bool Loop, const float StartTime)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (!m_renderObject)
     {
         if (!EnsureMeshLoaded())
@@ -121,7 +121,7 @@ bool SkeletalMeshComponent::PlayAllAnimations(const bool Loop, const float Start
 
 void SkeletalMeshComponent::StopAnimations()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (m_renderObject)
     {
         m_renderObject->StopRigidAnimations();
@@ -131,19 +131,19 @@ void SkeletalMeshComponent::StopAnimations()
 
 void SkeletalMeshComponent::OnCreate()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     (void)EnsureMeshLoaded();
 }
 
 void SkeletalMeshComponent::OnDestroy()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     ClearMesh();
 }
 
 void SkeletalMeshComponent::Tick(const float DeltaSeconds)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (m_settings.MeshPath.empty())
     {
         ClearMesh();
@@ -177,7 +177,7 @@ void SkeletalMeshComponent::Tick(const float DeltaSeconds)
 
 RendererSystem* SkeletalMeshComponent::ResolveRendererSystem() const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -195,7 +195,7 @@ RendererSystem* SkeletalMeshComponent::ResolveRendererSystem() const
 
 bool SkeletalMeshComponent::EnsureMeshLoaded()
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (m_settings.MeshPath.empty())
     {
         return false;
@@ -246,7 +246,7 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
 
 void SkeletalMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     auto* Owner = OwnerNode();
     if (!Owner)
     {
@@ -271,7 +271,7 @@ void SkeletalMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRende
 
 void SkeletalMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     auto* Renderer = ResolveRendererSystem();
     if (!Renderer || !Renderer->IsInitialized())
     {
@@ -308,7 +308,7 @@ void SkeletalMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderOb
 
 void SkeletalMeshComponent::ApplyAutoPlay(SnAPI::Graphics::MeshRenderObject& RenderObject)
 {
-    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    
     if (!m_settings.AutoPlayAnimations)
     {
         m_autoPlayApplied = false;

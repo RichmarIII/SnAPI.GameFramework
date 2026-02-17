@@ -1,11 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <span>
 #include <type_traits>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "BaseNode.h"
@@ -37,7 +37,7 @@ class NetReplicationBridge;
  * - Node/component identity is UUID-handle based.
  * - Object lifetime is deferred-destruction by default (`DestroyNode` + `EndFrame`).
  * - Component storage is type-partitioned (`TypeId -> IComponentStorage`) and created lazily.
- * - Graph tick methods evaluate relevance and then drive deterministic tree traversal.
+ * - Graph tick methods evaluate relevance, traverse node trees, then run dense storage-driven component updates.
  *
  * This class is the primary runtime backbone for world/level/prefab style object trees.
  */
@@ -129,8 +129,14 @@ public:
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
         Node->World(World());
+        Node->PendingDestroy(false);
         Node->TypeKey(StaticTypeId<T>());
-        ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
+        ObjectRegistry::Instance().RegisterNode(
+            Node->Id(),
+            Node,
+            Handle.RuntimePoolToken,
+            Handle.RuntimeIndex,
+            Handle.RuntimeGeneration);
         m_rootNodes.push_back(Handle);
         return Handle;
     }
@@ -164,8 +170,14 @@ public:
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
         Node->World(World());
+        Node->PendingDestroy(false);
         Node->TypeKey(StaticTypeId<T>());
-        ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
+        ObjectRegistry::Instance().RegisterNode(
+            Node->Id(),
+            Node,
+            Handle.RuntimePoolToken,
+            Handle.RuntimeIndex,
+            Handle.RuntimeGeneration);
         m_rootNodes.push_back(Handle);
         return Handle;
     }
@@ -229,8 +241,14 @@ public:
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
         Node->World(World());
+        Node->PendingDestroy(false);
         Node->TypeKey(Type);
-        ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
+        ObjectRegistry::Instance().RegisterNode(
+            Node->Id(),
+            Node,
+            Handle.RuntimePoolToken,
+            Handle.RuntimeIndex,
+            Handle.RuntimeGeneration);
         m_rootNodes.push_back(Handle);
         return Handle;
     }
@@ -293,8 +311,14 @@ public:
         Node->Name(std::move(Name));
         Node->OwnerGraph(this);
         Node->World(World());
+        Node->PendingDestroy(false);
         Node->TypeKey(Type);
-        ObjectRegistry::Instance().RegisterNode(Node->Id(), Node);
+        ObjectRegistry::Instance().RegisterNode(
+            Node->Id(),
+            Node,
+            Handle.RuntimePoolToken,
+            Handle.RuntimeIndex,
+            Handle.RuntimeGeneration);
         m_rootNodes.push_back(Handle);
         return Handle;
     }
@@ -314,7 +338,7 @@ public:
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is null"));
         }
 
-        if (m_pendingDestroyIds.contains(Handle.Id))
+        if (m_nodePool->IsPendingDestroy(Handle))
         {
             return Ok();
         }
@@ -324,6 +348,10 @@ public:
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
         }
+        if (Node->PendingDestroy())
+        {
+            return Ok();
+        }
 
         auto DestroyResult = m_nodePool->DestroyLater(Handle);
         if (!DestroyResult)
@@ -331,8 +359,8 @@ public:
             return std::unexpected(DestroyResult.error());
         }
 
+        Node->PendingDestroy(true);
         m_pendingDestroy.push_back(Handle);
-        m_pendingDestroyIds.emplace(Handle.Id);
         return Ok();
     }
 
@@ -347,8 +375,8 @@ public:
      */
     TExpected<void> AttachChild(NodeHandle Parent, NodeHandle Child)
     {
-        auto* ParentNode = Parent.Borrowed();
-        auto* ChildNode = Child.Borrowed();
+        auto* ParentNode = m_nodePool->Borrowed(Parent);
+        auto* ChildNode = m_nodePool->Borrowed(Child);
         if (!ParentNode || !ChildNode)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Parent or child not found"));
@@ -357,17 +385,10 @@ public:
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Child already has a parent"));
         }
-        ParentNode->AddChild(Child);
+        ParentNode->AddChildResolved(Child, ChildNode);
         ChildNode->Parent(Parent);
         ChildNode->World(ParentNode->World());
-        for (auto It = m_rootNodes.begin(); It != m_rootNodes.end(); ++It)
-        {
-            if (*It == Child)
-            {
-                m_rootNodes.erase(It);
-                break;
-            }
-        }
+        m_rootNodes.erase(std::remove(m_rootNodes.begin(), m_rootNodes.end(), Child), m_rootNodes.end());
         return Ok();
     }
 
@@ -379,39 +400,46 @@ public:
      */
     TExpected<void> DetachChild(NodeHandle Child)
     {
-        auto* ChildNode = Child.Borrowed();
+        auto* ChildNode = m_nodePool->Borrowed(Child);
         if (!ChildNode)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Child not found"));
         }
         if (!ChildNode->Parent().IsNull())
         {
-            if (auto* ParentNode = ChildNode->Parent().Borrowed())
+            if (auto* ParentNode = m_nodePool->Borrowed(ChildNode->Parent()))
             {
                 ParentNode->RemoveChild(Child);
             }
             ChildNode->Parent({});
         }
-        m_rootNodes.push_back(Child);
+        if (std::find(m_rootNodes.begin(), m_rootNodes.end(), Child) == m_rootNodes.end())
+        {
+            m_rootNodes.push_back(Child);
+        }
         return Ok();
     }
 
     /**
      * @brief Tick the graph (relevance + node tree).
      * @param DeltaSeconds Time since last tick.
-     * @remarks Evaluates relevance state first, then traverses active root trees.
+     * @remarks
+     * Update order:
+     * 1. relevance evaluation pass
+     * 2. active node-tree traversal (`BaseNode::TickTree`)
+     * 3. storage-driven dense component tick pass
      */
     void Tick(float DeltaSeconds) override;
     /**
      * @brief Fixed-step tick for the graph.
      * @param DeltaSeconds Fixed time step.
-     * @remarks Mirrors `Tick` ordering with fixed-step component/node hooks.
+     * @remarks Mirrors `Tick` ordering with fixed-step node/component hooks.
      */
     void FixedTick(float DeltaSeconds) override;
     /**
      * @brief Late tick for the graph.
      * @param DeltaSeconds Time since last tick.
-     * @remarks Mirrors `Tick` ordering with late-update hooks.
+     * @remarks Mirrors `Tick` ordering with late-update node/component hooks.
      */
     void LateTick(float DeltaSeconds) override;
 
@@ -447,8 +475,21 @@ public:
     }
 
     /**
+     * @brief Resolve a node UUID to a runtime-key handle (slow path).
+     * @param Id Node UUID.
+     * @return Runtime-key node handle or error when missing.
+     * @remarks
+     * Explicit persistence/replication bridge. Runtime systems should cache/use
+     * returned handle directly and avoid repeated UUID resolves.
+     */
+    TExpected<NodeHandle> NodeHandleByIdSlow(const Uuid& Id) const
+    {
+        return m_nodePool->HandleByIdSlow(Id);
+    }
+
+    /**
      * @brief Get the relevance evaluation budget.
-     * @return Max number of nodes evaluated per tick.
+     * @return Max number of relevance components evaluated per tick.
      */
     size_t RelevanceBudget() const
     {
@@ -457,7 +498,7 @@ public:
 
     /**
      * @brief Set the relevance evaluation budget.
-     * @param Budget Max number of nodes evaluated per tick (0 = unlimited).
+     * @param Budget Max number of relevance components evaluated per tick (0 = unlimited).
      * @remarks Allows incremental relevance evaluation on large graphs.
      */
     void RelevanceBudget(size_t Budget)
@@ -485,7 +526,7 @@ private:
     TExpectedRef<T> AddComponent(NodeHandle Owner, Args&&... args)
     {
         EnsureReflectionRegistered<T>();
-        auto* Node = Owner.Borrowed();
+        auto* Node = m_nodePool->Borrowed(Owner);
         if (!Node)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
@@ -496,7 +537,7 @@ private:
         {
             return std::unexpected(Result.error());
         }
-        RegisterComponentOnNode(*Node, StaticTypeId<T>());
+        RegisterComponentOnNode(*Node, StaticTypeId<T>(), Storage);
         return Result;
     }
 
@@ -513,7 +554,7 @@ private:
     TExpectedRef<T> AddComponentWithId(NodeHandle Owner, const Uuid& Id, Args&&... args)
     {
         EnsureReflectionRegistered<T>();
-        auto* Node = Owner.Borrowed();
+        auto* Node = m_nodePool->Borrowed(Owner);
         if (!Node)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
@@ -524,7 +565,7 @@ private:
         {
             return std::unexpected(Result.error());
         }
-        RegisterComponentOnNode(*Node, StaticTypeId<T>());
+        RegisterComponentOnNode(*Node, StaticTypeId<T>(), Storage);
         return Result;
     }
 
@@ -574,7 +615,7 @@ private:
         {
             return;
         }
-        auto* Node = Owner.Borrowed();
+        auto* Node = m_nodePool->Borrowed(Owner);
         if (!Node)
         {
             return;
@@ -585,22 +626,22 @@ private:
 
     /**
      * @brief Tick all components for a node.
-     * @param Owner Owner node handle.
+     * @param Owner Owner node reference.
      * @param DeltaSeconds Time since last tick.
      */
-    void TickComponents(NodeHandle Owner, float DeltaSeconds);
+    void TickComponents(BaseNode& Owner, float DeltaSeconds);
     /**
      * @brief Fixed-step tick all components for a node.
-     * @param Owner Owner node handle.
+     * @param Owner Owner node reference.
      * @param DeltaSeconds Fixed time step.
      */
-    void FixedTickComponents(NodeHandle Owner, float DeltaSeconds);
+    void FixedTickComponents(BaseNode& Owner, float DeltaSeconds);
     /**
      * @brief Late tick all components for a node.
-     * @param Owner Owner node handle.
+     * @param Owner Owner node reference.
      * @param DeltaSeconds Time since last tick.
      */
-    void LateTickComponents(NodeHandle Owner, float DeltaSeconds);
+    void LateTickComponents(BaseNode& Owner, float DeltaSeconds);
 
     /**
      * @brief Evaluate relevance policies to enable/disable nodes.
@@ -622,12 +663,20 @@ private:
      */
     bool IsNodeActive(const BaseNode& Node) const;
     /**
+     * @brief Adapter callback for storage-driven component ticking.
+     * @param UserData Opaque user pointer (expected `NodeGraph*`).
+     * @param Node Candidate owner node.
+     * @return True if the node should tick components this phase.
+     */
+    static bool StorageNodeActivePredicate(void* UserData, const BaseNode& Node);
+    /**
      * @brief Register a component type on a node's type list/mask.
      * @param Node Node to update.
      * @param Type Component type id.
+     * @param Storage Component storage for this type.
      * @remarks Synchronizes both sparse type list and dense bitmask.
      */
-    void RegisterComponentOnNode(BaseNode& Node, const TypeId& Type);
+    void RegisterComponentOnNode(BaseNode& Node, const TypeId& Type, IComponentStorage& Storage);
     /**
      * @brief Unregister a component type from a node's type list/mask.
      * @param Node Node to update.
@@ -659,6 +708,7 @@ private:
             auto Storage = std::make_unique<TComponentStorage<T>>();
             auto* Ptr = Storage.get();
             m_storages.emplace(Type, std::move(Storage));
+            m_storageOrder.push_back(Ptr);
             return *Ptr;
         }
         return *static_cast<TComponentStorage<T>*>(It->second.get());
@@ -721,9 +771,9 @@ private:
 
     std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief Owning node pool providing stable addresses and deferred destroy semantics. */
     std::unordered_map<TypeId, std::unique_ptr<IComponentStorage>, UuidHash> m_storages{}; /**< @brief Type-partitioned component storages created lazily on demand. */
+    std::vector<IComponentStorage*> m_storageOrder{}; /**< @brief Stable storage iteration order for deterministic/perf-friendly storage-driven updates. */
     std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root traversal entry points (nodes without parent in this graph). */
     std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Node handles queued for end-of-frame destruction. */
-    std::unordered_set<Uuid, UuidHash> m_pendingDestroyIds{}; /**< @brief Fast lookup for nodes already queued for deferred destruction. */
     size_t m_relevanceCursor = 0; /**< @brief Cursor for incremental relevance sweeps when budgeted evaluation is enabled. */
     size_t m_relevanceBudget = 0; /**< @brief Per-tick relevance evaluation cap; 0 means evaluate all nodes. */
 };

@@ -3,6 +3,8 @@
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
 #include <cstdint>
+#include "GameThreading.h"
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -76,9 +78,12 @@ struct RendererBootstrapSettings
  * This subsystem owns high-level renderer lifecycle for GameFramework worlds
  * while reusing SnAPI.Renderer's singleton-style backend.
  */
-class RendererSystem final
+class RendererSystem final : public ITaskDispatcher
 {
 public:
+    using WorkTask = std::function<void(RendererSystem&)>;
+    using CompletionTask = std::function<void(const TaskHandle&)>;
+
     /** @brief Construct an uninitialized renderer system. */
     RendererSystem() = default;
     /** @brief Destructor; releases renderer resources when initialized. */
@@ -89,6 +94,25 @@ public:
 
     RendererSystem(RendererSystem&& Other) noexcept;
     RendererSystem& operator=(RendererSystem&& Other) noexcept;
+
+    /**
+     * @brief Enqueue work on the renderer system thread.
+     * @param InTask Work callback executed on renderer-thread affinity.
+     * @param OnComplete Optional completion callback marshaled to caller dispatcher.
+     * @return Task handle for wait/cancel polling.
+     */
+    TaskHandle EnqueueTask(WorkTask InTask, CompletionTask OnComplete = {});
+
+    /**
+     * @brief Enqueue a generic thread task for dispatcher marshalling.
+     * @param InTask Callback to execute on this system thread.
+     */
+    void EnqueueThreadTask(std::function<void()> InTask) override;
+
+    /**
+     * @brief Execute all queued tasks on the renderer thread.
+     */
+    void ExecuteQueuedTasks();
 
     /**
      * @brief Initialize renderer using default bootstrap settings.
@@ -246,7 +270,8 @@ private:
         float Y = 0.0f;
     };
 
-    mutable std::mutex m_mutex{}; /**< @brief Guards backend/material pointers and lifecycle state. */
+    mutable GameMutex m_mutex{}; /**< @brief Renderer-system thread affinity guard. */
+    TSystemTaskQueue<RendererSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
     RendererBootstrapSettings m_settings{}; /**< @brief Active bootstrap settings snapshot. */
     SnAPI::Graphics::VulkanGraphicsAPI* m_graphics = nullptr; /**< @brief Non-owning pointer to active renderer singleton instance. */
     std::unique_ptr<SnAPI::Graphics::WindowBase, WindowDeleter> m_window{}; /**< @brief Optional world-owned renderer window. */

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <initializer_list>
 #include <span>
 #include <string>
@@ -77,6 +78,7 @@ public:
     void Owner(NodeHandle InOwner)
     {
         m_owner = InOwner;
+        m_ownerNode = InOwner.IsNull() ? nullptr : InOwner.Borrowed();
     }
 
     /**
@@ -174,13 +176,27 @@ public:
      */
     ComponentHandle Handle() const
     {
-        return ComponentHandle(m_id);
+        return ComponentHandle(m_id, m_runtimePoolToken, m_runtimeIndex, m_runtimeGeneration);
+    }
+
+    /**
+     * @brief Set runtime slot identity for fast handle resolution.
+     * @param RuntimePoolToken Runtime pool token.
+     * @param RuntimeIndex Runtime slot index.
+     * @param RuntimeGeneration Runtime slot generation.
+     * @remarks Managed by component storage/pool integration code.
+     */
+    void RuntimeIdentity(uint32_t RuntimePoolToken, uint32_t RuntimeIndex, uint32_t RuntimeGeneration)
+    {
+        m_runtimePoolToken = RuntimePoolToken;
+        m_runtimeIndex = RuntimeIndex;
+        m_runtimeGeneration = RuntimeGeneration;
     }
 
     /**
      * @brief Resolve the owning node pointer.
      * @return Owning BaseNode pointer or nullptr.
-     * @remarks Non-owning borrowed pointer; do not cache across frame/lifecycle boundaries.
+     * @remarks Uses cached owner pointer and falls back to handle resolution if needed.
      */
     BaseNode* OwnerNode() const;
 
@@ -229,7 +245,11 @@ public:
 
 private:
     NodeHandle m_owner{}; /**< @brief Owning node identity; resolved via ObjectRegistry when needed. */
+    mutable BaseNode* m_ownerNode = nullptr; /**< @brief Cached owner node pointer to avoid repeated registry resolution. */
     Uuid m_id{}; /**< @brief Stable component identity used for handles/replication/serialization. */
+    uint32_t m_runtimePoolToken = ComponentHandle::kInvalidRuntimePoolToken; /**< @brief Runtime pool token for fast handle resolution. */
+    uint32_t m_runtimeIndex = ComponentHandle::kInvalidRuntimeIndex; /**< @brief Runtime pool slot index for fast handle resolution. */
+    uint32_t m_runtimeGeneration = 0; /**< @brief Runtime pool slot generation for stale-handle rejection. */
     TypeId m_typeId{}; /**< @brief Reflected concrete component type id used by RPC/serialization paths. */
     bool m_active = true; /**< @brief Runtime tick gate for this component instance. */
     bool m_replicated = false; /**< @brief Runtime replication gate for this component instance. */
