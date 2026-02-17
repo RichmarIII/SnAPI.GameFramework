@@ -15,6 +15,7 @@
 #include "ColliderComponent.h"
 #include "ComponentStorage.h"
 #include "Expected.h"
+#include "FollowTargetComponent.h"
 #include "GameRuntime.h"
 #include "Handle.h"
 #include "IComponent.h"

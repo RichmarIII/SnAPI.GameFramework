@@ -17,6 +17,7 @@ NodeGraph::NodeGraph(NodeGraph&& Other) noexcept
     , m_nodePool(std::move(Other.m_nodePool))
     , m_storages(std::move(Other.m_storages))
     , m_storageOrder(std::move(Other.m_storageOrder))
+    , m_nextStorageSequence(Other.m_nextStorageSequence)
     , m_rootNodes(std::move(Other.m_rootNodes))
     , m_pendingDestroy(std::move(Other.m_pendingDestroy))
     , m_relevanceCursor(Other.m_relevanceCursor)
@@ -24,6 +25,7 @@ NodeGraph::NodeGraph(NodeGraph&& Other) noexcept
 {
     
     RebindOwnerGraph();
+    Other.m_nextStorageSequence = 0;
     Other.m_relevanceCursor = 0;
     Other.m_relevanceBudget = 0;
 }
@@ -45,11 +47,13 @@ NodeGraph& NodeGraph::operator=(NodeGraph&& Other) noexcept
     m_nodePool = std::move(Other.m_nodePool);
     m_storages = std::move(Other.m_storages);
     m_storageOrder = std::move(Other.m_storageOrder);
+    m_nextStorageSequence = Other.m_nextStorageSequence;
     m_rootNodes = std::move(Other.m_rootNodes);
     m_pendingDestroy = std::move(Other.m_pendingDestroy);
     m_relevanceCursor = Other.m_relevanceCursor;
     m_relevanceBudget = Other.m_relevanceBudget;
     RebindOwnerGraph();
+    Other.m_nextStorageSequence = 0;
     Other.m_relevanceCursor = 0;
     Other.m_relevanceBudget = 0;
     return *this;
@@ -83,8 +87,9 @@ void NodeGraph::Tick(float DeltaSeconds)
     }
 
     {
-        for (IComponentStorage* Storage : m_storageOrder)
+        for (const StorageOrderEntry& Entry : m_storageOrder)
         {
+            IComponentStorage* Storage = Entry.Storage;
             if (Storage)
             {
                 Storage->TickAll(&StorageNodeActivePredicate, this, DeltaSeconds);
@@ -116,8 +121,9 @@ void NodeGraph::FixedTick(float DeltaSeconds)
     }
 
     {
-        for (IComponentStorage* Storage : m_storageOrder)
+        for (const StorageOrderEntry& Entry : m_storageOrder)
         {
+            IComponentStorage* Storage = Entry.Storage;
             if (Storage)
             {
                 Storage->FixedTickAll(&StorageNodeActivePredicate, this, DeltaSeconds);
@@ -149,8 +155,9 @@ void NodeGraph::LateTick(float DeltaSeconds)
     }
 
     {
-        for (IComponentStorage* Storage : m_storageOrder)
+        for (const StorageOrderEntry& Entry : m_storageOrder)
         {
+            IComponentStorage* Storage = Entry.Storage;
             if (Storage)
             {
                 Storage->LateTickAll(&StorageNodeActivePredicate, this, DeltaSeconds);
@@ -194,8 +201,9 @@ void NodeGraph::EndFrame()
 
     {
         
-    for (IComponentStorage* Storage : m_storageOrder)
+    for (const StorageOrderEntry& Entry : m_storageOrder)
     {
+        IComponentStorage* Storage = Entry.Storage;
         if (Storage)
         {
             Storage->EndFrame();
@@ -224,8 +232,9 @@ void NodeGraph::Clear()
     const size_t Budget = m_relevanceBudget;
     {
         
-    for (IComponentStorage* Storage : m_storageOrder)
+    for (const StorageOrderEntry& Entry : m_storageOrder)
     {
+        IComponentStorage* Storage = Entry.Storage;
         if (Storage)
         {
             Storage->Clear();
@@ -243,6 +252,7 @@ void NodeGraph::Clear()
     }
     m_storages.clear();
     m_storageOrder.clear();
+    m_nextStorageSequence = 0;
     m_rootNodes.clear();
     m_pendingDestroy.clear();
     m_relevanceCursor = 0;

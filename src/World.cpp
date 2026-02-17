@@ -1,5 +1,6 @@
 #include "World.h"
 #include "Profiling.h"
+#include <algorithm>
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include <LinearAlgebra.hpp>
 #include <ICamera.hpp>
@@ -159,6 +160,28 @@ void World::EndFrame()
         m_rendererSystem.EndFrame();
     }
 #endif
+}
+
+bool World::FixedTickEnabled() const
+{
+    return m_fixedTickEnabled;
+}
+
+float World::FixedTickDeltaSeconds() const
+{
+    return m_fixedTickDeltaSeconds;
+}
+
+float World::FixedTickInterpolationAlpha() const
+{
+    return m_fixedTickInterpolationAlpha;
+}
+
+void World::SetFixedTickFrameState(const bool Enabled, const float FixedDeltaSeconds, const float InterpolationAlpha)
+{
+    m_fixedTickEnabled = Enabled;
+    m_fixedTickDeltaSeconds = Enabled ? std::max(0.0f, FixedDeltaSeconds) : 0.0f;
+    m_fixedTickInterpolationAlpha = Enabled ? std::clamp(InterpolationAlpha, 0.0f, 1.0f) : 1.0f;
 }
 
 TExpected<NodeHandle> World::CreateLevel(std::string Name)

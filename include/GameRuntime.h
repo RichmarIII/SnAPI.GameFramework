@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -25,6 +26,7 @@ struct GameRuntimeTickSettings
     std::size_t MaxFixedStepsPerUpdate = 8; /**< @brief Safety cap to avoid spiral-of-death under long frames. */
     bool EnableLateTick = true; /**< @brief Execute `World::LateTick` each update. */
     bool EnableEndFrame = true; /**< @brief Execute `World::EndFrame` each update. */
+    float MaxFpsWhenVSyncOff = 0.0f; /**< @brief Optional frame cap applied only while renderer VSync mode is `Off`; `<= 0` disables cap. */
 };
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
@@ -104,6 +106,7 @@ public:
      * 2. variable tick
      * 3. optional late tick
      * 4. optional end-frame
+     * 5. optional frame pacing (max-FPS cap while VSync is off)
      *
      * Input and network session pumping are handled by `World` lifecycle methods,
      * not by `GameRuntime`.
@@ -140,11 +143,31 @@ public:
     const GameRuntimeSettings& Settings() const;
 
 private:
+    using FrameClock = std::chrono::steady_clock;
+
+    /**
+     * @brief Apply end-of-frame pacing for max-FPS limiting.
+     * @param FrameStart Runtime update start timestamp.
+     * @remarks
+     * Uses absolute deadline scheduling to keep frame spacing even when runtime
+     * work cost varies slightly frame-to-frame.
+     */
+    void ApplyFramePacing(FrameClock::time_point FrameStart);
+
+    /**
+     * @brief Check whether frame pacing cap should run this frame.
+     * @return True when `MaxFpsWhenVSyncOff` is configured and VSync is currently off.
+     */
+    bool ShouldCapFrameRate() const;
+
     static void EnsureBuiltinTypesRegistered();
 
     GameRuntimeSettings m_settings{}; /**< @brief Last initialization settings snapshot. */
     std::unique_ptr<class World> m_world{}; /**< @brief Owned runtime world instance. */
     float m_fixedAccumulator = 0.0f; /**< @brief Accumulated fixed-step time. */
+    FrameClock::duration m_framePacerStep{}; /**< @brief Current pacing step duration derived from max-FPS setting. */
+    FrameClock::time_point m_nextFrameDeadline{}; /**< @brief Next target frame-present deadline used by runtime frame pacer. */
+    bool m_framePacerArmed = false; /**< @brief True once pacing deadline baseline has been initialized. */
 };
 
 } // namespace SnAPI::GameFramework

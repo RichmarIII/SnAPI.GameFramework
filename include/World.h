@@ -117,6 +117,32 @@ public:
     void EndFrame() override;
 
     /**
+     * @brief Check whether fixed-step simulation is enabled for this frame.
+     * @return True when fixed-step simulation is active.
+     */
+    bool FixedTickEnabled() const override;
+    /**
+     * @brief Get fixed-step delta used by runtime this frame.
+     * @return Fixed-step interval in seconds (0 when disabled).
+     */
+    float FixedTickDeltaSeconds() const override;
+    /**
+     * @brief Get render interpolation alpha between fixed samples.
+     * @return Alpha in [0, 1].
+     */
+    float FixedTickInterpolationAlpha() const override;
+
+    /**
+     * @brief Update runtime fixed-step timing snapshot consumed by components/systems.
+     * @param Enabled True when fixed simulation is active.
+     * @param FixedDeltaSeconds Active fixed-step interval in seconds.
+     * @param InterpolationAlpha Current interpolation alpha between fixed samples.
+     * @remarks
+     * This is updated by `GameRuntime` before `World::Tick` each frame.
+     */
+    void SetFixedTickFrameState(bool Enabled, float FixedDeltaSeconds, float InterpolationAlpha);
+
+    /**
      * @brief Create a level as a child node.
      * @param Name Level name.
      * @return Handle to the created level or error.
@@ -226,6 +252,9 @@ private:
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     RendererSystem m_rendererSystem{}; /**< @brief World-scoped renderer subsystem. */
 #endif
+    bool m_fixedTickEnabled = false; /**< @brief Runtime fixed-step enable state for current frame. */
+    float m_fixedTickDeltaSeconds = 0.0f; /**< @brief Runtime fixed-step interval snapshot for current frame. */
+    float m_fixedTickInterpolationAlpha = 1.0f; /**< @brief Runtime interpolation alpha between fixed samples for current frame. */
 };
 
 } // namespace SnAPI::GameFramework

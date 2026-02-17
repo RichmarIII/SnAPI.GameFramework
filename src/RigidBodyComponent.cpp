@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
 #include <SnAPI/Math/LinearAlgebra.h>
+#include <algorithm>
 #include <cmath>
 
 #include "BaseNode.h"
@@ -73,6 +74,29 @@ Quat FromPhysicsQuat(const SnAPI::Physics::Quat& Rotation)
     Out.y() = static_cast<Quat::Scalar>(Rotation.y());
     Out.z() = static_cast<Quat::Scalar>(Rotation.z());
     Out.w() = static_cast<Quat::Scalar>(Rotation.w());
+    if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
+    {
+        Out.normalize();
+    }
+    else
+    {
+        Out = Quat::Identity();
+    }
+    return Out;
+}
+
+Quat NlerpShortestPath(const Quat& A, const Quat& B, const float Alpha)
+{
+    const float ClampedAlpha = std::clamp(Alpha, 0.0f, 1.0f);
+    Quat End = B;
+    if (A.dot(B) < static_cast<Quat::Scalar>(0))
+    {
+        End.coeffs() = -End.coeffs();
+    }
+
+    Quat Out = Quat::Identity();
+    Out.coeffs() = (A.coeffs() * static_cast<Quat::Scalar>(1.0f - ClampedAlpha))
+                 + (End.coeffs() * static_cast<Quat::Scalar>(ClampedAlpha));
     if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
     {
         Out.normalize();
@@ -232,7 +256,7 @@ void RigidBodyComponent::OnDestroy()
     DestroyBody();
 }
 
-void RigidBodyComponent::FixedTick(float DeltaSeconds)
+void RigidBodyComponent::Tick(float DeltaSeconds)
 {
     (void)DeltaSeconds;
 
@@ -246,11 +270,33 @@ void RigidBodyComponent::FixedTick(float DeltaSeconds)
 
     if (m_settings.BodyType == Physics::EBodyType::Dynamic)
     {
-        SyncFromPhysics();
+        (void)SyncFromPhysics();
+        return;
     }
-    else
+
+    auto* Owner = OwnerNode();
+    auto* WorldPtr = Owner ? Owner->World() : nullptr;
+    if (!WorldPtr || !WorldPtr->FixedTickEnabled())
     {
-        SyncToPhysics();
+        (void)SyncToPhysics();
+    }
+}
+
+void RigidBodyComponent::FixedTick(float DeltaSeconds)
+{
+    (void)DeltaSeconds;
+
+    if (!m_bodyHandle.IsValid())
+    {
+        if (!CreateBody())
+        {
+            return;
+        }
+    }
+
+    if (m_settings.BodyType != Physics::EBodyType::Dynamic)
+    {
+        (void)SyncToPhysics();
     }
 }
 
@@ -288,9 +334,14 @@ bool RigidBodyComponent::CreateBody()
     }
 
     m_bodyHandle = CreateResult.value();
-    m_lastSyncedPhysicsPosition = SnAPI::Physics::TransformPosition(Desc.WorldTransform);
-    m_lastSyncedPhysicsRotation = SnAPI::Physics::TransformRotation(Desc.WorldTransform);
-    m_hasLastSyncedTransform = true;
+    m_previousPhysicsPosition = SnAPI::Physics::TransformPosition(Desc.WorldTransform);
+    m_previousPhysicsRotation = SnAPI::Physics::TransformRotation(Desc.WorldTransform);
+    m_currentPhysicsPosition = m_previousPhysicsPosition;
+    m_currentPhysicsRotation = m_previousPhysicsRotation;
+    m_hasPoseSamples = true;
+    m_lastPublishedPhysicsPosition = m_currentPhysicsPosition;
+    m_lastPublishedPhysicsRotation = m_currentPhysicsRotation;
+    m_hasLastPublishedTransform = true;
     BindPhysicsEvents();
     if (m_settings.BodyType == Physics::EBodyType::Dynamic)
     {
@@ -327,7 +378,8 @@ void RigidBodyComponent::DestroyBody()
 
     m_bodyHandle = {};
     m_isSleeping = false;
-    m_hasLastSyncedTransform = false;
+    m_hasPoseSamples = false;
+    m_hasLastPublishedTransform = false;
     Active(true);
 }
 
@@ -447,9 +499,14 @@ bool RigidBodyComponent::Teleport(const Vec3& Position, const Quat& Rotation, co
         }
     }
 
-    m_lastSyncedPhysicsPosition = SnAPI::Physics::TransformPosition(TransformValue);
-    m_lastSyncedPhysicsRotation = SnAPI::Physics::TransformRotation(TransformValue);
-    m_hasLastSyncedTransform = true;
+    m_previousPhysicsPosition = SnAPI::Physics::TransformPosition(TransformValue);
+    m_previousPhysicsRotation = SnAPI::Physics::TransformRotation(TransformValue);
+    m_currentPhysicsPosition = m_previousPhysicsPosition;
+    m_currentPhysicsRotation = m_previousPhysicsRotation;
+    m_lastPublishedPhysicsPosition = m_currentPhysicsPosition;
+    m_lastPublishedPhysicsRotation = m_currentPhysicsRotation;
+    m_hasPoseSamples = true;
+    m_hasLastPublishedTransform = true;
 
     if (m_settings.BodyType == Physics::EBodyType::Dynamic)
     {
@@ -528,6 +585,23 @@ void RigidBodyComponent::UpdateSleepDrivenActivity(const bool Sleeping)
     Active(!Sleeping);
 }
 
+float RigidBodyComponent::ResolveInterpolationAlpha() const
+{
+    if (!m_settings.EnableRenderInterpolation || m_settings.BodyType != Physics::EBodyType::Dynamic)
+    {
+        return 1.0f;
+    }
+
+    const auto* Owner = OwnerNode();
+    const auto* WorldPtr = Owner ? Owner->World() : nullptr;
+    if (!WorldPtr || !WorldPtr->FixedTickEnabled() || WorldPtr->FixedTickDeltaSeconds() <= 0.0f)
+    {
+        return 1.0f;
+    }
+
+    return std::clamp(WorldPtr->FixedTickInterpolationAlpha(), 0.0f, 1.0f);
+}
+
 bool RigidBodyComponent::SyncFromPhysics() const
 {
     if (!m_settings.SyncFromPhysics)
@@ -572,36 +646,62 @@ bool RigidBodyComponent::SyncFromPhysics() const
         PhysicsRotation = SnAPI::Physics::TransformRotation(TransformResult.value());
     }
 
-    constexpr double PositionEpsilon = 1e-5;
-    constexpr double PositionEpsilonSq = PositionEpsilon * PositionEpsilon;
-    constexpr double RotationDotThreshold = 0.999999995; // ~0.0002 rad (~0.011 deg)
-    if (m_hasLastSyncedTransform)
+    constexpr double PositionDeltaEpsilonSq = 1.0e-10;
+    constexpr double RotationDeltaDotThreshold = 0.999999995; // ~0.0002 rad (~0.011 deg)
+    if (!m_hasPoseSamples)
     {
-        
-        const double PositionDeltaSq = (PhysicsPosition - m_lastSyncedPhysicsPosition).squaredNorm();
-        const double RotationDot = std::abs(static_cast<double>(PhysicsRotation.dot(m_lastSyncedPhysicsRotation)));
-        if (PositionDeltaSq <= PositionEpsilonSq && RotationDot >= RotationDotThreshold)
+        m_previousPhysicsPosition = PhysicsPosition;
+        m_previousPhysicsRotation = PhysicsRotation;
+        m_currentPhysicsPosition = PhysicsPosition;
+        m_currentPhysicsRotation = PhysicsRotation;
+        m_hasPoseSamples = true;
+    }
+    else
+    {
+        const double PositionDeltaSq = (PhysicsPosition - m_currentPhysicsPosition).squaredNorm();
+        const double RotationDot = std::abs(static_cast<double>(PhysicsRotation.dot(m_currentPhysicsRotation)));
+        if (PositionDeltaSq > PositionDeltaEpsilonSq || RotationDot < RotationDeltaDotThreshold)
         {
-            
+            m_previousPhysicsPosition = m_currentPhysicsPosition;
+            m_previousPhysicsRotation = m_currentPhysicsRotation;
+            m_currentPhysicsPosition = PhysicsPosition;
+            m_currentPhysicsRotation = PhysicsRotation;
+        }
+    }
+
+    const float InterpolationAlpha = ResolveInterpolationAlpha();
+    SnAPI::Physics::Vec3 PublishPhysicsPosition = m_currentPhysicsPosition;
+    SnAPI::Physics::Quat PublishPhysicsRotation = m_currentPhysicsRotation;
+    if (InterpolationAlpha < 1.0f && m_hasPoseSamples)
+    {
+        const auto PositionAlpha = static_cast<SnAPI::Physics::Vec3::Scalar>(InterpolationAlpha);
+        PublishPhysicsPosition = m_previousPhysicsPosition + ((m_currentPhysicsPosition - m_previousPhysicsPosition) * PositionAlpha);
+
+        const Quat PreviousWorldRotation = FromPhysicsQuat(m_previousPhysicsRotation);
+        const Quat CurrentWorldRotation = FromPhysicsQuat(m_currentPhysicsRotation);
+        PublishPhysicsRotation = ToPhysicsQuat(NlerpShortestPath(PreviousWorldRotation, CurrentWorldRotation, InterpolationAlpha));
+    }
+
+    if (m_hasLastPublishedTransform)
+    {
+        const double PositionDeltaSq = (PublishPhysicsPosition - m_lastPublishedPhysicsPosition).squaredNorm();
+        const double RotationDot = std::abs(static_cast<double>(PublishPhysicsRotation.dot(m_lastPublishedPhysicsRotation)));
+        if (PositionDeltaSq <= PositionDeltaEpsilonSq && RotationDot >= RotationDeltaDotThreshold)
+        {
             return true;
         }
     }
 
-    m_lastSyncedPhysicsPosition = PhysicsPosition;
-    m_lastSyncedPhysicsRotation = PhysicsRotation;
-    m_hasLastSyncedTransform = true;
-
-    {
-        
-        WriteOwnerTransform(OwnerNode(), PhysicsPosition, PhysicsRotation, Physics);
-    }
+    m_lastPublishedPhysicsPosition = PublishPhysicsPosition;
+    m_lastPublishedPhysicsRotation = PublishPhysicsRotation;
+    m_hasLastPublishedTransform = true;
+    WriteOwnerTransform(OwnerNode(), PublishPhysicsPosition, PublishPhysicsRotation, Physics);
     return true;
 }
 
 bool RigidBodyComponent::SyncToPhysics() const
 {
-    
-    if (!m_settings.SyncToPhysics || !m_bodyHandle.IsValid())
+    if (!m_settings.SyncToPhysics || !m_bodyHandle.IsValid() || m_settings.BodyType == Physics::EBodyType::Dynamic)
     {
         return false;
     }
@@ -615,7 +715,20 @@ bool RigidBodyComponent::SyncToPhysics() const
 
     const SnAPI::Physics::Transform TransformValue = ReadOwnerTransform(OwnerNode(), Physics, true);
     const auto Result = Scene->Rigid().SetBodyTransform(m_bodyHandle, TransformValue);
-    return Result.has_value();
+    if (!Result)
+    {
+        return false;
+    }
+
+    m_previousPhysicsPosition = SnAPI::Physics::TransformPosition(TransformValue);
+    m_previousPhysicsRotation = SnAPI::Physics::TransformRotation(TransformValue);
+    m_currentPhysicsPosition = m_previousPhysicsPosition;
+    m_currentPhysicsRotation = m_previousPhysicsRotation;
+    m_lastPublishedPhysicsPosition = m_currentPhysicsPosition;
+    m_lastPublishedPhysicsRotation = m_currentPhysicsRotation;
+    m_hasPoseSamples = true;
+    m_hasLastPublishedTransform = true;
+    return true;
 }
 
 } // namespace SnAPI::GameFramework

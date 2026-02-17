@@ -4,6 +4,7 @@
 #include "BuiltinTypes.h"
 #include "Level.h"
 #include "NodeGraph.h"
+#include "FollowTargetComponent.h"
 #include "Relevance.h"
 #include "Serialization.h"
 #include "ScriptComponent.h"
@@ -55,6 +56,26 @@ SNAPI_REFLECT_TYPE(TransformComponent, (TTypeBuilder<TransformComponent>(Transfo
     .Field("Position", &TransformComponent::Position, EFieldFlagBits::Replication)
     .Field("Rotation", &TransformComponent::Rotation, EFieldFlagBits::Replication)
     .Field("Scale", &TransformComponent::Scale, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(FollowTargetComponent::Settings, (TTypeBuilder<FollowTargetComponent::Settings>(FollowTargetComponent::Settings::kTypeName)
+    .Field("Target", &FollowTargetComponent::Settings::Target)
+    .Field("PositionOffset", &FollowTargetComponent::Settings::PositionOffset)
+    .Field("SyncPosition", &FollowTargetComponent::Settings::SyncPosition)
+    .Field("SyncRotation", &FollowTargetComponent::Settings::SyncRotation)
+    .Field("RotationOffset", &FollowTargetComponent::Settings::RotationOffset)
+    .Field("PositionSmoothingHz", &FollowTargetComponent::Settings::PositionSmoothingHz)
+    .Field("RotationSmoothingHz", &FollowTargetComponent::Settings::RotationSmoothingHz)
+    .Field("ResolveTargetByUuidFallback", &FollowTargetComponent::Settings::ResolveTargetByUuidFallback)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(FollowTargetComponent, (TTypeBuilder<FollowTargetComponent>(FollowTargetComponent::kTypeName)
+    .Field("Settings",
+           &FollowTargetComponent::EditSettings,
+           &FollowTargetComponent::GetSettings,
+           EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
 
@@ -154,6 +175,7 @@ SNAPI_REFLECT_TYPE(RigidBodyComponent::Settings, (TTypeBuilder<RigidBodyComponen
     .Field("InitialAngularVelocity", &RigidBodyComponent::Settings::InitialAngularVelocity)
     .Field("SyncFromPhysics", &RigidBodyComponent::Settings::SyncFromPhysics)
     .Field("SyncToPhysics", &RigidBodyComponent::Settings::SyncToPhysics)
+    .Field("EnableRenderInterpolation", &RigidBodyComponent::Settings::EnableRenderInterpolation)
     .Field("AutoDeactivateWhenSleeping", &RigidBodyComponent::Settings::AutoDeactivateWhenSleeping)
     .Constructor<>()
     .Register()));

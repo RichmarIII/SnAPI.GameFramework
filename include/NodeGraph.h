@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
@@ -644,6 +645,65 @@ private:
     void LateTickComponents(BaseNode& Owner, float DeltaSeconds);
 
     /**
+     * @brief Per-storage ordering metadata for storage-driven component phases.
+     * @remarks
+     * Storage order is sorted by `TickPriority` (ascending). Entries with equal
+     * priority retain deterministic first-seen creation order via `Sequence`.
+     */
+    struct StorageOrderEntry
+    {
+        IComponentStorage* Storage = nullptr; /**< @brief Non-owning pointer to storage instance. */
+        int TickPriority = 0; /**< @brief Lower values run earlier. */
+        std::uint64_t Sequence = 0; /**< @brief Stable tie-breaker for equal priorities. */
+    };
+
+    /**
+     * @brief Resolve compile-time tick priority for a component type.
+     * @tparam T Component type.
+     * @return Tick priority hint for storage ordering.
+     * @remarks
+     * Types may optionally declare `static constexpr int kTickPriority`.
+     * Missing declarations default to priority 0.
+     */
+    template<typename T>
+    static consteval int StorageTickPriority()
+    {
+        if constexpr (requires { T::kTickPriority; })
+        {
+            return static_cast<int>(T::kTickPriority);
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    /**
+     * @brief Insert a new storage into ordered storage iteration list.
+     * @param Storage Storage pointer.
+     * @param TickPriority Tick priority hint.
+     */
+    void InsertStorageOrderEntry(IComponentStorage* Storage, int TickPriority)
+    {
+        StorageOrderEntry Entry;
+        Entry.Storage = Storage;
+        Entry.TickPriority = TickPriority;
+        Entry.Sequence = m_nextStorageSequence++;
+
+        const auto It = std::lower_bound(m_storageOrder.begin(),
+                                         m_storageOrder.end(),
+                                         Entry,
+                                         [](const StorageOrderEntry& Left, const StorageOrderEntry& Right) {
+                                             if (Left.TickPriority != Right.TickPriority)
+                                             {
+                                                 return Left.TickPriority < Right.TickPriority;
+                                             }
+                                             return Left.Sequence < Right.Sequence;
+                                         });
+        m_storageOrder.insert(It, Entry);
+    }
+
+    /**
      * @brief Evaluate relevance policies to enable/disable nodes.
      * @remarks Honors `RelevanceBudget` when non-zero.
      */
@@ -708,7 +768,7 @@ private:
             auto Storage = std::make_unique<TComponentStorage<T>>();
             auto* Ptr = Storage.get();
             m_storages.emplace(Type, std::move(Storage));
-            m_storageOrder.push_back(Ptr);
+            InsertStorageOrderEntry(Ptr, StorageTickPriority<T>());
             return *Ptr;
         }
         return *static_cast<TComponentStorage<T>*>(It->second.get());
@@ -771,7 +831,8 @@ private:
 
     std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief Owning node pool providing stable addresses and deferred destroy semantics. */
     std::unordered_map<TypeId, std::unique_ptr<IComponentStorage>, UuidHash> m_storages{}; /**< @brief Type-partitioned component storages created lazily on demand. */
-    std::vector<IComponentStorage*> m_storageOrder{}; /**< @brief Stable storage iteration order for deterministic/perf-friendly storage-driven updates. */
+    std::vector<StorageOrderEntry> m_storageOrder{}; /**< @brief Priority-sorted storage iteration order for deterministic storage-driven updates. */
+    std::uint64_t m_nextStorageSequence = 0; /**< @brief Monotonic insertion sequence for storage-order tie-breaking. */
     std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root traversal entry points (nodes without parent in this graph). */
     std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Node handles queued for end-of-frame destruction. */
     size_t m_relevanceCursor = 0; /**< @brief Cursor for incremental relevance sweeps when budgeted evaluation is enabled. */

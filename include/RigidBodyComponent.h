@@ -22,6 +22,8 @@ class RigidBodyComponent : public IComponent
 public:
     /** @brief Stable type name for reflection. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RigidBodyComponent";
+    /** @brief Tick ordering hint: rigid bodies run early so other components read resolved transforms. */
+    static constexpr int kTickPriority = -100;
 
     /**
      * @brief Runtime body configuration used for body creation.
@@ -42,6 +44,7 @@ public:
 
         bool SyncFromPhysics = true; /**< @brief Pull transform from physics for dynamic bodies. */
         bool SyncToPhysics = true; /**< @brief Push transform to physics for static/kinematic bodies. */
+        bool EnableRenderInterpolation = true; /**< @brief Blend between fixed-step dynamic body samples when fixed simulation is enabled. */
         bool AutoDeactivateWhenSleeping = true; /**< @brief Toggle component tick activity from physics sleep/wake events (dynamic bodies only). */
     };
 
@@ -66,6 +69,9 @@ public:
 
     void OnCreate() override;
     void OnDestroy() override;
+    /** @brief Variable-step sync phase; updates dynamic transform interpolation and variable-rate kinematic/static push when needed. */
+    void Tick(float DeltaSeconds) override;
+    /** @brief Fixed-step sync phase; pushes static/kinematic owner transform into physics before fixed-step simulation. */
     void FixedTick(float DeltaSeconds) override;
 
     /** @brief Ensure the physics body exists for this component. */
@@ -117,14 +123,21 @@ private:
 
     bool SyncFromPhysics() const;
     bool SyncToPhysics() const;
+    /** @brief Resolve world-provided interpolation alpha for dynamic transform blending. */
+    float ResolveInterpolationAlpha() const;
 
     Settings m_settings{}; /**< @brief Body configuration settings. */
     SnAPI::Physics::BodyHandle m_bodyHandle{}; /**< @brief Active backend body handle. */
     std::uint64_t m_sleepListenerToken = 0; /**< @brief PhysicsSystem listener token for body sleep/wake routing. */
     bool m_isSleeping = false; /**< @brief Last known backend sleep state for the bound body. */
-    mutable bool m_hasLastSyncedTransform = false; /**< @brief Whether transform delta cache is initialized for SyncFromPhysics. */
-    mutable SnAPI::Physics::Vec3 m_lastSyncedPhysicsPosition = SnAPI::Physics::Vec3::Zero(); /**< @brief Last synced physics-space position. */
-    mutable SnAPI::Physics::Quat m_lastSyncedPhysicsRotation = SnAPI::Physics::Quat::Identity(); /**< @brief Last synced physics-space rotation. */
+    mutable bool m_hasPoseSamples = false; /**< @brief Whether previous/current dynamic pose samples are initialized. */
+    mutable SnAPI::Physics::Vec3 m_previousPhysicsPosition = SnAPI::Physics::Vec3::Zero(); /**< @brief Previous fixed/sample position used for interpolation. */
+    mutable SnAPI::Physics::Quat m_previousPhysicsRotation = SnAPI::Physics::Quat::Identity(); /**< @brief Previous fixed/sample rotation used for interpolation. */
+    mutable SnAPI::Physics::Vec3 m_currentPhysicsPosition = SnAPI::Physics::Vec3::Zero(); /**< @brief Latest sampled physics position. */
+    mutable SnAPI::Physics::Quat m_currentPhysicsRotation = SnAPI::Physics::Quat::Identity(); /**< @brief Latest sampled physics rotation. */
+    mutable bool m_hasLastPublishedTransform = false; /**< @brief Whether last published transform cache is initialized. */
+    mutable SnAPI::Physics::Vec3 m_lastPublishedPhysicsPosition = SnAPI::Physics::Vec3::Zero(); /**< @brief Last transform position written to owner. */
+    mutable SnAPI::Physics::Quat m_lastPublishedPhysicsRotation = SnAPI::Physics::Quat::Identity(); /**< @brief Last transform rotation written to owner. */
 };
 
 } // namespace SnAPI::GameFramework

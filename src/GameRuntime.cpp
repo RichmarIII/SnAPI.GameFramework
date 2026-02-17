@@ -5,10 +5,13 @@
 #include "TypeRegistration.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <limits>
 #include <mutex>
 #include <optional>
 #include <string_view>
+#include <thread>
 
 #if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
     defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
@@ -16,6 +19,10 @@
 
 #include <cerrno>
 #include <cstdlib>
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <WindowBase.hpp>
 #endif
 
 namespace SnAPI::GameFramework
@@ -259,6 +266,12 @@ void ConfigureRealtimeProfilerStreamForStartup()
 } // namespace
 #endif
 
+namespace
+{
+constexpr auto kFrameSleepMargin = std::chrono::microseconds(1500);
+constexpr auto kFrameYieldMargin = std::chrono::microseconds(200);
+} // namespace
+
 Result GameRuntime::Init(const GameRuntimeSettings& Settings)
 {
     SNAPI_GF_PROFILE_FUNCTION("Runtime");
@@ -266,6 +279,9 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
 
     m_settings = Settings;
     m_fixedAccumulator = 0.0f;
+    m_framePacerStep = FrameClock::duration::zero();
+    m_nextFrameDeadline = FrameClock::time_point{};
+    m_framePacerArmed = false;
     SNAPI_GF_PROFILE_SET_THREAD_NAME("GameThread");
 #if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
     defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
@@ -283,6 +299,7 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
         WorldName = "World";
     }
     m_world = std::make_unique<class World>(std::move(WorldName));
+    m_world->SetFixedTickFrameState(false, 0.0f, 1.0f);
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
     if (m_settings.Input)
@@ -363,6 +380,9 @@ void GameRuntime::Shutdown()
 #endif
     m_world.reset();
     m_fixedAccumulator = 0.0f;
+    m_framePacerStep = FrameClock::duration::zero();
+    m_nextFrameDeadline = FrameClock::time_point{};
+    m_framePacerArmed = false;
 }
 
 bool GameRuntime::IsInitialized() const
@@ -379,12 +399,15 @@ void GameRuntime::Update(float DeltaSeconds)
         return;
     }
 
+    const auto FrameStart = FrameClock::now();
+
     SNAPI_GF_PROFILE_BEGIN_FRAME_AUTO();
     {
         SNAPI_GF_PROFILE_SCOPE("Frame.Update", "Runtime");
 
         const auto& TickSettings = m_settings.Tick;
-        if (TickSettings.EnableFixedTick && TickSettings.FixedDeltaSeconds > 0.0f)
+        const bool FixedTickEnabled = TickSettings.EnableFixedTick && TickSettings.FixedDeltaSeconds > 0.0f;
+        if (FixedTickEnabled)
         {
             SNAPI_GF_PROFILE_SCOPE("Frame.FixedTickLoop", "Runtime");
             {
@@ -415,6 +438,16 @@ void GameRuntime::Update(float DeltaSeconds)
                 }
             }
         }
+        else
+        {
+            m_fixedAccumulator = 0.0f;
+        }
+
+        const float FixedAlpha =
+            FixedTickEnabled ? std::clamp(m_fixedAccumulator / TickSettings.FixedDeltaSeconds, 0.0f, 1.0f) : 1.0f;
+        m_world->SetFixedTickFrameState(FixedTickEnabled,
+                                        FixedTickEnabled ? TickSettings.FixedDeltaSeconds : 0.0f,
+                                        FixedAlpha);
 
         {
             SNAPI_GF_PROFILE_SCOPE("Frame.VariableTick", "Runtime");
@@ -432,9 +465,102 @@ void GameRuntime::Update(float DeltaSeconds)
             SNAPI_GF_PROFILE_SCOPE("Frame.EndFrame", "Runtime");
             m_world->EndFrame();
         }
+
+        {
+            SNAPI_GF_PROFILE_SCOPE("Frame.Pacing", "Runtime");
+            ApplyFramePacing(FrameStart);
+        }
     }
 
     SNAPI_GF_PROFILE_END_FRAME();
+}
+
+void GameRuntime::ApplyFramePacing(const FrameClock::time_point FrameStart)
+{
+    if (!ShouldCapFrameRate())
+    {
+        m_framePacerStep = FrameClock::duration::zero();
+        m_nextFrameDeadline = FrameClock::time_point{};
+        m_framePacerArmed = false;
+        return;
+    }
+
+    const float MaxFps = m_settings.Tick.MaxFpsWhenVSyncOff;
+    const auto TargetStep = std::chrono::duration_cast<FrameClock::duration>(
+        std::chrono::duration<double>(1.0 / static_cast<double>(MaxFps)));
+    if (TargetStep <= FrameClock::duration::zero())
+    {
+        m_framePacerStep = FrameClock::duration::zero();
+        m_nextFrameDeadline = FrameClock::time_point{};
+        m_framePacerArmed = false;
+        return;
+    }
+
+    if (!m_framePacerArmed || m_framePacerStep != TargetStep)
+    {
+        m_framePacerStep = TargetStep;
+        m_nextFrameDeadline = FrameStart + m_framePacerStep;
+        m_framePacerArmed = true;
+    }
+    else if (FrameStart >= m_nextFrameDeadline)
+    {
+        // If the frame already exceeded target budget, do not add extra delay:
+        // rebase deadline from the current frame start to avoid pacing oscillation.
+        m_nextFrameDeadline = FrameStart + m_framePacerStep;
+    }
+
+    for (;;)
+    {
+        const auto Now = FrameClock::now();
+        if (Now >= m_nextFrameDeadline)
+        {
+            break;
+        }
+
+        const auto Remaining = m_nextFrameDeadline - Now;
+        if (Remaining > kFrameSleepMargin)
+        {
+            std::this_thread::sleep_for(Remaining - kFrameSleepMargin);
+        }
+        else if (Remaining > kFrameYieldMargin)
+        {
+            std::this_thread::yield();
+        }
+    }
+
+    m_nextFrameDeadline += m_framePacerStep;
+}
+
+bool GameRuntime::ShouldCapFrameRate() const
+{
+    if (!m_world)
+    {
+        return false;
+    }
+
+    const float MaxFps = m_settings.Tick.MaxFpsWhenVSyncOff;
+    if (!std::isfinite(MaxFps) || MaxFps <= 0.0f)
+    {
+        return false;
+    }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    const auto& Renderer = m_world->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        return false;
+    }
+
+    const auto* Window = Renderer.Window();
+    if (!Window || !Window->IsOpen())
+    {
+        return false;
+    }
+
+    return Window->VSyncMode() == SnAPI::Graphics::EWindowVSyncMode::Off;
+#else
+    return false;
+#endif
 }
 
 World* GameRuntime::WorldPtr()

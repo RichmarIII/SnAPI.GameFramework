@@ -248,7 +248,7 @@ struct Args
     std::string Bind = "0.0.0.0";
     std::uint16_t Port = 7777;
     int CubeCount = 256;
-    float FixedHz = 60.0f;
+    float FixedHz = 30.0f;
     int MaxFixedSteps = 4;
     std::optional<std::uint32_t> MaxSubStepping{3};
     bool CubeShadows = true;
@@ -545,6 +545,8 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
     Settings.Tick.MaxFixedStepsPerUpdate = static_cast<std::size_t>(std::max(Parsed.MaxFixedSteps, 1));
     Settings.Tick.EnableLateTick = true;
     Settings.Tick.EnableEndFrame = true;
+    // Keep frame cadence deterministic when VSync is toggled off at runtime.
+    Settings.Tick.MaxFpsWhenVSyncOff = 120.0f;
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (EnableNetworking)
@@ -634,19 +636,6 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
     return Settings;
 }
 
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-struct BodyRenderInterpolationState
-{
-    Vec3 PreviousPosition = Vec3::Zero();
-    Vec3 CurrentPosition = Vec3::Zero();
-    Quat PreviousRotation = Quat::Identity();
-    Quat CurrentRotation = Quat::Identity();
-    float SecondsSinceSample = 0.0f;
-    float StepSeconds = 1.0f / 60.0f;
-    bool HasSample = false;
-};
-#endif
-
 struct CubeSlot
 {
     NodeHandle Handle{};
@@ -655,7 +644,6 @@ struct CubeSlot
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     RigidBodyComponent* Body = nullptr;
     Vec3 ParkPosition{};
-    BodyRenderInterpolationState Interpolation{};
 #endif
     bool Active = false;
     float SpawnedAtSeconds = 0.0f;
@@ -673,10 +661,6 @@ struct PlayerActor
     InputComponent* Input = nullptr;
 #endif
 };
-
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-using PlayerRenderInterpolationState = BodyRenderInterpolationState;
-#endif
 
 struct CubeSharedMaterials
 {
@@ -830,6 +814,7 @@ bool CreateCubeSlot(World& Graph,
                     const int CubeIndex,
                     CubeSlot& OutSlot,
                     const bool CubeShadows,
+                    const bool DisableInterpolation,
                     const std::shared_ptr<SnAPI::Graphics::MaterialInstance>& SharedGBufferInstance,
                     const std::shared_ptr<SnAPI::Graphics::MaterialInstance>& SharedShadowInstance)
 {
@@ -896,8 +881,9 @@ bool CreateCubeSlot(World& Graph,
     Settings.AngularDamping = 0.08f;
     Settings.EnableCcd = false;
     Settings.StartActive = false;
-    Settings.SyncFromPhysics = false;
-    Settings.SyncToPhysics = true;
+    Settings.SyncFromPhysics = true;
+    Settings.SyncToPhysics = false;
+    Settings.EnableRenderInterpolation = !DisableInterpolation;
     if (auto RigidBody = Node->Add<RigidBodyComponent>(Settings))
     {
         (void)RigidBody->Teleport(OutSlot.ParkPosition, Quat::Identity(), true);
@@ -908,12 +894,6 @@ bool CreateCubeSlot(World& Graph,
     OutSlot.Transform = Transform;
     OutSlot.Active = false;
     OutSlot.SpawnedAtSeconds = 0.0f;
-    OutSlot.Interpolation.PreviousPosition = OutSlot.ParkPosition;
-    OutSlot.Interpolation.CurrentPosition = OutSlot.ParkPosition;
-    OutSlot.Interpolation.PreviousRotation = Quat::Identity();
-    OutSlot.Interpolation.CurrentRotation = Quat::Identity();
-    OutSlot.Interpolation.SecondsSinceSample = OutSlot.Interpolation.StepSeconds;
-    OutSlot.Interpolation.HasSample = true;
     return true;
 }
 
@@ -946,12 +926,6 @@ void ActivateCubeSlot(CubeSlot& Slot, const float TimeSeconds, std::mt19937& Rng
     (void)Slot.Body->Teleport(SpawnPosition, Quat::Identity(), true);
     (void)Slot.Body->SetVelocity(Vec3(InitialVX(Rng), InitialVY(Rng), InitialVZ(Rng)),
                                  Vec3(InitialAngular(Rng), InitialAngular(Rng), InitialAngular(Rng)));
-    Slot.Interpolation.PreviousPosition = SpawnPosition;
-    Slot.Interpolation.CurrentPosition = SpawnPosition;
-    Slot.Interpolation.PreviousRotation = Quat::Identity();
-    Slot.Interpolation.CurrentRotation = Quat::Identity();
-    Slot.Interpolation.SecondsSinceSample = Slot.Interpolation.StepSeconds;
-    Slot.Interpolation.HasSample = true;
 
     Slot.Active = true;
     Slot.SpawnedAtSeconds = TimeSeconds;
@@ -969,17 +943,11 @@ void DeactivateCubeSlot(CubeSlot& Slot, const float TimeSeconds)
     (void)Slot.Body->Teleport(Slot.ParkPosition, Quat::Identity(), true);
     Slot.Transform->Scale = Vec3(0.0f, 0.0f, 0.0f);
     Slot.Transform->Position = Slot.ParkPosition;
-    Slot.Interpolation.PreviousPosition = Slot.ParkPosition;
-    Slot.Interpolation.CurrentPosition = Slot.ParkPosition;
-    Slot.Interpolation.PreviousRotation = Quat::Identity();
-    Slot.Interpolation.CurrentRotation = Quat::Identity();
-    Slot.Interpolation.SecondsSinceSample = Slot.Interpolation.StepSeconds;
-    Slot.Interpolation.HasSample = true;
     Slot.Active = false;
     Slot.SpawnedAtSeconds = TimeSeconds;
 }
 
-PlayerActor CreatePlayerActor(World& Graph, const bool EnableInput)
+PlayerActor CreatePlayerActor(World& Graph, const bool EnableInput, const bool DisableInterpolation)
 {
     PlayerActor Player{};
 
@@ -1023,9 +991,9 @@ PlayerActor CreatePlayerActor(World& Graph, const bool EnableInput)
     BodySettings.AngularDamping = 0.6f;
     BodySettings.EnableCcd = true;
     BodySettings.StartActive = true;
-    // Player rendering uses explicit interpolation from body samples to avoid fixed-step snap jitter.
-    BodySettings.SyncFromPhysics = false;
-    BodySettings.SyncToPhysics = true;
+    BodySettings.SyncFromPhysics = true;
+    BodySettings.SyncToPhysics = false;
+    BodySettings.EnableRenderInterpolation = !DisableInterpolation;
     BodySettings.AutoDeactivateWhenSleeping = false;
     if (auto RigidBody = PlayerNode->Add<RigidBodyComponent>(BodySettings))
     {
@@ -1094,255 +1062,8 @@ SnAPI::Vector3D ToRendererVector3(const Vec3& Value)
         static_cast<SnAPI::Vector3D::Scalar>(Value.z())};
 }
 
-TransformComponent* ResolveTransform(NodeHandle Handle)
-{
-    auto* Node = Handle.Borrowed();
-    if (!Node)
-    {
-        return nullptr;
-    }
-
-    auto TransformResult = Node->Component<TransformComponent>();
-    if (!TransformResult)
-    {
-        return nullptr;
-    }
-
-    return &*TransformResult;
-}
-
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-Quat NormalizeQuatOrIdentity(const Quat& Rotation)
-{
-    Quat Out = Rotation;
-    if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
-    {
-        Out.normalize();
-    }
-    else
-    {
-        Out = Quat::Identity();
-    }
-    return Out;
-}
-
-Quat FromPhysicsQuat(const SnAPI::Physics::Quat& Rotation)
-{
-    Quat Out = Quat::Identity();
-    Out.x() = static_cast<Quat::Scalar>(Rotation.x());
-    Out.y() = static_cast<Quat::Scalar>(Rotation.y());
-    Out.z() = static_cast<Quat::Scalar>(Rotation.z());
-    Out.w() = static_cast<Quat::Scalar>(Rotation.w());
-    return NormalizeQuatOrIdentity(Out);
-}
-
-Quat NlerpShortestPath(const Quat& A, const Quat& B, const float Alpha)
-{
-    const float ClampedAlpha = std::clamp(Alpha, 0.0f, 1.0f);
-    Quat End = B;
-    if (A.dot(B) < static_cast<Quat::Scalar>(0))
-    {
-        End.coeffs() = -End.coeffs();
-    }
-
-    Quat Out = Quat::Identity();
-    Out.coeffs() = (A.coeffs() * static_cast<Quat::Scalar>(1.0f - ClampedAlpha))
-                 + (End.coeffs() * static_cast<Quat::Scalar>(ClampedAlpha));
-    return NormalizeQuatOrIdentity(Out);
-}
-
-void InitializeInterpolationState(BodyRenderInterpolationState& State, const float FixedHz)
-{
-    const float SafeFixedHz = std::max(FixedHz, 1.0f);
-    State.StepSeconds = 1.0f / SafeFixedHz;
-    State.SecondsSinceSample = State.StepSeconds;
-    State.HasSample = false;
-}
-
-void SeedInterpolationState(BodyRenderInterpolationState& State, const Vec3& Position, const Quat& Rotation)
-{
-    State.PreviousPosition = Position;
-    State.CurrentPosition = Position;
-    State.PreviousRotation = Rotation;
-    State.CurrentRotation = Rotation;
-    State.SecondsSinceSample = State.StepSeconds;
-    State.HasSample = true;
-}
-
-bool SampleBodyPoseWorld(World& Graph, const RigidBodyComponent* Body, Vec3& OutPosition, Quat& OutRotation)
-{
-    if (!Body || !Body->HasBody())
-    {
-        return false;
-    }
-
-    auto* Scene = Graph.Physics().Scene();
-    if (!Scene)
-    {
-        return false;
-    }
-
-    const auto BodyTransform = Scene->Rigid().BodyTransform(Body->PhysicsBodyHandle());
-    if (!BodyTransform)
-    {
-        return false;
-    }
-
-    const SnAPI::Physics::Vec3 PhysicsPosition = SnAPI::Physics::TransformPosition(*BodyTransform);
-    const SnAPI::Physics::Quat PhysicsRotation = SnAPI::Physics::TransformRotation(*BodyTransform);
-    OutPosition = Graph.Physics().PhysicsToWorldPosition(PhysicsPosition);
-    OutRotation = FromPhysicsQuat(PhysicsRotation);
-    return true;
-}
-
-void AdvanceInterpolationState(BodyRenderInterpolationState& State,
-                               const Vec3& Position,
-                               const Quat& Rotation,
-                               const float DeltaSeconds)
-{
-    constexpr double PositionDeltaEpsilonSq = 1.0e-8;
-    constexpr double RotationDeltaDotThreshold = 0.9999995;
-    if (!State.HasSample)
-    {
-        SeedInterpolationState(State, Position, Rotation);
-        return;
-    }
-
-    const double PositionDeltaSq = (Position - State.CurrentPosition).squaredNorm();
-    const double RotationDot = std::abs(static_cast<double>(Rotation.dot(State.CurrentRotation)));
-    const bool HasAdvancedSample =
-        PositionDeltaSq > PositionDeltaEpsilonSq || RotationDot < RotationDeltaDotThreshold;
-
-    if (HasAdvancedSample)
-    {
-        State.PreviousPosition = State.CurrentPosition;
-        State.PreviousRotation = State.CurrentRotation;
-        State.CurrentPosition = Position;
-        State.CurrentRotation = Rotation;
-        State.SecondsSinceSample = 0.0f;
-    }
-    else
-    {
-        State.SecondsSinceSample =
-            std::min(State.StepSeconds, State.SecondsSinceSample + std::max(0.0f, DeltaSeconds));
-    }
-}
-
-void ApplyInterpolationState(TransformComponent& Transform,
-                             const BodyRenderInterpolationState& State,
-                             const bool DisableInterpolation)
-{
-    const float Alpha = DisableInterpolation ? 1.0f
-                                             : std::clamp(State.SecondsSinceSample / std::max(State.StepSeconds, 0.0001f),
-                                                          0.0f,
-                                                          1.0f);
-    const Vec3::Scalar PositionAlpha = static_cast<Vec3::Scalar>(Alpha);
-    Transform.Position = State.PreviousPosition + ((State.CurrentPosition - State.PreviousPosition) * PositionAlpha);
-    Transform.Rotation = NlerpShortestPath(State.PreviousRotation, State.CurrentRotation, Alpha);
-}
-
-void InitializePlayerRenderInterpolation(World& Graph,
-                                         const PlayerActor& Player,
-                                         PlayerRenderInterpolationState& State,
-                                         const float FixedHz)
-{
-    InitializeInterpolationState(State, FixedHz);
-
-    Vec3 Position = Vec3::Zero();
-    Quat Rotation = Quat::Identity();
-    if (!SampleBodyPoseWorld(Graph, Player.Body, Position, Rotation))
-    {
-        return;
-    }
-
-    SeedInterpolationState(State, Position, Rotation);
-}
-
-void UpdatePlayerRenderInterpolation(World& Graph,
-                                     PlayerActor& Player,
-                                     PlayerRenderInterpolationState& State,
-                                     const float DeltaSeconds,
-                                     const bool DisableInterpolation)
-{
-    if (!Player.Transform)
-    {
-        return;
-    }
-
-    Vec3 Position = Vec3::Zero();
-    Quat Rotation = Quat::Identity();
-    if (!SampleBodyPoseWorld(Graph, Player.Body, Position, Rotation))
-    {
-        return;
-    }
-
-    AdvanceInterpolationState(State, Position, Rotation, DeltaSeconds);
-    ApplyInterpolationState(*Player.Transform, State, DisableInterpolation);
-}
-
-void InitializeCubeRenderInterpolation(World& Graph, CubeSlot& Slot, const float FixedHz)
-{
-    InitializeInterpolationState(Slot.Interpolation, FixedHz);
-
-    Vec3 Position = Vec3::Zero();
-    Quat Rotation = Quat::Identity();
-    if (!SampleBodyPoseWorld(Graph, Slot.Body, Position, Rotation))
-    {
-        return;
-    }
-
-    SeedInterpolationState(Slot.Interpolation, Position, Rotation);
-
-    if (Slot.Transform)
-    {
-        ApplyInterpolationState(*Slot.Transform, Slot.Interpolation, true);
-    }
-}
-
-void UpdateCubeRenderInterpolation(World& Graph,
-                                   CubeSlot& Slot,
-                                   const float DeltaSeconds,
-                                   const bool DisableInterpolation)
-{
-    if (!Slot.Active || !Slot.Transform || !Slot.Body)
-    {
-        return;
-    }
-
-    Vec3 Position = Vec3::Zero();
-    Quat Rotation = Quat::Identity();
-    if (!SampleBodyPoseWorld(Graph, Slot.Body, Position, Rotation))
-    {
-        return;
-    }
-
-    AdvanceInterpolationState(Slot.Interpolation, Position, Rotation, DeltaSeconds);
-    ApplyInterpolationState(*Slot.Transform, Slot.Interpolation, DisableInterpolation);
-}
-#endif
-
-void UpdateFollowCamera(CameraComponent* Camera, const TransformComponent* PlayerTransform)
-{
-    if (!Camera || !PlayerTransform)
-    {
-        return;
-    }
-
-    auto* RendererCamera = Camera->Camera();
-    if (!RendererCamera)
-    {
-        return;
-    }
-
-    const Vec3 Target = PlayerTransform->Position + Vec3(0.0f, 1.1f, 0.0f);
-    const Vec3 CameraPosition = Target + Vec3(0.0f, 4.0f, 8.0f);
-    RendererCamera->Position(ToRendererVector3(CameraPosition));
-    RendererCamera->LookAt(ToRendererVector3(Target));
-}
-
 CameraComponent* CreateStationaryObserverCamera(World& Graph)
 {
-    return nullptr;
     auto CameraNodeResult = Graph.CreateNode("StationaryObserverCamera");
     if (!CameraNodeResult)
     {
@@ -1381,7 +1102,7 @@ CameraComponent* CreateStationaryObserverCamera(World& Graph)
     return Camera;
 }
 
-CameraComponent* CreateViewCamera(World& Graph)
+CameraComponent* CreateViewCamera(World& Graph, const NodeHandle FollowTarget)
 {
     auto CameraNodeResult = Graph.CreateNode("ViewCamera");
     if (!CameraNodeResult)
@@ -1395,9 +1116,18 @@ CameraComponent* CreateViewCamera(World& Graph)
         return nullptr;
     }
 
+    if (auto Follow = CameraNode->Add<FollowTargetComponent>())
+    {
+        auto& FollowSettings = Follow->EditSettings();
+        FollowSettings.Target = FollowTarget;
+        FollowSettings.PositionOffset = Vec3(0.0f, 4.0f, 8.0f);
+        FollowSettings.SyncPosition = true;
+        FollowSettings.SyncRotation = false;
+    }
+
     if (auto Transform = CameraNode->Add<TransformComponent>())
     {
-        Transform->Position = Vec3(0.0f, kEarthSurfaceY + 8.0f, 50.0f);
+        Transform->Position = Vec3(0.0f, kEarthSurfaceY + 5.0f, 8.0f);
         Transform->Rotation =
             SnAPI::Math::AngleAxis3D(-SnAPI::Math::SLinearAlgebra::DegreesToRadians(25.0f), SnAPI::Math::Vector3::UnitX());
     }
@@ -1411,7 +1141,7 @@ CameraComponent* CreateViewCamera(World& Graph)
     auto* Camera = &*CameraResult;
     auto& Settings = Camera->EditSettings();
     Settings.Active = true;
-    Settings.SyncFromTransform = false;
+    Settings.SyncFromTransform = true;
     Settings.FovDegrees = 60.0f;
     Settings.NearClip = 0.05f;
     Settings.FarClip = 800.0f;
@@ -1544,7 +1274,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     }
     SpawnPhysicsGround(Graph);
 
-    PlayerActor Player = CreatePlayerActor(Graph, WindowEnabled);
+    PlayerActor Player = CreatePlayerActor(Graph, WindowEnabled, Parsed.DisableInterpolation);
     if (Player.Handle.IsNull() || !Player.Transform || !Player.Body || !Player.Movement)
     {
         std::cerr << "Failed to create controllable player actor\n";
@@ -1572,8 +1302,8 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             return 1;
         }
 
-        FollowCamera = CreateViewCamera(Graph);
-        Camera = CreateStationaryObserverCamera(Graph);
+        FollowCamera = CreateViewCamera(Graph, Player.Handle);
+        //Camera = CreateStationaryObserverCamera(Graph);
         if (!FollowCamera && !Camera)
         {
             std::cerr << "Failed to create debug cameras\n";
@@ -1607,6 +1337,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
                            i,
                            Slot,
                            Parsed.CubeShadows,
+                           Parsed.DisableInterpolation,
                            SharedCubeMaterials.GBuffer,
                            SharedCubeMaterials.Shadow))
         {
@@ -1640,14 +1371,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     constexpr int MaxActivationsPerFrame = 64;
     const float SpawnIntervalSeconds = CubeLifetimeSeconds / static_cast<float>(std::max(Parsed.CubeCount, 1));
     const float SpawnHalfExtent = std::max(10.0f, std::sqrt(static_cast<float>(std::max(Parsed.CubeCount, 1))) * 1.5f);
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-    PlayerRenderInterpolationState PlayerInterpolation{};
-    InitializePlayerRenderInterpolation(Graph, Player, PlayerInterpolation, Parsed.FixedHz);
-    for (auto& Slot : CubeSlots)
-    {
-        InitializeCubeRenderInterpolation(Graph, Slot, Parsed.FixedHz);
-    }
-#endif
 
     const auto Start = Clock::now();
     auto Previous = Start;
@@ -1667,11 +1390,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
         const float DeltaSeconds = std::chrono::duration<float>(Now - Previous).count();
         Previous = Now;
         const float TimeSeconds = std::chrono::duration<float>(Now - Start).count();
-
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-        Player.Transform = ResolveTransform(Player.Handle);
-        UpdatePlayerRenderInterpolation(Graph, Player, PlayerInterpolation, DeltaSeconds, Parsed.DisableInterpolation);
-#endif
 
         if (Graph.IsServer())
         {
@@ -1722,22 +1440,8 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             }
         }
 
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-        for (auto& Slot : CubeSlots)
-        {
-            UpdateCubeRenderInterpolation(Graph, Slot, DeltaSeconds, Parsed.DisableInterpolation);
-        }
-#endif
-
         if (WindowEnabled)
         {
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-            if (FollowCamera && FollowCamera->IsActive())
-            {
-                UpdateFollowCamera(FollowCamera, Player.Transform);
-            }
-#endif
-
             const float SafeDelta = std::max(DeltaSeconds, 0.0001f);
             const int Fps = static_cast<int>(std::round(1.0f / SafeDelta));
             const std::string FpsText = "FPS: " + std::to_string(Fps);
@@ -1746,6 +1450,14 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 
         Runtime.Update(DeltaSeconds);
 
+        // Check for f key. and toggle fullscreen
+        if(Runtime.World().Input().Snapshot()->KeyReleased(SnAPI::Input::EKey::F))
+        {
+            Runtime.World().Renderer().Window()->FullScreen(!Runtime.World().Renderer().Window()->FullScreen());
+            bool IsVSyncEnabled = Runtime.World().Renderer().Window()->VSyncMode() != SnAPI::Graphics::EWindowVSyncMode::Off;
+            Runtime.World().Renderer().Window()->VSyncMode( IsVSyncEnabled? SnAPI::Graphics::EWindowVSyncMode::Off: SnAPI::Graphics::EWindowVSyncMode::On);
+
+        }
         if (Session && Now >= NextLog)
         {
             for (const auto Dumps = Session->DumpConnections(Now); const auto& Dump : Dumps)
@@ -1762,7 +1474,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             ++FramesSincePerfLog;
             if (Now >= NextPerfLog)
             {
-                const auto ActiveCubes = std::count_if(CubeSlots.begin(), CubeSlots.end(), [](const CubeSlot& Slot) {
+                const auto ActiveCubes = std::ranges::count_if(CubeSlots, [](const CubeSlot& Slot) {
                     return Slot.Active;
                 });
 

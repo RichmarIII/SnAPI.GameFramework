@@ -61,6 +61,34 @@ public:
     virtual void EndFrame() = 0;
 
     /**
+     * @brief Report whether the runtime currently drives a fixed-step simulation loop.
+     * @return True when fixed-step simulation is enabled for the current frame.
+     * @remarks
+     * Components that interpolate fixed-step results for rendering should check this
+     * first. When false, interpolation alpha should be treated as 1.
+     */
+    virtual bool FixedTickEnabled() const = 0;
+
+    /**
+     * @brief Get active fixed-step delta seconds.
+     * @return Fixed simulation step interval in seconds (0 when fixed tick is disabled).
+     * @remarks
+     * This value is provided for systems that need deterministic step size metadata.
+     */
+    virtual float FixedTickDeltaSeconds() const = 0;
+
+    /**
+     * @brief Get current render interpolation alpha between fixed simulation samples.
+     * @return Alpha in range [0, 1].
+     * @remarks
+     * Convention:
+     * - 0 means "at previous fixed sample"
+     * - 1 means "at current fixed sample"
+     * When fixed tick is disabled this returns 1.
+     */
+    virtual float FixedTickInterpolationAlpha() const = 0;
+
+    /**
      * @brief Create a level as a child node.
      * @param Name Level name.
      * @return Handle to the created level or error.
