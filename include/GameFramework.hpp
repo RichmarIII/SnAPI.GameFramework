@@ -23,6 +23,7 @@
 #include "INode.h"
 #include "InputComponent.h"
 #include "InputSystem.h"
+#include "UISystem.h"
 #include "IWorld.h"
 #include "JobSystem.h"
 #include "Level.h"

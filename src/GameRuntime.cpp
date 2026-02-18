@@ -313,6 +313,18 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
 #endif
 
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (m_settings.UI)
+    {
+        auto InitUi = m_world->UI().Initialize(*m_settings.UI);
+        if (!InitUi)
+        {
+            Shutdown();
+            return std::unexpected(InitUi.error());
+        }
+    }
+#endif
+
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     if (m_settings.Physics)
     {
@@ -370,6 +382,12 @@ void GameRuntime::Shutdown()
     if (m_world)
     {
         m_world->Renderer().Shutdown();
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (m_world)
+    {
+        m_world->UI().Shutdown();
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_INPUT)

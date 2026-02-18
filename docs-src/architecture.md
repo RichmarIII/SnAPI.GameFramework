@@ -5,12 +5,12 @@ SnAPI.GameFramework is built around four main axes:
 1. **Runtime hierarchy**: `World -> Level -> NodeGraph -> BaseNode`
 2. **Type metadata**: `TypeRegistry`, `TTypeBuilder`, and cached `TypeId`
 3. **Data transport**: reflection serialization, asset payloads, and network replication
-4. **World-owned simulation systems**: input, networking, audio, physics, and renderer adapters
+4. **World-owned simulation systems**: input, ui, networking, audio, physics, and renderer adapters
 
 ## Runtime Model
 
-- `World` is the runtime root and owns subsystems (jobs, input, audio, networking bridges, physics system, renderer system).
-- `World` is also responsible for subsystem frame work (input pump + networking pump + audio update + optional physics step).
+- `World` is the runtime root and owns subsystems (jobs, input, ui, audio, networking bridges, physics system, renderer system).
+- `World` is also responsible for subsystem frame work (input pump + ui tick + networking pump + audio update + optional physics step).
 - `Level` and `NodeGraph` are nodes, so graphs can be nested.
 - `BaseNode` owns hierarchy relationships and component type bookkeeping.
 - `IComponent` adds behavior and state to nodes without changing node types.
@@ -25,6 +25,17 @@ SnAPI.GameFramework is built around four main axes:
   - `World::Input().Snapshot()`
   - `World::Input().Events()`
   - `World::Input().Actions()`
+
+## UI Model
+
+- `World` owns one `UISystem` when UI integration is compiled in.
+- `UISystem` wraps one `SnAPI::UI::UIContext` and handles lifecycle/bootstrap for viewport and DPI defaults.
+- `World::Tick(...)` ticks `UISystem` after input pumping and before node/component traversal.
+- Platform/window layers forward UI events through:
+  - `World::UI().PushInput(PointerEvent)`
+  - `World::UI().PushInput(KeyEvent)`
+  - `World::UI().PushInput(TextInputEvent)`
+- Renderer layers pull packetized draw data through `World::UI().BuildRenderPackets(...)`.
 
 ## Reflection Model
 

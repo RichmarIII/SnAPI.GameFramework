@@ -35,6 +35,9 @@ using GameRuntimeNetworkingSettings = NetworkBootstrapSettings;
 #if defined(SNAPI_GF_ENABLE_INPUT)
 using GameRuntimeInputSettings = InputBootstrapSettings;
 #endif
+#if defined(SNAPI_GF_ENABLE_UI)
+using GameRuntimeUiSettings = UIBootstrapSettings;
+#endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 using GameRuntimePhysicsSettings = PhysicsBootstrapSettings;
 #endif
@@ -52,6 +55,9 @@ struct GameRuntimeSettings
     GameRuntimeTickSettings Tick{}; /**< @brief Tick/lifecycle policy for `Update`. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     std::optional<GameRuntimeInputSettings> Input{}; /**< @brief Optional input bootstrap; nullopt keeps world input subsystem uninitialized. */
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    std::optional<GameRuntimeUiSettings> UI{}; /**< @brief Optional UI bootstrap; nullopt keeps world UI subsystem uninitialized. */
 #endif
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     std::optional<GameRuntimeNetworkingSettings> Networking{}; /**< @brief Optional networking bootstrap; nullopt = offline/local runtime. */
@@ -74,6 +80,7 @@ struct GameRuntimeSettings
  * Ownership:
  * - owns `World`
  * - world-owned `InputSystem` owns input runtime/context when enabled
+ * - world-owned `UISystem` owns UI context lifecycle when enabled
  * - world-owned `NetworkSystem` owns networking resources when enabled
  */
 class GameRuntime final
@@ -108,8 +115,8 @@ public:
      * 4. optional end-frame
      * 5. optional frame pacing (max-FPS cap while VSync is off)
      *
-     * Input and network session pumping are handled by `World` lifecycle methods,
-     * not by `GameRuntime`.
+     * Input pumping, UI ticking, and network session pumping are handled by
+     * `World` lifecycle methods, not by `GameRuntime`.
      */
     void Update(float DeltaSeconds);
 

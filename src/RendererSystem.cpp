@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <utility>
@@ -39,6 +41,12 @@
 #include <VulkanGraphicsAPI.hpp>
 #include <WindowBase.hpp>
 
+#if defined(SNAPI_GF_ENABLE_UI)
+#include <UIContext.h>
+#include <UIPacketWriter.h>
+#include <UIRenderPackets.h>
+#endif
+
 namespace SnAPI::GameFramework
 {
 namespace
@@ -46,6 +54,13 @@ namespace
 constexpr float kMinWindowExtent = 1.0f;
 constexpr float kWindowSizeEpsilon = 0.5f;
 constexpr std::size_t kMaxQueuedTextRequests = 256;
+#if defined(SNAPI_GF_ENABLE_UI)
+constexpr std::uint32_t kUiRectPipelineId = 1;
+constexpr std::uint32_t kUiImagePipelineId = 2;
+constexpr std::uint32_t kUiGlyphPipelineId = 3;
+constexpr float kUiGlobalZBase = 100.0f;
+constexpr float kUiGlobalZStep = 0.0001f;
+#endif
 
 float ClampWindowExtent(const float Value)
 {
@@ -119,6 +134,17 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
     m_defaultFont = Other.m_defaultFont;
     m_textQueue = std::move(Other.m_textQueue);
+#if defined(SNAPI_GF_ENABLE_UI)
+    m_uiMaterial = std::move(Other.m_uiMaterial);
+    m_uiFontMaterial = std::move(Other.m_uiFontMaterial);
+    m_uiFallbackTexture = std::move(Other.m_uiFallbackTexture);
+    m_uiFallbackMaterialInstance = std::move(Other.m_uiFallbackMaterialInstance);
+    m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
+    m_uiTextures = std::move(Other.m_uiTextures);
+    m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
+    m_uiPendingTextureUploads = std::move(Other.m_uiPendingTextureUploads);
+    m_uiQueuedRects = std::move(Other.m_uiQueuedRects);
+#endif
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
@@ -130,6 +156,17 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_passGraphRegistered = false;
     Other.m_defaultFont = nullptr;
     Other.m_textQueue.clear();
+#if defined(SNAPI_GF_ENABLE_UI)
+    Other.m_uiMaterial.reset();
+    Other.m_uiFontMaterial.reset();
+    Other.m_uiFallbackTexture.reset();
+    Other.m_uiFallbackMaterialInstance.reset();
+    Other.m_uiFontMaterialInstances.clear();
+    Other.m_uiTextures.clear();
+    Other.m_uiTextureMaterialInstances.clear();
+    Other.m_uiPendingTextureUploads.clear();
+    Other.m_uiQueuedRects.clear();
+#endif
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
@@ -160,6 +197,17 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
     m_defaultFont = Other.m_defaultFont;
     m_textQueue = std::move(Other.m_textQueue);
+#if defined(SNAPI_GF_ENABLE_UI)
+    m_uiMaterial = std::move(Other.m_uiMaterial);
+    m_uiFontMaterial = std::move(Other.m_uiFontMaterial);
+    m_uiFallbackTexture = std::move(Other.m_uiFallbackTexture);
+    m_uiFallbackMaterialInstance = std::move(Other.m_uiFallbackMaterialInstance);
+    m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
+    m_uiTextures = std::move(Other.m_uiTextures);
+    m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
+    m_uiPendingTextureUploads = std::move(Other.m_uiPendingTextureUploads);
+    m_uiQueuedRects = std::move(Other.m_uiQueuedRects);
+#endif
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
@@ -171,6 +219,17 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_passGraphRegistered = false;
     Other.m_defaultFont = nullptr;
     Other.m_textQueue.clear();
+#if defined(SNAPI_GF_ENABLE_UI)
+    Other.m_uiMaterial.reset();
+    Other.m_uiFontMaterial.reset();
+    Other.m_uiFallbackTexture.reset();
+    Other.m_uiFallbackMaterialInstance.reset();
+    Other.m_uiFontMaterialInstances.clear();
+    Other.m_uiTextures.clear();
+    Other.m_uiTextureMaterialInstances.clear();
+    Other.m_uiPendingTextureUploads.clear();
+    Other.m_uiQueuedRects.clear();
+#endif
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
@@ -219,6 +278,17 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_defaultShadowMaterial.reset();
         m_defaultFont = nullptr;
         m_textQueue.clear();
+#if defined(SNAPI_GF_ENABLE_UI)
+        m_uiMaterial.reset();
+        m_uiFontMaterial.reset();
+        m_uiFallbackTexture.reset();
+        m_uiFallbackMaterialInstance.reset();
+        m_uiFontMaterialInstances.clear();
+        m_uiTextures.clear();
+        m_uiTextureMaterialInstances.clear();
+        m_uiPendingTextureUploads.clear();
+        m_uiQueuedRects.clear();
+#endif
         m_window.reset();
         m_lightManager.reset();
         ResetPassPointers();
@@ -274,6 +344,19 @@ bool RendererSystem::InitializeUnlocked()
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
+    m_defaultFont = nullptr;
+    m_textQueue.clear();
+#if defined(SNAPI_GF_ENABLE_UI)
+    m_uiMaterial.reset();
+    m_uiFontMaterial.reset();
+    m_uiFallbackTexture.reset();
+    m_uiFallbackMaterialInstance.reset();
+    m_uiFontMaterialInstances.clear();
+    m_uiTextures.clear();
+    m_uiTextureMaterialInstances.clear();
+    m_uiPendingTextureUploads.clear();
+    m_uiQueuedRects.clear();
+#endif
     m_window.reset();
     m_lightManager.reset();
     ResetPassPointers();
@@ -429,6 +512,61 @@ SnAPI::Graphics::ICamera* RendererSystem::ActiveCamera() const
     return m_graphics ? m_graphics->ActiveCamera() : nullptr;
 }
 
+bool RendererSystem::SetViewPort(const SnAPI::Graphics::ViewportFit& ViewPort)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+    m_graphics->SetViewPort(ViewPort);
+    return true;
+}
+
+bool RendererSystem::ClearViewPort()
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+    m_graphics->ClearViewPort();
+    return true;
+}
+
+bool RendererSystem::SetPassViewPort(const SnAPI::Graphics::ERenderPassType PassType, const SnAPI::Graphics::ViewportFit& ViewPort)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+    m_graphics->SetPassViewPort(PassType, ViewPort);
+    return true;
+}
+
+bool RendererSystem::ClearPassViewPort(const SnAPI::Graphics::ERenderPassType PassType)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+    m_graphics->ClearPassViewPort(PassType);
+    return true;
+}
+
+bool RendererSystem::ClearPassViewPorts()
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+    m_graphics->ClearPassViewPorts();
+    return true;
+}
+
 bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
@@ -494,7 +632,7 @@ std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultShadowMaterial
     return m_defaultShadowMaterial;
 }
 
-bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, const bool Visible, const bool CastShadows)
+bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, const bool Visible, const bool CastShadows) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
@@ -570,6 +708,219 @@ bool RendererSystem::HasDefaultFont() const
     return IsFontRenderable(m_defaultFont);
 }
 
+SnAPI::Graphics::FontFace* RendererSystem::EnsureDefaultFontFace()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if ((!m_defaultFont || !IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
+    {
+        return nullptr;
+    }
+    return m_defaultFont;
+}
+
+#if defined(SNAPI_GF_ENABLE_UI)
+bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const SnAPI::UI::RenderPacketList& Packets)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    const auto PacketSpan = Packets.Packets();
+    std::size_t TotalInstances = 0;
+    for (const auto& Packet : PacketSpan)
+    {
+        TotalInstances += Packet.InstanceCount;
+    }
+
+    m_uiQueuedRects.clear();
+    m_uiQueuedRects.reserve(TotalInstances);
+
+    float GlobalZ = kUiGlobalZBase;
+
+    const auto ApplyUiColor = [](QueuedUiRect& OutRect, const SnAPI::UI::Color& ColorValue) {
+        constexpr float kInv = 1.0f / 255.0f;
+        OutRect.R = static_cast<float>(ColorValue.R) * kInv;
+        OutRect.G = static_cast<float>(ColorValue.G) * kInv;
+        OutRect.B = static_cast<float>(ColorValue.B) * kInv;
+        OutRect.A = static_cast<float>(ColorValue.A) * kInv;
+    };
+
+    const auto ApplyUiScissor = [](QueuedUiRect& OutRect, const SnAPI::UI::ScissorRect& Scissor) {
+        if (Scissor.W <= 0 || Scissor.H <= 0)
+        {
+            OutRect.HasScissor = false;
+            OutRect.ScissorMinX = 0.0f;
+            OutRect.ScissorMinY = 0.0f;
+            OutRect.ScissorMaxX = 0.0f;
+            OutRect.ScissorMaxY = 0.0f;
+            return;
+        }
+
+        OutRect.HasScissor = true;
+        OutRect.ScissorMinX = static_cast<float>(Scissor.X);
+        OutRect.ScissorMinY = static_cast<float>(Scissor.Y);
+        OutRect.ScissorMaxX = static_cast<float>(Scissor.X + Scissor.W);
+        OutRect.ScissorMaxY = static_cast<float>(Scissor.Y + Scissor.H);
+    };
+
+    const auto DecodeRectPacket = [&](const SnAPI::UI::RenderPacket& Packet) -> bool {
+        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride < sizeof(SnAPI::UI::RectInstance))
+        {
+            return false;
+        }
+
+        const auto* Bytes = static_cast<const std::uint8_t*>(Packet.InstanceData);
+        for (std::uint32_t Index = 0; Index < Packet.InstanceCount; ++Index)
+        {
+            SnAPI::UI::RectInstance Instance{};
+            std::memcpy(&Instance, Bytes + (static_cast<std::size_t>(Index) * Packet.InstanceStride), sizeof(Instance));
+
+            QueuedUiRect Rect{};
+            Rect.X = Instance.X;
+            Rect.Y = Instance.Y;
+            Rect.W = Instance.W;
+            Rect.H = Instance.H;
+            Rect.GlobalZ = GlobalZ;
+            ApplyUiColor(Rect, Instance.Fill);
+            ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
+            m_uiQueuedRects.emplace_back(Rect);
+            GlobalZ += kUiGlobalZStep;
+        }
+        return true;
+    };
+
+    const auto DecodeImagePacket = [&](const SnAPI::UI::RenderPacket& Packet) -> bool {
+        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride < sizeof(SnAPI::UI::ImageInstance))
+        {
+            return false;
+        }
+
+        const auto* Bytes = static_cast<const std::uint8_t*>(Packet.InstanceData);
+        for (std::uint32_t Index = 0; Index < Packet.InstanceCount; ++Index)
+        {
+            SnAPI::UI::ImageInstance Instance{};
+            std::memcpy(&Instance, Bytes + (static_cast<std::size_t>(Index) * Packet.InstanceStride), sizeof(Instance));
+
+            QueuedUiRect Rect{};
+            Rect.X = Instance.X;
+            Rect.Y = Instance.Y;
+            Rect.W = Instance.W;
+            Rect.H = Instance.H;
+            Rect.U0 = Instance.U0;
+            Rect.V0 = Instance.V0;
+            Rect.U1 = Instance.U1;
+            Rect.V1 = Instance.V1;
+            Rect.TextureId = Instance.Texture.Value;
+            Rect.GlobalZ = GlobalZ;
+            ApplyUiColor(Rect, Instance.Tint);
+            ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
+            m_uiQueuedRects.emplace_back(Rect);
+            GlobalZ += kUiGlobalZStep;
+
+            if (Rect.TextureId == 0 || m_uiTextures.contains(Rect.TextureId) || m_uiPendingTextureUploads.contains(Rect.TextureId))
+            {
+                continue;
+            }
+
+            const auto* Image = Context.GetImageData(SnAPI::UI::TextureId{Rect.TextureId});
+            if (!Image || !Image->Valid || Image->Width <= 0 || Image->Height <= 0 || Image->Pixels.empty())
+            {
+                continue;
+            }
+
+            auto& Pending = m_uiPendingTextureUploads[Rect.TextureId];
+            Pending.Width = static_cast<std::uint32_t>(Image->Width);
+            Pending.Height = static_cast<std::uint32_t>(Image->Height);
+            Pending.Pixels = Image->Pixels;
+        }
+        return true;
+    };
+
+    const auto DecodeGlyphPacket = [&](const SnAPI::UI::RenderPacket& Packet) -> bool {
+        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride < sizeof(SnAPI::UI::GlyphInstance))
+        {
+            return false;
+        }
+
+        const auto* Bytes = static_cast<const std::uint8_t*>(Packet.InstanceData);
+        for (std::uint32_t Index = 0; Index < Packet.InstanceCount; ++Index)
+        {
+            SnAPI::UI::GlyphInstance Instance{};
+            std::memcpy(&Instance, Bytes + (static_cast<std::size_t>(Index) * Packet.InstanceStride), sizeof(Instance));
+
+            QueuedUiRect Rect{};
+            Rect.X = Instance.X;
+            Rect.Y = Instance.Y;
+            Rect.W = Instance.W;
+            Rect.H = Instance.H;
+            Rect.U0 = Instance.U0;
+            Rect.V0 = Instance.V0;
+            Rect.U1 = Instance.U1;
+            Rect.V1 = Instance.V1;
+            Rect.UseFontAtlas = true;
+            Rect.GlobalZ = GlobalZ;
+            ApplyUiColor(Rect, Instance.GlyphColor);
+            ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
+            m_uiQueuedRects.emplace_back(Rect);
+            GlobalZ += kUiGlobalZStep;
+        }
+        return true;
+    };
+
+    for (const auto& Packet : PacketSpan)
+    {
+        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride == 0)
+        {
+            continue;
+        }
+
+        bool Consumed = false;
+        if (Packet.Key.Pipeline.Value == kUiRectPipelineId)
+        {
+            Consumed = DecodeRectPacket(Packet);
+        }
+        else if (Packet.Key.Pipeline.Value == kUiImagePipelineId)
+        {
+            Consumed = DecodeImagePacket(Packet);
+        }
+        else if (Packet.Key.Pipeline.Value == kUiGlyphPipelineId)
+        {
+            Consumed = DecodeGlyphPacket(Packet);
+        }
+
+        // Backward/forward compatibility fallback:
+        // accept packets by payload stride when pipeline ids differ across module revisions.
+        if (!Consumed)
+        {
+            if (Packet.InstanceStride >= sizeof(SnAPI::UI::ImageInstance))
+            {
+                Consumed = DecodeImagePacket(Packet);
+            }
+            else if (Packet.InstanceStride >= sizeof(SnAPI::UI::GlyphInstance))
+            {
+                Consumed = DecodeGlyphPacket(Packet);
+            }
+            else if (Packet.InstanceStride >= sizeof(SnAPI::UI::RectInstance))
+            {
+                Consumed = DecodeRectPacket(Packet);
+            }
+        }
+    }
+
+    // Keep UI queue bounded in pathological cases to avoid unbounded allocations.
+    if (m_uiQueuedRects.size() > 131072)
+    {
+        m_uiQueuedRects.resize(131072);
+    }
+
+    return true;
+}
+#endif
+
 void RendererSystem::EndFrame()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
@@ -597,6 +948,12 @@ void RendererSystem::EndFrame()
 
         if (BeganFrame)
         {
+#if defined(SNAPI_GF_ENABLE_UI)
+            {
+                SNAPI_GF_PROFILE_SCOPE("Renderer.FlushQueuedUi", "Rendering");
+                FlushQueuedUiPackets();
+            }
+#endif
             {
                 SNAPI_GF_PROFILE_SCOPE("Renderer.FlushQueuedText", "Rendering");
                 FlushQueuedText();
@@ -652,6 +1009,17 @@ void RendererSystem::ShutdownUnlocked()
     m_defaultShadowMaterial.reset();
     m_defaultFont = nullptr;
     m_textQueue.clear();
+#if defined(SNAPI_GF_ENABLE_UI)
+    m_uiMaterial.reset();
+    m_uiFontMaterial.reset();
+    m_uiFallbackTexture.reset();
+    m_uiFallbackMaterialInstance.reset();
+    m_uiFontMaterialInstances.clear();
+    m_uiTextures.clear();
+    m_uiTextureMaterialInstances.clear();
+    m_uiPendingTextureUploads.clear();
+    m_uiQueuedRects.clear();
+#endif
     m_lastWindowWidth = 0.0f;
     m_lastWindowHeight = 0.0f;
     m_hasWindowSizeSnapshot = false;
@@ -696,8 +1064,8 @@ bool RendererSystem::EnsureDefaultLighting()
         return true;
     }
 
-    m_lightManager.reset(new SnAPI::Graphics::LightManager());
-    auto Sun = m_lightManager->CreateDirectionalLight();
+    m_lightManager.reset(new Graphics::LightManager());
+    const auto Sun = m_lightManager->CreateDirectionalLight();
     if (!Sun)
     {
         m_lightManager.reset();
@@ -875,6 +1243,209 @@ void RendererSystem::FlushQueuedText()
     }
 }
 
+#if defined(SNAPI_GF_ENABLE_UI)
+bool RendererSystem::EnsureUiMaterialResources()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    if (!m_uiMaterial)
+    {
+        auto UiMaterial = std::make_shared<SnAPI::Graphics::UIMaterial>("DefaultUIMaterial");
+        UiMaterial->BakeCompileTimeParams();
+        m_uiMaterial = std::move(UiMaterial);
+    }
+    if (!m_uiFontMaterial)
+    {
+        auto UiFontMaterial = std::make_shared<SnAPI::Graphics::UIMaterial>("UIFontMaterial");
+        UiFontMaterial->BakeCompileTimeParams();
+        m_uiFontMaterial = std::move(UiFontMaterial);
+    }
+
+    if (!m_uiFallbackTexture)
+    {
+        SnAPI::Graphics::ImageCreateInfo ImageCI =
+            SnAPI::Graphics::ImageCreateInfo::DataDefault(SnAPI::Size2DU{1u, 1u}, SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm);
+        ImageCI.Data = {255, 255, 255, 255};
+        m_uiFallbackTexture = std::shared_ptr<SnAPI::Graphics::IGPUImage>(m_graphics->CreateImage2D(ImageCI).release());
+        if (!m_uiFallbackTexture)
+        {
+            return false;
+        }
+    }
+
+    if (!m_uiFallbackMaterialInstance)
+    {
+        m_uiFallbackMaterialInstance = m_uiMaterial->CreateMaterialInstance();
+        if (!m_uiFallbackMaterialInstance)
+        {
+            return false;
+        }
+        m_uiFallbackMaterialInstance->Texture("Material_Texture", m_uiFallbackTexture.get());
+    }
+
+    return true;
+}
+
+std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMaterialForTexture(const std::uint32_t TextureId)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    if (!EnsureUiMaterialResources())
+    {
+        return {};
+    }
+
+    if (TextureId == 0)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureId); MaterialIt != m_uiTextureMaterialInstances.end())
+    {
+        return MaterialIt->second;
+    }
+
+    auto PendingIt = m_uiPendingTextureUploads.find(TextureId);
+    if (PendingIt == m_uiPendingTextureUploads.end())
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    auto& Pending = PendingIt->second;
+    if (Pending.Width == 0 || Pending.Height == 0 || Pending.Pixels.empty())
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::DataDefault(
+        SnAPI::Size2DU{Pending.Width, Pending.Height}, SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm);
+    ImageCI.Data = Pending.Pixels;
+    auto Texture = std::shared_ptr<SnAPI::Graphics::IGPUImage>(m_graphics->CreateImage2D(ImageCI).release());
+    if (!Texture)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    auto MaterialInstance = m_uiMaterial->CreateMaterialInstance();
+    if (!MaterialInstance)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    MaterialInstance->Texture("Material_Texture", Texture.get());
+    m_uiTextures[TextureId] = std::move(Texture);
+    m_uiTextureMaterialInstances[TextureId] = MaterialInstance;
+    m_uiPendingTextureUploads.erase(PendingIt);
+    return MaterialInstance;
+}
+
+std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiFontMaterialInstance()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    if (!EnsureUiMaterialResources())
+    {
+        return {};
+    }
+
+    // World::EndFrame primes default font + packet writer metrics before BeginFrame.
+    // Avoid loading/regenerating font resources while the render command buffer is open.
+    if (!m_defaultFont || !IsFontRenderable(m_defaultFont))
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    auto* AtlasTexture = m_defaultFont->Atlas().GraphicsImage();
+    if (!AtlasTexture)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    if (const auto It = m_uiFontMaterialInstances.find(AtlasTexture); It != m_uiFontMaterialInstances.end())
+    {
+        return It->second;
+    }
+
+    if (!m_uiFontMaterial)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    auto MaterialInstance = m_uiFontMaterial->CreateMaterialInstance();
+    if (!MaterialInstance)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    MaterialInstance->Texture("Material_Texture", AtlasTexture);
+    m_uiFontMaterialInstances.emplace(AtlasTexture, MaterialInstance);
+
+    return MaterialInstance;
+}
+
+void RendererSystem::FlushQueuedUiPackets()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    if (m_uiQueuedRects.empty())
+    {
+        return;
+    }
+    if (!m_graphics || !EnsureUiMaterialResources())
+    {
+        m_uiQueuedRects.clear();
+        return;
+    }
+
+    for (const auto& Entry : m_uiQueuedRects)
+    {
+        SnAPI::Graphics::GpuData::InstancedTexturedRect Rect{};
+        Rect.Rect.Pivot = SnAPI::Vector2DF{0.0f, 0.0f};
+        Rect.Rect.PosSize = SnAPI::Vector4DF{Entry.X, Entry.Y, Entry.W, Entry.H};
+        Rect.Rect.Color = SnAPI::ColorF{Entry.R, Entry.G, Entry.B, Entry.A};
+        Rect.Rect.GlobalZ = Entry.GlobalZ;
+        Rect.SubArea = SnAPI::Graphics::GpuData::TextureArea{
+            Entry.U0,
+            Entry.V0,
+            Entry.U1 - Entry.U0,
+            Entry.V1 - Entry.V0};
+
+        if (Entry.HasScissor)
+        {
+            Rect.Rect.Scissor = SnAPI::Area2DF{
+                Entry.ScissorMinX,
+                Entry.ScissorMinY,
+                Entry.ScissorMaxX,
+                Entry.ScissorMaxY};
+        }
+        else
+        {
+            Rect.Rect.Scissor = SnAPI::Area2DF{};
+        }
+
+        std::shared_ptr<SnAPI::Graphics::MaterialInstance> MaterialInstance{};
+        if (Entry.UseFontAtlas)
+        {
+            MaterialInstance = ResolveUiFontMaterialInstance();
+        }
+        else
+        {
+            MaterialInstance = ResolveUiMaterialForTexture(Entry.TextureId);
+        }
+
+        if (!MaterialInstance)
+        {
+            MaterialInstance = m_uiFallbackMaterialInstance;
+        }
+
+        m_graphics->DrawTexturedRectangle(Rect, MaterialInstance, true);
+    }
+
+    m_uiQueuedRects.clear();
+}
+#endif
+
 bool RendererSystem::RecreateSwapChainForCurrentWindowUnlocked()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
@@ -995,6 +1566,7 @@ bool RendererSystem::RegisterDefaultPassGraph()
     auto UIPassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "UI Pass"},
         {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(), "UIShadingModel"},
+        {AutoGeneratedPass::PropertyNames::MaterialsModule.data(), "DefaultUIMaterial"},
     };
 
     auto CompositePassProperties = PassProperties{
@@ -1041,8 +1613,8 @@ bool RendererSystem::RegisterDefaultPassGraph()
         SSAO->SetBias(0.025f);
         SSAO->SetDenoiseBlurBeta(1.5f);
         SSAO->SetSliceCount(3);
-        SSAO->SetStepsPerSlice(3);
-        SSAO->SetTemporalBlendFactor(0.05f);
+        SSAO->SetStepsPerSlice(6);
+        SSAO->SetTemporalBlendFactor(0.01f);
         SSAO->SetDisocclusionThreshold(0.02f);
         m_ssaoPass = static_cast<SSAOPass*>(m_graphics->RegisterPass(std::move(SSAO)));
     }
@@ -1065,7 +1637,7 @@ bool RendererSystem::RegisterDefaultPassGraph()
         SSR->SetRoughnessThreshold(0.2f);
         SSR->SetMaxSteps(32);
         SSR->SetThickness(0.015f);
-        SSR->SetMaxDistance(1);
+        SSR->SetMaxDistance(0.25);
         m_ssrPass = static_cast<SSRPass*>(m_graphics->RegisterPass(std::move(SSR)));
 
         auto SSRCompositePassProperties = PassProperties{
@@ -1112,6 +1684,11 @@ void RendererSystem::ResetPassPointers()
     m_ssrPass = nullptr;
     m_bloomPass = nullptr;
     m_gbufferPass = nullptr;
+}
+
+    const Graphics::LightManager* RendererSystem::LightManager()const
+{
+    return m_lightManager.get();
 }
 
 } // namespace SnAPI::GameFramework

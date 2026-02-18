@@ -12,6 +12,9 @@
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include "InputSystem.h"
 #endif
+#if defined(SNAPI_GF_ENABLE_UI)
+#include "UISystem.h"
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 #include "AudioSystem.h"
 #endif
@@ -34,7 +37,7 @@ namespace SnAPI::GameFramework
  * `World` is the top-level runtime orchestration object:
  * - derives from `NodeGraph` for hierarchical node traversal
  * - implements `IWorld` for level/subsystem contracts
- * - owns subsystem instances (job system + optional input/audio/networking/
+ * - owns subsystem instances (job system + optional input/ui/audio/networking/
  *   physics/renderer adapters)
  *
  * Responsibility boundaries:
@@ -91,6 +94,8 @@ public:
      * @remarks
      * When input is enabled and initialized, this pumps one input frame before
      * node tick traversal so gameplay code can consume current frame state.
+     * When UI is enabled and initialized, this ticks world UI before graph
+     * traversal.
      * When networking is enabled and a session is attached, this pumps the
      * session before graph traversal.
      * When audio is enabled, this updates the world audio subsystem after
@@ -181,6 +186,19 @@ public:
     const InputSystem& Input() const override;
 #endif
 
+#if defined(SNAPI_GF_ENABLE_UI)
+    /**
+     * @brief Access the UI system for this world.
+     * @return Reference to UISystem.
+     */
+    UISystem& UI() override;
+    /**
+     * @brief Access the UI system for this world (const).
+     * @return Const reference to UISystem.
+     */
+    const UISystem& UI() const override;
+#endif
+
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     /**
      * @brief Access the audio system for this world.
@@ -239,6 +257,9 @@ private:
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     InputSystem m_inputSystem{}; /**< @brief World-scoped input subsystem instance. */
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    UISystem m_uiSystem{}; /**< @brief World-scoped UI subsystem instance. */
 #endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
     AudioSystem m_audioSystem{}; /**< @brief World-scoped audio subsystem instance. */

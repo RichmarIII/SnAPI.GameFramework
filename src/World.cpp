@@ -4,10 +4,81 @@
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include <LinearAlgebra.hpp>
 #include <ICamera.hpp>
+#include <FontFace.hpp>
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+#include <UIPacketWriter.h>
+#include <unordered_map>
 #endif
 
 namespace SnAPI::GameFramework
 {
+
+namespace
+{
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+class UiFontMetricsAdapter final : public SnAPI::UI::IFontMetrics
+{
+public:
+    void Bind(SnAPI::Graphics::FontFace* Face)
+    {
+        if (m_face == Face)
+        {
+            return;
+        }
+        m_face = Face;
+        m_cachedGlyphs.clear();
+    }
+
+    const SnAPI::UI::GlyphMetrics* GetGlyph(uint32_t Codepoint) const override
+    {
+        if (!m_face || !m_face->Valid())
+        {
+            return nullptr;
+        }
+
+        if (const auto Cached = m_cachedGlyphs.find(Codepoint); Cached != m_cachedGlyphs.end())
+        {
+            return &Cached->second;
+        }
+
+        const auto Glyph = m_face->Glyph(Codepoint);
+        const auto GlyphUv = m_face->GlyphUV(Codepoint);
+
+        SnAPI::UI::GlyphMetrics Metrics{};
+        Metrics.U0 = static_cast<float>(GlyphUv.Min.x());
+        Metrics.V0 = static_cast<float>(GlyphUv.Min.y());
+        Metrics.U1 = static_cast<float>(GlyphUv.Max.x());
+        Metrics.V1 = static_cast<float>(GlyphUv.Max.y());
+        Metrics.Width = static_cast<float>(Glyph.Width);
+        Metrics.Height = static_cast<float>(Glyph.Height);
+        Metrics.BearingX = static_cast<float>(Glyph.BitmapLeft);
+        // UIPacketWriter expects stb-style y-offset from baseline (usually negative).
+        // FreeType BitmapTop is upward-positive, so convert sign for consistent layout.
+        Metrics.BearingY = -static_cast<float>(Glyph.BitmapTop);
+        Metrics.Advance = static_cast<float>(Glyph.Advance.x());
+
+        auto [It, Inserted] = m_cachedGlyphs.emplace(Codepoint, Metrics);
+        (void)Inserted;
+        return &It->second;
+    }
+
+    float GetLineHeight() const override
+    {
+        return (m_face && m_face->Valid()) ? m_face->Height() : 0.0f;
+    }
+
+    float GetAscent() const override
+    {
+        return (m_face && m_face->Valid()) ? m_face->Ascender() : 0.0f;
+    }
+
+private:
+    SnAPI::Graphics::FontFace* m_face = nullptr;
+    mutable std::unordered_map<uint32_t, SnAPI::UI::GlyphMetrics> m_cachedGlyphs{};
+};
+#endif
+} // namespace
 
 World::World()
     : NodeGraph("World")
@@ -63,6 +134,12 @@ void World::Tick(const float DeltaSeconds)
     if (m_inputSystem.IsInitialized())
     {
         (void)m_inputSystem.Pump();
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (m_uiSystem.IsInitialized())
+    {
+        m_uiSystem.Tick(DeltaSeconds);
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
@@ -155,6 +232,30 @@ void World::EndFrame()
         NodeGraph::EndFrame();
     }
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (m_rendererSystem.IsInitialized() && m_uiSystem.IsInitialized())
+    {
+        if (auto* UiContext = m_uiSystem.Context())
+        {
+            if (auto* FontFace = m_rendererSystem.EnsureDefaultFontFace())
+            {
+                static UiFontMetricsAdapter FontMetricsAdapter{};
+                FontMetricsAdapter.Bind(FontFace);
+                UiContext->GetPacketWriter().SetFontMetrics(&FontMetricsAdapter);
+            }
+            else
+            {
+                UiContext->GetPacketWriter().SetFontMetrics(nullptr);
+            }
+
+            SnAPI::UI::RenderPacketList UiPackets{};
+            if (auto BuildPacketsResult = m_uiSystem.BuildRenderPackets(UiPackets); BuildPacketsResult)
+            {
+                (void)m_rendererSystem.QueueUiRenderPackets(*UiContext, UiPackets);
+            }
+        }
+    }
+#endif
     {
         
         m_rendererSystem.EndFrame();
@@ -233,6 +334,20 @@ const InputSystem& World::Input() const
 {
     
     return m_inputSystem;
+}
+#endif
+
+#if defined(SNAPI_GF_ENABLE_UI)
+UISystem& World::UI()
+{
+    
+    return m_uiSystem;
+}
+
+const UISystem& World::UI() const
+{
+    
+    return m_uiSystem;
 }
 #endif
 

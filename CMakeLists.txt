@@ -102,6 +102,7 @@ set(SNAPI_GF_SOURCES
     src/IComponent.cpp
     src/InputComponent.cpp
     src/InputSystem.cpp
+    src/UISystem.cpp
     src/INode.cpp
     src/Level.cpp
     src/NodeGraph.cpp
@@ -355,6 +356,31 @@ if (TARGET SnAPI.Input.USB.Backend.LIBUSB)
     target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Input.USB.Backend.LIBUSB)
 endif()
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_INPUT)
+
+# SnAPI.UI integration (required)
+set(SNAPI_UI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+set(SNAPI_GF_UI_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.UI")
+if (SNAPI_GF_UI_SOURCE_DIR)
+    FetchContent_Declare(
+        SnAPI.UI
+        SOURCE_DIR ${SNAPI_GF_UI_SOURCE_DIR}
+    )
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.UI/CMakeLists.txt")
+    FetchContent_Declare(
+        SnAPI.UI
+        SOURCE_DIR /mnt/Dev/CodeProjects/SnAPI.UI
+    )
+else()
+    FetchContent_Declare(
+        SnAPI.UI
+        GIT_REPOSITORY git@github.com:RichmarIII/SnAPI.UI.git
+        GIT_TAG master
+    )
+endif()
+FetchContent_MakeAvailable(SnAPI.UI)
+target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.UI)
+target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_UI)
 
 # SnAPI.Renderer integration (required when source is available)
 set(SNAPI_RENDERER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)

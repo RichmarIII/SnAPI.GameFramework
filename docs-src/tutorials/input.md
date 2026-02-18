@@ -13,7 +13,7 @@ By the end, you will understand:
 
 - `World` owns one `InputSystem` (`World::Input()`).
 - `InputSystem` owns one `SnAPI::Input::InputContext`.
-- `World::Tick(...)` pumps input first, then runs node/component `Tick(...)`.
+- `World::Tick(...)` pumps input first, then runs other world subsystems (for example UI), then node/component `Tick(...)`.
 - Your gameplay logic reads current-frame input state from `InputSystem`.
 
 ## 1) Initialize Input Through GameRuntime
@@ -141,4 +141,3 @@ For raw protocols/schemas:
 - use `THidReportView<TSchema>` / `TUsbControlView<TSchema>` for type-safe packet layouts
 
 This is useful for vendor-specific HID/USB hardware while keeping gameplay on normalized input paths.
-

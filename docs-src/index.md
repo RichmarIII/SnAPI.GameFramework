@@ -9,7 +9,7 @@ title: SnAPI.GameFramework
     <p>
       A data-driven game framework centered around Node graphs, reflection metadata,
       serialization pipelines, and network-aware gameplay systems.
-      It integrates directly with SnAPI.AssetPipeline, SnAPI.Input, SnAPI.Networking, SnAPI.Audio, SnAPI.Physics, and SnAPI.Renderer.
+      It integrates directly with SnAPI.AssetPipeline, SnAPI.Input, SnAPI.UI, SnAPI.Networking, SnAPI.Audio, SnAPI.Physics, and SnAPI.Renderer.
     </p>
     <div class="snapi-actions">
       <a class="md-button md-button--primary" href="tutorials/">Get Started</a>
@@ -22,6 +22,7 @@ title: SnAPI.GameFramework
       <span class="snapi-badge">Serialization</span>
       <span class="snapi-badge">Replication + RPC</span>
       <span class="snapi-badge">Input System</span>
+      <span class="snapi-badge">UI System</span>
       <span class="snapi-badge">Physics Simulation</span>
       <span class="snapi-badge">Audio Components</span>
       <span class="snapi-badge">Renderer Integration</span>
@@ -38,6 +39,7 @@ title: SnAPI.GameFramework
         <li>Field and method flags for replication and network RPC intent directly in reflected metadata.</li>
         <li>Ergonomic gameplay RPC dispatch with `INode::CallRPC(...)` / `IComponent::CallRPC(...)` role-aware helpers.</li>
         <li>World-owned `InputSystem` adapter over SnAPI.Input with backend-agnostic context lifecycle and normalized snapshot/event access.</li>
+        <li>World-owned `UISystem` adapter over SnAPI.UI with explicit context lifecycle, typed input forwarding, and packetized UI render output.</li>
         <li>Reflection-powered graph, level, and world serialization with schema-versioned payloads.</li>
         <li>Custom value codec extension points (`TValueCodec<T>`) for packed/high-performance data formats.</li>
         <li>World-owned `PhysicsSystem` adapter over SnAPI.Physics with backend routing and coupling support.</li>
@@ -80,6 +82,10 @@ ctest --test-dir build/debug --output-on-failure
   <a class="snapi-card" href="tutorials/input/">
     <h3>Input System</h3>
     <p>Initialize world input, choose backends, and consume normalized snapshot/events.</p>
+  </a>
+  <a class="snapi-card" href="tutorials/ui/">
+    <h3>UI System</h3>
+    <p>Initialize world UI, push events into `UIContext`, and build per-frame render packets.</p>
   </a>
   <a class="snapi-card" href="tutorials/renderer/">
     <h3>Renderer Integration</h3>

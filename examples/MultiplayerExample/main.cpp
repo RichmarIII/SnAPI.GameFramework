@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
@@ -18,6 +19,16 @@
 #include "VulkanGraphicsAPI.hpp"
 #include <MeshManager.hpp>
 #include <CameraBase.hpp>
+
+#include "LightManager.hpp"
+#if defined(SNAPI_GF_ENABLE_UI)
+#include <UIDockZone.h>
+#include <UIPanel.h>
+#include <UIProperties.h>
+#include <UISizing.h>
+#include <UIText.h>
+#include <UIContext.h>
+#endif
 #if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
     defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
 #include <SnAPI/Profiler/Profiler.h>
@@ -546,7 +557,7 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
     Settings.Tick.EnableLateTick = true;
     Settings.Tick.EnableEndFrame = true;
     // Keep frame cadence deterministic when VSync is toggled off at runtime.
-    Settings.Tick.MaxFpsWhenVSyncOff = 120.0f;
+    Settings.Tick.MaxFpsWhenVSyncOff = 1000.0f;
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (EnableNetworking)
@@ -630,6 +641,16 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
         RendererSettings.CreateDefaultEnvironmentProbe = true;
         RendererSettings.DefaultEnvironmentProbeY = 6360e3f + 1000.0f;
         Settings.Renderer = RendererSettings;
+    }
+#endif
+
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (EnableWindow)
+    {
+        GameRuntimeUiSettings UiSettings{};
+        UiSettings.ViewportWidth = 1280.0f;
+        UiSettings.ViewportHeight = 720.0f;
+        Settings.UI = UiSettings;
     }
 #endif
 
@@ -774,7 +795,7 @@ void SpawnPhysicsGround(World& Graph)
     {
         Transform->Replicated(true);
         Transform->Position = Vec3(0.0f, kEarthSurfaceY - 1.0f, 0.0f);
-        Transform->Scale = Vec3(128.0f, 2.0f, 128.0f);
+        Transform->Scale = Vec3(25.0f, 1.0f, 25.0f);
     }
 
     if (auto Collider = GroundNode->Add<ColliderComponent>())
@@ -782,7 +803,7 @@ void SpawnPhysicsGround(World& Graph)
         Collider->Replicated(true);
         auto& Settings = Collider->EditSettings();
         Settings.Shape = SnAPI::Physics::EShapeType::Box;
-        Settings.HalfExtent = Vec3(64.0f, 1.0f, 64.0f);
+        Settings.HalfExtent = Vec3(255.0f, 0.5f, 255.0f);
         Settings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
         Settings.Mask = kCollisionMaskAll;
         Settings.Friction = 0.55f;
@@ -895,6 +916,49 @@ bool CreateCubeSlot(World& Graph,
     OutSlot.Active = false;
     OutSlot.SpawnedAtSeconds = 0.0f;
     return true;
+}
+
+std::size_t CountActiveRenderedCubes(World& Graph)
+{
+    std::size_t Count = 0;
+    Graph.NodePool().ForEach([&Count](const NodeHandle&, BaseNode& Node) {
+        auto MeshResult = Node.Component<StaticMeshComponent>();
+        if (!MeshResult)
+        {
+            return;
+        }
+
+        const auto& MeshSettings = MeshResult->GetSettings();
+        if (!MeshSettings.Visible || std::string_view(MeshSettings.MeshPath) != kCubeMeshPath)
+        {
+            return;
+        }
+
+        // Exclude the controllable player actor, which also uses the cube mesh.
+        if (Node.Component<CharacterMovementController>())
+        {
+            return;
+        }
+
+        auto TransformResult = Node.Component<TransformComponent>();
+        if (!TransformResult)
+        {
+            return;
+        }
+
+        const Vec3 Scale = TransformResult->Scale;
+        const double MaxAbsScale = std::max({
+            std::abs(static_cast<double>(Scale.x())),
+            std::abs(static_cast<double>(Scale.y())),
+            std::abs(static_cast<double>(Scale.z()))});
+        if (MaxAbsScale < 0.01)
+        {
+            return;
+        }
+
+        ++Count;
+    });
+    return Count;
 }
 
 void ActivateCubeSlot(CubeSlot& Slot, const float TimeSeconds, std::mt19937& Rng, const float SpawnHalfExtent)
@@ -1220,6 +1284,325 @@ bool ModeUsesServerRole(const ERunMode Mode)
     return Mode != ERunMode::Client;
 }
 
+#if defined(SNAPI_GF_ENABLE_UI)
+const char* VSyncModeLabel(const SnAPI::Graphics::EWindowVSyncMode Mode)
+{
+    switch (Mode)
+    {
+    case SnAPI::Graphics::EWindowVSyncMode::Off:
+        return "Off";
+    case SnAPI::Graphics::EWindowVSyncMode::On:
+        return "On";
+    case SnAPI::Graphics::EWindowVSyncMode::Adaptive:
+        return "Adaptive";
+    case SnAPI::Graphics::EWindowVSyncMode::LowLatency:
+        return "LowLatency";
+    default:
+        return "Unknown";
+    }
+}
+
+std::string FormatFloat(const float Value, const int Precision = 2)
+{
+    char Buffer[64]{};
+    std::snprintf(Buffer, sizeof(Buffer), "%.*f", Precision, Value);
+    return std::string(Buffer);
+}
+
+template <typename TElement>
+TElement* ResolveUiElement(SnAPI::UI::UIContext& Context, const SnAPI::UI::ElementHandle<TElement>& Handle)
+{
+    if (Handle.Id.Value == 0)
+    {
+        return nullptr;
+    }
+
+    return &static_cast<TElement&>(Context.GetElement(Handle.Id));
+}
+
+struct MultiplayerHud
+{
+    static constexpr SnAPI::UI::PropertyKey TitleKey = SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Title");
+    static constexpr SnAPI::UI::PropertyKey SubtitleKey =
+        SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Subtitle");
+    static constexpr SnAPI::UI::PropertyKey FpsKey = SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Fps");
+    static constexpr SnAPI::UI::PropertyKey ModeKey = SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Mode");
+    static constexpr SnAPI::UI::PropertyKey CubeKey = SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Cubes");
+    static constexpr SnAPI::UI::PropertyKey SimulationKey =
+        SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Simulation");
+    static constexpr SnAPI::UI::PropertyKey WindowKey =
+        SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Window");
+    static constexpr SnAPI::UI::PropertyKey LightingKey =
+        SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Lighting");
+    static constexpr SnAPI::UI::PropertyKey NetworkingKey =
+        SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Networking");
+    static constexpr SnAPI::UI::PropertyKey HintKey = SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Hint");
+    static constexpr SnAPI::UI::PropertyKey ActiveTabKey =
+        SnAPI::UI::MakePropertyKey<std::size_t>("MultiplayerHud.ActiveTab");
+
+    bool Initialized = false;
+    SnAPI::UI::PropertyMap ViewModel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIDockZone> RootTabs{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> TitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> SubtitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> FpsText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> ModeText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> CubeText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> SimulationText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> WindowText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> LightingText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> NetworkingText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> HintText{};
+};
+
+template <typename TValue>
+SnAPI::UI::TPropertyRef<TValue> HudVmProperty(MultiplayerHud& Hud, const SnAPI::UI::PropertyKey Key)
+{
+    return SnAPI::UI::TPropertyRef<TValue>(&Hud.ViewModel, Key);
+}
+
+bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, MultiplayerHud& OutHud)
+{
+    if (!Graph.UI().IsInitialized())
+    {
+        return false;
+    }
+
+    auto* Context = Graph.UI().Context();
+    if (!Context)
+    {
+        return false;
+    }
+
+    auto Root = Context->Root();
+    auto& RootPanel = Root.Element();
+    RootPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    RootPanel.Padding().Set(0.0f);
+    RootPanel.Gap().Set(0.0f);
+
+    constexpr SnAPI::UI::Color kTitleColor{255, 226, 160, 255};
+    constexpr SnAPI::UI::Color kAccentColor{160, 214, 255, 255};
+    constexpr SnAPI::UI::Color kPrimaryTextColor{238, 242, 248, 255};
+    constexpr SnAPI::UI::Color kSecondaryTextColor{212, 218, 230, 255};
+    constexpr SnAPI::UI::Color kMutedTextColor{152, 166, 190, 255};
+    constexpr SnAPI::UI::Color kPanelFill{8, 14, 24, 185};
+    constexpr SnAPI::UI::Color kPanelBorder{120, 166, 220, 120};
+
+    auto Tabs = Root.Add(SnAPI::UI::UIDockZone{});
+    auto& TabsElement = Tabs.Element();
+    TabsElement.SplitDirection().Set(SnAPI::UI::EDockSplit::Leaf);
+    TabsElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    TabsElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    TabsElement.HAlign().Set(SnAPI::UI::EAlignment::Start);
+    TabsElement.VAlign().Set(SnAPI::UI::EAlignment::Start);
+    TabsElement.ElementMargin().Set(SnAPI::UI::Margin{12.0f, 12.0f, 0.0f, 0.0f});
+    OutHud.RootTabs = Tabs.Handle();
+
+    auto AddTextLine = [&](auto& Panel, const std::string_view Text, const SnAPI::UI::Color Color) {
+        auto Line = Panel.Add(SnAPI::UI::UIText(Text));
+        Line.Element().ColorVal(Color);
+        Line.Element().WrappingVal(SnAPI::UI::ETextWrapping::NoWrap);
+        return Line;
+    };
+    auto ConfigurePanelCard = [&](SnAPI::UI::UIPanel& Panel, const float Padding, const float Gap) {
+        Panel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        Panel.Padding().Set(Padding);
+        Panel.Gap().Set(Gap);
+        Panel.Background().Set(kPanelFill);
+        Panel.BorderColor().Set(kPanelBorder);
+        Panel.BorderThickness().Set(1.0f);
+        Panel.CornerRadius().Set(7.0f);
+    };
+
+    auto StatusPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Runtime"));
+    ConfigurePanelCard(StatusPanel.Element(), 12.0f, 4.0f);
+
+    auto Title = AddTextLine(StatusPanel, "SNAPI Multiplayer Example", kTitleColor);
+    OutHud.TitleText = Title.Handle();
+
+    auto Subtitle = AddTextLine(StatusPanel, "Traversal Sandbox Runtime", kAccentColor);
+    OutHud.SubtitleText = Subtitle.Handle();
+
+    auto FpsLine = AddTextLine(StatusPanel, "fps: --", kPrimaryTextColor);
+    OutHud.FpsText = FpsLine.Handle();
+
+    auto ModeLine = AddTextLine(StatusPanel, "mode: --", kSecondaryTextColor);
+    OutHud.ModeText = ModeLine.Handle();
+
+    auto CubeLine = AddTextLine(StatusPanel, "cubes: --", kSecondaryTextColor);
+    OutHud.CubeText = CubeLine.Handle();
+
+    auto SimLine = AddTextLine(StatusPanel, "simulation: --", kSecondaryTextColor);
+    OutHud.SimulationText = SimLine.Handle();
+
+    auto RuntimeHint = AddTextLine(StatusPanel, "Press 1/2/3/4 to switch tabs", kMutedTextColor);
+    OutHud.HintText = RuntimeHint.Handle();
+
+    auto ControlsPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Controls"));
+    ConfigurePanelCard(ControlsPanel.Element(), 12.0f, 3.0f);
+
+    AddTextLine(ControlsPanel, "Player Controls", kTitleColor);
+    AddTextLine(ControlsPanel, "Move: WASD / Left Stick", kPrimaryTextColor);
+    AddTextLine(ControlsPanel, "Jump: Space / Gamepad South", kPrimaryTextColor);
+    AddTextLine(ControlsPanel, "1/2/3/4: Switch tabs", kAccentColor);
+    AddTextLine(ControlsPanel, "Close window to exit", kMutedTextColor);
+
+    auto RenderingPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Rendering"));
+    ConfigurePanelCard(RenderingPanel.Element(), 12.0f, 3.0f);
+
+    AddTextLine(RenderingPanel, "Rendering", kTitleColor);
+    auto WindowLine = AddTextLine(RenderingPanel, "window: --", kSecondaryTextColor);
+    OutHud.WindowText = WindowLine.Handle();
+    auto LightingLine = AddTextLine(RenderingPanel, "lighting: --", kSecondaryTextColor);
+    OutHud.LightingText = LightingLine.Handle();
+    AddTextLine(RenderingPanel, "F: Toggle fullscreen + VSync", kPrimaryTextColor);
+    AddTextLine(RenderingPanel, "Z: Toggle soft shadows", kPrimaryTextColor);
+    AddTextLine(RenderingPanel, "C: Toggle contact hardening", kPrimaryTextColor);
+
+    auto NetworkingPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Networking"));
+    ConfigurePanelCard(NetworkingPanel.Element(), 12.0f, 3.0f);
+
+    AddTextLine(NetworkingPanel, "Networking", kTitleColor);
+    auto NetLine = AddTextLine(NetworkingPanel, "networking: --", kSecondaryTextColor);
+    OutHud.NetworkingText = NetLine.Handle();
+    AddTextLine(NetworkingPanel, "Mode switches:", kAccentColor);
+    AddTextLine(NetworkingPanel, "--local", kPrimaryTextColor);
+    AddTextLine(NetworkingPanel, "--server --port <p>", kPrimaryTextColor);
+    AddTextLine(NetworkingPanel, "--client --connect <ip>", kPrimaryTextColor);
+
+    auto BindText = [&](const SnAPI::UI::ElementHandle<SnAPI::UI::UIText>& Handle, const SnAPI::UI::PropertyKey Key) {
+        if (auto* TextElement = ResolveUiElement(*Context, Handle))
+        {
+            auto Target = TextElement->Text();
+            auto Source = HudVmProperty<std::string>(OutHud, Key);
+            Target.BindTo(Source, SnAPI::UI::EBindMode::OneWay);
+        }
+    };
+
+    BindText(OutHud.TitleText, MultiplayerHud::TitleKey);
+    BindText(OutHud.SubtitleText, MultiplayerHud::SubtitleKey);
+    BindText(OutHud.FpsText, MultiplayerHud::FpsKey);
+    BindText(OutHud.ModeText, MultiplayerHud::ModeKey);
+    BindText(OutHud.CubeText, MultiplayerHud::CubeKey);
+    BindText(OutHud.SimulationText, MultiplayerHud::SimulationKey);
+    BindText(OutHud.WindowText, MultiplayerHud::WindowKey);
+    BindText(OutHud.LightingText, MultiplayerHud::LightingKey);
+    BindText(OutHud.NetworkingText, MultiplayerHud::NetworkingKey);
+    BindText(OutHud.HintText, MultiplayerHud::HintKey);
+
+    {
+        auto TabsActive = TabsElement.ActiveTab();
+        auto VmActive = HudVmProperty<std::size_t>(OutHud, MultiplayerHud::ActiveTabKey);
+        TabsActive.BindTo(VmActive, SnAPI::UI::EBindMode::TwoWay);
+    }
+
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::TitleKey).Set("SNAPI Multiplayer Example");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::SubtitleKey)
+        .Set(std::string("mode: ") + ModeLabel(Mode) + " | target_hz=" + FormatFloat(Parsed.FixedHz, 1));
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::FpsKey).Set("fps: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::ModeKey).Set("mode: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::CubeKey).Set("cubes: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::SimulationKey).Set("simulation: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::WindowKey).Set("window: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::LightingKey).Set("lighting: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::NetworkingKey).Set("networking: --");
+    HudVmProperty<std::string>(OutHud, MultiplayerHud::HintKey).Set("Press 1/2/3/4 to switch tabs");
+    HudVmProperty<std::size_t>(OutHud, MultiplayerHud::ActiveTabKey).Set(size_t{0});
+
+    OutHud.Initialized = true;
+    return true;
+}
+
+void SetMultiplayerHudTab(World& Graph, MultiplayerHud& Hud, const size_t TabIndex)
+{
+    if (!Hud.Initialized)
+    {
+        return;
+    }
+
+    (void)Graph;
+    HudVmProperty<std::size_t>(Hud, MultiplayerHud::ActiveTabKey).Set(TabIndex);
+}
+
+void UpdateMultiplayerHud(World& Graph,
+                          const ERunMode Mode,
+                          const Args& Parsed,
+                          MultiplayerHud& Hud,
+                          const float DeltaSeconds,
+                          const std::size_t ActiveCubeCount,
+                          const std::size_t TotalCubeCount,
+                          NetSession* Session)
+{
+    if (!Hud.Initialized || !Graph.UI().IsInitialized())
+    {
+        return;
+    }
+
+    auto* Context = Graph.UI().Context();
+    if (!Context)
+    {
+        return;
+    }
+
+    if (auto* Window = Graph.Renderer().Window())
+    {
+        const auto WindowSize = Window->Size();
+        if (WindowSize.x() > 1.0f && WindowSize.y() > 1.0f)
+        {
+            (void)Graph.UI().SetViewportSize(WindowSize.x(), WindowSize.y());
+        }
+    }
+
+    const float SafeDelta = std::max(DeltaSeconds, 0.0001f);
+    const int Fps = static_cast<int>(std::round(1.0f / SafeDelta));
+
+    bool SoftShadowsEnabled = false;
+    bool ContactHardeningEnabled = false;
+    if (const auto* LightManager = Graph.Renderer().LightManager())
+    {
+        const auto DirectionalLights = LightManager->GetDirectionalLights();
+        if (const auto FirstLight = DirectionalLights.begin(); FirstLight != DirectionalLights.end())
+        {
+            SoftShadowsEnabled = (*FirstLight)->HasFeature(SnAPI::Graphics::DirectionalLightContract::Feature::SoftShadows);
+            ContactHardeningEnabled = (*FirstLight)->HasFeature(SnAPI::Graphics::DirectionalLightContract::Feature::ContactHardening);
+        }
+    }
+
+    std::string NetworkingText = "networking: disabled";
+    if (Session)
+    {
+        const auto Dumps = Session->DumpConnections(Clock::now());
+        const auto ReadyConnections = std::ranges::count_if(Dumps, [](const NetConnectionDump& Dump) {
+            return Dump.HandshakeComplete;
+        });
+        NetworkingText = "networking: conns=" + std::to_string(Dumps.size()) + " ready=" + std::to_string(ReadyConnections);
+    }
+
+    HudVmProperty<std::string>(Hud, MultiplayerHud::FpsKey)
+        .Set("fps: " + std::to_string(Fps) + " | dt: " + FormatFloat(SafeDelta * 1000.0f) + " ms");
+    HudVmProperty<std::string>(Hud, MultiplayerHud::ModeKey)
+        .Set(std::string("mode: ") + ModeLabel(Mode) +
+             " | hz: " + FormatFloat(Parsed.FixedHz, 1) +
+             " | max_steps: " + std::to_string(Parsed.MaxFixedSteps));
+    HudVmProperty<std::string>(Hud, MultiplayerHud::CubeKey)
+        .Set("cubes: " + std::to_string(ActiveCubeCount) + " / " + std::to_string(TotalCubeCount));
+    HudVmProperty<std::string>(Hud, MultiplayerHud::SimulationKey)
+        .Set(std::string("simulation: interp=") + (Parsed.DisableInterpolation ? "off" : "on") +
+             " | reset=" + (Parsed.ResetSimulation ? "on" : "off") +
+             " | substeps=" + (Parsed.MaxSubStepping ? std::to_string(*Parsed.MaxSubStepping) : std::string("auto")));
+
+    const auto* Window = Graph.Renderer().Window();
+    const std::string Fullscreen = (Window && Window->FullScreen()) ? "fullscreen" : "windowed";
+    const std::string VSync = Window ? VSyncModeLabel(Window->VSyncMode()) : "Unknown";
+    HudVmProperty<std::string>(Hud, MultiplayerHud::WindowKey).Set("window: " + Fullscreen + " | vsync: " + VSync);
+    HudVmProperty<std::string>(Hud, MultiplayerHud::LightingKey)
+        .Set(std::string("lighting: soft=") + (SoftShadowsEnabled ? "on" : "off") +
+             " | contact=" + (ContactHardeningEnabled ? "on" : "off") +
+             " | cubes=" + (Parsed.CubeShadows ? "on" : "off"));
+    HudVmProperty<std::string>(Hud, MultiplayerHud::NetworkingKey).Set(NetworkingText);
+}
+#endif
+
 int RunMode(const Args& Parsed, const ERunMode Mode)
 {
     RegisterExampleTypes();
@@ -1322,26 +1705,33 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
         (void)Graph.Renderer().LoadDefaultFont("/usr/share/fonts/TTF/Arial.TTF", 20);
     }
 
+    const bool BuildLocalCubePool = (Mode != ERunMode::Client);
     std::vector<CubeSlot> CubeSlots;
-    CubeSlots.reserve(static_cast<size_t>(std::max(Parsed.CubeCount, 1)));
+    if (BuildLocalCubePool)
+    {
+        CubeSlots.reserve(static_cast<size_t>(std::max(Parsed.CubeCount, 1)));
+    }
     CubeSharedMaterials SharedCubeMaterials{};
-    if (WindowEnabled && Graph.Renderer().IsInitialized())
+    if (BuildLocalCubePool && WindowEnabled && Graph.Renderer().IsInitialized())
     {
         SharedCubeMaterials = BuildSharedCubeMaterialInstances(Graph, Parsed.CubeShadows);
     }
     std::mt19937 Rng(static_cast<std::uint32_t>(Clock::now().time_since_epoch().count()));
-    for (int i = 0; i < Parsed.CubeCount; ++i)
+    if (BuildLocalCubePool)
     {
-        CubeSlot Slot{};
-        if (CreateCubeSlot(Graph,
-                           i,
-                           Slot,
-                           Parsed.CubeShadows,
-                           Parsed.DisableInterpolation,
-                           SharedCubeMaterials.GBuffer,
-                           SharedCubeMaterials.Shadow))
+        for (int i = 0; i < Parsed.CubeCount; ++i)
         {
-            CubeSlots.push_back(Slot);
+            CubeSlot Slot{};
+            if (CreateCubeSlot(Graph,
+                               i,
+                               Slot,
+                               Parsed.CubeShadows,
+                               Parsed.DisableInterpolation,
+                               SharedCubeMaterials.GBuffer,
+                               SharedCubeMaterials.Shadow))
+            {
+                CubeSlots.push_back(Slot);
+            }
         }
     }
 
@@ -1377,6 +1767,17 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     auto NextLog = Start;
     auto NextPerfLog = Start + std::chrono::seconds(1);
     std::uint32_t FramesSincePerfLog = 0;
+
+#if defined(SNAPI_GF_ENABLE_UI)
+    MultiplayerHud Hud{};
+    if (WindowEnabled)
+    {
+        if (!BuildMultiplayerHud(Graph, Mode, Parsed, Hud))
+        {
+            std::cerr << "Warning: failed to build HUD UI; continuing without UI overlay\n";
+        }
+    }
+#endif
 
     bool Running = true;
     while (Running)
@@ -1440,6 +1841,33 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             }
         }
 
+        std::size_t ActiveCubes = static_cast<std::size_t>(std::ranges::count_if(CubeSlots, [](const CubeSlot& Slot) {
+            return Slot.Active;
+        }));
+        std::size_t TotalCubes = CubeSlots.size();
+        if (!BuildLocalCubePool)
+        {
+            ActiveCubes = CountActiveRenderedCubes(Graph);
+            TotalCubes = ActiveCubes;
+        }
+
+#if defined(SNAPI_GF_ENABLE_UI)
+        if (WindowEnabled)
+        {
+            UpdateMultiplayerHud(Graph,
+                                 Mode,
+                                 Parsed,
+                                 Hud,
+                                 DeltaSeconds,
+                                 ActiveCubes,
+                                 TotalCubes,
+                                 Session);
+
+            Runtime.World().Renderer().SetViewPort(SnAPI::Graphics::ViewportFit{.X = 0,.Y = 0, .Width = Runtime.World().Renderer().Window()->Size().x(), .Height = Runtime.World().Renderer().Window()->Size().y() / 2});
+        }
+#endif
+
+#if !defined(SNAPI_GF_ENABLE_UI)
         if (WindowEnabled)
         {
             const float SafeDelta = std::max(DeltaSeconds, 0.0001f);
@@ -1447,17 +1875,75 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             const std::string FpsText = "FPS: " + std::to_string(Fps);
             (void)Graph.Renderer().QueueText(FpsText, 16.0f, 16.0f);
         }
+#endif
 
         Runtime.Update(DeltaSeconds);
 
-        // Check for f key. and toggle fullscreen
-        if(Runtime.World().Input().Snapshot()->KeyReleased(SnAPI::Input::EKey::F))
+#if defined(SNAPI_GF_ENABLE_INPUT)
+        const SnAPI::Input::InputSnapshot* InputSnapshot = nullptr;
+        if (WindowEnabled && Runtime.World().Input().IsInitialized())
         {
-            Runtime.World().Renderer().Window()->FullScreen(!Runtime.World().Renderer().Window()->FullScreen());
-            bool IsVSyncEnabled = Runtime.World().Renderer().Window()->VSyncMode() != SnAPI::Graphics::EWindowVSyncMode::Off;
-            Runtime.World().Renderer().Window()->VSyncMode( IsVSyncEnabled? SnAPI::Graphics::EWindowVSyncMode::Off: SnAPI::Graphics::EWindowVSyncMode::On);
-
+            InputSnapshot = Runtime.World().Input().Snapshot();
         }
+        if (InputSnapshot)
+        {
+            // Window-only debug toggles.
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::F))
+            {
+                Runtime.World().Renderer().Window()->FullScreen(!Runtime.World().Renderer().Window()->FullScreen());
+                const bool IsVSyncEnabled =
+                    Runtime.World().Renderer().Window()->VSyncMode() != SnAPI::Graphics::EWindowVSyncMode::Off;
+                Runtime.World().Renderer().Window()->VSyncMode(
+                    IsVSyncEnabled ? SnAPI::Graphics::EWindowVSyncMode::Off : SnAPI::Graphics::EWindowVSyncMode::On);
+            }
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::Z))
+            {
+                const auto DirLights = Runtime.World().Renderer().LightManager()->GetDirectionalLights();
+                if (const auto FirstLight = DirLights.begin(); FirstLight != DirLights.end())
+                {
+                    (*FirstLight)
+                        ->SetFeature(SnAPI::Graphics::DirectionalLightContract::Feature::SoftShadows,
+                                     !(*FirstLight)->HasFeature(
+                                         SnAPI::Graphics::DirectionalLightContract::Feature::SoftShadows));
+                    (*FirstLight)->SetFeature(SnAPI::Graphics::DirectionalLightContract::Feature::ContactHardening,
+                                              true);
+                }
+            }
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::C))
+            {
+                const auto DirLights = Runtime.World().Renderer().LightManager()->GetDirectionalLights();
+                if (const auto FirstLight = DirLights.begin(); FirstLight != DirLights.end())
+                {
+                    (*FirstLight)
+                        ->SetFeature(SnAPI::Graphics::DirectionalLightContract::Feature::ContactHardening,
+                                     !(*FirstLight)->HasFeature(
+                                         SnAPI::Graphics::DirectionalLightContract::Feature::ContactHardening));
+                }
+            }
+#if defined(SNAPI_GF_ENABLE_UI)
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::Num1) ||
+                InputSnapshot->KeyReleased(SnAPI::Input::EKey::Numpad1))
+            {
+                SetMultiplayerHudTab(Runtime.World(), Hud, size_t{0});
+            }
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::Num2) ||
+                InputSnapshot->KeyReleased(SnAPI::Input::EKey::Numpad2))
+            {
+                SetMultiplayerHudTab(Runtime.World(), Hud, size_t{1});
+            }
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::Num3) ||
+                InputSnapshot->KeyReleased(SnAPI::Input::EKey::Numpad3))
+            {
+                SetMultiplayerHudTab(Runtime.World(), Hud, size_t{2});
+            }
+            if (InputSnapshot->KeyReleased(SnAPI::Input::EKey::Num4) ||
+                InputSnapshot->KeyReleased(SnAPI::Input::EKey::Numpad4))
+            {
+                SetMultiplayerHudTab(Runtime.World(), Hud, size_t{3});
+            }
+#endif
+        }
+#endif
         if (Session && Now >= NextLog)
         {
             for (const auto Dumps = Session->DumpConnections(Now); const auto& Dump : Dumps)
@@ -1474,13 +1960,9 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
             ++FramesSincePerfLog;
             if (Now >= NextPerfLog)
             {
-                const auto ActiveCubes = std::ranges::count_if(CubeSlots, [](const CubeSlot& Slot) {
-                    return Slot.Active;
-                });
-
                 std::cout << "[" << ModeLabel(Mode) << "Perf] fps=" << FramesSincePerfLog
                           << " active_cubes=" << ActiveCubes
-                          << " total_cubes=" << CubeSlots.size()
+                          << " total_cubes=" << TotalCubes
                           << " interp=" << (Parsed.DisableInterpolation ? "off" : "on")
                           << " fixed_hz=" << Parsed.FixedHz
                           << " substeps=" << (Parsed.MaxSubStepping ? std::to_string(*Parsed.MaxSubStepping) : std::string("auto")) << "\n";

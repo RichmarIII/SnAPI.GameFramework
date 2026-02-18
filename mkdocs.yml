@@ -67,6 +67,7 @@ nav:
       - Worlds and Graphs: tutorials/worlds_graphs.md
       - Nodes and Components: tutorials/nodes_components.md
       - Input System: tutorials/input.md
+      - UI System: tutorials/ui.md
       - Renderer Integration and Mesh Components: tutorials/renderer.md
       - Physics System and Components: tutorials/physics.md
       - Physics Queries and Events: tutorials/physics_queries_events.md

@@ -12,6 +12,9 @@ class Level;
 #if defined(SNAPI_GF_ENABLE_INPUT)
 class InputSystem;
 #endif
+#if defined(SNAPI_GF_ENABLE_UI)
+class UISystem;
+#endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 class AudioSystem;
 #endif
@@ -29,7 +32,7 @@ class RendererSystem;
  * @brief Root runtime container contract for gameplay sessions.
  * @remarks
  * A world is the top-level execution root that owns levels and optional subsystem
- * integrations (input/audio/networking/physics/renderer). Worlds drive frame
+ * integrations (input/ui/audio/networking/physics/renderer). Worlds drive frame
  * lifecycle (`Tick`/`EndFrame`) and establish authoritative context for
  * contained node graphs.
  */
@@ -114,6 +117,19 @@ public:
      * @return Const reference to InputSystem.
      */
     virtual const InputSystem& Input() const = 0;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_UI)
+    /**
+     * @brief Access the UI subsystem for this world.
+     * @return Reference to UISystem.
+     */
+    virtual UISystem& UI() = 0;
+    /**
+     * @brief Access the UI subsystem for this world (const).
+     * @return Const reference to UISystem.
+     */
+    virtual const UISystem& UI() const = 0;
 #endif
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)

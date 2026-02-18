@@ -7,7 +7,7 @@ The framework uses:
 - **Component‑based composition** (Unity‑style behaviors).
 - **Stable UUID handles** for cross‑graph/cross‑asset references.
 - **Reflection‑driven serialization** (C++23, template‑centric).
-- **World-owned subsystem adapters** (networking, audio, physics, renderer).
+- **World-owned subsystem adapters** (input, ui, networking, audio, physics, renderer).
 - **End‑of‑frame deletion** to avoid dangling handles during a frame.
 - **Relevance system** to cull work for inactive/out‑of‑budget nodes.
 
@@ -85,6 +85,11 @@ This repository targets C++23 and is intended to be multi‑platform.
 ### Dependencies (FetchContent)
 - [stduuid](https://github.com/mariusbancila/stduuid) (UUIDs)
 - [SnAPI.AssetPipeline](https://github.com/RichmarIII/SnAPI.AssetPipeline) (required)
+- [SnAPI.Input](https://github.com/RichmarIII/SnAPI.Input) (required)
+- [SnAPI.UI](https://github.com/RichmarIII/SnAPI.UI) (required)
+- [SnAPI.Networking](https://github.com/RichmarIII/SnAPI.Networking) (required)
+- [SnAPI.Audio](https://github.com/RichmarIII/SnAPI.Audio) (required)
+- [SnAPI.Physics](https://github.com/RichmarIII/SnAPI.Physics) (required)
 - [SnAPI.Renderer](https://github.com/RichmarIII/SnAPI.Renderer) (auto-enabled when source is available)
 - Lua (optional, for scripting support)
 - Catch2 (tests)
@@ -102,6 +107,8 @@ cmake --build build
 -DSNAPI_GF_ENABLE_LUA=ON/OFF
 -DSNAPI_GF_ENABLE_SWIG=ON/OFF
 -DSNAPI_GF_ENABLE_PROFILER=ON/OFF
+-DSNAPI_GF_INPUT_SOURCE_DIR=/absolute/path/to/SnAPI.Input
+-DSNAPI_GF_UI_SOURCE_DIR=/absolute/path/to/SnAPI.UI
 -DSNAPI_GF_RENDERER_SOURCE_DIR=/absolute/path/to/SnAPI.Renderer
 ```
 
@@ -110,7 +117,7 @@ Renderer notes:
 - Renderer integration is compiled in only when `SnAPI.Renderer` source is found and target `SnAPI.Renderer` is created.
 - Resolution order is:
   - `SNAPI_GF_RENDERER_SOURCE_DIR`
-  - local fallback `/mnt/Apps/Dev/Repositories/SnAPI.Renderer`
+  - local fallback `/mnt/Dev/CodeProjects/SnAPI.Renderer`
   - otherwise renderer module is skipped with a CMake warning.
 
 ### Realtime Profiler Stream (GameRuntime startup helper)

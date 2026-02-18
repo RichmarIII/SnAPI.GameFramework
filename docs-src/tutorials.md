@@ -6,13 +6,14 @@ You will build a mental model in this order:
 
 1. Runtime structure (`World -> Level -> NodeGraph -> Node -> Component`)
 2. Input ownership and normalized frame state flow
-3. Renderer ownership and render-object flow
-4. Physics ownership and simulation flow
-5. Reflection registration (how types become visible to the engine)
-6. Serialization and asset packaging
-7. Networking replication + RPC
-8. Audio components
-9. Testing and validation
+3. UI ownership and packetized render flow
+4. Renderer ownership and render-object flow
+5. Physics ownership and simulation flow
+6. Reflection registration (how types become visible to the engine)
+7. Serialization and asset packaging
+8. Networking replication + RPC
+9. Audio components
+10. Testing and validation
 
 If you work through the pages in sequence, you will be able to read the examples in `examples/` and understand why each system is there.
 
@@ -53,14 +54,15 @@ Run examples:
 1. [Worlds and Graphs](tutorials/worlds_graphs.md)
 2. [Nodes and Components](tutorials/nodes_components.md)
 3. [Input System](tutorials/input.md)
-4. [Renderer Integration and Mesh Components](tutorials/renderer.md)
-5. [Physics System and Components](tutorials/physics.md)
-6. [Physics Queries and Events](tutorials/physics_queries_events.md)
-7. [Reflection and Serialization](tutorials/reflection_serialization.md)
-8. [AssetPipeline Integration](tutorials/assetpipeline.md)
-9. [Networking Replication and RPC](tutorials/networking.md)
-10. [Audio Components](tutorials/audio.md)
-11. [Testing and Validation](tutorials/testing.md)
+4. [UI System](tutorials/ui.md)
+5. [Renderer Integration and Mesh Components](tutorials/renderer.md)
+6. [Physics System and Components](tutorials/physics.md)
+7. [Physics Queries and Events](tutorials/physics_queries_events.md)
+8. [Reflection and Serialization](tutorials/reflection_serialization.md)
+9. [AssetPipeline Integration](tutorials/assetpipeline.md)
+10. [Networking Replication and RPC](tutorials/networking.md)
+11. [Audio Components](tutorials/audio.md)
+12. [Testing and Validation](tutorials/testing.md)
 
 ## Core Ideas You Should Keep In Mind
 
@@ -74,8 +76,8 @@ Run examples:
 - Nested field replication depends on codec availability:
     - with `TValueCodec<T>`, the full field value is codec-serialized.
     - without a codec, only nested reflected fields marked for replication are serialized.
-- `World` owns subsystem runtime (input/networking/audio/physics/renderer), and `GameRuntime` orchestrates world update phases.
-- `World::Tick(...)` pumps `InputSystem` first (when initialized), so node/component `Tick(...)` can read current-frame normalized input state.
+- `World` owns subsystem runtime (input/ui/networking/audio/physics/renderer), and `GameRuntime` orchestrates world update phases.
+- `World::Tick(...)` pumps `InputSystem` first and `UISystem` second (when initialized), then runs node/component `Tick(...)`.
 - Renderer follows the same world-owned subsystem pattern (`World::Renderer()`), and render submit/present is driven by `World::EndFrame()`.
 - Mesh assets are data-only; per-instance render behavior lives on render objects (`MeshRenderObject` via `IRenderObject`).
 - Physics stepping can be configured:
