@@ -50,7 +50,7 @@ public:
     /** @brief Construct an uninitialized UI system. */
     UISystem() = default;
     /** @brief Destructor; shuts down active UI context if initialized. */
-    ~UISystem();
+    ~UISystem() override;
 
     UISystem(const UISystem&) = delete;
     UISystem& operator=(const UISystem&) = delete;
@@ -110,19 +110,25 @@ public:
      * @brief Forward one pointer input event to the active UI context.
      * @param EventValue Pointer event payload.
      */
-    void PushInput(const SnAPI::UI::PointerEvent& EventValue);
+    void PushInput(const SnAPI::UI::PointerEvent& EventValue) const;
 
     /**
      * @brief Forward one key input event to the active UI context.
      * @param EventValue Key event payload.
      */
-    void PushInput(const SnAPI::UI::KeyEvent& EventValue);
+    void PushInput(const SnAPI::UI::KeyEvent& EventValue) const;
 
     /**
      * @brief Forward one text input event to the active UI context.
      * @param EventValue Text input event payload.
      */
-    void PushInput(const SnAPI::UI::TextInputEvent& EventValue);
+    void PushInput(const SnAPI::UI::TextInputEvent& EventValue) const;
+
+    /**
+    * @brief Forward one Wheel input event to the active UI context.
+    * @param EventValue Wheel input event payload.
+    */
+    void PushInput(const SnAPI::UI::WheelEvent& EventValue) const;
 
     /**
      * @brief Update logical UI viewport size.

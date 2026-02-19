@@ -28,9 +28,12 @@
 #include <UIProperties.h>
 #include <UISlider.h>
 #include <UIRealtimeGraph.h>
+#include <UIScrollContainer.h>
 #include <UISizing.h>
 #include <UIText.h>
+#include <UITextInput.h>
 #include <UIContext.h>
+#include <UITheme.h>
 #endif
 #if defined(SNAPI_GF_ENABLE_PROFILER) && SNAPI_GF_ENABLE_PROFILER && \
     defined(SNAPI_PROFILER_ENABLE_REALTIME_STREAM) && SNAPI_PROFILER_ENABLE_REALTIME_STREAM
@@ -619,7 +622,7 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
         InputSettings.CreateDesc.EnableKeyboard = true;
         InputSettings.CreateDesc.EnableMouse = true;
         InputSettings.CreateDesc.EnableGamepad = true;
-        InputSettings.CreateDesc.EnableTextInput = false;
+        InputSettings.CreateDesc.EnableTextInput = true;
         Settings.Input = InputSettings;
     }
 #endif
@@ -1316,11 +1319,67 @@ void PollRendererEvents(World& Graph, const CameraComponent* Camera, bool& Runni
                 {
                 case SnAPI::Input::EKey::Backspace:
                     return 8u;
+                case SnAPI::Input::EKey::Tab:
+                    return 9u;
                 case SnAPI::Input::EKey::Enter:
                 case SnAPI::Input::EKey::NumpadEnter:
                     return 13u;
                 case SnAPI::Input::EKey::Escape:
                     return 27u;
+                case SnAPI::Input::EKey::Space:
+                    return static_cast<uint32_t>(' ');
+                case SnAPI::Input::EKey::A:
+                    return static_cast<uint32_t>('a');
+                case SnAPI::Input::EKey::B:
+                    return static_cast<uint32_t>('b');
+                case SnAPI::Input::EKey::C:
+                    return static_cast<uint32_t>('c');
+                case SnAPI::Input::EKey::D:
+                    return static_cast<uint32_t>('d');
+                case SnAPI::Input::EKey::E:
+                    return static_cast<uint32_t>('e');
+                case SnAPI::Input::EKey::F:
+                    return static_cast<uint32_t>('f');
+                case SnAPI::Input::EKey::G:
+                    return static_cast<uint32_t>('g');
+                case SnAPI::Input::EKey::H:
+                    return static_cast<uint32_t>('h');
+                case SnAPI::Input::EKey::I:
+                    return static_cast<uint32_t>('i');
+                case SnAPI::Input::EKey::J:
+                    return static_cast<uint32_t>('j');
+                case SnAPI::Input::EKey::K:
+                    return static_cast<uint32_t>('k');
+                case SnAPI::Input::EKey::L:
+                    return static_cast<uint32_t>('l');
+                case SnAPI::Input::EKey::M:
+                    return static_cast<uint32_t>('m');
+                case SnAPI::Input::EKey::N:
+                    return static_cast<uint32_t>('n');
+                case SnAPI::Input::EKey::O:
+                    return static_cast<uint32_t>('o');
+                case SnAPI::Input::EKey::P:
+                    return static_cast<uint32_t>('p');
+                case SnAPI::Input::EKey::Q:
+                    return static_cast<uint32_t>('q');
+                case SnAPI::Input::EKey::R:
+                    return static_cast<uint32_t>('r');
+                case SnAPI::Input::EKey::S:
+                    return static_cast<uint32_t>('s');
+                case SnAPI::Input::EKey::T:
+                    return static_cast<uint32_t>('t');
+                case SnAPI::Input::EKey::U:
+                    return static_cast<uint32_t>('u');
+                case SnAPI::Input::EKey::V:
+                    return static_cast<uint32_t>('v');
+                case SnAPI::Input::EKey::W:
+                    return static_cast<uint32_t>('w');
+                case SnAPI::Input::EKey::X:
+                    return static_cast<uint32_t>('x');
+                case SnAPI::Input::EKey::Y:
+                    return static_cast<uint32_t>('y');
+                case SnAPI::Input::EKey::Z:
+                    return static_cast<uint32_t>('z');
                 case SnAPI::Input::EKey::Num0:
                 case SnAPI::Input::EKey::Numpad0:
                     return static_cast<uint32_t>('0');
@@ -1357,6 +1416,42 @@ void PollRendererEvents(World& Graph, const CameraComponent* Camera, bool& Runni
                 case SnAPI::Input::EKey::Minus:
                 case SnAPI::Input::EKey::NumpadMinus:
                     return static_cast<uint32_t>('-');
+                case SnAPI::Input::EKey::Equals:
+                    return static_cast<uint32_t>('=');
+                case SnAPI::Input::EKey::LeftBracket:
+                    return static_cast<uint32_t>('[');
+                case SnAPI::Input::EKey::RightBracket:
+                    return static_cast<uint32_t>(']');
+                case SnAPI::Input::EKey::Backslash:
+                    return static_cast<uint32_t>('\\');
+                case SnAPI::Input::EKey::Semicolon:
+                    return static_cast<uint32_t>(';');
+                case SnAPI::Input::EKey::Apostrophe:
+                    return static_cast<uint32_t>('\'');
+                case SnAPI::Input::EKey::Grave:
+                    return static_cast<uint32_t>('`');
+                case SnAPI::Input::EKey::Comma:
+                    return static_cast<uint32_t>(',');
+                case SnAPI::Input::EKey::Slash:
+                    return static_cast<uint32_t>('/');
+                case SnAPI::Input::EKey::Delete:
+                    return 127u;
+                case SnAPI::Input::EKey::Left:
+                    return 1073741904u;
+                case SnAPI::Input::EKey::Right:
+                    return 1073741903u;
+                case SnAPI::Input::EKey::Up:
+                    return 1073741906u;
+                case SnAPI::Input::EKey::Down:
+                    return 1073741905u;
+                case SnAPI::Input::EKey::Home:
+                    return 1073741898u;
+                case SnAPI::Input::EKey::End:
+                    return 1073741901u;
+                case SnAPI::Input::EKey::PageUp:
+                    return 1073741899u;
+                case SnAPI::Input::EKey::PageDown:
+                    return 1073741902u;
                 default:
                     return static_cast<uint32_t>(Key);
                 }
@@ -1476,6 +1571,19 @@ void PollRendererEvents(World& Graph, const CameraComponent* Camera, bool& Runni
                         }
 
                         Graph.UI().PushInput(UiPointer);
+                    }
+                    break;
+                case SnAPI::Input::EInputEventType::MouseWheel:
+                    if (const auto* WheelData = std::get_if<SnAPI::Input::MouseWheelEvent>(&Event.Data))
+                    {
+                        SnAPI::UI::WheelEvent UiWheel{};
+                        UiWheel.DeltaX = WheelData->DeltaX;
+                        UiWheel.DeltaY = WheelData->DeltaY;
+                        if (const auto* Snapshot = Graph.Input().Snapshot())
+                        {
+                            UiWheel.Position = ToUiPoint(Snapshot->Mouse().X, Snapshot->Mouse().Y);
+                        }
+                        Graph.UI().PushInput(UiWheel);
                     }
                     break;
                 case SnAPI::Input::EInputEventType::KeyDown:
@@ -1649,6 +1757,166 @@ struct MultiplayerHud
     uint32_t FrameTimeSeries = SnAPI::UI::UIRealtimeGraph::InvalidSeries;
 };
 
+namespace MultiplayerEditorThemeColors
+{
+constexpr SnAPI::UI::Color TitleText{255, 244, 199, 255};
+constexpr SnAPI::UI::Color AccentText{102, 224, 255, 255};
+constexpr SnAPI::UI::Color PrimaryText{242, 247, 255, 255};
+constexpr SnAPI::UI::Color SecondaryText{194, 209, 233, 255};
+constexpr SnAPI::UI::Color MutedText{124, 145, 174, 255};
+
+constexpr SnAPI::UI::Color CardFill{16, 22, 34, 214};
+constexpr SnAPI::UI::Color CardBorder{78, 142, 204, 186};
+constexpr SnAPI::UI::Color CardFillPressed{24, 33, 49, 230};
+
+constexpr SnAPI::UI::Color TabBg{9, 13, 20, 244};
+constexpr SnAPI::UI::Color TabActive{22, 44, 70, 252};
+constexpr SnAPI::UI::Color TabHover{17, 33, 52, 244};
+constexpr SnAPI::UI::Color TabText{233, 242, 255, 255};
+constexpr SnAPI::UI::Color Splitter{44, 74, 111, 224};
+constexpr SnAPI::UI::Color SplitterHover{122, 192, 255, 248};
+constexpr SnAPI::UI::Color DropZone{70, 166, 255, 112};
+constexpr SnAPI::UI::Color DropZoneHover{100, 204, 255, 172};
+
+constexpr SnAPI::UI::Color SliderTrack{31, 43, 62, 232};
+constexpr SnAPI::UI::Color SliderFill{81, 210, 255, 248};
+constexpr SnAPI::UI::Color SliderThumb{255, 255, 255, 255};
+constexpr SnAPI::UI::Color SliderValueBg{9, 15, 26, 242};
+constexpr SnAPI::UI::Color SliderBorder{99, 158, 216, 212};
+constexpr SnAPI::UI::Color SliderThumbPressed{202, 236, 255, 255};
+
+constexpr SnAPI::UI::Color ScrollBg{8, 13, 23, 214};
+constexpr SnAPI::UI::Color ScrollTrack{24, 36, 54, 200};
+constexpr SnAPI::UI::Color ScrollThumb{99, 146, 196, 232};
+constexpr SnAPI::UI::Color ScrollThumbHover{140, 212, 255, 248};
+
+constexpr SnAPI::UI::Color InputBg{8, 14, 24, 234};
+constexpr SnAPI::UI::Color InputBorder{98, 153, 210, 216};
+constexpr SnAPI::UI::Color InputBorderFocused{132, 222, 255, 255};
+constexpr SnAPI::UI::Color InputSelection{74, 173, 255, 156};
+constexpr SnAPI::UI::Color InputSpellError{255, 95, 120, 255};
+
+constexpr SnAPI::UI::Color GraphBg{5, 8, 14, 176};
+constexpr SnAPI::UI::Color GraphPlotBg{7, 14, 25, 236};
+constexpr SnAPI::UI::Color GraphBorder{86, 148, 212, 142};
+constexpr SnAPI::UI::Color GraphGrid{79, 114, 152, 94};
+constexpr SnAPI::UI::Color GraphAxis{152, 210, 255, 182};
+} // namespace MultiplayerEditorThemeColors
+
+class MultiplayerEditorTheme final : public SnAPI::UI::Theme
+{
+public:
+    MultiplayerEditorTheme()
+        : SnAPI::UI::Theme("MultiplayerEditor")
+    {
+    }
+
+    void Initialize() override
+    {
+        using namespace MultiplayerEditorThemeColors;
+
+        Define<SnAPI::UI::UIText>()
+            .Set(SnAPI::UI::UIText::TextColorKey, PrimaryText)
+            .Set(SnAPI::UI::UIText::WrappingKey, SnAPI::UI::ETextWrapping::NoWrap)
+            .Set(SnAPI::UI::UIText::TextAlignmentKey, SnAPI::UI::ETextAlignment::Start)
+            .Set(SnAPI::UI::UIText::TextJustifyKey, SnAPI::UI::ETextJustify::None)
+            .Disabled()
+                .Set(SnAPI::UI::UIText::TextColorKey, MutedText);
+
+        Define<SnAPI::UI::UIPanel>()
+            .Set(SnAPI::UI::UIPanel::DirectionKey, SnAPI::UI::ELayoutDirection::Vertical)
+            .Set(SnAPI::UI::UIPanel::PaddingKey, 8.0f)
+            .Set(SnAPI::UI::UIPanel::GapKey, 4.0f)
+            .Set(SnAPI::UI::UIPanel::BackgroundKey, SnAPI::UI::Color{0, 0, 0, 0})
+            .Set(SnAPI::UI::UIPanel::BorderColorKey, SnAPI::UI::Color{0, 0, 0, 0})
+            .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 0.0f)
+            .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 8.0f);
+
+        DefineClass("hud.card")
+            .Set(SnAPI::UI::UIPanel::BackgroundKey, CardFill)
+            .Set(SnAPI::UI::UIPanel::BorderColorKey, CardBorder)
+            .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+            .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 10.0f)
+            .Set(SnAPI::UI::UIPanel::PaddingKey, 12.0f)
+            .Set(SnAPI::UI::UIPanel::GapKey, 4.0f)
+            .Hovered()
+                .Set(SnAPI::UI::UIPanel::BorderColorKey, SnAPI::UI::Color{110, 182, 246, 218})
+            .Pressed()
+                .Set(SnAPI::UI::UIPanel::BackgroundKey, CardFillPressed);
+
+        DefineClass("hud.flat_row")
+            .Set(SnAPI::UI::UIPanel::DirectionKey, SnAPI::UI::ELayoutDirection::Horizontal)
+            .Set(SnAPI::UI::UIPanel::PaddingKey, 0.0f)
+            .Set(SnAPI::UI::UIPanel::GapKey, 8.0f)
+            .Set(SnAPI::UI::UIPanel::BackgroundKey, SnAPI::UI::Color{0, 0, 0, 0})
+            .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 0.0f);
+
+        Define<SnAPI::UI::UIDockZone>()
+            .Set(SnAPI::UI::UIDockZone::SplitterColorKey, Splitter)
+            .Set(SnAPI::UI::UIDockZone::SplitterHoverColorKey, SplitterHover)
+            .Set(SnAPI::UI::UIDockZone::TabBgColorKey, TabBg)
+            .Set(SnAPI::UI::UIDockZone::TabActiveColorKey, TabActive)
+            .Set(SnAPI::UI::UIDockZone::TabHoverColorKey, TabHover)
+            .Set(SnAPI::UI::UIDockZone::TabTextColorKey, TabText)
+            .Set(SnAPI::UI::UIDockZone::DropZoneColorKey, DropZone)
+            .Set(SnAPI::UI::UIDockZone::DropZoneHoverColorKey, DropZoneHover);
+
+        Define<SnAPI::UI::UISlider>()
+            .Set(SnAPI::UI::UISlider::TrackColorKey, SliderTrack)
+            .Set(SnAPI::UI::UISlider::FillColorKey, SliderFill)
+            .Set(SnAPI::UI::UISlider::ThumbColorKey, SliderThumb)
+            .Set(SnAPI::UI::UISlider::LabelColorKey, PrimaryText)
+            .Set(SnAPI::UI::UISlider::ValueTextColorKey, SecondaryText)
+            .Set(SnAPI::UI::UISlider::ValueBackgroundColorKey, SliderValueBg)
+            .Set(SnAPI::UI::UISlider::BorderColorKey, SliderBorder)
+            .Hovered()
+                .Set(SnAPI::UI::UISlider::FillColorKey, SnAPI::UI::Color{115, 226, 255, 252})
+                .Set(SnAPI::UI::UISlider::BorderColorKey, SnAPI::UI::Color{124, 198, 255, 230})
+            .Pressed()
+                .Set(SnAPI::UI::UISlider::ThumbColorKey, SliderThumbPressed)
+                .Set(SnAPI::UI::UISlider::FillColorKey, SnAPI::UI::Color{134, 232, 255, 255})
+                .Set(SnAPI::UI::UISlider::BorderColorKey, SnAPI::UI::Color{146, 218, 255, 242});
+
+        Define<SnAPI::UI::UIRealtimeGraph>()
+            .Set(SnAPI::UI::UIRealtimeGraph::BackgroundColorKey, GraphBg)
+            .Set(SnAPI::UI::UIRealtimeGraph::PlotBackgroundColorKey, GraphPlotBg)
+            .Set(SnAPI::UI::UIRealtimeGraph::BorderColorKey, GraphBorder)
+            .Set(SnAPI::UI::UIRealtimeGraph::GridColorKey, GraphGrid)
+            .Set(SnAPI::UI::UIRealtimeGraph::AxisColorKey, GraphAxis)
+            .Set(SnAPI::UI::UIRealtimeGraph::TitleColorKey, AccentText)
+            .Set(SnAPI::UI::UIRealtimeGraph::LegendTextColorKey, PrimaryText);
+
+        Define<SnAPI::UI::UIScrollContainer>()
+            .Set(SnAPI::UI::UIScrollContainer::BackgroundColorKey, ScrollBg)
+            .Set(SnAPI::UI::UIScrollContainer::BorderColorKey, CardBorder)
+            .Set(SnAPI::UI::UIScrollContainer::BorderThicknessKey, 1.0f)
+            .Set(SnAPI::UI::UIScrollContainer::CornerRadiusKey, 8.0f)
+            .Set(SnAPI::UI::UIScrollContainer::ScrollbarThicknessKey, 9.0f)
+            .Set(SnAPI::UI::UIScrollContainer::ScrollbarTrackColorKey, ScrollTrack)
+            .Set(SnAPI::UI::UIScrollContainer::ScrollbarThumbColorKey, ScrollThumb)
+            .Set(SnAPI::UI::UIScrollContainer::ScrollbarThumbHoverColorKey, ScrollThumbHover)
+            .Set(SnAPI::UI::UIScrollContainer::SmoothKey, true);
+
+        Define<SnAPI::UI::UITextInput>()
+            .Set(SnAPI::UI::UITextInput::BackgroundColorKey, InputBg)
+            .Set(SnAPI::UI::UITextInput::BorderColorKey, InputBorder)
+            .Set(SnAPI::UI::UITextInput::BorderThicknessKey, 1.0f)
+            .Set(SnAPI::UI::UITextInput::CornerRadiusKey, 6.0f)
+            .Set(SnAPI::UI::UITextInput::TextColorKey, PrimaryText)
+            .Set(SnAPI::UI::UITextInput::PlaceholderColorKey, MutedText)
+            .Set(SnAPI::UI::UITextInput::SelectionColorKey, InputSelection)
+            .Set(SnAPI::UI::UITextInput::CaretColorKey, SnAPI::UI::Color{236, 246, 255, 255})
+            .Set(SnAPI::UI::UITextInput::SpellErrorColorKey, InputSpellError)
+            .Set(SnAPI::UI::UITextInput::PaddingKey, 8.0f)
+            .Set(SnAPI::UI::UITextInput::TextAlignmentKey, SnAPI::UI::ETextAlignment::Start)
+            .Set(SnAPI::UI::UITextInput::TextJustifyKey, SnAPI::UI::ETextJustify::None)
+            .Hovered()
+                .Set(SnAPI::UI::UITextInput::BorderColorKey, SnAPI::UI::Color{108, 154, 208, 224})
+            .Focused()
+                .Set(SnAPI::UI::UITextInput::BorderColorKey, InputBorderFocused);
+    }
+};
+
 template <typename TValue>
 SnAPI::UI::TPropertyRef<TValue> HudVmProperty(MultiplayerHud& Hud, const SnAPI::UI::PropertyKey Key)
 {
@@ -1674,13 +1942,11 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     RootPanel.Padding().Set(0.0f);
     RootPanel.Gap().Set(0.0f);
 
-    constexpr SnAPI::UI::Color kTitleColor{255, 226, 160, 255};
-    constexpr SnAPI::UI::Color kAccentColor{160, 214, 255, 255};
-    constexpr SnAPI::UI::Color kPrimaryTextColor{238, 242, 248, 255};
-    constexpr SnAPI::UI::Color kSecondaryTextColor{212, 218, 230, 255};
-    constexpr SnAPI::UI::Color kMutedTextColor{152, 166, 190, 255};
-    constexpr SnAPI::UI::Color kPanelFill{8, 14, 24, 185};
-    constexpr SnAPI::UI::Color kPanelBorder{120, 166, 220, 120};
+    constexpr SnAPI::UI::Color kTitleColor = MultiplayerEditorThemeColors::TitleText;
+    constexpr SnAPI::UI::Color kAccentColor = MultiplayerEditorThemeColors::AccentText;
+    constexpr SnAPI::UI::Color kPrimaryTextColor = MultiplayerEditorThemeColors::PrimaryText;
+    constexpr SnAPI::UI::Color kSecondaryTextColor = MultiplayerEditorThemeColors::SecondaryText;
+    constexpr SnAPI::UI::Color kMutedTextColor = MultiplayerEditorThemeColors::MutedText;
 
     auto Tabs = Root.Add(SnAPI::UI::UIDockZone{});
     auto& TabsElement = Tabs.Element();
@@ -1694,18 +1960,15 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
 
     auto AddTextLine = [&](auto& Panel, const std::string_view Text, const SnAPI::UI::Color Color) {
         auto Line = Panel.Add(SnAPI::UI::UIText(Text));
-        Line.Element().ColorVal(Color);
+        Line.Element().TextColorVal(Color);
         Line.Element().WrappingVal(SnAPI::UI::ETextWrapping::NoWrap);
         return Line;
     };
     auto ConfigurePanelCard = [&](SnAPI::UI::UIPanel& Panel, const float Padding, const float Gap) {
+        Panel.ElementStyle().Apply("hud.card");
         Panel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
         Panel.Padding().Set(Padding);
         Panel.Gap().Set(Gap);
-        Panel.Background().Set(kPanelFill);
-        Panel.BorderColor().Set(kPanelBorder);
-        Panel.BorderThickness().Set(1.0f);
-        Panel.CornerRadius().Set(7.0f);
     };
     auto AddSliderControl = [&](auto& Panel,
                                 const std::string_view Label,
@@ -1717,11 +1980,10 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
                                 const std::string_view UnitSuffix) {
         auto Row = Panel.Add(SnAPI::UI::UIPanel("Hud.SliderRow"));
         auto& RowPanel = Row.Element();
+        RowPanel.ElementStyle().Apply("hud.flat_row");
         RowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
         RowPanel.Padding().Set(0.0f);
         RowPanel.Gap().Set(8.0f);
-        RowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
-        RowPanel.BorderThickness().Set(0.0f);
         RowPanel.Width().Set(SnAPI::UI::Sizing::Auto());
         RowPanel.HAlign().Set(SnAPI::UI::EAlignment::Start);
 
@@ -1731,19 +1993,12 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
             .MaxValueVal(MaxValue)
             .StepVal(StepValue)
             .DecimalPlacesVal(DecimalPlaces)
-            .AllowTextInputVal(true)
-            .TrackColorVal(SnAPI::UI::Color{48, 62, 82, 220})
-            .FillColorVal(SnAPI::UI::Color{118, 196, 255, 232})
-            .ThumbColorVal(SnAPI::UI::Color{236, 244, 255, 255})
-            .LabelColorVal(kPrimaryTextColor)
-            .ValueTextColorVal(kSecondaryTextColor)
-            .ValueBackgroundColorVal(SnAPI::UI::Color{18, 28, 42, 228})
-            .BorderColorVal(kPanelBorder);
+            .AllowTextInputVal(true);
         SliderElement.Width().Set(SnAPI::UI::Sizing::Fixed(324.0f));
         SliderElement.Height().Set(SnAPI::UI::Sizing::Fixed(42.0f));
 
         auto ValueLine = Row.Add(SnAPI::UI::UIText("--"));
-        ValueLine.Element().ColorVal(kAccentColor);
+        ValueLine.Element().TextColorVal(kAccentColor);
         ValueLine.Element().WrappingVal(SnAPI::UI::ETextWrapping::NoWrap);
         ValueLine.Element().Width().Set(SnAPI::UI::Sizing::Fixed(90.0f));
         ValueLine.Element().HAlign().Set(SnAPI::UI::EAlignment::Start);
@@ -1804,19 +2059,12 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     PerfGraphElement.LineThickness().Set(1.5f);
     PerfGraphElement.ShowLegend().Set(true);
     PerfGraphElement.ValuePrecision().Set(1u);
-    PerfGraphElement.BackgroundColor().Set(SnAPI::UI::Color{6, 10, 16, 160});
-    PerfGraphElement.PlotBackgroundColor().Set(SnAPI::UI::Color{10, 18, 30, 220});
-    PerfGraphElement.BorderColor().Set(SnAPI::UI::Color{120, 166, 220, 120});
-    PerfGraphElement.GridColor().Set(SnAPI::UI::Color{106, 130, 156, 74});
-    PerfGraphElement.AxisColor().Set(SnAPI::UI::Color{152, 194, 236, 165});
-    PerfGraphElement.TitleColor().Set(kAccentColor);
-    PerfGraphElement.LegendTextColor().Set(kPrimaryTextColor);
     OutHud.PerformanceGraph = PerfGraph.Handle();
 
     if (auto* GraphWidget = ResolveUiElement(*Context, OutHud.PerformanceGraph))
     {
-        OutHud.FpsSeries = GraphWidget->AddSeries("FPS", SnAPI::UI::Color{112, 198, 255, 255});
-        OutHud.FrameTimeSeries = GraphWidget->AddSeries("Frame ms", SnAPI::UI::Color{255, 196, 128, 255});
+        OutHud.FpsSeries = GraphWidget->AddSeries("FPS", SnAPI::UI::Color{92, 232, 255, 255});
+        OutHud.FrameTimeSeries = GraphWidget->AddSeries("Frame ms", SnAPI::UI::Color{255, 184, 96, 255});
         (void)GraphWidget->SetSeriesRange(OutHud.FpsSeries, 0.0f, 240.0f);
         (void)GraphWidget->SetSeriesRange(OutHud.FrameTimeSeries, 0.0f, 50.0f);
     }
@@ -1832,6 +2080,34 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     AddTextLine(ControlsPanel, "Jump: Space / Gamepad South", kPrimaryTextColor);
     AddTextLine(ControlsPanel, "1/2/3/4: Switch tabs", kAccentColor);
     AddTextLine(ControlsPanel, "Close window to exit", kMutedTextColor);
+    AddTextLine(ControlsPanel, "Editor (scroll container + text input)", kAccentColor);
+
+    auto NotesScroll = ControlsPanel.Add(SnAPI::UI::UIScrollContainer{});
+    auto& NotesScrollElement = NotesScroll.Element();
+    NotesScrollElement.Height().Set(SnAPI::UI::Sizing::Fixed(190.0f));
+    NotesScrollElement.Width().Set(SnAPI::UI::Sizing::Fixed(432.0f));
+    NotesScrollElement.Padding().Set(6.0f);
+    NotesScrollElement.Gap().Set(0.0f);
+    NotesScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    NotesScrollElement.ShowHorizontalScrollbar().Set(true);
+    NotesScrollElement.ShowVerticalScrollbar().Set(true);
+
+    auto NotesInput = NotesScroll.Add(SnAPI::UI::UITextInput{
+        "// Multiplayer notes\n"
+        "int maxPlayers = 32;\n"
+        "float netTick = 30.0f;\n"
+        "bool interpolation = true;\n"
+    });
+    auto& NotesInputElement = NotesInput.Element();
+    NotesInputElement.Multiline().Set(true);
+    NotesInputElement.WordWrap().Set(false);
+    NotesInputElement.Resizable().Set(true);
+    NotesInputElement.EnableSpellCheck().Set(true);
+    NotesInputElement.EnableSyntaxHighlight().Set(true);
+    NotesInputElement.SyntaxLanguage().Set(std::string("cpp"));
+    NotesInputElement.Placeholder().Set(std::string("Type gameplay or networking notes here..."));
+    NotesInputElement.Width().Set(SnAPI::UI::Sizing::Fixed(392.0f));
+    NotesInputElement.Height().Set(SnAPI::UI::Sizing::Fixed(148.0f));
 
     auto RenderingPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Rendering"));
     ConfigurePanelCard(RenderingPanel.Element(), 12.0f, 3.0f);
@@ -2154,6 +2430,10 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 
     SessionListener Listener(ModeLabel(Mode));
 
+#if defined(SNAPI_GF_ENABLE_UI)
+    MultiplayerEditorTheme HudTheme{};
+#endif
+
     GameRuntime Runtime;
     if (auto InitResult = Runtime.Init(MakeRuntimeSettings(Parsed,
                                                             ServerRole,
@@ -2172,6 +2452,17 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 #endif
 
     auto& Graph = Runtime.World();
+
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (WindowEnabled && Graph.UI().IsInitialized())
+    {
+        HudTheme.Initialize();
+        if (auto* UiContext = Graph.UI().Context())
+        {
+            UiContext->SetActiveTheme(&HudTheme);
+        }
+    }
+#endif
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     NetSession* Session = nullptr;

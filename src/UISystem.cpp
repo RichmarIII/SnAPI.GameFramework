@@ -140,7 +140,7 @@ Result UISystem::BuildRenderPackets(SnAPI::UI::RenderPacketList& OutPackets)
     return Ok();
 }
 
-void UISystem::PushInput(const SnAPI::UI::PointerEvent& EventValue)
+void UISystem::PushInput(const SnAPI::UI::PointerEvent& EventValue) const
 {
     SNAPI_GF_PROFILE_FUNCTION("UI");
     GameLockGuard Lock(m_mutex);
@@ -151,7 +151,7 @@ void UISystem::PushInput(const SnAPI::UI::PointerEvent& EventValue)
     m_context->PushInput(EventValue);
 }
 
-void UISystem::PushInput(const SnAPI::UI::KeyEvent& EventValue)
+void UISystem::PushInput(const SnAPI::UI::KeyEvent& EventValue) const
 {
     SNAPI_GF_PROFILE_FUNCTION("UI");
     GameLockGuard Lock(m_mutex);
@@ -162,7 +162,18 @@ void UISystem::PushInput(const SnAPI::UI::KeyEvent& EventValue)
     m_context->PushInput(EventValue);
 }
 
-void UISystem::PushInput(const SnAPI::UI::TextInputEvent& EventValue)
+void UISystem::PushInput(const SnAPI::UI::TextInputEvent& EventValue) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("UI");
+    GameLockGuard Lock(m_mutex);
+    if (!m_initialized || !m_context)
+    {
+        return;
+    }
+    m_context->PushInput(EventValue);
+}
+
+void UISystem::PushInput(const SnAPI::UI::WheelEvent& EventValue) const
 {
     SNAPI_GF_PROFILE_FUNCTION("UI");
     GameLockGuard Lock(m_mutex);
