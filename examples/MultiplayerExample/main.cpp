@@ -3,16 +3,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
-#include <limits>
 #include <random>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -346,8 +344,7 @@ struct SessionListener final : public INetSessionListener
                   << " remote=" << EndpointToString(Event.Remote);
         if (SessionRef)
         {
-            auto Dump = SessionRef->DumpConnection(Event.Handle, Clock::now());
-            if (Dump)
+            if (const auto Dump = SessionRef->DumpConnection(Event.Handle, Clock::now()))
             {
                 std::cout << " reason=" << DisconnectReasonToString(Dump->DisconnectReason)
                           << " pending_rel=" << Dump->PendingReliableCount
@@ -764,8 +761,7 @@ CubeSharedMaterials BuildSharedCubeMaterialInstances(World& Graph, const bool Cu
 
     if (CubeShadows)
     {
-        const auto ShadowMaterial = Graph.Renderer().DefaultShadowMaterial();
-        if (ShadowMaterial)
+        if (const auto ShadowMaterial = Graph.Renderer().DefaultShadowMaterial())
         {
             if (HasSourceMaterial)
             {
@@ -1171,7 +1167,7 @@ CameraComponent* CreateStationaryObserverCamera(World& Graph)
     return Camera;
 }
 
-CameraComponent* CreateViewCamera(World& Graph, const NodeHandle FollowTarget)
+CameraComponent* CreateViewCamera(World& Graph, const NodeHandle& FollowTarget)
 {
     auto CameraNodeResult = Graph.CreateNode("ViewCamera");
     if (!CameraNodeResult)
@@ -1283,7 +1279,7 @@ UiViewportTransform ResolveUiViewportTransform(World& Graph)
     return Transform;
 }
 
-void PollRendererEvents(World& Graph, CameraComponent* Camera, bool& Running)
+void PollRendererEvents(World& Graph, const CameraComponent* Camera, bool& Running)
 {
     (void)Camera;
 
@@ -1993,7 +1989,7 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     return true;
 }
 
-void SetMultiplayerHudTab(World& Graph, MultiplayerHud& Hud, const size_t TabIndex)
+void SetMultiplayerHudTab(const World& Graph, MultiplayerHud& Hud, const size_t TabIndex)
 {
     if (!Hud.Initialized)
     {
@@ -2011,7 +2007,7 @@ void UpdateMultiplayerHud(World& Graph,
                           const float DeltaSeconds,
                           const std::size_t ActiveCubeCount,
                           const std::size_t TotalCubeCount,
-                          NetSession* Session)
+                          const NetSession* Session)
 {
     if (!Hud.Initialized || !Graph.UI().IsInitialized())
     {
@@ -2221,9 +2217,9 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 #endif
 
     CameraComponent* Camera = nullptr;
-    CameraComponent* FollowCamera = nullptr;
     if (WindowEnabled)
     {
+        CameraComponent* FollowCamera = nullptr;
         if (!Graph.Renderer().IsInitialized() || !Graph.Renderer().HasOpenWindow())
         {
             std::cerr << "Renderer window was not initialized\n";
@@ -2303,7 +2299,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     float SpawnAccumulator = 0.0f;
     constexpr float CubeLifetimeSeconds = 5.0f;
     constexpr float MinInactiveSeconds = 1.0f / 60.0f;
-    constexpr int MaxActivationsPerFrame = 64;
     const float SpawnIntervalSeconds = CubeLifetimeSeconds / static_cast<float>(std::max(Parsed.CubeCount, 1));
     const float SpawnHalfExtent = std::max(10.0f, std::sqrt(static_cast<float>(std::max(Parsed.CubeCount, 1))) * 1.5f);
 
@@ -2340,6 +2335,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 
         if (Graph.IsServer())
         {
+            constexpr int MaxActivationsPerFrame = 64;
             if (Parsed.ResetSimulation)
             {
                 for (auto& Slot : CubeSlots)
