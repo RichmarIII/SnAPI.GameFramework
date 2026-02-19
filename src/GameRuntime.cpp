@@ -575,7 +575,8 @@ bool GameRuntime::ShouldCapFrameRate() const
         return false;
     }
 
-    return Window->VSyncMode() == SnAPI::Graphics::EWindowVSyncMode::Off;
+    //return Window->VSyncMode() == SnAPI::Graphics::EWindowVSyncMode::Off;
+    return true;
 #else
     return false;
 #endif

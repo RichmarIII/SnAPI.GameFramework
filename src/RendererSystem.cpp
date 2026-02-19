@@ -749,6 +749,14 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
         OutRect.A = static_cast<float>(ColorValue.A) * kInv;
     };
 
+    const auto ApplyUiBorderColor = [](QueuedUiRect& OutRect, const SnAPI::UI::Color& ColorValue) {
+        constexpr float kInv = 1.0f / 255.0f;
+        OutRect.BorderR = static_cast<float>(ColorValue.R) * kInv;
+        OutRect.BorderG = static_cast<float>(ColorValue.G) * kInv;
+        OutRect.BorderB = static_cast<float>(ColorValue.B) * kInv;
+        OutRect.BorderA = static_cast<float>(ColorValue.A) * kInv;
+    };
+
     const auto ApplyUiScissor = [](QueuedUiRect& OutRect, const SnAPI::UI::ScissorRect& Scissor) {
         if (Scissor.W <= 0 || Scissor.H <= 0)
         {
@@ -784,8 +792,11 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
             Rect.Y = Instance.Y;
             Rect.W = Instance.W;
             Rect.H = Instance.H;
+            Rect.CornerRadius = std::max(0.0f, Instance.CornerRadius);
+            Rect.BorderThickness = std::max(0.0f, Instance.BorderThickness);
             Rect.GlobalZ = GlobalZ;
             ApplyUiColor(Rect, Instance.Fill);
+            ApplyUiBorderColor(Rect, Instance.Border);
             ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
             m_uiQueuedRects.emplace_back(Rect);
             GlobalZ += kUiGlobalZStep;
@@ -1404,6 +1415,10 @@ void RendererSystem::FlushQueuedUiPackets()
         Rect.Rect.Pivot = SnAPI::Vector2DF{0.0f, 0.0f};
         Rect.Rect.PosSize = SnAPI::Vector4DF{Entry.X, Entry.Y, Entry.W, Entry.H};
         Rect.Rect.Color = SnAPI::ColorF{Entry.R, Entry.G, Entry.B, Entry.A};
+        Rect.Rect.CornerRadius = Entry.CornerRadius;
+        Rect.Rect.BorderThickness = Entry.BorderThickness;
+        Rect.Rect.PixelSize = SnAPI::Vector2DF{Entry.W, Entry.H};
+        Rect.Rect.BorderColor = SnAPI::ColorF{Entry.BorderR, Entry.BorderG, Entry.BorderB, Entry.BorderA};
         Rect.Rect.GlobalZ = Entry.GlobalZ;
         Rect.SubArea = SnAPI::Graphics::GpuData::TextureArea{
             Entry.U0,

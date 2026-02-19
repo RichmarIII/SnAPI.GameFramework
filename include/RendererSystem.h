@@ -356,6 +356,8 @@ private:
         float Y = 0.0f;
         float W = 0.0f;
         float H = 0.0f;
+        float CornerRadius = 0.0f;
+        float BorderThickness = 0.0f;
         float U0 = 0.0f;
         float V0 = 0.0f;
         float U1 = 1.0f;
@@ -364,6 +366,10 @@ private:
         float G = 1.0f;
         float B = 1.0f;
         float A = 1.0f;
+        float BorderR = 0.0f;
+        float BorderG = 0.0f;
+        float BorderB = 0.0f;
+        float BorderA = 0.0f;
         float ScissorMinX = 0.0f;
         float ScissorMinY = 0.0f;
         float ScissorMaxX = 0.0f;

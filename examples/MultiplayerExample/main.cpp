@@ -13,10 +13,13 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "GameFramework.hpp"
 #include "VulkanGraphicsAPI.hpp"
+#include <SSAOPass.hpp>
+#include <SSRPass.hpp>
 #include <MeshManager.hpp>
 #include <CameraBase.hpp>
 
@@ -25,6 +28,8 @@
 #include <UIDockZone.h>
 #include <UIPanel.h>
 #include <UIProperties.h>
+#include <UISlider.h>
+#include <UIRealtimeGraph.h>
 #include <UISizing.h>
 #include <UIText.h>
 #include <UIContext.h>
@@ -557,7 +562,7 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
     Settings.Tick.EnableLateTick = true;
     Settings.Tick.EnableEndFrame = true;
     // Keep frame cadence deterministic when VSync is toggled off at runtime.
-    Settings.Tick.MaxFpsWhenVSyncOff = 1000.0f;
+    Settings.Tick.MaxFpsWhenVSyncOff = 60.0f;
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (EnableNetworking)
@@ -1214,6 +1219,70 @@ CameraComponent* CreateViewCamera(World& Graph, const NodeHandle FollowTarget)
     return Camera;
 }
 
+struct UiViewportTransform
+{
+    float OutputX{0.0f};
+    float OutputY{0.0f};
+    float OutputWidth{0.0f};
+    float OutputHeight{0.0f};
+    float UiWidth{0.0f};
+    float UiHeight{0.0f};
+
+    [[nodiscard]] bool IsValid() const
+    {
+        return std::isfinite(OutputX) && std::isfinite(OutputY) && std::isfinite(OutputWidth) &&
+               std::isfinite(OutputHeight) && std::isfinite(UiWidth) && std::isfinite(UiHeight) &&
+               OutputWidth > 0.0f && OutputHeight > 0.0f && UiWidth > 0.0f && UiHeight > 0.0f;
+    }
+
+    [[nodiscard]] std::pair<float, float> MapWindowPointToUi(const float WindowX, const float WindowY) const
+    {
+        if (!IsValid())
+        {
+            return {WindowX, WindowY};
+        }
+
+        const float LocalX = (WindowX - OutputX) * (UiWidth / OutputWidth);
+        const float LocalY = (WindowY - OutputY) * (UiHeight / OutputHeight);
+        return {LocalX, LocalY};
+    }
+};
+
+UiViewportTransform ResolveUiViewportTransform(World& Graph)
+{
+    UiViewportTransform Transform{};
+
+    if (auto* GraphicsApi = Graph.Renderer().Graphics())
+    {
+        const auto DefaultViewportId = GraphicsApi->DefaultRenderViewportID();
+        if (const auto Config = GraphicsApi->GetRenderViewportConfig(DefaultViewportId))
+        {
+            Transform.OutputX = Config->OutputRect.X;
+            Transform.OutputY = Config->OutputRect.Y;
+            Transform.OutputWidth = Config->OutputRect.Width;
+            Transform.OutputHeight = Config->OutputRect.Height;
+            Transform.UiWidth = static_cast<float>(Config->RenderExtent.x());
+            Transform.UiHeight = static_cast<float>(Config->RenderExtent.y());
+        }
+    }
+
+    if (!Transform.IsValid())
+    {
+        if (auto* Window = Graph.Renderer().Window())
+        {
+            const auto WindowSize = Window->Size();
+            Transform.OutputX = 0.0f;
+            Transform.OutputY = 0.0f;
+            Transform.OutputWidth = WindowSize.x();
+            Transform.OutputHeight = WindowSize.y();
+            Transform.UiWidth = WindowSize.x();
+            Transform.UiHeight = WindowSize.y();
+        }
+    }
+
+    return Transform;
+}
+
 void PollRendererEvents(World& Graph, CameraComponent* Camera, bool& Running)
 {
     (void)Camera;
@@ -1221,8 +1290,138 @@ void PollRendererEvents(World& Graph, CameraComponent* Camera, bool& Running)
 #if defined(SNAPI_GF_ENABLE_INPUT)
     if (Graph.Input().IsInitialized())
     {
+        static bool UiLeftDown = false;
+        static bool UiRightDown = false;
+        static bool UiMiddleDown = false;
+#if defined(SNAPI_GF_ENABLE_UI)
+        static float UiDpiScaleCache = 0.0f;
+        if (Graph.UI().IsInitialized())
+        {
+            if (const auto* Window = Graph.Renderer().Window())
+            {
+                if (auto* NativeWindow = reinterpret_cast<SDL_Window*>(Window->Handle()))
+                {
+                    const float Scale = SDL_GetWindowDisplayScale(NativeWindow);
+                    if (std::isfinite(Scale) && Scale > 0.0f && std::abs(Scale - UiDpiScaleCache) > 0.0001f)
+                    {
+                        UiDpiScaleCache = Scale;
+                        (void)Graph.UI().SetDpiScale(Scale);
+                    }
+                }
+            }
+        }
+#endif
+
         if (const auto* Events = Graph.Input().Events())
         {
+#if defined(SNAPI_GF_ENABLE_UI)
+            const auto MapUiKeyCode = [](const SnAPI::Input::EKey Key) -> uint32_t {
+                switch (Key)
+                {
+                case SnAPI::Input::EKey::Backspace:
+                    return 8u;
+                case SnAPI::Input::EKey::Enter:
+                case SnAPI::Input::EKey::NumpadEnter:
+                    return 13u;
+                case SnAPI::Input::EKey::Escape:
+                    return 27u;
+                case SnAPI::Input::EKey::Num0:
+                case SnAPI::Input::EKey::Numpad0:
+                    return static_cast<uint32_t>('0');
+                case SnAPI::Input::EKey::Num1:
+                case SnAPI::Input::EKey::Numpad1:
+                    return static_cast<uint32_t>('1');
+                case SnAPI::Input::EKey::Num2:
+                case SnAPI::Input::EKey::Numpad2:
+                    return static_cast<uint32_t>('2');
+                case SnAPI::Input::EKey::Num3:
+                case SnAPI::Input::EKey::Numpad3:
+                    return static_cast<uint32_t>('3');
+                case SnAPI::Input::EKey::Num4:
+                case SnAPI::Input::EKey::Numpad4:
+                    return static_cast<uint32_t>('4');
+                case SnAPI::Input::EKey::Num5:
+                case SnAPI::Input::EKey::Numpad5:
+                    return static_cast<uint32_t>('5');
+                case SnAPI::Input::EKey::Num6:
+                case SnAPI::Input::EKey::Numpad6:
+                    return static_cast<uint32_t>('6');
+                case SnAPI::Input::EKey::Num7:
+                case SnAPI::Input::EKey::Numpad7:
+                    return static_cast<uint32_t>('7');
+                case SnAPI::Input::EKey::Num8:
+                case SnAPI::Input::EKey::Numpad8:
+                    return static_cast<uint32_t>('8');
+                case SnAPI::Input::EKey::Num9:
+                case SnAPI::Input::EKey::Numpad9:
+                    return static_cast<uint32_t>('9');
+                case SnAPI::Input::EKey::Period:
+                case SnAPI::Input::EKey::NumpadPeriod:
+                    return static_cast<uint32_t>('.');
+                case SnAPI::Input::EKey::Minus:
+                case SnAPI::Input::EKey::NumpadMinus:
+                    return static_cast<uint32_t>('-');
+                default:
+                    return static_cast<uint32_t>(Key);
+                }
+            };
+            const auto PushUtf8Codepoints = [&](const std::string& Text) {
+                if (!Graph.UI().IsInitialized())
+                {
+                    return;
+                }
+
+                size_t Index = 0;
+                while (Index < Text.size())
+                {
+                    const unsigned char C0 = static_cast<unsigned char>(Text[Index]);
+                    uint32_t Codepoint = C0;
+                    size_t Advance = 1;
+
+                    if ((C0 & 0xE0u) == 0xC0u && Index + 1 < Text.size())
+                    {
+                        const unsigned char C1 = static_cast<unsigned char>(Text[Index + 1]);
+                        if ((C1 & 0xC0u) == 0x80u)
+                        {
+                            Codepoint = ((C0 & 0x1Fu) << 6u) | (C1 & 0x3Fu);
+                            Advance = 2;
+                        }
+                    }
+                    else if ((C0 & 0xF0u) == 0xE0u && Index + 2 < Text.size())
+                    {
+                        const unsigned char C1 = static_cast<unsigned char>(Text[Index + 1]);
+                        const unsigned char C2 = static_cast<unsigned char>(Text[Index + 2]);
+                        if ((C1 & 0xC0u) == 0x80u && (C2 & 0xC0u) == 0x80u)
+                        {
+                            Codepoint = ((C0 & 0x0Fu) << 12u) | ((C1 & 0x3Fu) << 6u) | (C2 & 0x3Fu);
+                            Advance = 3;
+                        }
+                    }
+                    else if ((C0 & 0xF8u) == 0xF0u && Index + 3 < Text.size())
+                    {
+                        const unsigned char C1 = static_cast<unsigned char>(Text[Index + 1]);
+                        const unsigned char C2 = static_cast<unsigned char>(Text[Index + 2]);
+                        const unsigned char C3 = static_cast<unsigned char>(Text[Index + 3]);
+                        if ((C1 & 0xC0u) == 0x80u && (C2 & 0xC0u) == 0x80u && (C3 & 0xC0u) == 0x80u)
+                        {
+                            Codepoint = ((C0 & 0x07u) << 18u) | ((C1 & 0x3Fu) << 12u) | ((C2 & 0x3Fu) << 6u) |
+                                        (C3 & 0x3Fu);
+                            Advance = 4;
+                        }
+                    }
+
+                    SnAPI::UI::TextInputEvent UiText{};
+                    UiText.Codepoint = Codepoint;
+                    Graph.UI().PushInput(UiText);
+                    Index += Advance;
+                }
+            };
+            const UiViewportTransform UiTransform = ResolveUiViewportTransform(Graph);
+            const auto ToUiPoint = [&](const float WindowX, const float WindowY) {
+                const auto [UiX, UiY] = UiTransform.MapWindowPointToUi(WindowX, WindowY);
+                return SnAPI::UI::UIPoint{UiX, UiY};
+            };
+#endif
             for (const auto& Event : *Events)
             {
                 if (Event.Type == SnAPI::Input::EInputEventType::WindowCloseRequested)
@@ -1230,7 +1429,91 @@ void PollRendererEvents(World& Graph, CameraComponent* Camera, bool& Running)
                     Running = false;
                     return;
                 }
+
+#if defined(SNAPI_GF_ENABLE_UI)
+                if (!Graph.UI().IsInitialized())
+                {
+                    continue;
+                }
+
+                switch (Event.Type)
+                {
+                case SnAPI::Input::EInputEventType::MouseMove:
+                    if (const auto* MoveData = std::get_if<SnAPI::Input::MouseMoveEvent>(&Event.Data))
+                    {
+                        SnAPI::UI::PointerEvent UiPointer{};
+                        UiPointer.Position = ToUiPoint(MoveData->X, MoveData->Y);
+                        UiPointer.LeftDown = UiLeftDown;
+                        UiPointer.RightDown = UiRightDown;
+                        UiPointer.MiddleDown = UiMiddleDown;
+                        Graph.UI().PushInput(UiPointer);
+                    }
+                    break;
+                case SnAPI::Input::EInputEventType::MouseButtonDown:
+                case SnAPI::Input::EInputEventType::MouseButtonUp:
+                    if (const auto* ButtonData = std::get_if<SnAPI::Input::MouseButtonEvent>(&Event.Data))
+                    {
+                        const bool Down = (Event.Type == SnAPI::Input::EInputEventType::MouseButtonDown);
+                        switch (ButtonData->Button)
+                        {
+                        case SnAPI::Input::EMouseButton::Left:
+                            UiLeftDown = Down;
+                            break;
+                        case SnAPI::Input::EMouseButton::Right:
+                            UiRightDown = Down;
+                            break;
+                        case SnAPI::Input::EMouseButton::Middle:
+                            UiMiddleDown = Down;
+                            break;
+                        default:
+                            break;
+                        }
+
+                        SnAPI::UI::PointerEvent UiPointer{};
+                        UiPointer.LeftDown = UiLeftDown;
+                        UiPointer.RightDown = UiRightDown;
+                        UiPointer.MiddleDown = UiMiddleDown;
+
+                        if (const auto* Snapshot = Graph.Input().Snapshot())
+                        {
+                            UiPointer.Position = ToUiPoint(Snapshot->Mouse().X, Snapshot->Mouse().Y);
+                        }
+
+                        Graph.UI().PushInput(UiPointer);
+                    }
+                    break;
+                case SnAPI::Input::EInputEventType::KeyDown:
+                case SnAPI::Input::EInputEventType::KeyUp:
+                    if (const auto* KeyData = std::get_if<SnAPI::Input::KeyEvent>(&Event.Data))
+                    {
+                        SnAPI::UI::KeyEvent UiKey{};
+                        UiKey.KeyCode = MapUiKeyCode(KeyData->Key);
+                        UiKey.Down = (Event.Type == SnAPI::Input::EInputEventType::KeyDown);
+                        UiKey.Repeat = KeyData->Repeat;
+                        UiKey.Shift = KeyData->Modifiers.Shift();
+                        UiKey.Ctrl = KeyData->Modifiers.Control();
+                        UiKey.Alt = KeyData->Modifiers.Alt();
+                        Graph.UI().PushInput(UiKey);
+                    }
+                    break;
+                case SnAPI::Input::EInputEventType::TextInput:
+                    if (const auto* TextData = std::get_if<SnAPI::Input::TextInputEvent>(&Event.Data))
+                    {
+                        PushUtf8Codepoints(TextData->Text);
+                    }
+                    break;
+                default:
+                    break;
+                }
+#endif
             }
+        }
+
+        if (const auto* Snapshot = Graph.Input().Snapshot())
+        {
+            UiLeftDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Left);
+            UiRightDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Right);
+            UiMiddleDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Middle);
         }
         return;
     }
@@ -1339,6 +1622,18 @@ struct MultiplayerHud
     static constexpr SnAPI::UI::PropertyKey HintKey = SnAPI::UI::MakePropertyKey<std::string>("MultiplayerHud.Hint");
     static constexpr SnAPI::UI::PropertyKey ActiveTabKey =
         SnAPI::UI::MakePropertyKey<std::size_t>("MultiplayerHud.ActiveTab");
+    static constexpr SnAPI::UI::PropertyKey SsaoIntensityKey =
+        SnAPI::UI::MakePropertyKey<float>("MultiplayerHud.SsaoIntensity");
+    static constexpr SnAPI::UI::PropertyKey SsaoRadiusKey =
+        SnAPI::UI::MakePropertyKey<float>("MultiplayerHud.SsaoRadius");
+    static constexpr SnAPI::UI::PropertyKey SsrMaxDistanceKey =
+        SnAPI::UI::MakePropertyKey<float>("MultiplayerHud.SsrMaxDistance");
+    static constexpr SnAPI::UI::PropertyKey SsrMaxStepsKey =
+        SnAPI::UI::MakePropertyKey<float>("MultiplayerHud.SsrMaxSteps");
+    static constexpr SnAPI::UI::PropertyKey ShadowBiasKey =
+        SnAPI::UI::MakePropertyKey<float>("MultiplayerHud.ShadowBias");
+    static constexpr SnAPI::UI::PropertyKey ShadowSoftnessKey =
+        SnAPI::UI::MakePropertyKey<float>("MultiplayerHud.ShadowSoftness");
 
     bool Initialized = false;
     SnAPI::UI::PropertyMap ViewModel{};
@@ -1353,6 +1648,9 @@ struct MultiplayerHud
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> LightingText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> NetworkingText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> HintText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIRealtimeGraph> PerformanceGraph{};
+    uint32_t FpsSeries = SnAPI::UI::UIRealtimeGraph::InvalidSeries;
+    uint32_t FrameTimeSeries = SnAPI::UI::UIRealtimeGraph::InvalidSeries;
 };
 
 template <typename TValue>
@@ -1413,6 +1711,66 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
         Panel.BorderThickness().Set(1.0f);
         Panel.CornerRadius().Set(7.0f);
     };
+    auto AddSliderControl = [&](auto& Panel,
+                                const std::string_view Label,
+                                const SnAPI::UI::PropertyKey Key,
+                                const float MinValue,
+                                const float MaxValue,
+                                const float StepValue,
+                                const uint32_t DecimalPlaces,
+                                const std::string_view UnitSuffix) {
+        auto Row = Panel.Add(SnAPI::UI::UIPanel("Hud.SliderRow"));
+        auto& RowPanel = Row.Element();
+        RowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        RowPanel.Padding().Set(0.0f);
+        RowPanel.Gap().Set(8.0f);
+        RowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
+        RowPanel.BorderThickness().Set(0.0f);
+        RowPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+        RowPanel.HAlign().Set(SnAPI::UI::EAlignment::Start);
+
+        auto Slider = Row.Add(SnAPI::UI::UISlider(Label));
+        auto& SliderElement = Slider.Element();
+        SliderElement.MinValueVal(MinValue)
+            .MaxValueVal(MaxValue)
+            .StepVal(StepValue)
+            .DecimalPlacesVal(DecimalPlaces)
+            .AllowTextInputVal(true)
+            .TrackColorVal(SnAPI::UI::Color{48, 62, 82, 220})
+            .FillColorVal(SnAPI::UI::Color{118, 196, 255, 232})
+            .ThumbColorVal(SnAPI::UI::Color{236, 244, 255, 255})
+            .LabelColorVal(kPrimaryTextColor)
+            .ValueTextColorVal(kSecondaryTextColor)
+            .ValueBackgroundColorVal(SnAPI::UI::Color{18, 28, 42, 228})
+            .BorderColorVal(kPanelBorder);
+        SliderElement.Width().Set(SnAPI::UI::Sizing::Fixed(324.0f));
+        SliderElement.Height().Set(SnAPI::UI::Sizing::Fixed(42.0f));
+
+        auto ValueLine = Row.Add(SnAPI::UI::UIText("--"));
+        ValueLine.Element().ColorVal(kAccentColor);
+        ValueLine.Element().WrappingVal(SnAPI::UI::ETextWrapping::NoWrap);
+        ValueLine.Element().Width().Set(SnAPI::UI::Sizing::Fixed(90.0f));
+        ValueLine.Element().HAlign().Set(SnAPI::UI::EAlignment::Start);
+        ValueLine.Element().VAlign().Set(SnAPI::UI::EAlignment::Center);
+
+        if (auto* SliderWidget = ResolveUiElement(*Context, Slider.Handle()))
+        {
+            auto Target = SliderWidget->Value();
+            auto Source = HudVmProperty<float>(OutHud, Key);
+            Target.BindTo(Source, SnAPI::UI::EBindMode::TwoWay);
+        }
+
+        if (auto* ValueText = ResolveUiElement(*Context, ValueLine.Handle()))
+        {
+            auto Target = ValueText->Text();
+            auto Source = HudVmProperty<float>(OutHud, Key);
+            const uint32_t Digits = DecimalPlaces;
+            const std::string Suffix(UnitSuffix);
+            Target.BindTo(Source, [Digits, Suffix](const float Value) {
+                return FormatFloat(Value, static_cast<int>(Digits)) + Suffix;
+            });
+        }
+    };
 
     auto StatusPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Runtime"));
     ConfigurePanelCard(StatusPanel.Element(), 12.0f, 4.0f);
@@ -1435,6 +1793,38 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     auto SimLine = AddTextLine(StatusPanel, "simulation: --", kSecondaryTextColor);
     OutHud.SimulationText = SimLine.Handle();
 
+    auto PerfGraph = StatusPanel.Add(SnAPI::UI::UIRealtimeGraph("Performance"));
+    auto& PerfGraphElement = PerfGraph.Element();
+    PerfGraphElement.Width().Set(SnAPI::UI::Sizing::Fixed(420.0f));
+    PerfGraphElement.Height().Set(SnAPI::UI::Sizing::Fixed(168.0f));
+    PerfGraphElement.HAlign().Set(SnAPI::UI::EAlignment::Start);
+    PerfGraphElement.ContentPadding().Set(8.0f);
+    PerfGraphElement.SampleCapacity().Set(240u);
+    PerfGraphElement.AutoRange().Set(false);
+    PerfGraphElement.MinValue().Set(0.0f);
+    PerfGraphElement.MaxValue().Set(240.0f);
+    PerfGraphElement.GridLinesX().Set(8u);
+    PerfGraphElement.GridLinesY().Set(5u);
+    PerfGraphElement.LineThickness().Set(1.5f);
+    PerfGraphElement.ShowLegend().Set(true);
+    PerfGraphElement.ValuePrecision().Set(1u);
+    PerfGraphElement.BackgroundColor().Set(SnAPI::UI::Color{6, 10, 16, 160});
+    PerfGraphElement.PlotBackgroundColor().Set(SnAPI::UI::Color{10, 18, 30, 220});
+    PerfGraphElement.BorderColor().Set(SnAPI::UI::Color{120, 166, 220, 120});
+    PerfGraphElement.GridColor().Set(SnAPI::UI::Color{106, 130, 156, 74});
+    PerfGraphElement.AxisColor().Set(SnAPI::UI::Color{152, 194, 236, 165});
+    PerfGraphElement.TitleColor().Set(kAccentColor);
+    PerfGraphElement.LegendTextColor().Set(kPrimaryTextColor);
+    OutHud.PerformanceGraph = PerfGraph.Handle();
+
+    if (auto* GraphWidget = ResolveUiElement(*Context, OutHud.PerformanceGraph))
+    {
+        OutHud.FpsSeries = GraphWidget->AddSeries("FPS", SnAPI::UI::Color{112, 198, 255, 255});
+        OutHud.FrameTimeSeries = GraphWidget->AddSeries("Frame ms", SnAPI::UI::Color{255, 196, 128, 255});
+        (void)GraphWidget->SetSeriesRange(OutHud.FpsSeries, 0.0f, 240.0f);
+        (void)GraphWidget->SetSeriesRange(OutHud.FrameTimeSeries, 0.0f, 50.0f);
+    }
+
     auto RuntimeHint = AddTextLine(StatusPanel, "Press 1/2/3/4 to switch tabs", kMutedTextColor);
     OutHud.HintText = RuntimeHint.Handle();
 
@@ -1455,6 +1845,56 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     OutHud.WindowText = WindowLine.Handle();
     auto LightingLine = AddTextLine(RenderingPanel, "lighting: --", kSecondaryTextColor);
     OutHud.LightingText = LightingLine.Handle();
+    AddTextLine(RenderingPanel, "Real-time tuning", kAccentColor);
+    AddSliderControl(RenderingPanel,
+                     "SSAO Intensity",
+                     MultiplayerHud::SsaoIntensityKey,
+                     0.0f,
+                     4.0f,
+                     0.05f,
+                     2,
+                     "");
+    AddSliderControl(RenderingPanel,
+                     "SSAO Radius",
+                     MultiplayerHud::SsaoRadiusKey,
+                     0.1f,
+                     8.0f,
+                     0.05f,
+                     2,
+                     "");
+    AddSliderControl(RenderingPanel,
+                     "SSR Distance",
+                     MultiplayerHud::SsrMaxDistanceKey,
+                     4.0f,
+                     300.0f,
+                     1.0f,
+                     1,
+                     "");
+    AddSliderControl(RenderingPanel,
+                     "SSR Steps",
+                     MultiplayerHud::SsrMaxStepsKey,
+                     8.0f,
+                     256.0f,
+                     1.0f,
+                     0,
+                     "");
+    AddSliderControl(RenderingPanel,
+                     "Shadow Bias",
+                     MultiplayerHud::ShadowBiasKey,
+                     0.0001f,
+                     0.02f,
+                     0.0001f,
+                     4,
+                     "");
+    AddSliderControl(RenderingPanel,
+                     "Shadow Softness",
+                     MultiplayerHud::ShadowSoftnessKey,
+                     0.2f,
+                     8.0f,
+                     0.05f,
+                     2,
+                     "");
+    AddTextLine(RenderingPanel, "Keyboard shortcuts", kAccentColor);
     AddTextLine(RenderingPanel, "F: Toggle fullscreen + VSync", kPrimaryTextColor);
     AddTextLine(RenderingPanel, "Z: Toggle soft shadows", kPrimaryTextColor);
     AddTextLine(RenderingPanel, "C: Toggle contact hardening", kPrimaryTextColor);
@@ -1496,6 +1936,40 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
         TabsActive.BindTo(VmActive, SnAPI::UI::EBindMode::TwoWay);
     }
 
+    float SsaoIntensity = 1.0f;
+    float SsaoRadius = 2.0f;
+    float SsrMaxDistance = 90.0f;
+    float SsrMaxSteps = 64.0f;
+    float ShadowBias = SnAPI::Graphics::DirectionalLightContract::DefaultShadowBias;
+    float ShadowSoftness = SnAPI::Graphics::DirectionalLightContract::DefaultSoftnessFactor;
+
+    if (auto* GraphicsApi = Graph.Renderer().Graphics())
+    {
+        if (auto* SsaoPass =
+                dynamic_cast<SnAPI::Graphics::SSAOPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSAO)))
+        {
+            SsaoIntensity = SsaoPass->GetIntensity();
+            SsaoRadius = SsaoPass->GetRadius();
+        }
+
+        if (auto* SsrPass =
+                dynamic_cast<SnAPI::Graphics::SSRPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSR)))
+        {
+            SsrMaxDistance = SsrPass->GetMaxDistance();
+            SsrMaxSteps = static_cast<float>(SsrPass->GetMaxSteps());
+        }
+    }
+
+    if (const auto* LightManager = Graph.Renderer().LightManager())
+    {
+        const auto DirectionalLights = LightManager->GetDirectionalLights();
+        if (const auto FirstLight = DirectionalLights.begin(); FirstLight != DirectionalLights.end())
+        {
+            ShadowBias = (*FirstLight)->GetShadowBias();
+            ShadowSoftness = (*FirstLight)->GetSoftnessFactor();
+        }
+    }
+
     HudVmProperty<std::string>(OutHud, MultiplayerHud::TitleKey).Set("SNAPI Multiplayer Example");
     HudVmProperty<std::string>(OutHud, MultiplayerHud::SubtitleKey)
         .Set(std::string("mode: ") + ModeLabel(Mode) + " | target_hz=" + FormatFloat(Parsed.FixedHz, 1));
@@ -1508,6 +1982,12 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     HudVmProperty<std::string>(OutHud, MultiplayerHud::NetworkingKey).Set("networking: --");
     HudVmProperty<std::string>(OutHud, MultiplayerHud::HintKey).Set("Press 1/2/3/4 to switch tabs");
     HudVmProperty<std::size_t>(OutHud, MultiplayerHud::ActiveTabKey).Set(size_t{0});
+    HudVmProperty<float>(OutHud, MultiplayerHud::SsaoIntensityKey).Set(SsaoIntensity);
+    HudVmProperty<float>(OutHud, MultiplayerHud::SsaoRadiusKey).Set(SsaoRadius);
+    HudVmProperty<float>(OutHud, MultiplayerHud::SsrMaxDistanceKey).Set(SsrMaxDistance);
+    HudVmProperty<float>(OutHud, MultiplayerHud::SsrMaxStepsKey).Set(SsrMaxSteps);
+    HudVmProperty<float>(OutHud, MultiplayerHud::ShadowBiasKey).Set(ShadowBias);
+    HudVmProperty<float>(OutHud, MultiplayerHud::ShadowSoftnessKey).Set(ShadowSoftness);
 
     OutHud.Initialized = true;
     return true;
@@ -1546,15 +2026,64 @@ void UpdateMultiplayerHud(World& Graph,
 
     if (auto* Window = Graph.Renderer().Window())
     {
-        const auto WindowSize = Window->Size();
-        if (WindowSize.x() > 1.0f && WindowSize.y() > 1.0f)
+        const UiViewportTransform UiTransform = ResolveUiViewportTransform(Graph);
+        if (UiTransform.IsValid())
         {
-            (void)Graph.UI().SetViewportSize(WindowSize.x(), WindowSize.y());
+            (void)Graph.UI().SetViewportSize(UiTransform.UiWidth, UiTransform.UiHeight);
+        }
+        else
+        {
+            const auto WindowSize = Window->Size();
+            if (WindowSize.x() > 1.0f && WindowSize.y() > 1.0f)
+            {
+                (void)Graph.UI().SetViewportSize(WindowSize.x(), WindowSize.y());
+            }
         }
     }
 
     const float SafeDelta = std::max(DeltaSeconds, 0.0001f);
     const int Fps = static_cast<int>(std::round(1.0f / SafeDelta));
+
+    const auto ClampHudFloat = [](const float Value, const float MinValue, const float MaxValue) {
+        return std::clamp(std::isfinite(Value) ? Value : MinValue, MinValue, MaxValue);
+    };
+
+    const float SsaoIntensity =
+        ClampHudFloat(HudVmProperty<float>(Hud, MultiplayerHud::SsaoIntensityKey).Get(), 0.0f, 4.0f);
+    const float SsaoRadius = ClampHudFloat(HudVmProperty<float>(Hud, MultiplayerHud::SsaoRadiusKey).Get(), 0.1f, 8.0f);
+    const float SsrMaxDistance =
+        ClampHudFloat(HudVmProperty<float>(Hud, MultiplayerHud::SsrMaxDistanceKey).Get(), 4.0f, 300.0f);
+    const float SsrMaxStepsFloat =
+        ClampHudFloat(HudVmProperty<float>(Hud, MultiplayerHud::SsrMaxStepsKey).Get(), 8.0f, 256.0f);
+    const auto SsrMaxSteps = static_cast<uint32_t>(std::round(SsrMaxStepsFloat));
+    const float ShadowBias =
+        ClampHudFloat(HudVmProperty<float>(Hud, MultiplayerHud::ShadowBiasKey).Get(), 0.0001f, 0.02f);
+    const float ShadowSoftness =
+        ClampHudFloat(HudVmProperty<float>(Hud, MultiplayerHud::ShadowSoftnessKey).Get(), 0.2f, 8.0f);
+
+    if (!std::isfinite(HudVmProperty<float>(Hud, MultiplayerHud::SsrMaxStepsKey).Get()) ||
+        std::abs(HudVmProperty<float>(Hud, MultiplayerHud::SsrMaxStepsKey).Get() - static_cast<float>(SsrMaxSteps)) >
+            0.0001f)
+    {
+        HudVmProperty<float>(Hud, MultiplayerHud::SsrMaxStepsKey).Set(static_cast<float>(SsrMaxSteps));
+    }
+
+    if (auto* GraphicsApi = Graph.Renderer().Graphics())
+    {
+        if (auto* SsaoPass =
+                dynamic_cast<SnAPI::Graphics::SSAOPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSAO)))
+        {
+            SsaoPass->SetIntensity(SsaoIntensity);
+            SsaoPass->SetRadius(SsaoRadius);
+        }
+
+        if (auto* SsrPass =
+                dynamic_cast<SnAPI::Graphics::SSRPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSR)))
+        {
+            SsrPass->SetMaxDistance(SsrMaxDistance);
+            SsrPass->SetMaxSteps(SsrMaxSteps);
+        }
+    }
 
     bool SoftShadowsEnabled = false;
     bool ContactHardeningEnabled = false;
@@ -1563,6 +2092,8 @@ void UpdateMultiplayerHud(World& Graph,
         const auto DirectionalLights = LightManager->GetDirectionalLights();
         if (const auto FirstLight = DirectionalLights.begin(); FirstLight != DirectionalLights.end())
         {
+            (*FirstLight)->SetShadowBias(ShadowBias);
+            (*FirstLight)->SetSoftnessFactor(ShadowSoftness);
             SoftShadowsEnabled = (*FirstLight)->HasFeature(SnAPI::Graphics::DirectionalLightContract::Feature::SoftShadows);
             ContactHardeningEnabled = (*FirstLight)->HasFeature(SnAPI::Graphics::DirectionalLightContract::Feature::ContactHardening);
         }
@@ -1598,8 +2129,22 @@ void UpdateMultiplayerHud(World& Graph,
     HudVmProperty<std::string>(Hud, MultiplayerHud::LightingKey)
         .Set(std::string("lighting: soft=") + (SoftShadowsEnabled ? "on" : "off") +
              " | contact=" + (ContactHardeningEnabled ? "on" : "off") +
+             " | bias=" + FormatFloat(ShadowBias, 4) +
+             " | softness=" + FormatFloat(ShadowSoftness, 2) +
              " | cubes=" + (Parsed.CubeShadows ? "on" : "off"));
     HudVmProperty<std::string>(Hud, MultiplayerHud::NetworkingKey).Set(NetworkingText);
+
+    if (auto* GraphWidget = ResolveUiElement(*Context, Hud.PerformanceGraph))
+    {
+        if (Hud.FpsSeries != SnAPI::UI::UIRealtimeGraph::InvalidSeries)
+        {
+            (void)GraphWidget->PushSample(Hud.FpsSeries, static_cast<float>(Fps));
+        }
+        if (Hud.FrameTimeSeries != SnAPI::UI::UIRealtimeGraph::InvalidSeries)
+        {
+            (void)GraphWidget->PushSample(Hud.FrameTimeSeries, SafeDelta * 1000.0f);
+        }
+    }
 }
 #endif
 
@@ -1779,6 +2324,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     }
 #endif
 
+    
     bool Running = true;
     while (Running)
     {
@@ -1863,7 +2409,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
                                  TotalCubes,
                                  Session);
 
-            Runtime.World().Renderer().SetViewPort(SnAPI::Graphics::ViewportFit{.X = 0,.Y = 0, .Width = Runtime.World().Renderer().Window()->Size().x(), .Height = Runtime.World().Renderer().Window()->Size().y() / 2});
         }
 #endif
 
