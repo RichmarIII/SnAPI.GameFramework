@@ -147,6 +147,15 @@ struct ConstructorInfo
 };
 
 /**
+ * @brief Reflection metadata for one enum entry.
+ */
+struct EnumValueInfo
+{
+    std::string Name; /**< @brief Symbolic enum entry name (e.g. "Dynamic"). */
+    std::uint64_t Value = 0; /**< @brief Raw underlying-value bits (zero-extended to 64-bit). */
+};
+
+/**
  * @brief Reflection metadata for a type.
  * @remarks Central metadata object consumed by serialization, replication, RPC and tooling.
  */
@@ -160,6 +169,9 @@ struct TypeInfo
     std::vector<FieldInfo> Fields; /**< @brief Field metadata. */
     std::vector<MethodInfo> Methods; /**< @brief Method metadata. */
     std::vector<ConstructorInfo> Constructors; /**< @brief Constructor metadata. */
+    bool IsEnum = false; /**< @brief True when this type represents an enum. */
+    bool EnumIsSigned = false; /**< @brief True when enum underlying type is signed. */
+    std::vector<EnumValueInfo> EnumValues; /**< @brief Enum entries for tooling/editor usage. */
 };
 
 /**

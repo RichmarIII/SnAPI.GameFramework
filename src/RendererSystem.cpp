@@ -43,7 +43,6 @@
 
 #if defined(SNAPI_GF_ENABLE_UI)
 #include <UIContext.h>
-#include <UIPacketWriter.h>
 #include <UIRenderPackets.h>
 #endif
 
@@ -55,9 +54,6 @@ constexpr float kMinWindowExtent = 1.0f;
 constexpr float kWindowSizeEpsilon = 0.5f;
 constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
-constexpr std::uint32_t kUiRectPipelineId = 1;
-constexpr std::uint32_t kUiImagePipelineId = 2;
-constexpr std::uint32_t kUiGlyphPipelineId = 3;
 constexpr float kUiGlobalZBase = 100.0f;
 constexpr float kUiGlobalZStep = 0.0001f;
 #endif
@@ -733,7 +729,7 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
     std::size_t TotalInstances = 0;
     for (const auto& Packet : PacketSpan)
     {
-        TotalInstances += Packet.InstanceCount;
+        TotalInstances += Packet.InstanceCount();
     }
 
     m_uiQueuedRects.clear();
@@ -757,15 +753,38 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
         OutRect.BorderA = static_cast<float>(ColorValue.A) * kInv;
     };
 
-    const auto ApplyUiScissor = [](QueuedUiRect& OutRect, const SnAPI::UI::ScissorRect& Scissor) {
+    const auto NormalizeUiScissorMode = [](const SnAPI::UI::EScissorMode Mode) {
+        switch (Mode)
+        {
+        case SnAPI::UI::EScissorMode::None:
+        case SnAPI::UI::EScissorMode::Rect:
+        case SnAPI::UI::EScissorMode::ClipAll:
+            return Mode;
+        default:
+            return SnAPI::UI::EScissorMode::None;
+        }
+    };
+
+    const auto ApplyUiScissor = [&](QueuedUiRect& OutRect, const SnAPI::UI::EScissorMode Mode, const SnAPI::UI::ScissorRect& Scissor) -> bool {
+        OutRect.HasScissor = false;
+        OutRect.ScissorMinX = 0.0f;
+        OutRect.ScissorMinY = 0.0f;
+        OutRect.ScissorMaxX = 0.0f;
+        OutRect.ScissorMaxY = 0.0f;
+
+        switch (NormalizeUiScissorMode(Mode))
+        {
+        case SnAPI::UI::EScissorMode::None:
+            return true;
+        case SnAPI::UI::EScissorMode::ClipAll:
+            return false;
+        case SnAPI::UI::EScissorMode::Rect:
+            break;
+        }
+
         if (Scissor.W <= 0 || Scissor.H <= 0)
         {
-            OutRect.HasScissor = false;
-            OutRect.ScissorMinX = 0.0f;
-            OutRect.ScissorMinY = 0.0f;
-            OutRect.ScissorMaxX = 0.0f;
-            OutRect.ScissorMaxY = 0.0f;
-            return;
+            return false;
         }
 
         OutRect.HasScissor = true;
@@ -773,156 +792,109 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
         OutRect.ScissorMinY = static_cast<float>(Scissor.Y);
         OutRect.ScissorMaxX = static_cast<float>(Scissor.X + Scissor.W);
         OutRect.ScissorMaxY = static_cast<float>(Scissor.Y + Scissor.H);
-    };
-
-    const auto DecodeRectPacket = [&](const SnAPI::UI::RenderPacket& Packet) -> bool {
-        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride < sizeof(SnAPI::UI::RectInstance))
-        {
-            return false;
-        }
-
-        const auto* Bytes = static_cast<const std::uint8_t*>(Packet.InstanceData);
-        for (std::uint32_t Index = 0; Index < Packet.InstanceCount; ++Index)
-        {
-            SnAPI::UI::RectInstance Instance{};
-            std::memcpy(&Instance, Bytes + (static_cast<std::size_t>(Index) * Packet.InstanceStride), sizeof(Instance));
-
-            QueuedUiRect Rect{};
-            Rect.X = Instance.X;
-            Rect.Y = Instance.Y;
-            Rect.W = Instance.W;
-            Rect.H = Instance.H;
-            Rect.CornerRadius = std::max(0.0f, Instance.CornerRadius);
-            Rect.BorderThickness = std::max(0.0f, Instance.BorderThickness);
-            Rect.GlobalZ = GlobalZ;
-            ApplyUiColor(Rect, Instance.Fill);
-            ApplyUiBorderColor(Rect, Instance.Border);
-            ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
-            m_uiQueuedRects.emplace_back(Rect);
-            GlobalZ += kUiGlobalZStep;
-        }
         return true;
     };
 
-    const auto DecodeImagePacket = [&](const SnAPI::UI::RenderPacket& Packet) -> bool {
-        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride < sizeof(SnAPI::UI::ImageInstance))
+    const auto QueueImageTextureUploadIfNeeded = [&](const std::uint32_t TextureIdValue) {
+        if (TextureIdValue == 0 || m_uiTextures.contains(TextureIdValue) || m_uiPendingTextureUploads.contains(TextureIdValue))
         {
-            return false;
+            return;
         }
 
-        const auto* Bytes = static_cast<const std::uint8_t*>(Packet.InstanceData);
-        for (std::uint32_t Index = 0; Index < Packet.InstanceCount; ++Index)
+        const auto* Image = Context.GetImageData(SnAPI::UI::TextureId{TextureIdValue});
+        if (!Image || !Image->Valid || Image->Width <= 0 || Image->Height <= 0 || Image->Pixels.empty())
         {
-            SnAPI::UI::ImageInstance Instance{};
-            std::memcpy(&Instance, Bytes + (static_cast<std::size_t>(Index) * Packet.InstanceStride), sizeof(Instance));
-
-            QueuedUiRect Rect{};
-            Rect.X = Instance.X;
-            Rect.Y = Instance.Y;
-            Rect.W = Instance.W;
-            Rect.H = Instance.H;
-            Rect.U0 = Instance.U0;
-            Rect.V0 = Instance.V0;
-            Rect.U1 = Instance.U1;
-            Rect.V1 = Instance.V1;
-            Rect.TextureId = Instance.Texture.Value;
-            Rect.GlobalZ = GlobalZ;
-            ApplyUiColor(Rect, Instance.Tint);
-            ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
-            m_uiQueuedRects.emplace_back(Rect);
-            GlobalZ += kUiGlobalZStep;
-
-            if (Rect.TextureId == 0 || m_uiTextures.contains(Rect.TextureId) || m_uiPendingTextureUploads.contains(Rect.TextureId))
-            {
-                continue;
-            }
-
-            const auto* Image = Context.GetImageData(SnAPI::UI::TextureId{Rect.TextureId});
-            if (!Image || !Image->Valid || Image->Width <= 0 || Image->Height <= 0 || Image->Pixels.empty())
-            {
-                continue;
-            }
-
-            auto& Pending = m_uiPendingTextureUploads[Rect.TextureId];
-            Pending.Width = static_cast<std::uint32_t>(Image->Width);
-            Pending.Height = static_cast<std::uint32_t>(Image->Height);
-            Pending.Pixels = Image->Pixels;
-        }
-        return true;
-    };
-
-    const auto DecodeGlyphPacket = [&](const SnAPI::UI::RenderPacket& Packet) -> bool {
-        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride < sizeof(SnAPI::UI::GlyphInstance))
-        {
-            return false;
+            return;
         }
 
-        const auto* Bytes = static_cast<const std::uint8_t*>(Packet.InstanceData);
-        for (std::uint32_t Index = 0; Index < Packet.InstanceCount; ++Index)
-        {
-            SnAPI::UI::GlyphInstance Instance{};
-            std::memcpy(&Instance, Bytes + (static_cast<std::size_t>(Index) * Packet.InstanceStride), sizeof(Instance));
-
-            QueuedUiRect Rect{};
-            Rect.X = Instance.X;
-            Rect.Y = Instance.Y;
-            Rect.W = Instance.W;
-            Rect.H = Instance.H;
-            Rect.U0 = Instance.U0;
-            Rect.V0 = Instance.V0;
-            Rect.U1 = Instance.U1;
-            Rect.V1 = Instance.V1;
-            Rect.UseFontAtlas = true;
-            Rect.GlobalZ = GlobalZ;
-            ApplyUiColor(Rect, Instance.GlyphColor);
-            ApplyUiScissor(Rect, Instance.Scissor.IsEmpty() ? Packet.Key.Scissor : Instance.Scissor);
-            m_uiQueuedRects.emplace_back(Rect);
-            GlobalZ += kUiGlobalZStep;
-        }
-        return true;
+        auto& Pending = m_uiPendingTextureUploads[TextureIdValue];
+        Pending.Width = static_cast<std::uint32_t>(Image->Width);
+        Pending.Height = static_cast<std::uint32_t>(Image->Height);
+        Pending.Pixels = Image->Pixels;
     };
 
     for (const auto& Packet : PacketSpan)
     {
-        if (!Packet.InstanceData || Packet.InstanceCount == 0 || Packet.InstanceStride == 0)
+        if (const auto* Rects = std::get_if<SnAPI::UI::RectInstanceSpan>(&Packet.Instances))
         {
+            for (const auto& Instance : *Rects)
+            {
+                QueuedUiRect Rect{};
+                Rect.X = Instance.X;
+                Rect.Y = Instance.Y;
+                Rect.W = Instance.W;
+                Rect.H = Instance.H;
+                Rect.CornerRadius = std::max(0.0f, Instance.CornerRadius);
+                Rect.BorderThickness = std::max(0.0f, Instance.BorderThickness);
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiColor(Rect, Instance.Fill);
+                ApplyUiBorderColor(Rect, Instance.Border);
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
+            }
             continue;
         }
 
-        bool Consumed = false;
-        if (Packet.Key.Pipeline.Value == kUiRectPipelineId)
+        if (const auto* Images = std::get_if<SnAPI::UI::ImageInstanceSpan>(&Packet.Instances))
         {
-            Consumed = DecodeRectPacket(Packet);
-        }
-        else if (Packet.Key.Pipeline.Value == kUiImagePipelineId)
-        {
-            Consumed = DecodeImagePacket(Packet);
-        }
-        else if (Packet.Key.Pipeline.Value == kUiGlyphPipelineId)
-        {
-            Consumed = DecodeGlyphPacket(Packet);
+            for (const auto& Instance : *Images)
+            {
+                QueuedUiRect Rect{};
+                Rect.X = Instance.X;
+                Rect.Y = Instance.Y;
+                Rect.W = Instance.W;
+                Rect.H = Instance.H;
+                Rect.U0 = Instance.U0;
+                Rect.V0 = Instance.V0;
+                Rect.U1 = Instance.U1;
+                Rect.V1 = Instance.V1;
+                Rect.TextureId = Instance.Texture.Value;
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiColor(Rect, Instance.Tint);
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
+                QueueImageTextureUploadIfNeeded(Rect.TextureId);
+            }
+            continue;
         }
 
-        // Backward/forward compatibility fallback:
-        // accept packets by payload stride when pipeline ids differ across module revisions.
-        if (!Consumed)
+        if (const auto* Glyphs = std::get_if<SnAPI::UI::GlyphInstanceSpan>(&Packet.Instances))
         {
-            if (Packet.InstanceStride >= sizeof(SnAPI::UI::ImageInstance))
+            for (const auto& Instance : *Glyphs)
             {
-                Consumed = DecodeImagePacket(Packet);
-            }
-            else if (Packet.InstanceStride >= sizeof(SnAPI::UI::GlyphInstance))
-            {
-                Consumed = DecodeGlyphPacket(Packet);
-            }
-            else if (Packet.InstanceStride >= sizeof(SnAPI::UI::RectInstance))
-            {
-                Consumed = DecodeRectPacket(Packet);
+                QueuedUiRect Rect{};
+                Rect.X = Instance.X;
+                Rect.Y = Instance.Y;
+                Rect.W = Instance.W;
+                Rect.H = Instance.H;
+                Rect.U0 = Instance.U0;
+                Rect.V0 = Instance.V0;
+                Rect.U1 = Instance.U1;
+                Rect.V1 = Instance.V1;
+                Rect.UseFontAtlas = true;
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiColor(Rect, Instance.GlyphColor);
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
             }
         }
     }
 
-    // Keep UI queue bounded in pathological cases to avoid unbounded allocations.
     if (m_uiQueuedRects.size() > 131072)
     {
         m_uiQueuedRects.resize(131072);

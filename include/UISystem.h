@@ -182,6 +182,60 @@ public:
      */
     const SnAPI::UI::UIContext* Context() const;
 
+    /**
+     * @brief Register an external UI element type into the active UI context.
+     * @tparam TElement Element type deriving from `SnAPI::UI::IUIElement`.
+     * @param ThemeTypeHash Optional theme style type hash (defaults to element type hash).
+     * @return Success or error when UI is not initialized.
+     */
+    template<typename TElement>
+    Result RegisterElementType(uint32_t ThemeTypeHash = SnAPI::UI::TypeHash<TElement>())
+    {
+        GameLockGuard Lock(m_mutex);
+        if (!m_initialized || !m_context)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotReady, "UI system is not initialized"));
+        }
+
+        m_context->template RegisterElementType<TElement>(ThemeTypeHash);
+        return Ok();
+    }
+
+    /**
+     * @brief Unregister an external UI element type from the active UI context.
+     * @tparam TElement Element type deriving from `SnAPI::UI::IUIElement`.
+     * @return Success or error when UI is not initialized.
+     */
+    template<typename TElement>
+    Result UnregisterElementType()
+    {
+        GameLockGuard Lock(m_mutex);
+        if (!m_initialized || !m_context)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotReady, "UI system is not initialized"));
+        }
+
+        m_context->template UnregisterElementType<TElement>();
+        return Ok();
+    }
+
+    /**
+     * @brief Check whether an element type is registered in the active UI context.
+     * @tparam TElement Element type deriving from `SnAPI::UI::IUIElement`.
+     * @return True when registered and UI is initialized.
+     */
+    template<typename TElement>
+    bool IsElementTypeRegistered() const
+    {
+        GameLockGuard Lock(m_mutex);
+        if (!m_initialized || !m_context)
+        {
+            return false;
+        }
+
+        return m_context->template IsElementTypeRegistered<TElement>();
+    }
+
 private:
     void ShutdownUnlocked();
 
@@ -195,4 +249,3 @@ private:
 } // namespace SnAPI::GameFramework
 
 #endif // SNAPI_GF_ENABLE_UI
-

@@ -30,6 +30,8 @@
 #include "TypeRegistry.h"
 #include "World.h"
 
+#include <initializer_list>
+
 namespace SnAPI::GameFramework
 {
 
@@ -327,6 +329,21 @@ void RegisterBuiltinTypes()
         Info.Align = Align;
         (void)TypeRegistry::Instance().Register(std::move(Info));
     };
+    auto RegisterEnum = [](const char* Name,
+                           const size_t Size,
+                           const size_t Align,
+                           const bool IsSigned,
+                           const std::initializer_list<EnumValueInfo> Values) {
+        TypeInfo Info;
+        Info.Id = TypeIdFromName(Name);
+        Info.Name = Name;
+        Info.Size = Size;
+        Info.Align = Align;
+        Info.IsEnum = true;
+        Info.EnumIsSigned = IsSigned;
+        Info.EnumValues.assign(Values.begin(), Values.end());
+        (void)TypeRegistry::Instance().Register(std::move(Info));
+    };
 
     RegisterPlain(TTypeNameV<bool>, sizeof(bool), alignof(bool));
     RegisterPlain(TTypeNameV<int>, sizeof(int), alignof(int));
@@ -344,7 +361,16 @@ void RegisterBuiltinTypes()
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     RegisterPlain(TTypeNameV<ECollisionFilterBits>, sizeof(ECollisionFilterBits), alignof(ECollisionFilterBits));
     RegisterPlain(TTypeNameV<CollisionFilterFlags>, sizeof(CollisionFilterFlags), alignof(CollisionFilterFlags));
-    RegisterPlain(TTypeNameV<SnAPI::Physics::EBodyType>, sizeof(SnAPI::Physics::EBodyType), alignof(SnAPI::Physics::EBodyType));
+    RegisterEnum(
+        TTypeNameV<SnAPI::Physics::EBodyType>,
+        sizeof(SnAPI::Physics::EBodyType),
+        alignof(SnAPI::Physics::EBodyType),
+        false,
+        {
+            EnumValueInfo{"Static", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Static)},
+            EnumValueInfo{"Kinematic", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Kinematic)},
+            EnumValueInfo{"Dynamic", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Dynamic)},
+        });
     RegisterPlain(TTypeNameV<SnAPI::Physics::EShapeType>, sizeof(SnAPI::Physics::EShapeType), alignof(SnAPI::Physics::EShapeType));
 #endif
 #if defined(SNAPI_GF_ENABLE_INPUT)

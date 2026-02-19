@@ -103,6 +103,7 @@ set(SNAPI_GF_SOURCES
     src/InputComponent.cpp
     src/InputSystem.cpp
     src/UISystem.cpp
+    src/UIPropertyPanel.cpp
     src/INode.cpp
     src/Level.cpp
     src/NodeGraph.cpp

@@ -29,6 +29,7 @@
 #include <UISlider.h>
 #include <UIRealtimeGraph.h>
 #include <UIScrollContainer.h>
+#include <UIAccordion.h>
 #include <UISizing.h>
 #include <UIText.h>
 #include <UITextInput.h>
@@ -1897,6 +1898,24 @@ public:
             .Set(SnAPI::UI::UIScrollContainer::ScrollbarThumbHoverColorKey, ScrollThumbHover)
             .Set(SnAPI::UI::UIScrollContainer::SmoothKey, true);
 
+        Define<SnAPI::UI::UIAccordion>()
+            .Set(SnAPI::UI::UIAccordion::PaddingKey, 0.0f)
+            .Set(SnAPI::UI::UIAccordion::GapKey, 4.0f)
+            .Set(SnAPI::UI::UIAccordion::HeaderHeightKey, 26.0f)
+            .Set(SnAPI::UI::UIAccordion::HeaderPaddingKey, 8.0f)
+            .Set(SnAPI::UI::UIAccordion::ContentPaddingKey, 6.0f)
+            .Set(SnAPI::UI::UIAccordion::BackgroundColorKey, SnAPI::UI::Color{0, 0, 0, 0})
+            .Set(SnAPI::UI::UIAccordion::BorderColorKey, CardBorder)
+            .Set(SnAPI::UI::UIAccordion::BorderThicknessKey, 1.0f)
+            .Set(SnAPI::UI::UIAccordion::CornerRadiusKey, 8.0f)
+            .Set(SnAPI::UI::UIAccordion::HeaderColorKey, ScrollTrack)
+            .Set(SnAPI::UI::UIAccordion::HeaderHoverColorKey, SnAPI::UI::Color{37, 56, 82, 240})
+            .Set(SnAPI::UI::UIAccordion::HeaderExpandedColorKey, TabActive)
+            .Set(SnAPI::UI::UIAccordion::HeaderTextColorKey, PrimaryText)
+            .Set(SnAPI::UI::UIAccordion::HeaderTextExpandedColorKey, AccentText)
+            .Set(SnAPI::UI::UIAccordion::HeaderBorderColorKey, SliderBorder)
+            .Set(SnAPI::UI::UIAccordion::HeaderBorderThicknessKey, 1.0f);
+
         Define<SnAPI::UI::UITextInput>()
             .Set(SnAPI::UI::UITextInput::BackgroundColorKey, InputBg)
             .Set(SnAPI::UI::UITextInput::BorderColorKey, InputBorder)
@@ -1923,7 +1942,12 @@ SnAPI::UI::TPropertyRef<TValue> HudVmProperty(MultiplayerHud& Hud, const SnAPI::
     return SnAPI::UI::TPropertyRef<TValue>(&Hud.ViewModel, Key);
 }
 
-bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, MultiplayerHud& OutHud)
+bool BuildMultiplayerHud(World& Graph,
+                         const ERunMode Mode,
+                         const Args& Parsed,
+                         MultiplayerHud& OutHud,
+                         void* InspectorInstance,
+                         const SnAPI::GameFramework::TypeId& InspectorType)
 {
     if (!Graph.UI().IsInitialized())
     {
@@ -1935,6 +1959,9 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     {
         return false;
     }
+
+    // External elements are first-class in UIContext through explicit registration.
+    Context->RegisterElementType<UIPropertyPanel>(SnAPI::UI::TypeHash<SnAPI::UI::UIScrollContainer>());
 
     auto Root = Context->Root();
     auto& RootPanel = Root.Element();
@@ -2181,6 +2208,39 @@ bool BuildMultiplayerHud(World& Graph, const ERunMode Mode, const Args& Parsed, 
     AddTextLine(NetworkingPanel, "--local", kPrimaryTextColor);
     AddTextLine(NetworkingPanel, "--server --port <p>", kPrimaryTextColor);
     AddTextLine(NetworkingPanel, "--client --connect <ip>", kPrimaryTextColor);
+
+    if (InspectorInstance != nullptr && InspectorType != SnAPI::GameFramework::TypeId{})
+    {
+        auto InspectorPanel = Tabs.Add(SnAPI::UI::UIPanel("Hud.Inspector"));
+        ConfigurePanelCard(InspectorPanel.Element(), 12.0f, 4.0f);
+
+        AddTextLine(InspectorPanel, "Inspector", kTitleColor);
+        AddTextLine(InspectorPanel, "Reflection-backed property panel", kAccentColor);
+
+        auto InspectorScroll = InspectorPanel.Add(SnAPI::UI::UIScrollContainer{});
+        auto& InspectorScrollElement = InspectorScroll.Element();
+        InspectorScrollElement.Height().Set(SnAPI::UI::Sizing::Fixed(318.0f));
+        InspectorScrollElement.Width().Set(SnAPI::UI::Sizing::Fixed(454.0f));
+        InspectorScrollElement.Padding().Set(6.0f);
+        InspectorScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        InspectorScrollElement.ShowHorizontalScrollbar().Set(true);
+        InspectorScrollElement.ShowVerticalScrollbar().Set(true);
+
+        auto PropertyPanel = InspectorScroll.Add(UIPropertyPanel{});
+        auto& PropertyPanelElement = PropertyPanel.Element();
+        PropertyPanelElement.Width().Set(SnAPI::UI::Sizing::Fixed(424.0f));
+        PropertyPanelElement.Height().Set(SnAPI::UI::Sizing::Fixed(286.0f));
+        PropertyPanelElement.Padding().Set(6.0f);
+        PropertyPanelElement.Gap().Set(6.0f);
+        PropertyPanelElement.ShowHorizontalScrollbar().Set(true);
+        PropertyPanelElement.ShowVerticalScrollbar().Set(true);
+        PropertyPanelElement.Smooth().Set(true);
+
+        if (auto* PropertyPanelWidget = ResolveUiElement(*Context, PropertyPanel.Handle()))
+        {
+            (void)PropertyPanelWidget->BindObject(InspectorType, InspectorInstance);
+        }
+    }
 
     auto BindText = [&](const SnAPI::UI::ElementHandle<SnAPI::UI::UIText>& Handle, const SnAPI::UI::PropertyKey Key) {
         if (auto* TextElement = ResolveUiElement(*Context, Handle))
@@ -2603,7 +2663,18 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     MultiplayerHud Hud{};
     if (WindowEnabled)
     {
-        if (!BuildMultiplayerHud(Graph, Mode, Parsed, Hud))
+
+        void* InspectorInstance = nullptr;
+        SnAPI::GameFramework::TypeId InspectorType{};
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+        if (Player.Body)
+        {
+            InspectorInstance = static_cast<void*>(Player.Body);
+            InspectorType = StaticTypeId<RigidBodyComponent>();
+        }
+#endif
+
+        if (!BuildMultiplayerHud(Graph, Mode, Parsed, Hud, InspectorInstance, InspectorType))
         {
             std::cerr << "Warning: failed to build HUD UI; continuing without UI overlay\n";
         }

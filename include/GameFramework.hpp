@@ -24,6 +24,7 @@
 #include "InputComponent.h"
 #include "InputSystem.h"
 #include "UISystem.h"
+#include "UIPropertyPanel.h"
 #include "IWorld.h"
 #include "JobSystem.h"
 #include "Level.h"
