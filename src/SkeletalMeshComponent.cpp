@@ -79,6 +79,7 @@ void SkeletalMeshComponent::ClearMesh()
     m_autoPlayApplied = false;
     m_registered = false;
     m_passStateInitialized = false;
+    m_lastPassGraphRevision = 0;
 }
 
 bool SkeletalMeshComponent::PlayAnimation(const std::string& Name, const bool Loop, const float StartTime)
@@ -278,9 +279,11 @@ void SkeletalMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderOb
         return;
     }
 
+    const std::uint64_t PassGraphRevision = Renderer->RenderViewportPassGraphRevision();
     const bool PassStateChanged = !m_passStateInitialized
                                || m_lastVisible != m_settings.Visible
-                               || m_lastCastShadows != m_settings.CastShadows;
+                               || m_lastCastShadows != m_settings.CastShadows
+                               || m_lastPassGraphRevision != PassGraphRevision;
     if (PassStateChanged)
     {
         if (Renderer->ConfigureRenderObjectPasses(RenderObject, m_settings.Visible, m_settings.CastShadows))
@@ -288,6 +291,7 @@ void SkeletalMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderOb
             m_passStateInitialized = true;
             m_lastVisible = m_settings.Visible;
             m_lastCastShadows = m_settings.CastShadows;
+            m_lastPassGraphRevision = PassGraphRevision;
         }
     }
 

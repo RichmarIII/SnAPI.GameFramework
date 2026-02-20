@@ -4,11 +4,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "BaseNode.h"
 #include "CharacterMovementController.h"
 #include "IWorld.h"
 #include "InputSystem.h"
+#include "LocalPlayer.h"
 #include "NodeGraph.h"
 
 namespace SnAPI::GameFramework
@@ -27,6 +29,61 @@ Vec3 NormalizeOrZero(const Vec3& Value)
 
     const Scalar InvLength = Scalar(1) / std::sqrt(LengthSquared);
     return Value * InvLength;
+}
+
+struct LocalPlayerInputRouting
+{
+    const LocalPlayer* Controller = nullptr;
+    bool HasAnyLocalPlayers = false;
+};
+
+LocalPlayerInputRouting ResolveLocalPlayerRouting(const BaseNode& ControlledNode)
+{
+    LocalPlayerInputRouting Routing{};
+    auto* Graph = ControlledNode.OwnerGraph();
+    if (!Graph)
+    {
+        return Routing;
+    }
+
+    const NodeHandle ControlledHandle = ControlledNode.Handle();
+    Graph->NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
+        auto* Player = dynamic_cast<LocalPlayer*>(&Node);
+        if (!Player)
+        {
+            return;
+        }
+
+        Routing.HasAnyLocalPlayers = true;
+
+        // Local input assignment is runtime-local state and is represented by owner connection id 0.
+        if (Player->GetOwnerConnectionId() != 0)
+        {
+            return;
+        }
+        if (Player->GetPossessedNode() != ControlledHandle)
+        {
+            return;
+        }
+        if (!Routing.Controller)
+        {
+            Routing.Controller = Player;
+        }
+    });
+
+    return Routing;
+}
+
+bool IsGamepadConnected(const SnAPI::Input::InputSnapshot& Snapshot, const SnAPI::Input::DeviceId Device)
+{
+    if (!Device.IsValid())
+    {
+        return false;
+    }
+
+    const auto& Gamepads = Snapshot.Gamepads();
+    const auto It = Gamepads.find(Device);
+    return It != Gamepads.end() && It->second.Connected;
 }
 } // namespace
 
@@ -86,10 +143,49 @@ void InputComponent::Tick(float DeltaSeconds)
         return;
     }
 
+    bool KeyboardEnabled = m_settings.KeyboardEnabled;
+    bool GamepadEnabled = m_settings.GamepadEnabled;
+    std::optional<SnAPI::Input::DeviceId> ForcedGamepad{};
+
+    const LocalPlayerInputRouting LocalRouting = ResolveLocalPlayerRouting(*Owner);
+    if (LocalRouting.Controller)
+    {
+        if (!LocalRouting.Controller->GetAcceptInput())
+        {
+            if (m_settings.ClearMoveWhenUnavailable)
+            {
+                Movement.SetMoveInput(Vec3::Zero());
+            }
+            return;
+        }
+
+        if (LocalRouting.Controller->GetUseAssignedInputDevice())
+        {
+            // Assigned-device mode isolates player control to the owning gamepad only.
+            KeyboardEnabled = false;
+            GamepadEnabled = true;
+            ForcedGamepad = LocalRouting.Controller->GetAssignedInputDevice();
+        }
+        else if (LocalRouting.Controller->GetPlayerIndex() != 0)
+        {
+            // Keyboard remains reserved for primary local player by default.
+            KeyboardEnabled = false;
+        }
+    }
+    else if (LocalRouting.HasAnyLocalPlayers)
+    {
+        // When local-player possession is active globally, unpossessed actors must not consume global input.
+        if (m_settings.ClearMoveWhenUnavailable)
+        {
+            Movement.SetMoveInput(Vec3::Zero());
+        }
+        return;
+    }
+
     float MoveX = 0.0f;
     float MoveZ = 0.0f;
 
-    if (m_settings.KeyboardEnabled)
+    if (KeyboardEnabled)
     {
         if (Snapshot->KeyDown(m_settings.MoveLeftKey))
         {
@@ -109,10 +205,23 @@ void InputComponent::Tick(float DeltaSeconds)
         }
     }
 
-    const SnAPI::Input::DeviceId Gamepad = m_settings.GamepadEnabled ? ResolveGamepadDevice(*Snapshot)
-                                                                      : SnAPI::Input::DeviceId{};
+    SnAPI::Input::DeviceId Gamepad{};
+    if (GamepadEnabled)
+    {
+        if (ForcedGamepad.has_value())
+        {
+            if (IsGamepadConnected(*Snapshot, *ForcedGamepad))
+            {
+                Gamepad = *ForcedGamepad;
+            }
+        }
+        else
+        {
+            Gamepad = ResolveGamepadDevice(*Snapshot);
+        }
+    }
 
-    if (m_settings.GamepadEnabled && Gamepad.IsValid())
+    if (GamepadEnabled && Gamepad.IsValid())
     {
         const float AxisX = ApplyDeadzone(Snapshot->GamepadAxis(Gamepad, m_settings.MoveGamepadXAxis));
         float AxisY = ApplyDeadzone(Snapshot->GamepadAxis(Gamepad, m_settings.MoveGamepadYAxis));
@@ -147,11 +256,11 @@ void InputComponent::Tick(float DeltaSeconds)
     }
 
     bool JumpTriggered = false;
-    if (m_settings.KeyboardEnabled)
+    if (KeyboardEnabled)
     {
         JumpTriggered = Snapshot->KeyPressed(m_settings.JumpKey);
     }
-    if (!JumpTriggered && m_settings.GamepadEnabled && Gamepad.IsValid())
+    if (!JumpTriggered && GamepadEnabled && Gamepad.IsValid())
     {
         JumpTriggered = Snapshot->GamepadButtonPressed(Gamepad, m_settings.JumpGamepadButton);
     }

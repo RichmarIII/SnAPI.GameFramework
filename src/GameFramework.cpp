@@ -2,7 +2,9 @@
 
 #include "BaseNode.h"
 #include "BuiltinTypes.h"
+#include "GameplayRpcGateway.h"
 #include "Level.h"
+#include "LocalPlayer.h"
 #include "NodeGraph.h"
 #include "FollowTargetComponent.h"
 #include "Relevance.h"
@@ -51,6 +53,58 @@ SNAPI_REFLECT_TYPE(Level, (TTypeBuilder<Level>(Level::kTypeName)
 
 SNAPI_REFLECT_TYPE(World, (TTypeBuilder<World>(World::kTypeName)
     .Base<NodeGraph>()
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(LocalPlayer, (TTypeBuilder<LocalPlayer>(LocalPlayer::kTypeName)
+    .Base<BaseNode>()
+    .Field("PlayerIndex",
+           &LocalPlayer::EditPlayerIndex,
+           &LocalPlayer::GetPlayerIndex,
+           EFieldFlagBits::Replication)
+    .Field("PossessedNode",
+           &LocalPlayer::EditPossessedNode,
+           &LocalPlayer::GetPossessedNode,
+           EFieldFlagBits::Replication)
+    .Field("AcceptInput",
+           &LocalPlayer::EditAcceptInput,
+           &LocalPlayer::GetAcceptInput,
+           EFieldFlagBits::Replication)
+    .Field("OwnerConnectionId",
+           &LocalPlayer::EditOwnerConnectionId,
+           &LocalPlayer::GetOwnerConnectionId,
+           EFieldFlagBits::Replication)
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    .Field("AssignedInputDevice",
+           &LocalPlayer::EditAssignedInputDevice,
+           &LocalPlayer::GetAssignedInputDevice)
+    .Field("UseAssignedInputDevice",
+           &LocalPlayer::EditUseAssignedInputDevice,
+           &LocalPlayer::GetUseAssignedInputDevice)
+#endif
+    .Method("ServerRequestPossess",
+            &LocalPlayer::ServerRequestPossess,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("ServerRequestUnpossess",
+            &LocalPlayer::ServerRequestUnpossess,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(GameplayRpcGateway, (TTypeBuilder<GameplayRpcGateway>(GameplayRpcGateway::kTypeName)
+    .Base<BaseNode>()
+    .Method("ServerRequestJoinPlayer",
+            &GameplayRpcGateway::ServerRequestJoinPlayer,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("ServerRequestLeavePlayer",
+            &GameplayRpcGateway::ServerRequestLeavePlayer,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("ServerRequestLoadLevel",
+            &GameplayRpcGateway::ServerRequestLoadLevel,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
+    .Method("ServerRequestUnloadLevel",
+            &GameplayRpcGateway::ServerRequestUnloadLevel,
+            EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
     .Constructor<>()
     .Register()));
 

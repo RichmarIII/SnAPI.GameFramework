@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(SNAPI_GF_BUILD_TESTS "Build tests" ON)
 option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
+option(SNAPI_GF_BUILD_EDITOR "Build editor target" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" OFF)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
@@ -97,6 +98,8 @@ set(SNAPI_GF_SOURCES
     src/CameraComponent.cpp
     src/ColliderComponent.cpp
     src/FollowTargetComponent.cpp
+    src/GameplayHost.cpp
+    src/GameplayRpcGateway.cpp
     src/GameFramework.cpp
     src/GameRuntime.cpp
     src/IComponent.cpp
@@ -104,8 +107,11 @@ set(SNAPI_GF_SOURCES
     src/InputSystem.cpp
     src/UISystem.cpp
     src/UIPropertyPanel.cpp
+    src/UIRenderViewport.cpp
     src/INode.cpp
     src/Level.cpp
+    src/LocalPlayer.cpp
+    src/LocalPlayerService.cpp
     src/NodeGraph.cpp
     src/NetworkSystem.cpp
     src/PhysicsSystem.cpp
@@ -139,6 +145,35 @@ else()
 endif()
 
 target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GAMEFRAMEWORK_BUILD_DLL)
+
+if (SNAPI_GF_BUILD_EDITOR)
+    set(SNAPI_GF_EDITOR_SOURCES
+        include/Editor/EditorCameraComponent.h
+        include/Editor/EditorExport.h
+        include/Editor/EditorCoreServices.h
+        include/Editor/EditorLayout.h
+        include/Editor/EditorSelectionModel.h
+        include/Editor/EditorSceneBootstrap.h
+        include/Editor/EditorTheme.h
+        include/Editor/EditorViewportBinding.h
+        include/Editor/GameEditor.h
+        include/Editor/GameFrameworkEditor.hpp
+        include/Editor/IEditorService.h
+        src/Editor/main.cpp
+        src/Editor/EditorCameraComponent.cpp
+        src/Editor/EditorCoreServices.cpp
+        src/Editor/EditorLayout.cpp
+        src/Editor/EditorSelectionModel.cpp
+        src/Editor/EditorSceneBootstrap.cpp
+        src/Editor/EditorTheme.cpp
+        src/Editor/EditorTypeRegistration.cpp
+        src/Editor/EditorViewportBinding.cpp
+        src/Editor/GameEditor.cpp
+    )
+
+    add_executable(SnAPI.GameFramework.Editor ${SNAPI_GF_EDITOR_SOURCES})
+    target_link_libraries(SnAPI.GameFramework.Editor PRIVATE SnAPI.GameFramework)
+endif()
 
 # Lua
 if (SNAPI_GF_ENABLE_LUA)

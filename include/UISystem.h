@@ -2,9 +2,12 @@
 
 #if defined(SNAPI_GF_ENABLE_UI)
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 #include "Expected.h"
 #include "GameThreading.h"
@@ -16,10 +19,6 @@ namespace SnAPI::GameFramework
 
 /**
  * @brief Bootstrap settings for world-owned SnAPI.UI integration.
- * @remarks
- * These settings are applied when `UISystem::Initialize(...)` creates the
- * world UI context. They define baseline viewport sizing and optional DPI
- * override behavior.
  */
 struct UIBootstrapSettings
 {
@@ -29,221 +28,198 @@ struct UIBootstrapSettings
 };
 
 /**
- * @brief World-owned adapter over `SnAPI::UI::UIContext`.
- * @remarks
- * `UISystem` provides:
- * - explicit initialize/shutdown lifecycle for one world-scoped UI context,
- * - per-frame `Tick(...)` execution for input processing and async UI tasks,
- * - typed UI input forwarding (`PointerEvent`, `KeyEvent`, `TextInputEvent`),
- * - render packet extraction for renderer integration layers.
+ * @brief World-owned UI system with parent/child `UIContext` graph support.
  *
- * Threading:
- * - internal state is game-thread owned (`GameMutex` affinity guard),
- * - cross-thread interaction should use `EnqueueTask(...)`.
+ * @remarks
+ * - Contexts are addressed by stable `ContextId` values.
+ * - Context lifecycle is explicit (`CreateContext`, `DestroyContext`).
+ * - Viewport bindings are explicit and one-to-one (`ViewportId <-> ContextId`).
  */
 class UISystem final : public ITaskDispatcher
 {
 public:
     using WorkTask = std::function<void(UISystem&)>;
     using CompletionTask = std::function<void(const TaskHandle&)>;
+    using ContextId = std::uint64_t;
+    using ViewportId = std::uint64_t;
 
-    /** @brief Construct an uninitialized UI system. */
+    struct ViewportPacketBatch
+    {
+        ViewportId Viewport = 0;
+        ContextId Context = 0;
+        SnAPI::UI::UIContext* ContextPtr = nullptr;
+        SnAPI::UI::RenderPacketList Packets{};
+    };
+
+    struct ViewportBinding
+    {
+        ViewportId Viewport = 0;
+        ContextId Context = 0;
+    };
+
     UISystem() = default;
-    /** @brief Destructor; shuts down active UI context if initialized. */
     ~UISystem() override;
 
     UISystem(const UISystem&) = delete;
     UISystem& operator=(const UISystem&) = delete;
 
-    /**
-     * @brief Move constructor; transfers UI context ownership.
-     */
     UISystem(UISystem&& Other) noexcept;
-    /**
-     * @brief Move assignment; transfers UI context ownership safely.
-     */
     UISystem& operator=(UISystem&& Other) noexcept;
 
-    /**
-     * @brief Initialize UI system with default bootstrap settings.
-     * @return Success or error.
-     */
     Result Initialize();
-
-    /**
-     * @brief Initialize UI system with explicit bootstrap settings.
-     * @param SettingsValue UI bootstrap settings snapshot.
-     * @return Success or error.
-     * @remarks Reinitializes existing context when already initialized.
-     */
     Result Initialize(const UIBootstrapSettings& SettingsValue);
-
-    /**
-     * @brief Shutdown active UI context.
-     * @remarks Safe to call repeatedly.
-     */
     void Shutdown();
-
-    /**
-     * @brief Check whether a UI context is initialized and ready.
-     * @return True when initialized.
-     */
     bool IsInitialized() const;
 
-    /**
-     * @brief Tick the UI context for the current frame.
-     * @param DeltaSeconds Time since last frame.
-     * @remarks
-     * Executes queued UI tasks then advances `UIContext::Tick(...)`.
-     * Calling this when uninitialized is a no-op.
-     */
     void Tick(float DeltaSeconds);
 
-    /**
-     * @brief Build a frame render packet list from current UI tree state.
-     * @param OutPackets Output packet list populated by `UIContext`.
-     * @return Success or error.
-     */
-    Result BuildRenderPackets(SnAPI::UI::RenderPacketList& OutPackets);
+    Result BuildRenderPackets(ContextId Context, SnAPI::UI::RenderPacketList& OutPackets);
+    Result BuildBoundViewportRenderPackets(std::vector<ViewportPacketBatch>& OutBatches);
 
-    /**
-     * @brief Forward one pointer input event to the active UI context.
-     * @param EventValue Pointer event payload.
-     */
-    void PushInput(const SnAPI::UI::PointerEvent& EventValue) const;
+    void PushInput(const SnAPI::UI::PointerEvent& EventValue);
+    void PushInput(const SnAPI::UI::KeyEvent& EventValue);
+    void PushInput(const SnAPI::UI::TextInputEvent& EventValue);
+    void PushInput(const SnAPI::UI::WheelEvent& EventValue);
 
-    /**
-     * @brief Forward one key input event to the active UI context.
-     * @param EventValue Key event payload.
-     */
-    void PushInput(const SnAPI::UI::KeyEvent& EventValue) const;
-
-    /**
-     * @brief Forward one text input event to the active UI context.
-     * @param EventValue Text input event payload.
-     */
-    void PushInput(const SnAPI::UI::TextInputEvent& EventValue) const;
-
-    /**
-    * @brief Forward one Wheel input event to the active UI context.
-    * @param EventValue Wheel input event payload.
-    */
-    void PushInput(const SnAPI::UI::WheelEvent& EventValue) const;
-
-    /**
-     * @brief Update logical UI viewport size.
-     * @param Width Viewport width in UI units.
-     * @param Height Viewport height in UI units.
-     * @return Success or error.
-     */
     Result SetViewportSize(float Width, float Height);
-
-    /**
-     * @brief Override UI DPI scale.
-     * @param Scale DPI scale where 1.0 corresponds to 96 DPI.
-     * @return Success or error.
-     */
     Result SetDpiScale(float Scale);
 
-    /**
-     * @brief Enqueue work on the UI system thread.
-     * @param InTask Work callback executed on UI-thread affinity.
-     * @param OnComplete Optional completion callback marshaled to caller dispatcher.
-     * @return Task handle for wait/cancel polling.
-     */
+    ContextId RootContextId() const;
+    Result CreateContext(ContextId ParentContext, ContextId& OutContextId);
+    Result DestroyContext(ContextId Context);
+
+    SnAPI::UI::UIContext* Context(ContextId Context);
+    const SnAPI::UI::UIContext* Context(ContextId Context) const;
+
+    ContextId ContextIdFor(const SnAPI::UI::UIContext* Context) const;
+    std::vector<ContextId> ContextIds() const;
+
+    Result SetContextScreenRect(ContextId Context, float X, float Y, float Width, float Height);
+
+    Result BindViewportContext(ViewportId Viewport, ContextId Context);
+    Result UnbindViewportContext(ViewportId Viewport);
+    Result UnbindContext(ContextId Context);
+
+    std::optional<ContextId> BoundContextForViewport(ViewportId Viewport) const;
+    std::optional<ViewportId> BoundViewportForContext(ContextId Context) const;
+    std::vector<ViewportBinding> ViewportBindings() const;
+
     TaskHandle EnqueueTask(WorkTask InTask, CompletionTask OnComplete = {});
-
-    /**
-     * @brief Enqueue a generic thread task for dispatcher marshalling.
-     * @param InTask Callback to execute on this system thread.
-     */
     void EnqueueThreadTask(std::function<void()> InTask) override;
-
-    /**
-     * @brief Execute all queued tasks on the UI thread.
-     */
     void ExecuteQueuedTasks();
 
-    /**
-     * @brief Access active bootstrap settings snapshot.
-     * @return Settings currently used by this subsystem.
-     */
     const UIBootstrapSettings& Settings() const;
 
-    /**
-     * @brief Access active UI context.
-     * @return Context pointer or nullptr when uninitialized.
-     */
-    SnAPI::UI::UIContext* Context();
-
-    /**
-     * @brief Access active UI context (const).
-     * @return Context pointer or nullptr when uninitialized.
-     */
-    const SnAPI::UI::UIContext* Context() const;
-
-    /**
-     * @brief Register an external UI element type into the active UI context.
-     * @tparam TElement Element type deriving from `SnAPI::UI::IUIElement`.
-     * @param ThemeTypeHash Optional theme style type hash (defaults to element type hash).
-     * @return Success or error when UI is not initialized.
-     */
     template<typename TElement>
     Result RegisterElementType(uint32_t ThemeTypeHash = SnAPI::UI::TypeHash<TElement>())
     {
         GameLockGuard Lock(m_mutex);
-        if (!m_initialized || !m_context)
+        if (!m_initialized || m_rootContextId == 0)
         {
             return std::unexpected(MakeError(EErrorCode::NotReady, "UI system is not initialized"));
         }
 
-        m_context->template RegisterElementType<TElement>(ThemeTypeHash);
+        if constexpr (!SnAPI::UI::IsBuiltinElementTypeV<TElement>)
+        {
+            m_registeredExternalElementThemeHashes[SnAPI::UI::TypeHash<TElement>()] = ThemeTypeHash;
+        }
+
+        for (auto& [_, Node] : m_contextNodes)
+        {
+            if (Node.Context)
+            {
+                Node.Context->template RegisterElementType<TElement>(ThemeTypeHash);
+            }
+        }
         return Ok();
     }
 
-    /**
-     * @brief Unregister an external UI element type from the active UI context.
-     * @tparam TElement Element type deriving from `SnAPI::UI::IUIElement`.
-     * @return Success or error when UI is not initialized.
-     */
     template<typename TElement>
     Result UnregisterElementType()
     {
         GameLockGuard Lock(m_mutex);
-        if (!m_initialized || !m_context)
+        if (!m_initialized || m_rootContextId == 0)
         {
             return std::unexpected(MakeError(EErrorCode::NotReady, "UI system is not initialized"));
         }
 
-        m_context->template UnregisterElementType<TElement>();
+        if constexpr (!SnAPI::UI::IsBuiltinElementTypeV<TElement>)
+        {
+            m_registeredExternalElementThemeHashes.erase(SnAPI::UI::TypeHash<TElement>());
+        }
+
+        for (auto& [_, Node] : m_contextNodes)
+        {
+            if (Node.Context)
+            {
+                Node.Context->template UnregisterElementType<TElement>();
+            }
+        }
         return Ok();
     }
 
-    /**
-     * @brief Check whether an element type is registered in the active UI context.
-     * @tparam TElement Element type deriving from `SnAPI::UI::IUIElement`.
-     * @return True when registered and UI is initialized.
-     */
     template<typename TElement>
     bool IsElementTypeRegistered() const
     {
         GameLockGuard Lock(m_mutex);
-        if (!m_initialized || !m_context)
+        if (!m_initialized || m_rootContextId == 0)
         {
             return false;
         }
 
-        return m_context->template IsElementTypeRegistered<TElement>();
+        const auto RootIt = m_contextNodes.find(m_rootContextId);
+        if (RootIt == m_contextNodes.end() || !RootIt->second.Context)
+        {
+            return false;
+        }
+
+        return RootIt->second.Context->template IsElementTypeRegistered<TElement>();
     }
 
 private:
+    struct ContextNode
+    {
+        ContextId Id = 0;
+        ContextId Parent = 0;
+        std::vector<ContextId> Children{};
+        std::unique_ptr<SnAPI::UI::UIContext> Context{};
+    };
+
+    std::unique_ptr<SnAPI::UI::UIContext> CreateInitializedContext() const;
+    ContextId CreateContextLocked(ContextId ParentContext, std::unique_ptr<SnAPI::UI::UIContext> Context);
+    SnAPI::UI::UIContext* FindContextLocked(ContextId Context);
+    const SnAPI::UI::UIContext* FindContextLocked(ContextId Context) const;
+    bool IsContextPointEligibleLocked(ContextId Context, SnAPI::UI::UIPoint Position) const;
+    bool IsContextKeyboardEligibleLocked(ContextId Context) const;
+    void BuildContextOrderLocked(ContextId RootContext, std::vector<ContextId>& OutOrder) const;
+    ContextId FindDeepestPointerTargetLocked(ContextId RootContext, SnAPI::UI::UIPoint Position) const;
+    void DestroyContextRecursiveLocked(ContextId Context);
     void ShutdownUnlocked();
 
-    mutable GameMutex m_mutex{}; /**< @brief UI-system thread affinity guard. */
-    TSystemTaskQueue<UISystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
-    UIBootstrapSettings m_settings{}; /**< @brief Active UI bootstrap settings snapshot. */
-    std::unique_ptr<SnAPI::UI::UIContext> m_context{}; /**< @brief Active UI context instance. */
-    bool m_initialized = false; /**< @brief True when context has been initialized and can be ticked. */
+    mutable GameMutex m_mutex{};
+    TSystemTaskQueue<UISystem> m_taskQueue{};
+    UIBootstrapSettings m_settings{};
+
+    std::unordered_map<ContextId, ContextNode> m_contextNodes{};
+    std::unordered_map<const SnAPI::UI::UIContext*, ContextId> m_contextIdsByPointer{};
+
+    std::unordered_map<ViewportId, ContextId> m_viewportToContext{};
+    std::unordered_map<ContextId, ViewportId> m_contextToViewport{};
+
+    std::unordered_map<uint32_t, uint32_t> m_registeredExternalElementThemeHashes{};
+
+    ContextId m_rootContextId = 0;
+    ContextId m_nextContextId = 0;
+
+    ContextId m_activeInputContext = 0;
+    ContextId m_pointerCaptureContext = 0;
+    bool m_pointerLeftDown = false;
+    bool m_pointerRightDown = false;
+    bool m_pointerMiddleDown = false;
+    SnAPI::UI::UIPoint m_lastPointerPosition{};
+    bool m_hasLastPointerPosition = false;
+
+    bool m_initialized = false;
 };
 
 } // namespace SnAPI::GameFramework

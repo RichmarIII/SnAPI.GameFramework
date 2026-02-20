@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <cstdint>
 
 #include "IComponent.h"
 
@@ -88,6 +89,7 @@ private:
     bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */
     bool m_lastCastShadows = true; /**< @brief Last applied cast-shadows state. */
+    std::uint64_t m_lastPassGraphRevision = 0; /**< @brief Last renderer pass-graph revision applied to this render object. */
 };
 
 } // namespace SnAPI::GameFramework

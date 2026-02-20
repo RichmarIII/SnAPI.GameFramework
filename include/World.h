@@ -31,6 +31,8 @@
 namespace SnAPI::GameFramework
 {
 
+class GameplayHost;
+
 /**
  * @brief Concrete world root that owns levels and subsystems.
  * @remarks
@@ -166,6 +168,22 @@ public:
      * @remarks Snapshot of currently attached level-node handles.
      */
     std::vector<NodeHandle> Levels() const;
+
+    /**
+     * @brief Set gameplay host pointer associated with this world runtime.
+     * @remarks Non-owning and managed by `GameRuntime`.
+     */
+    void SetGameplayHost(GameplayHost* Host);
+
+    /**
+     * @brief Access gameplay host pointer associated with this world runtime.
+     */
+    GameplayHost* GameplayHostPtr();
+
+    /**
+     * @brief Access gameplay host pointer associated with this world runtime (const).
+     */
+    const GameplayHost* GameplayHostPtr() const;
     /**
      * @brief Access the job system for parallel internal tasks.
      * @return Reference to JobSystem.
@@ -255,6 +273,7 @@ private:
     mutable GameMutex m_threadMutex{}; /**< @brief World-thread affinity guard for queued task execution. */
     TSystemTaskQueue<World> m_taskQueue{}; /**< @brief Cross-thread task handoff queue for world-thread callbacks. */
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
+    GameplayHost* m_gameplayHost = nullptr; /**< @brief Non-owning gameplay host pointer for runtime bridge access. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     InputSystem m_inputSystem{}; /**< @brief World-scoped input subsystem instance. */
 #endif

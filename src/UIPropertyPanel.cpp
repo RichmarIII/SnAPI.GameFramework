@@ -30,8 +30,7 @@ namespace SnAPI::GameFramework
 namespace
 {
 constexpr int kMaxReflectionDepth = 8;
-constexpr float kLabelWidth = 184.0f;
-constexpr float kEditorHeight = 30.0f;
+constexpr float kLabelRatio = 0.45f;
 
 [[nodiscard]] std::string TrimCopy(std::string_view Text)
 {
@@ -53,7 +52,7 @@ constexpr float kEditorHeight = 30.0f;
 [[nodiscard]] std::string ToLowerCopy(std::string_view Text)
 {
   std::string out(Text);
-  std::transform(out.begin(), out.end(), out.begin(), [](const unsigned char c) {
+  std::ranges::transform(out, out.begin(), [](const unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });
   return out;
@@ -430,7 +429,7 @@ bool UIPropertyPanel::RebuildUi()
     contentPanel->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
     contentPanel->Padding().Set(4.0f);
     contentPanel->Gap().Set(6.0f);
-    contentPanel->Width().Set(SnAPI::UI::Sizing::Auto());
+    contentPanel->Width().Set(SnAPI::UI::Sizing::Fill());
     contentPanel->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
   }
 
@@ -448,7 +447,7 @@ bool UIPropertyPanel::RebuildUi()
 void UIPropertyPanel::BuildTypeIntoContainer(
   const SnAPI::UI::ElementId Parent,
   const TypeId& Type,
-  std::vector<FieldPathEntry> PathPrefix,
+  const std::vector<FieldPathEntry>& PathPrefix,
   const int Depth)
 {
   if (!m_Context)
@@ -494,7 +493,7 @@ void UIPropertyPanel::AddFieldEditor(
     return;
   }
 
-  const bool pathConst = std::any_of(Path.begin(), Path.end(), [](const FieldPathEntry& Entry) {
+  const bool pathConst = std::ranges::any_of(Path, [](const FieldPathEntry& Entry) {
     return Entry.IsConst;
   });
 
@@ -510,7 +509,7 @@ void UIPropertyPanel::AddFieldEditor(
     m_Context->AddChild(Parent, accordionHandle.Id);
     if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
     {
-      accordion->Width().Set(SnAPI::UI::Sizing::Auto());
+      accordion->Width().Set(SnAPI::UI::Sizing::Fill());
       accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
       accordion->AllowMultipleExpanded().Set(true);
       accordion->DefaultExpanded().Set(true);
@@ -531,7 +530,7 @@ void UIPropertyPanel::AddFieldEditor(
       body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
       body->Padding().Set(4.0f);
       body->Gap().Set(6.0f);
-      body->Width().Set(SnAPI::UI::Sizing::Auto());
+      body->Width().Set(SnAPI::UI::Sizing::Fill());
       body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
     }
 
@@ -562,7 +561,7 @@ void UIPropertyPanel::AddFieldEditor(
     row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
     row->Padding().Set(0.0f);
     row->Gap().Set(8.0f);
-    row->Width().Set(SnAPI::UI::Sizing::Auto());
+    row->Width().Set(SnAPI::UI::Sizing::Fill());
     row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
   }
 
@@ -572,11 +571,12 @@ void UIPropertyPanel::AddFieldEditor(
     m_Context->AddChild(rowHandle.Id, labelHandle.Id);
     if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
     {
-      label->Width().Set(SnAPI::UI::Sizing::Fixed(kLabelWidth));
+      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelRatio));
       label->HAlign().Set(SnAPI::UI::EAlignment::Start);
       label->VAlign().Set(SnAPI::UI::EAlignment::Center);
-      // Prevent long labels from painting over editors.
-      label->Wrapping().Set(SnAPI::UI::ETextWrapping::Clip);
+      label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
+      // Keep labels readable while preventing overlap into editors.
+      label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
   }
 
@@ -592,7 +592,8 @@ void UIPropertyPanel::AddFieldEditor(
       m_Context->AddChild(rowHandle.Id, textHandle.Id);
       if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
       {
-        text->Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        text->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        text->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
       }
     }
     return;
@@ -616,7 +617,7 @@ void UIPropertyPanel::AddFieldEditor(
 
     if (auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxHandle.Id)))
     {
-      checkbox->Width().Set(SnAPI::UI::Sizing::Fixed(26.0f));
+      checkbox->Width().Set(SnAPI::UI::Sizing::Auto());
       checkbox->HAlign().Set(SnAPI::UI::EAlignment::Start);
       checkbox->VAlign().Set(SnAPI::UI::EAlignment::Center);
       checkbox->Label().Set(std::string{});
@@ -636,7 +637,6 @@ void UIPropertyPanel::AddFieldEditor(
     {
       combo->ReadOnly().Set(readOnly);
       combo->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-      combo->RowHeight().Set(kEditorHeight);
       combo->MaxDropdownHeight().Set(220.0f);
       combo->Placeholder().Set(PrettyTypeName(Field.FieldType));
 
@@ -674,7 +674,7 @@ void UIPropertyPanel::AddFieldEditor(
       editor->ReadOnly().Set(readOnly);
       // Fill remaining row width so rows do not overflow narrow panels.
       editor->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-      editor->Height().Set(SnAPI::UI::Sizing::Fixed(kEditorHeight));
+      editor->Height().Set(SnAPI::UI::Sizing::Auto());
       editor->Placeholder().Set(PrettyTypeName(Field.FieldType));
     }
   }
@@ -704,7 +704,7 @@ void UIPropertyPanel::AddUnsupportedRow(
     row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
     row->Padding().Set(0.0f);
     row->Gap().Set(8.0f);
-    row->Width().Set(SnAPI::UI::Sizing::Auto());
+    row->Width().Set(SnAPI::UI::Sizing::Fill());
     row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
   }
 
@@ -714,8 +714,8 @@ void UIPropertyPanel::AddUnsupportedRow(
     m_Context->AddChild(rowHandle.Id, labelHandle.Id);
     if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
     {
-      label->Width().Set(SnAPI::UI::Sizing::Fixed(kLabelWidth));
-      label->Wrapping().Set(SnAPI::UI::ETextWrapping::Clip);
+      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelRatio));
+      label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
   }
 
@@ -726,7 +726,7 @@ void UIPropertyPanel::AddUnsupportedRow(
     if (auto* reason = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(reasonHandle.Id)))
     {
       reason->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-      reason->Wrapping().Set(SnAPI::UI::ETextWrapping::Clip);
+      reason->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
   }
 }
@@ -848,9 +848,7 @@ bool UIPropertyPanel::ResolveLeafPath(
       return false;
     }
 
-    const auto fieldIt = std::find_if(
-      ownerInfo->Fields.begin(),
-      ownerInfo->Fields.end(),
+    const auto fieldIt = std::ranges::find_if(ownerInfo->Fields,
       [&entry](const FieldInfo& candidate) {
         return candidate.Name == entry.FieldName;
       });
@@ -929,9 +927,7 @@ bool UIPropertyPanel::ReadFieldValue(
       return false;
     }
 
-    const auto it = std::find_if(
-      enumInfo->EnumValues.begin(),
-      enumInfo->EnumValues.end(),
+    const auto it = std::ranges::find_if(enumInfo->EnumValues,
       [enumBits](const EnumValueInfo& entry) { return entry.Value == enumBits; });
 
     if (it != enumInfo->EnumValues.end())
@@ -1224,16 +1220,16 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         if (enumInfo->EnumIsSigned)
         {
-          std::int64_t parsed = 0;
-          if (!ParseSigned(trimmed, parsed) || !ConvertSignedToBits(parsed, enumInfo->Size, enumBits))
+            if (std::int64_t parsed = 0;
+                !ParseSigned(trimmed, parsed) || !ConvertSignedToBits(parsed, enumInfo->Size, enumBits))
           {
             return false;
           }
         }
         else
         {
-          std::uint64_t parsed = 0;
-          if (!ParseUnsigned(trimmed, parsed) || !ConvertUnsignedToBits(parsed, enumInfo->Size, enumBits))
+            if (std::uint64_t parsed = 0;
+                !ParseUnsigned(trimmed, parsed) || !ConvertUnsignedToBits(parsed, enumInfo->Size, enumBits))
           {
             return false;
           }

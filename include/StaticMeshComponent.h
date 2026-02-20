@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <cstdint>
 
 #include "IComponent.h"
 
@@ -11,6 +12,7 @@ namespace SnAPI::Graphics
 {
 class MaterialInstance;
 class IRenderObject;
+class IVertexStreamSource;
 } // namespace SnAPI::Graphics
 
 namespace SnAPI::GameFramework
@@ -65,6 +67,20 @@ public:
     void SetSharedMaterialInstances(std::shared_ptr<SnAPI::Graphics::MaterialInstance> GBufferInstance,
                                     std::shared_ptr<SnAPI::Graphics::MaterialInstance> ShadowInstance = {});
 
+    /**
+     * @brief Override the render object geometry source with a procedural vertex stream.
+     * @remarks
+     * When set, this takes precedence over `Settings::MeshPath`. Clearing the source falls
+     * back to mesh-path loading behavior.
+     */
+    void SetVertexStreamSource(std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> StreamSource);
+
+    /** @brief Get the currently assigned procedural vertex stream source override. */
+    [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>& GetVertexStreamSource() const
+    {
+        return m_streamSource;
+    }
+
     void OnCreate() override;
     void OnDestroy() override;
     void Tick(float DeltaSeconds) override;
@@ -83,8 +99,11 @@ private:
     bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */
     bool m_lastCastShadows = true; /**< @brief Last applied cast-shadows state. */
+    std::uint64_t m_lastPassGraphRevision = 0; /**< @brief Last renderer pass-graph revision applied to this render object. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_sharedGBufferInstance{}; /**< @brief Optional shared GBuffer material instance override. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_sharedShadowInstance{}; /**< @brief Optional shared shadow material instance override. */
+    std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> m_streamSource{}; /**< @brief Optional procedural stream source override. */
+    std::weak_ptr<SnAPI::Graphics::IVertexStreamSource> m_loadedStreamSource{}; /**< @brief Last procedural source used to build current render object. */
 };
 
 } // namespace SnAPI::GameFramework

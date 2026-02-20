@@ -22,6 +22,8 @@ namespace SnAPI::GameFramework
  * - Add this component to a node that already owns `CharacterMovementController`.
  * - Tune bindings and analog shaping through `Settings`.
  * - Keep gameplay code backend-agnostic by consuming normalized input only.
+ * - When `LocalPlayer` possession exists, input is automatically routed through the
+ *   possessing local player and its assigned input device.
  */
 class InputComponent : public IComponent
 {

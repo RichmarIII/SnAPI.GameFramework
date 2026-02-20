@@ -84,13 +84,27 @@ void StaticMeshComponent::SetSharedMaterialInstances(std::shared_ptr<SnAPI::Grap
     }
 }
 
+void StaticMeshComponent::SetVertexStreamSource(std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> StreamSource)
+{
+    
+    if (m_streamSource == StreamSource)
+    {
+        return;
+    }
+
+    m_streamSource = std::move(StreamSource);
+    ClearMesh();
+}
+
 void StaticMeshComponent::ClearMesh()
 {
     
     m_renderObject.reset();
     m_loadedPath.clear();
+    m_loadedStreamSource.reset();
     m_registered = false;
     m_passStateInitialized = false;
+    m_lastPassGraphRevision = 0;
 }
 
 void StaticMeshComponent::OnCreate()
@@ -110,13 +124,17 @@ void StaticMeshComponent::Tick(float DeltaSeconds)
     
     (void)DeltaSeconds;
 
-    if (m_settings.MeshPath.empty())
+    if (m_settings.MeshPath.empty() && !m_streamSource)
     {
         ClearMesh();
         return;
     }
 
-    if (m_loadedPath != m_settings.MeshPath)
+    if (!m_streamSource && m_loadedPath != m_settings.MeshPath)
+    {
+        ClearMesh();
+    }
+    if (m_streamSource && m_loadedStreamSource.lock() != m_streamSource)
     {
         ClearMesh();
     }
@@ -160,7 +178,7 @@ RendererSystem* StaticMeshComponent::ResolveRendererSystem() const
 bool StaticMeshComponent::EnsureMeshLoaded()
 {
     
-    if (m_settings.MeshPath.empty())
+    if (m_settings.MeshPath.empty() && !m_streamSource)
     {
         return false;
     }
@@ -173,6 +191,27 @@ bool StaticMeshComponent::EnsureMeshLoaded()
 
     if (m_renderObject)
     {
+        return true;
+    }
+
+    if (m_streamSource)
+    {
+        auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>();
+        if (!RenderObject)
+        {
+            return false;
+        }
+
+        RenderObject->SetVertexStreamSource(m_streamSource);
+        m_renderObject = std::move(RenderObject);
+        m_loadedPath.clear();
+        m_loadedStreamSource = m_streamSource;
+        m_registered = false;
+
+        (void)Renderer->ApplyDefaultMaterials(*m_renderObject);
+        ApplySharedMaterialInstances(*m_renderObject);
+        ApplyRenderObjectState(*m_renderObject);
+
         return true;
     }
 
@@ -197,6 +236,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
 
     m_renderObject = std::move(RenderObject);
     m_loadedPath = m_settings.MeshPath;
+    m_loadedStreamSource.reset();
     m_registered = false;
 
     (void)Renderer->ApplyDefaultMaterials(*m_renderObject);
@@ -267,9 +307,11 @@ void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::IRenderObject&
         return;
     }
 
+    const std::uint64_t PassGraphRevision = Renderer->RenderViewportPassGraphRevision();
     const bool PassStateChanged = !m_passStateInitialized
                                || m_lastVisible != m_settings.Visible
-                               || m_lastCastShadows != m_settings.CastShadows;
+                               || m_lastCastShadows != m_settings.CastShadows
+                               || m_lastPassGraphRevision != PassGraphRevision;
     if (PassStateChanged)
     {
         if (Renderer->ConfigureRenderObjectPasses(RenderObject, m_settings.Visible, m_settings.CastShadows))
@@ -277,6 +319,7 @@ void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::IRenderObject&
             m_passStateInitialized = true;
             m_lastVisible = m_settings.Visible;
             m_lastCastShadows = m_settings.CastShadows;
+            m_lastPassGraphRevision = PassGraphRevision;
         }
     }
 

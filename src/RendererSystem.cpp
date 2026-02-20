@@ -41,6 +41,8 @@
 #include <VulkanGraphicsAPI.hpp>
 #include <WindowBase.hpp>
 
+#include "SnAPI/Math/LinearAlgebra.h"
+
 #if defined(SNAPI_GF_ENABLE_UI)
 #include <UIContext.h>
 #include <UIRenderPackets.h>
@@ -52,6 +54,7 @@ namespace
 {
 constexpr float kMinWindowExtent = 1.0f;
 constexpr float kWindowSizeEpsilon = 0.5f;
+constexpr float kViewportConfigFloatEpsilon = 0.001f;
 constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
 constexpr float kUiGlobalZBase = 100.0f;
@@ -61,6 +64,30 @@ constexpr float kUiGlobalZStep = 0.0001f;
 float ClampWindowExtent(const float Value)
 {
     return std::max(kMinWindowExtent, Value);
+}
+
+bool NearlyEqual(const float Left, const float Right)
+{
+    return std::fabs(Left - Right) <= kViewportConfigFloatEpsilon;
+}
+
+bool AreViewportRectsEquivalent(const SnAPI::Graphics::ViewportFit& Left, const SnAPI::Graphics::ViewportFit& Right)
+{
+    return NearlyEqual(Left.X, Right.X) &&
+           NearlyEqual(Left.Y, Right.Y) &&
+           NearlyEqual(Left.Width, Right.Width) &&
+           NearlyEqual(Left.Height, Right.Height);
+}
+
+bool AreRenderViewportConfigsEquivalent(const SnAPI::Graphics::RenderViewportConfig& Left,
+                                        const SnAPI::Graphics::RenderViewportConfig& Right)
+{
+    return Left.Name == Right.Name &&
+           Left.RenderExtent.x() == Right.RenderExtent.x() &&
+           Left.RenderExtent.y() == Right.RenderExtent.y() &&
+           AreViewportRectsEquivalent(Left.OutputRect, Right.OutputRect) &&
+           Left.Enabled == Right.Enabled &&
+           Left.pCamera == Right.pCamera;
 }
 
 bool IsFontRenderable(SnAPI::Graphics::FontFace* Face)
@@ -140,11 +167,14 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiPendingTextureUploads = std::move(Other.m_uiPendingTextureUploads);
     m_uiQueuedRects = std::move(Other.m_uiQueuedRects);
+    m_uiPacketsQueuedThisFrame = Other.m_uiPacketsQueuedThisFrame;
 #endif
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
+    m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
+    m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
     m_initialized = Other.m_initialized;
 
     Other.m_graphics = nullptr;
@@ -162,11 +192,14 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiPendingTextureUploads.clear();
     Other.m_uiQueuedRects.clear();
+    Other.m_uiPacketsQueuedThisFrame = false;
 #endif
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
     Other.m_registeredRenderObjects.clear();
+    Other.m_registeredViewportPassGraphs.clear();
+    Other.m_renderViewportPassGraphRevision = 1;
     Other.m_initialized = false;
 }
 
@@ -203,11 +236,14 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiPendingTextureUploads = std::move(Other.m_uiPendingTextureUploads);
     m_uiQueuedRects = std::move(Other.m_uiQueuedRects);
+    m_uiPacketsQueuedThisFrame = Other.m_uiPacketsQueuedThisFrame;
 #endif
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
+    m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
+    m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
     m_initialized = Other.m_initialized;
 
     Other.m_graphics = nullptr;
@@ -225,11 +261,14 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiPendingTextureUploads.clear();
     Other.m_uiQueuedRects.clear();
+    Other.m_uiPacketsQueuedThisFrame = false;
 #endif
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
     Other.m_registeredRenderObjects.clear();
+    Other.m_registeredViewportPassGraphs.clear();
+    Other.m_renderViewportPassGraphRevision = 1;
     Other.m_initialized = false;
     return *this;
 }
@@ -284,6 +323,7 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_uiTextureMaterialInstances.clear();
         m_uiPendingTextureUploads.clear();
         m_uiQueuedRects.clear();
+        m_uiPacketsQueuedThisFrame = false;
 #endif
         m_window.reset();
         m_lightManager.reset();
@@ -293,6 +333,8 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_lastWindowHeight = 0.0f;
         m_hasWindowSizeSnapshot = false;
         m_registeredRenderObjects.clear();
+        m_registeredViewportPassGraphs.clear();
+        m_renderViewportPassGraphRevision = 1;
     };
 
     ResetState();
@@ -352,12 +394,15 @@ bool RendererSystem::InitializeUnlocked()
     m_uiTextureMaterialInstances.clear();
     m_uiPendingTextureUploads.clear();
     m_uiQueuedRects.clear();
+    m_uiPacketsQueuedThisFrame = false;
 #endif
     m_window.reset();
     m_lightManager.reset();
     ResetPassPointers();
     m_passGraphRegistered = false;
     m_registeredRenderObjects.clear();
+    m_registeredViewportPassGraphs.clear();
+    m_renderViewportPassGraphRevision = 1;
 
     if (!m_settings.CreateGraphicsApi)
     {
@@ -530,6 +575,24 @@ bool RendererSystem::ClearViewPort()
     return true;
 }
 
+bool RendererSystem::UseDefaultRenderViewport(const bool Enabled)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    m_graphics->UseDefaultViewport(Enabled);
+    return true;
+}
+
+bool RendererSystem::IsUsingDefaultRenderViewport() const
+{
+    GameLockGuard Lock(m_mutex);
+    return m_graphics ? m_graphics->IsUsingDefaultViewport() : false;
+}
+
 bool RendererSystem::SetPassViewPort(const SnAPI::Graphics::ERenderPassType PassType, const SnAPI::Graphics::ViewportFit& ViewPort)
 {
     GameLockGuard Lock(m_mutex);
@@ -561,6 +624,217 @@ bool RendererSystem::ClearPassViewPorts()
     }
     m_graphics->ClearPassViewPorts();
     return true;
+}
+
+bool RendererSystem::CreateRenderViewport(std::string Name,
+                                          const float X,
+                                          const float Y,
+                                          const float Width,
+                                          const float Height,
+                                          const std::uint32_t RenderWidth,
+                                          const std::uint32_t RenderHeight,
+                                          SnAPI::Graphics::ICamera* Camera,
+                                          const bool Enabled,
+                                          std::uint64_t& OutViewportID)
+{
+    GameLockGuard Lock(m_mutex);
+    OutViewportID = 0;
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    const float ClampedW = std::max(kMinWindowExtent, Width);
+    const float ClampedH = std::max(kMinWindowExtent, Height);
+    const std::uint32_t FinalRenderWidth = RenderWidth > 0 ? RenderWidth : static_cast<std::uint32_t>(std::round(ClampedW));
+    const std::uint32_t FinalRenderHeight = RenderHeight > 0 ? RenderHeight : static_cast<std::uint32_t>(std::round(ClampedH));
+
+    SnAPI::Graphics::RenderViewportConfig Config{};
+    Config.Name = Name.empty() ? "Viewport" : std::move(Name);
+    Config.OutputRect = SnAPI::Graphics::ViewportFit{
+        .X = X,
+        .Y = Y,
+        .Width = ClampedW,
+        .Height = ClampedH,
+    };
+    Config.RenderExtent = SnAPI::Math::Size2DU{
+        std::max<std::uint32_t>(1u, FinalRenderWidth),
+        std::max<std::uint32_t>(1u, FinalRenderHeight)};
+    Config.Enabled = Enabled;
+    Config.pCamera = Camera;
+
+    const auto ViewportID = m_graphics->CreateRenderViewport(Config);
+    if (ViewportID == 0)
+    {
+        return false;
+    }
+
+    OutViewportID = static_cast<std::uint64_t>(ViewportID);
+    return true;
+}
+
+bool RendererSystem::UpdateRenderViewport(const std::uint64_t ViewportID,
+                                          std::string Name,
+                                          const float X,
+                                          const float Y,
+                                          const float Width,
+                                          const float Height,
+                                          const std::uint32_t RenderWidth,
+                                          const std::uint32_t RenderHeight,
+                                          SnAPI::Graphics::ICamera* Camera,
+                                          const bool Enabled)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    const float ClampedW = std::max(kMinWindowExtent, Width);
+    const float ClampedH = std::max(kMinWindowExtent, Height);
+    const std::uint32_t FinalRenderWidth = RenderWidth > 0 ? RenderWidth : static_cast<std::uint32_t>(std::round(ClampedW));
+    const std::uint32_t FinalRenderHeight = RenderHeight > 0 ? RenderHeight : static_cast<std::uint32_t>(std::round(ClampedH));
+
+    SnAPI::Graphics::RenderViewportConfig Config{};
+    Config.Name = Name.empty() ? "Viewport" : std::move(Name);
+    Config.OutputRect = SnAPI::Graphics::ViewportFit{
+        .X = X,
+        .Y = Y,
+        .Width = ClampedW,
+        .Height = ClampedH,
+    };
+    Config.RenderExtent = SnAPI::Math::Size2DU{
+        std::max<std::uint32_t>(1u, FinalRenderWidth),
+        std::max<std::uint32_t>(1u, FinalRenderHeight)};
+    Config.Enabled = Enabled;
+    Config.pCamera = Camera;
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    if (const auto Existing = m_graphics->GetRenderViewportConfig(RendererViewportID);
+        Existing.has_value() && AreRenderViewportConfigsEquivalent(*Existing, Config))
+    {
+        return true;
+    }
+
+    return m_graphics->SetRenderViewportConfig(RendererViewportID, Config);
+}
+
+bool RendererSystem::DestroyRenderViewport(const std::uint64_t ViewportID)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    if (RendererViewportID == m_graphics->DefaultRenderViewportID())
+    {
+        return false;
+    }
+
+    const bool Destroyed = m_graphics->DestroyRenderViewport(RendererViewportID);
+    if (Destroyed || !m_graphics->GetRenderViewportConfig(RendererViewportID).has_value())
+    {
+        m_registeredViewportPassGraphs.erase(ViewportID);
+    }
+    return Destroyed;
+}
+
+bool RendererSystem::HasRenderViewport(const std::uint64_t ViewportID) const
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    return m_graphics->GetRenderViewportConfig(RendererViewportID).has_value();
+}
+
+bool RendererSystem::RegisterRenderViewportPassGraph(const std::uint64_t ViewportID, const ERenderViewportPassGraphPreset Preset)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    const bool TrackDefault = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID) == m_graphics->DefaultRenderViewportID();
+    return RegisterRenderViewportPassGraphUnlocked(ViewportID, Preset, TrackDefault);
+}
+
+bool RendererSystem::SetRenderViewportGlobalInputNameOverrides(const std::uint64_t ViewportID,
+                                                               std::vector<std::pair<std::string, std::string>> Overrides)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    return m_graphics->SetRenderViewportGlobalInputNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID), std::move(Overrides));
+}
+
+bool RendererSystem::SetRenderViewportGlobalOutputNameOverrides(const std::uint64_t ViewportID,
+                                                                std::vector<std::pair<std::string, std::string>> Overrides)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    return m_graphics->SetRenderViewportGlobalOutputNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID), std::move(Overrides));
+}
+
+bool RendererSystem::SetRenderViewportPassInputNameOverrides(const std::uint64_t ViewportID,
+                                                             const SnAPI::Graphics::IHighLevelPass* Pass,
+                                                             std::vector<std::pair<std::string, std::string>> Overrides)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0 || !Pass)
+    {
+        return false;
+    }
+
+    return m_graphics->SetRenderViewportPassInputNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID), Pass, std::move(Overrides));
+}
+
+bool RendererSystem::SetRenderViewportPassOutputNameOverrides(const std::uint64_t ViewportID,
+                                                              const SnAPI::Graphics::IHighLevelPass* Pass,
+                                                              std::vector<std::pair<std::string, std::string>> Overrides)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0 || !Pass)
+    {
+        return false;
+    }
+
+    return m_graphics->SetRenderViewportPassOutputNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID), Pass, std::move(Overrides));
+}
+
+bool RendererSystem::ClearRenderViewportPassNameOverrides(const std::uint64_t ViewportID, const SnAPI::Graphics::IHighLevelPass* Pass)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0 || !Pass)
+    {
+        return false;
+    }
+
+    return m_graphics->ClearRenderViewportPassNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID), Pass);
+}
+
+bool RendererSystem::ClearRenderViewportNameOverrides(const std::uint64_t ViewportID)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    return m_graphics->ClearRenderViewportNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID));
 }
 
 bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
@@ -637,16 +911,46 @@ bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject&
         return false;
     }
 
-    if (auto* GBufferPass = m_graphics->GetRenderPass(SnAPI::Graphics::ERenderPassType::GBuffer))
+    bool ConfiguredAnyPass = false;
+    const auto ViewportIds = m_graphics->RenderViewportIDs();
+    for (const auto ViewportId : ViewportIds)
     {
-        RenderObject.EnablePass(GBufferPass->ID(), Visible);
+        const auto PresetIt = m_registeredViewportPassGraphs.find(static_cast<std::uint64_t>(ViewportId));
+        if (PresetIt == m_registeredViewportPassGraphs.end())
+        {
+            // Only configure scene-object visibility for viewports explicitly registered
+            // through RendererSystem pass-graph presets. This avoids accidental routing
+            // into stale/foreign fullscreen viewports.
+            continue;
+        }
+
+        if (PresetIt->second == ERenderViewportPassGraphPreset::UiPresentOnly ||
+            PresetIt->second == ERenderViewportPassGraphPreset::None)
+        {
+            continue;
+        }
+
+        if (auto* GBufferPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+        {
+            RenderObject.EnablePass(GBufferPass->ID(), Visible);
+            ConfiguredAnyPass = true;
+        }
+        if (auto* ShadowPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+        {
+            RenderObject.EnablePass(ShadowPass->ID(), Visible && CastShadows);
+            ConfiguredAnyPass = true;
+        }
     }
-    if (auto* ShadowPass = m_graphics->GetRenderPass(SnAPI::Graphics::ERenderPassType::Shadow))
-    {
-        RenderObject.EnablePass(ShadowPass->ID(), Visible && CastShadows);
-    }
+
     RenderObject.SetCastsShadows(CastShadows);
-    return true;
+    return ConfiguredAnyPass;
+}
+
+std::uint64_t RendererSystem::RenderViewportPassGraphRevision() const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    return m_renderViewportPassGraphRevision;
 }
 
 bool RendererSystem::RecreateSwapChain()
@@ -716,26 +1020,43 @@ SnAPI::Graphics::FontFace* RendererSystem::EnsureDefaultFontFace()
 }
 
 #if defined(SNAPI_GF_ENABLE_UI)
-bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const SnAPI::UI::RenderPacketList& Packets)
+bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
+                                          SnAPI::UI::UIContext& Context,
+                                          const SnAPI::UI::RenderPacketList& Packets)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
-    if (!m_graphics)
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+    if (!m_graphics->GetRenderViewportConfig(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID)).has_value())
     {
         return false;
     }
 
     const auto PacketSpan = Packets.Packets();
+    const auto ContextScreenRect = Context.GetScreenRect();
+    const float ContextOffsetX = ContextScreenRect.X;
+    const float ContextOffsetY = ContextScreenRect.Y;
     std::size_t TotalInstances = 0;
     for (const auto& Packet : PacketSpan)
     {
         TotalInstances += Packet.InstanceCount();
     }
 
-    m_uiQueuedRects.clear();
-    m_uiQueuedRects.reserve(TotalInstances);
+    if (!m_uiPacketsQueuedThisFrame)
+    {
+        m_uiQueuedRects.clear();
+        m_uiPacketsQueuedThisFrame = true;
+    }
 
-    float GlobalZ = kUiGlobalZBase;
+    if (m_uiQueuedRects.capacity() < (m_uiQueuedRects.size() + TotalInstances))
+    {
+        m_uiQueuedRects.reserve(m_uiQueuedRects.size() + TotalInstances);
+    }
+
+    float GlobalZ = kUiGlobalZBase + static_cast<float>(m_uiQueuedRects.size()) * kUiGlobalZStep;
 
     const auto ApplyUiColor = [](QueuedUiRect& OutRect, const SnAPI::UI::Color& ColorValue) {
         constexpr float kInv = 1.0f / 255.0f;
@@ -788,15 +1109,16 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
         }
 
         OutRect.HasScissor = true;
-        OutRect.ScissorMinX = static_cast<float>(Scissor.X);
-        OutRect.ScissorMinY = static_cast<float>(Scissor.Y);
-        OutRect.ScissorMaxX = static_cast<float>(Scissor.X + Scissor.W);
-        OutRect.ScissorMaxY = static_cast<float>(Scissor.Y + Scissor.H);
+        OutRect.ScissorMinX = static_cast<float>(Scissor.X) - ContextOffsetX;
+        OutRect.ScissorMinY = static_cast<float>(Scissor.Y) - ContextOffsetY;
+        OutRect.ScissorMaxX = static_cast<float>(Scissor.X + Scissor.W) - ContextOffsetX;
+        OutRect.ScissorMaxY = static_cast<float>(Scissor.Y + Scissor.H) - ContextOffsetY;
         return true;
     };
 
     const auto QueueImageTextureUploadIfNeeded = [&](const std::uint32_t TextureIdValue) {
-        if (TextureIdValue == 0 || m_uiTextures.contains(TextureIdValue) || m_uiPendingTextureUploads.contains(TextureIdValue))
+        const UiTextureCacheKey TextureCacheKey{&Context, TextureIdValue};
+        if (TextureIdValue == 0 || m_uiTextures.contains(TextureCacheKey) || m_uiPendingTextureUploads.contains(TextureCacheKey))
         {
             return;
         }
@@ -807,7 +1129,7 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
             return;
         }
 
-        auto& Pending = m_uiPendingTextureUploads[TextureIdValue];
+        auto& Pending = m_uiPendingTextureUploads[TextureCacheKey];
         Pending.Width = static_cast<std::uint32_t>(Image->Width);
         Pending.Height = static_cast<std::uint32_t>(Image->Height);
         Pending.Pixels = Image->Pixels;
@@ -820,8 +1142,10 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
             for (const auto& Instance : *Rects)
             {
                 QueuedUiRect Rect{};
-                Rect.X = Instance.X;
-                Rect.Y = Instance.Y;
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = Instance.X - ContextOffsetX;
+                Rect.Y = Instance.Y - ContextOffsetY;
                 Rect.W = Instance.W;
                 Rect.H = Instance.H;
                 Rect.CornerRadius = std::max(0.0f, Instance.CornerRadius);
@@ -845,8 +1169,10 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
             for (const auto& Instance : *Images)
             {
                 QueuedUiRect Rect{};
-                Rect.X = Instance.X;
-                Rect.Y = Instance.Y;
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = Instance.X - ContextOffsetX;
+                Rect.Y = Instance.Y - ContextOffsetY;
                 Rect.W = Instance.W;
                 Rect.H = Instance.H;
                 Rect.U0 = Instance.U0;
@@ -873,8 +1199,10 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
             for (const auto& Instance : *Glyphs)
             {
                 QueuedUiRect Rect{};
-                Rect.X = Instance.X;
-                Rect.Y = Instance.Y;
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = Instance.X - ContextOffsetX;
+                Rect.Y = Instance.Y - ContextOffsetY;
                 Rect.W = Instance.W;
                 Rect.H = Instance.H;
                 Rect.U0 = Instance.U0;
@@ -901,6 +1229,39 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
     }
 
     return true;
+}
+
+bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const SnAPI::UI::RenderPacketList& Packets)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    std::uint64_t ViewportID = 0;
+    {
+        GameLockGuard Lock(m_mutex);
+        if (!m_graphics)
+        {
+            return false;
+        }
+
+        if (m_graphics->IsUsingDefaultViewport())
+        {
+            ViewportID = static_cast<std::uint64_t>(m_graphics->DefaultRenderViewportID());
+        }
+        else
+        {
+            const auto Viewports = m_graphics->RenderViewportIDs();
+            if (!Viewports.empty())
+            {
+                ViewportID = static_cast<std::uint64_t>(Viewports.front());
+            }
+        }
+    }
+
+    if (ViewportID == 0)
+    {
+        return false;
+    }
+
+    return QueueUiRenderPackets(ViewportID, Context, Packets);
 }
 #endif
 
@@ -967,6 +1328,9 @@ void RendererSystem::EndFrame()
             It = m_registeredRenderObjects.erase(It);
         }
     }
+#if defined(SNAPI_GF_ENABLE_UI)
+    m_uiPacketsQueuedThisFrame = false;
+#endif
 }
 
 void RendererSystem::ShutdownUnlocked()
@@ -1002,11 +1366,14 @@ void RendererSystem::ShutdownUnlocked()
     m_uiTextureMaterialInstances.clear();
     m_uiPendingTextureUploads.clear();
     m_uiQueuedRects.clear();
+    m_uiPacketsQueuedThisFrame = false;
 #endif
     m_lastWindowWidth = 0.0f;
     m_lastWindowHeight = 0.0f;
     m_hasWindowSizeSnapshot = false;
     m_registeredRenderObjects.clear();
+    m_registeredViewportPassGraphs.clear();
+    m_renderViewportPassGraphRevision = 1;
     m_initialized = false;
 }
 
@@ -1023,7 +1390,7 @@ bool RendererSystem::EnsureDefaultMaterials()
     }
 
     auto GBufferMaterial = std::make_shared<SnAPI::Graphics::GBufferMaterial>("DefaultGBufferMaterial");
-    GBufferMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlbedoMap, true);
+    GBufferMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlbedoMap, false);
     GBufferMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::NormalMap, false);
     GBufferMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::MetalnessMap, false);
     GBufferMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::RoughnessMap, false);
@@ -1273,7 +1640,8 @@ bool RendererSystem::EnsureUiMaterialResources()
     return true;
 }
 
-std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMaterialForTexture(const std::uint32_t TextureId)
+std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMaterialForTexture(const SnAPI::UI::UIContext& Context,
+                                                                                                const std::uint32_t TextureId)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!EnsureUiMaterialResources())
@@ -1286,12 +1654,15 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         return m_uiFallbackMaterialInstance;
     }
 
-    if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureId); MaterialIt != m_uiTextureMaterialInstances.end())
+    const UiTextureCacheKey TextureCacheKey{&Context, TextureId};
+
+    if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
+        MaterialIt != m_uiTextureMaterialInstances.end())
     {
         return MaterialIt->second;
     }
 
-    auto PendingIt = m_uiPendingTextureUploads.find(TextureId);
+    auto PendingIt = m_uiPendingTextureUploads.find(TextureCacheKey);
     if (PendingIt == m_uiPendingTextureUploads.end())
     {
         return m_uiFallbackMaterialInstance;
@@ -1319,8 +1690,8 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     }
 
     MaterialInstance->Texture("Material_Texture", Texture.get());
-    m_uiTextures[TextureId] = std::move(Texture);
-    m_uiTextureMaterialInstances[TextureId] = MaterialInstance;
+    m_uiTextures[TextureCacheKey] = std::move(Texture);
+    m_uiTextureMaterialInstances[TextureCacheKey] = MaterialInstance;
     m_uiPendingTextureUploads.erase(PendingIt);
     return MaterialInstance;
 }
@@ -1378,6 +1749,7 @@ void RendererSystem::FlushQueuedUiPackets()
     if (!m_graphics || !EnsureUiMaterialResources())
     {
         m_uiQueuedRects.clear();
+        m_uiPacketsQueuedThisFrame = false;
         return;
     }
 
@@ -1418,7 +1790,14 @@ void RendererSystem::FlushQueuedUiPackets()
         }
         else
         {
-            MaterialInstance = ResolveUiMaterialForTexture(Entry.TextureId);
+            if (Entry.Context)
+            {
+                MaterialInstance = ResolveUiMaterialForTexture(*Entry.Context, Entry.TextureId);
+            }
+            else
+            {
+                MaterialInstance = m_uiFallbackMaterialInstance;
+            }
         }
 
         if (!MaterialInstance)
@@ -1426,10 +1805,11 @@ void RendererSystem::FlushQueuedUiPackets()
             MaterialInstance = m_uiFallbackMaterialInstance;
         }
 
-        m_graphics->DrawTexturedRectangle(Rect, MaterialInstance, true);
+        m_graphics->DrawTexturedRectangleForViewport(static_cast<SnAPI::Graphics::RenderViewportID>(Entry.ViewportID), Rect, MaterialInstance, true);
     }
 
     m_uiQueuedRects.clear();
+    m_uiPacketsQueuedThisFrame = false;
 }
 #endif
 
@@ -1510,23 +1890,107 @@ bool RendererSystem::CreateWindowResources()
     return true;
 }
 
-bool RendererSystem::RegisterDefaultPassGraph()
+bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t ViewportID,
+                                                             const ERenderViewportPassGraphPreset Preset,
+                                                             const bool TrackDefaultPassPointers)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    if (m_passGraphRegistered)
-    {
-        return true;
-    }
-    if (!m_graphics)
-    {
-        return false;
-    }
-    if (m_settings.CreateDefaultLighting && !EnsureDefaultLighting())
+    if (!m_graphics || ViewportID == 0)
     {
         return false;
     }
 
     using namespace SnAPI::Graphics;
+    const auto RendererViewportID = static_cast<RenderViewportID>(ViewportID);
+    const bool ViewportExists = m_graphics->GetRenderViewportConfig(RendererViewportID).has_value();
+    if (!ViewportExists)
+    {
+        SNAPI_RENDERER_LOG_WARNING("Cannot register pass graph preset: render viewport %llu does not exist.",
+                                   static_cast<unsigned long long>(ViewportID));
+        return false;
+    }
+
+    const auto RefreshTrackedPassPointers = [this, RendererViewportID, TrackDefaultPassPointers]() {
+        if (!TrackDefaultPassPointers || !m_graphics)
+        {
+            return;
+        }
+
+        ResetPassPointers();
+        m_gbufferPass = static_cast<GBufferPass*>(m_graphics->GetRenderPass(RendererViewportID, ERenderPassType::GBuffer));
+        m_ssaoPass = static_cast<SSAOPass*>(m_graphics->GetRenderPass(RendererViewportID, ERenderPassType::SSAO));
+        m_ssrPass = static_cast<SSRPass*>(m_graphics->GetRenderPass(RendererViewportID, ERenderPassType::SSR));
+        m_bloomPass = static_cast<BloomPass*>(m_graphics->GetRenderPass(RendererViewportID, ERenderPassType::Bloom));
+    };
+
+    if (const auto ExistingIt = m_registeredViewportPassGraphs.find(ViewportID);
+        ExistingIt != m_registeredViewportPassGraphs.end())
+    {
+        if (ExistingIt->second == Preset)
+        {
+            RefreshTrackedPassPointers();
+            if (TrackDefaultPassPointers && Preset != ERenderViewportPassGraphPreset::None)
+            {
+                m_passGraphRegistered = true;
+            }
+            return true;
+        }
+
+        SNAPI_RENDERER_LOG_WARNING("Render viewport %llu already has pass graph preset %u; refusing to replace with %u.",
+                                   static_cast<unsigned long long>(ViewportID),
+                                   static_cast<unsigned>(ExistingIt->second),
+                                   static_cast<unsigned>(Preset));
+        return false;
+    }
+
+    if (Preset == ERenderViewportPassGraphPreset::None)
+    {
+        m_registeredViewportPassGraphs.emplace(ViewportID, Preset);
+        return true;
+    }
+
+    if (Preset == ERenderViewportPassGraphPreset::UiPresentOnly)
+    {
+        auto UIPassProperties = PassProperties{
+            {AutoGeneratedPass::PropertyNames::PassName.data(), "UI Pass"},
+            {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(), "UIShadingModel"},
+            {AutoGeneratedPass::PropertyNames::MaterialsModule.data(), "DefaultUIMaterial"},
+        };
+
+        auto PresentPassProperties = PassProperties{
+            {AutoGeneratedPass::PropertyNames::PassName.data(), "Present Pass"},
+            {FullScreenPass::PropertyNames::MaterialsShadingModel.data(), "PostProcessShadingModel"},
+            {FullScreenPass::PropertyNames::MaterialsModule.data(), "PassThroughMaterial"},
+            // PassThroughMaterial samples `Composite_Out`; in UI-only preset we remap that
+            // DAG input to the UI pass output (`UI_Out`) so Present remains reusable.
+            {AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data(),
+             ResourceNameMappings{{"Composite_Out", "UI_Out"}}},
+        };
+
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<UIPass>(std::move(UIPassProperties)));
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<PresentPass>(std::move(PresentPassProperties)));
+
+        m_registeredViewportPassGraphs.emplace(ViewportID, Preset);
+        m_graphics->RequestFrameGraphRebuild(RendererViewportID);
+        ++m_renderViewportPassGraphRevision;
+        RefreshTrackedPassPointers();
+        if (TrackDefaultPassPointers)
+        {
+            m_passGraphRegistered = true;
+        }
+        return true;
+    }
+
+    if (Preset != ERenderViewportPassGraphPreset::DefaultWorld)
+    {
+        SNAPI_RENDERER_LOG_WARNING("Unsupported viewport pass graph preset value %u.", static_cast<unsigned>(Preset));
+        return false;
+    }
+
+    if (m_settings.CreateDefaultLighting && !EnsureDefaultLighting())
+    {
+        return false;
+    }
 
     auto GBufferPassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "GBuffer Pass"},
@@ -1588,9 +2052,14 @@ bool RendererSystem::RegisterDefaultPassGraph()
 
     auto Shadow = std::make_unique<ShadowPass>();
     Shadow->SetLightManager(m_lightManager.get());
-    m_graphics->RegisterPass(std::move(Shadow));
+    m_graphics->RegisterPass(RendererViewportID, std::move(Shadow));
 
-    m_gbufferPass = static_cast<GBufferPass*>(m_graphics->RegisterPass(std::make_unique<GBufferPass>(std::move(GBufferPassProperties))));
+    auto* RegisteredGBufferPass = static_cast<GBufferPass*>(
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<GBufferPass>(std::move(GBufferPassProperties))));
+    if (TrackDefaultPassPointers)
+    {
+        m_gbufferPass = RegisteredGBufferPass;
+    }
 
     if (m_settings.EnableSsao)
     {
@@ -1603,14 +2072,18 @@ bool RendererSystem::RegisterDefaultPassGraph()
         SSAO->SetStepsPerSlice(6);
         SSAO->SetTemporalBlendFactor(0.01f);
         SSAO->SetDisocclusionThreshold(0.02f);
-        m_ssaoPass = static_cast<SSAOPass*>(m_graphics->RegisterPass(std::move(SSAO)));
+        auto* RegisteredSSAOPass = static_cast<SSAOPass*>(m_graphics->RegisterPass(RendererViewportID, std::move(SSAO)));
+        if (TrackDefaultPassPointers)
+        {
+            m_ssaoPass = RegisteredSSAOPass;
+        }
     }
 
     auto HiZPassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "HiZ Pass"},
         {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
          DepthConfig{.WriteDepth = false, .SampleDepth = true, .DepthTest = false, .ReadResourceName = "GBuffer_Depth", .ReadLayout = EImageLayout::DepthStencilReadOnlyOptimal}}};
-    m_graphics->RegisterPass(std::make_unique<HiZPass>(std::move(HiZPassProperties)));
+    m_graphics->RegisterPass(RendererViewportID, std::make_unique<HiZPass>(std::move(HiZPassProperties)));
 
     if (m_settings.EnableSsr)
     {
@@ -1625,29 +2098,33 @@ bool RendererSystem::RegisterDefaultPassGraph()
         SSR->SetMaxSteps(32);
         SSR->SetThickness(0.015f);
         SSR->SetMaxDistance(0.25);
-        m_ssrPass = static_cast<SSRPass*>(m_graphics->RegisterPass(std::move(SSR)));
+        auto* RegisteredSSRPass = static_cast<SSRPass*>(m_graphics->RegisterPass(RendererViewportID, std::move(SSR)));
+        if (TrackDefaultPassPointers)
+        {
+            m_ssrPass = RegisteredSSRPass;
+        }
 
         auto SSRCompositePassProperties = PassProperties{
             {AutoGeneratedPass::PropertyNames::PassName.data(), "SSR Composite Pass"},
             {FullScreenPass::PropertyNames::MaterialsShadingModel.data(), "PostProcessShadingModel"},
             {FullScreenPass::PropertyNames::MaterialsModule.data(), "SSRCompositeMaterial"},
         };
-        m_graphics->RegisterPass(std::make_unique<CompositePass>(std::move(SSRCompositePassProperties)));
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<CompositePass>(std::move(SSRCompositePassProperties)));
     }
 
     auto DeferredShading = std::make_unique<DeferredShadingPass>(std::move(ShadingPassProperties));
     DeferredShading->SetLightManager(m_lightManager.get());
-    m_graphics->RegisterPass(std::move(DeferredShading));
+    m_graphics->RegisterPass(RendererViewportID, std::move(DeferredShading));
 
-    m_graphics->RegisterPass(std::make_unique<ToneMapPass>(std::move(ToneMapPassProperties)));
-    m_graphics->RegisterPass(std::make_unique<CompositePass>(std::move(CompositePassProperties)));
-    m_graphics->RegisterPass(std::make_unique<UIPass>(std::move(UIPassProperties)));
-    m_graphics->RegisterPass(std::make_unique<PresentPass>(std::move(PresentPassProperties)));
+    m_graphics->RegisterPass(RendererViewportID, std::make_unique<ToneMapPass>(std::move(ToneMapPassProperties)));
+    m_graphics->RegisterPass(RendererViewportID, std::make_unique<CompositePass>(std::move(CompositePassProperties)));
+    m_graphics->RegisterPass(RendererViewportID, std::make_unique<UIPass>(std::move(UIPassProperties)));
+    m_graphics->RegisterPass(RendererViewportID, std::make_unique<PresentPass>(std::move(PresentPassProperties)));
 
     if (m_settings.EnableAtmosphere)
     {
-        m_graphics->RegisterPass(std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties)));
-        m_graphics->RegisterPass(std::make_unique<CompositePass>(std::move(AtmosphereCompositePassProperties)));
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties)));
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<CompositePass>(std::move(AtmosphereCompositePassProperties)));
     }
 
     if (m_settings.EnableBloom)
@@ -1657,12 +2134,39 @@ bool RendererSystem::RegisterDefaultPassGraph()
         };
         auto Bloom = std::make_unique<BloomPass>(std::move(BloomPassProperties));
         Bloom->SetMipCount(5);
-        m_bloomPass = static_cast<BloomPass*>(m_graphics->RegisterPass(std::move(Bloom)));
+        auto* RegisteredBloomPass = static_cast<BloomPass*>(m_graphics->RegisterPass(RendererViewportID, std::move(Bloom)));
+        if (TrackDefaultPassPointers)
+        {
+            m_bloomPass = RegisteredBloomPass;
+        }
     }
 
-    m_graphics->RequestFrameGraphRebuild();
-    m_passGraphRegistered = true;
+    m_registeredViewportPassGraphs.emplace(ViewportID, Preset);
+    m_graphics->RequestFrameGraphRebuild(RendererViewportID);
+    ++m_renderViewportPassGraphRevision;
+    RefreshTrackedPassPointers();
+    if (TrackDefaultPassPointers)
+    {
+        m_passGraphRegistered = true;
+    }
     return true;
+}
+
+bool RendererSystem::RegisterDefaultPassGraph()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    if (m_passGraphRegistered)
+    {
+        return true;
+    }
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    m_graphics->UseDefaultViewport(true);
+    const auto DefaultViewportID = static_cast<std::uint64_t>(m_graphics->DefaultRenderViewportID());
+    return RegisterRenderViewportPassGraphUnlocked(DefaultViewportID, ERenderViewportPassGraphPreset::DefaultWorld, true);
 }
 
 void RendererSystem::ResetPassPointers()
@@ -1673,7 +2177,7 @@ void RendererSystem::ResetPassPointers()
     m_gbufferPass = nullptr;
 }
 
-    const Graphics::LightManager* RendererSystem::LightManager()const
+const Graphics::LightManager* RendererSystem::LightManager() const
 {
     return m_lightManager.get();
 }

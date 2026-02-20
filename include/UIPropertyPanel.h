@@ -83,7 +83,7 @@ private:
   void BuildTypeIntoContainer(
     SnAPI::UI::ElementId Parent,
     const TypeId& Type,
-    std::vector<FieldPathEntry> PathPrefix,
+    const std::vector<FieldPathEntry>& PathPrefix,
     int Depth);
   void AddFieldEditor(
     SnAPI::UI::ElementId Parent,

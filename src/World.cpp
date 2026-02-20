@@ -235,23 +235,38 @@ void World::EndFrame()
 #if defined(SNAPI_GF_ENABLE_UI)
     if (m_rendererSystem.IsInitialized() && m_uiSystem.IsInitialized())
     {
-        if (auto* UiContext = m_uiSystem.Context())
-        {
-            if (auto* FontFace = m_rendererSystem.EnsureDefaultFontFace())
+        auto BindFontMetrics = [&](SnAPI::UI::UIContext* UiContext, SnAPI::UI::IFontMetrics* Metrics) {
+            if (UiContext)
             {
-                static UiFontMetricsAdapter FontMetricsAdapter{};
-                FontMetricsAdapter.Bind(FontFace);
-                UiContext->GetPacketWriter().SetFontMetrics(&FontMetricsAdapter);
+                UiContext->GetPacketWriter().SetFontMetrics(Metrics);
             }
-            else
-            {
-                UiContext->GetPacketWriter().SetFontMetrics(nullptr);
-            }
+        };
 
-            SnAPI::UI::RenderPacketList UiPackets{};
-            if (auto BuildPacketsResult = m_uiSystem.BuildRenderPackets(UiPackets); BuildPacketsResult)
+        SnAPI::UI::IFontMetrics* Metrics = nullptr;
+        static UiFontMetricsAdapter FontMetricsAdapter{};
+        if (auto* FontFace = m_rendererSystem.EnsureDefaultFontFace())
+        {
+            FontMetricsAdapter.Bind(FontFace);
+            Metrics = &FontMetricsAdapter;
+        }
+
+        const auto ContextIds = m_uiSystem.ContextIds();
+        for (const auto ContextId : ContextIds)
+        {
+            BindFontMetrics(m_uiSystem.Context(ContextId), Metrics);
+        }
+
+        std::vector<UISystem::ViewportPacketBatch> ViewportBatches{};
+        if (auto BuildViewportPacketsResult = m_uiSystem.BuildBoundViewportRenderPackets(ViewportBatches); BuildViewportPacketsResult)
+        {
+            for (auto& Batch : ViewportBatches)
             {
-                (void)m_rendererSystem.QueueUiRenderPackets(*UiContext, UiPackets);
+                if (!Batch.ContextPtr || Batch.Viewport == 0)
+                {
+                    continue;
+                }
+
+                (void)m_rendererSystem.QueueUiRenderPackets(Batch.Viewport, *Batch.ContextPtr, Batch.Packets);
             }
         }
     }
@@ -315,6 +330,21 @@ std::vector<NodeHandle> World::Levels() const
         }
     });
     return Result;
+}
+
+void World::SetGameplayHost(GameplayHost* Host)
+{
+    m_gameplayHost = Host;
+}
+
+GameplayHost* World::GameplayHostPtr()
+{
+    return m_gameplayHost;
+}
+
+const GameplayHost* World::GameplayHostPtr() const
+{
+    return m_gameplayHost;
 }
 
 JobSystem& World::Jobs()

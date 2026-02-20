@@ -8,6 +8,7 @@
 #include <string>
 
 #include "Expected.h"
+#include "GameplayHost.h"
 #include "World.h"
 
 namespace SnAPI::GameFramework
@@ -53,6 +54,7 @@ struct GameRuntimeSettings
     std::string WorldName = "World"; /**< @brief Name assigned to the created world instance. */
     bool RegisterBuiltins = true; /**< @brief Register built-in reflection/serialization types once during init. */
     GameRuntimeTickSettings Tick{}; /**< @brief Tick/lifecycle policy for `Update`. */
+    std::optional<GameRuntimeGameplaySettings> Gameplay{}; /**< @brief Optional high-level gameplay orchestration settings. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     std::optional<GameRuntimeInputSettings> Input{}; /**< @brief Optional input bootstrap; nullopt keeps world input subsystem uninitialized. */
 #endif
@@ -67,6 +69,13 @@ struct GameRuntimeSettings
 #endif
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     std::optional<GameRuntimeRendererSettings> Renderer{}; /**< @brief Optional renderer bootstrap; nullopt = no world renderer backend. */
+    bool AutoExitOnWindowClose = true; /**< @brief Return `false` from `Update` when renderer window close is requested/observed. */
+#endif
+#if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_UI)
+    bool AutoForwardInputEventsToUi = true; /**< @brief Forward normalized input events to `UISystem` automatically each frame. */
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+    bool AutoUpdateUiDpiScaleFromWindow = false; /**< @brief Update UI DPI from the platform window display scale when available. */
 #endif
 };
 
@@ -75,7 +84,7 @@ struct GameRuntimeSettings
  * @remarks
  * Primary goal: remove boilerplate from apps/examples by providing:
  * - `Init(Settings)` for world + optional network/session setup
- * - `Update(DeltaSeconds)` for frame orchestration (pump/tick/end-frame)
+ * - `Update(DeltaSeconds)` for frame orchestration + app-loop continuation signal
  *
  * Ownership:
  * - owns `World`
@@ -107,18 +116,17 @@ public:
     /**
      * @brief Run one application frame.
      * @param DeltaSeconds Frame delta time.
+     * @return `true` to continue running; `false` when runtime requests app exit.
      * @remarks
      * Update order:
      * 1. optional fixed ticks (accumulator)
      * 2. variable tick
      * 3. optional late tick
      * 4. optional end-frame
-     * 5. optional frame pacing (max-FPS cap while VSync is off)
-     *
-     * Input pumping, UI ticking, and network session pumping are handled by
-     * `World` lifecycle methods, not by `GameRuntime`.
+     * 5. optional runtime platform/input routing (close request + UI input forwarding)
+     * 6. optional frame pacing (max-FPS cap while VSync is off)
      */
-    void Update(float DeltaSeconds);
+    bool Update(float DeltaSeconds);
 
     /**
      * @brief Get mutable world pointer.
@@ -149,6 +157,44 @@ public:
      */
     const GameRuntimeSettings& Settings() const;
 
+    /**
+     * @brief Access gameplay host.
+     * @return Gameplay host pointer or nullptr when gameplay is not configured.
+     */
+    GameplayHost* Gameplay();
+    /**
+     * @brief Access gameplay host (const).
+     * @return Gameplay host pointer or nullptr when gameplay is not configured.
+     */
+    const GameplayHost* Gameplay() const;
+
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
+    /**
+     * @brief Bind one renderer viewport to one UI context.
+     * @param ViewportID Target renderer viewport id.
+     * @param ContextID UI context id.
+     * @return Success or error.
+     */
+    Result BindViewportWithUI(std::uint64_t ViewportID, UISystem::ContextId ContextID);
+
+    /**
+     * @brief Remove viewport->UI context binding.
+     * @param ViewportID Target renderer viewport id.
+     * @return Success or error.
+     */
+    Result UnbindViewportFromUI(std::uint64_t ViewportID);
+
+    /**
+     * @brief Query currently bound UI context for one viewport.
+     */
+    std::optional<UISystem::ContextId> BoundUIContext(std::uint64_t ViewportID) const;
+
+    /**
+     * @brief Query currently bound renderer viewport for one UI context.
+     */
+    std::optional<std::uint64_t> BoundViewport(UISystem::ContextId ContextID) const;
+#endif
+
 private:
     using FrameClock = std::chrono::steady_clock;
 
@@ -167,14 +213,30 @@ private:
      */
     bool ShouldCapFrameRate() const;
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    bool ShouldContinueRunning() const;
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER) || (defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_UI))
+    bool ProcessPlatformAndUiInput();
+#endif
+
     static void EnsureBuiltinTypesRegistered();
 
     GameRuntimeSettings m_settings{}; /**< @brief Last initialization settings snapshot. */
     std::unique_ptr<class World> m_world{}; /**< @brief Owned runtime world instance. */
+    std::unique_ptr<GameplayHost> m_gameplayHost{}; /**< @brief Optional gameplay orchestration host. */
     float m_fixedAccumulator = 0.0f; /**< @brief Accumulated fixed-step time. */
     FrameClock::duration m_framePacerStep{}; /**< @brief Current pacing step duration derived from max-FPS setting. */
     FrameClock::time_point m_nextFrameDeadline{}; /**< @brief Next target frame-present deadline used by runtime frame pacer. */
     bool m_framePacerArmed = false; /**< @brief True once pacing deadline baseline has been initialized. */
+#if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_UI)
+    bool m_uiLeftDown = false; /**< @brief Runtime-cached UI pointer left-button state for forwarded input. */
+    bool m_uiRightDown = false; /**< @brief Runtime-cached UI pointer right-button state for forwarded input. */
+    bool m_uiMiddleDown = false; /**< @brief Runtime-cached UI pointer middle-button state for forwarded input. */
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+    float m_uiDpiScaleCache = 0.0f; /**< @brief Last DPI scale pushed into `UISystem`; avoids redundant updates. */
+#endif
 };
 
 } // namespace SnAPI::GameFramework

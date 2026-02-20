@@ -42,6 +42,19 @@ using SnAPI::Networking::NetConnectionHandle;
 
 namespace
 {
+thread_local std::optional<NetConnectionHandle> g_currentRpcConnection{};
+}
+
+namespace NetRpcInvocationContext
+{
+std::optional<NetConnectionHandle> CurrentConnection()
+{
+    return g_currentRpcConnection;
+}
+}
+
+namespace
+{
 using SnAPI::Networking::Byte;
 using SnAPI::Networking::ByteSpan;
 using SnAPI::Networking::ConstByteSpan;
@@ -116,6 +129,24 @@ public:
         char* Begin = const_cast<char*>(reinterpret_cast<const char*>(Data));
         setg(Begin, Begin, Begin + static_cast<std::streamsize>(Size));
     }
+};
+
+class ScopedRpcConnection final
+{
+public:
+    explicit ScopedRpcConnection(const NetConnectionHandle Connection)
+        : m_previous(g_currentRpcConnection)
+    {
+        g_currentRpcConnection = Connection;
+    }
+
+    ~ScopedRpcConnection()
+    {
+        g_currentRpcConnection = m_previous;
+    }
+
+private:
+    std::optional<NetConnectionHandle> m_previous{};
 };
 
 /**
@@ -661,7 +692,7 @@ const MethodInfo* NetRpcBridge::FindRpcMethod(const TypeId& Type,
     return nullptr;
 }
 
-NetRpcResponse NetRpcBridge::HandleRequest(NetConnectionHandle,
+NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
                                            const NetRpcRequest& RequestValue)
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
@@ -685,15 +716,77 @@ NetRpcResponse NetRpcBridge::HandleRequest(NetConnectionHandle,
     }
 
     const auto& Entry = MethodIt->second;
+    auto ResolveNodeInGraph = [&](const Uuid& TargetId) -> BaseNode* {
+        if (!m_graph || TargetId.is_nil())
+        {
+            return nullptr;
+        }
+
+        auto HandleResult = m_graph->NodeHandleByIdSlow(TargetId);
+        if (!HandleResult)
+        {
+            return nullptr;
+        }
+
+        return HandleResult.value().Borrowed();
+    };
+
+    auto ResolveComponentInGraph = [&](const Uuid& TargetId) -> IComponent* {
+        if (!m_graph || TargetId.is_nil())
+        {
+            return nullptr;
+        }
+
+        IComponent* Found = nullptr;
+        m_graph->NodePool().ForEach([&](const NodeHandle& OwnerHandle, BaseNode& Node) {
+            if (Found != nullptr)
+            {
+                return;
+            }
+
+            for (IComponentStorage* Storage : Node.ComponentStorages())
+            {
+                if (!Storage)
+                {
+                    continue;
+                }
+
+                auto* Component = static_cast<IComponent*>(Storage->Borrowed(OwnerHandle));
+                if (!Component)
+                {
+                    continue;
+                }
+                if (Component->Id() != TargetId)
+                {
+                    continue;
+                }
+
+                Found = Component;
+                return;
+            }
+        });
+
+        return Found;
+    };
+
     void* Instance = nullptr;
     if (RequestValue.TargetKind == static_cast<std::uint8_t>(ENetObjectKind::Node))
     {
         auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(RequestValue.TargetId);
+        if (!Node || Node->OwnerGraph() != m_graph)
+        {
+            Node = ResolveNodeInGraph(RequestValue.TargetId);
+        }
         Instance = Node;
     }
     else if (RequestValue.TargetKind == static_cast<std::uint8_t>(ENetObjectKind::Component))
     {
         auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(RequestValue.TargetId);
+        auto* OwnerNode = Component ? Component->OwnerNode() : nullptr;
+        if (!Component || !OwnerNode || OwnerNode->OwnerGraph() != m_graph)
+        {
+            Component = ResolveComponentInGraph(RequestValue.TargetId);
+        }
         Instance = Component;
     }
 
@@ -717,6 +810,7 @@ NetRpcResponse NetRpcBridge::HandleRequest(NetConnectionHandle,
     TExpected<Variant> InvokeResult = std::unexpected(MakeError(EErrorCode::InternalError, "RPC invoke failed"));
     try
     {
+        ScopedRpcConnection RpcScope(Handle);
         InvokeResult = Entry.Method.Invoke(Instance, ArgsResult.value());
     }
     catch (const std::exception&)

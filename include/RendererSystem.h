@@ -2,6 +2,7 @@
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
+#include <cstddef>
 #include <cstdint>
 #include "GameThreading.h"
 #include <functional>
@@ -10,6 +11,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace SnAPI::Graphics
@@ -28,6 +30,7 @@ class SSRPass;
 class BloomPass;
 class GBufferPass;
 class FontFace;
+class IHighLevelPass;
 struct IGPUImage;
 } // namespace SnAPI::Graphics
 
@@ -82,6 +85,16 @@ struct RendererBootstrapSettings
     std::string DefaultFontPath = "/usr/share/fonts/TTF/Arial.TTF"; /**< @brief Optional default font path; fallback list is used when unavailable. */
     std::uint32_t DefaultFontSize = 24; /**< @brief Default font pixel size. */
     bool CreateDefaultMaterials = true; /**< @brief Build default GBuffer + Shadow materials for mesh components. */
+};
+
+/**
+ * @brief Built-in pass graph presets for virtual render viewports.
+ */
+enum class ERenderViewportPassGraphPreset : uint8_t
+{
+    None = 0, /**< @brief Do not auto-register any passes. */
+    UiPresentOnly, /**< @brief Register only UI + Present passes (editor shell style viewport). */
+    DefaultWorld /**< @brief Register default world stack (shadow/gbuffer/deferred/post/ui/present + optional effects). */
 };
 
 /**
@@ -195,6 +208,19 @@ public:
     bool ClearViewPort();
 
     /**
+     * @brief Enable or disable renderer default viewport runtime (ID = `DefaultRenderViewportID()`).
+     * @param Enabled True to enable/create default viewport; false to disable/remove it.
+     * @return True when renderer is initialized and state was applied.
+     */
+    bool UseDefaultRenderViewport(bool Enabled = true);
+
+    /**
+     * @brief Query whether the renderer default viewport runtime is currently active.
+     * @return True when default viewport runtime exists and is enabled for use.
+     */
+    [[nodiscard]] bool IsUsingDefaultRenderViewport() const;
+
+    /**
      * @brief Set a pass-specific viewport override.
      * @param PassType Render pass type to override.
      * @param ViewPort Top-left pixel viewport rectangle for that pass.
@@ -214,6 +240,115 @@ public:
      * @return True when renderer is initialized and overrides were cleared.
      */
     bool ClearPassViewPorts();
+
+    /**
+     * @brief Create a new virtual render viewport.
+     * @param Name Debug/display name for viewport runtime.
+     * @param X Output rect X (window-space).
+     * @param Y Output rect Y (window-space).
+     * @param Width Output rect width (window-space).
+     * @param Height Output rect height (window-space).
+     * @param RenderWidth Local render extent width.
+     * @param RenderHeight Local render extent height.
+     * @param Camera Optional viewport camera override (nullptr = use active camera).
+     * @param Enabled Whether the viewport is enabled.
+     * @param OutViewportID Created viewport ID on success.
+     * @return True when viewport was created.
+     */
+    bool CreateRenderViewport(std::string Name,
+                              float X,
+                              float Y,
+                              float Width,
+                              float Height,
+                              std::uint32_t RenderWidth,
+                              std::uint32_t RenderHeight,
+                              SnAPI::Graphics::ICamera* Camera,
+                              bool Enabled,
+                              std::uint64_t& OutViewportID);
+
+    /**
+     * @brief Update an existing virtual render viewport configuration.
+     * @return True when viewport config was updated.
+     */
+    bool UpdateRenderViewport(std::uint64_t ViewportID,
+                              std::string Name,
+                              float X,
+                              float Y,
+                              float Width,
+                              float Height,
+                              std::uint32_t RenderWidth,
+                              std::uint32_t RenderHeight,
+                              SnAPI::Graphics::ICamera* Camera,
+                              bool Enabled);
+
+    /**
+     * @brief Destroy a virtual render viewport.
+     * @param ViewportID Viewport identifier.
+     * @return True when viewport was destroyed.
+     */
+    bool DestroyRenderViewport(std::uint64_t ViewportID);
+
+    /**
+     * @brief Check whether a render viewport currently exists.
+     * @param ViewportID Target viewport identifier.
+     * @return True when viewport exists.
+     */
+    [[nodiscard]] bool HasRenderViewport(std::uint64_t ViewportID) const;
+
+    /**
+     * @brief Register a built-in pass graph preset for a viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Preset Pass-graph preset.
+     * @return True when registration succeeded or was already applied with same preset.
+     */
+    bool RegisterRenderViewportPassGraph(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset);
+
+    /**
+     * @brief Set global DAG input-name remaps for one virtual viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Overrides Mapping pairs {FromName, ToName}.
+     */
+    bool SetRenderViewportGlobalInputNameOverrides(std::uint64_t ViewportID, std::vector<std::pair<std::string, std::string>> Overrides);
+
+    /**
+     * @brief Set global DAG output-name remaps for one virtual viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Overrides Mapping pairs {FromName, ToName}.
+     */
+    bool SetRenderViewportGlobalOutputNameOverrides(std::uint64_t ViewportID, std::vector<std::pair<std::string, std::string>> Overrides);
+
+    /**
+     * @brief Set per-pass DAG input-name remaps for one virtual viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Pass Target pass pointer.
+     * @param Overrides Mapping pairs {FromName, ToName}.
+     */
+    bool SetRenderViewportPassInputNameOverrides(std::uint64_t ViewportID,
+                                                 const SnAPI::Graphics::IHighLevelPass* Pass,
+                                                 std::vector<std::pair<std::string, std::string>> Overrides);
+
+    /**
+     * @brief Set per-pass DAG output-name remaps for one virtual viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Pass Target pass pointer.
+     * @param Overrides Mapping pairs {FromName, ToName}.
+     */
+    bool SetRenderViewportPassOutputNameOverrides(std::uint64_t ViewportID,
+                                                  const SnAPI::Graphics::IHighLevelPass* Pass,
+                                                  std::vector<std::pair<std::string, std::string>> Overrides);
+
+    /**
+     * @brief Clear per-pass DAG name remaps for one virtual viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Pass Target pass pointer.
+     */
+    bool ClearRenderViewportPassNameOverrides(std::uint64_t ViewportID, const SnAPI::Graphics::IHighLevelPass* Pass);
+
+    /**
+     * @brief Clear all DAG name remaps for one virtual viewport.
+     * @param ViewportID Target viewport identifier.
+     */
+    bool ClearRenderViewportNameOverrides(std::uint64_t ViewportID);
 
     /**
      * @brief Register a render object for renderer draw submission.
@@ -251,6 +386,15 @@ public:
     bool ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, bool Visible, bool CastShadows) const;
 
     /**
+     * @brief Monotonic revision for render-viewport pass graph topology changes.
+     * @return Current pass-graph revision value.
+     * @remarks
+     * Components can cache this value to know when viewport pass graphs were added and
+     * pass enable masks should be re-applied to existing render objects.
+     */
+    std::uint64_t RenderViewportPassGraphRevision() const;
+
+    /**
      * @brief Force swapchain recreation for the owned window.
      * @return True when request was applied.
      */
@@ -285,6 +429,7 @@ public:
 #if defined(SNAPI_GF_ENABLE_UI)
     /**
      * @brief Queue one frame of UI render packets for renderer submission.
+     * @param ViewportID Target render viewport id that should consume these packets.
      * @param Context UI context used to resolve packet texture ids into image payloads.
      * @param Packets Frame packet list generated by `UISystem::BuildRenderPackets`.
      * @return True when packets were accepted for the next renderer `EndFrame` submit.
@@ -292,6 +437,14 @@ public:
      * This performs CPU-side translation from SnAPI.UI packet formats into renderer
      * instanced-rectangle draw records and caches texture upload payloads for
      * deferred GPU creation during `EndFrame` after `BeginFrame` is active.
+     */
+    bool QueueUiRenderPackets(std::uint64_t ViewportID, SnAPI::UI::UIContext& Context, const SnAPI::UI::RenderPacketList& Packets);
+
+    /**
+     * @brief Queue one frame of UI render packets for renderer default viewport submission.
+     * @param Context UI context used to resolve packet texture ids into image payloads.
+     * @param Packets Frame packet list generated by `UISystem::BuildRenderPackets`.
+     * @return True when packets were accepted.
      */
     bool QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const SnAPI::UI::RenderPacketList& Packets);
 #endif
@@ -334,12 +487,14 @@ private:
     void FlushQueuedText();
 #if defined(SNAPI_GF_ENABLE_UI)
     bool EnsureUiMaterialResources();
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForTexture(std::uint32_t TextureId);
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForTexture(const SnAPI::UI::UIContext& Context,
+                                                                                    std::uint32_t TextureId);
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiFontMaterialInstance();
     void FlushQueuedUiPackets();
 #endif
     bool CreateWindowResources();
     bool RegisterDefaultPassGraph();
+    bool RegisterRenderViewportPassGraphUnlocked(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset, bool TrackDefaultPassPointers);
     void ResetPassPointers();
 
     struct TextRequest
@@ -350,8 +505,28 @@ private:
     };
 
 #if defined(SNAPI_GF_ENABLE_UI)
+    struct UiTextureCacheKey
+    {
+        const SnAPI::UI::UIContext* Context = nullptr;
+        std::uint32_t TextureId = 0;
+
+        friend bool operator==(const UiTextureCacheKey& Left, const UiTextureCacheKey& Right) = default;
+    };
+
+    struct UiTextureCacheKeyHasher
+    {
+        std::size_t operator()(const UiTextureCacheKey& Key) const noexcept
+        {
+            const std::size_t ContextHash = std::hash<const void*>{}(static_cast<const void*>(Key.Context));
+            const std::size_t TextureHash = std::hash<std::uint32_t>{}(Key.TextureId);
+            return ContextHash ^ (TextureHash + 0x9e3779b97f4a7c15ull + (ContextHash << 6u) + (ContextHash >> 2u));
+        }
+    };
+
     struct QueuedUiRect
     {
+        std::uint64_t ViewportID = 0;
+        const SnAPI::UI::UIContext* Context = nullptr;
         float X = 0.0f;
         float Y = 0.0f;
         float W = 0.0f;
@@ -409,15 +584,18 @@ private:
     std::shared_ptr<SnAPI::Graphics::IGPUImage> m_uiFallbackTexture{}; /**< @brief White 1x1 fallback texture used for rects and missing images. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiFallbackMaterialInstance{}; /**< @brief Material instance bound to fallback white texture. */
     std::unordered_map<SnAPI::Graphics::IGPUImage*, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiFontMaterialInstances{}; /**< @brief Cached immutable UI material instances keyed by font atlas texture pointer. */
-    std::unordered_map<std::uint32_t, std::shared_ptr<SnAPI::Graphics::IGPUImage>> m_uiTextures{}; /**< @brief UI texture-id to GPU image ownership map. */
-    std::unordered_map<std::uint32_t, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiTextureMaterialInstances{}; /**< @brief UI texture-id to renderer material instance map. */
-    std::unordered_map<std::uint32_t, PendingUiTextureUpload> m_uiPendingTextureUploads{}; /**< @brief Deferred CPU-side UI image payloads awaiting GPU upload during active render frame. */
+    std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
+    std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */
+    std::unordered_map<UiTextureCacheKey, PendingUiTextureUpload, UiTextureCacheKeyHasher> m_uiPendingTextureUploads{}; /**< @brief Deferred CPU-side UI image payloads keyed by (UIContext, texture-id). */
     std::vector<QueuedUiRect> m_uiQueuedRects{}; /**< @brief Per-frame translated UI rectangles awaiting renderer draw submission. */
+    bool m_uiPacketsQueuedThisFrame = false; /**< @brief True once at least one UI context queued packets for the current frame. */
 #endif
     float m_lastWindowWidth = 0.0f; /**< @brief Last known window width used for resize detection. */
     float m_lastWindowHeight = 0.0f; /**< @brief Last known window height used for resize detection. */
     bool m_hasWindowSizeSnapshot = false; /**< @brief True after first window-size sample. */
     std::vector<std::weak_ptr<SnAPI::Graphics::IRenderObject>> m_registeredRenderObjects{}; /**< @brief Registered render objects that need end-of-frame state snapshots. */
+    std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset> m_registeredViewportPassGraphs{}; /**< @brief Tracks preset assignment per viewport to prevent duplicate pass registration. */
+    std::uint64_t m_renderViewportPassGraphRevision = 1; /**< @brief Monotonic revision incremented when viewport pass-graph topology changes. */
     bool m_initialized = false; /**< @brief True when backend lifecycle is active through this subsystem. */
 };
 

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -25,6 +26,16 @@ namespace SnAPI::GameFramework
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
 using SnAPI::Networking::NetConnectionHandle;
+
+/**
+ * @brief Accessors for the currently executing reflected RPC invocation context.
+ * @remarks
+ * Context is thread-local and only valid while an incoming RPC is being invoked.
+ */
+namespace NetRpcInvocationContext
+{
+SNAPI_GAMEFRAMEWORK_API std::optional<NetConnectionHandle> CurrentConnection();
+}
 
 /**
  * @brief Status codes for reflection RPC responses.

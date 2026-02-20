@@ -49,8 +49,6 @@ int main(int, char**)
 }
 #else
 
-#include <SDL3/SDL.h>
-
 using namespace SnAPI::GameFramework;
 using namespace SnAPI::Networking;
 
@@ -563,7 +561,7 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
     Settings.Tick.EnableLateTick = true;
     Settings.Tick.EnableEndFrame = true;
     // Keep frame cadence deterministic when VSync is toggled off at runtime.
-    Settings.Tick.MaxFpsWhenVSyncOff = 60.0f;
+    Settings.Tick.MaxFpsWhenVSyncOff = 1000.0f;
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (EnableNetworking)
@@ -642,7 +640,7 @@ GameRuntimeSettings MakeRuntimeSettings(const Args& Parsed,
         RendererSettings.Resizable = true;
         RendererSettings.Visible = true;
         RendererSettings.CreateDefaultLighting = true;
-        RendererSettings.RegisterDefaultPassGraph = true;
+        RendererSettings.RegisterDefaultPassGraph = false;
         RendererSettings.CreateDefaultMaterials = true;
         RendererSettings.CreateDefaultEnvironmentProbe = true;
         RendererSettings.DefaultEnvironmentProbeY = 6360e3f + 1000.0f;
@@ -1283,358 +1281,6 @@ UiViewportTransform ResolveUiViewportTransform(World& Graph)
     return Transform;
 }
 
-void PollRendererEvents(World& Graph, const CameraComponent* Camera, bool& Running)
-{
-    (void)Camera;
-
-#if defined(SNAPI_GF_ENABLE_INPUT)
-    if (Graph.Input().IsInitialized())
-    {
-        static bool UiLeftDown = false;
-        static bool UiRightDown = false;
-        static bool UiMiddleDown = false;
-#if defined(SNAPI_GF_ENABLE_UI)
-        static float UiDpiScaleCache = 0.0f;
-        if (Graph.UI().IsInitialized())
-        {
-            if (const auto* Window = Graph.Renderer().Window())
-            {
-                if (auto* NativeWindow = reinterpret_cast<SDL_Window*>(Window->Handle()))
-                {
-                    const float Scale = SDL_GetWindowDisplayScale(NativeWindow);
-                    if (std::isfinite(Scale) && Scale > 0.0f && std::abs(Scale - UiDpiScaleCache) > 0.0001f)
-                    {
-                        UiDpiScaleCache = Scale;
-                        (void)Graph.UI().SetDpiScale(Scale);
-                    }
-                }
-            }
-        }
-#endif
-
-        if (const auto* Events = Graph.Input().Events())
-        {
-#if defined(SNAPI_GF_ENABLE_UI)
-            const auto MapUiKeyCode = [](const SnAPI::Input::EKey Key) -> uint32_t {
-                switch (Key)
-                {
-                case SnAPI::Input::EKey::Backspace:
-                    return 8u;
-                case SnAPI::Input::EKey::Tab:
-                    return 9u;
-                case SnAPI::Input::EKey::Enter:
-                case SnAPI::Input::EKey::NumpadEnter:
-                    return 13u;
-                case SnAPI::Input::EKey::Escape:
-                    return 27u;
-                case SnAPI::Input::EKey::Space:
-                    return static_cast<uint32_t>(' ');
-                case SnAPI::Input::EKey::A:
-                    return static_cast<uint32_t>('a');
-                case SnAPI::Input::EKey::B:
-                    return static_cast<uint32_t>('b');
-                case SnAPI::Input::EKey::C:
-                    return static_cast<uint32_t>('c');
-                case SnAPI::Input::EKey::D:
-                    return static_cast<uint32_t>('d');
-                case SnAPI::Input::EKey::E:
-                    return static_cast<uint32_t>('e');
-                case SnAPI::Input::EKey::F:
-                    return static_cast<uint32_t>('f');
-                case SnAPI::Input::EKey::G:
-                    return static_cast<uint32_t>('g');
-                case SnAPI::Input::EKey::H:
-                    return static_cast<uint32_t>('h');
-                case SnAPI::Input::EKey::I:
-                    return static_cast<uint32_t>('i');
-                case SnAPI::Input::EKey::J:
-                    return static_cast<uint32_t>('j');
-                case SnAPI::Input::EKey::K:
-                    return static_cast<uint32_t>('k');
-                case SnAPI::Input::EKey::L:
-                    return static_cast<uint32_t>('l');
-                case SnAPI::Input::EKey::M:
-                    return static_cast<uint32_t>('m');
-                case SnAPI::Input::EKey::N:
-                    return static_cast<uint32_t>('n');
-                case SnAPI::Input::EKey::O:
-                    return static_cast<uint32_t>('o');
-                case SnAPI::Input::EKey::P:
-                    return static_cast<uint32_t>('p');
-                case SnAPI::Input::EKey::Q:
-                    return static_cast<uint32_t>('q');
-                case SnAPI::Input::EKey::R:
-                    return static_cast<uint32_t>('r');
-                case SnAPI::Input::EKey::S:
-                    return static_cast<uint32_t>('s');
-                case SnAPI::Input::EKey::T:
-                    return static_cast<uint32_t>('t');
-                case SnAPI::Input::EKey::U:
-                    return static_cast<uint32_t>('u');
-                case SnAPI::Input::EKey::V:
-                    return static_cast<uint32_t>('v');
-                case SnAPI::Input::EKey::W:
-                    return static_cast<uint32_t>('w');
-                case SnAPI::Input::EKey::X:
-                    return static_cast<uint32_t>('x');
-                case SnAPI::Input::EKey::Y:
-                    return static_cast<uint32_t>('y');
-                case SnAPI::Input::EKey::Z:
-                    return static_cast<uint32_t>('z');
-                case SnAPI::Input::EKey::Num0:
-                case SnAPI::Input::EKey::Numpad0:
-                    return static_cast<uint32_t>('0');
-                case SnAPI::Input::EKey::Num1:
-                case SnAPI::Input::EKey::Numpad1:
-                    return static_cast<uint32_t>('1');
-                case SnAPI::Input::EKey::Num2:
-                case SnAPI::Input::EKey::Numpad2:
-                    return static_cast<uint32_t>('2');
-                case SnAPI::Input::EKey::Num3:
-                case SnAPI::Input::EKey::Numpad3:
-                    return static_cast<uint32_t>('3');
-                case SnAPI::Input::EKey::Num4:
-                case SnAPI::Input::EKey::Numpad4:
-                    return static_cast<uint32_t>('4');
-                case SnAPI::Input::EKey::Num5:
-                case SnAPI::Input::EKey::Numpad5:
-                    return static_cast<uint32_t>('5');
-                case SnAPI::Input::EKey::Num6:
-                case SnAPI::Input::EKey::Numpad6:
-                    return static_cast<uint32_t>('6');
-                case SnAPI::Input::EKey::Num7:
-                case SnAPI::Input::EKey::Numpad7:
-                    return static_cast<uint32_t>('7');
-                case SnAPI::Input::EKey::Num8:
-                case SnAPI::Input::EKey::Numpad8:
-                    return static_cast<uint32_t>('8');
-                case SnAPI::Input::EKey::Num9:
-                case SnAPI::Input::EKey::Numpad9:
-                    return static_cast<uint32_t>('9');
-                case SnAPI::Input::EKey::Period:
-                case SnAPI::Input::EKey::NumpadPeriod:
-                    return static_cast<uint32_t>('.');
-                case SnAPI::Input::EKey::Minus:
-                case SnAPI::Input::EKey::NumpadMinus:
-                    return static_cast<uint32_t>('-');
-                case SnAPI::Input::EKey::Equals:
-                    return static_cast<uint32_t>('=');
-                case SnAPI::Input::EKey::LeftBracket:
-                    return static_cast<uint32_t>('[');
-                case SnAPI::Input::EKey::RightBracket:
-                    return static_cast<uint32_t>(']');
-                case SnAPI::Input::EKey::Backslash:
-                    return static_cast<uint32_t>('\\');
-                case SnAPI::Input::EKey::Semicolon:
-                    return static_cast<uint32_t>(';');
-                case SnAPI::Input::EKey::Apostrophe:
-                    return static_cast<uint32_t>('\'');
-                case SnAPI::Input::EKey::Grave:
-                    return static_cast<uint32_t>('`');
-                case SnAPI::Input::EKey::Comma:
-                    return static_cast<uint32_t>(',');
-                case SnAPI::Input::EKey::Slash:
-                    return static_cast<uint32_t>('/');
-                case SnAPI::Input::EKey::Delete:
-                    return 127u;
-                case SnAPI::Input::EKey::Left:
-                    return 1073741904u;
-                case SnAPI::Input::EKey::Right:
-                    return 1073741903u;
-                case SnAPI::Input::EKey::Up:
-                    return 1073741906u;
-                case SnAPI::Input::EKey::Down:
-                    return 1073741905u;
-                case SnAPI::Input::EKey::Home:
-                    return 1073741898u;
-                case SnAPI::Input::EKey::End:
-                    return 1073741901u;
-                case SnAPI::Input::EKey::PageUp:
-                    return 1073741899u;
-                case SnAPI::Input::EKey::PageDown:
-                    return 1073741902u;
-                default:
-                    return static_cast<uint32_t>(Key);
-                }
-            };
-            const auto PushUtf8Codepoints = [&](const std::string& Text) {
-                if (!Graph.UI().IsInitialized())
-                {
-                    return;
-                }
-
-                size_t Index = 0;
-                while (Index < Text.size())
-                {
-                    const unsigned char C0 = static_cast<unsigned char>(Text[Index]);
-                    uint32_t Codepoint = C0;
-                    size_t Advance = 1;
-
-                    if ((C0 & 0xE0u) == 0xC0u && Index + 1 < Text.size())
-                    {
-                        const unsigned char C1 = static_cast<unsigned char>(Text[Index + 1]);
-                        if ((C1 & 0xC0u) == 0x80u)
-                        {
-                            Codepoint = ((C0 & 0x1Fu) << 6u) | (C1 & 0x3Fu);
-                            Advance = 2;
-                        }
-                    }
-                    else if ((C0 & 0xF0u) == 0xE0u && Index + 2 < Text.size())
-                    {
-                        const unsigned char C1 = static_cast<unsigned char>(Text[Index + 1]);
-                        const unsigned char C2 = static_cast<unsigned char>(Text[Index + 2]);
-                        if ((C1 & 0xC0u) == 0x80u && (C2 & 0xC0u) == 0x80u)
-                        {
-                            Codepoint = ((C0 & 0x0Fu) << 12u) | ((C1 & 0x3Fu) << 6u) | (C2 & 0x3Fu);
-                            Advance = 3;
-                        }
-                    }
-                    else if ((C0 & 0xF8u) == 0xF0u && Index + 3 < Text.size())
-                    {
-                        const unsigned char C1 = static_cast<unsigned char>(Text[Index + 1]);
-                        const unsigned char C2 = static_cast<unsigned char>(Text[Index + 2]);
-                        const unsigned char C3 = static_cast<unsigned char>(Text[Index + 3]);
-                        if ((C1 & 0xC0u) == 0x80u && (C2 & 0xC0u) == 0x80u && (C3 & 0xC0u) == 0x80u)
-                        {
-                            Codepoint = ((C0 & 0x07u) << 18u) | ((C1 & 0x3Fu) << 12u) | ((C2 & 0x3Fu) << 6u) |
-                                        (C3 & 0x3Fu);
-                            Advance = 4;
-                        }
-                    }
-
-                    SnAPI::UI::TextInputEvent UiText{};
-                    UiText.Codepoint = Codepoint;
-                    Graph.UI().PushInput(UiText);
-                    Index += Advance;
-                }
-            };
-            const UiViewportTransform UiTransform = ResolveUiViewportTransform(Graph);
-            const auto ToUiPoint = [&](const float WindowX, const float WindowY) {
-                const auto [UiX, UiY] = UiTransform.MapWindowPointToUi(WindowX, WindowY);
-                return SnAPI::UI::UIPoint{UiX, UiY};
-            };
-#endif
-            for (const auto& Event : *Events)
-            {
-                if (Event.Type == SnAPI::Input::EInputEventType::WindowCloseRequested)
-                {
-                    Running = false;
-                    return;
-                }
-
-#if defined(SNAPI_GF_ENABLE_UI)
-                if (!Graph.UI().IsInitialized())
-                {
-                    continue;
-                }
-
-                switch (Event.Type)
-                {
-                case SnAPI::Input::EInputEventType::MouseMove:
-                    if (const auto* MoveData = std::get_if<SnAPI::Input::MouseMoveEvent>(&Event.Data))
-                    {
-                        SnAPI::UI::PointerEvent UiPointer{};
-                        UiPointer.Position = ToUiPoint(MoveData->X, MoveData->Y);
-                        UiPointer.LeftDown = UiLeftDown;
-                        UiPointer.RightDown = UiRightDown;
-                        UiPointer.MiddleDown = UiMiddleDown;
-                        Graph.UI().PushInput(UiPointer);
-                    }
-                    break;
-                case SnAPI::Input::EInputEventType::MouseButtonDown:
-                case SnAPI::Input::EInputEventType::MouseButtonUp:
-                    if (const auto* ButtonData = std::get_if<SnAPI::Input::MouseButtonEvent>(&Event.Data))
-                    {
-                        const bool Down = (Event.Type == SnAPI::Input::EInputEventType::MouseButtonDown);
-                        switch (ButtonData->Button)
-                        {
-                        case SnAPI::Input::EMouseButton::Left:
-                            UiLeftDown = Down;
-                            break;
-                        case SnAPI::Input::EMouseButton::Right:
-                            UiRightDown = Down;
-                            break;
-                        case SnAPI::Input::EMouseButton::Middle:
-                            UiMiddleDown = Down;
-                            break;
-                        default:
-                            break;
-                        }
-
-                        SnAPI::UI::PointerEvent UiPointer{};
-                        UiPointer.LeftDown = UiLeftDown;
-                        UiPointer.RightDown = UiRightDown;
-                        UiPointer.MiddleDown = UiMiddleDown;
-
-                        if (const auto* Snapshot = Graph.Input().Snapshot())
-                        {
-                            UiPointer.Position = ToUiPoint(Snapshot->Mouse().X, Snapshot->Mouse().Y);
-                        }
-
-                        Graph.UI().PushInput(UiPointer);
-                    }
-                    break;
-                case SnAPI::Input::EInputEventType::MouseWheel:
-                    if (const auto* WheelData = std::get_if<SnAPI::Input::MouseWheelEvent>(&Event.Data))
-                    {
-                        SnAPI::UI::WheelEvent UiWheel{};
-                        UiWheel.DeltaX = WheelData->DeltaX;
-                        UiWheel.DeltaY = WheelData->DeltaY;
-                        if (const auto* Snapshot = Graph.Input().Snapshot())
-                        {
-                            UiWheel.Position = ToUiPoint(Snapshot->Mouse().X, Snapshot->Mouse().Y);
-                        }
-                        Graph.UI().PushInput(UiWheel);
-                    }
-                    break;
-                case SnAPI::Input::EInputEventType::KeyDown:
-                case SnAPI::Input::EInputEventType::KeyUp:
-                    if (const auto* KeyData = std::get_if<SnAPI::Input::KeyEvent>(&Event.Data))
-                    {
-                        SnAPI::UI::KeyEvent UiKey{};
-                        UiKey.KeyCode = MapUiKeyCode(KeyData->Key);
-                        UiKey.Down = (Event.Type == SnAPI::Input::EInputEventType::KeyDown);
-                        UiKey.Repeat = KeyData->Repeat;
-                        UiKey.Shift = KeyData->Modifiers.Shift();
-                        UiKey.Ctrl = KeyData->Modifiers.Control();
-                        UiKey.Alt = KeyData->Modifiers.Alt();
-                        Graph.UI().PushInput(UiKey);
-                    }
-                    break;
-                case SnAPI::Input::EInputEventType::TextInput:
-                    if (const auto* TextData = std::get_if<SnAPI::Input::TextInputEvent>(&Event.Data))
-                    {
-                        PushUtf8Codepoints(TextData->Text);
-                    }
-                    break;
-                default:
-                    break;
-                }
-#endif
-            }
-        }
-
-        if (const auto* Snapshot = Graph.Input().Snapshot())
-        {
-            UiLeftDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Left);
-            UiRightDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Right);
-            UiMiddleDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Middle);
-        }
-        return;
-    }
-#endif
-
-    SDL_Event Event{};
-    while (SDL_PollEvent(&Event))
-    {
-        if (Event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED || Event.type == SDL_EVENT_QUIT)
-        {
-            Running = false;
-            return;
-        }
-    }
-}
-
 enum class ERunMode
 {
     Server,
@@ -1697,6 +1343,26 @@ std::string FormatFloat(const float Value, const int Precision = 2)
     return std::string(Buffer);
 }
 
+template <typename TPass>
+TPass* FindViewportPass(SnAPI::Graphics::VulkanGraphicsAPI* GraphicsApi, const SnAPI::Graphics::ERenderPassType PassType)
+{
+    if (!GraphicsApi)
+    {
+        return nullptr;
+    }
+
+    const auto ViewportIds = GraphicsApi->RenderViewportIDs();
+    for (const auto ViewportId : ViewportIds)
+    {
+        if (auto* Pass = dynamic_cast<TPass*>(GraphicsApi->GetRenderPass(ViewportId, PassType)))
+        {
+            return Pass;
+        }
+    }
+
+    return dynamic_cast<TPass*>(GraphicsApi->GetRenderPass(PassType));
+}
+
 template <typename TElement>
 TElement* ResolveUiElement(SnAPI::UI::UIContext& Context, const SnAPI::UI::ElementHandle<TElement>& Handle)
 {
@@ -1756,6 +1422,7 @@ struct MultiplayerHud
     SnAPI::UI::ElementHandle<SnAPI::UI::UIRealtimeGraph> PerformanceGraph{};
     uint32_t FpsSeries = SnAPI::UI::UIRealtimeGraph::InvalidSeries;
     uint32_t FrameTimeSeries = SnAPI::UI::UIRealtimeGraph::InvalidSeries;
+    std::uint64_t RootViewportId = 0;
 };
 
 namespace MultiplayerEditorThemeColors
@@ -1942,7 +1609,8 @@ SnAPI::UI::TPropertyRef<TValue> HudVmProperty(MultiplayerHud& Hud, const SnAPI::
     return SnAPI::UI::TPropertyRef<TValue>(&Hud.ViewModel, Key);
 }
 
-bool BuildMultiplayerHud(World& Graph,
+bool BuildMultiplayerHud(GameRuntime& Runtime,
+                         World& Graph,
                          const ERunMode Mode,
                          const Args& Parsed,
                          MultiplayerHud& OutHud,
@@ -1954,14 +1622,16 @@ bool BuildMultiplayerHud(World& Graph,
         return false;
     }
 
-    auto* Context = Graph.UI().Context();
-    if (!Context)
+    const std::uint64_t RootContextId = Graph.UI().RootContextId();
+    auto* Context = Graph.UI().Context(RootContextId);
+    if (!Context || RootContextId == 0)
     {
         return false;
     }
 
     // External elements are first-class in UIContext through explicit registration.
-    Context->RegisterElementType<UIPropertyPanel>(SnAPI::UI::TypeHash<SnAPI::UI::UIScrollContainer>());
+    (void)Graph.UI().RegisterElementType<UIRenderViewport>(SnAPI::UI::TypeHash<SnAPI::UI::UIPanel>());
+    (void)Graph.UI().RegisterElementType<UIPropertyPanel>(SnAPI::UI::TypeHash<SnAPI::UI::UIScrollContainer>());
 
     auto Root = Context->Root();
     auto& RootPanel = Root.Element();
@@ -1969,13 +1639,58 @@ bool BuildMultiplayerHud(World& Graph,
     RootPanel.Padding().Set(0.0f);
     RootPanel.Gap().Set(0.0f);
 
+    SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel> HudRoot = Root;
+    float InitialWidth = 1280.0f;
+    float InitialHeight = 720.0f;
+    if (const auto* Window = Graph.Renderer().Window())
+    {
+        const auto WindowSize = Window->Size();
+        if (WindowSize.x() > 0.0f && WindowSize.y() > 0.0f)
+        {
+            InitialWidth = WindowSize.x();
+            InitialHeight = WindowSize.y();
+        }
+    }
+
+    if (OutHud.RootViewportId == 0)
+    {
+        std::uint64_t ViewportId = 0;
+        if (!Graph.Renderer().CreateRenderViewport("Multiplayer.RootViewport",
+                                                   0.0f,
+                                                   0.0f,
+                                                   InitialWidth,
+                                                   InitialHeight,
+                                                   static_cast<std::uint32_t>(std::round(InitialWidth)),
+                                                   static_cast<std::uint32_t>(std::round(InitialHeight)),
+                                                   Graph.Renderer().ActiveCamera(),
+                                                   true,
+                                                   ViewportId))
+        {
+            return false;
+        }
+
+        if (!Graph.Renderer().RegisterRenderViewportPassGraph(ViewportId, ERenderViewportPassGraphPreset::DefaultWorld))
+        {
+            return false;
+        }
+
+        OutHud.RootViewportId = ViewportId;
+    }
+
+    if (auto BindRootResult = Runtime.BindViewportWithUI(OutHud.RootViewportId, RootContextId); !BindRootResult)
+    {
+        return false;
+    }
+
+    (void)Graph.UI().SetContextScreenRect(RootContextId, 0.0f, 0.0f, InitialWidth, InitialHeight);
+
     constexpr SnAPI::UI::Color kTitleColor = MultiplayerEditorThemeColors::TitleText;
     constexpr SnAPI::UI::Color kAccentColor = MultiplayerEditorThemeColors::AccentText;
     constexpr SnAPI::UI::Color kPrimaryTextColor = MultiplayerEditorThemeColors::PrimaryText;
     constexpr SnAPI::UI::Color kSecondaryTextColor = MultiplayerEditorThemeColors::SecondaryText;
     constexpr SnAPI::UI::Color kMutedTextColor = MultiplayerEditorThemeColors::MutedText;
 
-    auto Tabs = Root.Add(SnAPI::UI::UIDockZone{});
+    auto Tabs = HudRoot.Add(SnAPI::UI::UIDockZone{});
     auto& TabsElement = Tabs.Element();
     TabsElement.SplitDirection().Set(SnAPI::UI::EDockSplit::Leaf);
     TabsElement.Width().Set(SnAPI::UI::Sizing::Auto());
@@ -2277,15 +1992,13 @@ bool BuildMultiplayerHud(World& Graph,
 
     if (auto* GraphicsApi = Graph.Renderer().Graphics())
     {
-        if (auto* SsaoPass =
-                dynamic_cast<SnAPI::Graphics::SSAOPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSAO)))
+        if (auto* SsaoPass = FindViewportPass<SnAPI::Graphics::SSAOPass>(GraphicsApi, SnAPI::Graphics::ERenderPassType::SSAO))
         {
             SsaoIntensity = SsaoPass->GetIntensity();
             SsaoRadius = SsaoPass->GetRadius();
         }
 
-        if (auto* SsrPass =
-                dynamic_cast<SnAPI::Graphics::SSRPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSR)))
+        if (auto* SsrPass = FindViewportPass<SnAPI::Graphics::SSRPass>(GraphicsApi, SnAPI::Graphics::ERenderPassType::SSR))
         {
             SsrMaxDistance = SsrPass->GetMaxDistance();
             SsrMaxSteps = static_cast<float>(SsrPass->GetMaxSteps());
@@ -2350,7 +2063,7 @@ void UpdateMultiplayerHud(World& Graph,
         return;
     }
 
-    auto* Context = Graph.UI().Context();
+    auto* Context = Graph.UI().Context(Graph.UI().RootContextId());
     if (!Context)
     {
         return;
@@ -2369,6 +2082,26 @@ void UpdateMultiplayerHud(World& Graph,
             if (WindowSize.x() > 1.0f && WindowSize.y() > 1.0f)
             {
                 (void)Graph.UI().SetViewportSize(WindowSize.x(), WindowSize.y());
+            }
+        }
+
+        if (Hud.RootViewportId != 0)
+        {
+            const auto WindowSize = Window->Size();
+            if (WindowSize.x() > 1.0f && WindowSize.y() > 1.0f)
+            {
+                const std::uint64_t RootContextId = Graph.UI().RootContextId();
+                (void)Graph.UI().SetContextScreenRect(RootContextId, 0.0f, 0.0f, WindowSize.x(), WindowSize.y());
+                (void)Graph.Renderer().UpdateRenderViewport(Hud.RootViewportId,
+                                                            "Multiplayer.RootViewport",
+                                                            0.0f,
+                                                            0.0f,
+                                                            WindowSize.x(),
+                                                            WindowSize.y(),
+                                                            static_cast<std::uint32_t>(std::round(WindowSize.x())),
+                                                            static_cast<std::uint32_t>(std::round(WindowSize.y())),
+                                                            Graph.Renderer().ActiveCamera(),
+                                                            true);
             }
         }
     }
@@ -2402,15 +2135,13 @@ void UpdateMultiplayerHud(World& Graph,
 
     if (auto* GraphicsApi = Graph.Renderer().Graphics())
     {
-        if (auto* SsaoPass =
-                dynamic_cast<SnAPI::Graphics::SSAOPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSAO)))
+        if (auto* SsaoPass = FindViewportPass<SnAPI::Graphics::SSAOPass>(GraphicsApi, SnAPI::Graphics::ERenderPassType::SSAO))
         {
             SsaoPass->SetIntensity(SsaoIntensity);
             SsaoPass->SetRadius(SsaoRadius);
         }
 
-        if (auto* SsrPass =
-                dynamic_cast<SnAPI::Graphics::SSRPass*>(GraphicsApi->GetRenderPass(SnAPI::Graphics::ERenderPassType::SSR)))
+        if (auto* SsrPass = FindViewportPass<SnAPI::Graphics::SSRPass>(GraphicsApi, SnAPI::Graphics::ERenderPassType::SSR))
         {
             SsrPass->SetMaxDistance(SsrMaxDistance);
             SsrPass->SetMaxSteps(SsrMaxSteps);
@@ -2513,11 +2244,18 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 
     auto& Graph = Runtime.World();
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (WindowEnabled && Graph.Renderer().IsInitialized())
+    {
+        (void)Graph.Renderer().UseDefaultRenderViewport(false);
+    }
+#endif
+
 #if defined(SNAPI_GF_ENABLE_UI)
     if (WindowEnabled && Graph.UI().IsInitialized())
     {
         HudTheme.Initialize();
-        if (auto* UiContext = Graph.UI().Context())
+        if (auto* UiContext = Graph.UI().Context(Graph.UI().RootContextId()))
         {
             UiContext->SetActiveTheme(&HudTheme);
         }
@@ -2567,7 +2305,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
     return 1;
 #endif
 
-    CameraComponent* Camera = nullptr;
     if (WindowEnabled)
     {
         CameraComponent* FollowCamera = nullptr;
@@ -2578,21 +2315,13 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
         }
 
         FollowCamera = CreateViewCamera(Graph, Player.Handle);
-        //Camera = CreateStationaryObserverCamera(Graph);
-        if (!FollowCamera && !Camera)
+        if (!FollowCamera)
         {
             std::cerr << "Failed to create debug cameras\n";
             return 1;
         }
-        if (!Camera)
-        {
-            Camera = FollowCamera;
-        }
-        else if (FollowCamera)
-        {
-            FollowCamera->SetActive(false);
-            Camera->SetActive(true);
-        }
+
+        FollowCamera->SetActive(true);
 
         (void)Graph.Renderer().LoadDefaultFont("/usr/share/fonts/TTF/Arial.TTF", 20);
     }
@@ -2674,7 +2403,7 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
         }
 #endif
 
-        if (!BuildMultiplayerHud(Graph, Mode, Parsed, Hud, InspectorInstance, InspectorType))
+        if (!BuildMultiplayerHud(Runtime, Graph, Mode, Parsed, Hud, InspectorInstance, InspectorType))
         {
             std::cerr << "Warning: failed to build HUD UI; continuing without UI overlay\n";
         }
@@ -2682,14 +2411,8 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 #endif
 
     
-    bool Running = true;
-    while (Running)
+    while (true)
     {
-        if (WindowEnabled && !Graph.Renderer().HasOpenWindow())
-        {
-            break;
-        }
-
         const auto Now = Clock::now();
         const float DeltaSeconds = std::chrono::duration<float>(Now - Previous).count();
         Previous = Now;
@@ -2780,7 +2503,10 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
         }
 #endif
 
-        Runtime.Update(DeltaSeconds);
+        if (!Runtime.Update(DeltaSeconds))
+        {
+            break;
+        }
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
         const SnAPI::Input::InputSnapshot* InputSnapshot = nullptr;
@@ -2858,8 +2584,6 @@ int RunMode(const Args& Parsed, const ERunMode Mode)
 
         if (WindowEnabled)
         {
-            PollRendererEvents(Graph, Camera, Running);
-
             ++FramesSincePerfLog;
             if (Now >= NextPerfLog)
             {
