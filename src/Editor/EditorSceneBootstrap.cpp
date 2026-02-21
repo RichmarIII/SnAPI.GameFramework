@@ -174,16 +174,13 @@ bool ConfigurePhysics(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
     ColliderSettings.Density = std::max<float>(Spec.Mass, 0.01f);
     ColliderSettings.Friction = Spec.Friction;
     ColliderSettings.Restitution = Spec.Restitution;
+    ColliderSettings.Layer = Spec.BodyType == SnAPI::Physics::EBodyType::Static
+                                 ? CollisionLayerFlags(ECollisionFilterBits::WorldStatic)
+                                 : CollisionLayerFlags(ECollisionFilterBits::WorldDynamic);
+    ColliderSettings.Mask = kCollisionMaskAll;
     ColliderSettings.IsTrigger = false;
 
-    auto RigidBodyResult = Node.Add<RigidBodyComponent>();
-    if (!RigidBodyResult)
-    {
-        return false;
-    }
-
-    auto& RigidBody = *RigidBodyResult;
-    auto& BodySettings = RigidBody.EditSettings();
+    RigidBodyComponent::Settings BodySettings{};
     BodySettings.BodyType = Spec.BodyType;
     BodySettings.Mass = std::max<float>(Spec.Mass, 0.01f);
     BodySettings.EnableCcd = Spec.EnableCcd;
@@ -194,6 +191,13 @@ bool ConfigurePhysics(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
     BodySettings.SyncToPhysics = Spec.BodyType != SnAPI::Physics::EBodyType::Dynamic;
     BodySettings.EnableRenderInterpolation = true;
     BodySettings.AutoDeactivateWhenSleeping = true;
+
+    auto RigidBodyResult = Node.Add<RigidBodyComponent>(BodySettings);
+    if (!RigidBodyResult)
+    {
+        return false;
+    }
+
     return true;
 }
 #endif

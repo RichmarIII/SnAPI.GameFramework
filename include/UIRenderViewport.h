@@ -46,6 +46,7 @@ public:
     SNAPI_PROPERTY_INV(std::string, ViewportName, SnAPI::UI::EInvalidation::Layout);
     SNAPI_PROPERTY_INV(bool, Enabled, SnAPI::UI::EInvalidation::Layout);
     SNAPI_PROPERTY_INV(float, RenderScale, SnAPI::UI::EInvalidation::Layout);
+    SNAPI_PROPERTY_INV(std::int32_t, ViewportIndex, SnAPI::UI::EInvalidation::Layout);
     SNAPI_PROPERTY_INV(ERenderViewportPassGraphPreset, PassGraphPreset, SnAPI::UI::EInvalidation::Layout);
     SNAPI_PROPERTY_INV(bool, AutoRegisterPassGraph, SnAPI::UI::EInvalidation::Layout);
 

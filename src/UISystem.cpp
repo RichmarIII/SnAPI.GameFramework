@@ -459,38 +459,16 @@ void UISystem::PushInput(const SnAPI::UI::PointerEvent& EventValue)
     m_lastPointerPosition = EventValue.Position;
     m_hasLastPointerPosition = true;
 
-    ContextId TargetContext = m_pointerCaptureContext;
-    if (TargetContext == 0 || !m_pointerLeftDown || !FindContextLocked(TargetContext) ||
-        !IsContextPointEligibleLocked(TargetContext, EventValue.Position))
-    {
-        TargetContext = FindDeepestPointerTargetLocked(m_rootContextId, EventValue.Position);
-    }
-    if (TargetContext == 0)
-    {
-        TargetContext = m_rootContextId;
-    }
+    std::vector<ContextId> ContextOrder{};
+    ContextOrder.reserve(m_contextNodes.size());
+    BuildContextOrderLocked(m_rootContextId, ContextOrder);
 
-    if (auto* ContextValue = FindContextLocked(TargetContext))
+    for (const auto ContextIdValue : ContextOrder)
     {
-        ContextValue->PushInput(EventValue);
-    }
-
-    const bool LeftPressedThisEvent = EventValue.LeftDown && !m_pointerLeftDown;
-    const bool RightPressedThisEvent = EventValue.RightDown && !m_pointerRightDown;
-    const bool MiddlePressedThisEvent = EventValue.MiddleDown && !m_pointerMiddleDown;
-    const bool LeftReleasedThisEvent = !EventValue.LeftDown && m_pointerLeftDown;
-
-    if (LeftPressedThisEvent || RightPressedThisEvent || MiddlePressedThisEvent)
-    {
-        m_activeInputContext = TargetContext;
-        if (LeftPressedThisEvent)
+        if (auto* ContextValue = FindContextLocked(ContextIdValue))
         {
-            m_pointerCaptureContext = TargetContext;
+            ContextValue->PushInput(EventValue);
         }
-    }
-    if (LeftReleasedThisEvent)
-    {
-        m_pointerCaptureContext = 0;
     }
 
     m_pointerLeftDown = EventValue.LeftDown;
@@ -507,19 +485,16 @@ void UISystem::PushInput(const SnAPI::UI::KeyEvent& EventValue)
         return;
     }
 
-    ContextId TargetContext = m_activeInputContext;
-    if (TargetContext == 0 || !FindContextLocked(TargetContext))
-    {
-        TargetContext = m_rootContextId;
-    }
-    else if (!IsContextKeyboardEligibleLocked(TargetContext))
-    {
-        TargetContext = m_rootContextId;
-    }
+    std::vector<ContextId> ContextOrder{};
+    ContextOrder.reserve(m_contextNodes.size());
+    BuildContextOrderLocked(m_rootContextId, ContextOrder);
 
-    if (auto* ContextValue = FindContextLocked(TargetContext))
+    for (const auto ContextIdValue : ContextOrder)
     {
-        ContextValue->PushInput(EventValue);
+        if (auto* ContextValue = FindContextLocked(ContextIdValue))
+        {
+            ContextValue->PushInput(EventValue);
+        }
     }
 }
 
@@ -532,19 +507,16 @@ void UISystem::PushInput(const SnAPI::UI::TextInputEvent& EventValue)
         return;
     }
 
-    ContextId TargetContext = m_activeInputContext;
-    if (TargetContext == 0 || !FindContextLocked(TargetContext))
-    {
-        TargetContext = m_rootContextId;
-    }
-    else if (!IsContextKeyboardEligibleLocked(TargetContext))
-    {
-        TargetContext = m_rootContextId;
-    }
+    std::vector<ContextId> ContextOrder{};
+    ContextOrder.reserve(m_contextNodes.size());
+    BuildContextOrderLocked(m_rootContextId, ContextOrder);
 
-    if (auto* ContextValue = FindContextLocked(TargetContext))
+    for (const auto ContextIdValue : ContextOrder)
     {
-        ContextValue->PushInput(EventValue);
+        if (auto* ContextValue = FindContextLocked(ContextIdValue))
+        {
+            ContextValue->PushInput(EventValue);
+        }
     }
 }
 
@@ -560,15 +532,16 @@ void UISystem::PushInput(const SnAPI::UI::WheelEvent& EventValue)
     m_lastPointerPosition = EventValue.Position;
     m_hasLastPointerPosition = true;
 
-    ContextId TargetContext = FindDeepestPointerTargetLocked(m_rootContextId, EventValue.Position);
-    if (TargetContext == 0)
-    {
-        TargetContext = m_rootContextId;
-    }
+    std::vector<ContextId> ContextOrder{};
+    ContextOrder.reserve(m_contextNodes.size());
+    BuildContextOrderLocked(m_rootContextId, ContextOrder);
 
-    if (auto* ContextValue = FindContextLocked(TargetContext))
+    for (const auto ContextIdValue : ContextOrder)
     {
-        ContextValue->PushInput(EventValue);
+        if (auto* ContextValue = FindContextLocked(ContextIdValue))
+        {
+            ContextValue->PushInput(EventValue);
+        }
     }
 }
 

@@ -53,6 +53,7 @@ public:
     explicit RigidBodyComponent(const Settings& Settings)
     {
         m_settings = Settings;
+        m_settingsDirty = true;
     }
 
     /** @brief Access settings (const). */
@@ -64,6 +65,7 @@ public:
     /** @brief Access settings for mutation. */
     Settings& EditSettings()
     {
+        m_settingsDirty = true;
         return m_settings;
     }
 
@@ -138,6 +140,7 @@ private:
     mutable bool m_hasLastPublishedTransform = false; /**< @brief Whether last published transform cache is initialized. */
     mutable SnAPI::Physics::Vec3 m_lastPublishedPhysicsPosition = SnAPI::Physics::Vec3::Zero(); /**< @brief Last transform position written to owner. */
     mutable SnAPI::Physics::Quat m_lastPublishedPhysicsRotation = SnAPI::Physics::Quat::Identity(); /**< @brief Last transform rotation written to owner. */
+    bool m_settingsDirty = true; /**< @brief True when mutable settings were edited and body recreation is required. */
 };
 
 } // namespace SnAPI::GameFramework

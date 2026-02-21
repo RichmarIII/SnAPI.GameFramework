@@ -28,17 +28,17 @@ struct PhysicsBootstrapSettings
     SnAPI::Physics::SceneRoutingDesc Routing{}; /**< @brief Backend routing per physics domain. */
     std::vector<SnAPI::Physics::CouplingDesc> Couplings{}; /**< @brief Optional inter-domain coupling descriptors. */
 
-    std::uint32_t ThreadCount = 0; /**< @brief Optional physics worker-thread override (0 = use scene/default backend behavior). */
+    std::uint32_t ThreadCount{0}; /**< @brief Optional physics worker-thread override (0 = use scene/default backend behavior). */
     std::optional<std::uint32_t> MaxSubStepping{}; /**< @brief Optional simulation substep count override; when set, maps to `Scene.CollisionSteps`. */
 
-    bool TickInFixedTick = true; /**< @brief When true, world fixed tick advances the physics scene. */
-    bool TickInVariableTick = false; /**< @brief When true, world variable tick advances the physics scene. */
+    bool TickInFixedTick{true}; /**< @brief When true, world fixed tick advances the physics scene. */
+    bool TickInVariableTick{false}; /**< @brief When true, world variable tick advances the physics scene. */
 
-    bool EnableFloatingOrigin = true; /**< @brief Use world->physics position offsetting to keep simulation near local origin. */
-    bool AutoRebaseFloatingOrigin = false; /**< @brief Allow automatic rebasing when anchor point drifts beyond threshold. */
+    bool EnableFloatingOrigin{true}; /**< @brief Use world->physics position offsetting to keep simulation near local origin. */
+    bool AutoRebaseFloatingOrigin{true}; /**< @brief Allow automatic rebasing when anchor point drifts beyond threshold. */
     SnAPI::Physics::Scalar FloatingOriginRebaseDistance = static_cast<SnAPI::Physics::Scalar>(512.0); /**< @brief Rebase distance threshold in world units. */
-    bool InitializeFloatingOriginFromFirstBody = true; /**< @brief Initialize floating origin from first world-position conversion call. */
-    SnAPI::Physics::Vec3 InitialFloatingOrigin = SnAPI::Physics::Vec3::Zero(); /**< @brief Initial world origin when auto-init is disabled. */
+    bool InitializeFloatingOriginFromFirstBody{true}; /**< @brief Initialize floating origin from first world-position conversion call. */
+    SnAPI::Physics::Vec3 InitialFloatingOrigin{SnAPI::Physics::Vec3::Zero()}; /**< @brief Initial world origin when auto-init is disabled. */
 };
 
 /**

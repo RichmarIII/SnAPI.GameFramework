@@ -59,6 +59,20 @@ constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
 constexpr float kUiGlobalZBase = 100.0f;
 constexpr float kUiGlobalZStep = 0.0001f;
+constexpr std::uint32_t kUiGradientTextureSize = 128u;
+
+[[nodiscard]] constexpr std::uint32_t PackUiColorRgba8(const SnAPI::UI::Color& Value)
+{
+    return (static_cast<std::uint32_t>(Value.R) << 24u) |
+           (static_cast<std::uint32_t>(Value.G) << 16u) |
+           (static_cast<std::uint32_t>(Value.B) << 8u) |
+           static_cast<std::uint32_t>(Value.A);
+}
+
+[[nodiscard]] constexpr float ClampUnit(const float Value)
+{
+    return std::clamp(Value, 0.0f, 1.0f);
+}
 #endif
 
 float ClampWindowExtent(const float Value)
@@ -165,6 +179,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
+    m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
+    m_uiGradientMaterialInstances = std::move(Other.m_uiGradientMaterialInstances);
     m_uiPendingTextureUploads = std::move(Other.m_uiPendingTextureUploads);
     m_uiQueuedRects = std::move(Other.m_uiQueuedRects);
     m_uiPacketsQueuedThisFrame = Other.m_uiPacketsQueuedThisFrame;
@@ -190,6 +206,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
     Other.m_uiTextureMaterialInstances.clear();
+    Other.m_uiGradientTextures.clear();
+    Other.m_uiGradientMaterialInstances.clear();
     Other.m_uiPendingTextureUploads.clear();
     Other.m_uiQueuedRects.clear();
     Other.m_uiPacketsQueuedThisFrame = false;
@@ -234,6 +252,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
+    m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
+    m_uiGradientMaterialInstances = std::move(Other.m_uiGradientMaterialInstances);
     m_uiPendingTextureUploads = std::move(Other.m_uiPendingTextureUploads);
     m_uiQueuedRects = std::move(Other.m_uiQueuedRects);
     m_uiPacketsQueuedThisFrame = Other.m_uiPacketsQueuedThisFrame;
@@ -259,6 +279,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
     Other.m_uiTextureMaterialInstances.clear();
+    Other.m_uiGradientTextures.clear();
+    Other.m_uiGradientMaterialInstances.clear();
     Other.m_uiPendingTextureUploads.clear();
     Other.m_uiQueuedRects.clear();
     Other.m_uiPacketsQueuedThisFrame = false;
@@ -321,6 +343,8 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_uiFontMaterialInstances.clear();
         m_uiTextures.clear();
         m_uiTextureMaterialInstances.clear();
+        m_uiGradientTextures.clear();
+        m_uiGradientMaterialInstances.clear();
         m_uiPendingTextureUploads.clear();
         m_uiQueuedRects.clear();
         m_uiPacketsQueuedThisFrame = false;
@@ -392,6 +416,8 @@ bool RendererSystem::InitializeUnlocked()
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
     m_uiTextureMaterialInstances.clear();
+    m_uiGradientTextures.clear();
+    m_uiGradientMaterialInstances.clear();
     m_uiPendingTextureUploads.clear();
     m_uiQueuedRects.clear();
     m_uiPacketsQueuedThisFrame = false;
@@ -753,6 +779,28 @@ bool RendererSystem::HasRenderViewport(const std::uint64_t ViewportID) const
     return m_graphics->GetRenderViewportConfig(RendererViewportID).has_value();
 }
 
+bool RendererSystem::SetRenderViewportIndex(const std::uint64_t ViewportID, const std::size_t Index)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return false;
+    }
+
+    return m_graphics->SetRenderViewportIndex(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID), Index);
+}
+
+std::optional<std::size_t> RendererSystem::RenderViewportIndex(const std::uint64_t ViewportID) const
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return std::nullopt;
+    }
+
+    return m_graphics->GetRenderViewportIndex(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID));
+}
+
 bool RendererSystem::RegisterRenderViewportPassGraph(const std::uint64_t ViewportID, const ERenderViewportPassGraphPreset Preset)
 {
     GameLockGuard Lock(m_mutex);
@@ -1074,6 +1122,52 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
         OutRect.BorderA = static_cast<float>(ColorValue.A) * kInv;
     };
 
+    const auto ApplyUiGradient = [](QueuedUiRect& OutRect, const SnAPI::UI::LinearGradient& Gradient) {
+        OutRect.UseGradient = true;
+        OutRect.TextureId = 0;
+        OutRect.UseFontAtlas = false;
+        OutRect.R = 1.0f;
+        OutRect.G = 1.0f;
+        OutRect.B = 1.0f;
+        OutRect.A = 1.0f;
+        OutRect.U0 = 0.0f;
+        OutRect.V0 = 0.0f;
+        OutRect.U1 = 1.0f;
+        OutRect.V1 = 1.0f;
+
+        OutRect.GradientStopCount = static_cast<std::uint8_t>(
+            std::min<std::size_t>(QueuedUiRect::MaxGradientStops, static_cast<std::size_t>(Gradient.StopCount)));
+
+        if (OutRect.GradientStopCount == 0)
+        {
+            OutRect.UseGradient = false;
+            OutRect.R = 0.0f;
+            OutRect.G = 0.0f;
+            OutRect.B = 0.0f;
+            OutRect.A = 0.0f;
+            return;
+        }
+
+        OutRect.GradientStartX = Gradient.StartX;
+        OutRect.GradientStartY = Gradient.StartY;
+        OutRect.GradientEndX = Gradient.EndX;
+        OutRect.GradientEndY = Gradient.EndY;
+
+        for (std::size_t Index = 0; Index < QueuedUiRect::MaxGradientStops; ++Index)
+        {
+            if (Index < OutRect.GradientStopCount)
+            {
+                OutRect.GradientStops[Index] = Gradient.Stops[Index].Position;
+                OutRect.GradientColors[Index] = PackUiColorRgba8(Gradient.Stops[Index].StopColor);
+            }
+            else
+            {
+                OutRect.GradientStops[Index] = 0.0f;
+                OutRect.GradientColors[Index] = 0u;
+            }
+        }
+    };
+
     const auto NormalizeUiScissorMode = [](const SnAPI::UI::EScissorMode Mode) {
         switch (Mode)
         {
@@ -1190,6 +1284,33 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 m_uiQueuedRects.emplace_back(Rect);
                 GlobalZ += kUiGlobalZStep;
                 QueueImageTextureUploadIfNeeded(Rect.TextureId);
+            }
+            continue;
+        }
+
+        if (const auto* Gradients = std::get_if<SnAPI::UI::GradientInstanceSpan>(&Packet.Instances))
+        {
+            for (const auto& Instance : *Gradients)
+            {
+                QueuedUiRect Rect{};
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = Instance.X - ContextOffsetX;
+                Rect.Y = Instance.Y - ContextOffsetY;
+                Rect.W = Instance.W;
+                Rect.H = Instance.H;
+                Rect.CornerRadius = std::max(0.0f, Instance.CornerRadius);
+                Rect.BorderThickness = std::max(0.0f, Instance.BorderThickness);
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiBorderColor(Rect, Instance.Border);
+                ApplyUiGradient(Rect, Instance.Gradient);
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
             }
             continue;
         }
@@ -1364,6 +1485,8 @@ void RendererSystem::ShutdownUnlocked()
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
     m_uiTextureMaterialInstances.clear();
+    m_uiGradientTextures.clear();
+    m_uiGradientMaterialInstances.clear();
     m_uiPendingTextureUploads.clear();
     m_uiQueuedRects.clear();
     m_uiPacketsQueuedThisFrame = false;
@@ -1696,6 +1819,167 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     return MaterialInstance;
 }
 
+std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMaterialForGradient(const QueuedUiRect& Entry)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    if (!EnsureUiMaterialResources())
+    {
+        return {};
+    }
+
+    if (!Entry.UseGradient)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    const std::size_t StopCount = std::min<std::size_t>(QueuedUiRect::MaxGradientStops, Entry.GradientStopCount);
+    if (StopCount == 0)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    std::array<float, QueuedUiRect::MaxGradientStops> StopPositions{};
+    std::array<std::uint32_t, QueuedUiRect::MaxGradientStops> StopColors{};
+    for (std::size_t Index = 0; Index < StopCount; ++Index)
+    {
+        StopPositions[Index] = ClampUnit(Entry.GradientStops[Index]);
+        StopColors[Index] = Entry.GradientColors[Index];
+    }
+
+    // Canonicalize stop ordering for deterministic cache keys.
+    for (std::size_t Outer = 1; Outer < StopCount; ++Outer)
+    {
+        std::size_t Inner = Outer;
+        while (Inner > 0 && StopPositions[Inner] < StopPositions[Inner - 1])
+        {
+            std::swap(StopPositions[Inner], StopPositions[Inner - 1]);
+            std::swap(StopColors[Inner], StopColors[Inner - 1]);
+            --Inner;
+        }
+    }
+
+    UiGradientCacheKey CacheKey{};
+    CacheKey.StartX = Entry.GradientStartX;
+    CacheKey.StartY = Entry.GradientStartY;
+    CacheKey.EndX = Entry.GradientEndX;
+    CacheKey.EndY = Entry.GradientEndY;
+    CacheKey.StopCount = static_cast<std::uint8_t>(StopCount);
+    for (std::size_t Index = 0; Index < StopCount; ++Index)
+    {
+        CacheKey.Stops[Index] = StopPositions[Index];
+        CacheKey.Colors[Index] = StopColors[Index];
+    }
+
+    if (const auto It = m_uiGradientMaterialInstances.find(CacheKey); It != m_uiGradientMaterialInstances.end())
+    {
+        return It->second;
+    }
+
+    const auto DecodeChannel = [](const std::uint32_t Packed, const int Shift) -> float {
+        constexpr float kInv = 1.0f / 255.0f;
+        return static_cast<float>((Packed >> Shift) & 0xffu) * kInv;
+    };
+
+    const auto SampleGradient = [&](const float T) {
+        const float ClampedT = ClampUnit(T);
+
+        if (StopCount == 1 || ClampedT <= StopPositions[0])
+        {
+            return StopColors[0];
+        }
+        if (ClampedT >= StopPositions[StopCount - 1])
+        {
+            return StopColors[StopCount - 1];
+        }
+
+        std::size_t SegmentIndex = 0;
+        for (std::size_t Index = 0; Index + 1 < StopCount; ++Index)
+        {
+            if (ClampedT <= StopPositions[Index + 1])
+            {
+                SegmentIndex = Index;
+                break;
+            }
+        }
+
+        const float LeftPos = StopPositions[SegmentIndex];
+        const float RightPos = StopPositions[SegmentIndex + 1];
+        const std::uint32_t LeftColor = StopColors[SegmentIndex];
+        const std::uint32_t RightColor = StopColors[SegmentIndex + 1];
+
+        const float Denom = std::max(1e-6f, RightPos - LeftPos);
+        const float Alpha = ClampUnit((ClampedT - LeftPos) / Denom);
+        const float InvAlpha = 1.0f - Alpha;
+
+        const auto BlendChannel = [&](const int Shift) -> std::uint8_t {
+            const float Left = DecodeChannel(LeftColor, Shift);
+            const float Right = DecodeChannel(RightColor, Shift);
+            const float Mixed = std::clamp(Left * InvAlpha + Right * Alpha, 0.0f, 1.0f);
+            return static_cast<std::uint8_t>(std::round(Mixed * 255.0f));
+        };
+
+        return (static_cast<std::uint32_t>(BlendChannel(24)) << 24u) |
+               (static_cast<std::uint32_t>(BlendChannel(16)) << 16u) |
+               (static_cast<std::uint32_t>(BlendChannel(8)) << 8u) |
+               static_cast<std::uint32_t>(BlendChannel(0));
+    };
+
+    std::vector<std::uint8_t> PixelData{};
+    PixelData.resize(static_cast<std::size_t>(kUiGradientTextureSize) *
+                     static_cast<std::size_t>(kUiGradientTextureSize) * 4u);
+
+    const float StartX = Entry.GradientStartX;
+    const float StartY = Entry.GradientStartY;
+    const float EndX = Entry.GradientEndX;
+    const float EndY = Entry.GradientEndY;
+    const float DeltaX = EndX - StartX;
+    const float DeltaY = EndY - StartY;
+    const float GradientLengthSq = DeltaX * DeltaX + DeltaY * DeltaY;
+
+    for (std::uint32_t Y = 0; Y < kUiGradientTextureSize; ++Y)
+    {
+        for (std::uint32_t X = 0; X < kUiGradientTextureSize; ++X)
+        {
+            const float U = (static_cast<float>(X) + 0.5f) / static_cast<float>(kUiGradientTextureSize);
+            const float V = (static_cast<float>(Y) + 0.5f) / static_cast<float>(kUiGradientTextureSize);
+            float T = 0.0f;
+            if (GradientLengthSq > 1e-6f)
+            {
+                T = ((U - StartX) * DeltaX + (V - StartY) * DeltaY) / GradientLengthSq;
+            }
+
+            const std::uint32_t Packed = SampleGradient(T);
+            const std::size_t PixelIndex =
+                (static_cast<std::size_t>(Y) * static_cast<std::size_t>(kUiGradientTextureSize) + static_cast<std::size_t>(X)) * 4u;
+            PixelData[PixelIndex + 0] = static_cast<std::uint8_t>((Packed >> 24u) & 0xffu);
+            PixelData[PixelIndex + 1] = static_cast<std::uint8_t>((Packed >> 16u) & 0xffu);
+            PixelData[PixelIndex + 2] = static_cast<std::uint8_t>((Packed >> 8u) & 0xffu);
+            PixelData[PixelIndex + 3] = static_cast<std::uint8_t>(Packed & 0xffu);
+        }
+    }
+
+    SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::DataDefault(
+        SnAPI::Size2DU{kUiGradientTextureSize, kUiGradientTextureSize},
+        SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm);
+    ImageCI.Data = std::move(PixelData);
+    auto Texture = std::shared_ptr<SnAPI::Graphics::IGPUImage>(m_graphics->CreateImage2D(ImageCI).release());
+    if (!Texture)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    auto MaterialInstance = m_uiMaterial->CreateMaterialInstance();
+    if (!MaterialInstance)
+    {
+        return m_uiFallbackMaterialInstance;
+    }
+
+    MaterialInstance->Texture("Material_Texture", Texture.get());
+    m_uiGradientTextures.emplace(CacheKey, std::move(Texture));
+    m_uiGradientMaterialInstances.emplace(CacheKey, MaterialInstance);
+    return MaterialInstance;
+}
+
 std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiFontMaterialInstance()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
@@ -1787,6 +2071,10 @@ void RendererSystem::FlushQueuedUiPackets()
         if (Entry.UseFontAtlas)
         {
             MaterialInstance = ResolveUiFontMaterialInstance();
+        }
+        else if (Entry.UseGradient)
+        {
+            MaterialInstance = ResolveUiMaterialForGradient(Entry);
         }
         else
         {

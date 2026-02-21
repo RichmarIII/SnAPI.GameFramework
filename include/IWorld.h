@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "Expected.h"
@@ -7,6 +8,16 @@
 
 namespace SnAPI::GameFramework
 {
+
+/**
+ * @brief High-level world role used by runtime/editor flows.
+ */
+enum class EWorldKind : std::uint8_t
+{
+    Runtime,
+    Editor,
+    PIE
+};
 
 class Level;
 #if defined(SNAPI_GF_ENABLE_INPUT)
@@ -41,6 +52,64 @@ class IWorld
 public:
     /** @brief Virtual destructor. */
     virtual ~IWorld() = default;
+
+    /**
+     * @brief World role classification.
+     * @return Active world kind.
+     */
+    virtual EWorldKind Kind() const = 0;
+
+    /**
+     * @brief Whether high-level gameplay orchestration should run for this world.
+     * @remarks
+     * GameRuntime uses this to gate `GameplayHost::Tick`.
+     */
+    virtual bool ShouldRunGameplay() const = 0;
+    /**
+     * @brief Whether input pumping should run during variable tick.
+     */
+    virtual bool ShouldTickInput() const = 0;
+    /**
+     * @brief Whether UI context tick should run during variable tick.
+     */
+    virtual bool ShouldTickUI() const = 0;
+    /**
+     * @brief Whether networking queues/session pumps should run.
+     */
+    virtual bool ShouldPumpNetworking() const = 0;
+    /**
+     * @brief Whether node/component tick traversal should run.
+     */
+    virtual bool ShouldTickNodeGraph() const = 0;
+    /**
+     * @brief Whether physics simulation stepping should run.
+     * @remarks
+     * Physics queries can still be allowed independently via
+     * `ShouldAllowPhysicsQueries()`.
+     */
+    virtual bool ShouldSimulatePhysics() const = 0;
+    /**
+     * @brief Whether physics query access should be considered valid.
+     * @remarks
+     * Editor worlds typically return true while `ShouldSimulatePhysics()` is false.
+     */
+    virtual bool ShouldAllowPhysicsQueries() const = 0;
+    /**
+     * @brief Whether audio subsystem update should run.
+     */
+    virtual bool ShouldTickAudio() const = 0;
+    /**
+     * @brief Whether node/component end-frame flush should run.
+     */
+    virtual bool ShouldRunNodeEndFrame() const = 0;
+    /**
+     * @brief Whether UI render packet generation/queueing should run.
+     */
+    virtual bool ShouldBuildUiRenderPackets() const = 0;
+    /**
+     * @brief Whether renderer end-frame submission should run.
+     */
+    virtual bool ShouldRenderFrame() const = 0;
 
     /**
      * @brief Per-frame tick.

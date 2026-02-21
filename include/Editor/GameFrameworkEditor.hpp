@@ -6,5 +6,6 @@
 #include "Editor/EditorCameraComponent.h"
 #include "Editor/EditorCoreServices.h"
 #include "Editor/EditorSelectionModel.h"
+#include "Editor/EditorWorld.h"
 #include "Editor/GameEditor.h"
 #include "Editor/IEditorService.h"

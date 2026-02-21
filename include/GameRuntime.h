@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <functional>
 
 #include "Expected.h"
 #include "GameplayHost.h"
@@ -52,6 +53,7 @@ using GameRuntimeRendererSettings = RendererBootstrapSettings;
 struct GameRuntimeSettings
 {
     std::string WorldName = "World"; /**< @brief Name assigned to the created world instance. */
+    std::function<std::unique_ptr<class World>(std::string)> WorldFactory{}; /**< @brief Optional world factory override (defaults to `World`). */
     bool RegisterBuiltins = true; /**< @brief Register built-in reflection/serialization types once during init. */
     GameRuntimeTickSettings Tick{}; /**< @brief Tick/lifecycle policy for `Update`. */
     std::optional<GameRuntimeGameplaySettings> Gameplay{}; /**< @brief Optional high-level gameplay orchestration settings. */

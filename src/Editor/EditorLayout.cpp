@@ -12,20 +12,34 @@
 #include "World.h"
 
 #include <UIContext.h>
+#include <UIColorPicker.h>
+#include <UIDatePicker.h>
 #include <UIElementBase.h>
+#include <UIImage.h>
+#include <UIListView.h>
+#include <UIMenuBar.h>
+#include <UINumberField.h>
 #include <UIPanel.h>
-#include <UIRadio.h>
+#include <UIPagination.h>
 #include <UIScrollContainer.h>
 #include <UISizing.h>
+#include <UITable.h>
+#include <UITabs.h>
+#include <UITokenField.h>
+#include <UIToolbar.h>
 #include <UIText.h>
 #include <UITextInput.h>
 #include <UIRealtimeGraph.h>
+#include <UITreeView.h>
+#include <UIBadge.h>
+#include <UIBreadcrumbs.h>
+#include <UIButton.h>
 
 #include <array>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
-#include <functional>
 #include <string>
 #include <string_view>
 
@@ -33,6 +47,56 @@
 
 namespace SnAPI::GameFramework::Editor
 {
+namespace
+{
+constexpr std::string_view kBrandIconUrl =
+    "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/dashboard/materialicons/24dp/2x/baseline_dashboard_black_24dp.png";
+constexpr std::string_view kHierarchyIconUrl =
+    "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/list/materialicons/24dp/2x/baseline_list_black_24dp.png";
+constexpr std::string_view kSearchIconUrl =
+    "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/search/materialicons/24dp/2x/baseline_search_black_24dp.png";
+constexpr std::string_view kGameViewIconUrl =
+    "https://raw.githubusercontent.com/google/material-design-icons/master/png/image/photo_camera/materialicons/24dp/2x/baseline_photo_camera_black_24dp.png";
+constexpr std::string_view kInspectorIconUrl =
+    "https://raw.githubusercontent.com/google/material-design-icons/master/png/action/find_in_page/materialicons/24dp/2x/baseline_find_in_page_black_24dp.png";
+constexpr std::array<std::string_view, 6> kMenuItems{
+    "File", "Edit", "Assets", "Tools", "Window", "Help"};
+constexpr std::array<std::string_view, 6> kToolbarActions{
+    "Play", "Pause", "Step", "Move", "Rotate", "Scale"};
+constexpr std::array<std::string_view, 3> kViewportModes{
+    "Perspective", "Lit", "Shaded"};
+
+constexpr std::array<std::string_view, 8> kAssetPreviewUrls{{
+    "https://picsum.photos/seed/snapi_environment/512/320",
+    "https://picsum.photos/seed/snapi_props/512/320",
+    "https://picsum.photos/seed/snapi_character/512/320",
+    "https://picsum.photos/seed/snapi_fx/512/320",
+    "https://picsum.photos/seed/snapi_textures/512/320",
+    "https://picsum.photos/seed/snapi_prefab/512/320",
+    "https://picsum.photos/seed/snapi_floor/512/320",
+    "https://picsum.photos/seed/snapi_crate/512/320",
+}};
+
+[[nodiscard]] std::string ToLower(const std::string_view Text)
+{
+    std::string Out(Text);
+    std::transform(Out.begin(), Out.end(), Out.begin(), [](const unsigned char Ch) {
+        return static_cast<char>(std::tolower(Ch));
+    });
+    return Out;
+}
+
+[[nodiscard]] bool LabelMatchesFilter(const std::string_view Label, const std::string& FilterLower)
+{
+    if (FilterLower.empty())
+    {
+        return true;
+    }
+
+    const std::string LabelLower = ToLower(Label);
+    return LabelLower.find(FilterLower) != std::string::npos;
+}
+} // namespace
 
 Result EditorLayout::Build(GameRuntime& Runtime,
                            SnAPI::UI::Theme& Theme,
@@ -75,11 +139,12 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_context = nullptr;
     m_gameViewport = {};
     m_inspectorPropertyPanel = {};
-    m_hierarchyListHost = {};
-    m_hierarchyRowsRoot = {};
-    m_hierarchyRowsByNode.clear();
+    m_hierarchyTree = {};
+    m_hierarchyVisibleNodes.clear();
     m_hierarchySignature = 0;
     m_hierarchyNodeCount = 0;
+    m_hierarchyVisualSelection = {};
+    m_hierarchyFilterText.clear();
     m_selection = nullptr;
     m_onHierarchyNodeChosen.Reset();
     m_boundInspectorObject = nullptr;
@@ -180,8 +245,8 @@ void EditorLayout::BuildShell(SnAPI::UI::UIContext& Context,
     ConfigureRoot(Context);
     m_selection = SelectionModel;
 
-    (void)BuildMenuBar(Root);
-    (void)BuildToolbar(Root);
+    BuildMenuBar(Root);
+    BuildToolbar(Root);
     BuildWorkspace(Root, Runtime, ActiveCamera, SelectionModel);
     BuildContentBrowser(Root);
 }
@@ -199,63 +264,85 @@ void EditorLayout::ConfigureRoot(SnAPI::UI::UIContext& Context)
     RootPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 }
 
-EditorLayout::PanelBuilder EditorLayout::BuildMenuBar(PanelBuilder& Root)
+void EditorLayout::BuildMenuBar(PanelBuilder& Root)
 {
-    auto MenuBar = Root.Add(SnAPI::UI::UIPanel("Editor.MenuBar"));
-    auto& MenuPanel = MenuBar.Element();
-    MenuPanel.ElementStyle().Apply("editor.menu_bar");
-    MenuPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    MenuPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    MenuPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    auto MenuBar = Root.Add(SnAPI::UI::UIMenuBar{});
+    auto& MenuBarElement = MenuBar.Element();
+    MenuBarElement.ElementStyle().Apply("editor.menu_bar");
+    MenuBarElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    MenuBarElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+
+    auto BrandIcon = MenuBar.Add(SnAPI::UI::UIImage(kBrandIconUrl));
+    auto& BrandIconImage = BrandIcon.Element();
+    BrandIconImage.Width().Set(SnAPI::UI::Sizing::Fixed(16.0f));
+    BrandIconImage.Height().Set(SnAPI::UI::Sizing::Fixed(16.0f));
+    BrandIconImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+    BrandIconImage.LazyLoad().Set(true);
+    BrandIconImage.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 6.0f, 0.0f});
 
     auto Brand = MenuBar.Add(SnAPI::UI::UIText("SnAPI"));
-    Brand.Element().ElementStyle().Apply("editor.panel_title");
-    Brand.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 6.0f, 0.0f});
+    Brand.Element().ElementStyle().Apply("editor.brand_title");
+    Brand.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 3.0f, 0.0f});
 
     auto Product = MenuBar.Add(SnAPI::UI::UIText("GameFramework"));
-    Product.Element().ElementStyle().Apply("editor.panel_subtitle");
-    Product.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 18.0f, 0.0f});
+    Product.Element().ElementStyle().Apply("editor.brand_subtitle");
+    Product.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 14.0f, 0.0f});
 
-    constexpr std::array<std::string_view, 6> kMenuItems{"File", "Edit", "Assets", "Tools", "Window", "Help"};
-    for (const std::string_view Label : kMenuItems)
+    for (std::size_t Index = 0; Index < kMenuItems.size(); ++Index)
     {
-        auto Item = MenuBar.Add(SnAPI::UI::UIText(Label));
-        Item.Element().ElementStyle().Apply("editor.menu_item");
-        Item.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 10.0f, 0.0f});
+        auto Item = MenuBar.Add(SnAPI::UI::UIText(kMenuItems[Index]));
+        auto& ItemText = Item.Element();
+        ItemText.ElementStyle().Apply("editor.menu_item");
+        ItemText.TextColor().Set(SnAPI::UI::Color{224, 228, 235, 255});
+        ItemText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        ItemText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 10.0f, 0.0f});
     }
 
-    return MenuBar;
+    auto Spacer = MenuBar.Add(SnAPI::UI::UIPanel("Editor.MenuSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpacerPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
+
+    // Keep right side clear to avoid clipping on narrower editor windows.
 }
 
-EditorLayout::PanelBuilder EditorLayout::BuildToolbar(PanelBuilder& Root)
+void EditorLayout::BuildToolbar(PanelBuilder& Root)
 {
-    auto Toolbar = Root.Add(SnAPI::UI::UIPanel("Editor.Toolbar"));
-    auto& ToolbarPanel = Toolbar.Element();
-    ToolbarPanel.ElementStyle().Apply("editor.toolbar");
-    ToolbarPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    ToolbarPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    ToolbarPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    auto Toolbar = Root.Add(SnAPI::UI::UIToolbar{});
+    auto& ToolbarElement = Toolbar.Element();
+    ToolbarElement.ElementStyle().Apply("editor.toolbar");
+    ToolbarElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    ToolbarElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto AddChip = [&](const std::string_view Label) {
-        auto Chip = Toolbar.Add(SnAPI::UI::UIPanel("Editor.ToolbarChip"));
-        auto& ChipPanel = Chip.Element();
-        ChipPanel.ElementStyle().Apply("editor.toolbar_chip");
-        ChipPanel.Width().Set(SnAPI::UI::Sizing::Auto());
-        ChipPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-        ChipPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 2.0f, 0.0f});
+    for (std::size_t Index = 0; Index < kToolbarActions.size(); ++Index)
+    {
+        auto Button = Toolbar.Add(SnAPI::UI::UIButton{});
+        auto& ButtonElement = Button.Element();
+        ButtonElement.ElementStyle().Apply("editor.toolbar_button");
+        ButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+        ButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        ButtonElement.ElementPadding().Set(SnAPI::UI::Padding{7.0f, 4.0f, 7.0f, 4.0f});
+        ButtonElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 2.0f, 0.0f});
 
-        auto ChipLabel = Chip.Add(SnAPI::UI::UIText(Label));
-        ChipLabel.Element().ElementStyle().Apply("editor.menu_item");
-        ChipLabel.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
-    };
+        auto Label = Button.Add(SnAPI::UI::UIText(kToolbarActions[Index]));
+        auto& LabelText = Label.Element();
+        LabelText.ElementStyle().Apply("editor.toolbar_button_text");
+        LabelText.TextColor().Set(SnAPI::UI::Color{218, 223, 232, 255});
+        LabelText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        LabelText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    }
 
-    AddChip("Play");
-    AddChip("Pause");
-    AddChip("Step");
-    AddChip("Perspective");
-    AddChip("Lit");
+    auto Spacer = Toolbar.Add(SnAPI::UI::UIPanel("Editor.ToolbarSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpacerPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
 
-    return Toolbar;
+    auto ModeBreadcrumbs = Toolbar.Add(SnAPI::UI::UIBreadcrumbs{});
+    auto& ModeBreadcrumbsElement = ModeBreadcrumbs.Element();
+    ModeBreadcrumbsElement.ElementStyle().Apply("editor.modes_breadcrumb");
+    ModeBreadcrumbsElement.SetCrumbs({std::string(kViewportModes[0]), std::string(kViewportModes[1])});
 }
 
 void EditorLayout::BuildWorkspace(PanelBuilder& Root,
@@ -281,65 +368,153 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     auto& ContentPanel = ContentBrowser.Element();
     ContentPanel.ElementStyle().Apply("editor.content_browser");
     ContentPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    ContentPanel.Height().Set(SnAPI::UI::Sizing::Fixed(224.0f));
+    ContentPanel.Height().Set(SnAPI::UI::Sizing::Ratio(0.34f));
     ContentPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
     auto HeaderRow = ContentBrowser.Add(SnAPI::UI::UIPanel("Editor.ContentHeader"));
     auto& HeaderPanel = HeaderRow.Element();
-    HeaderPanel.ElementStyle().Apply("editor.toolbar");
-    HeaderPanel.Padding().Set(4.0f);
-    HeaderPanel.Gap().Set(8.0f);
+    HeaderPanel.ElementStyle().Apply("editor.content_header");
+    HeaderPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HeaderPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     HeaderPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     HeaderPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    constexpr std::array<std::string_view, 4> kContentTabs{"Content Browser", "Assets", "Prefabs", "Materials"};
-    for (const std::string_view TabLabel : kContentTabs)
-    {
-        auto Tab = HeaderRow.Add(SnAPI::UI::UIText(TabLabel));
-        Tab.Element().ElementStyle().Apply("editor.menu_item");
-        Tab.Element().ElementMargin().Set(SnAPI::UI::Margin{2.0f, 0.0f, 8.0f, 0.0f});
-    }
+    auto Path = HeaderRow.Add(SnAPI::UI::UIBreadcrumbs{});
+    auto& PathElement = Path.Element();
+    PathElement.ElementStyle().Apply("editor.browser_path");
+    PathElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    PathElement.SetCrumbs({"Content", "Assets", "Environment"});
 
-    auto CardScroll = ContentBrowser.Add(SnAPI::UI::UIScrollContainer{});
-    auto& CardScrollElement = CardScroll.Element();
-    CardScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    CardScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    CardScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    CardScrollElement.ShowHorizontalScrollbar().Set(true);
-    CardScrollElement.ShowVerticalScrollbar().Set(false);
-    CardScrollElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    auto HeaderSearch = HeaderRow.Add(SnAPI::UI::UITextInput{});
+    auto& HeaderSearchInput = HeaderSearch.Element();
+    HeaderSearchInput.ElementStyle().Apply("editor.search");
+    HeaderSearchInput.Width().Set(SnAPI::UI::Sizing::Ratio(0.45f));
+    HeaderSearchInput.Placeholder().Set(std::string("Search assets..."));
 
-    auto Cards = CardScroll.Add(SnAPI::UI::UIPanel("Editor.AssetCards"));
-    auto& CardsPanel = Cards.Element();
-    CardsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    CardsPanel.Padding().Set(4.0f);
-    CardsPanel.Gap().Set(10.0f);
-    CardsPanel.Height().Set(SnAPI::UI::Sizing::Fill());
-    CardsPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    auto BrowserTabs = ContentBrowser.Add(SnAPI::UI::UITabs{});
+    auto& BrowserTabsElement = BrowserTabs.Element();
+    BrowserTabsElement.ElementStyle().Apply("editor.browser_tabs");
+    BrowserTabsElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    BrowserTabsElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    BrowserTabsElement.HeaderHeight().Set(28.0f);
+
+    auto AssetsTab = BrowserTabs.Add(SnAPI::UI::UIPanel("Editor.ContentTab.Assets"));
+    auto& AssetsTabPanel = AssetsTab.Element();
+    AssetsTabPanel.ElementStyle().Apply("editor.section_card");
+    AssetsTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    AssetsTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    AssetsTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    AssetsTabPanel.Padding().Set(6.0f);
+    AssetsTabPanel.Gap().Set(6.0f);
+
+    auto AssetsList = AssetsTab.Add(SnAPI::UI::UIListView{});
+    auto& AssetsListElement = AssetsList.Element();
+    AssetsListElement.Orientation().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    AssetsListElement.ItemExtent().Set(152.0f);
+    AssetsListElement.ItemGap().Set(10.0f);
+    AssetsListElement.Virtualized().Set(false);
+    AssetsListElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    AssetsListElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    AssetsListElement.ElementStyle().Apply("editor.browser_list");
 
     constexpr std::array<std::string_view, 8> kAssets{
         "Environment", "Props", "Character", "FX", "Textures", "MyPrefab", "SciFi_Floor", "Crate_Model"};
-    for (const std::string_view AssetName : kAssets)
+    for (std::size_t AssetIndex = 0; AssetIndex < kAssets.size(); ++AssetIndex)
     {
-        auto Card = Cards.Add(SnAPI::UI::UIPanel("Editor.AssetCard"));
+        auto Card = AssetsList.Add(SnAPI::UI::UIPanel("Editor.AssetCard"));
         auto& CardPanel = Card.Element();
         CardPanel.ElementStyle().Apply("editor.asset_card");
-        CardPanel.Width().Set(SnAPI::UI::Sizing::Fixed(140.0f));
-        CardPanel.Height().Set(SnAPI::UI::Sizing::Fixed(160.0f));
-        CardPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+        CardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        CardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        CardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+        CardPanel.Padding().Set(6.0f);
+        CardPanel.Gap().Set(4.0f);
 
         auto Preview = Card.Add(SnAPI::UI::UIPanel("Editor.AssetPreview"));
         auto& PreviewPanel = Preview.Element();
         PreviewPanel.ElementStyle().Apply("editor.asset_preview");
         PreviewPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-        PreviewPanel.Height().Set(SnAPI::UI::Sizing::Fixed(104.0f));
-        PreviewPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+        PreviewPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
 
-        auto Label = Card.Add(SnAPI::UI::UIText(AssetName));
+        auto PreviewImage = Preview.Add(SnAPI::UI::UIImage(kAssetPreviewUrls[AssetIndex]));
+        auto& PreviewImageElement = PreviewImage.Element();
+        PreviewImageElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        PreviewImageElement.Height().Set(SnAPI::UI::Sizing::Fill());
+        PreviewImageElement.Mode().Set(SnAPI::UI::EImageMode::AspectFill);
+        PreviewImageElement.LazyLoad().Set(true);
+
+        auto Label = Card.Add(SnAPI::UI::UIText(kAssets[AssetIndex]));
         Label.Element().ElementStyle().Apply("editor.menu_item");
-        Label.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
-        Label.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 2.0f, 0.0f, 0.0f});
+        Label.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
+
+    auto BrowserPagination = AssetsTab.Add(SnAPI::UI::UIPagination{});
+    auto& BrowserPaginationElement = BrowserPagination.Element();
+    BrowserPaginationElement.ElementStyle().Apply("editor.browser_pagination");
+    BrowserPaginationElement.PageCount().Set(6);
+    BrowserPaginationElement.VisibleButtonCount().Set(6);
+    BrowserPaginationElement.Width().Set(SnAPI::UI::Sizing::Fill());
+
+    auto DetailsTab = BrowserTabs.Add(SnAPI::UI::UIPanel("Editor.ContentTab.Details"));
+    auto& DetailsTabPanel = DetailsTab.Element();
+    DetailsTabPanel.ElementStyle().Apply("editor.section_card");
+    DetailsTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    DetailsTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    DetailsTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    DetailsTabPanel.Padding().Set(6.0f);
+    DetailsTabPanel.Gap().Set(6.0f);
+
+    auto DetailsTable = DetailsTab.Add(SnAPI::UI::UITable{});
+    auto& DetailsTableElement = DetailsTable.Element();
+    DetailsTableElement.ElementStyle().Apply("editor.browser_table");
+    DetailsTableElement.ColumnCount().Set(2u);
+    DetailsTableElement.RowHeight().Set(28.0f);
+    DetailsTableElement.HeaderHeight().Set(28.0f);
+    DetailsTableElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    DetailsTableElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    DetailsTableElement.SetColumnHeaders({"Field", "Value"});
+
+    constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kAssetMeta{{
+        {"Name", "SciFi_Floor"},
+        {"Type", "StaticMesh"},
+        {"Triangles", "8,432"},
+        {"Materials", "2"},
+        {"Modified", "Today"},
+    }};
+    for (const auto& [FieldName, FieldValue] : kAssetMeta)
+    {
+        auto FieldCell = DetailsTable.Add(SnAPI::UI::UIText(FieldName));
+        FieldCell.Element().ElementStyle().Apply("editor.menu_item");
+        auto ValueCell = DetailsTable.Add(SnAPI::UI::UIText(FieldValue));
+        ValueCell.Element().ElementStyle().Apply("editor.panel_title");
+    }
+
+    auto CollectionsTab = BrowserTabs.Add(SnAPI::UI::UIPanel("Editor.ContentTab.Collections"));
+    auto& CollectionsTabPanel = CollectionsTab.Element();
+    CollectionsTabPanel.ElementStyle().Apply("editor.section_card");
+    CollectionsTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    CollectionsTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    CollectionsTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    CollectionsTabPanel.Padding().Set(6.0f);
+    CollectionsTabPanel.Gap().Set(6.0f);
+
+    auto Tags = CollectionsTab.Add(SnAPI::UI::UITokenField{});
+    auto& TagsElement = Tags.Element();
+    TagsElement.ElementStyle().Apply("editor.token_field");
+    TagsElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    TagsElement.AddToken("Environment", false);
+    TagsElement.AddToken("Gameplay", false);
+    TagsElement.AddToken("Favorites", false);
+
+    auto Palette = CollectionsTab.Add(SnAPI::UI::UIColorPicker{});
+    auto& PaletteElement = Palette.Element();
+    PaletteElement.ElementStyle().Apply("editor.color_picker");
+    PaletteElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    PaletteElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    BrowserTabsElement.SetTabLabel(0, "Assets");
+    BrowserTabsElement.SetTabLabel(1, "Details");
+    BrowserTabsElement.SetTabLabel(2, "Collections");
 }
 
 void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
@@ -350,43 +525,109 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
     auto Hierarchy = Workspace.Add(SnAPI::UI::UIPanel("Editor.Hierarchy"));
     auto& HierarchyPanel = Hierarchy.Element();
     HierarchyPanel.ElementStyle().Apply("editor.sidebar");
-    HierarchyPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.38f));
+    HierarchyPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.30f));
     HierarchyPanel.Height().Set(SnAPI::UI::Sizing::Fill());
     HierarchyPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    HierarchyPanel.Padding().Set(6.0f);
+    HierarchyPanel.Gap().Set(6.0f);
 
-    auto Title = Hierarchy.Add(SnAPI::UI::UIText("Scene Hierarchy"));
-    Title.Element().ElementStyle().Apply("editor.panel_title");
-    Title.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    auto TitleRow = Hierarchy.Add(SnAPI::UI::UIPanel("Editor.HierarchyTitleRow"));
+    auto& TitleRowPanel = TitleRow.Element();
+    TitleRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    TitleRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    TitleRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    TitleRowPanel.Gap().Set(4.0f);
+    TitleRowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
+    TitleRowPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto Search = Hierarchy.Add(SnAPI::UI::UITextInput{});
+    auto TitleIcon = TitleRow.Add(SnAPI::UI::UIImage(kHierarchyIconUrl));
+    auto& TitleIconImage = TitleIcon.Element();
+    TitleIconImage.Width().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    TitleIconImage.Height().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    TitleIconImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+    TitleIconImage.LazyLoad().Set(true);
+
+    auto Title = TitleRow.Add(SnAPI::UI::UIText("Scene Hierarchy"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.panel_title");
+    TitleText.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+    TitleText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 4.0f, 0.0f});
+
+    auto CountBadge = TitleRow.Add(SnAPI::UI::UIBadge("0"));
+    CountBadge.Element().ElementStyle().Apply("editor.status_badge");
+    CountBadge.Element().HorizontalPadding().Set(5.0f);
+    CountBadge.Element().VerticalPadding().Set(2.0f);
+
+    auto SearchRow = Hierarchy.Add(SnAPI::UI::UIPanel("Editor.HierarchySearchRow"));
+    auto& SearchRowPanel = SearchRow.Element();
+    SearchRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    SearchRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    SearchRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    SearchRowPanel.Gap().Set(6.0f);
+    SearchRowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
+    SearchRowPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+
+    auto SearchIcon = SearchRow.Add(SnAPI::UI::UIImage(kSearchIconUrl));
+    auto& SearchIconImage = SearchIcon.Element();
+    SearchIconImage.Width().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    SearchIconImage.Height().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    SearchIconImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+    SearchIconImage.LazyLoad().Set(true);
+    SearchIconImage.ElementMargin().Set(SnAPI::UI::Margin{2.0f, 0.0f, 0.0f, 0.0f});
+
+    auto Search = SearchRow.Add(SnAPI::UI::UITextInput{});
     auto& SearchInput = Search.Element();
     SearchInput.ElementStyle().Apply("editor.search");
     SearchInput.Width().Set(SnAPI::UI::Sizing::Fill());
-    SearchInput.Height().Set(SnAPI::UI::Sizing::Fixed(30.0f));
+    SearchInput.Height().Set(SnAPI::UI::Sizing::Auto());
     SearchInput.Placeholder().Set(std::string("Search..."));
     SearchInput.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    SearchInput.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_hierarchyFilterText = ToLower(Value);
+        m_hierarchySignature = 0;
+        m_hierarchyNodeCount = 0;
+    }));
 
-    auto TreeScroll = Hierarchy.Add(SnAPI::UI::UIScrollContainer{});
-    auto& TreeScrollElement = TreeScroll.Element();
-    TreeScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    TreeScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    TreeScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    TreeScrollElement.ShowVerticalScrollbar().Set(true);
-    TreeScrollElement.ShowHorizontalScrollbar().Set(false);
-    TreeScrollElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    auto Tree = Hierarchy.Add(SnAPI::UI::UITreeView{});
+    auto& TreeElement = Tree.Element();
+    TreeElement.ElementStyle().Apply("editor.tree");
+    TreeElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    TreeElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    TreeElement.RowHeight().Set(24.0f);
+    TreeElement.PaddingX().Set(6.0f);
+    TreeElement.PaddingY().Set(4.0f);
+    TreeElement.OnSelectionChanged(SnAPI::UI::TDelegate<void(int32_t)>::Bind([this](const int32_t VisibleIndex) {
+        if (VisibleIndex < 0 || static_cast<std::size_t>(VisibleIndex) >= m_hierarchyVisibleNodes.size())
+        {
+            return;
+        }
 
-    auto TreePanel = TreeScroll.Add(SnAPI::UI::UIPanel("Editor.HierarchyTreeHost"));
-    auto& TreePanelElement = TreePanel.Element();
-    TreePanelElement.Padding().Set(4.0f);
-    TreePanelElement.Gap().Set(3.0f);
-    TreePanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    TreePanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    TreePanelElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+        OnHierarchyNodeChosen(m_hierarchyVisibleNodes[static_cast<std::size_t>(VisibleIndex)]);
+    }));
+    m_hierarchyTree = Tree.Handle();
 
-    m_hierarchyListHost = TreePanel.Handle().Id;
+    auto HierarchyPager = Hierarchy.Add(SnAPI::UI::UIPagination{});
+    auto& HierarchyPagerElement = HierarchyPager.Element();
+    HierarchyPagerElement.ElementStyle().Apply("editor.browser_pagination");
+    HierarchyPagerElement.PageCount().Set(1);
+    HierarchyPagerElement.VisibleButtonCount().Set(1);
+    HierarchyPagerElement.ButtonWidth().Set(26.0f);
+    HierarchyPagerElement.Width().Set(SnAPI::UI::Sizing::Fill());
+
     m_selection = SelectionModel;
     EnsureDefaultSelection(ActiveCamera);
     SyncHierarchy(Runtime, ActiveCamera);
+
+    if (m_selection)
+    {
+        std::size_t NodeCount = 0;
+        if (auto* WorldPtr = Runtime.WorldPtr())
+        {
+            WorldPtr->NodePool().ForEach([&](const NodeHandle&, BaseNode&) { ++NodeCount; });
+        }
+        CountBadge.Element().Text().Set(std::to_string(NodeCount));
+    }
 }
 
 void EditorLayout::EnsureDefaultSelection(CameraComponent* ActiveCamera)
@@ -406,7 +647,7 @@ void EditorLayout::EnsureDefaultSelection(CameraComponent* ActiveCamera)
 
 void EditorLayout::SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCamera)
 {
-    if (!m_context || m_hierarchyListHost.Value == 0)
+    if (!m_context || m_hierarchyTree.Id.Value == 0)
     {
         return;
     }
@@ -425,15 +666,26 @@ void EditorLayout::SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCa
         return;
     }
 
-    const std::uint64_t Signature = ComputeHierarchySignature(Entries);
-    if (Signature != m_hierarchySignature || Entries.size() != m_hierarchyNodeCount || m_hierarchyRowsRoot.Value == 0)
+    if (!m_hierarchyFilterText.empty())
     {
-        RebuildHierarchyRows(Entries);
-        m_hierarchySignature = Signature;
-        m_hierarchyNodeCount = Entries.size();
+        Entries.erase(
+            std::remove_if(Entries.begin(), Entries.end(), [this](const HierarchyEntry& Entry) {
+                return !LabelMatchesFilter(Entry.Label, m_hierarchyFilterText);
+            }),
+            Entries.end());
     }
 
-    SyncHierarchySelectionVisual();
+    const NodeHandle SelectedNode = (m_selection != nullptr) ? m_selection->SelectedNode() : NodeHandle{};
+    const std::uint64_t Signature = ComputeHierarchySignature(Entries);
+    if (Signature != m_hierarchySignature ||
+        Entries.size() != m_hierarchyNodeCount ||
+        SelectedNode != m_hierarchyVisualSelection)
+    {
+        RebuildHierarchyTree(Entries, SelectedNode);
+        m_hierarchySignature = Signature;
+        m_hierarchyNodeCount = Entries.size();
+        m_hierarchyVisualSelection = SelectedNode;
+    }
 }
 
 bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<HierarchyEntry>& OutEntries) const
@@ -447,34 +699,37 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
         }
     });
 
-    const std::function<void(NodeHandle, int)> Visit = [&](const NodeHandle Handle, const int Depth) {
+    std::vector<std::pair<NodeHandle, int>> Stack{};
+    Stack.reserve(RootHandles.size());
+    for (auto It = RootHandles.rbegin(); It != RootHandles.rend(); ++It)
+    {
+        Stack.emplace_back(*It, 0);
+    }
+
+    while (!Stack.empty())
+    {
+        const auto [Handle, Depth] = Stack.back();
+        Stack.pop_back();
+
         auto* Node = Pool.Borrowed(Handle);
         if (!Node)
         {
-            return;
+            continue;
         }
 
         OutEntries.push_back(HierarchyEntry{Handle, Depth, Node->Name()});
 
-        for (const NodeHandle ChildHandle : Node->Children())
+        const auto& Children = Node->Children();
+        for (auto ChildIt = Children.rbegin(); ChildIt != Children.rend(); ++ChildIt)
         {
-            if (ChildHandle.IsNull())
+            const NodeHandle ChildHandle = *ChildIt;
+            if (ChildHandle.IsNull() || !Pool.Borrowed(ChildHandle))
             {
                 continue;
             }
 
-            if (!Pool.Borrowed(ChildHandle))
-            {
-                continue;
-            }
-
-            Visit(ChildHandle, Depth + 1);
+            Stack.emplace_back(ChildHandle, Depth + 1);
         }
-    };
-
-    for (const NodeHandle RootHandle : RootHandles)
-    {
-        Visit(RootHandle, 0);
     }
 
     return true;
@@ -502,104 +757,51 @@ std::uint64_t EditorLayout::ComputeHierarchySignature(const std::vector<Hierarch
     return Hash;
 }
 
-void EditorLayout::RebuildHierarchyRows(const std::vector<HierarchyEntry>& Entries)
+void EditorLayout::RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, const NodeHandle SelectedNode)
 {
-    if (!m_context || m_hierarchyListHost.Value == 0)
+    if (!m_context || m_hierarchyTree.Id.Value == 0)
     {
         return;
     }
 
-    if (m_hierarchyRowsRoot.Value != 0)
-    {
-        if (auto* ExistingRoot = dynamic_cast<SnAPI::UI::UIElementBase*>(&m_context->GetElement(m_hierarchyRowsRoot)))
-        {
-            ExistingRoot->Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
-        }
-    }
-
-    const auto RowsRootHandle = m_context->CreateElement<SnAPI::UI::UIPanel>("Editor.HierarchyRows");
-    if (RowsRootHandle.Id.Value == 0)
+    auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_hierarchyTree.Id));
+    if (!Tree)
     {
         return;
     }
 
-    m_context->AddChild(m_hierarchyListHost, RowsRootHandle.Id);
-    m_hierarchyRowsRoot = RowsRootHandle.Id;
-    m_hierarchyRowsByNode.clear();
+    std::vector<SnAPI::UI::UITreeItem> TreeItems{};
+    TreeItems.reserve(Entries.size());
+    m_hierarchyVisibleNodes.clear();
+    m_hierarchyVisibleNodes.reserve(Entries.size());
 
-    if (auto* RowsRoot = dynamic_cast<SnAPI::UI::UIPanel*>(&m_context->GetElement(RowsRootHandle.Id)))
+    for (std::size_t Index = 0; Index < Entries.size(); ++Index)
     {
-        RowsRoot->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-        RowsRoot->Padding().Set(0.0f);
-        RowsRoot->Gap().Set(3.0f);
-        RowsRoot->Width().Set(SnAPI::UI::Sizing::Fill());
-    }
-
-    const NodeHandle SelectedNode = (m_selection != nullptr) ? m_selection->SelectedNode() : NodeHandle{};
-
-    for (const HierarchyEntry& Entry : Entries)
-    {
-        std::string Label(static_cast<std::size_t>(Entry.Depth) * 2u, ' ');
-        if (Entry.Label.empty())
+        const HierarchyEntry& Entry = Entries[Index];
+        const std::string LabelBase = Entry.Label.empty() ? std::string("<unnamed>") : Entry.Label;
+        std::string Label = LabelBase;
+        if (!SelectedNode.IsNull() && Entry.Handle == SelectedNode)
         {
-            Label += "<unnamed>";
-        }
-        else
-        {
-            Label += Entry.Label;
+            Label = "* " + LabelBase;
         }
 
-        const auto RowHandle = m_context->CreateElement<SnAPI::UI::UIRadio>(Label);
-        if (RowHandle.Id.Value == 0)
+        bool HasChildren = false;
+        if ((Index + 1u) < Entries.size())
         {
-            continue;
+            HasChildren = Entries[Index + 1u].Depth > Entry.Depth;
         }
 
-        m_context->AddChild(RowsRootHandle.Id, RowHandle.Id);
-        m_hierarchyRowsByNode[Entry.Handle.Id] = RowHandle.Id;
-
-        if (auto* Row = dynamic_cast<SnAPI::UI::UIRadio*>(&m_context->GetElement(RowHandle.Id)))
-        {
-            Row->ElementStyle().Apply("editor.hierarchy_item");
-            Row->GroupId().Set(kHierarchyRadioGroup);
-            Row->Width().Set(SnAPI::UI::Sizing::Fill());
-            Row->Height().Set(SnAPI::UI::Sizing::Auto());
-            Row->Selected().Set(Entry.Handle == SelectedNode);
-            Row->OnSelected([this, Handle = Entry.Handle](const bool Selected) {
-                if (Selected)
-                {
-                    OnHierarchyNodeChosen(Handle);
-                }
-            });
-        }
+        TreeItems.push_back(SnAPI::UI::UITreeItem{
+            .Label = std::move(Label),
+            .Depth = static_cast<uint32_t>(std::max(0, Entry.Depth)),
+            .HasChildren = HasChildren,
+            .Expanded = true,
+        });
+        m_hierarchyVisibleNodes.push_back(Entry.Handle);
     }
 
-    if (m_context)
-    {
-        m_context->MarkLayoutDirty();
-    }
-}
-
-void EditorLayout::SyncHierarchySelectionVisual()
-{
-    if (!m_context)
-    {
-        return;
-    }
-
-    const NodeHandle SelectedNode = (m_selection != nullptr) ? m_selection->SelectedNode() : NodeHandle{};
-
-    for (const auto& [NodeId, RowId] : m_hierarchyRowsByNode)
-    {
-        auto* Row = dynamic_cast<SnAPI::UI::UIRadio*>(&m_context->GetElement(RowId));
-        if (!Row)
-        {
-            continue;
-        }
-
-        const bool IsSelected = (!SelectedNode.IsNull() && SelectedNode.Id == NodeId);
-        Row->Selected().Set(IsSelected);
-    }
+    Tree->SetItems(std::move(TreeItems));
+    m_context->MarkLayoutDirty();
 }
 
 void EditorLayout::OnHierarchyNodeChosen(const NodeHandle Handle)
@@ -656,26 +858,44 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     GamePaneElement.Height().Set(SnAPI::UI::Sizing::Fill());
     GamePaneElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto Header = GamePane.Add(SnAPI::UI::UIPanel("Editor.GameHeader"));
+    auto ViewTabs = GamePane.Add(SnAPI::UI::UITabs{});
+    auto& ViewTabsElement = ViewTabs.Element();
+    ViewTabsElement.ElementStyle().Apply("editor.viewport_tabs");
+    ViewTabsElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ViewTabsElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    ViewTabsElement.HeaderHeight().Set(30.0f);
+
+    auto GameViewTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameViewTab"));
+    auto& GameViewTabPanel = GameViewTab.Element();
+    GameViewTabPanel.ElementStyle().Apply("editor.section_card");
+    GameViewTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    GameViewTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    GameViewTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    GameViewTabPanel.Padding().Set(4.0f);
+    GameViewTabPanel.Gap().Set(4.0f);
+
+    auto Header = GameViewTab.Add(SnAPI::UI::UIPanel("Editor.GameHeader"));
     auto& HeaderPanel = Header.Element();
     HeaderPanel.ElementStyle().Apply("editor.toolbar");
     HeaderPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
     HeaderPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     HeaderPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto HeaderTitle = Header.Add(SnAPI::UI::UIText("Game View"));
-    HeaderTitle.Element().ElementStyle().Apply("editor.panel_title");
-    HeaderTitle.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 14.0f, 0.0f});
+    auto HeaderIcon = Header.Add(SnAPI::UI::UIImage(kGameViewIconUrl));
+    auto& HeaderIconImage = HeaderIcon.Element();
+    HeaderIconImage.Width().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    HeaderIconImage.Height().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    HeaderIconImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+    HeaderIconImage.LazyLoad().Set(true);
+    HeaderIconImage.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 6.0f, 0.0f});
 
-    auto HeaderMode = Header.Add(SnAPI::UI::UIText("Perspective"));
-    HeaderMode.Element().ElementStyle().Apply("editor.menu_item");
-    HeaderMode.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 8.0f, 0.0f});
+    auto Breadcrumbs = Header.Add(SnAPI::UI::UIBreadcrumbs{});
+    auto& BreadcrumbsElement = Breadcrumbs.Element();
+    BreadcrumbsElement.ElementStyle().Apply("editor.viewport_breadcrumb");
+    BreadcrumbsElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    BreadcrumbsElement.SetCrumbs({"Game View", "Perspective", "Lit"});
 
-    auto HeaderLit = Header.Add(SnAPI::UI::UIText("Lit"));
-    HeaderLit.Element().ElementStyle().Apply("editor.menu_item");
-    HeaderLit.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
-
-    auto Viewport = GamePane.Add(UIRenderViewport{});
+    auto Viewport = GameViewTab.Add(UIRenderViewport{});
     auto& ViewportElement = Viewport.Element();
     ViewportElement.Width().Set(SnAPI::UI::Sizing::Fill());
     ViewportElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
@@ -691,6 +911,48 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
         ViewportElement.SetViewportCamera(ActiveCamera->Camera());
     }
 
+    auto MetricsTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameMetricsTab"));
+    auto& MetricsTabPanel = MetricsTab.Element();
+    MetricsTabPanel.ElementStyle().Apply("editor.section_card");
+    MetricsTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    MetricsTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    MetricsTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    MetricsTabPanel.Padding().Set(8.0f);
+    MetricsTabPanel.Gap().Set(8.0f);
+
+    auto MetricsGraph = MetricsTab.Add(SnAPI::UI::UIRealtimeGraph("Editor Metrics"));
+    auto& MetricsGraphElement = MetricsGraph.Element();
+    MetricsGraphElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    MetricsGraphElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    MetricsGraphElement.AddSeries("Frame ms", SnAPI::UI::Color{86, 176, 255, 255});
+    MetricsGraphElement.AddSeries("FPS", SnAPI::UI::Color{120, 226, 188, 255});
+
+    auto MetricsTable = MetricsTab.Add(SnAPI::UI::UITable{});
+    auto& MetricsTableElement = MetricsTable.Element();
+    MetricsTableElement.ElementStyle().Apply("editor.tools_table");
+    MetricsTableElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    MetricsTableElement.Height().Set(SnAPI::UI::Sizing::Fixed(120.0f));
+    MetricsTableElement.ColumnCount().Set(2u);
+    MetricsTableElement.ShowHeader().Set(true);
+    MetricsTableElement.SetColumnHeaders({"Metric", "Value"});
+
+    constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kMetricsRows{{
+        {"Draw Calls", "152"},
+        {"GPU Time", "6.8 ms"},
+        {"Triangles", "1.4M"},
+        {"Entities", "12"},
+    }};
+    for (const auto& [MetricName, MetricValue] : kMetricsRows)
+    {
+        auto MetricCell = MetricsTable.Add(SnAPI::UI::UIText(MetricName));
+        MetricCell.Element().ElementStyle().Apply("editor.menu_item");
+        auto ValueCell = MetricsTable.Add(SnAPI::UI::UIText(MetricValue));
+        ValueCell.Element().ElementStyle().Apply("editor.panel_title");
+    }
+
+    ViewTabsElement.SetTabLabel(0, "Game View");
+    ViewTabsElement.SetTabLabel(1, "Profiler");
+
     m_gameViewport = Viewport.Handle();
 }
 
@@ -699,19 +961,53 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     auto Inspector = Workspace.Add(SnAPI::UI::UIPanel("Editor.Inspector"));
     auto& InspectorPanel = Inspector.Element();
     InspectorPanel.ElementStyle().Apply("editor.sidebar");
-    InspectorPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.48f));
+    InspectorPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.30f));
     InspectorPanel.Height().Set(SnAPI::UI::Sizing::Fill());
     InspectorPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    InspectorPanel.Padding().Set(6.0f);
+    InspectorPanel.Gap().Set(6.0f);
 
-    auto Title = Inspector.Add(SnAPI::UI::UIText("Inspector"));
+    auto TitleRow = Inspector.Add(SnAPI::UI::UIPanel("Editor.InspectorTitleRow"));
+    auto& TitleRowPanel = TitleRow.Element();
+    TitleRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    TitleRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    TitleRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    TitleRowPanel.Gap().Set(4.0f);
+    TitleRowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
+    TitleRowPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+
+    auto TitleIcon = TitleRow.Add(SnAPI::UI::UIImage(kInspectorIconUrl));
+    auto& TitleIconImage = TitleIcon.Element();
+    TitleIconImage.Width().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    TitleIconImage.Height().Set(SnAPI::UI::Sizing::Fixed(14.0f));
+    TitleIconImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+    TitleIconImage.LazyLoad().Set(true);
+
+    auto Title = TitleRow.Add(SnAPI::UI::UIText("Inspector"));
     Title.Element().ElementStyle().Apply("editor.panel_title");
     Title.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto Subtitle = Inspector.Add(SnAPI::UI::UIText("Selection"));
+    auto InspectorTabs = Inspector.Add(SnAPI::UI::UITabs{});
+    auto& InspectorTabsElement = InspectorTabs.Element();
+    InspectorTabsElement.ElementStyle().Apply("editor.viewport_tabs");
+    InspectorTabsElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    InspectorTabsElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    InspectorTabsElement.HeaderHeight().Set(30.0f);
+
+    auto PropertiesTab = InspectorTabs.Add(SnAPI::UI::UIPanel("Editor.Inspector.Properties"));
+    auto& PropertiesTabPanel = PropertiesTab.Element();
+    PropertiesTabPanel.ElementStyle().Apply("editor.section_card");
+    PropertiesTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    PropertiesTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PropertiesTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    PropertiesTabPanel.Padding().Set(4.0f);
+    PropertiesTabPanel.Gap().Set(4.0f);
+
+    auto Subtitle = PropertiesTab.Add(SnAPI::UI::UIText("Selection"));
     Subtitle.Element().ElementStyle().Apply("editor.panel_subtitle");
     Subtitle.Element().ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto PropertyPanelBuilder = Inspector.Add(UIPropertyPanel{});
+    auto PropertyPanelBuilder = PropertiesTab.Add(UIPropertyPanel{});
     auto& PropertyPanel = PropertyPanelBuilder.Element();
     PropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     PropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
@@ -721,6 +1017,134 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     PropertyPanel.ShowVerticalScrollbar().Set(true);
     PropertyPanel.Smooth().Set(true);
     PropertyPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+
+    auto ToolsTab = InspectorTabs.Add(SnAPI::UI::UIPanel("Editor.Inspector.Tools"));
+    auto& ToolsTabPanel = ToolsTab.Element();
+    ToolsTabPanel.ElementStyle().Apply("editor.section_card");
+    ToolsTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ToolsTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ToolsTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ToolsTabPanel.Padding().Set(4.0f);
+    ToolsTabPanel.Gap().Set(6.0f);
+
+    auto ToolsScroll = ToolsTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ToolsScrollElement = ToolsScroll.Element();
+    ToolsScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ToolsScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    ToolsScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ToolsScrollElement.ShowHorizontalScrollbar().Set(false);
+    ToolsScrollElement.ShowVerticalScrollbar().Set(true);
+    ToolsScrollElement.Smooth().Set(true);
+    ToolsScrollElement.Padding().Set(2.0f);
+    ToolsScrollElement.Gap().Set(6.0f);
+
+    auto SnapCard = ToolsScroll.Add(SnAPI::UI::UIPanel("Editor.Tools.Snap"));
+    auto& SnapCardPanel = SnapCard.Element();
+    SnapCardPanel.ElementStyle().Apply("editor.section_card");
+    SnapCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    SnapCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    SnapCardPanel.Gap().Set(4.0f);
+
+    auto SnapTitle = SnapCard.Add(SnAPI::UI::UIText("Snapping"));
+    SnapTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto MoveSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
+    auto& MoveSnapField = MoveSnap.Element();
+    MoveSnapField.ElementStyle().Apply("editor.number_field");
+    MoveSnapField.Step().Set(0.1);
+    MoveSnapField.Value().Set(1.0);
+    MoveSnapField.Precision().Set(2u);
+    MoveSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
+    MoveSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
+    MoveSnapField.Padding().Set(5.0f);
+
+    auto RotateSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
+    auto& RotateSnapField = RotateSnap.Element();
+    RotateSnapField.ElementStyle().Apply("editor.number_field");
+    RotateSnapField.Step().Set(1.0);
+    RotateSnapField.Value().Set(15.0);
+    RotateSnapField.Precision().Set(1u);
+    RotateSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
+    RotateSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
+    RotateSnapField.Padding().Set(5.0f);
+
+    auto ScaleSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
+    auto& ScaleSnapField = ScaleSnap.Element();
+    ScaleSnapField.ElementStyle().Apply("editor.number_field");
+    ScaleSnapField.Step().Set(0.05);
+    ScaleSnapField.Value().Set(0.5);
+    ScaleSnapField.Precision().Set(2u);
+    ScaleSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
+    ScaleSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
+    ScaleSnapField.Padding().Set(5.0f);
+
+    auto DateCard = ToolsScroll.Add(SnAPI::UI::UIPanel("Editor.Tools.Date"));
+    auto& DateCardPanel = DateCard.Element();
+    DateCardPanel.ElementStyle().Apply("editor.section_card");
+    DateCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    DateCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    DateCardPanel.Gap().Set(4.0f);
+
+    auto DateTitle = DateCard.Add(SnAPI::UI::UIText("Build Date"));
+    DateTitle.Element().ElementStyle().Apply("editor.panel_title");
+    auto DatePicker = DateCard.Add(SnAPI::UI::UIDatePicker{});
+    DatePicker.Element().ElementStyle().Apply("editor.date_picker");
+    DatePicker.Element().Width().Set(SnAPI::UI::Sizing::Fill());
+    DatePicker.Element().ShowWeekday().Set(false);
+
+    auto ColorCard = ToolsScroll.Add(SnAPI::UI::UIPanel("Editor.Tools.Color"));
+    auto& ColorCardPanel = ColorCard.Element();
+    ColorCardPanel.ElementStyle().Apply("editor.section_card");
+    ColorCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ColorCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ColorCardPanel.Gap().Set(4.0f);
+
+    auto ColorTitle = ColorCard.Add(SnAPI::UI::UIText("Gizmo Palette"));
+    ColorTitle.Element().ElementStyle().Apply("editor.panel_title");
+    auto ColorPicker = ColorCard.Add(SnAPI::UI::UIColorPicker{});
+    ColorPicker.Element().ElementStyle().Apply("editor.color_picker");
+    ColorPicker.Element().Width().Set(SnAPI::UI::Sizing::Fill());
+    ColorPicker.Element().Height().Set(SnAPI::UI::Sizing::Fixed(136.0f));
+
+    auto TagsCard = ToolsScroll.Add(SnAPI::UI::UIPanel("Editor.Tools.Tags"));
+    auto& TagsCardPanel = TagsCard.Element();
+    TagsCardPanel.ElementStyle().Apply("editor.section_card");
+    TagsCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    TagsCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    TagsCardPanel.Gap().Set(4.0f);
+
+    auto TagsTitle = TagsCard.Add(SnAPI::UI::UIText("Selection Tags"));
+    TagsTitle.Element().ElementStyle().Apply("editor.panel_title");
+    auto TagsField = TagsCard.Add(SnAPI::UI::UITokenField{});
+    TagsField.Element().ElementStyle().Apply("editor.token_field");
+    TagsField.Element().Width().Set(SnAPI::UI::Sizing::Fill());
+    TagsField.Element().AddToken("Gameplay", false);
+    TagsField.Element().AddToken("Dynamic", false);
+
+    auto ShortcutsTable = ToolsScroll.Add(SnAPI::UI::UITable{});
+    auto& ShortcutsTableElement = ShortcutsTable.Element();
+    ShortcutsTableElement.ElementStyle().Apply("editor.tools_table");
+    ShortcutsTableElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ShortcutsTableElement.ColumnCount().Set(2u);
+    ShortcutsTableElement.RowHeight().Set(26.0f);
+    ShortcutsTableElement.HeaderHeight().Set(26.0f);
+    ShortcutsTableElement.SetColumnHeaders({"Action", "Hotkey"});
+    constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kShortcuts{{
+        {"Focus Selection", "F"},
+        {"Duplicate", "Ctrl+D"},
+        {"Frame All", "Shift+F"},
+        {"Delete", "Del"},
+    }};
+    for (const auto& [Action, Hotkey] : kShortcuts)
+    {
+        auto ActionCell = ShortcutsTable.Add(SnAPI::UI::UIText(Action));
+        ActionCell.Element().ElementStyle().Apply("editor.menu_item");
+        auto KeyCell = ShortcutsTable.Add(SnAPI::UI::UIText(Hotkey));
+        KeyCell.Element().ElementStyle().Apply("editor.panel_title");
+    }
+
+    InspectorTabsElement.SetTabLabel(0, "Selection");
+    InspectorTabsElement.SetTabLabel(1, "Tools");
 
     m_inspectorPropertyPanel = PropertyPanelBuilder.Handle();
     BindInspectorTarget(SelectedNode, ActiveCamera);
@@ -744,23 +1168,28 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
 
     if (SelectedNode)
     {
-        if (SelectedNode->Has<CameraComponent>())
+        if (m_boundInspectorObject != SelectedNode || m_boundInspectorType != SelectedNode->TypeKey())
         {
-            auto CameraResult = SelectedNode->Component<CameraComponent>();
-            if (CameraResult)
+            PropertyPanel->ClearObject();
+            if (PropertyPanel->BindNode(SelectedNode))
             {
-                TargetObject = &*CameraResult;
-                TargetType = StaticTypeId<CameraComponent>();
+                m_boundInspectorObject = SelectedNode;
+                m_boundInspectorType = SelectedNode->TypeKey();
+            }
+            else
+            {
+                m_boundInspectorObject = nullptr;
+                m_boundInspectorType = {};
             }
         }
-
-        if (!TargetObject)
+        else
         {
-            TargetObject = SelectedNode;
-            TargetType = SelectedNode->TypeKey();
+            PropertyPanel->RefreshFromModel();
         }
+        return;
     }
-    else if (ActiveCamera)
+
+    if (ActiveCamera)
     {
         TargetObject = ActiveCamera;
         TargetType = StaticTypeId<CameraComponent>();
@@ -776,12 +1205,21 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
 
     if (m_boundInspectorObject == TargetObject && m_boundInspectorType == TargetType)
     {
+        PropertyPanel->RefreshFromModel();
         return;
     }
 
-    (void)PropertyPanel->BindObject(TargetType, TargetObject);
-    m_boundInspectorObject = TargetObject;
-    m_boundInspectorType = TargetType;
+    PropertyPanel->ClearObject();
+    if (PropertyPanel->BindObject(TargetType, TargetObject))
+    {
+        m_boundInspectorObject = TargetObject;
+        m_boundInspectorType = TargetType;
+    }
+    else
+    {
+        m_boundInspectorObject = nullptr;
+        m_boundInspectorType = {};
+    }
 }
 
 void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent* ActiveCamera)
@@ -883,24 +1321,18 @@ void EditorLayout::EnsureGameViewportOverlay(GameRuntime& Runtime)
     auto OverlayPanelBuilder = OverlayContext->Root().Add(SnAPI::UI::UIPanel("Editor.GameViewportOverlay"));
     auto& OverlayPanel = OverlayPanelBuilder.Element();
     OverlayPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Fixed(278.0f));
-    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Fixed(178.0f));
+    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Fixed(248.0f));
+    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Fixed(118.0f));
     OverlayPanel.HAlign().Set(SnAPI::UI::EAlignment::End);
-    OverlayPanel.VAlign().Set(SnAPI::UI::EAlignment::Start);
+    OverlayPanel.VAlign().Set(SnAPI::UI::EAlignment::End);
     OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{12.0f, 12.0f, 12.0f, 12.0f});
-    OverlayPanel.Padding().Set(8.0f);
-    OverlayPanel.Gap().Set(4.0f);
-    OverlayPanel.Background().Set(SnAPI::UI::Color{8, 14, 24, 214});
-    OverlayPanel.BorderColor().Set(SnAPI::UI::Color{79, 118, 166, 214});
+    OverlayPanel.Padding().Set(6.0f);
+    OverlayPanel.Gap().Set(3.0f);
+    OverlayPanel.Background().Set(SnAPI::UI::Color{20, 22, 27, 214});
+    OverlayPanel.BorderColor().Set(SnAPI::UI::Color{87, 93, 104, 220});
     OverlayPanel.BorderThickness().Set(1.0f);
     OverlayPanel.CornerRadius().Set(6.0f);
     OverlayPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
-
-    auto TitleBuilder = OverlayPanelBuilder.Add(SnAPI::UI::UIText("Realtime FrameGraph"));
-    auto& Title = TitleBuilder.Element();
-    Title.TextColor().Set(SnAPI::UI::Color{182, 220, 255, 255});
-    Title.HAlign().Set(SnAPI::UI::EAlignment::Start);
-    Title.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
 
     auto StatsBuilder = OverlayPanelBuilder.Add(SnAPI::UI::UIPanel("Editor.GameViewportOverlay.Stats"));
     auto& StatsPanel = StatsBuilder.Element();
@@ -914,7 +1346,7 @@ void EditorLayout::EnsureGameViewportOverlay(GameRuntime& Runtime)
     auto FrameTimeLabelBuilder = StatsBuilder.Add(SnAPI::UI::UIText("Frame: -- ms"));
     auto& FrameTimeLabel = FrameTimeLabelBuilder.Element();
     FrameTimeLabel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    FrameTimeLabel.TextColor().Set(SnAPI::UI::Color{136, 216, 255, 255});
+    FrameTimeLabel.TextColor().Set(SnAPI::UI::Color{206, 212, 221, 255});
     FrameTimeLabel.HAlign().Set(SnAPI::UI::EAlignment::Start);
     FrameTimeLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     FrameTimeLabel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
@@ -922,7 +1354,7 @@ void EditorLayout::EnsureGameViewportOverlay(GameRuntime& Runtime)
     auto FpsLabelBuilder = StatsBuilder.Add(SnAPI::UI::UIText("FPS: --"));
     auto& FpsLabel = FpsLabelBuilder.Element();
     FpsLabel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    FpsLabel.TextColor().Set(SnAPI::UI::Color{255, 206, 120, 255});
+    FpsLabel.TextColor().Set(SnAPI::UI::Color{223, 227, 234, 255});
     FpsLabel.HAlign().Set(SnAPI::UI::EAlignment::Start);
     FpsLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     FpsLabel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
@@ -939,17 +1371,17 @@ void EditorLayout::EnsureGameViewportOverlay(GameRuntime& Runtime)
     Graph.ContentPadding().Set(6.0f);
     Graph.LineThickness().Set(1.6f);
     Graph.ValuePrecision().Set(1u);
-    Graph.BackgroundColor().Set(SnAPI::UI::Color{12, 20, 32, 220});
-    Graph.PlotBackgroundColor().Set(SnAPI::UI::Color{17, 29, 46, 230});
-    Graph.BorderColor().Set(SnAPI::UI::Color{89, 131, 184, 214});
-    Graph.GridColor().Set(SnAPI::UI::Color{84, 119, 168, 88});
-    Graph.AxisColor().Set(SnAPI::UI::Color{128, 172, 222, 176});
-    Graph.TitleColor().Set(SnAPI::UI::Color{226, 236, 248, 255});
-    Graph.LegendTextColor().Set(SnAPI::UI::Color{190, 208, 232, 255});
+    Graph.BackgroundColor().Set(SnAPI::UI::Color{19, 21, 25, 224});
+    Graph.PlotBackgroundColor().Set(SnAPI::UI::Color{24, 27, 33, 230});
+    Graph.BorderColor().Set(SnAPI::UI::Color{84, 90, 101, 216});
+    Graph.GridColor().Set(SnAPI::UI::Color{92, 99, 110, 76});
+    Graph.AxisColor().Set(SnAPI::UI::Color{130, 137, 149, 152});
+    Graph.TitleColor().Set(SnAPI::UI::Color{228, 231, 237, 255});
+    Graph.LegendTextColor().Set(SnAPI::UI::Color{186, 192, 202, 255});
     Graph.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
 
-    const std::uint32_t FrameSeries = Graph.AddSeries("Frame ms", SnAPI::UI::Color{104, 198, 255, 255});
-    const std::uint32_t FpsSeries = Graph.AddSeries("FPS", SnAPI::UI::Color{255, 182, 92, 255});
+    const std::uint32_t FrameSeries = Graph.AddSeries("Frame ms", SnAPI::UI::Color{184, 191, 201, 255});
+    const std::uint32_t FpsSeries = Graph.AddSeries("FPS", SnAPI::UI::Color{223, 228, 235, 255});
     if (FrameSeries != SnAPI::UI::UIRealtimeGraph::InvalidSeries)
     {
         (void)Graph.SetSeriesRange(FrameSeries, 0.0f, 33.34f);

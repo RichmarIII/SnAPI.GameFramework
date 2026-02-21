@@ -37,6 +37,15 @@ public:
             return nullptr;
         }
 
+        // Current font atlas preload path is ASCII-only; map unsupported codepoints to fallback.
+        constexpr uint32_t kAsciiFirst = 0x20u;
+        constexpr uint32_t kAsciiLastExclusive = 0x7Fu;
+        constexpr uint32_t kFallbackCodepoint = static_cast<uint32_t>('?');
+        if (Codepoint < kAsciiFirst || Codepoint >= kAsciiLastExclusive)
+        {
+            Codepoint = kFallbackCodepoint;
+        }
+
         if (const auto Cached = m_cachedGlyphs.find(Codepoint); Cached != m_cachedGlyphs.end())
         {
             return &Cached->second;
@@ -80,6 +89,26 @@ private:
 #endif
 } // namespace
 
+WorldExecutionProfile WorldExecutionProfile::Runtime()
+{
+    return {};
+}
+
+WorldExecutionProfile WorldExecutionProfile::Editor()
+{
+    auto Profile = Runtime();
+    Profile.RunGameplay = false;
+    Profile.TickPhysicsSimulation = false;
+    Profile.TickAudio = false;
+    Profile.PumpNetworking = false;
+    return Profile;
+}
+
+WorldExecutionProfile WorldExecutionProfile::PIE()
+{
+    return Runtime();
+}
+
 World::World()
     : NodeGraph("World")
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
@@ -89,6 +118,8 @@ World::World()
     
     TypeKey(StaticTypeId<World>());
     BaseNode::World(this);
+    m_worldKind = EWorldKind::Runtime;
+    m_executionProfile = WorldExecutionProfile::Runtime();
 }
 
 World::World(std::string Name)
@@ -100,6 +131,8 @@ World::World(std::string Name)
     
     TypeKey(StaticTypeId<World>());
     BaseNode::World(this);
+    m_worldKind = EWorldKind::Runtime;
+    m_executionProfile = WorldExecutionProfile::Runtime();
 }
 
 World::~World()
@@ -126,42 +159,122 @@ void World::ExecuteQueuedTasks()
     m_taskQueue.ExecuteQueuedTasks(*this, m_threadMutex);
 }
 
+EWorldKind World::Kind() const
+{
+    return m_worldKind;
+}
+
+bool World::ShouldRunGameplay() const
+{
+    return m_executionProfile.RunGameplay;
+}
+
+bool World::ShouldTickInput() const
+{
+    return m_executionProfile.TickInput;
+}
+
+bool World::ShouldTickUI() const
+{
+    return m_executionProfile.TickUI;
+}
+
+bool World::ShouldPumpNetworking() const
+{
+    return m_executionProfile.PumpNetworking;
+}
+
+bool World::ShouldTickNodeGraph() const
+{
+    return m_executionProfile.TickNodeGraph;
+}
+
+bool World::ShouldSimulatePhysics() const
+{
+    return m_executionProfile.TickPhysicsSimulation;
+}
+
+bool World::ShouldAllowPhysicsQueries() const
+{
+    return m_executionProfile.AllowPhysicsQueries;
+}
+
+bool World::ShouldTickAudio() const
+{
+    return m_executionProfile.TickAudio;
+}
+
+bool World::ShouldRunNodeEndFrame() const
+{
+    return m_executionProfile.RunNodeEndFrame;
+}
+
+bool World::ShouldBuildUiRenderPackets() const
+{
+    return m_executionProfile.BuildUiRenderPackets;
+}
+
+bool World::ShouldRenderFrame() const
+{
+    return m_executionProfile.RenderFrame;
+}
+
+void World::SetWorldKind(const EWorldKind Kind)
+{
+    m_worldKind = Kind;
+}
+
+const WorldExecutionProfile& World::ExecutionProfile() const
+{
+    return m_executionProfile;
+}
+
+void World::SetExecutionProfile(const WorldExecutionProfile& Profile)
+{
+    m_executionProfile = Profile;
+}
+
 void World::Tick(const float DeltaSeconds)
 {
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
 #if defined(SNAPI_GF_ENABLE_INPUT)
-    if (m_inputSystem.IsInitialized())
+    if (ShouldTickInput() && m_inputSystem.IsInitialized())
     {
         (void)m_inputSystem.Pump();
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_UI)
-    if (m_uiSystem.IsInitialized())
+    if (ShouldTickUI() && m_uiSystem.IsInitialized())
     {
         m_uiSystem.Tick(DeltaSeconds);
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
-    m_networkSystem.ExecuteQueuedTasks();
-    if (auto* Session = m_networkSystem.Session())
+    if (ShouldPumpNetworking())
     {
-        
-        Session->Pump(Networking::Clock::now());
+        m_networkSystem.ExecuteQueuedTasks();
+        if (auto* Session = m_networkSystem.Session())
+        {
+            
+            Session->Pump(Networking::Clock::now());
+        }
     }
 #endif
+    if (ShouldTickNodeGraph())
     {
         
         NodeGraph::Tick(DeltaSeconds);
     }
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
-    if (m_physicsSystem.IsInitialized() && m_physicsSystem.TickInVariableTick())
+    if (ShouldSimulatePhysics() && m_physicsSystem.IsInitialized() && m_physicsSystem.TickInVariableTick())
     {
         
         (void)m_physicsSystem.Step(DeltaSeconds);
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_AUDIO)
+    if (ShouldTickAudio())
     {
         
         m_audioSystem.Update(DeltaSeconds);
@@ -174,14 +287,15 @@ void World::FixedTick(float DeltaSeconds)
 
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
+    if (ShouldTickNodeGraph())
     {
         
         NodeGraph::FixedTick(DeltaSeconds);
     }
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
-    const bool RunPhysicsFixedStep = [&]() {
+    const bool RunPhysicsFixedStep = [this]() {
         
-        return m_physicsSystem.IsInitialized() && m_physicsSystem.TickInFixedTick();
+        return ShouldSimulatePhysics() && m_physicsSystem.IsInitialized() && m_physicsSystem.TickInFixedTick();
     }();
     if (RunPhysicsFixedStep)
     {
@@ -213,6 +327,7 @@ void World::LateTick(const float DeltaSeconds)
 
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
+    if (ShouldTickNodeGraph())
     {
         
         NodeGraph::LateTick(DeltaSeconds);
@@ -225,15 +340,19 @@ void World::EndFrame()
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
-    m_networkSystem.ExecuteQueuedTasks();
+    if (ShouldPumpNetworking())
+    {
+        m_networkSystem.ExecuteQueuedTasks();
+    }
 #endif
+    if (ShouldRunNodeEndFrame())
     {
         
         NodeGraph::EndFrame();
     }
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #if defined(SNAPI_GF_ENABLE_UI)
-    if (m_rendererSystem.IsInitialized() && m_uiSystem.IsInitialized())
+    if (ShouldBuildUiRenderPackets() && m_rendererSystem.IsInitialized() && m_uiSystem.IsInitialized())
     {
         auto BindFontMetrics = [&](SnAPI::UI::UIContext* UiContext, SnAPI::UI::IFontMetrics* Metrics) {
             if (UiContext)
@@ -271,6 +390,7 @@ void World::EndFrame()
         }
     }
 #endif
+    if (ShouldRenderFrame())
     {
         
         m_rendererSystem.EndFrame();

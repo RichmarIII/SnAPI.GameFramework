@@ -2,10 +2,16 @@
 
 #include "BaseNode.h"
 #include "CameraComponent.h"
+#include "InputSystem.h"
+#include "TransformComponent.h"
 #include "UIRenderViewport.h"
 #include "World.h"
 
 #include <UIEvents.h>
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+#include <Input.h>
+#endif
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include "RigidBodyComponent.h"
@@ -17,8 +23,10 @@
 
 #include <SnAPI/Math/LinearAlgebra.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <numbers>
 #include <span>
 #include <utility>
 
@@ -81,6 +89,41 @@ private:
     NodeHandle m_previous{};
     NodeHandle m_next{};
 };
+
+[[nodiscard]] bool IsFiniteFloat(const float Value)
+{
+    return std::isfinite(Value);
+}
+
+[[nodiscard]] bool IsFiniteVec3(const Vec3& Value)
+{
+    return std::isfinite(Value.x()) && std::isfinite(Value.y()) && std::isfinite(Value.z());
+}
+
+[[nodiscard]] Vec3 NormalizeOrAxis(const Vec3& Value, const Vec3& FallbackAxis)
+{
+    const auto LengthSquared = Value.squaredNorm();
+    if (!(LengthSquared > static_cast<Vec3::Scalar>(1.0e-8)))
+    {
+        return FallbackAxis;
+    }
+    return Value / std::sqrt(LengthSquared);
+}
+
+[[nodiscard]] bool IsPointInsideRect(const SnAPI::UI::UIRect& Rect, const float X, const float Y)
+{
+    if (!std::isfinite(Rect.X) || !std::isfinite(Rect.Y) || !std::isfinite(Rect.W) || !std::isfinite(Rect.H))
+    {
+        return false;
+    }
+
+    if (Rect.W <= 0.0f || Rect.H <= 0.0f || !std::isfinite(X) || !std::isfinite(Y))
+    {
+        return false;
+    }
+
+    return X >= Rect.X && X <= (Rect.X + Rect.W) && Y >= Rect.Y && Y <= (Rect.Y + Rect.H);
+}
 } // namespace
 
 std::string_view EditorCommandService::Name() const
@@ -622,36 +665,58 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
         return false;
     }
 
-    const SnAPI::Math::Scalar NdcX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
-    const SnAPI::Math::Scalar NdcY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
+    const SnAPI::Math::Scalar NormalizedX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
+    const SnAPI::Math::Scalar NormalizedY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
 
-    const SnAPI::Math::Vector4 ClipNear{
-        NdcX, NdcY, static_cast<SnAPI::Math::Scalar>(1.0), static_cast<SnAPI::Math::Scalar>(1.0)};
-    const SnAPI::Math::Vector4 ClipFar{
-        NdcX, NdcY, static_cast<SnAPI::Math::Scalar>(0.0), static_cast<SnAPI::Math::Scalar>(1.0)};
-
-    const SnAPI::Math::Matrix4 InverseViewProjection = Camera->ViewProjection().inverse();
-    const SnAPI::Math::Vector4 WorldNear4 = InverseViewProjection * ClipNear;
-    const SnAPI::Math::Vector4 WorldFar4 = InverseViewProjection * ClipFar;
-
-    const auto NearW = static_cast<double>(WorldNear4.w());
-    const auto FarW = static_cast<double>(WorldFar4.w());
-    constexpr double kSmallNumber = 1.0e-8;
-    if (std::fabs(NearW) <= kSmallNumber || std::fabs(FarW) <= kSmallNumber)
+    const SnAPI::Math::Scalar FovRadians = static_cast<SnAPI::Math::Scalar>(
+        static_cast<double>(Camera->Fov()) * (std::numbers::pi_v<double> / 180.0));
+    const SnAPI::Math::Scalar TanHalfFov = static_cast<SnAPI::Math::Scalar>(
+        std::tan(static_cast<double>(FovRadians) * 0.5));
+    const SnAPI::Math::Scalar Aspect = static_cast<SnAPI::Math::Scalar>(Camera->Aspect());
+    if (!std::isfinite(TanHalfFov) || !std::isfinite(Aspect) ||
+        !(TanHalfFov > static_cast<SnAPI::Math::Scalar>(0.0)) ||
+        !(Aspect > static_cast<SnAPI::Math::Scalar>(0.0)))
     {
         return false;
     }
 
-    const SnAPI::Physics::Vec3 RayNear = (WorldNear4.template head<3>() / WorldNear4.w());
-    const SnAPI::Physics::Vec3 RayFar = (WorldFar4.template head<3>() / WorldFar4.w());
-    SnAPI::Physics::Vec3 RayDirection = RayFar - RayNear;
+    SnAPI::Physics::Vec3 Forward = Camera->Forward().template cast<SnAPI::Math::Scalar>();
+    SnAPI::Physics::Vec3 Right = Camera->Right().template cast<SnAPI::Math::Scalar>();
+    SnAPI::Physics::Vec3 Up = Camera->Up().template cast<SnAPI::Math::Scalar>();
+
+    const SnAPI::Math::Scalar ForwardLength = Forward.norm();
+    const SnAPI::Math::Scalar RightLength = Right.norm();
+    const SnAPI::Math::Scalar UpLength = Up.norm();
+    constexpr SnAPI::Math::Scalar kSmallNumber = static_cast<SnAPI::Math::Scalar>(1.0e-8);
+    if (!(ForwardLength > kSmallNumber) || !(RightLength > kSmallNumber) || !(UpLength > kSmallNumber))
+    {
+        return false;
+    }
+
+    Forward /= ForwardLength;
+    Right /= RightLength;
+    Up /= UpLength;
+
+    SnAPI::Physics::Vec3 RayDirection = Forward +
+        (Right * (NormalizedX * Aspect * TanHalfFov)) +
+        (Up * (NormalizedY * TanHalfFov));
+
     const SnAPI::Math::Scalar DirectionLength = RayDirection.norm();
-    if (!(DirectionLength > static_cast<SnAPI::Math::Scalar>(0.0)))
+    if (!(DirectionLength > kSmallNumber))
     {
         return false;
     }
-
     RayDirection /= DirectionLength;
+
+    const SnAPI::Math::Scalar NearClip =
+        std::max(static_cast<SnAPI::Math::Scalar>(Camera->Near()), static_cast<SnAPI::Math::Scalar>(0.001));
+    const SnAPI::Physics::Vec3 CameraPosition = Camera->Position().template cast<SnAPI::Math::Scalar>();
+    const SnAPI::Physics::Vec3 RayOrigin = CameraPosition + (RayDirection * NearClip);
+
+    if (!WorldPtr->ShouldAllowPhysicsQueries())
+    {
+        return false;
+    }
 
     auto& Physics = WorldPtr->Physics();
     auto* Scene = Physics.Scene();
@@ -661,7 +726,7 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
     }
 
     SnAPI::Physics::RaycastRequest Request{};
-    Request.Origin = Physics.WorldToPhysicsPosition(RayNear, false);
+    Request.Origin = Physics.WorldToPhysicsPosition(RayOrigin, false);
     Request.Direction = RayDirection;
     Request.Distance = static_cast<float>(100000.0);
     Request.Mode = SnAPI::Physics::EQueryMode::ClosestHit;
@@ -718,6 +783,219 @@ bool EditorSelectionInteractionService::TryResolvePickedNodeActiveCamera(EditorS
 
     OutNode = Camera->Owner();
     return true;
+}
+
+std::string_view EditorTransformInteractionService::Name() const
+{
+    return "EditorTransformInteractionService";
+}
+
+std::vector<std::type_index> EditorTransformInteractionService::Dependencies() const
+{
+    return {std::type_index(typeid(EditorSceneService)),
+            std::type_index(typeid(EditorSelectionService)),
+            std::type_index(typeid(EditorLayoutService))};
+}
+
+Result EditorTransformInteractionService::Initialize(EditorServiceContext& Context)
+{
+    (void)Context;
+    m_mode = EEditorTransformMode::Translate;
+    m_dragging = false;
+    m_lastMouseX = 0.0f;
+    m_lastMouseY = 0.0f;
+    return Ok();
+}
+
+void EditorTransformInteractionService::Tick(EditorServiceContext& Context, const float DeltaSeconds)
+{
+    (void)DeltaSeconds;
+
+#if !defined(SNAPI_GF_ENABLE_INPUT) || !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(SNAPI_GF_ENABLE_UI)
+    (void)Context;
+    m_dragging = false;
+    return;
+#else
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr || !WorldPtr->Input().IsInitialized())
+    {
+        m_dragging = false;
+        return;
+    }
+
+    const auto* Snapshot = WorldPtr->Input().Snapshot();
+    if (!Snapshot || !Snapshot->IsWindowFocused())
+    {
+        m_dragging = false;
+        return;
+    }
+
+    const bool RightDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Right);
+    if (!RightDown)
+    {
+        if (Snapshot->KeyPressed(SnAPI::Input::EKey::W))
+        {
+            m_mode = EEditorTransformMode::Translate;
+        }
+        else if (Snapshot->KeyPressed(SnAPI::Input::EKey::E))
+        {
+            m_mode = EEditorTransformMode::Rotate;
+        }
+        else if (Snapshot->KeyPressed(SnAPI::Input::EKey::R))
+        {
+            m_mode = EEditorTransformMode::Scale;
+        }
+    }
+
+    auto* SelectionService = Context.GetService<EditorSelectionService>();
+    auto* SceneService = Context.GetService<EditorSceneService>();
+    auto* LayoutService = Context.GetService<EditorLayoutService>();
+    if (!SelectionService || !SceneService || !LayoutService)
+    {
+        m_dragging = false;
+        return;
+    }
+
+    const NodeHandle Selected = SelectionService->Model().SelectedNode();
+    if (Selected.IsNull())
+    {
+        m_dragging = false;
+        return;
+    }
+
+    BaseNode* Node = WorldPtr->NodePool().Borrowed(Selected);
+    if (!Node)
+    {
+        m_dragging = false;
+        return;
+    }
+
+    auto TransformResult = Node->Component<TransformComponent>();
+    if (!TransformResult)
+    {
+        m_dragging = false;
+        return;
+    }
+
+    auto* Camera = SceneService->ActiveRenderCamera();
+    auto* ViewportElement = LayoutService->GameViewportElement();
+    if (!Camera || !ViewportElement)
+    {
+        m_dragging = false;
+        return;
+    }
+
+    const SnAPI::UI::UIRect ViewRect = ViewportElement->LayoutRect();
+    const float MouseX = Snapshot->Mouse().X;
+    const float MouseY = Snapshot->Mouse().Y;
+    const bool PointerInside = IsPointInsideRect(ViewRect, MouseX, MouseY);
+
+    const bool LeftDown = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Left);
+    const bool LeftPressed = Snapshot->MouseButtonPressed(SnAPI::Input::EMouseButton::Left);
+    const bool AllowTransform = PointerInside && LeftDown && !RightDown;
+    if (!AllowTransform)
+    {
+        m_dragging = false;
+        return;
+    }
+
+    if (!m_dragging || LeftPressed)
+    {
+        m_dragging = true;
+        m_lastMouseX = MouseX;
+        m_lastMouseY = MouseY;
+        return;
+    }
+
+    const float Dx = MouseX - m_lastMouseX;
+    const float Dy = MouseY - m_lastMouseY;
+    m_lastMouseX = MouseX;
+    m_lastMouseY = MouseY;
+    if (!IsFiniteFloat(Dx) || !IsFiniteFloat(Dy))
+    {
+        return;
+    }
+
+    constexpr float kTransformDragThresholdPixels = 3.0f;
+    if (std::fabs(Dx) < kTransformDragThresholdPixels && std::fabs(Dy) < kTransformDragThresholdPixels)
+    {
+        return;
+    }
+
+    auto& Transform = *TransformResult;
+    if (!IsFiniteVec3(Transform.Position))
+    {
+        Transform.Position = Vec3::Zero();
+    }
+    if (!IsFiniteVec3(Transform.Scale))
+    {
+        Transform.Scale = Vec3::Ones();
+    }
+    if (!std::isfinite(Transform.Rotation.x()) || !std::isfinite(Transform.Rotation.y()) ||
+        !std::isfinite(Transform.Rotation.z()) || !std::isfinite(Transform.Rotation.w()) ||
+        !(Transform.Rotation.squaredNorm() > static_cast<Quat::Scalar>(0.0)))
+    {
+        Transform.Rotation = Quat::Identity();
+    }
+
+    const bool Fast = Snapshot->KeyDown(SnAPI::Input::EKey::LeftShift) ||
+                      Snapshot->KeyDown(SnAPI::Input::EKey::RightShift);
+    const float SpeedMultiplier = Fast ? 2.0f : 1.0f;
+
+    switch (m_mode)
+    {
+    case EEditorTransformMode::Translate:
+        {
+            Vec3 Right = NormalizeOrAxis(Camera->Right().template cast<SnAPI::Math::Scalar>(), Vec3::UnitX());
+            Vec3 Up = NormalizeOrAxis(Camera->Up().template cast<SnAPI::Math::Scalar>(), Vec3::UnitY());
+            const Vec3 CameraPos = Camera->Position().template cast<SnAPI::Math::Scalar>();
+            const SnAPI::Math::Scalar Distance = std::max<SnAPI::Math::Scalar>(
+                static_cast<SnAPI::Math::Scalar>(0.25),
+                (Transform.Position - CameraPos).norm());
+            const SnAPI::Math::Scalar PixelScale = Distance * static_cast<SnAPI::Math::Scalar>(0.0015 * SpeedMultiplier);
+            Transform.Position += (Right * static_cast<SnAPI::Math::Scalar>(Dx) * PixelScale) +
+                                  (Up * static_cast<SnAPI::Math::Scalar>(-Dy) * PixelScale);
+        }
+        break;
+    case EEditorTransformMode::Rotate:
+        {
+            const SnAPI::Math::Scalar DegreesPerPixel = static_cast<SnAPI::Math::Scalar>(0.25 * SpeedMultiplier);
+            const SnAPI::Math::Scalar YawRadians = SnAPI::Math::SLinearAlgebra::DegreesToRadians(
+                static_cast<SnAPI::Math::Scalar>(Dx) * DegreesPerPixel);
+            const SnAPI::Math::Scalar PitchRadians = SnAPI::Math::SLinearAlgebra::DegreesToRadians(
+                static_cast<SnAPI::Math::Scalar>(-Dy) * DegreesPerPixel);
+
+            const Quat YawQuat(SnAPI::Math::AngleAxis3D(YawRadians, Vec3::UnitY()));
+            const Vec3 PitchAxis = NormalizeOrAxis(
+                Camera->Right().template cast<SnAPI::Math::Scalar>(),
+                Vec3::UnitX());
+            const Quat PitchQuat(SnAPI::Math::AngleAxis3D(PitchRadians, PitchAxis));
+
+            Transform.Rotation = (YawQuat * PitchQuat * Transform.Rotation).normalized();
+        }
+        break;
+    case EEditorTransformMode::Scale:
+        {
+            const SnAPI::Math::Scalar Delta = static_cast<SnAPI::Math::Scalar>((Dx - Dy) * 0.01f * SpeedMultiplier);
+            const SnAPI::Math::Scalar ScaleFactor = std::max<SnAPI::Math::Scalar>(
+                static_cast<SnAPI::Math::Scalar>(0.01),
+                static_cast<SnAPI::Math::Scalar>(1.0) + Delta);
+            Transform.Scale *= ScaleFactor;
+            Transform.Scale.x() = std::max<SnAPI::Math::Scalar>(Transform.Scale.x(), static_cast<SnAPI::Math::Scalar>(0.001));
+            Transform.Scale.y() = std::max<SnAPI::Math::Scalar>(Transform.Scale.y(), static_cast<SnAPI::Math::Scalar>(0.001));
+            Transform.Scale.z() = std::max<SnAPI::Math::Scalar>(Transform.Scale.z(), static_cast<SnAPI::Math::Scalar>(0.001));
+        }
+        break;
+    default:
+        break;
+    }
+#endif
+}
+
+void EditorTransformInteractionService::Shutdown(EditorServiceContext& Context)
+{
+    (void)Context;
+    m_dragging = false;
 }
 
 } // namespace SnAPI::GameFramework::Editor

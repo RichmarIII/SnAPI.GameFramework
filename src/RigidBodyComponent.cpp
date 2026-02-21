@@ -260,6 +260,14 @@ void RigidBodyComponent::Tick(float DeltaSeconds)
 {
     (void)DeltaSeconds;
 
+    if (m_bodyHandle.IsValid() && m_settingsDirty)
+    {
+        if (!RecreateBody())
+        {
+            return;
+        }
+    }
+
     if (!m_bodyHandle.IsValid())
     {
         if (!CreateBody())
@@ -286,6 +294,14 @@ void RigidBodyComponent::FixedTick(float DeltaSeconds)
 {
     (void)DeltaSeconds;
 
+    if (m_bodyHandle.IsValid() && m_settingsDirty)
+    {
+        if (!RecreateBody())
+        {
+            return;
+        }
+    }
+
     if (!m_bodyHandle.IsValid())
     {
         if (!CreateBody())
@@ -304,6 +320,7 @@ bool RigidBodyComponent::CreateBody()
 {
     if (m_bodyHandle.IsValid())
     {
+        m_settingsDirty = false;
         return true;
     }
 
@@ -359,6 +376,7 @@ bool RigidBodyComponent::CreateBody()
         m_isSleeping = false;
         Active(true);
     }
+    m_settingsDirty = false;
     return true;
 }
 

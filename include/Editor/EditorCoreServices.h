@@ -81,6 +81,13 @@ enum class EEditorPickingBackend : std::uint8_t
     RendererIdBuffer
 };
 
+enum class EEditorTransformMode : std::uint8_t
+{
+    Translate = 0,
+    Rotate,
+    Scale
+};
+
 /**
  * @brief Provides the active editor UI theme.
  */
@@ -204,6 +211,25 @@ private:
     bool m_pointerPressedInside = false;
     bool m_pointerDragged = false;
     SnAPI::UI::UIPoint m_pointerPressPosition{};
+};
+
+class SNAPI_GAMEFRAMEWORK_EDITOR_API EditorTransformInteractionService final : public IEditorService
+{
+public:
+    [[nodiscard]] std::string_view Name() const override;
+    [[nodiscard]] std::vector<std::type_index> Dependencies() const override;
+    Result Initialize(EditorServiceContext& Context) override;
+    void Tick(EditorServiceContext& Context, float DeltaSeconds) override;
+    void Shutdown(EditorServiceContext& Context) override;
+
+    void SetMode(EEditorTransformMode Mode) { m_mode = Mode; }
+    [[nodiscard]] EEditorTransformMode Mode() const { return m_mode; }
+
+private:
+    EEditorTransformMode m_mode = EEditorTransformMode::Translate;
+    bool m_dragging = false;
+    float m_lastMouseX = 0.0f;
+    float m_lastMouseY = 0.0f;
 };
 
 } // namespace SnAPI::GameFramework::Editor

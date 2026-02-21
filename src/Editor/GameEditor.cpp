@@ -1,9 +1,11 @@
 #include "Editor/GameEditor.h"
 
 #include "Editor/EditorCoreServices.h"
+#include "Editor/EditorWorld.h"
 
 #include <algorithm>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace SnAPI::GameFramework::Editor
@@ -204,6 +206,13 @@ Result GameEditor::InitializeRuntime(const GameEditorSettings& Settings)
 {
     GameRuntimeSettings EffectiveSettings = Settings.Runtime;
 
+    if (!EffectiveSettings.WorldFactory)
+    {
+        EffectiveSettings.WorldFactory = [](std::string Name) -> std::unique_ptr<SnAPI::GameFramework::World> {
+            return std::make_unique<EditorWorld>(std::move(Name));
+        };
+    }
+
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_UI)
     // Editor UX requires pointer/keyboard routing into UI by default.
     if (EffectiveSettings.UI.has_value() && !EffectiveSettings.Input.has_value())
@@ -241,6 +250,7 @@ void GameEditor::EnsureDefaultServicesRegistered()
     (void)RegisterService<EditorSelectionService>();
     (void)RegisterService<EditorLayoutService>();
     (void)RegisterService<EditorSelectionInteractionService>();
+    (void)RegisterService<EditorTransformInteractionService>();
 #endif
 
     m_defaultServicesRegistered = true;

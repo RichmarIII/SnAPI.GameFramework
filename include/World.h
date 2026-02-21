@@ -34,6 +34,43 @@ namespace SnAPI::GameFramework
 class GameplayHost;
 
 /**
+ * @brief World frame-phase execution policy.
+ * @remarks
+ * This allows editor/runtime/PIE worlds to share one implementation while
+ * selectively enabling simulation and subsystem phases.
+ */
+struct WorldExecutionProfile
+{
+    bool RunGameplay = true; /**< @brief Run high-level gameplay host tick. */
+    bool TickInput = true; /**< @brief Pump world input in variable tick. */
+    bool TickUI = true; /**< @brief Tick world UI contexts in variable tick. */
+    bool PumpNetworking = true; /**< @brief Pump networking queues/sessions each frame. */
+    bool TickNodeGraph = true; /**< @brief Run node/component tick traversal phases. */
+    bool TickPhysicsSimulation = true; /**< @brief Advance physics simulation in variable/fixed phases. */
+    bool AllowPhysicsQueries = true; /**< @brief Allow query-only physics access even when simulation is disabled. */
+    bool TickAudio = true; /**< @brief Update world audio subsystem. */
+    bool RunNodeEndFrame = true; /**< @brief Run node/component end-frame flush. */
+    bool BuildUiRenderPackets = true; /**< @brief Build UI packets and queue to renderer. */
+    bool RenderFrame = true; /**< @brief Submit renderer end-frame. */
+
+    /**
+     * @brief Runtime/game defaults.
+     */
+    [[nodiscard]] static WorldExecutionProfile Runtime();
+    /**
+     * @brief Editor defaults.
+     * @remarks
+     * Physics simulation is disabled while collider/query data remains available.
+     */
+    [[nodiscard]] static WorldExecutionProfile Editor();
+    /**
+     * @brief PIE defaults.
+     * @remarks Equivalent to runtime defaults.
+     */
+    [[nodiscard]] static WorldExecutionProfile PIE();
+};
+
+/**
  * @brief Concrete world root that owns levels and subsystems.
  * @remarks
  * `World` is the top-level runtime orchestration object:
@@ -70,6 +107,22 @@ public:
     World& operator=(const World&) = delete;
     World(World&&) noexcept = default;
     World& operator=(World&&) noexcept = default;
+
+    EWorldKind Kind() const override;
+    bool ShouldRunGameplay() const override;
+    bool ShouldTickInput() const override;
+    bool ShouldTickUI() const override;
+    bool ShouldPumpNetworking() const override;
+    bool ShouldTickNodeGraph() const override;
+    bool ShouldSimulatePhysics() const override;
+    bool ShouldAllowPhysicsQueries() const override;
+    bool ShouldTickAudio() const override;
+    bool ShouldRunNodeEndFrame() const override;
+    bool ShouldBuildUiRenderPackets() const override;
+    bool ShouldRenderFrame() const override;
+    void SetWorldKind(EWorldKind Kind);
+    const WorldExecutionProfile& ExecutionProfile() const;
+    void SetExecutionProfile(const WorldExecutionProfile& Profile);
 
     /**
      * @brief Enqueue work on the world (game) thread.
@@ -292,6 +345,8 @@ private:
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     RendererSystem m_rendererSystem{}; /**< @brief World-scoped renderer subsystem. */
 #endif
+    EWorldKind m_worldKind = EWorldKind::Runtime; /**< @brief Role/classification of this world instance. */
+    WorldExecutionProfile m_executionProfile{}; /**< @brief Per-world frame-phase execution policy. */
     bool m_fixedTickEnabled = false; /**< @brief Runtime fixed-step enable state for current frame. */
     float m_fixedTickDeltaSeconds = 0.0f; /**< @brief Runtime fixed-step interval snapshot for current frame. */
     float m_fixedTickInterpolationAlpha = 1.0f; /**< @brief Runtime interpolation alpha between fixed samples for current frame. */

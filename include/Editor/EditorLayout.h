@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <limits>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace SnAPI::UI
@@ -20,6 +19,7 @@ namespace SnAPI::UI
 class Theme;
 class UIContext;
 class UIPanel;
+class UITreeView;
 template<typename TElement>
 class TElementBuilder;
 } // namespace SnAPI::UI
@@ -57,7 +57,6 @@ public:
 
 private:
     using PanelBuilder = SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel>;
-    static constexpr std::uint32_t kHierarchyRadioGroup = 0xED170001u;
 
     struct HierarchyEntry
     {
@@ -75,8 +74,8 @@ private:
                     EditorSelectionModel* SelectionModel);
     void ConfigureRoot(SnAPI::UI::UIContext& Context);
 
-    PanelBuilder BuildMenuBar(PanelBuilder& Root);
-    PanelBuilder BuildToolbar(PanelBuilder& Root);
+    void BuildMenuBar(PanelBuilder& Root);
+    void BuildToolbar(PanelBuilder& Root);
     void BuildWorkspace(PanelBuilder& Root,
                         GameRuntime& Runtime,
                         CameraComponent* ActiveCamera,
@@ -92,10 +91,9 @@ private:
 
     void EnsureDefaultSelection(CameraComponent* ActiveCamera);
     void SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCamera);
-    void RebuildHierarchyRows(const std::vector<HierarchyEntry>& Entries);
+    void RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, NodeHandle SelectedNode);
     [[nodiscard]] bool CollectHierarchyEntries(World& WorldRef, std::vector<HierarchyEntry>& OutEntries) const;
     [[nodiscard]] std::uint64_t ComputeHierarchySignature(const std::vector<HierarchyEntry>& Entries) const;
-    void SyncHierarchySelectionVisual();
     void OnHierarchyNodeChosen(NodeHandle Handle);
     [[nodiscard]] BaseNode* ResolveSelectedNode(GameRuntime& Runtime, CameraComponent* ActiveCamera) const;
 
@@ -110,11 +108,12 @@ private:
     SnAPI::UI::UIContext* m_context = nullptr;
     SnAPI::UI::ElementHandle<UIRenderViewport> m_gameViewport{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_inspectorPropertyPanel{};
-    SnAPI::UI::ElementId m_hierarchyListHost{};
-    SnAPI::UI::ElementId m_hierarchyRowsRoot{};
-    std::unordered_map<Uuid, SnAPI::UI::ElementId, UuidHash> m_hierarchyRowsByNode{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_hierarchyTree{};
+    std::vector<NodeHandle> m_hierarchyVisibleNodes{};
     std::uint64_t m_hierarchySignature = 0;
     std::size_t m_hierarchyNodeCount = 0;
+    NodeHandle m_hierarchyVisualSelection{};
+    std::string m_hierarchyFilterText{};
     EditorSelectionModel* m_selection = nullptr;
     SnAPI::UI::TDelegate<void(NodeHandle)> m_onHierarchyNodeChosen{};
     void* m_boundInspectorObject = nullptr;

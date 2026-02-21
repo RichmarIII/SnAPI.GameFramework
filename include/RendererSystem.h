@@ -4,10 +4,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include "GameThreading.h"
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -296,6 +298,21 @@ public:
     [[nodiscard]] bool HasRenderViewport(std::uint64_t ViewportID) const;
 
     /**
+     * @brief Set draw/composition index for a render viewport.
+     * @param ViewportID Target viewport identifier.
+     * @param Index Zero-based render order index (lower renders first).
+     * @return True when viewport exists and index was applied.
+     */
+    bool SetRenderViewportIndex(std::uint64_t ViewportID, std::size_t Index);
+
+    /**
+     * @brief Query draw/composition index for a render viewport.
+     * @param ViewportID Target viewport identifier.
+     * @return Zero-based index when viewport exists.
+     */
+    [[nodiscard]] std::optional<std::size_t> RenderViewportIndex(std::uint64_t ViewportID) const;
+
+    /**
      * @brief Register a built-in pass graph preset for a viewport.
      * @param ViewportID Target viewport identifier.
      * @param Preset Pass-graph preset.
@@ -465,6 +482,10 @@ public:
     const Graphics::LightManager* LightManager()const;
 
 private:
+#if defined(SNAPI_GF_ENABLE_UI)
+    struct QueuedUiRect;
+#endif
+
     bool InitializeUnlocked();
     void ApplyOutOfMemoryFallbackSettings();
     bool RecreateSwapChainForCurrentWindowUnlocked();
@@ -489,6 +510,7 @@ private:
     bool EnsureUiMaterialResources();
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForTexture(const SnAPI::UI::UIContext& Context,
                                                                                     std::uint32_t TextureId);
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForGradient(const QueuedUiRect& Entry);
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiFontMaterialInstance();
     void FlushQueuedUiPackets();
 #endif
@@ -525,6 +547,8 @@ private:
 
     struct QueuedUiRect
     {
+        static constexpr std::size_t MaxGradientStops = 10;
+
         std::uint64_t ViewportID = 0;
         const SnAPI::UI::UIContext* Context = nullptr;
         float X = 0.0f;
@@ -552,7 +576,53 @@ private:
         bool HasScissor = false;
         std::uint32_t TextureId = 0;
         bool UseFontAtlas = false;
+        bool UseGradient = false;
+        float GradientStartX = 0.0f;
+        float GradientStartY = 0.0f;
+        float GradientEndX = 1.0f;
+        float GradientEndY = 0.0f;
+        std::uint8_t GradientStopCount = 0;
+        std::array<float, MaxGradientStops> GradientStops{};
+        std::array<std::uint32_t, MaxGradientStops> GradientColors{};
         float GlobalZ = 0.0f;
+    };
+
+    struct UiGradientCacheKey
+    {
+        float StartX = 0.0f;
+        float StartY = 0.0f;
+        float EndX = 1.0f;
+        float EndY = 0.0f;
+        std::uint8_t StopCount = 0;
+        std::array<float, QueuedUiRect::MaxGradientStops> Stops{};
+        std::array<std::uint32_t, QueuedUiRect::MaxGradientStops> Colors{};
+
+        friend bool operator==(const UiGradientCacheKey& Left, const UiGradientCacheKey& Right) = default;
+    };
+
+    struct UiGradientCacheKeyHasher
+    {
+        std::size_t operator()(const UiGradientCacheKey& Key) const noexcept
+        {
+            std::size_t Seed = 0;
+            const auto Mix = [&Seed](const std::size_t Value) {
+                Seed ^= Value + 0x9e3779b97f4a7c15ull + (Seed << 6u) + (Seed >> 2u);
+            };
+
+            Mix(std::hash<float>{}(Key.StartX));
+            Mix(std::hash<float>{}(Key.StartY));
+            Mix(std::hash<float>{}(Key.EndX));
+            Mix(std::hash<float>{}(Key.EndY));
+            Mix(std::hash<std::uint8_t>{}(Key.StopCount));
+
+            for (std::size_t Index = 0; Index < static_cast<std::size_t>(Key.StopCount); ++Index)
+            {
+                Mix(std::hash<float>{}(Key.Stops[Index]));
+                Mix(std::hash<std::uint32_t>{}(Key.Colors[Index]));
+            }
+
+            return Seed;
+        }
     };
 
     struct PendingUiTextureUpload
@@ -586,6 +656,8 @@ private:
     std::unordered_map<SnAPI::Graphics::IGPUImage*, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiFontMaterialInstances{}; /**< @brief Cached immutable UI material instances keyed by font atlas texture pointer. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */
+    std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiGradientCacheKeyHasher> m_uiGradientTextures{}; /**< @brief Cached generated gradient textures keyed by gradient definition. */
+    std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiGradientCacheKeyHasher> m_uiGradientMaterialInstances{}; /**< @brief Cached material instances for generated gradient textures. */
     std::unordered_map<UiTextureCacheKey, PendingUiTextureUpload, UiTextureCacheKeyHasher> m_uiPendingTextureUploads{}; /**< @brief Deferred CPU-side UI image payloads keyed by (UIContext, texture-id). */
     std::vector<QueuedUiRect> m_uiQueuedRects{}; /**< @brief Per-frame translated UI rectangles awaiting renderer draw submission. */
     bool m_uiPacketsQueuedThisFrame = false; /**< @brief True once at least one UI context queued packets for the current frame. */

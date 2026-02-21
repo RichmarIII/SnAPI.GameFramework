@@ -11,23 +11,31 @@ int main()
     GameEditor EditorApp{};
     GameEditorSettings Settings{};
     Settings.Runtime.WorldName = "SnAPI.GameFramework.Editor";
+    Settings.Runtime.Tick.EnableFixedTick = true;
+    Settings.Runtime.Tick.EnableLateTick = true;
+    Settings.Runtime.Tick.MaxFpsWhenVSyncOff = 120;
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     GameRuntimeRendererSettings RendererSettings{};
     RendererSettings.CreateGraphicsApi = true;
     RendererSettings.CreateWindow = true;
     RendererSettings.WindowTitle = "SnAPI.GameFramework.Editor";
-    RendererSettings.WindowWidth = 1600.0f;
-    RendererSettings.WindowHeight = 900.0f;
+    RendererSettings.WindowWidth = 1920.0f;
+    RendererSettings.WindowHeight = 1080.0f;
     RendererSettings.RegisterDefaultPassGraph = false;
     Settings.Runtime.Renderer = RendererSettings;
 #endif
 
 #if defined(SNAPI_GF_ENABLE_UI)
     GameRuntimeUiSettings UiSettings{};
-    UiSettings.ViewportWidth = 1600.0f;
-    UiSettings.ViewportHeight = 900.0f;
+    UiSettings.ViewportWidth = 1920.0f;
+    UiSettings.ViewportHeight = 1080.0f;
     Settings.Runtime.UI = UiSettings;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    GameRuntimePhysicsSettings PhysicsSettings{};
+    Settings.Runtime.Physics = PhysicsSettings;
 #endif
 
     if (auto InitResult = EditorApp.Initialize(Settings); !InitResult)

@@ -18,6 +18,7 @@
 
 namespace SnAPI::GameFramework
 {
+class BaseNode;
 
 class SNAPI_GAMEFRAMEWORK_API UIPropertyPanel final : public SnAPI::UI::UIScrollContainer
 {
@@ -39,6 +40,7 @@ public:
   }
 
   bool BindObject(const TypeId& Type, void* Instance);
+  bool BindNode(BaseNode* Node);
   void ClearObject();
   void RefreshFromModel();
 
@@ -70,6 +72,7 @@ private:
 
   struct FieldBinding
   {
+    void* RootInstance = nullptr;
     std::vector<FieldPathEntry> Path{};
     TypeId FieldType{};
     EEditorKind EditorKind = EEditorKind::Unsupported;
@@ -79,15 +82,24 @@ private:
     bool LastBool = false;
   };
 
+  struct BoundSection
+  {
+    TypeId Type{};
+    void* Instance = nullptr;
+    std::string Heading{};
+  };
+
   bool RebuildUi();
   void BuildTypeIntoContainer(
     SnAPI::UI::ElementId Parent,
     const TypeId& Type,
+    void* RootInstance,
     const std::vector<FieldPathEntry>& PathPrefix,
     int Depth);
   void AddFieldEditor(
     SnAPI::UI::ElementId Parent,
     const FieldInfo& Field,
+    void* RootInstance,
     std::vector<FieldPathEntry> Path,
     int Depth);
   void AddUnsupportedRow(
@@ -130,6 +142,7 @@ private:
 
   TypeId m_BoundType{};
   void* m_BoundInstance = nullptr;
+  std::vector<BoundSection> m_BoundSections{};
   SnAPI::UI::ElementId m_ContentRoot{};
   std::vector<FieldBinding> m_Bindings{};
   bool m_Built = false;

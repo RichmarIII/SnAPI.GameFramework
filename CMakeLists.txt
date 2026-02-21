@@ -159,6 +159,7 @@ if (SNAPI_GF_BUILD_EDITOR)
         include/Editor/GameEditor.h
         include/Editor/GameFrameworkEditor.hpp
         include/Editor/IEditorService.h
+        include/Editor/EditorWorld.h
         src/Editor/main.cpp
         src/Editor/EditorCameraComponent.cpp
         src/Editor/EditorCoreServices.cpp
@@ -168,6 +169,7 @@ if (SNAPI_GF_BUILD_EDITOR)
         src/Editor/EditorTheme.cpp
         src/Editor/EditorTypeRegistration.cpp
         src/Editor/EditorViewportBinding.cpp
+        src/Editor/EditorWorld.cpp
         src/Editor/GameEditor.cpp
     )
 

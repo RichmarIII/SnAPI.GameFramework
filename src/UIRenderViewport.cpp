@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <string>
 #include <utility>
@@ -32,6 +33,7 @@ UIRenderViewport::UIRenderViewport()
     m_Properties.SetDefaultProperty(ViewportNameKey, std::string{"RenderViewport"});
     m_Properties.SetDefaultProperty(EnabledKey, true);
     m_Properties.SetDefaultProperty(RenderScaleKey, 1.0f);
+    m_Properties.SetDefaultProperty(ViewportIndexKey, static_cast<std::int32_t>(-1));
     m_Properties.SetDefaultProperty(PassGraphPresetKey, ERenderViewportPassGraphPreset::DefaultWorld);
     m_Properties.SetDefaultProperty(AutoRegisterPassGraphKey, true);
 
@@ -366,6 +368,12 @@ void UIRenderViewport::SyncViewport()
 
     if (m_ownedViewportId != 0)
     {
+        const std::int32_t StyledViewportIndex = GetStyledProperty(ViewportIndexKey, static_cast<std::int32_t>(-1));
+        if (StyledViewportIndex >= 0)
+        {
+            (void)Renderer.SetRenderViewportIndex(m_ownedViewportId, static_cast<std::size_t>(StyledViewportIndex));
+        }
+
         const bool AutoRegisterPassGraph = GetStyledProperty(AutoRegisterPassGraphKey, true);
         const auto Preset = GetStyledProperty(PassGraphPresetKey, ERenderViewportPassGraphPreset::DefaultWorld);
         if (!AutoRegisterPassGraph || Preset == ERenderViewportPassGraphPreset::None)

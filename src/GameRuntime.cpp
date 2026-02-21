@@ -558,7 +558,19 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     {
         WorldName = "World";
     }
-    m_world = std::make_unique<class World>(std::move(WorldName));
+    if (m_settings.WorldFactory)
+    {
+        m_world = m_settings.WorldFactory(WorldName);
+    }
+    else
+    {
+        m_world = std::make_unique<class World>(std::move(WorldName));
+    }
+    if (!m_world)
+    {
+        Shutdown();
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Failed to create world instance"));
+    }
     m_world->SetGameplayHost(nullptr);
     m_world->SetFixedTickFrameState(false, 0.0f, 1.0f);
 
@@ -715,7 +727,7 @@ bool GameRuntime::Update(float DeltaSeconds)
     {
         SNAPI_GF_PROFILE_SCOPE("Frame.Update", "Runtime");
 
-        if (m_gameplayHost && m_gameplayHost->IsInitialized())
+        if (m_gameplayHost && m_gameplayHost->IsInitialized() && m_world->ShouldRunGameplay())
         {
             SNAPI_GF_PROFILE_SCOPE("Frame.Gameplay", "Runtime");
             m_gameplayHost->Tick(DeltaSeconds);

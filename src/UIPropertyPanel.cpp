@@ -2,6 +2,9 @@
 
 #if defined(SNAPI_GF_ENABLE_UI)
 
+#include "BaseNode.h"
+#include "ComponentStorage.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -329,12 +332,85 @@ void UIPropertyPanel::Initialize(SnAPI::UI::UIContext* Context, const SnAPI::UI:
 
 bool UIPropertyPanel::BindObject(const TypeId& Type, void* Instance)
 {
-  m_BoundType = Type;
-  m_BoundInstance = Instance;
-  if (!m_BoundInstance)
+  if (!Instance)
   {
     ClearObject();
     return false;
+  }
+
+  if (m_Built && m_ContentRoot.Value != 0 && m_BoundType == Type && m_BoundInstance == Instance)
+  {
+    SyncModelToEditors();
+    return true;
+  }
+
+  m_BoundType = Type;
+  m_BoundInstance = Instance;
+  m_BoundSections.clear();
+  m_BoundSections.push_back(BoundSection{
+    .Type = Type,
+    .Instance = Instance,
+    .Heading = PrettyTypeName(Type)});
+
+  if (!RebuildUi())
+  {
+    return false;
+  }
+
+  SyncModelToEditors();
+  return true;
+}
+
+bool UIPropertyPanel::BindNode(BaseNode* Node)
+{
+  if (!Node)
+  {
+    ClearObject();
+    return false;
+  }
+
+  m_BoundType = Node->TypeKey();
+  m_BoundInstance = Node;
+  m_BoundSections.clear();
+
+  std::string nodeHeading = Node->Name();
+  const std::string nodeTypeName = PrettyTypeName(Node->TypeKey());
+  if (nodeHeading.empty())
+  {
+    nodeHeading = nodeTypeName;
+  }
+  else if (!nodeTypeName.empty())
+  {
+    nodeHeading += " (" + nodeTypeName + ")";
+  }
+
+  m_BoundSections.push_back(BoundSection{
+    .Type = Node->TypeKey(),
+    .Instance = Node,
+    .Heading = std::move(nodeHeading)});
+
+  const auto& ComponentTypes = Node->ComponentTypes();
+  const auto& ComponentStorages = Node->ComponentStorages();
+  const size_t ComponentCount = std::min(ComponentTypes.size(), ComponentStorages.size());
+  for (size_t Index = 0; Index < ComponentCount; ++Index)
+  {
+    IComponentStorage* Storage = ComponentStorages[Index];
+    if (!Storage)
+    {
+      continue;
+    }
+
+    const TypeId& ComponentType = ComponentTypes[Index];
+    void* ComponentInstance = Storage->Borrowed(Node->Handle());
+    if (!ComponentInstance)
+    {
+      continue;
+    }
+
+    m_BoundSections.push_back(BoundSection{
+      .Type = ComponentType,
+      .Instance = ComponentInstance,
+      .Heading = PrettyTypeName(ComponentType)});
   }
 
   if (!RebuildUi())
@@ -350,7 +426,16 @@ void UIPropertyPanel::ClearObject()
 {
   m_BoundType = TypeId{};
   m_BoundInstance = nullptr;
+  m_BoundSections.clear();
+  m_ContentRoot = {};
+  std::fill(std::begin(m_Children), std::end(m_Children), SnAPI::UI::ElementId{});
+  m_ChildCount = 0;
   m_Bindings.clear();
+  m_Built = false;
+  if (m_Context)
+  {
+    m_Context->MarkLayoutDirty();
+  }
 }
 
 void UIPropertyPanel::RefreshFromModel()
@@ -405,13 +490,10 @@ bool UIPropertyPanel::RebuildUi()
   }
   m_RebuildInProgress = true;
 
-  if (m_ContentRoot.Value != 0)
-  {
-    SnAPI::UI::IUIElement& oldRoot = m_Context->GetElement(m_ContentRoot);
-    oldRoot.Properties().SetProperty(
-      SnAPI::UI::UIElementBase::VisibilityKey,
-      SnAPI::UI::EVisibility::Collapsed);
-  }
+  // Property panel is single-content by design.
+  m_ContentRoot = {};
+  std::fill(std::begin(m_Children), std::end(m_Children), SnAPI::UI::ElementId{});
+  m_ChildCount = 0;
 
   const auto contentHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.ContentRoot");
   if (contentHandle.Id.Value == 0)
@@ -433,7 +515,69 @@ bool UIPropertyPanel::RebuildUi()
     contentPanel->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
   }
 
-  BuildTypeIntoContainer(m_ContentRoot, m_BoundType, {}, 0);
+  if (m_BoundSections.empty())
+  {
+    m_BoundSections.push_back(BoundSection{
+      .Type = m_BoundType,
+      .Instance = m_BoundInstance,
+      .Heading = PrettyTypeName(m_BoundType)});
+  }
+
+  if (m_BoundSections.size() == 1)
+  {
+    const BoundSection& Section = m_BoundSections.front();
+    BuildTypeIntoContainer(m_ContentRoot, Section.Type, Section.Instance, {}, 0);
+  }
+  else
+  {
+    const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+    if (accordionHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(m_ContentRoot, accordionHandle.Id);
+      if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
+      {
+        accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+        accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        accordion->AllowMultipleExpanded().Set(true);
+        accordion->DefaultExpanded().Set(true);
+        accordion->Gap().Set(4.0f);
+        accordion->ContentPadding().Set(6.0f);
+      }
+
+      for (const BoundSection& Section : m_BoundSections)
+      {
+        if (!Section.Instance)
+        {
+          continue;
+        }
+
+        const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.SectionBody");
+        if (bodyHandle.Id.Value == 0)
+        {
+          continue;
+        }
+
+        m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+        if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
+        {
+          body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+          body->Padding().Set(4.0f);
+          body->Gap().Set(6.0f);
+          body->Width().Set(SnAPI::UI::Sizing::Fill());
+          body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        }
+
+        if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
+        {
+          std::string heading = Section.Heading.empty() ? PrettyTypeName(Section.Type) : Section.Heading;
+          accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+          accordion->SetSectionExpanded(bodyHandle.Id, true);
+        }
+
+        BuildTypeIntoContainer(bodyHandle.Id, Section.Type, Section.Instance, {}, 0);
+      }
+    }
+  }
 
   m_Built = true;
   m_RebuildInProgress = false;
@@ -447,6 +591,7 @@ bool UIPropertyPanel::RebuildUi()
 void UIPropertyPanel::BuildTypeIntoContainer(
   const SnAPI::UI::ElementId Parent,
   const TypeId& Type,
+  void* RootInstance,
   const std::vector<FieldPathEntry>& PathPrefix,
   const int Depth)
 {
@@ -458,6 +603,12 @@ void UIPropertyPanel::BuildTypeIntoContainer(
   if (Depth > kMaxReflectionDepth)
   {
     AddUnsupportedRow(Parent, "Depth", "Maximum reflection depth reached");
+    return;
+  }
+
+  if (!RootInstance)
+  {
+    AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null instance");
     return;
   }
 
@@ -478,13 +629,14 @@ void UIPropertyPanel::BuildTypeIntoContainer(
   {
     auto path = PathPrefix;
     path.push_back(FieldPathEntry{Type, field.Name, field.IsConst});
-    AddFieldEditor(Parent, field, std::move(path), Depth);
+    AddFieldEditor(Parent, field, RootInstance, std::move(path), Depth);
   }
 }
 
 void UIPropertyPanel::AddFieldEditor(
   const SnAPI::UI::ElementId Parent,
   const FieldInfo& Field,
+  void* RootInstance,
   std::vector<FieldPathEntry> Path,
   const int Depth)
 {
@@ -545,7 +697,7 @@ void UIPropertyPanel::AddFieldEditor(
       accordion->SetSectionExpanded(bodyHandle.Id, true);
     }
 
-    BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, std::move(Path), Depth + 1);
+    BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, RootInstance, std::move(Path), Depth + 1);
     return;
   }
 
@@ -600,6 +752,7 @@ void UIPropertyPanel::AddFieldEditor(
   }
 
   FieldBinding binding{};
+  binding.RootInstance = RootInstance;
   binding.Path = std::move(Path);
   binding.FieldType = Field.FieldType;
   binding.EditorKind = editorKind;
@@ -900,14 +1053,14 @@ bool UIPropertyPanel::ReadFieldValue(
   std::string& OutText,
   bool& OutBool) const
 {
-  if (!m_BoundInstance)
+  if (!Binding.RootInstance)
   {
     return false;
   }
 
   void* owner = nullptr;
   const FieldInfo* field = nullptr;
-  if (!ResolveLeafPath(m_BoundInstance, Binding.Path, owner, field) || !field || !field->Getter)
+  if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || !field->Getter)
   {
     return false;
   }
@@ -1074,7 +1227,7 @@ bool UIPropertyPanel::WriteFieldValue(
   std::string_view TextValue,
   const bool BoolValue)
 {
-  if (!m_BoundInstance || Binding.ReadOnly)
+  if (!Binding.RootInstance || Binding.ReadOnly)
   {
     return false;
   }
@@ -1082,7 +1235,7 @@ bool UIPropertyPanel::WriteFieldValue(
   void* owner = nullptr;
   const FieldInfo* field = nullptr;
   const bool requiresSetter = Binding.EditorKind != EEditorKind::Enum;
-  if (!ResolveLeafPath(m_BoundInstance, Binding.Path, owner, field) || !field || field->IsConst ||
+  if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || field->IsConst ||
       (requiresSetter && !field->Setter))
   {
     return false;
