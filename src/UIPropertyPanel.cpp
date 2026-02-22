@@ -4,6 +4,7 @@
 
 #include "BaseNode.h"
 #include "ComponentStorage.h"
+#include "NodeGraph.h"
 
 #include <algorithm>
 #include <array>
@@ -468,6 +469,20 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
     .Instance = Node,
     .Heading = std::move(nodeHeading)});
 
+  NodeHandle ComponentOwner = Node->Handle();
+  if (auto* OwnerGraph = Node->OwnerGraph())
+  {
+    const bool OwnerHandleValid = !ComponentOwner.IsNull() && OwnerGraph->NodePool().Borrowed(ComponentOwner) != nullptr;
+    if (!OwnerHandleValid)
+    {
+      const auto FreshOwnerHandle = OwnerGraph->NodeHandleByIdSlow(Node->Id());
+      if (FreshOwnerHandle)
+      {
+        ComponentOwner = *FreshOwnerHandle;
+      }
+    }
+  }
+
   const auto& ComponentTypes = Node->ComponentTypes();
   const auto& ComponentStorages = Node->ComponentStorages();
   const size_t ComponentCount = std::min(ComponentTypes.size(), ComponentStorages.size());
@@ -480,7 +495,12 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
     }
 
     const TypeId& ComponentType = ComponentTypes[Index];
-    void* ComponentInstance = Storage->Borrowed(Node->Handle());
+    void* ComponentInstance = Storage->Borrowed(ComponentOwner);
+    if (!ComponentInstance)
+    {
+      // UUID-resolved fallback keeps inspector usable when runtime key fields drift.
+      ComponentInstance = Storage->Borrowed(NodeHandle{Node->Id()});
+    }
     if (!ComponentInstance)
     {
       continue;

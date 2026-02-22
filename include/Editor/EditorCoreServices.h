@@ -5,12 +5,14 @@
 #include "Editor/EditorSelectionModel.h"
 #include "Editor/EditorTheme.h"
 #include "Editor/EditorViewportBinding.h"
+#include "Editor/EditorAssetService.h"
 #include "Editor/IEditorService.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <string>
 
 namespace SnAPI::UI
 {
@@ -176,9 +178,23 @@ public:
     [[nodiscard]] int32_t GameViewportTabIndex() const;
 
 private:
+    void ApplyAssetBrowserState(EditorServiceContext& Context);
+    void QueueLayoutRebuild() { m_layoutRebuildRequested = true; }
+    void RebuildLayout(EditorServiceContext& Context);
+
     EditorLayout m_layout{};
     bool m_hasPendingSelectionRequest = false;
     NodeHandle m_pendingSelectionRequest{};
+    bool m_hasPendingAssetSelection = false;
+    bool m_pendingAssetSelectionDoubleClick = false;
+    std::string m_pendingAssetSelectionKey{};
+    bool m_hasPendingAssetPlaceRequest = false;
+    std::string m_pendingAssetPlaceKey{};
+    bool m_hasPendingAssetSaveRequest = false;
+    std::string m_pendingAssetSaveKey{};
+    bool m_hasPendingAssetRefreshRequest = false;
+    bool m_layoutRebuildRequested = false;
+    std::size_t m_assetListSignature = 0;
 };
 
 /**

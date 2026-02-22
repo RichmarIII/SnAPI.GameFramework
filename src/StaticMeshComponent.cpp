@@ -4,13 +4,21 @@
 
 #include "Profiling.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <string>
+#include <string_view>
 
+#include <BoxStreamSource.hpp>
+#include <ConeStreamSource.hpp>
 #include <LinearAlgebra.hpp>
 #include <MeshManager.hpp>
 #include <MeshRenderObject.hpp>
+#include <PyramidStreamSource.hpp>
+#include <SphereStreamSource.hpp>
 
 #include "BaseNode.h"
 #include "IWorld.h"
@@ -21,6 +29,23 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+std::string ToLowerASCII(const std::string_view Value)
+{
+    std::string Out(Value);
+    std::transform(Out.begin(), Out.end(), Out.begin(), [](const unsigned char Ch) {
+        return static_cast<char>(std::tolower(Ch));
+    });
+    return Out;
+}
+
+SnAPI::Vector3DF ToVector3DF(const Vec3& Value)
+{
+    return SnAPI::Vector3DF{
+        static_cast<float>(Value.x()),
+        static_cast<float>(Value.y()),
+        static_cast<float>(Value.z())};
+}
+
 bool IsFiniteVec3(const Vec3& Value)
 {
     return std::isfinite(Value.x()) && std::isfinite(Value.y()) && std::isfinite(Value.z());
@@ -61,6 +86,44 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const TransformComponent& Transform
     WorldTransform.rotate(Rotation);
     WorldTransform.scale(Scale);
     return WorldTransform.matrix();
+}
+
+SnAPI::Graphics::SharedVertexStreamSourcePtr BuildPrimitiveSourceFromMeshPath(const std::string& MeshPath)
+{
+    const std::string Token = ToLowerASCII(MeshPath);
+
+    if (Token == "primitive://box" || Token == "__primitive_box__")
+    {
+        auto Source = std::make_shared<SnAPI::Graphics::BoxStreamSource>();
+        Source->SetSize(ToVector3DF(Vec3(1.0f, 1.0f, 1.0f)));
+        return Source;
+    }
+
+    if (Token == "primitive://sphere" || Token == "__primitive_sphere__")
+    {
+        auto Source = std::make_shared<SnAPI::Graphics::SphereStreamSource>();
+        Source->SetRadius(0.5f);
+        Source->SetSegments(32u, 16u);
+        return Source;
+    }
+
+    if (Token == "primitive://cone" || Token == "__primitive_cone__")
+    {
+        auto Source = std::make_shared<SnAPI::Graphics::ConeStreamSource>();
+        Source->SetRadius(0.5f);
+        Source->SetHeight(1.0f);
+        Source->SetRadialSegments(24u);
+        return Source;
+    }
+
+    if (Token == "primitive://pyramid" || Token == "__primitive_pyramid__")
+    {
+        auto Source = std::make_shared<SnAPI::Graphics::PyramidStreamSource>();
+        Source->SetSize(ToVector3DF(Vec3(1.0f, 1.0f, 1.0f)));
+        return Source;
+    }
+
+    return {};
 }
 } // namespace
 
@@ -109,7 +172,6 @@ void StaticMeshComponent::ClearMesh()
 
 void StaticMeshComponent::OnCreate()
 {
-    
     (void)EnsureMeshLoaded();
 }
 
@@ -121,7 +183,6 @@ void StaticMeshComponent::OnDestroy()
 
 void StaticMeshComponent::Tick(float DeltaSeconds)
 {
-    
     (void)DeltaSeconds;
 
     if (m_settings.MeshPath.empty() && !m_streamSource)
@@ -206,6 +267,27 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         m_renderObject = std::move(RenderObject);
         m_loadedPath.clear();
         m_loadedStreamSource = m_streamSource;
+        m_registered = false;
+
+        (void)Renderer->ApplyDefaultMaterials(*m_renderObject);
+        ApplySharedMaterialInstances(*m_renderObject);
+        ApplyRenderObjectState(*m_renderObject);
+
+        return true;
+    }
+
+    if (const auto PrimitiveSource = BuildPrimitiveSourceFromMeshPath(m_settings.MeshPath))
+    {
+        auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>();
+        if (!RenderObject)
+        {
+            return false;
+        }
+
+        RenderObject->SetVertexStreamSource(PrimitiveSource);
+        m_renderObject = std::move(RenderObject);
+        m_loadedPath = m_settings.MeshPath;
+        m_loadedStreamSource.reset();
         m_registered = false;
 
         (void)Renderer->ApplyDefaultMaterials(*m_renderObject);

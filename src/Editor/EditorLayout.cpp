@@ -6,6 +6,7 @@
 #include "GameRuntime.h"
 #include "RendererSystem.h"
 #include "StaticTypeId.h"
+#include "TypeRegistry.h"
 #include "UIPropertyPanel.h"
 #include "UIRenderViewport.h"
 #include "UISystem.h"
@@ -38,9 +39,12 @@
 #include <array>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <limits>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 
 #include "CameraBase.hpp"
 
@@ -64,17 +68,6 @@ constexpr std::array<std::string_view, 6> kToolbarActions{
     "Play", "Pause", "Step", "Move", "Rotate", "Scale"};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
-
-constexpr std::array<std::string_view, 8> kAssetPreviewUrls{{
-    "https://picsum.photos/seed/snapi_environment/512/320",
-    "https://picsum.photos/seed/snapi_props/512/320",
-    "https://picsum.photos/seed/snapi_character/512/320",
-    "https://picsum.photos/seed/snapi_fx/512/320",
-    "https://picsum.photos/seed/snapi_textures/512/320",
-    "https://picsum.photos/seed/snapi_prefab/512/320",
-    "https://picsum.photos/seed/snapi_floor/512/320",
-    "https://picsum.photos/seed/snapi_crate/512/320",
-}};
 
 constexpr float kMainAreaSplitRatio = 0.68f;
 constexpr float kWorkspaceLeftSplitRatio = 0.23f;
@@ -129,6 +122,21 @@ void ConfigureHostPanel(SnAPI::UI::UIPanel& Panel)
     const std::string LabelLower = ToLower(Label);
     return LabelLower.find(FilterLower) != std::string::npos;
 }
+
+[[nodiscard]] std::size_t ComputeNodeComponentSignature(const BaseNode& Node)
+{
+    std::size_t Seed = Node.ComponentTypes().size();
+    const auto HashCombine = [&Seed](const std::size_t Value) {
+        Seed ^= Value + 0x9e3779b9 + (Seed << 6) + (Seed >> 2);
+    };
+
+    for (const TypeId& Type : Node.ComponentTypes())
+    {
+        HashCombine(UuidHash{}(Type));
+    }
+
+    return Seed;
+}
 } // namespace
 
 Result EditorLayout::Build(GameRuntime& Runtime,
@@ -179,6 +187,29 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_inspectorPropertyPanel = {};
     m_hierarchyTree = {};
     m_invalidationDebugToggleLabel = {};
+    m_contentSearchInput = {};
+    m_contentAssetNameValue = {};
+    m_contentAssetTypeValue = {};
+    m_contentAssetVariantValue = {};
+    m_contentAssetIdValue = {};
+    m_contentAssetStatusValue = {};
+    m_contentPlaceButton = {};
+    m_contentSaveButton = {};
+    m_contentAssetsList = {};
+    m_contentAssetsEmptyHint = {};
+    m_contentAssetCards.clear();
+    m_contentAssetCardButtons.clear();
+    m_contentAssetCardIndices.clear();
+    m_contentAssets.clear();
+    m_contentAssetFilterText.clear();
+    m_selectedContentAssetKey.clear();
+    m_lastContentAssetClickKey.clear();
+    m_lastContentAssetClickTime = {};
+    m_contentAssetDetails = {};
+    m_onContentAssetSelected = {};
+    m_onContentAssetPlaceRequested = {};
+    m_onContentAssetSaveRequested = {};
+    m_onContentAssetRefreshRequested = {};
     m_hierarchyVisibleNodes.clear();
     m_hierarchySignature = 0;
     m_hierarchyNodeCount = 0;
@@ -188,6 +219,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onHierarchyNodeChosen.Reset();
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
+    m_boundInspectorComponentSignature = 0;
     m_invalidationDebugOverlayEnabled = false;
     m_built = false;
 }
@@ -447,6 +479,20 @@ void EditorLayout::BuildWorkspace(PanelBuilder& Root,
 
 void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
 {
+    m_contentAssetCardButtons.clear();
+    m_contentAssetCardIndices.clear();
+    m_contentSearchInput = {};
+    m_contentAssetNameValue = {};
+    m_contentAssetTypeValue = {};
+    m_contentAssetVariantValue = {};
+    m_contentAssetIdValue = {};
+    m_contentAssetStatusValue = {};
+    m_contentPlaceButton = {};
+    m_contentSaveButton = {};
+    m_contentAssetsList = {};
+    m_contentAssetsEmptyHint = {};
+    m_contentAssetCards.clear();
+
     auto ContentBrowser = Root.Add(SnAPI::UI::UIPanel("Editor.ContentBrowser"));
     auto& ContentPanel = ContentBrowser.Element();
     ContentPanel.ElementStyle().Apply("editor.content_browser");
@@ -466,13 +512,35 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     auto& PathElement = Path.Element();
     PathElement.ElementStyle().Apply("editor.browser_path");
     PathElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    PathElement.SetCrumbs({"Content", "Assets", "Environment"});
+    PathElement.SetCrumbs({"Content", "Packs"});
 
     auto HeaderSearch = HeaderRow.Add(SnAPI::UI::UITextInput{});
     auto& HeaderSearchInput = HeaderSearch.Element();
     HeaderSearchInput.ElementStyle().Apply("editor.search");
     HeaderSearchInput.Width().Set(SnAPI::UI::Sizing::Ratio(0.45f));
     HeaderSearchInput.Placeholder().Set(std::string("Search assets..."));
+    HeaderSearchInput.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_contentAssetFilterText = ToLower(Value);
+        ApplyContentAssetFilter();
+    }));
+    m_contentSearchInput = HeaderSearch.Handle();
+
+    auto RefreshButton = HeaderRow.Add(SnAPI::UI::UIButton{});
+    auto& RefreshButtonElement = RefreshButton.Element();
+    RefreshButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    RefreshButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    RefreshButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    RefreshButtonElement.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 3.0f, 6.0f, 3.0f});
+    RefreshButtonElement.OnClick([this]() {
+        if (m_onContentAssetRefreshRequested)
+        {
+            m_onContentAssetRefreshRequested();
+        }
+    });
+
+    auto RefreshLabel = RefreshButton.Add(SnAPI::UI::UIText("Rescan"));
+    RefreshLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    RefreshLabel.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
 
     auto BrowserTabs = ContentBrowser.Add(SnAPI::UI::UITabs{});
     auto& BrowserTabsElement = BrowserTabs.Element();
@@ -499,43 +567,21 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     AssetsListElement.Width().Set(SnAPI::UI::Sizing::Fill());
     AssetsListElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     AssetsListElement.ElementStyle().Apply("editor.browser_list");
+    m_contentAssetsList = AssetsList.Handle();
 
-    constexpr std::array<std::string_view, 8> kAssets{
-        "Environment", "Props", "Character", "FX", "Textures", "MyPrefab", "SciFi_Floor", "Crate_Model"};
-    for (std::size_t AssetIndex = 0; AssetIndex < kAssets.size(); ++AssetIndex)
-    {
-        auto Card = AssetsList.Add(SnAPI::UI::UIPanel("Editor.AssetCard"));
-        auto& CardPanel = Card.Element();
-        CardPanel.ElementStyle().Apply("editor.asset_card");
-        CardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-        CardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-        CardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
-        CardPanel.Padding().Set(6.0f);
-        CardPanel.Gap().Set(4.0f);
+    auto EmptyHint = AssetsTab.Add(SnAPI::UI::UIText("No assets discovered. Click Rescan to search for .snpak packs."));
+    EmptyHint.Element().ElementStyle().Apply("editor.panel_subtitle");
+    EmptyHint.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_contentAssetsEmptyHint = EmptyHint.Handle();
 
-        auto Preview = Card.Add(SnAPI::UI::UIPanel("Editor.AssetPreview"));
-        auto& PreviewPanel = Preview.Element();
-        PreviewPanel.ElementStyle().Apply("editor.asset_preview");
-        PreviewPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-        PreviewPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-
-        auto PreviewImage = Preview.Add(SnAPI::UI::UIImage(kAssetPreviewUrls[AssetIndex]));
-        auto& PreviewImageElement = PreviewImage.Element();
-        PreviewImageElement.Width().Set(SnAPI::UI::Sizing::Fill());
-        PreviewImageElement.Height().Set(SnAPI::UI::Sizing::Fill());
-        PreviewImageElement.Mode().Set(SnAPI::UI::EImageMode::AspectFill);
-        PreviewImageElement.LazyLoad().Set(true);
-
-        auto Label = Card.Add(SnAPI::UI::UIText(kAssets[AssetIndex]));
-        Label.Element().ElementStyle().Apply("editor.menu_item");
-        Label.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
-    }
+    EnsureContentAssetCardCapacity();
+    UpdateContentAssetCardWidgets();
 
     auto BrowserPagination = AssetsTab.Add(SnAPI::UI::UIPagination{});
     auto& BrowserPaginationElement = BrowserPagination.Element();
     BrowserPaginationElement.ElementStyle().Apply("editor.browser_pagination");
-    BrowserPaginationElement.PageCount().Set(6);
-    BrowserPaginationElement.VisibleButtonCount().Set(6);
+    BrowserPaginationElement.PageCount().Set(1);
+    BrowserPaginationElement.VisibleButtonCount().Set(1);
     BrowserPaginationElement.Width().Set(SnAPI::UI::Sizing::Fill());
 
     auto DetailsTab = BrowserTabs.Add(SnAPI::UI::UIPanel("Editor.ContentTab.Details"));
@@ -547,30 +593,7 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     DetailsTabPanel.Padding().Set(6.0f);
     DetailsTabPanel.Gap().Set(6.0f);
 
-    auto DetailsTable = DetailsTab.Add(SnAPI::UI::UITable{});
-    auto& DetailsTableElement = DetailsTable.Element();
-    DetailsTableElement.ElementStyle().Apply("editor.browser_table");
-    DetailsTableElement.ColumnCount().Set(2u);
-    DetailsTableElement.RowHeight().Set(28.0f);
-    DetailsTableElement.HeaderHeight().Set(28.0f);
-    DetailsTableElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    DetailsTableElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    DetailsTableElement.SetColumnHeaders({"Field", "Value"});
-
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kAssetMeta{{
-        {"Name", "SciFi_Floor"},
-        {"Type", "StaticMesh"},
-        {"Triangles", "8,432"},
-        {"Materials", "2"},
-        {"Modified", "Today"},
-    }};
-    for (const auto& [FieldName, FieldValue] : kAssetMeta)
-    {
-        auto FieldCell = DetailsTable.Add(SnAPI::UI::UIText(FieldName));
-        FieldCell.Element().ElementStyle().Apply("editor.menu_item");
-        auto ValueCell = DetailsTable.Add(SnAPI::UI::UIText(FieldValue));
-        ValueCell.Element().ElementStyle().Apply("editor.panel_title");
-    }
+    BuildContentDetailsPane(DetailsTab);
 
     auto CollectionsTab = BrowserTabs.Add(SnAPI::UI::UIPanel("Editor.ContentTab.Collections"));
     auto& CollectionsTabPanel = CollectionsTab.Element();
@@ -598,6 +621,89 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     BrowserTabsElement.SetTabLabel(0, "Assets");
     BrowserTabsElement.SetTabLabel(1, "Details");
     BrowserTabsElement.SetTabLabel(2, "Collections");
+
+    ApplyContentAssetFilter();
+    RefreshContentAssetCardSelectionStyles();
+    UpdateContentAssetDetailsWidgets();
+}
+
+void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
+{
+    auto Instructions = DetailsTab.Add(SnAPI::UI::UIText("Double-click an asset to preview. Click Place then click the viewport to instantiate."));
+    Instructions.Element().ElementStyle().Apply("editor.panel_subtitle");
+    Instructions.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto DetailsTable = DetailsTab.Add(SnAPI::UI::UITable{});
+    auto& DetailsTableElement = DetailsTable.Element();
+    DetailsTableElement.ElementStyle().Apply("editor.browser_table");
+    DetailsTableElement.ColumnCount().Set(2u);
+    DetailsTableElement.RowHeight().Set(28.0f);
+    DetailsTableElement.HeaderHeight().Set(28.0f);
+    DetailsTableElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    DetailsTableElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    DetailsTableElement.SetColumnHeaders({"Field", "Value"});
+
+    const auto AddField = [&](const std::string_view Label, SnAPI::UI::ElementHandle<SnAPI::UI::UIText>& OutValueHandle) {
+        auto FieldCell = DetailsTable.Add(SnAPI::UI::UIText(Label));
+        FieldCell.Element().ElementStyle().Apply("editor.menu_item");
+
+        auto ValueCell = DetailsTable.Add(SnAPI::UI::UIText("--"));
+        ValueCell.Element().ElementStyle().Apply("editor.panel_title");
+        ValueCell.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+        OutValueHandle = ValueCell.Handle();
+    };
+
+    AddField("Name", m_contentAssetNameValue);
+    AddField("Type", m_contentAssetTypeValue);
+    AddField("Variant", m_contentAssetVariantValue);
+    AddField("Asset Id", m_contentAssetIdValue);
+    AddField("Status", m_contentAssetStatusValue);
+
+    auto ActionsRow = DetailsTab.Add(SnAPI::UI::UIPanel("Editor.ContentActions"));
+    auto& ActionsRowPanel = ActionsRow.Element();
+    ActionsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ActionsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ActionsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ActionsRowPanel.Padding().Set(0.0f);
+    ActionsRowPanel.Gap().Set(6.0f);
+    ActionsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ActionsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ActionsRowPanel.BorderThickness().Set(0.0f);
+    ActionsRowPanel.CornerRadius().Set(0.0f);
+
+    auto PlaceButton = ActionsRow.Add(SnAPI::UI::UIButton{});
+    auto& PlaceButtonElement = PlaceButton.Element();
+    PlaceButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    PlaceButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    PlaceButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    PlaceButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    PlaceButtonElement.OnClick([this]() {
+        if (m_onContentAssetPlaceRequested && !m_selectedContentAssetKey.empty())
+        {
+            m_onContentAssetPlaceRequested(m_selectedContentAssetKey);
+        }
+    });
+    auto PlaceLabel = PlaceButton.Add(SnAPI::UI::UIText("Place In Scene"));
+    PlaceLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    PlaceLabel.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+    m_contentPlaceButton = PlaceButton.Handle();
+
+    auto SaveButton = ActionsRow.Add(SnAPI::UI::UIButton{});
+    auto& SaveButtonElement = SaveButton.Element();
+    SaveButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    SaveButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    SaveButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SaveButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    SaveButtonElement.OnClick([this]() {
+        if (m_onContentAssetSaveRequested && !m_selectedContentAssetKey.empty())
+        {
+            m_onContentAssetSaveRequested(m_selectedContentAssetKey);
+        }
+    });
+    auto SaveLabel = SaveButton.Add(SnAPI::UI::UIText("Save Update"));
+    SaveLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    SaveLabel.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+    m_contentSaveButton = SaveButton.Handle();
 }
 
 void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
@@ -773,45 +879,125 @@ void EditorLayout::SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCa
 
 bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<HierarchyEntry>& OutEntries) const
 {
-    auto& Pool = WorldRef.NodePool();
-    std::vector<NodeHandle> RootHandles{};
-    Pool.ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
-        if (Node.Parent().IsNull())
-        {
-            RootHandles.push_back(Handle);
-        }
-    });
-
-    std::vector<std::pair<NodeHandle, int>> Stack{};
-    Stack.reserve(RootHandles.size());
-    for (auto It = RootHandles.rbegin(); It != RootHandles.rend(); ++It)
+    struct TraversalNode
     {
-        Stack.emplace_back(*It, 0);
+        NodeHandle Handle{};
+        BaseNode* Node = nullptr;
+        int Depth = 0;
+    };
+
+    const auto CollectGraphRoots = [](NodeGraph& Graph, const int Depth, std::vector<TraversalNode>& OutNodes) {
+        Graph.NodePool().ForEach([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
+            if (Node.Parent().IsNull())
+            {
+                OutNodes.push_back(TraversalNode{Handle, &Node, Depth});
+            }
+        });
+    };
+
+    std::vector<TraversalNode> RootNodes{};
+    CollectGraphRoots(WorldRef, 0, RootNodes);
+
+    std::vector<TraversalNode> Stack{};
+    Stack.reserve(RootNodes.size());
+    for (auto It = RootNodes.rbegin(); It != RootNodes.rend(); ++It)
+    {
+        Stack.push_back(*It);
     }
+
+    std::unordered_set<Uuid, UuidHash> VisitedNodes{};
+    VisitedNodes.reserve(RootNodes.size() * 2u);
 
     while (!Stack.empty())
     {
-        const auto [Handle, Depth] = Stack.back();
+        const TraversalNode Current = Stack.back();
         Stack.pop_back();
 
-        auto* Node = Pool.Borrowed(Handle);
+        BaseNode* Node = Current.Node;
+        if (!Node)
+        {
+            Node = Current.Handle.Borrowed();
+        }
+        if (!Node)
+        {
+            Node = Current.Handle.BorrowedSlowByUuid();
+        }
         if (!Node)
         {
             continue;
         }
 
-        OutEntries.push_back(HierarchyEntry{Handle, Depth, Node->Name()});
-
-        const auto& Children = Node->Children();
-        for (auto ChildIt = Children.rbegin(); ChildIt != Children.rend(); ++ChildIt)
+        if (!VisitedNodes.insert(Node->Id()).second)
         {
-            const NodeHandle ChildHandle = *ChildIt;
-            if (ChildHandle.IsNull() || !Pool.Borrowed(ChildHandle))
+            continue;
+        }
+
+        NodeHandle EntryHandle = Current.Handle;
+        if (EntryHandle.IsNull() || EntryHandle.Borrowed() == nullptr)
+        {
+            EntryHandle = Node->Handle();
+        }
+        if (EntryHandle.IsNull())
+        {
+            continue;
+        }
+
+        OutEntries.push_back(HierarchyEntry{EntryHandle, Current.Depth, Node->Name()});
+
+        std::vector<TraversalNode> ChildNodes{};
+        ChildNodes.reserve(Node->Children().size() + 8u);
+
+        NodeGraph* OwnerGraph = Node->OwnerGraph();
+        for (const NodeHandle ChildHandle : Node->Children())
+        {
+            if (ChildHandle.IsNull())
             {
                 continue;
             }
 
-            Stack.emplace_back(ChildHandle, Depth + 1);
+            BaseNode* ChildNode = nullptr;
+            if (OwnerGraph)
+            {
+                ChildNode = OwnerGraph->NodePool().Borrowed(ChildHandle);
+                if (!ChildNode)
+                {
+                    auto FreshChildHandle = OwnerGraph->NodeHandleByIdSlow(ChildHandle.Id);
+                    if (FreshChildHandle)
+                    {
+                        ChildNode = OwnerGraph->NodePool().Borrowed(*FreshChildHandle);
+                    }
+                }
+            }
+
+            if (!ChildNode)
+            {
+                ChildNode = ChildHandle.Borrowed();
+            }
+            if (!ChildNode)
+            {
+                ChildNode = ChildHandle.BorrowedSlowByUuid();
+            }
+            if (!ChildNode)
+            {
+                continue;
+            }
+
+            ChildNodes.push_back(TraversalNode{ChildNode->Handle(), ChildNode, Current.Depth + 1});
+        }
+
+        NodeGraph* NestedGraph = dynamic_cast<NodeGraph*>(Node);
+        if (!NestedGraph && TypeRegistry::Instance().IsA(Node->TypeKey(), StaticTypeId<NodeGraph>()))
+        {
+            NestedGraph = static_cast<NodeGraph*>(Node);
+        }
+        if (NestedGraph)
+        {
+            CollectGraphRoots(*NestedGraph, Current.Depth + 1, ChildNodes);
+        }
+
+        for (auto ChildIt = ChildNodes.rbegin(); ChildIt != ChildNodes.rend(); ++ChildIt)
+        {
+            Stack.push_back(*ChildIt);
         }
     }
 
@@ -906,6 +1092,366 @@ void EditorLayout::OnHierarchyNodeChosen(const NodeHandle Handle)
 void EditorLayout::SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)> Handler)
 {
     m_onHierarchyNodeChosen = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssets(std::vector<ContentAssetEntry> Assets)
+{
+    m_contentAssets = std::move(Assets);
+
+    const auto SelectedIt = std::find_if(
+        m_contentAssets.begin(),
+        m_contentAssets.end(),
+        [this](const ContentAssetEntry& Entry) { return Entry.Key == m_selectedContentAssetKey; });
+    if (SelectedIt == m_contentAssets.end())
+    {
+        m_selectedContentAssetKey.clear();
+    }
+
+    if (m_built)
+    {
+        EnsureContentAssetCardCapacity();
+        UpdateContentAssetCardWidgets();
+        ApplyContentAssetFilter();
+        RefreshContentAssetCardSelectionStyles();
+        UpdateContentAssetDetailsWidgets();
+    }
+}
+
+void EditorLayout::SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler)
+{
+    m_onContentAssetSelected = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onContentAssetPlaceRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onContentAssetSaveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onContentAssetRefreshRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetDetails(ContentAssetDetails Details)
+{
+    m_contentAssetDetails = std::move(Details);
+    UpdateContentAssetDetailsWidgets();
+}
+
+void EditorLayout::HandleContentAssetCardClicked(const std::size_t AssetIndex)
+{
+    if (AssetIndex >= m_contentAssets.size())
+    {
+        return;
+    }
+
+    const ContentAssetEntry& Asset = m_contentAssets[AssetIndex];
+    m_selectedContentAssetKey = Asset.Key;
+
+    const auto Now = std::chrono::steady_clock::now();
+    const bool IsDoubleClick = (m_lastContentAssetClickKey == Asset.Key) &&
+                               (std::chrono::duration_cast<std::chrono::milliseconds>(Now - m_lastContentAssetClickTime).count() <= 350);
+    m_lastContentAssetClickKey = Asset.Key;
+    m_lastContentAssetClickTime = Now;
+
+    m_contentAssetDetails.Name.clear();
+    m_contentAssetDetails.Type.clear();
+    m_contentAssetDetails.Variant.clear();
+    m_contentAssetDetails.AssetId.clear();
+    m_contentAssetDetails.Status = IsDoubleClick ? std::string("Loading preview...") : std::string("Selected");
+
+    if (m_onContentAssetSelected)
+    {
+        m_onContentAssetSelected(Asset.Key, IsDoubleClick);
+    }
+
+    RefreshContentAssetCardSelectionStyles();
+    UpdateContentAssetDetailsWidgets();
+}
+
+void EditorLayout::EnsureContentAssetCardCapacity()
+{
+    if (!m_context || m_contentAssetsList.Id.Value == 0)
+    {
+        return;
+    }
+
+    SnAPI::UI::TElementBuilder<SnAPI::UI::UIListView> AssetsListBuilder(
+        m_context,
+        SnAPI::UI::ElementHandle<SnAPI::UI::UIListView>{m_contentAssetsList.Id});
+
+    while (m_contentAssetCards.size() < m_contentAssets.size())
+    {
+        const std::size_t AssetIndex = m_contentAssetCards.size();
+        auto CardButton = AssetsListBuilder.Add(SnAPI::UI::UIButton{});
+        auto& CardButtonElement = CardButton.Element();
+        CardButtonElement.ElementStyle().Apply("editor.asset_tile_button");
+        CardButtonElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        CardButtonElement.Height().Set(SnAPI::UI::Sizing::Fill());
+        CardButtonElement.ElementPadding().Set(SnAPI::UI::Padding{0.0f, 0.0f, 0.0f, 0.0f});
+        CardButtonElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+        CardButtonElement.OnClick([this, AssetIndex]() { HandleContentAssetCardClicked(AssetIndex); });
+
+        auto Card = CardButton.Add(SnAPI::UI::UIPanel("Editor.AssetCard"));
+        auto& CardPanel = Card.Element();
+        CardPanel.ElementStyle().Apply("editor.asset_card");
+        CardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        CardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        CardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+        CardPanel.Padding().Set(6.0f);
+        CardPanel.Gap().Set(4.0f);
+
+        auto Preview = Card.Add(SnAPI::UI::UIPanel("Editor.AssetPreview"));
+        auto& PreviewPanel = Preview.Element();
+        PreviewPanel.ElementStyle().Apply("editor.asset_preview");
+        PreviewPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        PreviewPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+        auto TypeLabel = Preview.Add(SnAPI::UI::UIText("--"));
+        auto& TypeLabelText = TypeLabel.Element();
+        TypeLabelText.ElementStyle().Apply("editor.panel_subtitle");
+        TypeLabelText.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+        TypeLabelText.HAlign().Set(SnAPI::UI::EAlignment::Center);
+        TypeLabelText.VAlign().Set(SnAPI::UI::EAlignment::Center);
+        TypeLabelText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+
+        auto NameLabel = Card.Add(SnAPI::UI::UIText("--"));
+        auto& NameLabelText = NameLabel.Element();
+        NameLabelText.ElementStyle().Apply("editor.panel_title");
+        NameLabelText.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+
+        auto VariantLabel = Card.Add(SnAPI::UI::UIText("--"));
+        auto& VariantLabelText = VariantLabel.Element();
+        VariantLabelText.ElementStyle().Apply("editor.panel_subtitle");
+        VariantLabelText.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+
+        ContentAssetCardWidgets Widgets{};
+        Widgets.Button = CardButton.Handle();
+        Widgets.Type = TypeLabel.Handle();
+        Widgets.Name = NameLabel.Handle();
+        Widgets.Variant = VariantLabel.Handle();
+        m_contentAssetCards.push_back(Widgets);
+        m_contentAssetCardButtons.push_back(CardButton.Handle());
+        m_contentAssetCardIndices.push_back(AssetIndex);
+    }
+}
+
+void EditorLayout::UpdateContentAssetCardWidgets()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    const auto SetText = [this](const SnAPI::UI::ElementHandle<SnAPI::UI::UIText>& Handle, const std::string& Value) {
+        if (Handle.Id.Value == 0 || !m_context)
+        {
+            return;
+        }
+
+        auto* Text = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(Handle.Id));
+        if (Text)
+        {
+            Text->Text().Set(Value);
+        }
+    };
+
+    for (std::size_t AssetIndex = 0; AssetIndex < m_contentAssetCards.size(); ++AssetIndex)
+    {
+        const ContentAssetCardWidgets& Widgets = m_contentAssetCards[AssetIndex];
+        if (Widgets.Button.Id.Value == 0)
+        {
+            continue;
+        }
+
+        auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(Widgets.Button.Id));
+        if (!Button)
+        {
+            continue;
+        }
+
+        if (AssetIndex >= m_contentAssets.size())
+        {
+            Button->Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+            continue;
+        }
+
+        const ContentAssetEntry& Asset = m_contentAssets[AssetIndex];
+        const std::string VariantText = Asset.Variant.empty() ? std::string("default") : Asset.Variant;
+        SetText(Widgets.Type, Asset.Type);
+        SetText(Widgets.Name, Asset.Name);
+        SetText(Widgets.Variant, VariantText);
+        Button->Visibility().Set(SnAPI::UI::EVisibility::Visible);
+    }
+
+    if (m_contentAssetsEmptyHint.Id.Value != 0)
+    {
+        if (auto* EmptyHint = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentAssetsEmptyHint.Id)))
+        {
+            EmptyHint->Visibility().Set(
+                m_contentAssets.empty() ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+        }
+    }
+}
+
+void EditorLayout::ApplyContentAssetFilter()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    const bool HasFilter = !m_contentAssetFilterText.empty();
+    for (std::size_t CardIndex = 0; CardIndex < m_contentAssetCardButtons.size(); ++CardIndex)
+    {
+        const auto& CardHandle = m_contentAssetCardButtons[CardIndex];
+        if (CardHandle.Id.Value == 0 || CardIndex >= m_contentAssetCardIndices.size())
+        {
+            continue;
+        }
+
+        const std::size_t AssetIndex = m_contentAssetCardIndices[CardIndex];
+        auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(CardHandle.Id));
+        if (!Button)
+        {
+            continue;
+        }
+
+        if (AssetIndex >= m_contentAssets.size())
+        {
+            Button->Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+            continue;
+        }
+
+        const ContentAssetEntry& Asset = m_contentAssets[AssetIndex];
+        const bool VisibleByName = LabelMatchesFilter(Asset.Name, m_contentAssetFilterText);
+        const bool VisibleByType = LabelMatchesFilter(Asset.Type, m_contentAssetFilterText);
+        const bool VisibleByVariant = LabelMatchesFilter(Asset.Variant, m_contentAssetFilterText);
+        const bool ShouldShow = !HasFilter || VisibleByName || VisibleByType || VisibleByVariant;
+        Button->Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            ShouldShow ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    }
+
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::RefreshContentAssetCardSelectionStyles()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    const std::size_t SelectedIndex = ResolveSelectedContentAssetIndex();
+    for (std::size_t CardIndex = 0; CardIndex < m_contentAssetCardButtons.size(); ++CardIndex)
+    {
+        const auto& CardHandle = m_contentAssetCardButtons[CardIndex];
+        if (CardHandle.Id.Value == 0 || CardIndex >= m_contentAssetCardIndices.size())
+        {
+            continue;
+        }
+
+        auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(CardHandle.Id));
+        if (!Button)
+        {
+            continue;
+        }
+
+        const bool IsSelected = (m_contentAssetCardIndices[CardIndex] == SelectedIndex);
+        Button->Background().Set(IsSelected ? SnAPI::UI::Color{67, 57, 42, 255} : SnAPI::UI::Color{0, 0, 0, 0});
+        Button->BorderColor().Set(IsSelected ? SnAPI::UI::Color{168, 146, 112, 255} : SnAPI::UI::Color{0, 0, 0, 0});
+        Button->BorderThickness().Set(IsSelected ? 1.0f : 0.0f);
+        Button->CornerRadius().Set(5.0f);
+    }
+}
+
+void EditorLayout::UpdateContentAssetDetailsWidgets()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    const std::size_t SelectedIndex = ResolveSelectedContentAssetIndex();
+    const ContentAssetEntry* Selected = (SelectedIndex < m_contentAssets.size()) ? &m_contentAssets[SelectedIndex] : nullptr;
+
+    const std::string NameText = !m_contentAssetDetails.Name.empty()
+                                     ? m_contentAssetDetails.Name
+                                     : (Selected ? Selected->Name : std::string("--"));
+    const std::string TypeText = !m_contentAssetDetails.Type.empty()
+                                     ? m_contentAssetDetails.Type
+                                     : (Selected ? Selected->Type : std::string("--"));
+    const std::string VariantText = !m_contentAssetDetails.Variant.empty()
+                                        ? m_contentAssetDetails.Variant
+                                        : (Selected ? (Selected->Variant.empty() ? std::string("default") : Selected->Variant)
+                                                    : std::string("--"));
+    const std::string IdText = !m_contentAssetDetails.AssetId.empty()
+                                   ? m_contentAssetDetails.AssetId
+                                   : (Selected ? Selected->Key : std::string("--"));
+    const std::string StatusText = !m_contentAssetDetails.Status.empty()
+                                       ? m_contentAssetDetails.Status
+                                       : (Selected ? std::string("Selected") : std::string("No asset selected"));
+
+    const auto ApplyText = [this](const SnAPI::UI::ElementHandle<SnAPI::UI::UIText>& Handle, const std::string& Value) {
+        if (Handle.Id.Value == 0 || !m_context)
+        {
+            return;
+        }
+
+        auto* Text = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(Handle.Id));
+        if (Text)
+        {
+            Text->Text().Set(Value);
+        }
+    };
+
+    ApplyText(m_contentAssetNameValue, NameText);
+    ApplyText(m_contentAssetTypeValue, TypeText);
+    ApplyText(m_contentAssetVariantValue, VariantText);
+    ApplyText(m_contentAssetIdValue, IdText);
+    ApplyText(m_contentAssetStatusValue, StatusText);
+
+    const bool HasSelection = (Selected != nullptr);
+
+    if (m_contentPlaceButton.Id.Value != 0)
+    {
+        if (auto* PlaceButton = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentPlaceButton.Id)))
+        {
+            PlaceButton->SetDisabled(!HasSelection || !m_contentAssetDetails.CanPlace);
+        }
+    }
+
+    if (m_contentSaveButton.Id.Value != 0)
+    {
+        if (auto* SaveButton = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentSaveButton.Id)))
+        {
+            SaveButton->SetDisabled(!HasSelection || !m_contentAssetDetails.CanSave);
+        }
+    }
+}
+
+std::size_t EditorLayout::ResolveSelectedContentAssetIndex() const
+{
+    if (m_selectedContentAssetKey.empty())
+    {
+        return std::numeric_limits<std::size_t>::max();
+    }
+
+    for (std::size_t AssetIndex = 0; AssetIndex < m_contentAssets.size(); ++AssetIndex)
+    {
+        if (m_contentAssets[AssetIndex].Key == m_selectedContentAssetKey)
+        {
+            return AssetIndex;
+        }
+    }
+
+    return std::numeric_limits<std::size_t>::max();
 }
 
 bool EditorLayout::QueryInvalidationDebugOverlayEnabled() const
@@ -1034,7 +1580,11 @@ BaseNode* EditorLayout::ResolveSelectedNode(GameRuntime& Runtime, CameraComponen
 
     if (ActiveCamera && !ActiveCamera->Owner().IsNull())
     {
-        return WorldPtr->NodePool().Borrowed(ActiveCamera->Owner());
+        if (auto* CameraNode = ActiveCamera->Owner().Borrowed())
+        {
+            return CameraNode;
+        }
+        return ActiveCamera->Owner().BorrowedSlowByUuid();
     }
 
     return nullptr;
@@ -1333,18 +1883,23 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
 
     if (SelectedNode)
     {
-        if (m_boundInspectorObject != SelectedNode || m_boundInspectorType != SelectedNode->TypeKey())
+        const std::size_t ComponentSignature = ComputeNodeComponentSignature(*SelectedNode);
+        if (m_boundInspectorObject != SelectedNode
+            || m_boundInspectorType != SelectedNode->TypeKey()
+            || m_boundInspectorComponentSignature != ComponentSignature)
         {
             PropertyPanel->ClearObject();
             if (PropertyPanel->BindNode(SelectedNode))
             {
                 m_boundInspectorObject = SelectedNode;
                 m_boundInspectorType = SelectedNode->TypeKey();
+                m_boundInspectorComponentSignature = ComponentSignature;
             }
             else
             {
                 m_boundInspectorObject = nullptr;
                 m_boundInspectorType = {};
+                m_boundInspectorComponentSignature = 0;
             }
         }
         else
@@ -1365,6 +1920,7 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
         PropertyPanel->ClearObject();
         m_boundInspectorObject = nullptr;
         m_boundInspectorType = {};
+        m_boundInspectorComponentSignature = 0;
         return;
     }
 
@@ -1379,11 +1935,13 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
     {
         m_boundInspectorObject = TargetObject;
         m_boundInspectorType = TargetType;
+        m_boundInspectorComponentSignature = 0;
     }
     else
     {
         m_boundInspectorObject = nullptr;
         m_boundInspectorType = {};
+        m_boundInspectorComponentSignature = 0;
     }
 }
 

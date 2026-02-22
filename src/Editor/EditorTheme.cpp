@@ -609,6 +609,16 @@ void EditorTheme::Initialize()
         .Pressed()
             .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{31, 34, 40, 255});
 
+    DefineClass("editor.asset_tile_button")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{0, 0, 0, 0})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{0, 0, 0, 0})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 0.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 5.0f)
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{48, 41, 31, 96})
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{68, 58, 42, 120});
+
     DefineClass("editor.asset_card")
         .Set(SnAPI::UI::UIPanel::PaddingKey, 6.0f)
         .Set(SnAPI::UI::UIPanel::GapKey, 3.0f)

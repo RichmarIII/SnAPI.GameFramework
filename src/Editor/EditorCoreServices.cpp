@@ -33,6 +33,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <numbers>
 #include <span>
 #include <utility>
@@ -130,6 +131,24 @@ private:
     }
 
     return X >= Rect.X && X <= (Rect.X + Rect.W) && Y >= Rect.Y && Y <= (Rect.Y + Rect.H);
+}
+
+[[nodiscard]] std::size_t ComputeAssetListSignature(const std::vector<EditorAssetService::DiscoveredAsset>& Assets)
+{
+    std::size_t Seed = Assets.size();
+    const auto HashCombine = [&Seed](const std::size_t Value) {
+        Seed ^= Value + 0x9e3779b9 + (Seed << 6) + (Seed >> 2);
+    };
+
+    for (const auto& Asset : Assets)
+    {
+        HashCombine(std::hash<std::string>{}(Asset.Key));
+        HashCombine(std::hash<std::string>{}(Asset.Name));
+        HashCombine(std::hash<std::string>{}(Asset.TypeLabel));
+        HashCombine(std::hash<std::string>{}(Asset.Variant));
+    }
+
+    return Seed;
 }
 } // namespace
 
@@ -336,9 +355,17 @@ void EditorSelectionService::EnsureSelectionValid(EditorServiceContext& Context,
     }
 
     const NodeHandle SelectedNode = m_selection.SelectedNode();
-    if (!SelectedNode.IsNull() && WorldPtr->NodePool().Borrowed(SelectedNode) != nullptr)
+    if (!SelectedNode.IsNull())
     {
-        return;
+        if (auto* Resolved = m_selection.ResolveSelectedNode(*WorldPtr))
+        {
+            const NodeHandle ResolvedHandle = Resolved->Handle();
+            if (!ResolvedHandle.IsNull() && ResolvedHandle != SelectedNode)
+            {
+                (void)m_selection.SelectNode(ResolvedHandle);
+            }
+            return;
+        }
     }
 
     if (ActiveCamera && !ActiveCamera->Owner().IsNull())
@@ -361,7 +388,8 @@ std::vector<std::type_index> EditorLayoutService::Dependencies() const
             std::type_index(typeid(EditorSceneService)),
             std::type_index(typeid(EditorSelectionService)),
             std::type_index(typeid(EditorRootViewportService)),
-            std::type_index(typeid(EditorCommandService))};
+            std::type_index(typeid(EditorCommandService)),
+            std::type_index(typeid(EditorAssetService))};
 }
 
 Result EditorLayoutService::Initialize(EditorServiceContext& Context)
@@ -369,14 +397,27 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     auto* ThemeService = Context.GetService<EditorThemeService>();
     auto* SceneService = Context.GetService<EditorSceneService>();
     auto* SelectionService = Context.GetService<EditorSelectionService>();
-    if (!ThemeService || !SceneService || !SelectionService)
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    if (!ThemeService || !SceneService || !SelectionService || !AssetService)
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Missing required editor services for layout"));
     }
 
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
+    m_hasPendingAssetSelection = false;
+    m_pendingAssetSelectionDoubleClick = false;
+    m_pendingAssetSelectionKey.clear();
+    m_hasPendingAssetPlaceRequest = false;
+    m_pendingAssetPlaceKey.clear();
+    m_hasPendingAssetSaveRequest = false;
+    m_pendingAssetSaveKey.clear();
+    m_hasPendingAssetRefreshRequest = false;
+    m_layoutRebuildRequested = false;
+    m_assetListSignature = 0;
 
+    ApplyAssetBrowserState(Context);
+    m_assetListSignature = ComputeAssetListSignature(AssetService->Assets());
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
                                               SceneService->ActiveCameraComponent(),
@@ -390,6 +431,23 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_pendingSelectionRequest = Handle;
         m_hasPendingSelectionRequest = true;
     }));
+    m_layout.SetContentAssetSelectionHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
+            m_pendingAssetSelectionKey = AssetKey;
+            m_pendingAssetSelectionDoubleClick = IsDoubleClick;
+            m_hasPendingAssetSelection = true;
+        }));
+    m_layout.SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingAssetPlaceKey = AssetKey;
+        m_hasPendingAssetPlaceRequest = true;
+    }));
+    m_layout.SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingAssetSaveKey = AssetKey;
+        m_hasPendingAssetSaveRequest = true;
+    }));
+    m_layout.SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetRefreshRequest = true;
+    }));
 
     return Ok();
 }
@@ -399,9 +457,66 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     auto* SceneService = Context.GetService<EditorSceneService>();
     auto* SelectionService = Context.GetService<EditorSelectionService>();
     auto* CommandService = Context.GetService<EditorCommandService>();
-    if (!SceneService || !SelectionService)
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    if (!SceneService || !SelectionService || !AssetService)
     {
         return;
+    }
+
+    if (m_hasPendingAssetRefreshRequest)
+    {
+        m_hasPendingAssetRefreshRequest = false;
+        const Result RefreshResult = AssetService->RefreshDiscovery();
+        if (!RefreshResult)
+        {
+            // Keep rendering and expose error through status text.
+        }
+    }
+
+    if (m_hasPendingAssetSelection)
+    {
+        m_hasPendingAssetSelection = false;
+
+        if (!m_pendingAssetSelectionKey.empty())
+        {
+            if (AssetService->SelectAssetByKey(m_pendingAssetSelectionKey) && m_pendingAssetSelectionDoubleClick)
+            {
+                (void)AssetService->OpenSelectedAssetPreview();
+            }
+        }
+
+        m_pendingAssetSelectionKey.clear();
+        m_pendingAssetSelectionDoubleClick = false;
+    }
+
+    if (m_hasPendingAssetPlaceRequest)
+    {
+        m_hasPendingAssetPlaceRequest = false;
+
+        if (!m_pendingAssetPlaceKey.empty())
+        {
+            (void)AssetService->ArmPlacementByKey(m_pendingAssetPlaceKey);
+        }
+
+        m_pendingAssetPlaceKey.clear();
+    }
+
+    if (m_hasPendingAssetSaveRequest)
+    {
+        m_hasPendingAssetSaveRequest = false;
+
+        if (!m_pendingAssetSaveKey.empty() && AssetService->SelectAssetByKey(m_pendingAssetSaveKey))
+        {
+            (void)AssetService->SaveSelectedAssetUpdate();
+        }
+
+        m_pendingAssetSaveKey.clear();
+    }
+
+    const std::size_t CurrentAssetSignature = ComputeAssetListSignature(AssetService->Assets());
+    if (CurrentAssetSignature != m_assetListSignature)
+    {
+        m_assetListSignature = CurrentAssetSignature;
     }
 
     if (m_hasPendingSelectionRequest)
@@ -424,14 +539,135 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         }
     }
 
+    ApplyAssetBrowserState(Context);
     m_layout.Sync(Context.Runtime(), SceneService->ActiveCameraComponent(), &SelectionService->Model(), DeltaSeconds);
+}
+
+void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
+{
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    if (!AssetService)
+    {
+        return;
+    }
+
+    std::vector<EditorLayout::ContentAssetEntry> Entries{};
+    Entries.reserve(AssetService->Assets().size());
+    for (const auto& Asset : AssetService->Assets())
+    {
+        EditorLayout::ContentAssetEntry Entry{};
+        Entry.Key = Asset.Key;
+        Entry.Name = Asset.Name;
+        Entry.Type = Asset.TypeLabel;
+        Entry.Variant = Asset.Variant;
+        Entries.emplace_back(std::move(Entry));
+    }
+    m_layout.SetContentAssets(std::move(Entries));
+
+    EditorLayout::ContentAssetDetails Details{};
+    if (const auto* SelectedAsset = AssetService->SelectedAsset())
+    {
+        Details.Name = SelectedAsset->Name;
+        Details.Type = SelectedAsset->TypeLabel;
+        Details.Variant = SelectedAsset->Variant.empty() ? std::string("default") : SelectedAsset->Variant;
+        Details.AssetId = SelectedAsset->Key;
+        Details.CanPlace = true;
+        Details.CanSave = true;
+    }
+    else
+    {
+        Details.CanPlace = false;
+        Details.CanSave = false;
+    }
+
+    if (!AssetService->StatusMessage().empty())
+    {
+        Details.Status = AssetService->StatusMessage();
+    }
+    else if (!AssetService->PreviewSummary().empty())
+    {
+        Details.Status = AssetService->PreviewSummary();
+    }
+    else if (AssetService->IsPlacementArmed())
+    {
+        Details.Status = "Placement armed: click inside viewport to instantiate.";
+    }
+    else
+    {
+        Details.Status = "Ready";
+    }
+
+    m_layout.SetContentAssetDetails(std::move(Details));
+}
+
+void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
+{
+    auto* ThemeService = Context.GetService<EditorThemeService>();
+    auto* SceneService = Context.GetService<EditorSceneService>();
+    auto* SelectionService = Context.GetService<EditorSelectionService>();
+    if (!ThemeService || !SceneService || !SelectionService)
+    {
+        m_layoutRebuildRequested = false;
+        return;
+    }
+
+    m_layout.Shutdown(&Context.Runtime());
+    ApplyAssetBrowserState(Context);
+
+    const Result BuildResult = m_layout.Build(Context.Runtime(),
+                                              ThemeService->Theme(),
+                                              SceneService->ActiveCameraComponent(),
+                                              &SelectionService->Model());
+    if (!BuildResult)
+    {
+        m_layoutRebuildRequested = false;
+        return;
+    }
+
+    m_layout.SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)>::Bind([this](const NodeHandle Handle) {
+        m_pendingSelectionRequest = Handle;
+        m_hasPendingSelectionRequest = true;
+    }));
+    m_layout.SetContentAssetSelectionHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
+            m_pendingAssetSelectionKey = AssetKey;
+            m_pendingAssetSelectionDoubleClick = IsDoubleClick;
+            m_hasPendingAssetSelection = true;
+        }));
+    m_layout.SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingAssetPlaceKey = AssetKey;
+        m_hasPendingAssetPlaceRequest = true;
+    }));
+    m_layout.SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingAssetSaveKey = AssetKey;
+        m_hasPendingAssetSaveRequest = true;
+    }));
+    m_layout.SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetRefreshRequest = true;
+    }));
+
+    m_layoutRebuildRequested = false;
 }
 
 void EditorLayoutService::Shutdown(EditorServiceContext& Context)
 {
+    m_layout.SetContentAssetSelectionHandler({});
+    m_layout.SetContentAssetPlaceHandler({});
+    m_layout.SetContentAssetSaveHandler({});
+    m_layout.SetContentAssetRefreshHandler({});
     m_layout.SetHierarchySelectionHandler({});
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
+    m_hasPendingAssetSelection = false;
+    m_pendingAssetSelectionDoubleClick = false;
+    m_pendingAssetSelectionKey.clear();
+    m_hasPendingAssetPlaceRequest = false;
+    m_pendingAssetPlaceKey.clear();
+    m_hasPendingAssetSaveRequest = false;
+    m_pendingAssetSaveKey.clear();
+    m_hasPendingAssetRefreshRequest = false;
+    m_layoutRebuildRequested = false;
+    m_assetListSignature = 0;
     m_layout.Shutdown(&Context.Runtime());
 }
 
@@ -745,7 +981,8 @@ std::vector<std::type_index> EditorSelectionInteractionService::Dependencies() c
     return {std::type_index(typeid(EditorSceneService)),
             std::type_index(typeid(EditorSelectionService)),
             std::type_index(typeid(EditorLayoutService)),
-            std::type_index(typeid(EditorCommandService))};
+            std::type_index(typeid(EditorCommandService)),
+            std::type_index(typeid(EditorAssetService))};
 }
 
 Result EditorSelectionInteractionService::Initialize(EditorServiceContext& Context)
@@ -877,6 +1114,15 @@ void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorService
     if (!ShouldPick)
     {
         return;
+    }
+
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    if (AssetService && AssetService->IsPlacementArmed())
+    {
+        if (const Result InstantiateResult = AssetService->InstantiateArmedAsset(Context); InstantiateResult)
+        {
+            return;
+        }
     }
 
     auto* SelectionService = Context.GetService<EditorSelectionService>();
@@ -1165,7 +1411,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
         return;
     }
 
-    BaseNode* Node = WorldPtr->NodePool().Borrowed(Selected);
+    BaseNode* Node = SelectionService->Model().ResolveSelectedNode(*WorldPtr);
     if (!Node)
     {
         m_dragging = false;

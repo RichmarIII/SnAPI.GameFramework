@@ -149,6 +149,7 @@ target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GAMEFRAMEWORK_BUILD
 if (SNAPI_GF_BUILD_EDITOR)
     set(SNAPI_GF_EDITOR_SOURCES
         include/Editor/EditorCameraComponent.h
+        include/Editor/EditorAssetService.h
         include/Editor/EditorExport.h
         include/Editor/EditorCoreServices.h
         include/Editor/EditorLayout.h
@@ -162,6 +163,7 @@ if (SNAPI_GF_BUILD_EDITOR)
         include/Editor/EditorWorld.h
         src/Editor/main.cpp
         src/Editor/EditorCameraComponent.cpp
+        src/Editor/EditorAssetService.cpp
         src/Editor/EditorCoreServices.cpp
         src/Editor/EditorLayout.cpp
         src/Editor/EditorSelectionModel.cpp
