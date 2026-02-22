@@ -19,6 +19,7 @@ class Theme;
 class UIContext;
 class UIPanel;
 class UITabs;
+class UIText;
 class UITreeView;
 template<typename TElement>
 class TElementBuilder;
@@ -97,6 +98,11 @@ private:
     [[nodiscard]] std::uint64_t ComputeHierarchySignature(const std::vector<HierarchyEntry>& Entries) const;
     void OnHierarchyNodeChosen(NodeHandle Handle);
     [[nodiscard]] BaseNode* ResolveSelectedNode(GameRuntime& Runtime, CameraComponent* ActiveCamera) const;
+    [[nodiscard]] bool QueryInvalidationDebugOverlayEnabled() const;
+    void SetInvalidationDebugOverlayEnabled(bool Enabled);
+    void ToggleInvalidationDebugOverlay();
+    void SyncInvalidationDebugOverlay();
+    void UpdateInvalidationDebugToggleLabel();
 
     void BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* ActiveCamera);
     void SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent* ActiveCamera);
@@ -106,10 +112,12 @@ private:
     [[nodiscard]] UIPropertyPanel* ResolveInspectorPanel() const;
 
     SnAPI::UI::UIContext* m_context = nullptr;
+    GameRuntime* m_runtime = nullptr;
     SnAPI::UI::ElementHandle<SnAPI::UI::UITabs> m_gameViewTabs{};
     SnAPI::UI::ElementHandle<UIRenderViewport> m_gameViewport{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_inspectorPropertyPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_hierarchyTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_invalidationDebugToggleLabel{};
     std::vector<NodeHandle> m_hierarchyVisibleNodes{};
     std::uint64_t m_hierarchySignature = 0;
     std::size_t m_hierarchyNodeCount = 0;
@@ -119,6 +127,7 @@ private:
     SnAPI::UI::TDelegate<void(NodeHandle)> m_onHierarchyNodeChosen{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
+    bool m_invalidationDebugOverlayEnabled = false;
     bool m_built = false;
 };
 

@@ -551,7 +551,8 @@ private:
         {
             Rectangle = 0,
             Triangle = 1,
-            Circle = 2
+            Circle = 2,
+            Shadow = 3
         };
 
         static constexpr std::size_t MaxGradientStops = 10;
@@ -640,6 +641,7 @@ private:
     {
         std::uint32_t Width = 0;
         std::uint32_t Height = 0;
+        bool HasTransparency = true;
         std::vector<std::uint8_t> Pixels{};
     };
 #endif
@@ -665,12 +667,15 @@ private:
     std::shared_ptr<SnAPI::Graphics::Material> m_uiFontMaterial{}; /**< @brief Shared UI font material used for glyph coverage sampling. */
     std::shared_ptr<SnAPI::Graphics::Material> m_uiTriangleMaterial{}; /**< @brief Shared UI triangle material used for vector triangle masking. */
     std::shared_ptr<SnAPI::Graphics::Material> m_uiCircleMaterial{}; /**< @brief Shared UI circle material used for vector circle fills. */
+    std::shared_ptr<SnAPI::Graphics::Material> m_uiShadowMaterial{}; /**< @brief Shared UI shadow material used for procedural drop-shadow rendering. */
     std::shared_ptr<SnAPI::Graphics::IGPUImage> m_uiFallbackTexture{}; /**< @brief White 1x1 fallback texture used for rects and missing images. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiFallbackMaterialInstance{}; /**< @brief Material instance bound to fallback white texture. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiTriangleMaterialInstance{}; /**< @brief Reused immutable triangle material instance. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiCircleMaterialInstance{}; /**< @brief Reused immutable circle material instance. */
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiShadowMaterialInstance{}; /**< @brief Reused immutable shadow material instance. */
     std::unordered_map<SnAPI::Graphics::IGPUImage*, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiFontMaterialInstances{}; /**< @brief Cached immutable UI material instances keyed by font atlas texture pointer. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
+    std::unordered_map<UiTextureCacheKey, bool, UiTextureCacheKeyHasher> m_uiTextureHasTransparency{}; /**< @brief UI texture transparency hint keyed by (UIContext, texture-id); UI defaults this to true to avoid CPU alpha scans. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */
     std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiGradientCacheKeyHasher> m_uiGradientTextures{}; /**< @brief Cached generated gradient textures keyed by gradient definition. */
     std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiGradientCacheKeyHasher> m_uiGradientMaterialInstances{}; /**< @brief Cached material instances for generated gradient textures. */

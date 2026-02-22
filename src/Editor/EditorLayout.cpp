@@ -156,8 +156,11 @@ Result EditorLayout::Build(GameRuntime& Runtime,
         return std::unexpected(MakeError(EErrorCode::NotFound, "Root UI context is not available"));
     }
 
+    m_runtime = &Runtime;
+    m_invalidationDebugOverlayEnabled = QueryInvalidationDebugOverlayEnabled();
     m_context->SetActiveTheme(&Theme);
     BuildShell(*m_context, Runtime, ActiveCamera, SelectionModel);
+    SyncInvalidationDebugOverlay();
     BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
 
@@ -170,10 +173,12 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
 {
     (void)Runtime;
     m_context = nullptr;
+    m_runtime = nullptr;
     m_gameViewTabs = {};
     m_gameViewport = {};
     m_inspectorPropertyPanel = {};
     m_hierarchyTree = {};
+    m_invalidationDebugToggleLabel = {};
     m_hierarchyVisibleNodes.clear();
     m_hierarchySignature = 0;
     m_hierarchyNodeCount = 0;
@@ -183,6 +188,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onHierarchyNodeChosen.Reset();
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
+    m_invalidationDebugOverlayEnabled = false;
     m_built = false;
 }
 
@@ -213,6 +219,7 @@ void EditorLayout::Sync(GameRuntime& Runtime,
     }
 
     m_selection = SelectionModel;
+    SyncInvalidationDebugOverlay();
     SyncHierarchy(Runtime, ActiveCamera);
     BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
@@ -292,6 +299,12 @@ void EditorLayout::ConfigureRoot(SnAPI::UI::UIContext& Context)
     auto Root = Context.Root();
     auto& RootPanel = Root.Element();
     RootPanel.ElementStyle().Apply("editor.root");
+    // Force an opaque fullscreen root so uncovered regions never reveal desktop composition.
+    RootPanel.UseGradient().Set(false);
+    RootPanel.Background().Set(SnAPI::UI::Color{12, 13, 16, 255});
+    RootPanel.BorderColor().Set(SnAPI::UI::Color{12, 13, 16, 255});
+    RootPanel.BorderThickness().Set(0.0f);
+    RootPanel.CornerRadius().Set(0.0f);
     RootPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
     RootPanel.Padding().Set(0.0f);
     RootPanel.Gap().Set(0.0f);
@@ -340,7 +353,22 @@ void EditorLayout::BuildMenuBar(PanelBuilder& Root)
     SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     SpacerPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
 
-    // Keep right side clear to avoid clipping on narrower editor windows.
+    auto InvalidationToggle = MenuBar.Add(SnAPI::UI::UIButton{});
+    auto& InvalidationToggleButton = InvalidationToggle.Element();
+    InvalidationToggleButton.ElementStyle().Apply("editor.menu_button");
+    InvalidationToggleButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    InvalidationToggleButton.Height().Set(SnAPI::UI::Sizing::Auto());
+    InvalidationToggleButton.ElementPadding().Set(SnAPI::UI::Padding{7.0f, 3.0f, 7.0f, 3.0f});
+    InvalidationToggleButton.ElementMargin().Set(SnAPI::UI::Margin{8.0f, 0.0f, 0.0f, 0.0f});
+    InvalidationToggleButton.OnClick([this]() { ToggleInvalidationDebugOverlay(); });
+
+    auto InvalidationToggleLabel = InvalidationToggle.Add(SnAPI::UI::UIText{});
+    auto& InvalidationToggleLabelText = InvalidationToggleLabel.Element();
+    InvalidationToggleLabelText.ElementStyle().Apply("editor.menu_button_text");
+    InvalidationToggleLabelText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+    InvalidationToggleLabelText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    m_invalidationDebugToggleLabel = InvalidationToggleLabel.Handle();
+    UpdateInvalidationDebugToggleLabel();
 }
 
 void EditorLayout::BuildToolbar(PanelBuilder& Root)
@@ -878,6 +906,114 @@ void EditorLayout::OnHierarchyNodeChosen(const NodeHandle Handle)
 void EditorLayout::SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)> Handler)
 {
     m_onHierarchyNodeChosen = std::move(Handler);
+}
+
+bool EditorLayout::QueryInvalidationDebugOverlayEnabled() const
+{
+#if !defined(SNAPI_GF_ENABLE_UI)
+    return false;
+#else
+    if (!m_runtime)
+    {
+        return false;
+    }
+
+    auto* WorldPtr = m_runtime->WorldPtr();
+    if (!WorldPtr || !WorldPtr->UI().IsInitialized())
+    {
+        return false;
+    }
+
+    auto& UI = WorldPtr->UI();
+    const std::uint64_t RootContextId = UI.RootContextId();
+    if (RootContextId == 0)
+    {
+        return false;
+    }
+
+    const auto* RootContext = UI.Context(RootContextId);
+    return RootContext != nullptr && RootContext->IsInvalidationDebugOverlayEnabled();
+#endif
+}
+
+void EditorLayout::SetInvalidationDebugOverlayEnabled(const bool Enabled)
+{
+    m_invalidationDebugOverlayEnabled = Enabled;
+
+#if defined(SNAPI_GF_ENABLE_UI)
+    if (m_runtime)
+    {
+        if (auto* WorldPtr = m_runtime->WorldPtr(); WorldPtr && WorldPtr->UI().IsInitialized())
+        {
+            auto& UI = WorldPtr->UI();
+            const auto ContextIds = UI.ContextIds();
+            for (const std::uint64_t ContextId : ContextIds)
+            {
+                if (auto* Context = UI.Context(ContextId))
+                {
+                    Context->SetInvalidationDebugOverlayEnabled(Enabled);
+                }
+            }
+        }
+    }
+#endif
+
+    UpdateInvalidationDebugToggleLabel();
+}
+
+void EditorLayout::ToggleInvalidationDebugOverlay()
+{
+    SetInvalidationDebugOverlayEnabled(!m_invalidationDebugOverlayEnabled);
+}
+
+void EditorLayout::SyncInvalidationDebugOverlay()
+{
+#if !defined(SNAPI_GF_ENABLE_UI)
+    return;
+#else
+    if (!m_runtime)
+    {
+        return;
+    }
+
+    auto* WorldPtr = m_runtime->WorldPtr();
+    if (!WorldPtr || !WorldPtr->UI().IsInitialized())
+    {
+        return;
+    }
+
+    auto& UI = WorldPtr->UI();
+    const auto ContextIds = UI.ContextIds();
+    for (const std::uint64_t ContextId : ContextIds)
+    {
+        if (auto* Context = UI.Context(ContextId))
+        {
+            if (Context->IsInvalidationDebugOverlayEnabled() != m_invalidationDebugOverlayEnabled)
+            {
+                Context->SetInvalidationDebugOverlayEnabled(m_invalidationDebugOverlayEnabled);
+            }
+        }
+    }
+#endif
+}
+
+void EditorLayout::UpdateInvalidationDebugToggleLabel()
+{
+    if (!m_context || m_invalidationDebugToggleLabel.Id.Value == 0)
+    {
+        return;
+    }
+
+    auto* Label = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_invalidationDebugToggleLabel.Id));
+    if (!Label)
+    {
+        return;
+    }
+
+    Label->Text().Set(m_invalidationDebugOverlayEnabled ? std::string("InvDbg: ON") : std::string("InvDbg: OFF"));
+    Label->TextColor().Set(m_invalidationDebugOverlayEnabled
+                               ? SnAPI::UI::Color{184, 238, 198, 255}
+                               : SnAPI::UI::Color{224, 228, 235, 255});
 }
 
 BaseNode* EditorLayout::ResolveSelectedNode(GameRuntime& Runtime, CameraComponent* ActiveCamera) const

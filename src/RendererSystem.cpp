@@ -60,8 +60,10 @@ constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
 constexpr float kViewportConfigFloatEpsilon = 0.001f;
 constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
-constexpr float kUiGlobalZBase = 100.0f;
-constexpr float kUiGlobalZStep = 0.0001f;
+constexpr float kUiGlobalZBase = 1.0f;
+// Keep UI depth values in a compact range to preserve separation after the UI shader's
+// reverse-Z remap (which is non-linear in GlobalZ). Large GlobalZ growth collapses depth.
+constexpr float kUiGlobalZStep = 0.01f;
 constexpr std::uint32_t kUiGradientTextureSize = 128u;
 
 [[nodiscard]] constexpr std::uint32_t PackUiColorRgba8(const SnAPI::UI::Color& Value)
@@ -190,12 +192,15 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_uiFontMaterial = std::move(Other.m_uiFontMaterial);
     m_uiTriangleMaterial = std::move(Other.m_uiTriangleMaterial);
     m_uiCircleMaterial = std::move(Other.m_uiCircleMaterial);
+    m_uiShadowMaterial = std::move(Other.m_uiShadowMaterial);
     m_uiFallbackTexture = std::move(Other.m_uiFallbackTexture);
     m_uiFallbackMaterialInstance = std::move(Other.m_uiFallbackMaterialInstance);
     m_uiTriangleMaterialInstance = std::move(Other.m_uiTriangleMaterialInstance);
     m_uiCircleMaterialInstance = std::move(Other.m_uiCircleMaterialInstance);
+    m_uiShadowMaterialInstance = std::move(Other.m_uiShadowMaterialInstance);
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
+    m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
     m_uiGradientMaterialInstances = std::move(Other.m_uiGradientMaterialInstances);
@@ -226,12 +231,15 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_uiFontMaterial.reset();
     Other.m_uiTriangleMaterial.reset();
     Other.m_uiCircleMaterial.reset();
+    Other.m_uiShadowMaterial.reset();
     Other.m_uiFallbackTexture.reset();
     Other.m_uiFallbackMaterialInstance.reset();
     Other.m_uiTriangleMaterialInstance.reset();
     Other.m_uiCircleMaterialInstance.reset();
+    Other.m_uiShadowMaterialInstance.reset();
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
+    Other.m_uiTextureHasTransparency.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
     Other.m_uiGradientMaterialInstances.clear();
@@ -281,12 +289,15 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_uiFontMaterial = std::move(Other.m_uiFontMaterial);
     m_uiTriangleMaterial = std::move(Other.m_uiTriangleMaterial);
     m_uiCircleMaterial = std::move(Other.m_uiCircleMaterial);
+    m_uiShadowMaterial = std::move(Other.m_uiShadowMaterial);
     m_uiFallbackTexture = std::move(Other.m_uiFallbackTexture);
     m_uiFallbackMaterialInstance = std::move(Other.m_uiFallbackMaterialInstance);
     m_uiTriangleMaterialInstance = std::move(Other.m_uiTriangleMaterialInstance);
     m_uiCircleMaterialInstance = std::move(Other.m_uiCircleMaterialInstance);
+    m_uiShadowMaterialInstance = std::move(Other.m_uiShadowMaterialInstance);
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
+    m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
     m_uiGradientMaterialInstances = std::move(Other.m_uiGradientMaterialInstances);
@@ -317,12 +328,15 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_uiFontMaterial.reset();
     Other.m_uiTriangleMaterial.reset();
     Other.m_uiCircleMaterial.reset();
+    Other.m_uiShadowMaterial.reset();
     Other.m_uiFallbackTexture.reset();
     Other.m_uiFallbackMaterialInstance.reset();
     Other.m_uiTriangleMaterialInstance.reset();
     Other.m_uiCircleMaterialInstance.reset();
+    Other.m_uiShadowMaterialInstance.reset();
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
+    Other.m_uiTextureHasTransparency.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
     Other.m_uiGradientMaterialInstances.clear();
@@ -390,12 +404,15 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_uiFontMaterial.reset();
         m_uiTriangleMaterial.reset();
         m_uiCircleMaterial.reset();
+        m_uiShadowMaterial.reset();
         m_uiFallbackTexture.reset();
         m_uiFallbackMaterialInstance.reset();
         m_uiTriangleMaterialInstance.reset();
         m_uiCircleMaterialInstance.reset();
+        m_uiShadowMaterialInstance.reset();
         m_uiFontMaterialInstances.clear();
         m_uiTextures.clear();
+        m_uiTextureHasTransparency.clear();
         m_uiTextureMaterialInstances.clear();
         m_uiGradientTextures.clear();
         m_uiGradientMaterialInstances.clear();
@@ -472,12 +489,15 @@ bool RendererSystem::InitializeUnlocked()
     m_uiFontMaterial.reset();
     m_uiTriangleMaterial.reset();
     m_uiCircleMaterial.reset();
+    m_uiShadowMaterial.reset();
     m_uiFallbackTexture.reset();
     m_uiFallbackMaterialInstance.reset();
     m_uiTriangleMaterialInstance.reset();
     m_uiCircleMaterialInstance.reset();
+    m_uiShadowMaterialInstance.reset();
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
+    m_uiTextureHasTransparency.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
     m_uiGradientMaterialInstances.clear();
@@ -1283,8 +1303,14 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
     };
 
     const auto QueueImageTextureUploadIfNeeded = [&](const std::uint32_t TextureIdValue) {
+        if (TextureIdValue == 0)
+        {
+            return;
+        }
+
         const UiTextureCacheKey TextureCacheKey{&Context, TextureIdValue};
-        if (TextureIdValue == 0 || m_uiTextures.contains(TextureCacheKey) || m_uiPendingTextureUploads.contains(TextureCacheKey))
+        const bool HasOpacityMetadata = m_uiTextureHasTransparency.contains(TextureCacheKey);
+        if (m_uiTextures.contains(TextureCacheKey) && HasOpacityMetadata)
         {
             return;
         }
@@ -1295,9 +1321,19 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             return;
         }
 
+        // UI path assumes textures may be translucent; avoid per-pixel alpha scans on CPU.
+        constexpr bool HasTransparency = true;
+        m_uiTextureHasTransparency[TextureCacheKey] = HasTransparency;
+
+        if (m_uiPendingTextureUploads.contains(TextureCacheKey))
+        {
+            return;
+        }
+
         auto& Pending = m_uiPendingTextureUploads[TextureCacheKey];
         Pending.Width = static_cast<std::uint32_t>(Image->Width);
         Pending.Height = static_cast<std::uint32_t>(Image->Height);
+        Pending.HasTransparency = HasTransparency;
         Pending.Pixels = Image->Pixels;
     };
 
@@ -1472,6 +1508,36 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             continue;
         }
 
+        if (const auto* Shadows = std::get_if<SnAPI::UI::ShadowInstanceSpan>(&Packet.Instances))
+        {
+            for (const auto& Instance : *Shadows)
+            {
+                QueuedUiRect Rect{};
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = Instance.X - ContextOffsetX;
+                Rect.Y = Instance.Y - ContextOffsetY;
+                Rect.W = Instance.W;
+                Rect.H = Instance.H;
+                Rect.PrimitiveKind = QueuedUiRect::EPrimitiveKind::Shadow;
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiColor(Rect, Instance.ShadowColor);
+                Rect.ShapeData0 = {
+                    std::max(0.0f, Instance.Expansion),
+                    std::max(0.0f, Instance.CornerRadius),
+                    std::max(0.0f, Instance.Spread),
+                    std::max(0.0f, Instance.Blur)};
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
+            }
+            continue;
+        }
+
         if (const auto* Glyphs = std::get_if<SnAPI::UI::GlyphInstanceSpan>(&Packet.Instances))
         {
             for (const auto& Instance : *Glyphs)
@@ -1634,12 +1700,15 @@ void RendererSystem::ShutdownUnlocked()
     m_uiFontMaterial.reset();
     m_uiTriangleMaterial.reset();
     m_uiCircleMaterial.reset();
+    m_uiShadowMaterial.reset();
     m_uiFallbackTexture.reset();
     m_uiFallbackMaterialInstance.reset();
     m_uiTriangleMaterialInstance.reset();
     m_uiCircleMaterialInstance.reset();
+    m_uiShadowMaterialInstance.reset();
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
+    m_uiTextureHasTransparency.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
     m_uiGradientMaterialInstances.clear();
@@ -2018,6 +2087,12 @@ bool RendererSystem::EnsureUiMaterialResources()
         UiCircleMaterial->BakeCompileTimeParams();
         m_uiCircleMaterial = std::move(UiCircleMaterial);
     }
+    if (!m_uiShadowMaterial)
+    {
+        auto UiShadowMaterial = std::make_shared<SnAPI::Graphics::UIMaterial>("UIShadowMaterial");
+        UiShadowMaterial->BakeCompileTimeParams();
+        m_uiShadowMaterial = std::move(UiShadowMaterial);
+    }
 
     if (!m_uiFallbackTexture)
     {
@@ -2062,6 +2137,19 @@ bool RendererSystem::EnsureUiMaterialResources()
         }
         m_uiCircleMaterialInstance = m_uiCircleMaterial->CreateMaterialInstance();
         if (!m_uiCircleMaterialInstance)
+        {
+            return false;
+        }
+    }
+
+    if (!m_uiShadowMaterialInstance)
+    {
+        if (!m_uiShadowMaterial)
+        {
+            return false;
+        }
+        m_uiShadowMaterialInstance = m_uiShadowMaterial->CreateMaterialInstance();
+        if (!m_uiShadowMaterialInstance)
         {
             return false;
         }
@@ -2121,6 +2209,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
 
     MaterialInstance->Texture("Material_Texture", Texture.get());
     m_uiTextures[TextureCacheKey] = std::move(Texture);
+    m_uiTextureHasTransparency[TextureCacheKey] = Pending.HasTransparency;
     m_uiTextureMaterialInstances[TextureCacheKey] = MaterialInstance;
     m_uiPendingTextureUploads.erase(PendingIt);
     return MaterialInstance;
@@ -2338,6 +2427,83 @@ void RendererSystem::FlushQueuedUiPackets()
         return;
     }
 
+    constexpr float kOpaqueAlphaEpsilon = 1e-5f;
+    const auto IsNearlyOpaque = [](const float Alpha) {
+        return std::fabs(Alpha - 1.0f) <= kOpaqueAlphaEpsilon;
+    };
+    const auto GradientHasTransparency = [&](const QueuedUiRect& Entry) {
+        const std::size_t StopCount = std::min<std::size_t>(QueuedUiRect::MaxGradientStops, static_cast<std::size_t>(Entry.GradientStopCount));
+        if (StopCount == 0)
+        {
+            return false;
+        }
+
+        for (std::size_t StopIndex = 0; StopIndex < StopCount; ++StopIndex)
+        {
+            const std::uint32_t PackedColor = Entry.GradientColors[StopIndex];
+            const std::uint8_t Alpha = static_cast<std::uint8_t>(PackedColor & 0xffu);
+            if (Alpha < 255u)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto HasUiTransparency = [&](const QueuedUiRect& Entry) {
+        // These procedural primitives rely on edge coverage in the shader,
+        // so they must be alpha blended to avoid writing partial-alpha edges
+        // directly into the target when "opaque" batching is used.
+        if (Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Shadow ||
+            Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Triangle ||
+            Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Circle)
+        {
+            return true;
+        }
+
+        if (Entry.UseFontAtlas)
+        {
+            return true;
+        }
+
+        // Rounded clipping and visible borders are AA'd in UIShadingModel and
+        // therefore produce fractional coverage at edges.
+        if (Entry.CornerRadius > kOpaqueAlphaEpsilon)
+        {
+            return true;
+        }
+
+        if (Entry.BorderThickness > kOpaqueAlphaEpsilon &&
+            Entry.BorderA > kOpaqueAlphaEpsilon)
+        {
+            return true;
+        }
+
+        if (!IsNearlyOpaque(Entry.A))
+        {
+            return true;
+        }
+
+        if (Entry.UseGradient)
+        {
+            return GradientHasTransparency(Entry);
+        }
+
+        if (Entry.TextureId != 0)
+        {
+            const UiTextureCacheKey Key{Entry.Context, Entry.TextureId};
+            if (const auto It = m_uiTextureHasTransparency.find(Key); It != m_uiTextureHasTransparency.end())
+            {
+                return It->second;
+            }
+
+            // No metadata yet; be conservative until the image is analyzed.
+            return true;
+        }
+
+        // Default to opaque path so layered UI surfaces do not get over-accumulated in OIT.
+        return false;
+    };
+
     for (const auto& Entry : m_uiQueuedRects)
     {
         SnAPI::Graphics::GpuData::InstancedTexturedRect Rect{};
@@ -2371,7 +2537,11 @@ void RendererSystem::FlushQueuedUiPackets()
         }
 
         std::shared_ptr<SnAPI::Graphics::MaterialInstance> MaterialInstance{};
-        if (Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Triangle)
+        if (Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Shadow)
+        {
+            MaterialInstance = m_uiShadowMaterialInstance;
+        }
+        else if (Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Triangle)
         {
             MaterialInstance = m_uiTriangleMaterialInstance;
         }
@@ -2404,7 +2574,12 @@ void RendererSystem::FlushQueuedUiPackets()
             MaterialInstance = m_uiFallbackMaterialInstance;
         }
 
-        m_graphics->DrawTexturedRectangleForViewport(static_cast<SnAPI::Graphics::RenderViewportID>(Entry.ViewportID), Rect, MaterialInstance, true);
+        m_graphics->DrawTexturedRectangleForViewport(
+            static_cast<SnAPI::Graphics::RenderViewportID>(Entry.ViewportID),
+            Rect,
+            MaterialInstance,
+            HasUiTransparency(Entry),
+            false);
     }
 
     m_uiQueuedRects.clear();
@@ -2562,6 +2737,13 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
             {AutoGeneratedPass::PropertyNames::PassName.data(), "UI Pass"},
             {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(), "UIShadingModel"},
             {AutoGeneratedPass::PropertyNames::MaterialsModule.data(), "DefaultUIMaterial"},
+            {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
+             DepthConfig{
+                 .WriteDepth = true,
+                 .DepthTest = true,
+                 .ClearDepth = 0.0f,
+                 .WriteResourceName = "UI_Depth",
+                 .DepthCompareOp = ECompareOp::Greater}},
         };
 
         auto PresentPassProperties = PassProperties{
@@ -2569,9 +2751,9 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
             {FullScreenPass::PropertyNames::MaterialsShadingModel.data(), "PostProcessShadingModel"},
             {FullScreenPass::PropertyNames::MaterialsModule.data(), "PassThroughMaterial"},
             // PassThroughMaterial samples `Composite_Out`; in UI-only preset we remap that
-            // DAG input to the UI pass output (`UI_Out`) so Present remains reusable.
+            // DAG input to `UI_Opaque` produced by UIPass.
             {AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data(),
-             ResourceNameMappings{{"Composite_Out", "UI_Out"}}},
+             ResourceNameMappings{{"Composite_Out", "UI_Opaque"}}},
         };
 
         m_graphics->RegisterPass(RendererViewportID, std::make_unique<UIPass>(std::move(UIPassProperties)));
@@ -2625,12 +2807,22 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {AutoGeneratedPass::PropertyNames::PassName.data(), "UI Pass"},
         {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(), "UIShadingModel"},
         {AutoGeneratedPass::PropertyNames::MaterialsModule.data(), "DefaultUIMaterial"},
+        {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
+         DepthConfig{
+             .WriteDepth = true,
+             .DepthTest = true,
+             .ClearDepth = 0.0f,
+             .WriteResourceName = "UI_Depth",
+             .DepthCompareOp = ECompareOp::Greater}},
     };
 
     auto CompositePassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Composite Pass"},
         {FullScreenPass::PropertyNames::MaterialsShadingModel.data(), "PostProcessShadingModel"},
         {FullScreenPass::PropertyNames::MaterialsModule.data(), "CompositeMaterial"},
+        // CompositeMaterial expects UI_Out; source it directly from UIPass UI_Opaque.
+        {AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data(),
+         ResourceNameMappings{{"UI_Out", "UI_Opaque"}}},
     };
 
     auto AtmosphereCompositePassProperties = PassProperties{
