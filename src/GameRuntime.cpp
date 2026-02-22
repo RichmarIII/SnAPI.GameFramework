@@ -661,6 +661,14 @@ void GameRuntime::Shutdown()
         }
         m_gameplayHost.reset();
     }
+
+    if (m_world)
+    {
+        // Tear down world nodes/components while subsystems are still alive.
+        // This ensures render objects/material instances release GPU resources
+        // before renderer/device shutdown.
+        m_world->Clear();
+    }
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (m_world)
     {

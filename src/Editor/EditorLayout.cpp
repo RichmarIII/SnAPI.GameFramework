@@ -14,6 +14,7 @@
 #include <UIContext.h>
 #include <UIColorPicker.h>
 #include <UIDatePicker.h>
+#include <UIDockZone.h>
 #include <UIElementBase.h>
 #include <UIImage.h>
 #include <UIListView.h>
@@ -74,6 +75,40 @@ constexpr std::array<std::string_view, 8> kAssetPreviewUrls{{
     "https://picsum.photos/seed/snapi_floor/512/320",
     "https://picsum.photos/seed/snapi_crate/512/320",
 }};
+
+constexpr float kMainAreaSplitRatio = 0.68f;
+constexpr float kWorkspaceLeftSplitRatio = 0.23f;
+constexpr float kWorkspaceCenterSplitRatio = 0.74f;
+
+void ConfigureSplitZone(SnAPI::UI::UIDockZone& Zone,
+                        const SnAPI::UI::EDockSplit Direction,
+                        const float SplitRatio,
+                        const float MinPrimarySize,
+                        const float MinSecondarySize)
+{
+    Zone.SplitDirection().Set(Direction);
+    Zone.SplitRatio().Set(SplitRatio);
+    Zone.MinPrimarySize().Set(MinPrimarySize);
+    Zone.MinSecondarySize().Set(MinSecondarySize);
+    Zone.Width().Set(SnAPI::UI::Sizing::Fill());
+    Zone.Height().Set(SnAPI::UI::Sizing::Fill());
+    Zone.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+}
+
+void ConfigureHostPanel(SnAPI::UI::UIPanel& Panel)
+{
+    Panel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Padding().Set(0.0f);
+    Panel.Gap().Set(0.0f);
+    Panel.UseGradient().Set(false);
+    Panel.Background().Set(SnAPI::UI::Color::Transparent());
+    Panel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    Panel.BorderThickness().Set(0.0f);
+    Panel.CornerRadius().Set(0.0f);
+    Panel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+}
 
 [[nodiscard]] std::string ToLower(const std::string_view Text)
 {
@@ -238,8 +273,18 @@ void EditorLayout::BuildShell(SnAPI::UI::UIContext& Context,
 
     BuildMenuBar(Root);
     BuildToolbar(Root);
-    BuildWorkspace(Root, Runtime, ActiveCamera, SelectionModel);
-    BuildContentBrowser(Root);
+
+    auto MainAreaSplit = Root.Add(SnAPI::UI::UIDockZone{});
+    auto& MainAreaSplitElement = MainAreaSplit.Element();
+    ConfigureSplitZone(MainAreaSplitElement, SnAPI::UI::EDockSplit::Vertical, kMainAreaSplitRatio, 220.0f, 140.0f);
+
+    auto WorkspaceHost = MainAreaSplit.Add(SnAPI::UI::UIPanel("Editor.WorkspaceHost"));
+    ConfigureHostPanel(WorkspaceHost.Element());
+    BuildWorkspace(WorkspaceHost, Runtime, ActiveCamera, SelectionModel);
+
+    auto BrowserHost = MainAreaSplit.Add(SnAPI::UI::UIPanel("Editor.ContentBrowserHost"));
+    ConfigureHostPanel(BrowserHost.Element());
+    BuildContentBrowser(BrowserHost);
 }
 
 void EditorLayout::ConfigureRoot(SnAPI::UI::UIContext& Context)
@@ -345,12 +390,31 @@ void EditorLayout::BuildWorkspace(PanelBuilder& Root,
     auto& WorkspacePanel = Workspace.Element();
     WorkspacePanel.ElementStyle().Apply("editor.workspace");
     WorkspacePanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    WorkspacePanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    WorkspacePanel.Height().Set(SnAPI::UI::Sizing::Fill());
     WorkspacePanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    BuildHierarchyPane(Workspace, Runtime, ActiveCamera, SelectionModel);
-    BuildGamePane(Workspace, Runtime, ActiveCamera);
-    BuildInspectorPane(Workspace, ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
+    auto WorkspaceSplit = Workspace.Add(SnAPI::UI::UIDockZone{});
+    auto& WorkspaceSplitElement = WorkspaceSplit.Element();
+    ConfigureSplitZone(WorkspaceSplitElement, SnAPI::UI::EDockSplit::Horizontal, kWorkspaceLeftSplitRatio, 210.0f, 360.0f);
+
+    auto HierarchyHost = WorkspaceSplit.Add(SnAPI::UI::UIPanel("Editor.Workspace.HierarchyHost"));
+    ConfigureHostPanel(HierarchyHost.Element());
+    BuildHierarchyPane(HierarchyHost, Runtime, ActiveCamera, SelectionModel);
+
+    auto CenterRightHost = WorkspaceSplit.Add(SnAPI::UI::UIPanel("Editor.Workspace.CenterRightHost"));
+    ConfigureHostPanel(CenterRightHost.Element());
+
+    auto CenterRightSplit = CenterRightHost.Add(SnAPI::UI::UIDockZone{});
+    auto& CenterRightSplitElement = CenterRightSplit.Element();
+    ConfigureSplitZone(CenterRightSplitElement, SnAPI::UI::EDockSplit::Horizontal, kWorkspaceCenterSplitRatio, 340.0f, 220.0f);
+
+    auto GameHost = CenterRightSplit.Add(SnAPI::UI::UIPanel("Editor.Workspace.GameHost"));
+    ConfigureHostPanel(GameHost.Element());
+    BuildGamePane(GameHost, Runtime, ActiveCamera);
+
+    auto InspectorHost = CenterRightSplit.Add(SnAPI::UI::UIPanel("Editor.Workspace.InspectorHost"));
+    ConfigureHostPanel(InspectorHost.Element());
+    BuildInspectorPane(InspectorHost, ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
 }
 
 void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
@@ -359,7 +423,7 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     auto& ContentPanel = ContentBrowser.Element();
     ContentPanel.ElementStyle().Apply("editor.content_browser");
     ContentPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    ContentPanel.Height().Set(SnAPI::UI::Sizing::Ratio(0.34f));
+    ContentPanel.Height().Set(SnAPI::UI::Sizing::Fill());
     ContentPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
     auto HeaderRow = ContentBrowser.Add(SnAPI::UI::UIPanel("Editor.ContentHeader"));
@@ -516,7 +580,7 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
     auto Hierarchy = Workspace.Add(SnAPI::UI::UIPanel("Editor.Hierarchy"));
     auto& HierarchyPanel = Hierarchy.Element();
     HierarchyPanel.ElementStyle().Apply("editor.sidebar");
-    HierarchyPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.30f));
+    HierarchyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     HierarchyPanel.Height().Set(SnAPI::UI::Sizing::Fill());
     HierarchyPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     HierarchyPanel.Padding().Set(6.0f);
@@ -845,7 +909,7 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     auto GamePane = Workspace.Add(SnAPI::UI::UIPanel("Editor.GamePane"));
     auto& GamePaneElement = GamePane.Element();
     GamePaneElement.ElementStyle().Apply("editor.center");
-    GamePaneElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    GamePaneElement.Width().Set(SnAPI::UI::Sizing::Fill());
     GamePaneElement.Height().Set(SnAPI::UI::Sizing::Fill());
     GamePaneElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
@@ -926,7 +990,7 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     auto Inspector = Workspace.Add(SnAPI::UI::UIPanel("Editor.Inspector"));
     auto& InspectorPanel = Inspector.Element();
     InspectorPanel.ElementStyle().Apply("editor.sidebar");
-    InspectorPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.30f));
+    InspectorPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     InspectorPanel.Height().Set(SnAPI::UI::Sizing::Fill());
     InspectorPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     InspectorPanel.Padding().Set(6.0f);

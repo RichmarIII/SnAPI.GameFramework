@@ -12,6 +12,7 @@
 #include <UIColorPicker.h>
 #include <UIComboBox.h>
 #include <UIDatePicker.h>
+#include <UIDockZone.h>
 #include <UIListView.h>
 #include <UIMenuBar.h>
 #include <UINumberField.h>
@@ -223,6 +224,17 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UITabs::HeaderTextColorKey, kTextSecondary)
         .Set(SnAPI::UI::UITabs::HeaderActiveTextColorKey, kAccentStrong)
         .Set(SnAPI::UI::UITabs::ContentBackgroundColorKey, Color{17, 18, 22, 228});
+
+    Define<SnAPI::UI::UIDockZone>()
+        .Set(SnAPI::UI::UIDockZone::SplitterThicknessKey, 6.0f)
+        .Set(SnAPI::UI::UIDockZone::MinSplitRatioKey, 0.08f)
+        .Set(SnAPI::UI::UIDockZone::MaxSplitRatioKey, 0.92f)
+        .Set(SnAPI::UI::UIDockZone::SplitterColorKey, Color{54, 59, 67, 210})
+        .Set(SnAPI::UI::UIDockZone::SplitterHoverColorKey, Color{126, 136, 150, 245})
+        .Set(SnAPI::UI::UIDockZone::TabBgColorKey, Color{18, 20, 24, 220})
+        .Set(SnAPI::UI::UIDockZone::TabActiveColorKey, Color{67, 57, 42, 235})
+        .Set(SnAPI::UI::UIDockZone::TabHoverColorKey, Color{42, 45, 52, 235})
+        .Set(SnAPI::UI::UIDockZone::TabTextColorKey, kTextSecondary);
 
     Define<SnAPI::UI::UIBreadcrumbs>()
         .Set(SnAPI::UI::UIBreadcrumbs::BackgroundColorKey, Color{0, 0, 0, 0})

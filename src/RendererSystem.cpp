@@ -1575,19 +1575,12 @@ void RendererSystem::EndFrame()
 void RendererSystem::ShutdownUnlocked()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    if (m_graphics && m_window)
-    {
-        m_graphics->DestroyResourcesForWindow(m_window.get());
-    }
-
     if (m_graphics)
     {
         m_graphics->ActiveCamera(nullptr);
-        SnAPI::Graphics::DestroyGraphicsAPI();
     }
 
-    m_graphics = nullptr;
-    m_window.reset();
+    // Release subsystem-owned references to GPU objects before tearing down the graphics API.
     m_lightManager.reset();
     ResetPassPointers();
     m_passGraphRegistered = false;
@@ -1618,6 +1611,14 @@ void RendererSystem::ShutdownUnlocked()
     m_lastWindowHeight = 0.0f;
     m_hasWindowSizeSnapshot = false;
     m_registeredRenderObjects.clear();
+
+    if (m_graphics)
+    {
+        SnAPI::Graphics::DestroyGraphicsAPI();
+    }
+
+    m_graphics = nullptr;
+    m_window.reset();
     m_registeredViewportPassGraphs.clear();
     m_renderViewportPassGraphRevision = 1;
     m_initialized = false;
