@@ -1,6 +1,7 @@
 #include "World.h"
 #include "Profiling.h"
 #include <algorithm>
+#include <cstdint>
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include <LinearAlgebra.hpp>
 #include <ICamera.hpp>
@@ -28,6 +29,7 @@ public:
         }
         m_face = Face;
         m_cachedGlyphs.clear();
+        m_cachedRevision = 0;
     }
 
     const SnAPI::UI::GlyphMetrics* GetGlyph(uint32_t Codepoint) const override
@@ -37,13 +39,11 @@ public:
             return nullptr;
         }
 
-        // Current font atlas preload path is ASCII-only; map unsupported codepoints to fallback.
-        constexpr uint32_t kAsciiFirst = 0x20u;
-        constexpr uint32_t kAsciiLastExclusive = 0x7Fu;
-        constexpr uint32_t kFallbackCodepoint = static_cast<uint32_t>('?');
-        if (Codepoint < kAsciiFirst || Codepoint >= kAsciiLastExclusive)
+        const uint64_t CacheRevision = m_face->GlyphCacheRevision();
+        if (CacheRevision != m_cachedRevision)
         {
-            Codepoint = kFallbackCodepoint;
+            m_cachedGlyphs.clear();
+            m_cachedRevision = CacheRevision;
         }
 
         if (const auto Cached = m_cachedGlyphs.find(Codepoint); Cached != m_cachedGlyphs.end())
@@ -51,8 +51,14 @@ public:
             return &Cached->second;
         }
 
-        const auto Glyph = m_face->Glyph(Codepoint);
-        const auto GlyphUv = m_face->GlyphUV(Codepoint);
+        SnAPI::Graphics::FontFace::ResolvedGlyph ResolvedGlyph{};
+        if (!m_face->ResolveGlyph(Codepoint, ResolvedGlyph))
+        {
+            return nullptr;
+        }
+
+        const auto& Glyph = ResolvedGlyph.GlyphData;
+        const auto GlyphUv = ResolvedGlyph.UV;
 
         SnAPI::UI::GlyphMetrics Metrics{};
         Metrics.U0 = static_cast<float>(GlyphUv.Min.x());
@@ -66,6 +72,8 @@ public:
         // FreeType BitmapTop is upward-positive, so convert sign for consistent layout.
         Metrics.BearingY = -static_cast<float>(Glyph.BitmapTop);
         Metrics.Advance = static_cast<float>(Glyph.Advance.x());
+        Metrics.AtlasTextureHandle = static_cast<std::uint64_t>(
+            reinterpret_cast<std::uintptr_t>(ResolvedGlyph.pAtlasImage));
 
         auto [It, Inserted] = m_cachedGlyphs.emplace(Codepoint, Metrics);
         (void)Inserted;
@@ -85,6 +93,7 @@ public:
 private:
     SnAPI::Graphics::FontFace* m_face = nullptr;
     mutable std::unordered_map<uint32_t, SnAPI::UI::GlyphMetrics> m_cachedGlyphs{};
+    mutable uint64_t m_cachedRevision = 0;
 };
 #endif
 } // namespace

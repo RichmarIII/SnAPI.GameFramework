@@ -14,6 +14,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,6 +24,7 @@
 #include <UIComboBox.h>
 #include <UIElementBase.h>
 #include <UIEvents.h>
+#include <UINumberField.h>
 #include <UIPanel.h>
 #include <UISizing.h>
 #include <UIText.h>
@@ -33,7 +35,55 @@ namespace SnAPI::GameFramework
 namespace
 {
 constexpr int kMaxReflectionDepth = 8;
-constexpr float kLabelRatio = 0.45f;
+constexpr float kLabelWidth = 78.0f;
+constexpr float kRowPadding = 4.0f;
+constexpr float kAxisTagWidth = 12.0f;
+constexpr float kVectorGap = 2.0f;
+
+using SnAPI::UI::Color;
+
+constexpr Color kCardBackground{16, 18, 23, 236};
+constexpr Color kCardBorder{52, 58, 70, 226};
+constexpr Color kRowBackground{19, 22, 30, 246};
+constexpr Color kRowBorder{50, 56, 68, 232};
+constexpr Color kLabelColor{170, 178, 192, 255};
+constexpr Color kValueBg{12, 15, 21, 252};
+constexpr Color kValueBorder{58, 65, 80, 236};
+constexpr Color kValueBorderFocused{114, 122, 138, 242};
+constexpr Color kAxisX{232, 110, 90, 255};
+constexpr Color kAxisY{118, 208, 142, 255};
+constexpr Color kAxisZ{116, 156, 235, 255};
+constexpr Color kAxisW{220, 196, 138, 255};
+
+[[nodiscard]] Color AxisTintForIndex(const size_t Index)
+{
+  switch (Index)
+  {
+  case 0:
+    return kAxisX;
+  case 1:
+    return kAxisY;
+  case 2:
+    return kAxisZ;
+  default:
+    return kAxisW;
+  }
+}
+
+[[nodiscard]] const char* AxisLabelForIndex(const size_t Index)
+{
+  switch (Index)
+  {
+  case 0:
+    return "X";
+  case 1:
+    return "Y";
+  case 2:
+    return "Z";
+  default:
+    return "W";
+  }
+}
 
 [[nodiscard]] std::string TrimCopy(std::string_view Text)
 {
@@ -80,6 +130,26 @@ constexpr float kLabelRatio = 0.45f;
     out = "0";
   }
   return out;
+}
+
+[[nodiscard]] std::string FormatComponentValues(const std::span<const double> Values)
+{
+  std::string out;
+  out.reserve(Values.size() * 10);
+  for (size_t index = 0; index < Values.size(); ++index)
+  {
+    if (index > 0)
+    {
+      out += ", ";
+    }
+    out += FormatNumber(Values[index]);
+  }
+  return out;
+}
+
+[[nodiscard]] bool NearlyEqual(const double A, const double B, const double Epsilon = 1e-6)
+{
+  return std::fabs(A - B) <= Epsilon;
 }
 
 [[nodiscard]] bool ParseComponentList(std::string_view Text, double* OutValues, const size_t Count)
@@ -318,11 +388,19 @@ UIPropertyPanel::UIPropertyPanel()
 {
   // Keep panel behavior scroll-centric by default, with one vertical content root.
   Direction().SetDefault(SnAPI::UI::ELayoutDirection::Vertical);
-  Padding().SetDefault(8.0f);
-  Gap().SetDefault(6.0f);
+  Padding().SetDefault(4.0f);
+  Gap().SetDefault(4.0f);
   ShowHorizontalScrollbar().SetDefault(false);
   ShowVerticalScrollbar().SetDefault(true);
   Smooth().SetDefault(true);
+  ScrollbarThickness().SetDefault(7.0f);
+  BackgroundColor().SetDefault(kCardBackground);
+  BorderColor().SetDefault(kCardBorder);
+  BorderThickness().SetDefault(1.0f);
+  CornerRadius().SetDefault(4.0f);
+  ScrollbarTrackColor().SetDefault(Color{12, 14, 19, 230});
+  ScrollbarThumbColor().SetDefault(Color{67, 74, 88, 242});
+  ScrollbarThumbHoverColor().SetDefault(Color{102, 110, 126, 246});
 }
 
 void UIPropertyPanel::Initialize(SnAPI::UI::UIContext* Context, const SnAPI::UI::ElementId Id)
@@ -509,10 +587,14 @@ bool UIPropertyPanel::RebuildUi()
   if (auto* contentPanel = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(m_ContentRoot)))
   {
     contentPanel->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    contentPanel->Padding().Set(4.0f);
-    contentPanel->Gap().Set(6.0f);
+    contentPanel->Padding().Set(2.0f);
+    contentPanel->Gap().Set(4.0f);
     contentPanel->Width().Set(SnAPI::UI::Sizing::Fill());
     contentPanel->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    contentPanel->Background().Set(Color::Transparent());
+    contentPanel->BorderColor().Set(Color::Transparent());
+    contentPanel->BorderThickness().Set(0.0f);
+    contentPanel->CornerRadius().Set(0.0f);
   }
 
   if (m_BoundSections.empty())
@@ -530,52 +612,74 @@ bool UIPropertyPanel::RebuildUi()
   }
   else
   {
-    const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
-    if (accordionHandle.Id.Value != 0)
+    for (const BoundSection& Section : m_BoundSections)
     {
+      if (!Section.Instance)
+      {
+        continue;
+      }
+
+      const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+      if (accordionHandle.Id.Value == 0)
+      {
+        continue;
+      }
       m_Context->AddChild(m_ContentRoot, accordionHandle.Id);
-      if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
+
+      auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+      if (accordion)
       {
         accordion->Width().Set(SnAPI::UI::Sizing::Fill());
         accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
         accordion->AllowMultipleExpanded().Set(true);
         accordion->DefaultExpanded().Set(true);
         accordion->Gap().Set(4.0f);
-        accordion->ContentPadding().Set(6.0f);
+        accordion->Padding().Set(0.0f);
+        accordion->HeaderHeight().Set(28.0f);
+        accordion->HeaderPadding().Set(9.0f);
+        accordion->ContentPadding().Set(5.0f);
+        accordion->BackgroundColor().Set(kCardBackground);
+        accordion->BorderColor().Set(kCardBorder);
+        accordion->BorderThickness().Set(1.0f);
+        accordion->CornerRadius().Set(4.0f);
+        accordion->HeaderColor().Set(Color{48, 55, 68, 246});
+        accordion->HeaderHoverColor().Set(Color{58, 66, 80, 248});
+        accordion->HeaderExpandedColor().Set(Color{56, 64, 78, 248});
+        accordion->HeaderTextColor().Set(Color{214, 220, 231, 255});
+        accordion->HeaderTextExpandedColor().Set(Color{230, 234, 241, 255});
+        accordion->HeaderBorderColor().Set(kCardBorder);
+        accordion->HeaderBorderThickness().Set(1.0f);
+        accordion->ArrowSize().Set(6.0f);
+        accordion->ArrowGap().Set(6.0f);
       }
 
-      for (const BoundSection& Section : m_BoundSections)
+      const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.SectionBody");
+      if (bodyHandle.Id.Value == 0)
       {
-        if (!Section.Instance)
-        {
-          continue;
-        }
-
-        const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.SectionBody");
-        if (bodyHandle.Id.Value == 0)
-        {
-          continue;
-        }
-
-        m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
-        if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
-        {
-          body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-          body->Padding().Set(4.0f);
-          body->Gap().Set(6.0f);
-          body->Width().Set(SnAPI::UI::Sizing::Fill());
-          body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
-        }
-
-        if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
-        {
-          std::string heading = Section.Heading.empty() ? PrettyTypeName(Section.Type) : Section.Heading;
-          accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
-          accordion->SetSectionExpanded(bodyHandle.Id, true);
-        }
-
-        BuildTypeIntoContainer(bodyHandle.Id, Section.Type, Section.Instance, {}, 0);
+        continue;
       }
+
+      m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+      if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
+      {
+        body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        body->Padding().Set(2.0f);
+        body->Gap().Set(4.0f);
+        body->Width().Set(SnAPI::UI::Sizing::Fill());
+        body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        body->Background().Set(Color::Transparent());
+        body->BorderColor().Set(Color::Transparent());
+        body->BorderThickness().Set(0.0f);
+      }
+
+      if (accordion)
+      {
+        std::string heading = Section.Heading.empty() ? PrettyTypeName(Section.Type) : Section.Heading;
+        accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+        accordion->SetSectionExpanded(bodyHandle.Id, true);
+      }
+
+      BuildTypeIntoContainer(bodyHandle.Id, Section.Type, Section.Instance, {}, 0);
     }
   }
 
@@ -651,6 +755,34 @@ void UIPropertyPanel::AddFieldEditor(
 
   if (IsNestedStructType(Field.FieldType))
   {
+    const std::string nestedTitle = PrettyFieldName(Field.Name);
+    const bool flattenSettings = EqualsIgnoreCase(nestedTitle, "Settings");
+    if (flattenSettings)
+    {
+      const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.SettingsBody");
+      if (bodyHandle.Id.Value == 0)
+      {
+        AddUnsupportedRow(Parent, Field.Name, "Failed to create nested body");
+        return;
+      }
+
+      m_Context->AddChild(Parent, bodyHandle.Id);
+      if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
+      {
+        body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        body->Padding().Set(2.0f);
+        body->Gap().Set(4.0f);
+        body->Width().Set(SnAPI::UI::Sizing::Fill());
+        body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        body->Background().Set(Color::Transparent());
+        body->BorderColor().Set(Color::Transparent());
+        body->BorderThickness().Set(0.0f);
+      }
+
+      BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, RootInstance, std::move(Path), Depth + 1);
+      return;
+    }
+
     const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
     if (accordionHandle.Id.Value == 0)
     {
@@ -666,7 +798,23 @@ void UIPropertyPanel::AddFieldEditor(
       accordion->AllowMultipleExpanded().Set(true);
       accordion->DefaultExpanded().Set(true);
       accordion->Gap().Set(4.0f);
-      accordion->ContentPadding().Set(6.0f);
+      accordion->Padding().Set(0.0f);
+      accordion->HeaderHeight().Set(26.0f);
+      accordion->HeaderPadding().Set(8.0f);
+      accordion->ContentPadding().Set(5.0f);
+      accordion->BackgroundColor().Set(kCardBackground);
+      accordion->BorderColor().Set(kCardBorder);
+      accordion->BorderThickness().Set(1.0f);
+      accordion->CornerRadius().Set(4.0f);
+      accordion->HeaderColor().Set(Color{45, 51, 63, 246});
+      accordion->HeaderHoverColor().Set(Color{56, 63, 77, 248});
+      accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+      accordion->HeaderTextColor().Set(Color{205, 212, 223, 255});
+      accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
+      accordion->HeaderBorderColor().Set(kCardBorder);
+      accordion->HeaderBorderThickness().Set(1.0f);
+      accordion->ArrowSize().Set(6.0f);
+      accordion->ArrowGap().Set(6.0f);
     }
 
     const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.NestedBody");
@@ -680,18 +828,21 @@ void UIPropertyPanel::AddFieldEditor(
     if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
     {
       body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-      body->Padding().Set(4.0f);
-      body->Gap().Set(6.0f);
+      body->Padding().Set(2.0f);
+      body->Gap().Set(4.0f);
       body->Width().Set(SnAPI::UI::Sizing::Fill());
       body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      body->Background().Set(Color::Transparent());
+      body->BorderColor().Set(Color::Transparent());
+      body->BorderThickness().Set(0.0f);
     }
 
     if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
     {
-      std::string heading = PrettyTypeName(Field.FieldType);
+      std::string heading = nestedTitle;
       if (heading.empty())
       {
-        heading = PrettyFieldName(Field.Name);
+        heading = PrettyTypeName(Field.FieldType);
       }
       accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
       accordion->SetSectionExpanded(bodyHandle.Id, true);
@@ -711,25 +862,49 @@ void UIPropertyPanel::AddFieldEditor(
   if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
   {
     row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    row->Padding().Set(0.0f);
+    row->Padding().Set(kRowPadding);
     row->Gap().Set(8.0f);
     row->Width().Set(SnAPI::UI::Sizing::Fill());
     row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    row->Background().Set(kRowBackground);
+    row->BorderColor().Set(kRowBorder);
+    row->BorderThickness().Set(1.0f);
+    row->CornerRadius().Set(4.0f);
   }
 
-  const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(PrettyFieldName(Field.Name));
+  const std::string fieldLabel = PrettyFieldName(Field.Name);
+  const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(fieldLabel);
   if (labelHandle.Id.Value != 0)
   {
     m_Context->AddChild(rowHandle.Id, labelHandle.Id);
     if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
     {
-      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelRatio));
+      label->Width().Set(SnAPI::UI::Sizing::Auto());
       label->HAlign().Set(SnAPI::UI::EAlignment::Start);
       label->VAlign().Set(SnAPI::UI::EAlignment::Center);
       label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
-      // Keep labels readable while preventing overlap into editors.
       label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+      label->TextColor().Set(kLabelColor);
     }
+  }
+
+  const auto valueHostHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.ValueHost");
+  if (valueHostHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(rowHandle.Id, valueHostHandle.Id);
+  if (auto* valueHost = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(valueHostHandle.Id)))
+  {
+    valueHost->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    valueHost->Padding().Set(0.0f);
+    valueHost->Gap().Set(kVectorGap);
+    valueHost->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    valueHost->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    valueHost->VAlign().Set(SnAPI::UI::EAlignment::Center);
+    valueHost->Background().Set(Color::Transparent());
+    valueHost->BorderColor().Set(Color::Transparent());
+    valueHost->BorderThickness().Set(0.0f);
   }
 
   const EEditorKind editorKind = ResolveEditorKind(Field.FieldType);
@@ -741,11 +916,12 @@ void UIPropertyPanel::AddFieldEditor(
       "<unsupported: " + PrettyTypeName(Field.FieldType) + ">");
     if (textHandle.Id.Value != 0)
     {
-      m_Context->AddChild(rowHandle.Id, textHandle.Id);
+      m_Context->AddChild(valueHostHandle.Id, textHandle.Id);
       if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
       {
         text->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
         text->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+        text->TextColor().Set(Color{152, 160, 176, 255});
       }
     }
     return;
@@ -765,15 +941,20 @@ void UIPropertyPanel::AddFieldEditor(
     {
       return;
     }
-    m_Context->AddChild(rowHandle.Id, checkboxHandle.Id);
+    m_Context->AddChild(valueHostHandle.Id, checkboxHandle.Id);
     binding.EditorId = checkboxHandle.Id;
 
     if (auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxHandle.Id)))
     {
-      checkbox->Width().Set(SnAPI::UI::Sizing::Auto());
-      checkbox->HAlign().Set(SnAPI::UI::EAlignment::Start);
+      checkbox->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+      checkbox->HAlign().Set(SnAPI::UI::EAlignment::End);
       checkbox->VAlign().Set(SnAPI::UI::EAlignment::Center);
       checkbox->Label().Set(std::string{});
+      checkbox->BoxSize().Set(12.0f);
+      checkbox->BorderThickness().Set(1.0f);
+      checkbox->CheckInset().Set(2.0f);
+      checkbox->BoxColor().Set(kValueBg);
+      checkbox->CheckColor().Set(Color{220, 202, 168, 255});
     }
   }
   else if (editorKind == EEditorKind::Enum)
@@ -783,15 +964,28 @@ void UIPropertyPanel::AddFieldEditor(
     {
       return;
     }
-    m_Context->AddChild(rowHandle.Id, comboHandle.Id);
+    m_Context->AddChild(valueHostHandle.Id, comboHandle.Id);
     binding.EditorId = comboHandle.Id;
 
     if (auto* combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboHandle.Id)))
     {
       combo->ReadOnly().Set(readOnly);
       combo->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+      combo->Height().Set(SnAPI::UI::Sizing::Auto());
+      combo->VAlign().Set(SnAPI::UI::EAlignment::Center);
       combo->MaxDropdownHeight().Set(220.0f);
       combo->Placeholder().Set(PrettyTypeName(Field.FieldType));
+      combo->BackgroundColor().Set(kValueBg);
+      combo->HoverColor().Set(Color{26, 30, 39, 252});
+      combo->PressedColor().Set(Color{31, 36, 46, 252});
+      combo->BorderColor().Set(kValueBorder);
+      combo->BorderThickness().Set(1.0f);
+      combo->CornerRadius().Set(3.0f);
+      combo->TextColor().Set(Color{224, 229, 237, 255});
+      combo->PlaceholderColor().Set(Color{138, 147, 163, 255});
+      combo->ArrowColor().Set(Color{185, 193, 205, 255});
+      combo->Padding().Set(6.0f);
+      combo->RowHeight().Set(24.0f);
 
       std::vector<std::string> options;
       if (const TypeInfo* enumInfo = TypeRegistry::Instance().Find(Field.FieldType);
@@ -806,6 +1000,192 @@ void UIPropertyPanel::AddFieldEditor(
       combo->SetItems(std::move(options));
     }
   }
+  else if ((editorKind == EEditorKind::Signed || editorKind == EEditorKind::Unsigned ||
+            editorKind == EEditorKind::Float || editorKind == EEditorKind::Double) && !readOnly)
+  {
+    const auto numberHandle = m_Context->CreateElement<SnAPI::UI::UINumberField>();
+    if (numberHandle.Id.Value == 0)
+    {
+      return;
+    }
+    m_Context->AddChild(valueHostHandle.Id, numberHandle.Id);
+    binding.EditorId = numberHandle.Id;
+    binding.ComponentEditorIds[0] = numberHandle.Id;
+    binding.ComponentCount = 1;
+
+    if (auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(numberHandle.Id)))
+    {
+      numberField->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+      numberField->Height().Set(SnAPI::UI::Sizing::Auto());
+      numberField->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      numberField->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      numberField->ShowSpinButtons().Set(true);
+      numberField->AllowTextInput().Set(true);
+      numberField->Padding().Set(3.0f);
+      numberField->BorderThickness().Set(1.0f);
+      numberField->CornerRadius().Set(3.0f);
+      numberField->BackgroundColor().Set(kValueBg);
+      numberField->HoverColor().Set(Color{26, 30, 39, 252});
+      numberField->PressedColor().Set(Color{31, 36, 46, 252});
+      numberField->BorderColor().Set(kValueBorder);
+      numberField->TextColor().Set(Color{224, 229, 237, 255});
+      numberField->CaretColor().Set(kValueBorderFocused);
+      numberField->SpinButtonColor().Set(Color{23, 27, 35, 252});
+      numberField->SpinButtonHoverColor().Set(Color{31, 36, 46, 252});
+
+      if (editorKind == EEditorKind::Signed)
+      {
+        numberField->Precision().Set(0u);
+        numberField->Step().Set(1.0);
+        numberField->MinValue().Set(static_cast<double>(std::numeric_limits<int>::min()));
+        numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<int>::max()));
+      }
+      else if (editorKind == EEditorKind::Unsigned)
+      {
+        numberField->Precision().Set(0u);
+        numberField->Step().Set(1.0);
+        numberField->MinValue().Set(0.0);
+        if (binding.FieldType == StaticTypeId<unsigned int>())
+        {
+          numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<unsigned int>::max()));
+        }
+        else
+        {
+          numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<std::uint64_t>::max()));
+        }
+      }
+      else if (editorKind == EEditorKind::Float)
+      {
+        numberField->Precision().Set(3u);
+        numberField->Step().Set(0.01);
+        numberField->MinValue().Set(-static_cast<double>(std::numeric_limits<float>::max()));
+        numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<float>::max()));
+      }
+      else
+      {
+        numberField->Precision().Set(4u);
+        numberField->Step().Set(0.01);
+        numberField->MinValue().Set(-std::numeric_limits<double>::max());
+        numberField->MaxValue().Set(std::numeric_limits<double>::max());
+      }
+    }
+  }
+  else if ((editorKind == EEditorKind::Vec2 || editorKind == EEditorKind::Vec3 ||
+            editorKind == EEditorKind::Vec4 || editorKind == EEditorKind::Quat ||
+            editorKind == EEditorKind::Color) && !readOnly)
+  {
+    const std::uint8_t componentCount =
+      (editorKind == EEditorKind::Vec2) ? 2 :
+      ((editorKind == EEditorKind::Vec3) ? 3 : 4);
+    binding.ComponentCount = componentCount;
+
+    for (std::uint8_t componentIndex = 0; componentIndex < componentCount; ++componentIndex)
+    {
+      const auto chipHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.VectorChip");
+      if (chipHandle.Id.Value == 0)
+      {
+        continue;
+      }
+      m_Context->AddChild(valueHostHandle.Id, chipHandle.Id);
+      if (auto* chip = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(chipHandle.Id)))
+      {
+        chip->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        chip->Padding().Set(1.0f);
+        chip->Gap().Set(2.0f);
+        chip->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        chip->Height().Set(SnAPI::UI::Sizing::Auto());
+        chip->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        chip->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        chip->Background().Set(kValueBg);
+        chip->BorderColor().Set(kValueBorder);
+        chip->BorderThickness().Set(1.0f);
+        chip->CornerRadius().Set(3.0f);
+      }
+
+      const char* axisLabel = AxisLabelForIndex(componentIndex);
+      if (editorKind == EEditorKind::Color)
+      {
+        switch (componentIndex)
+        {
+        case 0:
+          axisLabel = "R";
+          break;
+        case 1:
+          axisLabel = "G";
+          break;
+        case 2:
+          axisLabel = "B";
+          break;
+        default:
+          axisLabel = "A";
+          break;
+        }
+      }
+
+      const auto axisHandle = m_Context->CreateElement<SnAPI::UI::UIText>(axisLabel);
+      if (axisHandle.Id.Value != 0)
+      {
+        m_Context->AddChild(chipHandle.Id, axisHandle.Id);
+        if (auto* axisText = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(axisHandle.Id)))
+        {
+          axisText->Width().Set(SnAPI::UI::Sizing::Auto());
+          axisText->HAlign().Set(SnAPI::UI::EAlignment::Center);
+          axisText->VAlign().Set(SnAPI::UI::EAlignment::Center);
+          axisText->TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+          axisText->Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+          axisText->TextColor().Set(AxisTintForIndex(componentIndex));
+        }
+      }
+
+      const auto numberHandle = m_Context->CreateElement<SnAPI::UI::UINumberField>();
+      if (numberHandle.Id.Value == 0)
+      {
+        continue;
+      }
+      m_Context->AddChild(chipHandle.Id, numberHandle.Id);
+      if (binding.EditorId.Value == 0)
+      {
+        binding.EditorId = numberHandle.Id;
+      }
+      binding.ComponentEditorIds[componentIndex] = numberHandle.Id;
+
+      if (auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(numberHandle.Id)))
+      {
+        numberField->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        numberField->Height().Set(SnAPI::UI::Sizing::Auto());
+        numberField->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        numberField->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        numberField->ShowSpinButtons().Set(true);
+        numberField->AllowTextInput().Set(true);
+        numberField->Padding().Set(2.0f);
+        numberField->BorderThickness().Set(0.0f);
+        numberField->CornerRadius().Set(0.0f);
+        numberField->BackgroundColor().Set(Color::Transparent());
+        numberField->HoverColor().Set(Color::Transparent());
+        numberField->PressedColor().Set(Color::Transparent());
+        numberField->BorderColor().Set(Color::Transparent());
+        numberField->TextColor().Set(Color{224, 229, 237, 255});
+        numberField->CaretColor().Set(kValueBorderFocused);
+          numberField->SpinButtonColor().Set(Color{23, 27, 35, 252});
+          numberField->SpinButtonHoverColor().Set(Color{31, 36, 46, 252});
+
+        if (editorKind == EEditorKind::Color)
+        {
+          numberField->Precision().Set(0u);
+          numberField->Step().Set(1.0);
+          numberField->MinValue().Set(0.0);
+          numberField->MaxValue().Set(255.0);
+        }
+        else
+        {
+          numberField->Precision().Set(3u);
+          numberField->Step().Set(0.01);
+          numberField->MinValue().Set(-std::numeric_limits<double>::max());
+          numberField->MaxValue().Set(std::numeric_limits<double>::max());
+        }
+      }
+    }
+  }
   else
   {
     const auto editorHandle = m_Context->CreateElement<SnAPI::UI::UITextInput>();
@@ -813,7 +1193,7 @@ void UIPropertyPanel::AddFieldEditor(
     {
       return;
     }
-    m_Context->AddChild(rowHandle.Id, editorHandle.Id);
+    m_Context->AddChild(valueHostHandle.Id, editorHandle.Id);
     binding.EditorId = editorHandle.Id;
 
     if (auto* editor = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(editorHandle.Id)))
@@ -825,9 +1205,19 @@ void UIPropertyPanel::AddFieldEditor(
       editor->EnableSpellCheck().Set(false);
       editor->EnableSyntaxHighlight().Set(false);
       editor->ReadOnly().Set(readOnly);
-      // Fill remaining row width so rows do not overflow narrow panels.
       editor->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
       editor->Height().Set(SnAPI::UI::Sizing::Auto());
+      editor->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      editor->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      editor->Padding().Set(6.0f);
+      editor->BorderThickness().Set(1.0f);
+      editor->CornerRadius().Set(3.0f);
+      editor->BackgroundColor().Set(kValueBg);
+      editor->BorderColor().Set(kValueBorder);
+      editor->TextColor().Set(Color{224, 229, 237, 255});
+      editor->PlaceholderColor().Set(Color{138, 147, 163, 255});
+      editor->SelectionColor().Set(Color{74, 90, 122, 194});
+      editor->CaretColor().Set(kValueBorderFocused);
       editor->Placeholder().Set(PrettyTypeName(Field.FieldType));
     }
   }
@@ -855,10 +1245,14 @@ void UIPropertyPanel::AddUnsupportedRow(
   if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
   {
     row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    row->Padding().Set(0.0f);
+    row->Padding().Set(kRowPadding);
     row->Gap().Set(8.0f);
     row->Width().Set(SnAPI::UI::Sizing::Fill());
     row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    row->Background().Set(Color{24, 20, 24, 246});
+    row->BorderColor().Set(Color{86, 66, 78, 236});
+    row->BorderThickness().Set(1.0f);
+    row->CornerRadius().Set(4.0f);
   }
 
   const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(std::string(Label));
@@ -867,7 +1261,8 @@ void UIPropertyPanel::AddUnsupportedRow(
     m_Context->AddChild(rowHandle.Id, labelHandle.Id);
     if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
     {
-      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelRatio));
+      label->Width().Set(SnAPI::UI::Sizing::Auto());
+      label->TextColor().Set(Color{212, 170, 182, 255});
       label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
   }
@@ -879,6 +1274,7 @@ void UIPropertyPanel::AddUnsupportedRow(
     if (auto* reason = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(reasonHandle.Id)))
     {
       reason->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+      reason->TextColor().Set(Color{198, 162, 174, 255});
       reason->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
   }
@@ -910,13 +1306,25 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::String;
   }
+  if (Type == StaticTypeId<Vec2>())
+  {
+    return EEditorKind::Vec2;
+  }
   if (Type == StaticTypeId<Vec3>())
   {
     return EEditorKind::Vec3;
   }
+  if (Type == StaticTypeId<Vec4>())
+  {
+    return EEditorKind::Vec4;
+  }
   if (Type == StaticTypeId<Quat>())
   {
     return EEditorKind::Quat;
+  }
+  if (Type == StaticTypeId<SnAPI::UI::Color>())
+  {
+    return EEditorKind::Color;
   }
   if (Type == StaticTypeId<Uuid>())
   {
@@ -1184,6 +1592,16 @@ bool UIPropertyPanel::ReadFieldValue(
       OutText = ref->get();
       return true;
     }
+  case EEditorKind::Vec2:
+    {
+      const auto ref = value.AsConstRef<Vec2>();
+      if (!ref)
+      {
+        return false;
+      }
+      OutText = FormatVec2(ref->get());
+      return true;
+    }
   case EEditorKind::Vec3:
     {
       const auto ref = value.AsConstRef<Vec3>();
@@ -1194,6 +1612,16 @@ bool UIPropertyPanel::ReadFieldValue(
       OutText = FormatVec3(ref->get());
       return true;
     }
+  case EEditorKind::Vec4:
+    {
+      const auto ref = value.AsConstRef<Vec4>();
+      if (!ref)
+      {
+        return false;
+      }
+      OutText = FormatVec4(ref->get());
+      return true;
+    }
   case EEditorKind::Quat:
     {
       const auto ref = value.AsConstRef<Quat>();
@@ -1202,6 +1630,16 @@ bool UIPropertyPanel::ReadFieldValue(
         return false;
       }
       OutText = FormatQuat(ref->get());
+      return true;
+    }
+  case EEditorKind::Color:
+    {
+      const auto ref = value.AsConstRef<SnAPI::UI::Color>();
+      if (!ref)
+      {
+        return false;
+      }
+      OutText = FormatColor(ref->get());
       return true;
     }
   case EEditorKind::Uuid:
@@ -1303,6 +1741,15 @@ bool UIPropertyPanel::WriteFieldValue(
     }
   case EEditorKind::String:
     return static_cast<bool>(field->Setter(owner, Variant::FromValue(std::string(TextValue))));
+  case EEditorKind::Vec2:
+    {
+      Vec2 parsed{};
+      if (!ParseVec2(TextValue, parsed))
+      {
+        return false;
+      }
+      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+    }
   case EEditorKind::Vec3:
     {
       Vec3 parsed{};
@@ -1312,10 +1759,28 @@ bool UIPropertyPanel::WriteFieldValue(
       }
       return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
     }
+  case EEditorKind::Vec4:
+    {
+      Vec4 parsed{};
+      if (!ParseVec4(TextValue, parsed))
+      {
+        return false;
+      }
+      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+    }
   case EEditorKind::Quat:
     {
       Quat parsed = Quat::Identity();
       if (!ParseQuat(TextValue, parsed))
+      {
+        return false;
+      }
+      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+    }
+  case EEditorKind::Color:
+    {
+      SnAPI::UI::Color parsed{};
+      if (!ParseColor(TextValue, parsed))
       {
         return false;
       }
@@ -1471,6 +1936,19 @@ bool UIPropertyPanel::ParseDouble(std::string_view Text, double& OutValue) const
   return true;
 }
 
+bool UIPropertyPanel::ParseVec2(std::string_view Text, Vec2& OutValue) const
+{
+  std::array<double, 2> components{};
+  if (!ParseComponentList(Text, components.data(), components.size()))
+  {
+    return false;
+  }
+
+  OutValue.x() = static_cast<Vec2::Scalar>(components[0]);
+  OutValue.y() = static_cast<Vec2::Scalar>(components[1]);
+  return true;
+}
+
 bool UIPropertyPanel::ParseVec3(std::string_view Text, Vec3& OutValue) const
 {
   std::array<double, 3> components{};
@@ -1482,6 +1960,21 @@ bool UIPropertyPanel::ParseVec3(std::string_view Text, Vec3& OutValue) const
   OutValue.x() = static_cast<Scalar>(components[0]);
   OutValue.y() = static_cast<Scalar>(components[1]);
   OutValue.z() = static_cast<Scalar>(components[2]);
+  return true;
+}
+
+bool UIPropertyPanel::ParseVec4(std::string_view Text, Vec4& OutValue) const
+{
+  std::array<double, 4> components{};
+  if (!ParseComponentList(Text, components.data(), components.size()))
+  {
+    return false;
+  }
+
+  OutValue.x() = static_cast<Vec4::Scalar>(components[0]);
+  OutValue.y() = static_cast<Vec4::Scalar>(components[1]);
+  OutValue.z() = static_cast<Vec4::Scalar>(components[2]);
+  OutValue.w() = static_cast<Vec4::Scalar>(components[3]);
   return true;
 }
 
@@ -1500,6 +1993,25 @@ bool UIPropertyPanel::ParseQuat(std::string_view Text, Quat& OutValue) const
   return true;
 }
 
+bool UIPropertyPanel::ParseColor(std::string_view Text, SnAPI::UI::Color& OutValue) const
+{
+  std::array<double, 4> components{};
+  if (!ParseComponentList(Text, components.data(), components.size()))
+  {
+    return false;
+  }
+
+  const auto ClampChannel = [](const double Value) -> std::uint8_t {
+    return static_cast<std::uint8_t>(std::clamp(std::llround(Value), 0ll, 255ll));
+  };
+
+  OutValue.R = ClampChannel(components[0]);
+  OutValue.G = ClampChannel(components[1]);
+  OutValue.B = ClampChannel(components[2]);
+  OutValue.A = ClampChannel(components[3]);
+  return true;
+}
+
 bool UIPropertyPanel::ParseUuid(std::string_view Text, Uuid& OutValue) const
 {
   const auto parsed = uuids::uuid::from_string(TrimCopy(Text));
@@ -1512,19 +2024,51 @@ bool UIPropertyPanel::ParseUuid(std::string_view Text, Uuid& OutValue) const
   return true;
 }
 
+std::string UIPropertyPanel::FormatVec2(const Vec2& Value) const
+{
+  const std::array<double, 2> components{
+    static_cast<double>(Value.x()),
+    static_cast<double>(Value.y())};
+  return FormatComponentValues(components);
+}
+
 std::string UIPropertyPanel::FormatVec3(const Vec3& Value) const
 {
-  return FormatNumber(static_cast<double>(Value.x())) + ", " +
-         FormatNumber(static_cast<double>(Value.y())) + ", " +
-         FormatNumber(static_cast<double>(Value.z()));
+  const std::array<double, 3> components{
+    static_cast<double>(Value.x()),
+    static_cast<double>(Value.y()),
+    static_cast<double>(Value.z())};
+  return FormatComponentValues(components);
+}
+
+std::string UIPropertyPanel::FormatVec4(const Vec4& Value) const
+{
+  const std::array<double, 4> components{
+    static_cast<double>(Value.x()),
+    static_cast<double>(Value.y()),
+    static_cast<double>(Value.z()),
+    static_cast<double>(Value.w())};
+  return FormatComponentValues(components);
 }
 
 std::string UIPropertyPanel::FormatQuat(const Quat& Value) const
 {
-  return FormatNumber(static_cast<double>(Value.x())) + ", " +
-         FormatNumber(static_cast<double>(Value.y())) + ", " +
-         FormatNumber(static_cast<double>(Value.z())) + ", " +
-         FormatNumber(static_cast<double>(Value.w()));
+  const std::array<double, 4> components{
+    static_cast<double>(Value.x()),
+    static_cast<double>(Value.y()),
+    static_cast<double>(Value.z()),
+    static_cast<double>(Value.w())};
+  return FormatComponentValues(components);
+}
+
+std::string UIPropertyPanel::FormatColor(const SnAPI::UI::Color& Value) const
+{
+  const std::array<double, 4> components{
+    static_cast<double>(Value.R),
+    static_cast<double>(Value.G),
+    static_cast<double>(Value.B),
+    static_cast<double>(Value.A)};
+  return FormatComponentValues(components);
 }
 
 void UIPropertyPanel::SyncModelToEditors()
@@ -1583,6 +2127,87 @@ void UIPropertyPanel::SyncModelToEditors()
       {
         comboBox->SetSelectedIndex(-1, false);
       }
+      binding.LastText = textValue;
+      continue;
+    }
+
+    if (binding.ComponentCount > 0)
+    {
+      bool hasFocusedComponent = false;
+      std::array<double, 4> nextComponents{};
+      bool parseOk = true;
+
+      switch (binding.EditorKind)
+      {
+      case EEditorKind::Signed:
+      case EEditorKind::Unsigned:
+      case EEditorKind::Float:
+      case EEditorKind::Double:
+        {
+          parseOk = ParseDouble(textValue, nextComponents[0]);
+          break;
+        }
+      case EEditorKind::Vec2:
+        parseOk = ParseComponentList(textValue, nextComponents.data(), 2);
+        break;
+      case EEditorKind::Vec3:
+        parseOk = ParseComponentList(textValue, nextComponents.data(), 3);
+        break;
+      case EEditorKind::Vec4:
+      case EEditorKind::Quat:
+      case EEditorKind::Color:
+        parseOk = ParseComponentList(textValue, nextComponents.data(), 4);
+        break;
+      default:
+        parseOk = false;
+        break;
+      }
+
+      if (!parseOk)
+      {
+        continue;
+      }
+
+      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+      {
+        const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
+        if (componentId.Value == 0)
+        {
+          continue;
+        }
+
+        auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+        if (!numberField)
+        {
+          continue;
+        }
+
+        hasFocusedComponent = hasFocusedComponent || numberField->IsFocused();
+      }
+
+      if (hasFocusedComponent)
+      {
+        continue;
+      }
+
+      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+      {
+        const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
+        if (componentId.Value == 0)
+        {
+          continue;
+        }
+
+        auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+        if (!numberField)
+        {
+          continue;
+        }
+
+        (void)numberField->SetValue(nextComponents[index], false);
+      }
+
+      binding.LastComponents = nextComponents;
       binding.LastText = textValue;
       continue;
     }
@@ -1675,6 +2300,152 @@ void UIPropertyPanel::SyncEditorsToModel()
             comboBox->SetSelectedIndex(-1, false);
           }
           binding.LastText = modelText;
+        }
+      }
+      continue;
+    }
+
+    if (binding.ComponentCount > 0)
+    {
+      std::array<double, 4> currentComponents = binding.LastComponents;
+      bool hasFocusedComponent = false;
+      bool hasAnyComponent = false;
+
+      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+      {
+        const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
+        if (componentId.Value == 0)
+        {
+          continue;
+        }
+
+        auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+        if (!numberField)
+        {
+          continue;
+        }
+
+        hasAnyComponent = true;
+        currentComponents[index] = numberField->GetValue();
+        hasFocusedComponent = hasFocusedComponent || numberField->IsFocused();
+      }
+
+      if (!hasAnyComponent)
+      {
+        continue;
+      }
+
+      bool changed = false;
+      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+      {
+        if (!NearlyEqual(currentComponents[index], binding.LastComponents[index]))
+        {
+          changed = true;
+          break;
+        }
+      }
+
+      if (!changed)
+      {
+        continue;
+      }
+
+      std::string nextText{};
+      switch (binding.EditorKind)
+      {
+      case EEditorKind::Signed:
+        nextText = std::to_string(static_cast<std::int64_t>(std::llround(currentComponents[0])));
+        break;
+      case EEditorKind::Unsigned:
+        nextText = std::to_string(static_cast<std::uint64_t>(std::max<std::int64_t>(
+          0,
+          static_cast<std::int64_t>(std::llround(currentComponents[0])))));
+        break;
+      case EEditorKind::Float:
+      case EEditorKind::Double:
+        nextText = FormatNumber(currentComponents[0]);
+        break;
+      case EEditorKind::Vec2:
+        nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 2));
+        break;
+      case EEditorKind::Vec3:
+        nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 3));
+        break;
+      case EEditorKind::Vec4:
+      case EEditorKind::Quat:
+        nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 4));
+        break;
+      case EEditorKind::Color:
+        {
+          std::array<double, 4> colorChannels{
+            static_cast<double>(std::clamp(std::llround(currentComponents[0]), 0ll, 255ll)),
+            static_cast<double>(std::clamp(std::llround(currentComponents[1]), 0ll, 255ll)),
+            static_cast<double>(std::clamp(std::llround(currentComponents[2]), 0ll, 255ll)),
+            static_cast<double>(std::clamp(std::llround(currentComponents[3]), 0ll, 255ll))};
+          nextText = FormatComponentValues(colorChannels);
+          break;
+        }
+      default:
+        break;
+      }
+
+      if (!nextText.empty() && WriteFieldValue(binding, nextText, false))
+      {
+        binding.LastComponents = currentComponents;
+        binding.LastText = nextText;
+        continue;
+      }
+
+      if (!hasFocusedComponent)
+      {
+        std::string modelText{};
+        bool modelBool = false;
+        if (ReadFieldValue(binding, modelText, modelBool))
+        {
+          std::array<double, 4> modelComponents{};
+          bool parsed = false;
+          switch (binding.EditorKind)
+          {
+          case EEditorKind::Signed:
+          case EEditorKind::Unsigned:
+          case EEditorKind::Float:
+          case EEditorKind::Double:
+            parsed = ParseDouble(modelText, modelComponents[0]);
+            break;
+          case EEditorKind::Vec2:
+            parsed = ParseComponentList(modelText, modelComponents.data(), 2);
+            break;
+          case EEditorKind::Vec3:
+            parsed = ParseComponentList(modelText, modelComponents.data(), 3);
+            break;
+          case EEditorKind::Vec4:
+          case EEditorKind::Quat:
+          case EEditorKind::Color:
+            parsed = ParseComponentList(modelText, modelComponents.data(), 4);
+            break;
+          default:
+            break;
+          }
+
+          if (parsed)
+          {
+            for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+            {
+              const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
+              if (componentId.Value == 0)
+              {
+                continue;
+              }
+              auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+              if (!numberField)
+              {
+                continue;
+              }
+              (void)numberField->SetValue(modelComponents[index], false);
+            }
+            binding.LastComponents = modelComponents;
+            binding.LastText = modelText;
+          }
         }
       }
       continue;

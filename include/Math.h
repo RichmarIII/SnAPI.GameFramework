@@ -12,10 +12,22 @@ namespace SnAPI::GameFramework
 using Scalar = SnAPI::Math::Scalar;
 
 /**
+ * @brief Canonical 2D vector type used across runtime and serialization.
+ * @remarks Alias of `SnAPI::Math::Vec2`.
+ */
+using Vec2 = SnAPI::Math::Vec2;
+
+/**
  * @brief Canonical 3D vector type used across runtime and serialization.
  * @remarks Alias of `SnAPI::Math::Vec3`.
  */
 using Vec3 = SnAPI::Math::Vec3;
+
+/**
+ * @brief Canonical 4D vector type used across runtime and serialization.
+ * @remarks Alias of `SnAPI::Math::Vec4`.
+ */
+using Vec4 = SnAPI::Math::Vec4;
 
 /**
  * @brief Canonical quaternion type used for interop with systems that need quaternion rotation.

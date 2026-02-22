@@ -10,7 +10,6 @@
 #include "UIBuilder.h"
 
 #include <cstdint>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -19,6 +18,7 @@ namespace SnAPI::UI
 class Theme;
 class UIContext;
 class UIPanel;
+class UITabs;
 class UITreeView;
 template<typename TElement>
 class TElementBuilder;
@@ -53,6 +53,7 @@ public:
     void Sync(GameRuntime& Runtime, CameraComponent* ActiveCamera, EditorSelectionModel* SelectionModel, float DeltaSeconds);
     [[nodiscard]] bool IsBuilt() const { return m_built; }
     [[nodiscard]] UIRenderViewport* GameViewport() const;
+    [[nodiscard]] int32_t GameViewportTabIndex() const;
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)> Handler);
 
 private:
@@ -99,13 +100,13 @@ private:
 
     void BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* ActiveCamera);
     void SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent* ActiveCamera);
-    void EnsureGameViewportOverlay(GameRuntime& Runtime);
-    void UpdateGameViewportOverlay(GameRuntime& Runtime, float DeltaSeconds);
 
     [[nodiscard]] UIRenderViewport* ResolveGameViewport() const;
+    [[nodiscard]] SnAPI::UI::UITabs* ResolveGameViewTabs() const;
     [[nodiscard]] UIPropertyPanel* ResolveInspectorPanel() const;
 
     SnAPI::UI::UIContext* m_context = nullptr;
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITabs> m_gameViewTabs{};
     SnAPI::UI::ElementHandle<UIRenderViewport> m_gameViewport{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_inspectorPropertyPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_hierarchyTree{};
@@ -118,13 +119,6 @@ private:
     SnAPI::UI::TDelegate<void(NodeHandle)> m_onHierarchyNodeChosen{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
-    std::uint64_t m_overlayContextId = 0;
-    SnAPI::UI::ElementId m_overlayPanel{};
-    SnAPI::UI::ElementId m_overlayGraph{};
-    SnAPI::UI::ElementId m_overlayFrameTimeLabel{};
-    SnAPI::UI::ElementId m_overlayFpsLabel{};
-    std::uint32_t m_overlayFrameTimeSeries = std::numeric_limits<std::uint32_t>::max();
-    std::uint32_t m_overlayFpsSeries = std::numeric_limits<std::uint32_t>::max();
     bool m_built = false;
 };
 

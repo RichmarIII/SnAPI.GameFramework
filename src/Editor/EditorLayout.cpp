@@ -29,7 +29,6 @@
 #include <UIToolbar.h>
 #include <UIText.h>
 #include <UITextInput.h>
-#include <UIRealtimeGraph.h>
 #include <UITreeView.h>
 #include <UIBadge.h>
 #include <UIBreadcrumbs.h>
@@ -39,7 +38,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstdio>
 #include <string>
 #include <string_view>
 
@@ -137,6 +135,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
 {
     (void)Runtime;
     m_context = nullptr;
+    m_gameViewTabs = {};
     m_gameViewport = {};
     m_inspectorPropertyPanel = {};
     m_hierarchyTree = {};
@@ -149,13 +148,6 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onHierarchyNodeChosen.Reset();
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
-    m_overlayContextId = 0;
-    m_overlayPanel = {};
-    m_overlayGraph = {};
-    m_overlayFrameTimeLabel = {};
-    m_overlayFpsLabel = {};
-    m_overlayFrameTimeSeries = std::numeric_limits<std::uint32_t>::max();
-    m_overlayFpsSeries = std::numeric_limits<std::uint32_t>::max();
     m_built = false;
 }
 
@@ -189,8 +181,7 @@ void EditorLayout::Sync(GameRuntime& Runtime,
     SyncHierarchy(Runtime, ActiveCamera);
     BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
-    EnsureGameViewportOverlay(Runtime);
-    UpdateGameViewportOverlay(Runtime, DeltaSeconds);
+    (void)DeltaSeconds;
 #endif
 }
 
@@ -782,7 +773,7 @@ void EditorLayout::RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entri
         std::string Label = LabelBase;
         if (!SelectedNode.IsNull() && Entry.Handle == SelectedNode)
         {
-            Label = "* " + LabelBase;
+            Label = "\u2022 " + LabelBase;
         }
 
         bool HasChildren = false;
@@ -864,6 +855,7 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ViewTabsElement.Width().Set(SnAPI::UI::Sizing::Fill());
     ViewTabsElement.Height().Set(SnAPI::UI::Sizing::Fill());
     ViewTabsElement.HeaderHeight().Set(30.0f);
+    m_gameViewTabs = ViewTabs.Handle();
 
     auto GameViewTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameViewTab"));
     auto& GameViewTabPanel = GameViewTab.Element();
@@ -911,44 +903,17 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
         ViewportElement.SetViewportCamera(ActiveCamera->Camera());
     }
 
-    auto MetricsTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameMetricsTab"));
-    auto& MetricsTabPanel = MetricsTab.Element();
-    MetricsTabPanel.ElementStyle().Apply("editor.section_card");
-    MetricsTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    MetricsTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    MetricsTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
-    MetricsTabPanel.Padding().Set(8.0f);
-    MetricsTabPanel.Gap().Set(8.0f);
+    auto ProfilerTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameProfilerTab"));
+    auto& ProfilerTabPanel = ProfilerTab.Element();
+    ProfilerTabPanel.ElementStyle().Apply("editor.section_card");
+    ProfilerTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ProfilerTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ProfilerTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ProfilerTabPanel.Padding().Set(8.0f);
+    ProfilerTabPanel.Gap().Set(6.0f);
 
-    auto MetricsGraph = MetricsTab.Add(SnAPI::UI::UIRealtimeGraph("Editor Metrics"));
-    auto& MetricsGraphElement = MetricsGraph.Element();
-    MetricsGraphElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    MetricsGraphElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    MetricsGraphElement.AddSeries("Frame ms", SnAPI::UI::Color{86, 176, 255, 255});
-    MetricsGraphElement.AddSeries("FPS", SnAPI::UI::Color{120, 226, 188, 255});
-
-    auto MetricsTable = MetricsTab.Add(SnAPI::UI::UITable{});
-    auto& MetricsTableElement = MetricsTable.Element();
-    MetricsTableElement.ElementStyle().Apply("editor.tools_table");
-    MetricsTableElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    MetricsTableElement.Height().Set(SnAPI::UI::Sizing::Fixed(120.0f));
-    MetricsTableElement.ColumnCount().Set(2u);
-    MetricsTableElement.ShowHeader().Set(true);
-    MetricsTableElement.SetColumnHeaders({"Metric", "Value"});
-
-    constexpr std::array<std::pair<std::string_view, std::string_view>, 4> kMetricsRows{{
-        {"Draw Calls", "152"},
-        {"GPU Time", "6.8 ms"},
-        {"Triangles", "1.4M"},
-        {"Entities", "12"},
-    }};
-    for (const auto& [MetricName, MetricValue] : kMetricsRows)
-    {
-        auto MetricCell = MetricsTable.Add(SnAPI::UI::UIText(MetricName));
-        MetricCell.Element().ElementStyle().Apply("editor.menu_item");
-        auto ValueCell = MetricsTable.Add(SnAPI::UI::UIText(MetricValue));
-        ValueCell.Element().ElementStyle().Apply("editor.panel_title");
-    }
+    auto ProfilerHint = ProfilerTab.Add(SnAPI::UI::UIText("Profiler is rendered as a game-viewport overlay."));
+    ProfilerHint.Element().ElementStyle().Apply("editor.menu_item");
 
     ViewTabsElement.SetTabLabel(0, "Game View");
     ViewTabsElement.SetTabLabel(1, "Profiler");
@@ -1011,9 +976,9 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     auto& PropertyPanel = PropertyPanelBuilder.Element();
     PropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     PropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    PropertyPanel.Padding().Set(6.0f);
-    PropertyPanel.Gap().Set(4.0f);
-    PropertyPanel.ShowHorizontalScrollbar().Set(true);
+    PropertyPanel.Padding().Set(3.0f);
+    PropertyPanel.Gap().Set(3.0f);
+    PropertyPanel.ShowHorizontalScrollbar().Set(false);
     PropertyPanel.ShowVerticalScrollbar().Set(true);
     PropertyPanel.Smooth().Set(true);
     PropertyPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
@@ -1261,202 +1226,18 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent*
     Viewport->SetViewportCamera(RenderCamera);
 }
 
-void EditorLayout::EnsureGameViewportOverlay(GameRuntime& Runtime)
-{
-    auto* Viewport = ResolveGameViewport();
-    auto* WorldPtr = Runtime.WorldPtr();
-    if (!Viewport || !WorldPtr || !WorldPtr->UI().IsInitialized())
-    {
-        m_overlayContextId = 0;
-        m_overlayPanel = {};
-        m_overlayGraph = {};
-        m_overlayFrameTimeLabel = {};
-        m_overlayFpsLabel = {};
-        m_overlayFrameTimeSeries = std::numeric_limits<std::uint32_t>::max();
-        m_overlayFpsSeries = std::numeric_limits<std::uint32_t>::max();
-        return;
-    }
-
-    const std::uint64_t OverlayContextId = Viewport->OwnedContextId();
-    if (OverlayContextId == 0)
-    {
-        m_overlayContextId = 0;
-        m_overlayPanel = {};
-        m_overlayGraph = {};
-        m_overlayFrameTimeLabel = {};
-        m_overlayFpsLabel = {};
-        m_overlayFrameTimeSeries = std::numeric_limits<std::uint32_t>::max();
-        m_overlayFpsSeries = std::numeric_limits<std::uint32_t>::max();
-        return;
-    }
-
-    if (m_overlayContextId != OverlayContextId)
-    {
-        m_overlayContextId = OverlayContextId;
-        m_overlayPanel = {};
-        m_overlayGraph = {};
-        m_overlayFrameTimeLabel = {};
-        m_overlayFpsLabel = {};
-        m_overlayFrameTimeSeries = std::numeric_limits<std::uint32_t>::max();
-        m_overlayFpsSeries = std::numeric_limits<std::uint32_t>::max();
-    }
-
-    auto* OverlayContext = WorldPtr->UI().Context(m_overlayContextId);
-    if (!OverlayContext)
-    {
-        return;
-    }
-
-    if (m_overlayGraph.Value != 0 && m_overlayFrameTimeLabel.Value != 0 && m_overlayFpsLabel.Value != 0)
-    {
-        auto* ExistingGraph = dynamic_cast<SnAPI::UI::UIRealtimeGraph*>(&OverlayContext->GetElement(m_overlayGraph));
-        auto* ExistingFrameLabel = dynamic_cast<SnAPI::UI::UIText*>(&OverlayContext->GetElement(m_overlayFrameTimeLabel));
-        auto* ExistingFpsLabel = dynamic_cast<SnAPI::UI::UIText*>(&OverlayContext->GetElement(m_overlayFpsLabel));
-        if (ExistingGraph && ExistingFrameLabel && ExistingFpsLabel)
-        {
-            return;
-        }
-    }
-
-    auto OverlayPanelBuilder = OverlayContext->Root().Add(SnAPI::UI::UIPanel("Editor.GameViewportOverlay"));
-    auto& OverlayPanel = OverlayPanelBuilder.Element();
-    OverlayPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Fixed(248.0f));
-    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Fixed(118.0f));
-    OverlayPanel.HAlign().Set(SnAPI::UI::EAlignment::End);
-    OverlayPanel.VAlign().Set(SnAPI::UI::EAlignment::End);
-    OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{12.0f, 12.0f, 12.0f, 12.0f});
-    OverlayPanel.Padding().Set(6.0f);
-    OverlayPanel.Gap().Set(3.0f);
-    OverlayPanel.Background().Set(SnAPI::UI::Color{20, 22, 27, 214});
-    OverlayPanel.BorderColor().Set(SnAPI::UI::Color{87, 93, 104, 220});
-    OverlayPanel.BorderThickness().Set(1.0f);
-    OverlayPanel.CornerRadius().Set(6.0f);
-    OverlayPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
-
-    auto StatsBuilder = OverlayPanelBuilder.Add(SnAPI::UI::UIPanel("Editor.GameViewportOverlay.Stats"));
-    auto& StatsPanel = StatsBuilder.Element();
-    StatsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    StatsPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    StatsPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    StatsPanel.Gap().Set(12.0f);
-    StatsPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
-    StatsPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
-
-    auto FrameTimeLabelBuilder = StatsBuilder.Add(SnAPI::UI::UIText("Frame: -- ms"));
-    auto& FrameTimeLabel = FrameTimeLabelBuilder.Element();
-    FrameTimeLabel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    FrameTimeLabel.TextColor().Set(SnAPI::UI::Color{206, 212, 221, 255});
-    FrameTimeLabel.HAlign().Set(SnAPI::UI::EAlignment::Start);
-    FrameTimeLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
-    FrameTimeLabel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
-
-    auto FpsLabelBuilder = StatsBuilder.Add(SnAPI::UI::UIText("FPS: --"));
-    auto& FpsLabel = FpsLabelBuilder.Element();
-    FpsLabel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    FpsLabel.TextColor().Set(SnAPI::UI::Color{223, 227, 234, 255});
-    FpsLabel.HAlign().Set(SnAPI::UI::EAlignment::Start);
-    FpsLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
-    FpsLabel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
-
-    auto GraphBuilder = OverlayPanelBuilder.Add(SnAPI::UI::UIRealtimeGraph("Frame Time / FPS"));
-    auto& Graph = GraphBuilder.Element();
-    Graph.Width().Set(SnAPI::UI::Sizing::Fill());
-    Graph.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    Graph.SampleCapacity().Set(220u);
-    Graph.AutoRange().Set(true);
-    Graph.ShowLegend().Set(false);
-    Graph.GridLinesX().Set(8u);
-    Graph.GridLinesY().Set(4u);
-    Graph.ContentPadding().Set(6.0f);
-    Graph.LineThickness().Set(1.6f);
-    Graph.ValuePrecision().Set(1u);
-    Graph.BackgroundColor().Set(SnAPI::UI::Color{19, 21, 25, 224});
-    Graph.PlotBackgroundColor().Set(SnAPI::UI::Color{24, 27, 33, 230});
-    Graph.BorderColor().Set(SnAPI::UI::Color{84, 90, 101, 216});
-    Graph.GridColor().Set(SnAPI::UI::Color{92, 99, 110, 76});
-    Graph.AxisColor().Set(SnAPI::UI::Color{130, 137, 149, 152});
-    Graph.TitleColor().Set(SnAPI::UI::Color{228, 231, 237, 255});
-    Graph.LegendTextColor().Set(SnAPI::UI::Color{186, 192, 202, 255});
-    Graph.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
-
-    const std::uint32_t FrameSeries = Graph.AddSeries("Frame ms", SnAPI::UI::Color{184, 191, 201, 255});
-    const std::uint32_t FpsSeries = Graph.AddSeries("FPS", SnAPI::UI::Color{223, 228, 235, 255});
-    if (FrameSeries != SnAPI::UI::UIRealtimeGraph::InvalidSeries)
-    {
-        (void)Graph.SetSeriesRange(FrameSeries, 0.0f, 33.34f);
-    }
-    if (FpsSeries != SnAPI::UI::UIRealtimeGraph::InvalidSeries)
-    {
-        (void)Graph.SetSeriesRange(FpsSeries, 0.0f, 240.0f);
-    }
-
-    m_overlayContextId = OverlayContextId;
-    m_overlayPanel = OverlayPanelBuilder.Handle().Id;
-    m_overlayGraph = GraphBuilder.Handle().Id;
-    m_overlayFrameTimeLabel = FrameTimeLabelBuilder.Handle().Id;
-    m_overlayFpsLabel = FpsLabelBuilder.Handle().Id;
-    m_overlayFrameTimeSeries = FrameSeries;
-    m_overlayFpsSeries = FpsSeries;
-}
-
-void EditorLayout::UpdateGameViewportOverlay(GameRuntime& Runtime, const float DeltaSeconds)
-{
-    if (!std::isfinite(DeltaSeconds) || DeltaSeconds <= 0.0f)
-    {
-        return;
-    }
-
-    auto* WorldPtr = Runtime.WorldPtr();
-    if (!WorldPtr || !WorldPtr->UI().IsInitialized() || m_overlayContextId == 0 || m_overlayGraph.Value == 0)
-    {
-        return;
-    }
-
-    auto* OverlayContext = WorldPtr->UI().Context(m_overlayContextId);
-    if (!OverlayContext)
-    {
-        return;
-    }
-
-    auto* Graph = dynamic_cast<SnAPI::UI::UIRealtimeGraph*>(&OverlayContext->GetElement(m_overlayGraph));
-    if (!Graph || m_overlayFrameTimeSeries == std::numeric_limits<std::uint32_t>::max())
-    {
-        return;
-    }
-
-    const float FrameMs = std::clamp(DeltaSeconds * 1000.0f, 0.0f, 500.0f);
-    const float FramesPerSecond = std::clamp(1.0f / DeltaSeconds, 0.0f, 2000.0f);
-    (void)Graph->PushSample(m_overlayFrameTimeSeries, FrameMs);
-    if (m_overlayFpsSeries != std::numeric_limits<std::uint32_t>::max())
-    {
-        (void)Graph->PushSample(m_overlayFpsSeries, FramesPerSecond);
-    }
-
-    if (m_overlayFrameTimeLabel.Value != 0)
-    {
-        if (auto* FrameLabel = dynamic_cast<SnAPI::UI::UIText*>(&OverlayContext->GetElement(m_overlayFrameTimeLabel)))
-        {
-            char Buffer[64]{};
-            std::snprintf(Buffer, sizeof(Buffer), "Frame: %.2f ms", FrameMs);
-            FrameLabel->Text().Set(std::string(Buffer));
-        }
-    }
-
-    if (m_overlayFpsLabel.Value != 0)
-    {
-        if (auto* FpsLabel = dynamic_cast<SnAPI::UI::UIText*>(&OverlayContext->GetElement(m_overlayFpsLabel)))
-        {
-            char Buffer[64]{};
-            std::snprintf(Buffer, sizeof(Buffer), "FPS: %.1f", FramesPerSecond);
-            FpsLabel->Text().Set(std::string(Buffer));
-        }
-    }
-}
-
 UIRenderViewport* EditorLayout::GameViewport() const
 {
     return ResolveGameViewport();
+}
+
+int32_t EditorLayout::GameViewportTabIndex() const
+{
+    if (auto* Tabs = ResolveGameViewTabs())
+    {
+        return Tabs->ActiveIndex().Get();
+    }
+    return 0;
 }
 
 UIRenderViewport* EditorLayout::ResolveGameViewport() const
@@ -1467,6 +1248,15 @@ UIRenderViewport* EditorLayout::ResolveGameViewport() const
     }
 
     return dynamic_cast<UIRenderViewport*>(&m_context->GetElement(m_gameViewport.Id));
+}
+
+SnAPI::UI::UITabs* EditorLayout::ResolveGameViewTabs() const
+{
+    if (!m_context || m_gameViewTabs.Id.Value == 0)
+    {
+        return nullptr;
+    }
+    return dynamic_cast<SnAPI::UI::UITabs*>(&m_context->GetElement(m_gameViewTabs.Id));
 }
 
 UIPropertyPanel* EditorLayout::ResolveInspectorPanel() const

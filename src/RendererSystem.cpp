@@ -170,12 +170,17 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
     m_defaultFont = Other.m_defaultFont;
+    m_defaultFontFallbacksConfigured = Other.m_defaultFontFallbacksConfigured;
     m_textQueue = std::move(Other.m_textQueue);
 #if defined(SNAPI_GF_ENABLE_UI)
     m_uiMaterial = std::move(Other.m_uiMaterial);
     m_uiFontMaterial = std::move(Other.m_uiFontMaterial);
+    m_uiTriangleMaterial = std::move(Other.m_uiTriangleMaterial);
+    m_uiCircleMaterial = std::move(Other.m_uiCircleMaterial);
     m_uiFallbackTexture = std::move(Other.m_uiFallbackTexture);
     m_uiFallbackMaterialInstance = std::move(Other.m_uiFallbackMaterialInstance);
+    m_uiTriangleMaterialInstance = std::move(Other.m_uiTriangleMaterialInstance);
+    m_uiCircleMaterialInstance = std::move(Other.m_uiCircleMaterialInstance);
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
@@ -197,12 +202,17 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
     Other.m_defaultFont = nullptr;
+    Other.m_defaultFontFallbacksConfigured = false;
     Other.m_textQueue.clear();
 #if defined(SNAPI_GF_ENABLE_UI)
     Other.m_uiMaterial.reset();
     Other.m_uiFontMaterial.reset();
+    Other.m_uiTriangleMaterial.reset();
+    Other.m_uiCircleMaterial.reset();
     Other.m_uiFallbackTexture.reset();
     Other.m_uiFallbackMaterialInstance.reset();
+    Other.m_uiTriangleMaterialInstance.reset();
+    Other.m_uiCircleMaterialInstance.reset();
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
     Other.m_uiTextureMaterialInstances.clear();
@@ -243,12 +253,17 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
     m_defaultFont = Other.m_defaultFont;
+    m_defaultFontFallbacksConfigured = Other.m_defaultFontFallbacksConfigured;
     m_textQueue = std::move(Other.m_textQueue);
 #if defined(SNAPI_GF_ENABLE_UI)
     m_uiMaterial = std::move(Other.m_uiMaterial);
     m_uiFontMaterial = std::move(Other.m_uiFontMaterial);
+    m_uiTriangleMaterial = std::move(Other.m_uiTriangleMaterial);
+    m_uiCircleMaterial = std::move(Other.m_uiCircleMaterial);
     m_uiFallbackTexture = std::move(Other.m_uiFallbackTexture);
     m_uiFallbackMaterialInstance = std::move(Other.m_uiFallbackMaterialInstance);
+    m_uiTriangleMaterialInstance = std::move(Other.m_uiTriangleMaterialInstance);
+    m_uiCircleMaterialInstance = std::move(Other.m_uiCircleMaterialInstance);
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
@@ -270,12 +285,17 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
     Other.m_defaultFont = nullptr;
+    Other.m_defaultFontFallbacksConfigured = false;
     Other.m_textQueue.clear();
 #if defined(SNAPI_GF_ENABLE_UI)
     Other.m_uiMaterial.reset();
     Other.m_uiFontMaterial.reset();
+    Other.m_uiTriangleMaterial.reset();
+    Other.m_uiCircleMaterial.reset();
     Other.m_uiFallbackTexture.reset();
     Other.m_uiFallbackMaterialInstance.reset();
+    Other.m_uiTriangleMaterialInstance.reset();
+    Other.m_uiCircleMaterialInstance.reset();
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
     Other.m_uiTextureMaterialInstances.clear();
@@ -334,12 +354,17 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_defaultGBufferMaterial.reset();
         m_defaultShadowMaterial.reset();
         m_defaultFont = nullptr;
+        m_defaultFontFallbacksConfigured = false;
         m_textQueue.clear();
 #if defined(SNAPI_GF_ENABLE_UI)
         m_uiMaterial.reset();
         m_uiFontMaterial.reset();
+        m_uiTriangleMaterial.reset();
+        m_uiCircleMaterial.reset();
         m_uiFallbackTexture.reset();
         m_uiFallbackMaterialInstance.reset();
+        m_uiTriangleMaterialInstance.reset();
+        m_uiCircleMaterialInstance.reset();
         m_uiFontMaterialInstances.clear();
         m_uiTextures.clear();
         m_uiTextureMaterialInstances.clear();
@@ -407,12 +432,17 @@ bool RendererSystem::InitializeUnlocked()
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
     m_defaultFont = nullptr;
+    m_defaultFontFallbacksConfigured = false;
     m_textQueue.clear();
 #if defined(SNAPI_GF_ENABLE_UI)
     m_uiMaterial.reset();
     m_uiFontMaterial.reset();
+    m_uiTriangleMaterial.reset();
+    m_uiCircleMaterial.reset();
     m_uiFallbackTexture.reset();
     m_uiFallbackMaterialInstance.reset();
+    m_uiTriangleMaterialInstance.reset();
+    m_uiCircleMaterialInstance.reset();
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
     m_uiTextureMaterialInstances.clear();
@@ -1030,6 +1060,8 @@ bool RendererSystem::LoadDefaultFont(const std::string& FontPath, const std::uin
     }
 
     m_defaultFont = Face;
+    m_defaultFontFallbacksConfigured = false;
+    EnsureDefaultFont();
     return true;
 }
 
@@ -1258,6 +1290,91 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             continue;
         }
 
+        if (const auto* Triangles = std::get_if<SnAPI::UI::TriangleInstanceSpan>(&Packet.Instances))
+        {
+            for (const auto& Instance : *Triangles)
+            {
+                const float MinX = std::min({Instance.X0, Instance.X1, Instance.X2});
+                const float MaxX = std::max({Instance.X0, Instance.X1, Instance.X2});
+                const float MinY = std::min({Instance.Y0, Instance.Y1, Instance.Y2});
+                const float MaxY = std::max({Instance.Y0, Instance.Y1, Instance.Y2});
+                const float Width = std::max(0.0f, MaxX - MinX);
+                const float Height = std::max(0.0f, MaxY - MinY);
+
+                if (Width <= 0.0f || Height <= 0.0f)
+                {
+                    continue;
+                }
+
+                QueuedUiRect Rect{};
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = MinX - ContextOffsetX;
+                Rect.Y = MinY - ContextOffsetY;
+                Rect.W = Width;
+                Rect.H = Height;
+                Rect.PrimitiveKind = QueuedUiRect::EPrimitiveKind::Triangle;
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiColor(Rect, Instance.Fill);
+
+                const float InvWidth = 1.0f / Width;
+                const float InvHeight = 1.0f / Height;
+                Rect.ShapeData0 = {
+                    (Instance.X0 - MinX) * InvWidth,
+                    (Instance.Y0 - MinY) * InvHeight,
+                    (Instance.X1 - MinX) * InvWidth,
+                    (Instance.Y1 - MinY) * InvHeight};
+                Rect.ShapeData1 = {
+                    (Instance.X2 - MinX) * InvWidth,
+                    (Instance.Y2 - MinY) * InvHeight,
+                    0.0f,
+                    0.0f};
+
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
+            }
+            continue;
+        }
+
+        if (const auto* Circles = std::get_if<SnAPI::UI::CircleInstanceSpan>(&Packet.Instances))
+        {
+            for (const auto& Instance : *Circles)
+            {
+                const float Radius = std::max(0.0f, Instance.Radius);
+                if (Radius <= 0.0f)
+                {
+                    continue;
+                }
+
+                QueuedUiRect Rect{};
+                Rect.ViewportID = ViewportID;
+                Rect.Context = &Context;
+                Rect.X = (Instance.CenterX - Radius) - ContextOffsetX;
+                Rect.Y = (Instance.CenterY - Radius) - ContextOffsetY;
+                Rect.W = Radius * 2.0f;
+                Rect.H = Radius * 2.0f;
+                Rect.CornerRadius = Radius;
+                Rect.BorderThickness = std::max(0.0f, Instance.BorderThickness);
+                Rect.PrimitiveKind = QueuedUiRect::EPrimitiveKind::Circle;
+                Rect.GlobalZ = GlobalZ;
+                ApplyUiColor(Rect, Instance.Fill);
+                ApplyUiBorderColor(Rect, Instance.Border);
+                if (!ApplyUiScissor(Rect, Instance.ScissorMode, Instance.Scissor))
+                {
+                    continue;
+                }
+
+                m_uiQueuedRects.emplace_back(Rect);
+                GlobalZ += kUiGlobalZStep;
+            }
+            continue;
+        }
+
         if (const auto* Images = std::get_if<SnAPI::UI::ImageInstanceSpan>(&Packet.Instances))
         {
             for (const auto& Instance : *Images)
@@ -1330,6 +1447,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 Rect.V0 = Instance.V0;
                 Rect.U1 = Instance.U1;
                 Rect.V1 = Instance.V1;
+                Rect.FontAtlasTextureHandle = Instance.AtlasTextureHandle;
                 Rect.UseFontAtlas = true;
                 Rect.GlobalZ = GlobalZ;
                 ApplyUiColor(Rect, Instance.GlyphColor);
@@ -1476,12 +1594,17 @@ void RendererSystem::ShutdownUnlocked()
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
     m_defaultFont = nullptr;
+    m_defaultFontFallbacksConfigured = false;
     m_textQueue.clear();
 #if defined(SNAPI_GF_ENABLE_UI)
     m_uiMaterial.reset();
     m_uiFontMaterial.reset();
+    m_uiTriangleMaterial.reset();
+    m_uiCircleMaterial.reset();
     m_uiFallbackTexture.reset();
     m_uiFallbackMaterialInstance.reset();
+    m_uiTriangleMaterialInstance.reset();
+    m_uiCircleMaterialInstance.reset();
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
     m_uiTextureMaterialInstances.clear();
@@ -1597,11 +1720,6 @@ bool RendererSystem::EnsureDefaultFont()
         return false;
     }
 
-    if (IsFontRenderable(m_defaultFont))
-    {
-        return true;
-    }
-
     auto* Library = SnAPI::Graphics::FontLibrary::Instance();
     if (!Library)
     {
@@ -1609,6 +1727,59 @@ bool RendererSystem::EnsureDefaultFont()
     }
 
     namespace fs = std::filesystem;
+    const auto ConfigureFallbackFaces = [this, Library](SnAPI::Graphics::FontFace* PrimaryFace) {
+        if (!PrimaryFace || m_defaultFontFallbacksConfigured)
+        {
+            return;
+        }
+
+        PrimaryFace->ClearFallbackFaces();
+
+        const std::array<std::string, 11> FallbackFacePaths{
+            // General Latin fallback
+            m_settings.DefaultFontPath,
+            "/usr/share/fonts/TTF/Arial.TTF",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "C:/Windows/Fonts/arial.ttf",
+            "C:/Windows/Fonts/segoeui.ttf",
+            // CJK fallback
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+            "C:/Windows/Fonts/msgothic.ttc",
+            "C:/Windows/Fonts/simsun.ttc",
+            // Emoji fallback
+            "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+            "C:/Windows/Fonts/seguiemj.ttf"};
+
+        for (const auto& Candidate : FallbackFacePaths)
+        {
+            if (Candidate.empty())
+            {
+                continue;
+            }
+
+            std::error_code Ec;
+            if (!fs::exists(Candidate, Ec) || Ec)
+            {
+                continue;
+            }
+
+            auto* FallbackFace = Library->FontFace(Candidate, m_settings.DefaultFontSize);
+            if (IsFontRenderable(FallbackFace))
+            {
+                PrimaryFace->AddFallbackFace(FallbackFace);
+            }
+        }
+
+        m_defaultFontFallbacksConfigured = true;
+    };
+
+    if (IsFontRenderable(m_defaultFont))
+    {
+        ConfigureFallbackFaces(m_defaultFont);
+        return true;
+    }
+
     const std::array<std::string, 4> FallbackPaths{
         m_settings.DefaultFontPath,
         "/usr/share/fonts/TTF/Arial.TTF",
@@ -1632,6 +1803,8 @@ bool RendererSystem::EnsureDefaultFont()
         if (IsFontRenderable(Face))
         {
             m_defaultFont = Face;
+            m_defaultFontFallbacksConfigured = false;
+            ConfigureFallbackFaces(m_defaultFont);
             return true;
         }
     }
@@ -1737,6 +1910,18 @@ bool RendererSystem::EnsureUiMaterialResources()
         UiFontMaterial->BakeCompileTimeParams();
         m_uiFontMaterial = std::move(UiFontMaterial);
     }
+    if (!m_uiTriangleMaterial)
+    {
+        auto UiTriangleMaterial = std::make_shared<SnAPI::Graphics::UIMaterial>("UITriangleMaterial");
+        UiTriangleMaterial->BakeCompileTimeParams();
+        m_uiTriangleMaterial = std::move(UiTriangleMaterial);
+    }
+    if (!m_uiCircleMaterial)
+    {
+        auto UiCircleMaterial = std::make_shared<SnAPI::Graphics::UIMaterial>("UICircleMaterial");
+        UiCircleMaterial->BakeCompileTimeParams();
+        m_uiCircleMaterial = std::move(UiCircleMaterial);
+    }
 
     if (!m_uiFallbackTexture)
     {
@@ -1758,6 +1943,32 @@ bool RendererSystem::EnsureUiMaterialResources()
             return false;
         }
         m_uiFallbackMaterialInstance->Texture("Material_Texture", m_uiFallbackTexture.get());
+    }
+
+    if (!m_uiTriangleMaterialInstance)
+    {
+        if (!m_uiTriangleMaterial)
+        {
+            return false;
+        }
+        m_uiTriangleMaterialInstance = m_uiTriangleMaterial->CreateMaterialInstance();
+        if (!m_uiTriangleMaterialInstance)
+        {
+            return false;
+        }
+    }
+
+    if (!m_uiCircleMaterialInstance)
+    {
+        if (!m_uiCircleMaterial)
+        {
+            return false;
+        }
+        m_uiCircleMaterialInstance = m_uiCircleMaterial->CreateMaterialInstance();
+        if (!m_uiCircleMaterialInstance)
+        {
+            return false;
+        }
     }
 
     return true;
@@ -1980,7 +2191,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     return MaterialInstance;
 }
 
-std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiFontMaterialInstance()
+std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiFontMaterialInstance(const std::uint64_t AtlasTextureHandle)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     if (!EnsureUiMaterialResources())
@@ -1988,14 +2199,13 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiFont
         return {};
     }
 
-    // World::EndFrame primes default font + packet writer metrics before BeginFrame.
-    // Avoid loading/regenerating font resources while the render command buffer is open.
-    if (!m_defaultFont || !IsFontRenderable(m_defaultFont))
+    if (!m_uiFontMaterial)
     {
         return m_uiFallbackMaterialInstance;
     }
 
-    auto* AtlasTexture = m_defaultFont->Atlas().GraphicsImage();
+    auto* AtlasTexture = reinterpret_cast<SnAPI::Graphics::IGPUImage*>(
+        static_cast<std::uintptr_t>(AtlasTextureHandle));
     if (!AtlasTexture)
     {
         return m_uiFallbackMaterialInstance;
@@ -2004,11 +2214,6 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiFont
     if (const auto It = m_uiFontMaterialInstances.find(AtlasTexture); It != m_uiFontMaterialInstances.end())
     {
         return It->second;
-    }
-
-    if (!m_uiFontMaterial)
-    {
-        return m_uiFallbackMaterialInstance;
     }
 
     auto MaterialInstance = m_uiFontMaterial->CreateMaterialInstance();
@@ -2047,6 +2252,8 @@ void RendererSystem::FlushQueuedUiPackets()
         Rect.Rect.BorderThickness = Entry.BorderThickness;
         Rect.Rect.PixelSize = SnAPI::Vector2DF{Entry.W, Entry.H};
         Rect.Rect.BorderColor = SnAPI::ColorF{Entry.BorderR, Entry.BorderG, Entry.BorderB, Entry.BorderA};
+        Rect.Rect.ShapeData0 = SnAPI::Vector4DF{Entry.ShapeData0[0], Entry.ShapeData0[1], Entry.ShapeData0[2], Entry.ShapeData0[3]};
+        Rect.Rect.ShapeData1 = SnAPI::Vector4DF{Entry.ShapeData1[0], Entry.ShapeData1[1], Entry.ShapeData1[2], Entry.ShapeData1[3]};
         Rect.Rect.GlobalZ = Entry.GlobalZ;
         Rect.SubArea = SnAPI::Graphics::GpuData::TextureArea{
             Entry.U0,
@@ -2068,9 +2275,17 @@ void RendererSystem::FlushQueuedUiPackets()
         }
 
         std::shared_ptr<SnAPI::Graphics::MaterialInstance> MaterialInstance{};
-        if (Entry.UseFontAtlas)
+        if (Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Triangle)
         {
-            MaterialInstance = ResolveUiFontMaterialInstance();
+            MaterialInstance = m_uiTriangleMaterialInstance;
+        }
+        else if (Entry.PrimitiveKind == QueuedUiRect::EPrimitiveKind::Circle)
+        {
+            MaterialInstance = m_uiCircleMaterialInstance;
+        }
+        else if (Entry.UseFontAtlas)
+        {
+            MaterialInstance = ResolveUiFontMaterialInstance(Entry.FontAtlasTextureHandle);
         }
         else if (Entry.UseGradient)
         {

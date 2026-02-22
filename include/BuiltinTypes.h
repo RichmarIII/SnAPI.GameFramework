@@ -15,6 +15,9 @@
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include <Input.h>
 #endif
+#if defined(SNAPI_GF_ENABLE_UI)
+#include <UILayout.h>
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -33,10 +36,15 @@ SNAPI_DEFINE_TYPE_NAME(double, "double")
 SNAPI_DEFINE_TYPE_NAME(std::string, "std::string")
 SNAPI_DEFINE_TYPE_NAME(std::vector<uint8_t>, "std::vector<uint8_t>")
 SNAPI_DEFINE_TYPE_NAME(Uuid, "SnAPI::GameFramework::Uuid")
+SNAPI_DEFINE_TYPE_NAME(Vec2, "SnAPI::GameFramework::Vec2")
 SNAPI_DEFINE_TYPE_NAME(Vec3, "SnAPI::GameFramework::Vec3")
+SNAPI_DEFINE_TYPE_NAME(Vec4, "SnAPI::GameFramework::Vec4")
 SNAPI_DEFINE_TYPE_NAME(Quat, "SnAPI::GameFramework::Quat")
 SNAPI_DEFINE_TYPE_NAME(NodeHandle, "SnAPI::GameFramework::NodeHandle")
 SNAPI_DEFINE_TYPE_NAME(ComponentHandle, "SnAPI::GameFramework::ComponentHandle")
+#if defined(SNAPI_GF_ENABLE_UI)
+SNAPI_DEFINE_TYPE_NAME(SnAPI::UI::Color, "SnAPI::UI::Color")
+#endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 SNAPI_DEFINE_TYPE_NAME(ECollisionFilterBits, "SnAPI::GameFramework::ECollisionFilterBits")
 SNAPI_DEFINE_TYPE_NAME(CollisionFilterFlags, "SnAPI::GameFramework::CollisionFilterFlags")

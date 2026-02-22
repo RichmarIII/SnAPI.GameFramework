@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_UI)
 
 #include <cstdint>
+#include <array>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -63,8 +64,11 @@ private:
     Float,
     Double,
     String,
+    Vec2,
     Vec3,
+    Vec4,
     Quat,
+    Color,
     Uuid,
     Enum,
     Unsupported
@@ -78,6 +82,9 @@ private:
     EEditorKind EditorKind = EEditorKind::Unsupported;
     bool ReadOnly = false;
     SnAPI::UI::ElementId EditorId{};
+    std::array<SnAPI::UI::ElementId, 4> ComponentEditorIds{};
+    std::uint8_t ComponentCount = 0;
+    std::array<double, 4> LastComponents{};
     std::string LastText{};
     bool LastBool = false;
   };
@@ -130,12 +137,18 @@ private:
   [[nodiscard]] bool ParseSigned(std::string_view Text, std::int64_t& OutValue) const;
   [[nodiscard]] bool ParseUnsigned(std::string_view Text, std::uint64_t& OutValue) const;
   [[nodiscard]] bool ParseDouble(std::string_view Text, double& OutValue) const;
+  [[nodiscard]] bool ParseVec2(std::string_view Text, Vec2& OutValue) const;
   [[nodiscard]] bool ParseVec3(std::string_view Text, Vec3& OutValue) const;
+  [[nodiscard]] bool ParseVec4(std::string_view Text, Vec4& OutValue) const;
   [[nodiscard]] bool ParseQuat(std::string_view Text, Quat& OutValue) const;
+  [[nodiscard]] bool ParseColor(std::string_view Text, SnAPI::UI::Color& OutValue) const;
   [[nodiscard]] bool ParseUuid(std::string_view Text, Uuid& OutValue) const;
 
+  [[nodiscard]] std::string FormatVec2(const Vec2& Value) const;
   [[nodiscard]] std::string FormatVec3(const Vec3& Value) const;
+  [[nodiscard]] std::string FormatVec4(const Vec4& Value) const;
   [[nodiscard]] std::string FormatQuat(const Quat& Value) const;
+  [[nodiscard]] std::string FormatColor(const SnAPI::UI::Color& Value) const;
 
   void SyncModelToEditors();
   void SyncEditorsToModel();

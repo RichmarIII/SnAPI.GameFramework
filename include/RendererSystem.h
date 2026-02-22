@@ -511,7 +511,7 @@ private:
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForTexture(const SnAPI::UI::UIContext& Context,
                                                                                     std::uint32_t TextureId);
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForGradient(const QueuedUiRect& Entry);
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiFontMaterialInstance();
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiFontMaterialInstance(std::uint64_t AtlasTextureHandle);
     void FlushQueuedUiPackets();
 #endif
     bool CreateWindowResources();
@@ -547,6 +547,13 @@ private:
 
     struct QueuedUiRect
     {
+        enum class EPrimitiveKind : std::uint8_t
+        {
+            Rectangle = 0,
+            Triangle = 1,
+            Circle = 2
+        };
+
         static constexpr std::size_t MaxGradientStops = 10;
 
         std::uint64_t ViewportID = 0;
@@ -574,9 +581,13 @@ private:
         float ScissorMaxX = 0.0f;
         float ScissorMaxY = 0.0f;
         bool HasScissor = false;
+        EPrimitiveKind PrimitiveKind = EPrimitiveKind::Rectangle;
         std::uint32_t TextureId = 0;
+        std::uint64_t FontAtlasTextureHandle = 0;
         bool UseFontAtlas = false;
         bool UseGradient = false;
+        std::array<float, 4> ShapeData0{};
+        std::array<float, 4> ShapeData1{};
         float GradientStartX = 0.0f;
         float GradientStartY = 0.0f;
         float GradientEndX = 1.0f;
@@ -647,12 +658,17 @@ private:
     std::shared_ptr<SnAPI::Graphics::Material> m_defaultGBufferMaterial{}; /**< @brief Default material assigned by mesh components. */
     std::shared_ptr<SnAPI::Graphics::Material> m_defaultShadowMaterial{}; /**< @brief Default shadow material assigned by mesh components. */
     SnAPI::Graphics::FontFace* m_defaultFont = nullptr; /**< @brief Non-owning default font pointer managed by FontLibrary cache. */
+    bool m_defaultFontFallbacksConfigured = false; /**< @brief True once fallback face chain is attached to the default font. */
     std::vector<TextRequest> m_textQueue{}; /**< @brief Pending text draw requests flushed in EndFrame. */
 #if defined(SNAPI_GF_ENABLE_UI)
     std::shared_ptr<SnAPI::Graphics::Material> m_uiMaterial{}; /**< @brief Shared UI material used to create texture-bound UI material instances. */
     std::shared_ptr<SnAPI::Graphics::Material> m_uiFontMaterial{}; /**< @brief Shared UI font material used for glyph coverage sampling. */
+    std::shared_ptr<SnAPI::Graphics::Material> m_uiTriangleMaterial{}; /**< @brief Shared UI triangle material used for vector triangle masking. */
+    std::shared_ptr<SnAPI::Graphics::Material> m_uiCircleMaterial{}; /**< @brief Shared UI circle material used for vector circle fills. */
     std::shared_ptr<SnAPI::Graphics::IGPUImage> m_uiFallbackTexture{}; /**< @brief White 1x1 fallback texture used for rects and missing images. */
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiFallbackMaterialInstance{}; /**< @brief Material instance bound to fallback white texture. */
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiTriangleMaterialInstance{}; /**< @brief Reused immutable triangle material instance. */
+    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiCircleMaterialInstance{}; /**< @brief Reused immutable circle material instance. */
     std::unordered_map<SnAPI::Graphics::IGPUImage*, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiFontMaterialInstances{}; /**< @brief Cached immutable UI material instances keyed by font atlas texture pointer. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */

@@ -29,6 +29,9 @@
 #include "SkeletalMeshComponent.h"
 #include "StaticMeshComponent.h"
 #endif
+#if defined(SNAPI_GF_ENABLE_UI)
+#include <UILayout.h>
+#endif
 #include "TypeRegistry.h"
 #include "World.h"
 
@@ -408,10 +411,15 @@ void RegisterBuiltinTypes()
     RegisterPlain(TTypeNameV<std::string>, sizeof(std::string), alignof(std::string));
     RegisterPlain(TTypeNameV<std::vector<uint8_t>>, sizeof(std::vector<uint8_t>), alignof(std::vector<uint8_t>));
     RegisterPlain(TTypeNameV<Uuid>, sizeof(Uuid), alignof(Uuid));
+    RegisterPlain(TTypeNameV<Vec2>, sizeof(Vec2), alignof(Vec2));
     RegisterPlain(TTypeNameV<Vec3>, sizeof(Vec3), alignof(Vec3));
+    RegisterPlain(TTypeNameV<Vec4>, sizeof(Vec4), alignof(Vec4));
     RegisterPlain(TTypeNameV<Quat>, sizeof(Quat), alignof(Quat));
     RegisterPlain(TTypeNameV<NodeHandle>, sizeof(NodeHandle), alignof(NodeHandle));
     RegisterPlain(TTypeNameV<ComponentHandle>, sizeof(ComponentHandle), alignof(ComponentHandle));
+#if defined(SNAPI_GF_ENABLE_UI)
+    RegisterPlain(TTypeNameV<SnAPI::UI::Color>, sizeof(SnAPI::UI::Color), alignof(SnAPI::UI::Color));
+#endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     RegisterPlain(TTypeNameV<ECollisionFilterBits>, sizeof(ECollisionFilterBits), alignof(ECollisionFilterBits));
     RegisterPlain(TTypeNameV<CollisionFilterFlags>, sizeof(CollisionFilterFlags), alignof(CollisionFilterFlags));
