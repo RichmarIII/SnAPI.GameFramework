@@ -12,6 +12,7 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <utility>
 
 #include <PCH.hpp>
@@ -30,6 +31,7 @@
 #include <FontLibrary.hpp>
 #include <PassVariants.hpp>
 #include <PresentPass.hpp>
+#include <SDL3/SDL.h>
 #include <SDLWindow.hpp>
 #include <SSAOPass.hpp>
 #include <SSRPass.hpp>
@@ -54,6 +56,7 @@ namespace
 {
 constexpr float kMinWindowExtent = 1.0f;
 constexpr float kWindowSizeEpsilon = 0.5f;
+constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
 constexpr float kViewportConfigFloatEpsilon = 0.001f;
 constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
@@ -83,6 +86,16 @@ float ClampWindowExtent(const float Value)
 bool NearlyEqual(const float Left, const float Right)
 {
     return std::fabs(Left - Right) <= kViewportConfigFloatEpsilon;
+}
+
+[[nodiscard]] bool IsPrimaryMouseButtonDown()
+{
+    float MouseX = 0.0f;
+    float MouseY = 0.0f;
+    const auto Buttons = SDL_GetGlobalMouseState(&MouseX, &MouseY);
+    (void)MouseX;
+    (void)MouseY;
+    return (Buttons & SDL_BUTTON_LMASK) != 0u;
 }
 
 bool AreViewportRectsEquivalent(const SnAPI::Graphics::ViewportFit& Left, const SnAPI::Graphics::ViewportFit& Right)
@@ -193,6 +206,10 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
+    m_pendingSwapChainWidth = Other.m_pendingSwapChainWidth;
+    m_pendingSwapChainHeight = Other.m_pendingSwapChainHeight;
+    m_hasPendingSwapChainResize = Other.m_hasPendingSwapChainResize;
+    m_pendingSwapChainStableFrames = Other.m_pendingSwapChainStableFrames;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
@@ -225,6 +242,10 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
+    Other.m_pendingSwapChainWidth = 0.0f;
+    Other.m_pendingSwapChainHeight = 0.0f;
+    Other.m_hasPendingSwapChainResize = false;
+    Other.m_pendingSwapChainStableFrames = 0;
     Other.m_registeredRenderObjects.clear();
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
@@ -276,6 +297,10 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_lastWindowWidth = Other.m_lastWindowWidth;
     m_lastWindowHeight = Other.m_lastWindowHeight;
     m_hasWindowSizeSnapshot = Other.m_hasWindowSizeSnapshot;
+    m_pendingSwapChainWidth = Other.m_pendingSwapChainWidth;
+    m_pendingSwapChainHeight = Other.m_pendingSwapChainHeight;
+    m_hasPendingSwapChainResize = Other.m_hasPendingSwapChainResize;
+    m_pendingSwapChainStableFrames = Other.m_pendingSwapChainStableFrames;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
@@ -308,6 +333,10 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_lastWindowWidth = 0.0f;
     Other.m_lastWindowHeight = 0.0f;
     Other.m_hasWindowSizeSnapshot = false;
+    Other.m_pendingSwapChainWidth = 0.0f;
+    Other.m_pendingSwapChainHeight = 0.0f;
+    Other.m_hasPendingSwapChainResize = false;
+    Other.m_pendingSwapChainStableFrames = 0;
     Other.m_registeredRenderObjects.clear();
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
@@ -381,6 +410,10 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_lastWindowWidth = 0.0f;
         m_lastWindowHeight = 0.0f;
         m_hasWindowSizeSnapshot = false;
+        m_pendingSwapChainWidth = 0.0f;
+        m_pendingSwapChainHeight = 0.0f;
+        m_hasPendingSwapChainResize = false;
+        m_pendingSwapChainStableFrames = 0;
         m_registeredRenderObjects.clear();
         m_registeredViewportPassGraphs.clear();
         m_renderViewportPassGraphRevision = 1;
@@ -459,6 +492,10 @@ bool RendererSystem::InitializeUnlocked()
     m_registeredRenderObjects.clear();
     m_registeredViewportPassGraphs.clear();
     m_renderViewportPassGraphRevision = 1;
+    m_pendingSwapChainWidth = 0.0f;
+    m_pendingSwapChainHeight = 0.0f;
+    m_hasPendingSwapChainResize = false;
+    m_pendingSwapChainStableFrames = 0;
 
     if (!m_settings.CreateGraphicsApi)
     {
@@ -476,6 +513,9 @@ bool RendererSystem::InitializeUnlocked()
     {
         return false;
     }
+
+    // GameFramework owns swapchain resize coalescing when auto-resize is enabled.
+    m_graphics->SetAutoSwapChainRecreateOnInvalidation(!m_settings.AutoHandleSwapChainResize);
 
     if (m_settings.CreateWindow && !CreateWindowResources())
     {
@@ -1610,6 +1650,10 @@ void RendererSystem::ShutdownUnlocked()
     m_lastWindowWidth = 0.0f;
     m_lastWindowHeight = 0.0f;
     m_hasWindowSizeSnapshot = false;
+    m_pendingSwapChainWidth = 0.0f;
+    m_pendingSwapChainHeight = 0.0f;
+    m_hasPendingSwapChainResize = false;
+    m_pendingSwapChainStableFrames = 0;
     m_registeredRenderObjects.clear();
 
     if (m_graphics)
@@ -1830,16 +1874,67 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
         return false;
     }
 
+    const bool RecreateRequestedByGraphics = m_graphics->ConsumeSwapChainRecreateRequest(m_window.get());
+
     if (!m_hasWindowSizeSnapshot)
     {
         m_lastWindowWidth = Width;
         m_lastWindowHeight = Height;
         m_hasWindowSizeSnapshot = true;
+        m_pendingSwapChainWidth = Width;
+        m_pendingSwapChainHeight = Height;
+        m_hasPendingSwapChainResize = RecreateRequestedByGraphics;
+        m_pendingSwapChainStableFrames = 0;
         return false;
     }
 
-    if (std::fabs(Width - m_lastWindowWidth) <= kWindowSizeEpsilon
-        && std::fabs(Height - m_lastWindowHeight) <= kWindowSizeEpsilon)
+    const bool MatchesCurrentSwapChain =
+        std::fabs(Width - m_lastWindowWidth) <= kWindowSizeEpsilon
+        && std::fabs(Height - m_lastWindowHeight) <= kWindowSizeEpsilon;
+    if (MatchesCurrentSwapChain && !RecreateRequestedByGraphics)
+    {
+        m_pendingSwapChainWidth = Width;
+        m_pendingSwapChainHeight = Height;
+        m_hasPendingSwapChainResize = false;
+        m_pendingSwapChainStableFrames = 0;
+        return false;
+    }
+
+    const bool PendingTargetChanged =
+        !m_hasPendingSwapChainResize
+        || std::fabs(Width - m_pendingSwapChainWidth) > kWindowSizeEpsilon
+        || std::fabs(Height - m_pendingSwapChainHeight) > kWindowSizeEpsilon;
+
+    const bool NeedPendingResizeTracking = !MatchesCurrentSwapChain
+                                           || (RecreateRequestedByGraphics && !m_hasPendingSwapChainResize);
+    if (NeedPendingResizeTracking && PendingTargetChanged)
+    {
+        m_pendingSwapChainWidth = Width;
+        m_pendingSwapChainHeight = Height;
+        m_hasPendingSwapChainResize = true;
+        m_pendingSwapChainStableFrames = 0;
+        // Window border drag can change size continuously even when button state
+        // is not visible to the app (platform-dependent). Never recreate on the
+        // same frame a new resize delta arrives.
+        return false;
+    }
+
+    if (!m_hasPendingSwapChainResize)
+    {
+        m_pendingSwapChainStableFrames = 0;
+        return false;
+    }
+
+    if (m_pendingSwapChainStableFrames < std::numeric_limits<std::uint32_t>::max())
+    {
+        ++m_pendingSwapChainStableFrames;
+    }
+    if (m_pendingSwapChainStableFrames < kPendingSwapChainStableFrameThreshold)
+    {
+        return false;
+    }
+
+    if (IsPrimaryMouseButtonDown())
     {
         return false;
     }
@@ -2368,6 +2463,10 @@ bool RendererSystem::RecreateSwapChainForCurrentWindowUnlocked()
     m_lastWindowWidth = WindowSize.x();
     m_lastWindowHeight = WindowSize.y();
     m_hasWindowSizeSnapshot = (m_lastWindowWidth > 0.0f && m_lastWindowHeight > 0.0f);
+    m_pendingSwapChainWidth = m_lastWindowWidth;
+    m_pendingSwapChainHeight = m_lastWindowHeight;
+    m_hasPendingSwapChainResize = false;
+    m_pendingSwapChainStableFrames = 0;
     return true;
 }
 
@@ -2390,6 +2489,10 @@ bool RendererSystem::CreateWindowResources()
     m_lastWindowWidth = WindowSize.x();
     m_lastWindowHeight = WindowSize.y();
     m_hasWindowSizeSnapshot = (m_lastWindowWidth > 0.0f && m_lastWindowHeight > 0.0f);
+    m_pendingSwapChainWidth = m_lastWindowWidth;
+    m_pendingSwapChainHeight = m_lastWindowHeight;
+    m_hasPendingSwapChainResize = false;
+    m_pendingSwapChainStableFrames = 0;
     m_window = std::move(Window);
     return true;
 }

@@ -5,6 +5,7 @@
 #include "UISystem.h"
 #include "World.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "WindowBase.hpp"
@@ -78,6 +79,11 @@ Result EditorViewportBinding::Initialize(GameRuntime& Runtime, std::string Viewp
     m_viewportId = ViewportId;
     m_lastWidth = Width;
     m_lastHeight = Height;
+    m_appliedRenderWidth = std::max<std::uint32_t>(1u, static_cast<std::uint32_t>(std::round(Width)));
+    m_appliedRenderHeight = std::max<std::uint32_t>(1u, static_cast<std::uint32_t>(std::round(Height)));
+    m_pendingRenderWidth = m_appliedRenderWidth;
+    m_pendingRenderHeight = m_appliedRenderHeight;
+    m_hasPendingRenderExtentResize = false;
 
     if (!Renderer.RegisterRenderViewportPassGraph(m_viewportId, ERenderViewportPassGraphPreset::UiPresentOnly))
     {
@@ -120,6 +126,11 @@ void EditorViewportBinding::Shutdown(GameRuntime* Runtime)
     m_rootContextId = 0;
     m_lastWidth = 0.0f;
     m_lastHeight = 0.0f;
+    m_appliedRenderWidth = 0;
+    m_appliedRenderHeight = 0;
+    m_pendingRenderWidth = 0;
+    m_pendingRenderHeight = 0;
+    m_hasPendingRenderExtentResize = false;
 }
 
 bool EditorViewportBinding::SyncToWindow(GameRuntime& Runtime)
@@ -169,26 +180,84 @@ bool EditorViewportBinding::SyncToWindow(GameRuntime& Runtime)
         return false;
     }
 
+    const auto ToRenderExtent = [](const float Value) {
+        return std::max<std::uint32_t>(1u, static_cast<std::uint32_t>(std::round(Value)));
+    };
+
     const bool NeedsResize = std::abs(Width - m_lastWidth) > kChangeEpsilon || std::abs(Height - m_lastHeight) > kChangeEpsilon;
-    if (!NeedsResize)
+    if (NeedsResize)
+    {
+        m_lastWidth = Width;
+        m_lastHeight = Height;
+        (void)UI.SetViewportSize(Width, Height);
+        (void)UI.SetContextScreenRect(m_rootContextId, 0.0f, 0.0f, Width, Height);
+    }
+
+    const std::uint32_t DesiredRenderWidth = ToRenderExtent(Width);
+    const std::uint32_t DesiredRenderHeight = ToRenderExtent(Height);
+    std::uint32_t RenderWidth = m_appliedRenderWidth > 0 ? m_appliedRenderWidth : DesiredRenderWidth;
+    std::uint32_t RenderHeight = m_appliedRenderHeight > 0 ? m_appliedRenderHeight : DesiredRenderHeight;
+    bool ApplyRenderExtent = false;
+    bool IsPointerPressed = false;
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    if (const auto* Snapshot = WorldPtr->Input().Snapshot())
+    {
+        IsPointerPressed = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Left);
+    }
+#endif
+
+    if (DesiredRenderWidth != m_appliedRenderWidth || DesiredRenderHeight != m_appliedRenderHeight)
+    {
+        const bool PendingChanged = !m_hasPendingRenderExtentResize
+                                    || m_pendingRenderWidth != DesiredRenderWidth
+                                    || m_pendingRenderHeight != DesiredRenderHeight;
+        if (PendingChanged)
+        {
+            m_pendingRenderWidth = DesiredRenderWidth;
+            m_pendingRenderHeight = DesiredRenderHeight;
+            m_hasPendingRenderExtentResize = true;
+        }
+
+        if (!IsPointerPressed)
+        {
+            RenderWidth = m_pendingRenderWidth;
+            RenderHeight = m_pendingRenderHeight;
+            ApplyRenderExtent = true;
+        }
+    }
+    else
+    {
+        m_pendingRenderWidth = DesiredRenderWidth;
+        m_pendingRenderHeight = DesiredRenderHeight;
+        m_hasPendingRenderExtentResize = false;
+        RenderWidth = DesiredRenderWidth;
+        RenderHeight = DesiredRenderHeight;
+    }
+
+    if (!NeedsResize && !ApplyRenderExtent)
     {
         return true;
     }
 
-    m_lastWidth = Width;
-    m_lastHeight = Height;
-    (void)UI.SetViewportSize(Width, Height);
-    (void)UI.SetContextScreenRect(m_rootContextId, 0.0f, 0.0f, Width, Height);
-    return Renderer.UpdateRenderViewport(m_viewportId,
-                                         m_viewportName,
-                                         0.0f,
-                                         0.0f,
-                                         Width,
-                                         Height,
-                                         static_cast<std::uint32_t>(std::round(Width)),
-                                         static_cast<std::uint32_t>(std::round(Height)),
-                                         nullptr,
-                                         true);
+    const bool Updated = Renderer.UpdateRenderViewport(m_viewportId,
+                                                       m_viewportName,
+                                                       0.0f,
+                                                       0.0f,
+                                                       Width,
+                                                       Height,
+                                                       RenderWidth,
+                                                       RenderHeight,
+                                                       nullptr,
+                                                       true);
+    if (Updated && (ApplyRenderExtent || m_appliedRenderWidth == 0 || m_appliedRenderHeight == 0))
+    {
+        m_appliedRenderWidth = RenderWidth;
+        m_appliedRenderHeight = RenderHeight;
+        m_pendingRenderWidth = RenderWidth;
+        m_pendingRenderHeight = RenderHeight;
+        m_hasPendingRenderExtentResize = false;
+    }
+    return Updated;
 #endif
 }
 

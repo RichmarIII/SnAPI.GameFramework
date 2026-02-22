@@ -35,7 +35,8 @@ namespace SnAPI::GameFramework
 namespace
 {
 constexpr int kMaxReflectionDepth = 8;
-constexpr float kLabelWidth = 78.0f;
+constexpr float kLabelLaneRatio = 1.0f;
+constexpr float kValueLaneRatio = 1.8f;
 constexpr float kRowPadding = 4.0f;
 constexpr float kAxisTagWidth = 12.0f;
 constexpr float kVectorGap = 2.0f;
@@ -879,7 +880,7 @@ void UIPropertyPanel::AddFieldEditor(
     m_Context->AddChild(rowHandle.Id, labelHandle.Id);
     if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
     {
-      label->Width().Set(SnAPI::UI::Sizing::Auto());
+      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
       label->HAlign().Set(SnAPI::UI::EAlignment::Start);
       label->VAlign().Set(SnAPI::UI::EAlignment::Center);
       label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
@@ -899,8 +900,8 @@ void UIPropertyPanel::AddFieldEditor(
     valueHost->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
     valueHost->Padding().Set(0.0f);
     valueHost->Gap().Set(kVectorGap);
-    valueHost->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    valueHost->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    valueHost->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+    valueHost->HAlign().Set(SnAPI::UI::EAlignment::End);
     valueHost->VAlign().Set(SnAPI::UI::EAlignment::Center);
     valueHost->Background().Set(Color::Transparent());
     valueHost->BorderColor().Set(Color::Transparent());
@@ -1261,8 +1262,9 @@ void UIPropertyPanel::AddUnsupportedRow(
     m_Context->AddChild(rowHandle.Id, labelHandle.Id);
     if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
     {
-      label->Width().Set(SnAPI::UI::Sizing::Auto());
+      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
       label->TextColor().Set(Color{212, 170, 182, 255});
+      label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
       label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }
   }
@@ -1273,7 +1275,8 @@ void UIPropertyPanel::AddUnsupportedRow(
     m_Context->AddChild(rowHandle.Id, reasonHandle.Id);
     if (auto* reason = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(reasonHandle.Id)))
     {
-      reason->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+      reason->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+      reason->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
       reason->TextColor().Set(Color{198, 162, 174, 255});
       reason->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
     }

@@ -234,6 +234,11 @@ void UIRenderViewport::ReleaseOwnedResources()
         m_ownedViewportId = 0;
         m_ownedContextId = 0;
         m_bindingEstablished = false;
+        m_appliedRenderWidth = 0;
+        m_appliedRenderHeight = 0;
+        m_pendingRenderWidth = 0;
+        m_pendingRenderHeight = 0;
+        m_hasPendingRenderExtentResize = false;
         m_registeredPassGraphPreset.reset();
         return;
     }
@@ -244,6 +249,11 @@ void UIRenderViewport::ReleaseOwnedResources()
         m_ownedViewportId = 0;
         m_ownedContextId = 0;
         m_bindingEstablished = false;
+        m_appliedRenderWidth = 0;
+        m_appliedRenderHeight = 0;
+        m_pendingRenderWidth = 0;
+        m_pendingRenderHeight = 0;
+        m_hasPendingRenderExtentResize = false;
         m_registeredPassGraphPreset.reset();
         return;
     }
@@ -267,6 +277,11 @@ void UIRenderViewport::ReleaseOwnedResources()
     m_ownedViewportId = 0;
     m_ownedContextId = 0;
     m_bindingEstablished = false;
+    m_appliedRenderWidth = 0;
+    m_appliedRenderHeight = 0;
+    m_pendingRenderWidth = 0;
+    m_pendingRenderHeight = 0;
+    m_hasPendingRenderExtentResize = false;
     m_registeredPassGraphPreset.reset();
 }
 
@@ -301,6 +316,11 @@ void UIRenderViewport::SyncViewport()
     {
         m_ownedViewportId = 0;
         m_bindingEstablished = false;
+        m_appliedRenderWidth = 0;
+        m_appliedRenderHeight = 0;
+        m_pendingRenderWidth = 0;
+        m_pendingRenderHeight = 0;
+        m_hasPendingRenderExtentResize = false;
         m_registeredPassGraphPreset.reset();
     }
 
@@ -346,8 +366,47 @@ void UIRenderViewport::SyncViewport()
     RenderScaleValue = std::clamp(RenderScaleValue, kMinRenderScale, kMaxRenderScale);
 
     const bool EnabledValue = GetStyledProperty(EnabledKey, true) && IsVisible();
-    const std::uint32_t RenderWidth = ComputeRenderExtent(m_Rect.W, RenderScaleValue);
-    const std::uint32_t RenderHeight = ComputeRenderExtent(m_Rect.H, RenderScaleValue);
+    const std::uint32_t DesiredRenderWidth = ComputeRenderExtent(m_Rect.W, RenderScaleValue);
+    const std::uint32_t DesiredRenderHeight = ComputeRenderExtent(m_Rect.H, RenderScaleValue);
+    std::uint32_t RenderWidth = m_appliedRenderWidth > 0 ? m_appliedRenderWidth : DesiredRenderWidth;
+    std::uint32_t RenderHeight = m_appliedRenderHeight > 0 ? m_appliedRenderHeight : DesiredRenderHeight;
+    bool ApplyRenderExtent = false;
+    bool IsPointerPressed = false;
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    if (const auto* Snapshot = World->Input().Snapshot())
+    {
+        IsPointerPressed = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Left);
+    }
+#endif
+
+    if (DesiredRenderWidth != m_appliedRenderWidth || DesiredRenderHeight != m_appliedRenderHeight)
+    {
+        const bool PendingChanged = !m_hasPendingRenderExtentResize
+                                    || m_pendingRenderWidth != DesiredRenderWidth
+                                    || m_pendingRenderHeight != DesiredRenderHeight;
+        if (PendingChanged)
+        {
+            m_pendingRenderWidth = DesiredRenderWidth;
+            m_pendingRenderHeight = DesiredRenderHeight;
+            m_hasPendingRenderExtentResize = true;
+        }
+
+        if (!IsPointerPressed)
+        {
+            RenderWidth = m_pendingRenderWidth;
+            RenderHeight = m_pendingRenderHeight;
+            ApplyRenderExtent = true;
+        }
+    }
+    else
+    {
+        m_pendingRenderWidth = DesiredRenderWidth;
+        m_pendingRenderHeight = DesiredRenderHeight;
+        m_hasPendingRenderExtentResize = false;
+        RenderWidth = DesiredRenderWidth;
+        RenderHeight = DesiredRenderHeight;
+    }
+
     if (m_camera && RenderHeight > 0u)
     {
         m_camera->Aspect(static_cast<float>(RenderWidth) / static_cast<float>(RenderHeight));
@@ -363,6 +422,11 @@ void UIRenderViewport::SyncViewport()
         }
 
         m_ownedViewportId = NewViewportId;
+        m_appliedRenderWidth = RenderWidth;
+        m_appliedRenderHeight = RenderHeight;
+        m_pendingRenderWidth = RenderWidth;
+        m_pendingRenderHeight = RenderHeight;
+        m_hasPendingRenderExtentResize = false;
         m_registeredPassGraphPreset.reset();
     }
 
@@ -414,8 +478,16 @@ void UIRenderViewport::SyncViewport()
         ChildContext->SetViewportSize(std::max(m_Rect.W, 1.0f), std::max(m_Rect.H, 1.0f));
     }
 
-    (void)Renderer.UpdateRenderViewport(
+    const bool Updated = Renderer.UpdateRenderViewport(
         m_ownedViewportId, Name, m_Rect.X, m_Rect.Y, m_Rect.W, m_Rect.H, RenderWidth, RenderHeight, m_camera, EnabledValue);
+    if (Updated && (ApplyRenderExtent || m_appliedRenderWidth == 0 || m_appliedRenderHeight == 0))
+    {
+        m_appliedRenderWidth = RenderWidth;
+        m_appliedRenderHeight = RenderHeight;
+        m_pendingRenderWidth = RenderWidth;
+        m_pendingRenderHeight = RenderHeight;
+        m_hasPendingRenderExtentResize = false;
+    }
 }
 
 std::uint32_t UIRenderViewport::ComputeRenderExtent(const float LogicalSize, const float RenderScale)

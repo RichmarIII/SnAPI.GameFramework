@@ -681,6 +681,10 @@ private:
     float m_lastWindowWidth = 0.0f; /**< @brief Last known window width used for resize detection. */
     float m_lastWindowHeight = 0.0f; /**< @brief Last known window height used for resize detection. */
     bool m_hasWindowSizeSnapshot = false; /**< @brief True after first window-size sample. */
+    float m_pendingSwapChainWidth = 0.0f; /**< @brief Latest observed window width waiting for swapchain recreation. */
+    float m_pendingSwapChainHeight = 0.0f; /**< @brief Latest observed window height waiting for swapchain recreation. */
+    bool m_hasPendingSwapChainResize = false; /**< @brief True while window size has diverged and resize is being coalesced. */
+    std::uint32_t m_pendingSwapChainStableFrames = 0; /**< @brief Consecutive frames where pending swapchain target stayed unchanged. */
     std::vector<std::weak_ptr<SnAPI::Graphics::IRenderObject>> m_registeredRenderObjects{}; /**< @brief Registered render objects that need end-of-frame state snapshots. */
     std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset> m_registeredViewportPassGraphs{}; /**< @brief Tracks preset assignment per viewport to prevent duplicate pass registration. */
     std::uint64_t m_renderViewportPassGraphRevision = 1; /**< @brief Monotonic revision incremented when viewport pass-graph topology changes. */

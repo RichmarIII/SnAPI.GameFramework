@@ -37,6 +37,11 @@ private:
     std::uint64_t m_rootContextId = 0;
     float m_lastWidth = 0.0f;
     float m_lastHeight = 0.0f;
+    std::uint32_t m_appliedRenderWidth = 0;
+    std::uint32_t m_appliedRenderHeight = 0;
+    std::uint32_t m_pendingRenderWidth = 0;
+    std::uint32_t m_pendingRenderHeight = 0;
+    bool m_hasPendingRenderExtentResize = false;
 };
 
 } // namespace SnAPI::GameFramework::Editor

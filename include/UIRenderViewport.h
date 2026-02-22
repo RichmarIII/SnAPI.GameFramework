@@ -87,6 +87,11 @@ private:
     std::uint64_t m_ownedViewportId = 0;
     std::uint64_t m_ownedContextId = 0;
     bool m_bindingEstablished = false;
+    std::uint32_t m_appliedRenderWidth = 0;
+    std::uint32_t m_appliedRenderHeight = 0;
+    std::uint32_t m_pendingRenderWidth = 0;
+    std::uint32_t m_pendingRenderHeight = 0;
+    bool m_hasPendingRenderExtentResize = false;
     std::optional<ERenderViewportPassGraphPreset> m_registeredPassGraphPreset{};
     PointerEventHandler m_pointerEventHandler{};
 };
