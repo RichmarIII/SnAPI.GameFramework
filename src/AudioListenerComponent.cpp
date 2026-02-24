@@ -118,10 +118,11 @@ void AudioListenerComponent::Tick(float DeltaSeconds)
     Quat Rotation = Quat::Identity();
     if (auto* OwnerNode = this->OwnerNode())
     {
-        if (auto TransformResult = OwnerNode->Component<TransformComponent>())
+        NodeTransform WorldTransform{};
+        if (TransformComponent::TryGetNodeWorldTransform(*OwnerNode, WorldTransform))
         {
-            Position = TransformResult->Position;
-            Rotation = TransformResult->Rotation;
+            Position = WorldTransform.Position;
+            Rotation = WorldTransform.Rotation;
         }
     }
 

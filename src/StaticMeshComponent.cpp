@@ -56,7 +56,7 @@ bool IsFiniteQuat(const Quat& Value)
     return std::isfinite(Value.x()) && std::isfinite(Value.y()) && std::isfinite(Value.z()) && std::isfinite(Value.w());
 }
 
-SnAPI::Matrix4 ComposeRendererWorldTransform(const TransformComponent& Transform)
+SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
 {
     const SnAPI::Vector3D Position{
         static_cast<SnAPI::Vector3D::Scalar>(Transform.Position.x()),
@@ -337,20 +337,20 @@ void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::IRenderObje
         return;
     }
 
-    auto TransformResult = Owner->Component<TransformComponent>();
-    if (!TransformResult)
+    NodeTransform WorldTransform{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*Owner, WorldTransform))
     {
         return;
     }
 
-    if (!IsFiniteVec3(TransformResult->Position)
-        || !IsFiniteQuat(TransformResult->Rotation)
-        || !IsFiniteVec3(TransformResult->Scale))
+    if (!IsFiniteVec3(WorldTransform.Position)
+        || !IsFiniteQuat(WorldTransform.Rotation)
+        || !IsFiniteVec3(WorldTransform.Scale))
     {
         return;
     }
 
-    RenderObject.SetWorldTransform(ComposeRendererWorldTransform(*TransformResult));
+    RenderObject.SetWorldTransform(ComposeRendererWorldTransform(WorldTransform));
 }
 
 void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject) const

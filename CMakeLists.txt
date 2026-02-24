@@ -121,6 +121,7 @@ set(SNAPI_GF_SOURCES
     src/RigidBodyComponent.cpp
     src/SkeletalMeshComponent.cpp
     src/StaticMeshComponent.cpp
+    src/TransformComponent.cpp
     src/Serialization.cpp
     src/ScriptABI.cpp
     src/TypeAutoRegistry.cpp

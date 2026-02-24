@@ -137,9 +137,10 @@ void CharacterMovementController::FixedTick(float DeltaSeconds)
 
         if (!HasPositionSample)
         {
-            if (auto TransformResult = Owner->Component<TransformComponent>())
+            NodeTransform WorldTransform{};
+            if (TransformComponent::TryGetNodeWorldTransform(*Owner, WorldTransform))
             {
-                PositionSample = TransformResult->Position;
+                PositionSample = WorldTransform.Position;
                 HasPositionSample = true;
             }
         }
@@ -222,8 +223,8 @@ bool CharacterMovementController::RefreshGroundedState()
         return false;
     }
 
-    auto TransformResult = Owner->Component<TransformComponent>();
-    if (!TransformResult)
+    NodeTransform OwnerWorldTransform{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*Owner, OwnerWorldTransform))
     {
         return false;
     }
@@ -248,7 +249,7 @@ bool CharacterMovementController::RefreshGroundedState()
     SnAPI::Physics::RaycastRequest Request{};
     const float StartOffset = std::max(0.0f, m_settings.GroundProbeStartOffset);
     const float ProbeDepth = std::max(0.0f, m_settings.GroundProbeDistance);
-    const SnAPI::Physics::Vec3 WorldOrigin = TransformResult->Position + Vec3{0.0f, HalfHeight + StartOffset, 0.0f};
+    const SnAPI::Physics::Vec3 WorldOrigin = OwnerWorldTransform.Position + Vec3{0.0f, HalfHeight + StartOffset, 0.0f};
     Request.Origin = Physics ? Physics->WorldToPhysicsPosition(WorldOrigin, false) : WorldOrigin;
     Request.Direction = SnAPI::Physics::Vec3{0.0f, -1.0f, 0.0f};
     Request.Distance = (HalfHeight * 2.0f) + StartOffset + ProbeDepth;

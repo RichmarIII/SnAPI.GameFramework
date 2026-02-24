@@ -119,22 +119,19 @@ Physics::Transform ReadOwnerTransform(BaseNode* Owner,
         return Out;
     }
 
-    auto TransformResult = [&]() {
-        
-        return Owner->Component<TransformComponent>();
-    }();
-    if (!TransformResult)
+    NodeTransform WorldTransform{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*Owner, WorldTransform))
     {
         return Out;
     }
 
     {
         
-        Physics::SetTransformPosition(Out, WorldToPhysicsPosition(PhysicsSystemPtr, TransformResult->Position, AllowInitializeOrigin));
+        Physics::SetTransformPosition(Out, WorldToPhysicsPosition(PhysicsSystemPtr, WorldTransform.Position, AllowInitializeOrigin));
     }
     {
         
-        Physics::SetTransformRotation(Out, ToPhysicsQuat(TransformResult->Rotation));
+        Physics::SetTransformRotation(Out, ToPhysicsQuat(WorldTransform.Rotation));
     }
     return Out;
 }
@@ -150,32 +147,9 @@ void WriteOwnerTransform(BaseNode* Owner,
         return;
     }
 
-    auto TransformResult = [&]() {
-        
-        return Owner->Component<TransformComponent>();
-    }();
-    if (!TransformResult)
-    {
-        const auto AddedResult = [&]() {
-            
-            return Owner->Add<TransformComponent>();
-        }();
-        if (!AddedResult)
-        {
-            return;
-        }
-        TransformResult = AddedResult;
-    }
-
-    {
-        
-        const Vec3 WorldPosition = PhysicsToWorldPosition(PhysicsSystemPtr, PhysicsPosition);
-        TransformResult->Position = WorldPosition;
-    }
-    {
-        
-        TransformResult->Rotation = FromPhysicsQuat(PhysicsRotation);
-    }
+    const Vec3 WorldPosition = PhysicsToWorldPosition(PhysicsSystemPtr, PhysicsPosition);
+    const Quat WorldRotation = FromPhysicsQuat(PhysicsRotation);
+    (void)TransformComponent::TrySetNodeWorldPose(*Owner, WorldPosition, WorldRotation, true);
 }
 
 Physics::ColliderDesc BuildColliderDesc(BaseNode* Owner)
@@ -481,21 +455,9 @@ bool RigidBodyComponent::Teleport(const Vec3& Position, const Quat& Rotation, co
         return false;
     }
 
-    if (auto* Owner = OwnerNode())
+    if (auto* Owner = OwnerNode(); Owner && !TransformComponent::TrySetNodeWorldPose(*Owner, Position, Rotation, true))
     {
-        auto TransformResult = Owner->Component<TransformComponent>();
-        if (!TransformResult)
-        {
-            const auto AddedResult = Owner->Add<TransformComponent>();
-            if (!AddedResult)
-            {
-                return false;
-            }
-            TransformResult = AddedResult;
-        }
-
-        TransformResult->Position = Position;
-        TransformResult->Rotation = Rotation;
+        return false;
     }
 
     SnAPI::Physics::Transform TransformValue = SnAPI::Physics::IdentityTransform();

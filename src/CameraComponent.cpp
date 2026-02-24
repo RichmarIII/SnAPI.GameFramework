@@ -221,19 +221,19 @@ void CameraComponent::SyncFromTransform()
         return;
     }
 
-    auto TransformResult = Owner->Component<TransformComponent>();
-    if (!TransformResult)
+    NodeTransform WorldTransform{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*Owner, WorldTransform))
     {
         return;
     }
 
-    if (!IsFiniteVec3(TransformResult->Position) || !IsFiniteQuat(TransformResult->Rotation))
+    if (!IsFiniteVec3(WorldTransform.Position) || !IsFiniteQuat(WorldTransform.Rotation))
     {
         return;
     }
 
-    m_camera->Position(ToRendererVector3(TransformResult->Position));
-    m_camera->Rotation(ToRendererRotation(TransformResult->Rotation));
+    m_camera->Position(ToRendererVector3(WorldTransform.Position));
+    m_camera->Rotation(ToRendererRotation(WorldTransform.Rotation));
 }
 
 } // namespace SnAPI::GameFramework

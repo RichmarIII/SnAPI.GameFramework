@@ -343,9 +343,10 @@ void AudioSourceComponent::UpdateEmitterTransform(float DeltaSeconds)
     Vec3 Position{};
     if (auto* OwnerNode = Owner().Borrowed())
     {
-        if (auto TransformResult = OwnerNode->Component<TransformComponent>())
+        NodeTransform WorldTransform{};
+        if (TransformComponent::TryGetNodeWorldTransform(*OwnerNode, WorldTransform))
         {
-            Position = TransformResult->Position;
+            Position = WorldTransform.Position;
         }
     }
 

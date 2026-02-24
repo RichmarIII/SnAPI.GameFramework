@@ -1841,20 +1841,27 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
         return;
     }
 
-    auto& Transform = *TransformResult;
-    if (!IsFiniteVec3(Transform.Position))
+    NodeTransform TransformWorld{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*Node, TransformWorld))
     {
-        Transform.Position = Vec3::Zero();
+        TransformWorld.Position = TransformResult->Position;
+        TransformWorld.Rotation = TransformResult->Rotation;
+        TransformWorld.Scale = TransformResult->Scale;
     }
-    if (!IsFiniteVec3(Transform.Scale))
+
+    if (!IsFiniteVec3(TransformWorld.Position))
     {
-        Transform.Scale = Vec3::Ones();
+        TransformWorld.Position = Vec3::Zero();
     }
-    if (!std::isfinite(Transform.Rotation.x()) || !std::isfinite(Transform.Rotation.y()) ||
-        !std::isfinite(Transform.Rotation.z()) || !std::isfinite(Transform.Rotation.w()) ||
-        !(Transform.Rotation.squaredNorm() > static_cast<Quat::Scalar>(0.0)))
+    if (!IsFiniteVec3(TransformWorld.Scale))
     {
-        Transform.Rotation = Quat::Identity();
+        TransformWorld.Scale = Vec3::Ones();
+    }
+    if (!std::isfinite(TransformWorld.Rotation.x()) || !std::isfinite(TransformWorld.Rotation.y()) ||
+        !std::isfinite(TransformWorld.Rotation.z()) || !std::isfinite(TransformWorld.Rotation.w()) ||
+        !(TransformWorld.Rotation.squaredNorm() > static_cast<Quat::Scalar>(0.0)))
+    {
+        TransformWorld.Rotation = Quat::Identity();
     }
 
     const bool Fast = Snapshot->KeyDown(SnAPI::Input::EKey::LeftShift) ||
@@ -1870,10 +1877,10 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
             const Vec3 CameraPos = Camera->Position().template cast<SnAPI::Math::Scalar>();
             const SnAPI::Math::Scalar Distance = std::max<SnAPI::Math::Scalar>(
                 static_cast<SnAPI::Math::Scalar>(0.25),
-                (Transform.Position - CameraPos).norm());
+                (TransformWorld.Position - CameraPos).norm());
             const SnAPI::Math::Scalar PixelScale = Distance * static_cast<SnAPI::Math::Scalar>(0.0015 * SpeedMultiplier);
-            Transform.Position += (Right * static_cast<SnAPI::Math::Scalar>(Dx) * PixelScale) +
-                                  (Up * static_cast<SnAPI::Math::Scalar>(-Dy) * PixelScale);
+            TransformWorld.Position += (Right * static_cast<SnAPI::Math::Scalar>(Dx) * PixelScale) +
+                                       (Up * static_cast<SnAPI::Math::Scalar>(-Dy) * PixelScale);
         }
         break;
     case EEditorTransformMode::Rotate:
@@ -1890,7 +1897,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
                 Vec3::UnitX());
             const Quat PitchQuat(SnAPI::Math::AngleAxis3D(PitchRadians, PitchAxis));
 
-            Transform.Rotation = (YawQuat * PitchQuat * Transform.Rotation).normalized();
+            TransformWorld.Rotation = (YawQuat * PitchQuat * TransformWorld.Rotation).normalized();
         }
         break;
     case EEditorTransformMode::Scale:
@@ -1899,15 +1906,20 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
             const SnAPI::Math::Scalar ScaleFactor = std::max<SnAPI::Math::Scalar>(
                 static_cast<SnAPI::Math::Scalar>(0.01),
                 static_cast<SnAPI::Math::Scalar>(1.0) + Delta);
-            Transform.Scale *= ScaleFactor;
-            Transform.Scale.x() = std::max<SnAPI::Math::Scalar>(Transform.Scale.x(), static_cast<SnAPI::Math::Scalar>(0.001));
-            Transform.Scale.y() = std::max<SnAPI::Math::Scalar>(Transform.Scale.y(), static_cast<SnAPI::Math::Scalar>(0.001));
-            Transform.Scale.z() = std::max<SnAPI::Math::Scalar>(Transform.Scale.z(), static_cast<SnAPI::Math::Scalar>(0.001));
+            TransformWorld.Scale *= ScaleFactor;
+            TransformWorld.Scale.x() =
+                std::max<SnAPI::Math::Scalar>(TransformWorld.Scale.x(), static_cast<SnAPI::Math::Scalar>(0.001));
+            TransformWorld.Scale.y() =
+                std::max<SnAPI::Math::Scalar>(TransformWorld.Scale.y(), static_cast<SnAPI::Math::Scalar>(0.001));
+            TransformWorld.Scale.z() =
+                std::max<SnAPI::Math::Scalar>(TransformWorld.Scale.z(), static_cast<SnAPI::Math::Scalar>(0.001));
         }
         break;
     default:
         break;
     }
+
+    (void)TransformComponent::TrySetNodeWorldTransform(*Node, TransformWorld, true);
 #endif
 }
 

@@ -70,12 +70,6 @@ bool FollowTargetComponent::ApplyFollow(const float DeltaSeconds)
         return false;
     }
 
-    auto OwnerTransformResult = Owner->Component<TransformComponent>();
-    if (!OwnerTransformResult)
-    {
-        return false;
-    }
-
     BaseNode* TargetNode = m_settings.Target.Borrowed();
     if (!TargetNode && m_settings.ResolveTargetByUuidFallback)
     {
@@ -86,33 +80,38 @@ bool FollowTargetComponent::ApplyFollow(const float DeltaSeconds)
         return false;
     }
 
-    auto TargetTransformResult = TargetNode->Component<TransformComponent>();
-    if (!TargetTransformResult)
+    NodeTransform OwnerWorld{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*Owner, OwnerWorld))
     {
         return false;
     }
 
-    auto& OwnerTransform = *OwnerTransformResult;
-    const auto& TargetTransform = *TargetTransformResult;
+    NodeTransform TargetWorld{};
+    if (!TransformComponent::TryGetNodeWorldTransform(*TargetNode, TargetWorld))
+    {
+        return false;
+    }
+
+    NodeTransform DesiredWorld = OwnerWorld;
 
     if (m_settings.SyncPosition)
     {
-        const Vec3 DesiredPosition = TargetTransform.Position + m_settings.PositionOffset;
+        const Vec3 DesiredPosition = TargetWorld.Position + m_settings.PositionOffset;
         const float PositionAlpha = ExponentialAlpha(m_settings.PositionSmoothingHz, DeltaSeconds);
         const auto PositionBlend = static_cast<Vec3::Scalar>(PositionAlpha);
-        OwnerTransform.Position = OwnerTransform.Position + ((DesiredPosition - OwnerTransform.Position) * PositionBlend);
+        DesiredWorld.Position = OwnerWorld.Position + ((DesiredPosition - OwnerWorld.Position) * PositionBlend);
     }
 
     if (m_settings.SyncRotation)
     {
-        const Quat DesiredRotation = NormalizeQuatOrIdentity(TargetTransform.Rotation * m_settings.RotationOffset);
+        const Quat DesiredRotation = NormalizeQuatOrIdentity(TargetWorld.Rotation * m_settings.RotationOffset);
         const float RotationAlpha = ExponentialAlpha(m_settings.RotationSmoothingHz, DeltaSeconds);
-        OwnerTransform.Rotation = (RotationAlpha >= 1.0f)
-                                      ? DesiredRotation
-                                      : NlerpShortestPath(OwnerTransform.Rotation, DesiredRotation, RotationAlpha);
+        DesiredWorld.Rotation = (RotationAlpha >= 1.0f)
+                                    ? DesiredRotation
+                                    : NlerpShortestPath(OwnerWorld.Rotation, DesiredRotation, RotationAlpha);
     }
 
-    return true;
+    return TransformComponent::TrySetNodeWorldTransform(*Owner, DesiredWorld, true);
 }
 
 } // namespace SnAPI::GameFramework
