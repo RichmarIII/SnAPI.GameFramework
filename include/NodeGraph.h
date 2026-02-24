@@ -507,6 +507,40 @@ public:
         m_relevanceBudget = Budget;
     }
 
+    /**
+     * @brief Remove a component by reflected type from a node.
+     * @param Owner Owner node handle.
+     * @param Type Reflected component type.
+     * @return Success or error if owner/type is invalid.
+     */
+    TExpected<void> RemoveComponentByType(NodeHandle Owner, const TypeId& Type)
+    {
+        if (Owner.IsNull())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is null"));
+        }
+        if (Type == TypeId{})
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Component type is null"));
+        }
+
+        auto* Node = m_nodePool->Borrowed(Owner);
+        if (!Node)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
+        }
+
+        auto It = m_storages.find(Type);
+        if (It == m_storages.end() || !It->second || !It->second->Has(Owner))
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Component was not found on node"));
+        }
+
+        It->second->Remove(Owner);
+        UnregisterComponentOnNode(*Node, Type);
+        return Ok();
+    }
+
 private:
     friend class BaseNode;
     friend class ComponentSerializationRegistry;

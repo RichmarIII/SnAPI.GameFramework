@@ -1,14 +1,17 @@
 #include "Editor/EditorAssetService.h"
 
+#include "BaseNode.h"
 #include "AssetPackReader.h"
 #include "AssetPackWriter.h"
 #include "AssetPipelineFactories.h"
 #include "AssetPipelineIds.h"
+#include "ComponentStorage.h"
 #include "GameRuntime.h"
 #include "Level.h"
 #include "NodeGraph.h"
 #include "Serialization.h"
 #include "TransformComponent.h"
+#include "TypeRegistry.h"
 #include "World.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "StaticMeshComponent.h"
@@ -345,6 +348,299 @@ void AppendUniquePath(std::vector<std::string>& Paths,
 
     Paths.push_back(PathToUse.string());
 }
+
+[[nodiscard]] std::string NormalizeAssetLogicalName(std::string_view RawName)
+{
+    std::string Name(RawName);
+    std::replace(Name.begin(), Name.end(), '\\', '/');
+
+    const auto IsWhitespace = [](const unsigned char Character) {
+        return std::isspace(Character) != 0;
+    };
+
+    while (!Name.empty() && IsWhitespace(static_cast<unsigned char>(Name.front())))
+    {
+        Name.erase(Name.begin());
+    }
+    while (!Name.empty() && IsWhitespace(static_cast<unsigned char>(Name.back())))
+    {
+        Name.pop_back();
+    }
+
+    while (Name.find("//") != std::string::npos)
+    {
+        Name.replace(Name.find("//"), 2u, "/");
+    }
+
+    while (Name.rfind("./", 0) == 0)
+    {
+        Name.erase(0, 2);
+    }
+
+    while (!Name.empty() && Name.front() == '/')
+    {
+        Name.erase(Name.begin());
+    }
+
+    if (Name == ".")
+    {
+        Name.clear();
+    }
+
+    return Name;
+}
+
+[[nodiscard]] std::string ShortTypeName(std::string_view QualifiedTypeName)
+{
+    const std::size_t Delimiter = QualifiedTypeName.rfind("::");
+    if (Delimiter == std::string_view::npos)
+    {
+        return std::string(QualifiedTypeName);
+    }
+    return std::string(QualifiedTypeName.substr(Delimiter + 2));
+}
+
+[[nodiscard]] std::string MakeUniqueLogicalName(::SnAPI::AssetPipeline::AssetManager& AssetManagerRef,
+                                                const std::string& Prefix,
+                                                std::string BaseName)
+{
+    BaseName = NormalizeAssetLogicalName(BaseName);
+    if (BaseName.empty())
+    {
+        BaseName = "Asset";
+    }
+
+    std::string CandidateBase = NormalizeAssetLogicalName(Prefix + "/" + BaseName);
+    if (CandidateBase.empty())
+    {
+        CandidateBase = BaseName;
+    }
+
+    std::string Candidate = CandidateBase;
+    std::size_t SuffixIndex = 1;
+    while (AssetManagerRef.FindAsset(Candidate).has_value())
+    {
+        Candidate = CandidateBase + "_" + std::to_string(SuffixIndex++);
+    }
+
+    return Candidate;
+}
+
+TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle DestinationHandle, NodeGraph& DestinationGraph)
+{
+    NodeGraph* SourceGraph = SourceNode.OwnerGraph();
+    if (!SourceGraph)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Source node is not owned by a graph"));
+    }
+
+    NodeHandle SourceHandle = SourceNode.Handle();
+    if (SourceHandle.IsNull())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Source node handle is null"));
+    }
+    if (SourceGraph->NodePool().Borrowed(SourceHandle) == nullptr)
+    {
+        if (const auto RefreshedHandle = SourceGraph->NodeHandleByIdSlow(SourceNode.Id()); RefreshedHandle)
+        {
+            SourceHandle = *RefreshedHandle;
+        }
+    }
+
+    const auto& ComponentTypes = SourceNode.ComponentTypes();
+    const auto& ComponentStorages = SourceNode.ComponentStorages();
+    for (std::size_t ComponentIndex = 0; ComponentIndex < ComponentTypes.size(); ++ComponentIndex)
+    {
+        const TypeId& ComponentType = ComponentTypes[ComponentIndex];
+        IComponentStorage* Storage =
+            (ComponentIndex < ComponentStorages.size()) ? ComponentStorages[ComponentIndex] : nullptr;
+
+        if ((!Storage || Storage->TypeKey() != ComponentType) && !ComponentStorages.empty())
+        {
+            auto MatchIt = std::find_if(ComponentStorages.begin(),
+                                        ComponentStorages.end(),
+                                        [&](IComponentStorage* Candidate) {
+                                            return Candidate && Candidate->TypeKey() == ComponentType;
+                                        });
+            Storage = (MatchIt != ComponentStorages.end()) ? *MatchIt : nullptr;
+        }
+
+        if (!Storage)
+        {
+            const TypeInfo* ComponentInfo = TypeRegistry::Instance().Find(ComponentType);
+            const std::string ComponentLabel = ComponentInfo ? ShortTypeName(ComponentInfo->Name) : std::string("UnknownComponent");
+            return std::unexpected(
+                MakeError(EErrorCode::NotFound, "Missing component storage for '" + ComponentLabel + "' while cloning prefab"));
+        }
+
+        const void* SourceComponent = Storage->Borrowed(SourceHandle);
+        if (!SourceComponent && !SourceHandle.Id.is_nil())
+        {
+            if (const auto RefreshedHandle = SourceGraph->NodeHandleByIdSlow(SourceHandle.Id); RefreshedHandle)
+            {
+                SourceHandle = *RefreshedHandle;
+                SourceComponent = Storage->Borrowed(SourceHandle);
+            }
+        }
+        if (!SourceComponent && !SourceHandle.Id.is_nil())
+        {
+            SourceComponent = Storage->Borrowed(NodeHandle{SourceHandle.Id});
+        }
+        if (!SourceComponent)
+        {
+            const TypeInfo* ComponentInfo = TypeRegistry::Instance().Find(ComponentType);
+            const std::string ComponentLabel = ComponentInfo ? ShortTypeName(ComponentInfo->Name) : std::string("UnknownComponent");
+            return std::unexpected(
+                MakeError(EErrorCode::NotFound, "Failed to resolve source component '" + ComponentLabel + "' while cloning prefab"));
+        }
+
+        auto CreateResult = ComponentSerializationRegistry::Instance().Create(DestinationGraph, DestinationHandle, ComponentType);
+        if (!CreateResult)
+        {
+            return std::unexpected(CreateResult.error());
+        }
+        void* DestinationComponent = CreateResult.value();
+        if (!DestinationComponent)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to allocate destination component"));
+        }
+
+        std::vector<uint8_t> SerializedBytes{};
+        const TSerializationContext SerializeContext{.Graph = SourceGraph};
+        auto SerializeResult = ComponentSerializationRegistry::Instance().Serialize(
+            ComponentType,
+            SourceComponent,
+            SerializedBytes,
+            SerializeContext);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error());
+        }
+
+        const TSerializationContext DeserializeContext{.Graph = &DestinationGraph};
+        auto DeserializeResult = ComponentSerializationRegistry::Instance().Deserialize(
+            ComponentType,
+            DestinationComponent,
+            SerializedBytes.data(),
+            SerializedBytes.size(),
+            DeserializeContext);
+        if (!DeserializeResult)
+        {
+            return std::unexpected(DeserializeResult.error());
+        }
+    }
+
+    return Ok();
+}
+
+[[nodiscard]] BaseNode* ResolveNodeForClone(NodeGraph* Graph, const NodeHandle Handle)
+{
+    if (Graph)
+    {
+        if (BaseNode* Node = Graph->NodePool().Borrowed(Handle))
+        {
+            return Node;
+        }
+        if (!Handle.Id.is_nil())
+        {
+            if (const auto RefreshedHandle = Graph->NodeHandleByIdSlow(Handle.Id); RefreshedHandle)
+            {
+                if (BaseNode* Node = Graph->NodePool().Borrowed(*RefreshedHandle))
+                {
+                    return Node;
+                }
+            }
+        }
+    }
+
+    if (BaseNode* Node = Handle.Borrowed())
+    {
+        return Node;
+    }
+    return Handle.BorrowedSlowByUuid();
+}
+
+TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, NodeGraph& DestinationGraph, const NodeHandle DestinationParent)
+{
+    std::string NodeName = SourceNode.Name();
+    if (NodeName.empty())
+    {
+        if (const TypeInfo* Info = TypeRegistry::Instance().Find(SourceNode.TypeKey()))
+        {
+            NodeName = ShortTypeName(Info->Name);
+        }
+        else
+        {
+            NodeName = "Node";
+        }
+    }
+
+    auto CreateResult = DestinationGraph.CreateNode(SourceNode.TypeKey(), NodeName);
+    if (!CreateResult)
+    {
+        return std::unexpected(CreateResult.error());
+    }
+
+    NodeHandle CreatedHandle = CreateResult.value();
+    BaseNode* CreatedNode = CreatedHandle.Borrowed();
+    if (!CreatedNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to resolve cloned node"));
+    }
+
+    auto CopyComponentsResult = CloneNodeComponents(SourceNode, CreatedHandle, DestinationGraph);
+    if (!CopyComponentsResult)
+    {
+        return std::unexpected(CopyComponentsResult.error());
+    }
+
+    if (!DestinationParent.IsNull())
+    {
+        auto AttachResult = DestinationGraph.AttachChild(DestinationParent, CreatedHandle);
+        if (!AttachResult)
+        {
+            return std::unexpected(AttachResult.error());
+        }
+    }
+
+    NodeGraph* SourceGraph = SourceNode.OwnerGraph();
+    for (const NodeHandle ChildHandle : SourceNode.Children())
+    {
+        BaseNode* ChildNode = ResolveNodeForClone(SourceGraph, ChildHandle);
+        if (!ChildNode)
+        {
+            continue;
+        }
+
+        auto ChildCloneResult = CloneNodeSubtree(*ChildNode, DestinationGraph, CreatedHandle);
+        if (!ChildCloneResult)
+        {
+            return std::unexpected(ChildCloneResult.error());
+        }
+    }
+
+    return CreatedHandle;
+}
+
+TExpected<void> CloneNodeChildrenAsRoots(const BaseNode& SourceNode, NodeGraph& DestinationGraph)
+{
+    NodeGraph* SourceGraph = SourceNode.OwnerGraph();
+    for (const NodeHandle ChildHandle : SourceNode.Children())
+    {
+        BaseNode* ChildNode = ResolveNodeForClone(SourceGraph, ChildHandle);
+        if (!ChildNode)
+        {
+            continue;
+        }
+
+        auto CloneResult = CloneNodeSubtree(*ChildNode, DestinationGraph, NodeHandle{});
+        if (!CloneResult)
+        {
+            return std::unexpected(CloneResult.error());
+        }
+    }
+    return Ok();
+}
 } // namespace
 
 std::string_view EditorAssetService::Name() const
@@ -357,6 +653,7 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     (void)Context;
     m_assets.clear();
     m_assetIndexByKey.clear();
+    m_assetRenameOverrides.clear();
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
@@ -409,6 +706,7 @@ void EditorAssetService::Shutdown(EditorServiceContext& Context)
     m_assetManager.reset();
     m_assets.clear();
     m_assetIndexByKey.clear();
+    m_assetRenameOverrides.clear();
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
@@ -471,35 +769,90 @@ Result EditorAssetService::RefreshDiscovery()
         return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
     }
 
-    const std::vector<::SnAPI::AssetPipeline::AssetInfo> RawAssets = m_assetManager->ListAssets();
+    const std::vector<::SnAPI::AssetPipeline::AssetCatalogEntry> RawAssets = m_assetManager->ListAssetCatalog();
 
     std::vector<DiscoveredAsset> NextAssets{};
     NextAssets.reserve(RawAssets.size());
 
     std::unordered_set<std::string> SeenKeys{};
     SeenKeys.reserve(RawAssets.size());
+    std::unordered_set<::SnAPI::AssetPipeline::AssetId, ::SnAPI::AssetPipeline::UuidHash> SeenAssetIds{};
+    SeenAssetIds.reserve(RawAssets.size());
 
-    for (const auto& Info : RawAssets)
+    std::size_t RuntimeAssetCount = 0;
+    std::size_t DirtyAssetCount = 0;
+
+    for (const auto& CatalogEntry : RawAssets)
     {
+        const auto& Info = CatalogEntry.Info;
         const std::string Key = Info.Id.ToString();
-        if (!SeenKeys.insert(Key).second)
+        if (!SeenKeys.insert(Key).second || !SeenAssetIds.insert(Info.Id).second)
         {
             continue;
         }
 
         DiscoveredAsset Entry{};
         Entry.Key = Key;
-        Entry.Name = Info.Name.empty() ? Key : Info.Name;
+        Entry.Name = Info.Name.empty() ? Key : NormalizeAssetLogicalName(Info.Name);
+        if (Entry.Name.empty())
+        {
+            Entry.Name = Key;
+        }
+
+        bool HasRenameOverride = false;
+        if (const auto RenameOverrideIt = m_assetRenameOverrides.find(Info.Id); RenameOverrideIt != m_assetRenameOverrides.end())
+        {
+            const std::string OverriddenName = NormalizeAssetLogicalName(RenameOverrideIt->second);
+            if (!OverriddenName.empty())
+            {
+                Entry.Name = OverriddenName;
+                HasRenameOverride = (OverriddenName != NormalizeAssetLogicalName(Info.Name));
+            }
+        }
+
         Entry.TypeLabel = AssetKindToLabel(Info.AssetKind);
         Entry.Variant = Info.VariantKey;
         Entry.AssetId = Info.Id;
         Entry.AssetKind = Info.AssetKind;
         Entry.CookedPayloadType = Info.CookedPayloadType;
         Entry.SchemaVersion = Info.SchemaVersion;
+        Entry.IsRuntime = (CatalogEntry.Origin == ::SnAPI::AssetPipeline::EAssetOrigin::RuntimeMemory);
+        Entry.IsDirty = CatalogEntry.Dirty || HasRenameOverride;
+        Entry.CanSave = CatalogEntry.CanSave;
+        Entry.OwningPackPath = CatalogEntry.OwningPackPath;
+        if (Entry.IsRuntime)
+        {
+            ++RuntimeAssetCount;
+        }
+        if (Entry.IsDirty)
+        {
+            ++DirtyAssetCount;
+        }
+
         NextAssets.emplace_back(std::move(Entry));
     }
 
+    for (auto It = m_assetRenameOverrides.begin(); It != m_assetRenameOverrides.end();)
+    {
+        if (SeenAssetIds.contains(It->first))
+        {
+            ++It;
+        }
+        else
+        {
+            It = m_assetRenameOverrides.erase(It);
+        }
+    }
+
     std::sort(NextAssets.begin(), NextAssets.end(), [](const DiscoveredAsset& Left, const DiscoveredAsset& Right) {
+        if (Left.IsDirty != Right.IsDirty)
+        {
+            return Left.IsDirty && !Right.IsDirty;
+        }
+        if (Left.IsRuntime != Right.IsRuntime)
+        {
+            return Left.IsRuntime && !Right.IsRuntime;
+        }
         if (Left.Name != Right.Name)
         {
             return Left.Name < Right.Name;
@@ -534,7 +887,9 @@ Result EditorAssetService::RefreshDiscovery()
 
     std::ostringstream Message;
     Message << "Discovered " << m_assets.size() << " assets across "
-            << m_assetManager->GetMountedPacks().size() << " mounted pack(s).";
+            << m_assetManager->GetMountedPacks().size() << " mounted pack(s), "
+            << RuntimeAssetCount << " runtime asset(s), "
+            << DirtyAssetCount << " unsaved.";
     m_statusMessage = Message.str();
     return Ok();
 }
@@ -603,15 +958,50 @@ Result EditorAssetService::OpenSelectedAssetPreview()
 
 Result EditorAssetService::SaveSelectedAssetUpdate()
 {
-    const DiscoveredAsset* Asset = SelectedAsset();
-    if (!Asset)
+    if (m_selectedAssetKey.empty())
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No selected asset to save"));
+    }
+
+    return SaveAssetByKey(m_selectedAssetKey);
+}
+
+Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
+{
+    const DiscoveredAsset* Asset = FindAssetByKey(Key);
+    if (!Asset)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found"));
     }
 
     if (!m_assetManager)
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    if (Asset->IsRuntime)
+    {
+        auto SavePathResult = ResolveRuntimeSavePath(*Asset);
+        if (!SavePathResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, SavePathResult.error()));
+        }
+
+        auto SaveResult = m_assetManager->SaveRuntimeAsset(Asset->AssetId, SavePathResult.value());
+        if (!SaveResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, SaveResult.error()));
+        }
+
+        m_assetRenameOverrides.erase(Asset->AssetId);
+        auto RefreshResult = RefreshDiscovery();
+        if (!RefreshResult)
+        {
+            return RefreshResult;
+        }
+
+        m_statusMessage = "Saved runtime asset to pack: " + SavePathResult.value();
+        return Ok();
     }
 
     auto PackPathResult = ResolveOwningPackPath(*Asset);
@@ -641,7 +1031,449 @@ Result EditorAssetService::SaveSelectedAssetUpdate()
         return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
     }
 
+    m_assetRenameOverrides.erase(Asset->AssetId);
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
     m_statusMessage = "Saved asset update into pack: " + PackPathResult.value();
+    return Ok();
+}
+
+Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
+{
+    const DiscoveredAsset* Asset = FindAssetByKey(Key);
+    if (!Asset)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found"));
+    }
+
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    const DiscoveredAsset AssetSnapshot = *Asset;
+    const std::string DeletedAssetKey = AssetSnapshot.Key;
+    const std::string DeletedAssetName = AssetSnapshot.Name.empty() ? DeletedAssetKey : AssetSnapshot.Name;
+
+    if (AssetSnapshot.IsRuntime)
+    {
+        auto DeleteResult = m_assetManager->DeleteRuntimeAsset(AssetSnapshot.AssetId);
+        if (!DeleteResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, DeleteResult.error()));
+        }
+
+        m_assetManager->ClearCache();
+        m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
+        if (m_selectedAssetKey == DeletedAssetKey)
+        {
+            m_selectedAssetKey.clear();
+            m_previewSummary.clear();
+        }
+        if (m_placementAssetKey == DeletedAssetKey)
+        {
+            m_placementAssetKey.clear();
+        }
+
+        auto RefreshResult = RefreshDiscovery();
+        if (!RefreshResult)
+        {
+            return RefreshResult;
+        }
+
+        m_statusMessage = "Deleted runtime asset: " + DeletedAssetName;
+        return Ok();
+    }
+
+    auto PackPathResult = ResolveOwningPackPath(AssetSnapshot);
+    if (!PackPathResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, PackPathResult.error()));
+    }
+
+    const std::string PackPath = PackPathResult.value();
+    ::SnAPI::AssetPipeline::AssetPackReader Reader{};
+    auto OpenResult = Reader.Open(PackPath);
+    if (!OpenResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, OpenResult.error()));
+    }
+
+    ::SnAPI::AssetPipeline::AssetPackWriter Writer{};
+    const uint32_t AssetCount = Reader.GetAssetCount();
+    bool Removed = false;
+    uint32_t RemainingAssets = 0;
+    for (uint32_t Index = 0; Index < AssetCount; ++Index)
+    {
+        auto InfoResult = Reader.GetAssetInfo(Index);
+        if (!InfoResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, InfoResult.error()));
+        }
+
+        const ::SnAPI::AssetPipeline::AssetInfo& Info = *InfoResult;
+        if (Info.Id == AssetSnapshot.AssetId)
+        {
+            Removed = true;
+            continue;
+        }
+
+        auto CookedResult = Reader.LoadCookedPayload(Info.Id);
+        if (!CookedResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedResult.error()));
+        }
+
+        ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
+        Entry.Id = Info.Id;
+        Entry.AssetKind = Info.AssetKind;
+        Entry.Name = Info.Name;
+        Entry.VariantKey = Info.VariantKey;
+        Entry.Cooked = std::move(*CookedResult);
+
+        Entry.Bulk.reserve(Info.BulkChunkCount);
+        for (uint32_t BulkIndex = 0; BulkIndex < Info.BulkChunkCount; ++BulkIndex)
+        {
+            auto BulkResult = Reader.LoadBulkChunk(Info.Id, BulkIndex);
+            if (!BulkResult)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, BulkResult.error()));
+            }
+
+            auto BulkInfoResult = Reader.GetBulkChunkInfo(Info.Id, BulkIndex);
+            if (!BulkInfoResult)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, BulkInfoResult.error()));
+            }
+
+            ::SnAPI::AssetPipeline::BulkChunk Chunk(BulkInfoResult->Semantic, BulkInfoResult->SubIndex, true);
+            Chunk.Bytes = std::move(*BulkResult);
+            Entry.Bulk.push_back(std::move(Chunk));
+        }
+
+        Writer.AddAsset(std::move(Entry));
+        ++RemainingAssets;
+    }
+
+    if (!Removed)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found in its owning pack"));
+    }
+
+    m_assetManager->UnmountPack(PackPath);
+    if (RemainingAssets == 0)
+    {
+        std::error_code Error{};
+        std::filesystem::remove(PackPath, Error);
+        if (Error)
+        {
+            (void)m_assetManager->MountPack(PackPath);
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to delete empty pack '" + PackPath + "': " + Error.message()));
+        }
+    }
+    else
+    {
+        auto WriteResult = Writer.Write(PackPath);
+        if (!WriteResult)
+        {
+            (void)m_assetManager->MountPack(PackPath);
+            return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
+        }
+
+        auto MountResult = m_assetManager->MountPack(PackPath);
+        if (!MountResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, MountResult.error()));
+        }
+    }
+
+    m_assetManager->ClearCache();
+    m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
+    if (m_selectedAssetKey == DeletedAssetKey)
+    {
+        m_selectedAssetKey.clear();
+        m_previewSummary.clear();
+    }
+    if (m_placementAssetKey == DeletedAssetKey)
+    {
+        m_placementAssetKey.clear();
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    if (RemainingAssets == 0)
+    {
+        m_statusMessage = "Deleted asset and removed empty pack: " + DeletedAssetName;
+    }
+    else
+    {
+        m_statusMessage = "Deleted asset: " + DeletedAssetName;
+    }
+    return Ok();
+}
+
+Result EditorAssetService::DeleteSelectedAsset()
+{
+    if (m_selectedAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No selected asset to delete"));
+    }
+    return DeleteAssetByKey(m_selectedAssetKey);
+}
+
+Result EditorAssetService::RenameAssetByKey(const std::string_view Key, const std::string_view NewName)
+{
+    const DiscoveredAsset* Asset = FindAssetByKey(Key);
+    if (!Asset)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found"));
+    }
+
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    const std::string NormalizedName = NormalizeAssetLogicalName(NewName);
+    if (NormalizedName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Asset name cannot be empty"));
+    }
+
+    if (Asset->IsRuntime)
+    {
+        auto RenameResult = m_assetManager->RenameRuntimeAsset(Asset->AssetId, NormalizedName);
+        if (!RenameResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, RenameResult.error()));
+        }
+        auto RefreshResult = RefreshDiscovery();
+        if (!RefreshResult)
+        {
+            return RefreshResult;
+        }
+        m_statusMessage = "Renamed runtime asset to: " + NormalizedName;
+        return Ok();
+    }
+
+    if (NormalizedName == Asset->Name)
+    {
+        m_assetRenameOverrides.erase(Asset->AssetId);
+    }
+    else
+    {
+        m_assetRenameOverrides[Asset->AssetId] = NormalizedName;
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    m_statusMessage = "Renamed asset in editor: " + NormalizedName + " (save to persist)";
+    return Ok();
+}
+
+Result EditorAssetService::RenameSelectedAsset(const std::string_view NewName)
+{
+    if (m_selectedAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No selected asset to rename"));
+    }
+    return RenameAssetByKey(m_selectedAssetKey, NewName);
+}
+
+Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Context, const NodeHandle SourceHandle)
+{
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    BaseNode* SourceNode = SourceHandle.Borrowed();
+    if (!SourceNode)
+    {
+        SourceNode = SourceHandle.BorrowedSlowByUuid();
+    }
+    if (!SourceNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Source node not found for prefab creation"));
+    }
+
+    if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<World>()))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World cannot be converted into a prefab asset"));
+    }
+
+    ::SnAPI::AssetPipeline::RuntimeAssetUpsert RuntimeAsset{};
+    RuntimeAsset.Id = ::SnAPI::AssetPipeline::AssetId::Generate();
+    RuntimeAsset.Bulk.clear();
+    RuntimeAsset.Dirty = true;
+
+    if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<Level>()))
+    {
+        auto* LevelNode = dynamic_cast<Level*>(SourceNode);
+        if (!LevelNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Selected level node could not be resolved"));
+        }
+
+        auto PayloadResult = LevelSerializer::Serialize(*LevelNode);
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+        if (PayloadResult->Graph.Nodes.empty()
+            && (!SourceNode->Children().empty() || !SourceNode->ComponentTypes().empty()))
+        {
+            Level FallbackLevel(SourceNode->Name().empty() ? std::string("Level") : SourceNode->Name());
+            auto CloneResult = CloneNodeChildrenAsRoots(*SourceNode, FallbackLevel);
+            if (!CloneResult)
+            {
+                return std::unexpected(CloneResult.error());
+            }
+            auto FallbackPayloadResult = LevelSerializer::Serialize(FallbackLevel);
+            if (!FallbackPayloadResult)
+            {
+                return std::unexpected(FallbackPayloadResult.error());
+            }
+            PayloadResult = std::move(FallbackPayloadResult);
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeLevelPayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error());
+        }
+
+        RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Levels", SourceNode->Name());
+        RuntimeAsset.AssetKind = AssetKindLevel();
+        RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+            PayloadLevel(),
+            LevelSerializer::kSchemaVersion,
+            std::move(Bytes));
+    }
+    else
+    {
+        NodeGraph PrefabGraph{};
+        std::string BaseName = SourceNode->Name();
+        if (BaseName.empty())
+        {
+            if (const TypeInfo* Type = TypeRegistry::Instance().Find(SourceNode->TypeKey()))
+            {
+                BaseName = ShortTypeName(Type->Name);
+            }
+            else
+            {
+                BaseName = "Node";
+            }
+        }
+        PrefabGraph.Name(BaseName + ".Graph");
+
+        if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<NodeGraph>()))
+        {
+            auto* SourceGraph = dynamic_cast<NodeGraph*>(SourceNode);
+            if (!SourceGraph)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, "Selected graph node could not be resolved"));
+            }
+
+            auto PayloadResult = NodeGraphSerializer::Serialize(*SourceGraph);
+            if (!PayloadResult)
+            {
+                return std::unexpected(PayloadResult.error());
+            }
+            if (PayloadResult->Nodes.empty()
+                && (!SourceNode->Children().empty() || !SourceNode->ComponentTypes().empty()))
+            {
+                auto CloneResult = CloneNodeSubtree(*SourceNode, PrefabGraph, NodeHandle{});
+                if (!CloneResult)
+                {
+                    return std::unexpected(CloneResult.error());
+                }
+                auto FallbackPayloadResult = NodeGraphSerializer::Serialize(PrefabGraph);
+                if (!FallbackPayloadResult)
+                {
+                    return std::unexpected(FallbackPayloadResult.error());
+                }
+                PayloadResult = std::move(FallbackPayloadResult);
+            }
+
+            std::vector<uint8_t> Bytes{};
+            auto SerializeResult = SerializeNodeGraphPayload(*PayloadResult, Bytes);
+            if (!SerializeResult)
+            {
+                return std::unexpected(SerializeResult.error());
+            }
+
+            RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Graphs", BaseName);
+            RuntimeAsset.AssetKind = AssetKindNodeGraph();
+            RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+                PayloadNodeGraph(),
+                NodeGraphSerializer::kSchemaVersion,
+                std::move(Bytes));
+        }
+        else
+        {
+            auto CloneResult = CloneNodeSubtree(*SourceNode, PrefabGraph, NodeHandle{});
+            if (!CloneResult)
+            {
+                return std::unexpected(CloneResult.error());
+            }
+
+            auto PayloadResult = NodeGraphSerializer::Serialize(PrefabGraph);
+            if (!PayloadResult)
+            {
+                return std::unexpected(PayloadResult.error());
+            }
+            if (PayloadResult->Nodes.empty())
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, "Prefab clone produced an empty graph payload"));
+            }
+
+            std::vector<uint8_t> Bytes{};
+            auto SerializeResult = SerializeNodeGraphPayload(*PayloadResult, Bytes);
+            if (!SerializeResult)
+            {
+                return std::unexpected(SerializeResult.error());
+            }
+
+            RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Prefabs", BaseName);
+            RuntimeAsset.AssetKind = AssetKindNodeGraph();
+            RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+                PayloadNodeGraph(),
+                NodeGraphSerializer::kSchemaVersion,
+                std::move(Bytes));
+        }
+    }
+
+    auto UpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(RuntimeAsset));
+    if (!UpsertResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, UpsertResult.error()));
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    const std::string AssetKey = UpsertResult->ToString();
+    (void)SelectAssetByKey(AssetKey);
+    m_statusMessage = "Created runtime prefab asset: " + SourceNode->Name();
+    (void)Context;
     return Ok();
 }
 
@@ -794,6 +1626,16 @@ std::expected<std::string, std::string> EditorAssetService::ResolveOwningPackPat
         return std::unexpected("Asset manager is not initialized");
     }
 
+    if (!Asset.OwningPackPath.empty())
+    {
+        return Asset.OwningPackPath;
+    }
+
+    if (Asset.IsRuntime)
+    {
+        return std::unexpected("Runtime memory assets do not have an owning pack");
+    }
+
     const auto MountedPacks = m_assetManager->GetMountedPacks();
     for (const std::string& PackPath : MountedPacks)
     {
@@ -812,6 +1654,43 @@ std::expected<std::string, std::string> EditorAssetService::ResolveOwningPackPat
     }
 
     return std::unexpected("Unable to resolve owning pack for selected asset");
+}
+
+std::expected<std::string, std::string> EditorAssetService::ResolveRuntimeSavePath(const DiscoveredAsset& Asset) const
+{
+    if (!Asset.IsRuntime)
+    {
+        return std::unexpected("Selected asset is not a runtime memory asset");
+    }
+
+    std::error_code Error{};
+    const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+    if (Error)
+    {
+        return std::unexpected("Failed to resolve current directory: " + Error.message());
+    }
+
+    std::filesystem::path AssetsRoot = CurrentPath / "Assets";
+    std::filesystem::create_directories(AssetsRoot, Error);
+    if (Error)
+    {
+        return std::unexpected("Failed to create Assets directory: " + Error.message());
+    }
+
+    const std::string RelativeName = NormalizeAssetLogicalName(Asset.Name);
+    if (RelativeName.empty())
+    {
+        return std::unexpected("Runtime asset has an empty logical name");
+    }
+
+    std::filesystem::path OutputPath = AssetsRoot / std::filesystem::path(RelativeName);
+    const std::string ExtensionLower = ToLowerCopy(OutputPath.extension().string());
+    if (ExtensionLower != ".snpak")
+    {
+        OutputPath += ".snpak";
+    }
+
+    return OutputPath.lexically_normal().string();
 }
 
 std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetService::BuildCookedPayloadForAsset(

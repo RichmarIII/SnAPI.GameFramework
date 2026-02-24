@@ -446,9 +446,9 @@ This allows many components/nodes to share one mesh asset and one vertex stream 
 
 ---
 
-## Handles (UUID‑based)
+## Handles (UUID + Runtime Key)
 
-All references are handles that store a UUID:
+All references are handles that store a UUID plus an optional runtime key cache:
 
 ```cpp
 NodeHandle Target;
@@ -459,6 +459,8 @@ Key rules:
 - Handles remain valid across serialization and asset loads.
 - A handle resolves **only once the target object is loaded and registered**.
 - Borrowed pointers **must not be cached** (use handles instead).
+- In hot/runtime APIs, pass handles as `const NodeHandle&` / `const ComponentHandle&`.
+- Do not pass handles by value in hot paths; copies do not preserve runtime-key refresh on the caller instance and can repeatedly hit UUID fallback.
 
 There are two core handle types:
 - `NodeHandle` for nodes (BaseNode and derived).

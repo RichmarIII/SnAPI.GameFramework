@@ -38,6 +38,7 @@ public:
 private:
     [[nodiscard]] CameraComponent* ResolveActiveCameraComponent(World& WorldRef) const;
 
+    NodeHandle m_levelNode{};
     NodeHandle m_cameraNode{};
     std::vector<NodeHandle> m_sceneNodes{};
     CameraComponent* m_cameraComponent = nullptr;

@@ -2,6 +2,7 @@
 #include "Profiling.h"
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include <LinearAlgebra.hpp>
 #include <ICamera.hpp>
@@ -59,18 +60,34 @@ public:
 
         const auto& Glyph = ResolvedGlyph.GlyphData;
         const auto GlyphUv = ResolvedGlyph.UV;
+        float PaddingX = 0.0f;
+        float PaddingY = 0.0f;
+        if (ResolvedGlyph.pOwningFace)
+        {
+            if (const auto* AtlasPage = ResolvedGlyph.pOwningFace->AtlasForCodePoint(ResolvedGlyph.ResolvedCodePoint))
+            {
+                const auto AtlasSize = AtlasPage->Size();
+                if (AtlasSize.x() > 0 && AtlasSize.y() > 0)
+                {
+                    const float UvWidthPixels = static_cast<float>(GlyphUv.Width()) * static_cast<float>(AtlasSize.x());
+                    const float UvHeightPixels = static_cast<float>(GlyphUv.Height()) * static_cast<float>(AtlasSize.y());
+                    PaddingX = std::max(0.0f, (UvWidthPixels - static_cast<float>(Glyph.Width)) * 0.5f);
+                    PaddingY = std::max(0.0f, (UvHeightPixels - static_cast<float>(Glyph.Height)) * 0.5f);
+                }
+            }
+        }
 
         SnAPI::UI::GlyphMetrics Metrics{};
         Metrics.U0 = static_cast<float>(GlyphUv.Min.x());
         Metrics.V0 = static_cast<float>(GlyphUv.Min.y());
         Metrics.U1 = static_cast<float>(GlyphUv.Max.x());
         Metrics.V1 = static_cast<float>(GlyphUv.Max.y());
-        Metrics.Width = static_cast<float>(Glyph.Width);
-        Metrics.Height = static_cast<float>(Glyph.Height);
-        Metrics.BearingX = static_cast<float>(Glyph.BitmapLeft);
+        Metrics.Width = static_cast<float>(Glyph.Width) + PaddingX * 2.0f;
+        Metrics.Height = static_cast<float>(Glyph.Height) + PaddingY * 2.0f;
+        Metrics.BearingX = static_cast<float>(Glyph.BitmapLeft) - PaddingX;
         // UIPacketWriter expects stb-style y-offset from baseline (usually negative).
         // FreeType BitmapTop is upward-positive, so convert sign for consistent layout.
-        Metrics.BearingY = -static_cast<float>(Glyph.BitmapTop);
+        Metrics.BearingY = -(static_cast<float>(Glyph.BitmapTop) + PaddingY);
         Metrics.Advance = static_cast<float>(Glyph.Advance.x());
         Metrics.AtlasTextureHandle = static_cast<std::uint64_t>(
             reinterpret_cast<std::uintptr_t>(ResolvedGlyph.pAtlasImage));

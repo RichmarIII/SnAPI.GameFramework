@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <mutex>
 #include "GameThreading.h"
@@ -42,6 +43,16 @@ public:
     static constexpr uint32_t kInvalidRuntimePoolToken = 0;
     /** @brief Runtime slot index sentinel meaning "no runtime slot". */
     static constexpr uint32_t kInvalidRuntimeIndex = std::numeric_limits<uint32_t>::max();
+
+    /**
+     * @brief Runtime-key identity tuple used to rehydrate handles after UUID fallback.
+     */
+    struct RuntimeIdentity
+    {
+        uint32_t RuntimePoolToken = kInvalidRuntimePoolToken;
+        uint32_t RuntimeIndex = kInvalidRuntimeIndex;
+        uint32_t RuntimeGeneration = 0;
+    };
 
     /**
      * @brief Access the singleton registry instance.
@@ -264,26 +275,146 @@ public:
             return nullptr;
         }
 
-        GameLockGuard Lock(m_mutex);
-        if (RuntimePoolToken != kInvalidRuntimePoolToken
-            && RuntimeIndex != kInvalidRuntimeIndex
-            && RuntimePoolToken < m_runtimeSlotsByPool.size())
+        RuntimeIdentity Identity{};
+        return ResolveFastOrFallback<T>(
+            Id,
+            RuntimePoolToken,
+            RuntimeIndex,
+            RuntimeGeneration,
+            &Identity);
+    }
+
+    /**
+     * @brief Resolve runtime-key fast path with UUID fallback and runtime identity refresh.
+     * @tparam T Expected type.
+     * @param Id UUID for fallback path.
+     * @param RuntimePoolToken Runtime pool token.
+     * @param RuntimeIndex Runtime slot index.
+     * @param RuntimeGeneration Runtime slot generation.
+     * @param OutIdentity Optional refreshed runtime identity when resolved.
+     * @return Pointer to object, or nullptr when missing/type mismatch.
+     * @remarks
+     * Fallback is intentionally available for runtime migrations/rehydration boundaries.
+     * When fallback is used, a warning is emitted (rate-limited by per-object hit count).
+     * Callers should persist `OutIdentity` back into the same handle instance; passing
+     * handles by value prevents cache refresh and can trigger repeated fallback.
+     */
+    template<typename T>
+    T* ResolveFastOrFallback(const Uuid& Id,
+        uint32_t RuntimePoolToken,
+        uint32_t RuntimeIndex,
+        uint32_t RuntimeGeneration,
+        RuntimeIdentity* OutIdentity) const
+    {
+        if (Id.is_nil())
         {
-            const auto& PoolSlots = m_runtimeSlotsByPool[RuntimePoolToken];
-            if (RuntimeIndex < PoolSlots.size())
+            if (OutIdentity)
             {
-                const RuntimeSlot& Slot = PoolSlots[RuntimeIndex];
-                if (Slot.Occupied && Slot.Generation == RuntimeGeneration && Slot.Id == Id)
+                *OutIdentity = RuntimeIdentity{};
+            }
+            return nullptr;
+        }
+
+        struct WarningInfo
+        {
+            bool Emit = false;
+            Uuid Id{};
+            uint64_t Count = 0;
+            bool HasRuntimeIdentity = false;
+            EObjectKind Kind = EObjectKind::Other;
+        };
+        WarningInfo Warning{};
+
+        T* Resolved = nullptr;
+        RuntimeIdentity ResolvedIdentity{};
+
+        {
+            GameLockGuard Lock(m_mutex);
+            if (RuntimePoolToken != kInvalidRuntimePoolToken
+                && RuntimeIndex != kInvalidRuntimeIndex
+                && RuntimePoolToken < m_runtimeSlotsByPool.size())
+            {
+                const auto& PoolSlots = m_runtimeSlotsByPool[RuntimePoolToken];
+                if (RuntimeIndex < PoolSlots.size())
                 {
-                    if (T* FromSlot = ResolveFromRuntimeSlotLocked<T>(Slot))
+                    const RuntimeSlot& Slot = PoolSlots[RuntimeIndex];
+                    if (Slot.Occupied && Slot.Generation == RuntimeGeneration && Slot.Id == Id)
                     {
-                        return FromSlot;
+                        Resolved = ResolveFromRuntimeSlotLocked<T>(Slot);
+                        if (Resolved)
+                        {
+                            ResolvedIdentity.RuntimePoolToken = RuntimePoolToken;
+                            ResolvedIdentity.RuntimeIndex = RuntimeIndex;
+                            ResolvedIdentity.RuntimeGeneration = RuntimeGeneration;
+                        }
+                    }
+                }
+            }
+
+            if (!Resolved)
+            {
+                auto It = m_entries.find(Id);
+                if (It != m_entries.end())
+                {
+                    const Entry& EntryRef = It->second;
+                    Resolved = ResolveFromEntryLocked<T>(EntryRef);
+                    if (Resolved)
+                    {
+                        if (HasRuntimeKey(EntryRef))
+                        {
+                            ResolvedIdentity.RuntimePoolToken = EntryRef.RuntimePoolToken;
+                            ResolvedIdentity.RuntimeIndex = EntryRef.RuntimeIndex;
+                            ResolvedIdentity.RuntimeGeneration = EntryRef.RuntimeGeneration;
+                        }
+
+                        auto& Count = m_fastPathFallbackCounts[Id];
+                        ++Count;
+                        if ((Count <= 4u) || ((Count & (Count - 1u)) == 0u))
+                        {
+                            Warning.Emit = true;
+                            Warning.Id = Id;
+                            Warning.Count = Count;
+                            Warning.HasRuntimeIdentity = HasRuntimeKey(EntryRef);
+                            Warning.Kind = EntryRef.Kind;
+                        }
                     }
                 }
             }
         }
 
-        return nullptr;
+        if (Warning.Emit)
+        {
+            const char* KindLabel = "object";
+            switch (Warning.Kind)
+            {
+            case EObjectKind::Node:
+                KindLabel = "node";
+                break;
+            case EObjectKind::Component:
+                KindLabel = "component";
+                break;
+            case EObjectKind::Other:
+            default:
+                KindLabel = "object";
+                break;
+            }
+
+            std::fprintf(
+                stderr,
+                "[SnAPI][HandleFallback] Fast runtime-key lookup missed for %s %s; UUID fallback used (%llu hit%s). Runtime identity %s.\n",
+                KindLabel,
+                ToString(Warning.Id).c_str(),
+                static_cast<unsigned long long>(Warning.Count),
+                Warning.Count == 1u ? "" : "s",
+                Warning.HasRuntimeIdentity ? "available (handle will be rehydrated)" : "not available");
+        }
+
+        if (OutIdentity)
+        {
+            *OutIdentity = ResolvedIdentity;
+        }
+
+        return Resolved;
     }
 
     /**
@@ -518,6 +649,7 @@ private:
     mutable GameMutex m_mutex{}; /**< @brief Protects registry state. */
     std::unordered_map<Uuid, Entry, UuidHash> m_entries{}; /**< @brief UUID -> entry map (fallback path). */
     std::vector<std::vector<RuntimeSlot>> m_runtimeSlotsByPool{{}}; /**< @brief Runtime pool token -> runtime slots (fast path). */
+    mutable std::unordered_map<Uuid, uint64_t, UuidHash> m_fastPathFallbackCounts{}; /**< @brief Per-object fast-path miss counters for fallback diagnostics. */
 };
 
 } // namespace SnAPI::GameFramework

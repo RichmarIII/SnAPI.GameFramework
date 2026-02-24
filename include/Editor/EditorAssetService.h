@@ -3,6 +3,7 @@
 #include "Editor/EditorExport.h"
 #include "Editor/IEditorService.h"
 
+#include "Handles.h"
 #include "AssetManager.h"
 
 #include <memory>
@@ -30,6 +31,10 @@ public:
         ::SnAPI::AssetPipeline::TypeId AssetKind{};
         ::SnAPI::AssetPipeline::TypeId CookedPayloadType{};
         uint32_t SchemaVersion = 0;
+        bool IsRuntime = false;
+        bool IsDirty = false;
+        bool CanSave = true;
+        std::string OwningPackPath{};
     };
 
     [[nodiscard]] std::string_view Name() const override;
@@ -48,6 +53,12 @@ public:
     Result RefreshDiscovery();
     Result OpenSelectedAssetPreview();
     Result SaveSelectedAssetUpdate();
+    Result SaveAssetByKey(std::string_view Key);
+    Result DeleteAssetByKey(std::string_view Key);
+    Result DeleteSelectedAsset();
+    Result RenameAssetByKey(std::string_view Key, std::string_view NewName);
+    Result RenameSelectedAsset(std::string_view NewName);
+    Result CreateRuntimePrefabFromNode(EditorServiceContext& Context, NodeHandle SourceHandle);
 
     Result InstantiateArmedAsset(EditorServiceContext& Context);
     Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
@@ -62,6 +73,8 @@ private:
     [[nodiscard]] const DiscoveredAsset* FindAssetByKey(std::string_view Key) const;
     [[nodiscard]] std::expected<std::string, std::string> ResolveOwningPackPath(
         const DiscoveredAsset& Asset) const;
+    [[nodiscard]] std::expected<std::string, std::string> ResolveRuntimeSavePath(
+        const DiscoveredAsset& Asset) const;
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> BuildCookedPayloadForAsset(
         const DiscoveredAsset& Asset);
     Result InstantiateNodeGraphAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
@@ -71,6 +84,7 @@ private:
     std::unique_ptr<::SnAPI::AssetPipeline::AssetManager> m_assetManager{};
     std::vector<DiscoveredAsset> m_assets{};
     std::unordered_map<std::string, std::size_t> m_assetIndexByKey{};
+    std::unordered_map<::SnAPI::AssetPipeline::AssetId, std::string, ::SnAPI::AssetPipeline::UuidHash> m_assetRenameOverrides{};
     std::string m_selectedAssetKey{};
     std::string m_placementAssetKey{};
     std::string m_previewSummary{};
@@ -78,4 +92,3 @@ private:
 };
 
 } // namespace SnAPI::GameFramework::Editor
-

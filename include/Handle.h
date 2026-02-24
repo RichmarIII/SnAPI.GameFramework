@@ -16,6 +16,9 @@ namespace SnAPI::GameFramework
  * @tparam T Resolved object type (e.g., BaseNode, IComponent).
  * @remarks Handles do not own objects; they resolve via ObjectRegistry.
  * @note Borrowed pointers must not be cached.
+ * @note Pass handles by reference in hot/runtime APIs. `Borrowed()` refreshes
+ * runtime-key fields on the handle instance; passing by value can cause repeated
+ * UUID fallback lookups.
  */
 template<typename T>
 struct THandle
@@ -62,9 +65,9 @@ struct THandle
     }
 
     Uuid Id{}; /**< @brief UUID of the referenced object. */
-    uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Runtime pool token (optional fast-path identity). */
-    uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Runtime pool slot index (optional fast-path identity). */
-    uint32_t RuntimeGeneration = 0; /**< @brief Runtime pool slot generation for stale-handle rejection. */
+    mutable uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Runtime pool token (optional fast-path identity). */
+    mutable uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Runtime pool slot index (optional fast-path identity). */
+    mutable uint32_t RuntimeGeneration = 0; /**< @brief Runtime pool slot generation for stale-handle rejection. */
 
     /**
      * @brief Check if the handle is null.
@@ -120,12 +123,26 @@ struct THandle
      * @return Pointer to the object, or nullptr if not loaded/registered.
      * @remarks
      * Fast path uses runtime pool token/index/generation only (no UUID hash lookup).
+     * On success, runtime identity is refreshed on this handle instance.
      * Returns nullptr when runtime identity is unavailable.
      * @note The returned pointer must not be stored.
      */
     T* Borrowed() const
     {
-        return ObjectRegistry::Instance().ResolveFast<T>(Id, RuntimePoolToken, RuntimeIndex, RuntimeGeneration);
+        ObjectRegistry::RuntimeIdentity Identity{};
+        T* Resolved = ObjectRegistry::Instance().ResolveFastOrFallback<T>(
+            Id,
+            RuntimePoolToken,
+            RuntimeIndex,
+            RuntimeGeneration,
+            &Identity);
+        if (Resolved)
+        {
+            RuntimePoolToken = Identity.RuntimePoolToken;
+            RuntimeIndex = Identity.RuntimeIndex;
+            RuntimeGeneration = Identity.RuntimeGeneration;
+        }
+        return Resolved;
     }
 
     // Borrowed pointers are valid only for the current frame; do not cache or store them.
@@ -134,12 +151,26 @@ struct THandle
      * @return Pointer to the object, or nullptr if not loaded/registered.
      * @remarks
      * Fast path uses runtime pool token/index/generation only (no UUID hash lookup).
+     * On success, runtime identity is refreshed on this handle instance.
      * Returns nullptr when runtime identity is unavailable.
      * @note The returned pointer must not be stored.
      */
     T* Borrowed()
     {
-        return ObjectRegistry::Instance().ResolveFast<T>(Id, RuntimePoolToken, RuntimeIndex, RuntimeGeneration);
+        ObjectRegistry::RuntimeIdentity Identity{};
+        T* Resolved = ObjectRegistry::Instance().ResolveFastOrFallback<T>(
+            Id,
+            RuntimePoolToken,
+            RuntimeIndex,
+            RuntimeGeneration,
+            &Identity);
+        if (Resolved)
+        {
+            RuntimePoolToken = Identity.RuntimePoolToken;
+            RuntimeIndex = Identity.RuntimeIndex;
+            RuntimeGeneration = Identity.RuntimeGeneration;
+        }
+        return Resolved;
     }
 
     /**
@@ -172,7 +203,7 @@ struct THandle
      */
     bool IsValid() const
     {
-        return ObjectRegistry::Instance().IsValidFast<T>(Id, RuntimePoolToken, RuntimeIndex, RuntimeGeneration);
+        return Borrowed() != nullptr;
     }
 
     /**

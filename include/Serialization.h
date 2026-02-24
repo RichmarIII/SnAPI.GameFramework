@@ -594,6 +594,22 @@ public:
     }
 
     /**
+     * @brief Enumerate registered component types.
+     * @return Snapshot of registered component type ids.
+     */
+    std::vector<TypeId> Types() const
+    {
+        GameLockGuard Lock(m_mutex);
+        std::vector<TypeId> Result{};
+        Result.reserve(m_entries.size());
+        for (const auto& [Type, _] : m_entries)
+        {
+            Result.push_back(Type);
+        }
+        return Result;
+    }
+
+    /**
      * @brief Create a component by type id.
      * @param Graph Owning graph.
      * @param Owner Owner node handle.

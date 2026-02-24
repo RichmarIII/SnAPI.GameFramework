@@ -3,7 +3,11 @@
 #include "BaseNode.h"
 #include "CameraComponent.h"
 #include "InputSystem.h"
+#include "Level.h"
+#include "NodeGraph.h"
+#include "Serialization.h"
 #include "TransformComponent.h"
+#include "TypeRegistry.h"
 #include "UIRenderViewport.h"
 #include "World.h"
 
@@ -35,7 +39,11 @@
 #include <cstdio>
 #include <functional>
 #include <numbers>
+#include <optional>
 #include <span>
+#include <string>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
 
 #include "GameRuntime.h"
@@ -146,10 +154,287 @@ private:
         HashCombine(std::hash<std::string>{}(Asset.Name));
         HashCombine(std::hash<std::string>{}(Asset.TypeLabel));
         HashCombine(std::hash<std::string>{}(Asset.Variant));
+        HashCombine(static_cast<std::size_t>(Asset.IsRuntime ? 1u : 0u));
+        HashCombine(static_cast<std::size_t>(Asset.IsDirty ? 1u : 0u));
+        HashCombine(static_cast<std::size_t>(Asset.CanSave ? 1u : 0u));
     }
 
     return Seed;
 }
+
+[[nodiscard]] std::size_t ComputeAssetDetailsSignature(const EditorLayout::ContentAssetDetails& Details)
+{
+    std::size_t Seed = 0;
+    const auto HashCombine = [&Seed](const std::size_t Value) {
+        Seed ^= Value + 0x9e3779b9 + (Seed << 6) + (Seed >> 2);
+    };
+
+    HashCombine(std::hash<std::string>{}(Details.Name));
+    HashCombine(std::hash<std::string>{}(Details.Type));
+    HashCombine(std::hash<std::string>{}(Details.Variant));
+    HashCombine(std::hash<std::string>{}(Details.AssetId));
+    HashCombine(std::hash<std::string>{}(Details.Status));
+    HashCombine(static_cast<std::size_t>(Details.IsRuntime ? 1u : 0u));
+    HashCombine(static_cast<std::size_t>(Details.IsDirty ? 1u : 0u));
+    HashCombine(static_cast<std::size_t>(Details.CanPlace ? 1u : 0u));
+    HashCombine(static_cast<std::size_t>(Details.CanSave ? 1u : 0u));
+    return Seed;
+}
+
+[[nodiscard]] std::string ShortTypeLabel(std::string_view QualifiedName)
+{
+    const std::size_t Delimiter = QualifiedName.rfind("::");
+    if (Delimiter == std::string_view::npos)
+    {
+        return std::string(QualifiedName);
+    }
+
+    return std::string(QualifiedName.substr(Delimiter + 2));
+}
+
+[[nodiscard]] BaseNode* ResolveNodeFromHandle(const NodeHandle Handle, World& WorldRef)
+{
+    if (Handle.IsNull())
+    {
+        return &WorldRef;
+    }
+
+    if (auto* Node = Handle.Borrowed())
+    {
+        return Node;
+    }
+
+    if (auto* Node = Handle.BorrowedSlowByUuid())
+    {
+        return Node;
+    }
+
+    if (const auto HandleResult = WorldRef.NodeHandleByIdSlow(Handle.Id); HandleResult.has_value())
+    {
+        return WorldRef.NodePool().Borrowed(*HandleResult);
+    }
+
+    return nullptr;
+}
+
+[[nodiscard]] Result ExecuteHierarchyAction(EditorServiceContext& Context,
+                                            const EditorLayout::HierarchyActionRequest& Request)
+{
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "World is not available"));
+    }
+
+    if (Request.Action == EditorLayout::EHierarchyAction::CreatePrefab)
+    {
+        auto* AssetService = Context.GetService<EditorAssetService>();
+        if (!AssetService)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotReady, "Asset service is not available"));
+        }
+        if (Request.TargetNode.IsNull())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Prefab creation requires a target node"));
+        }
+        return AssetService->CreateRuntimePrefabFromNode(Context, Request.TargetNode);
+    }
+
+    if (Request.Action == EditorLayout::EHierarchyAction::DeleteNode)
+    {
+        if (Request.TargetNode.IsNull())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Delete node requires a target node"));
+        }
+
+        BaseNode* TargetNode = ResolveNodeFromHandle(Request.TargetNode, *WorldPtr);
+        if (!TargetNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
+        }
+
+        if (TypeRegistry::Instance().IsA(TargetNode->TypeKey(), StaticTypeId<World>()))
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World cannot be deleted"));
+        }
+
+        NodeGraph* OwnerGraph = TargetNode->OwnerGraph();
+        if (!OwnerGraph)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
+        }
+
+        auto DestroyResult = OwnerGraph->DestroyNode(TargetNode->Handle());
+        if (!DestroyResult)
+        {
+            return std::unexpected(DestroyResult.error());
+        }
+        return Ok();
+    }
+
+    if (Request.Action == EditorLayout::EHierarchyAction::RemoveComponentType)
+    {
+        if (Request.TargetNode.IsNull())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Remove component requires a target node"));
+        }
+        if (Request.Type == TypeId{})
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Remove component requires a component type"));
+        }
+
+        BaseNode* TargetNode = ResolveNodeFromHandle(Request.TargetNode, *WorldPtr);
+        if (!TargetNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
+        }
+
+        NodeGraph* OwnerGraph = TargetNode->OwnerGraph();
+        if (!OwnerGraph)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
+        }
+
+        auto RemoveResult = OwnerGraph->RemoveComponentByType(TargetNode->Handle(), Request.Type);
+        if (!RemoveResult)
+        {
+            return std::unexpected(RemoveResult.error());
+        }
+        return Ok();
+    }
+
+    const TypeInfo* Type = TypeRegistry::Instance().Find(Request.Type);
+    if (!Type)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Requested type is not registered"));
+    }
+
+    if (Request.Action == EditorLayout::EHierarchyAction::AddNodeType)
+    {
+        if (!TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<BaseNode>()))
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Requested type is not a node type"));
+        }
+        if (TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<World>()))
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World nodes cannot be created from hierarchy"));
+        }
+        if (TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<Level>()) && !Request.TargetIsWorldRoot)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Levels can only be added under the world root"));
+        }
+
+        BaseNode* ParentNode = nullptr;
+        if (!Request.TargetIsWorldRoot)
+        {
+            ParentNode = ResolveNodeFromHandle(Request.TargetNode, *WorldPtr);
+            if (!ParentNode)
+            {
+                return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
+            }
+        }
+
+        NodeGraph* OwnerGraph = Request.TargetIsWorldRoot ? static_cast<NodeGraph*>(WorldPtr) : ParentNode->OwnerGraph();
+        if (!OwnerGraph)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
+        }
+
+        std::string NodeName = ShortTypeLabel(Type->Name);
+        if (NodeName.empty())
+        {
+            NodeName = "Node";
+        }
+
+        auto CreateResult = OwnerGraph->CreateNode(Type->Id, NodeName);
+        if (!CreateResult)
+        {
+            return std::unexpected(CreateResult.error());
+        }
+
+        if (!Request.TargetIsWorldRoot)
+        {
+            auto AttachResult = OwnerGraph->AttachChild(ParentNode->Handle(), *CreateResult);
+            if (!AttachResult)
+            {
+                return std::unexpected(AttachResult.error());
+            }
+        }
+        return Ok();
+    }
+
+    if (Request.Action != EditorLayout::EHierarchyAction::AddComponentType)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported hierarchy action"));
+    }
+
+    if (!ComponentSerializationRegistry::Instance().Has(Type->Id))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Requested type is not a component type"));
+    }
+    if (Request.TargetNode.IsNull())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Target node is required for component creation"));
+    }
+
+    BaseNode* TargetNode = ResolveNodeFromHandle(Request.TargetNode, *WorldPtr);
+    if (!TargetNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
+    }
+
+    NodeGraph* OwnerGraph = TargetNode->OwnerGraph();
+    if (!OwnerGraph)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
+    }
+
+    auto CreateComponentResult = ComponentSerializationRegistry::Instance().Create(*OwnerGraph, TargetNode->Handle(), Type->Id);
+    if (!CreateComponentResult)
+    {
+        return std::unexpected(CreateComponentResult.error());
+    }
+
+    return Ok();
+}
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+[[nodiscard]] std::optional<NodeHandle> ResolveNodeHandleByPhysicsBodyRecursive(
+    NodeGraph& Graph,
+    const SnAPI::Physics::BodyHandle& TargetBody,
+    std::unordered_set<const NodeGraph*>& VisitedGraphs)
+{
+    if (!VisitedGraphs.insert(&Graph).second)
+    {
+        return std::nullopt;
+    }
+
+    std::optional<NodeHandle> ResolvedHandle{};
+    Graph.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+        if (ResolvedHandle.has_value())
+        {
+            return;
+        }
+
+        auto RigidBodyResult = Node.Component<RigidBodyComponent>();
+        if (RigidBodyResult && RigidBodyResult->HasBody() && RigidBodyResult->PhysicsBodyHandle() == TargetBody)
+        {
+            ResolvedHandle = Handle;
+            return;
+        }
+
+        if (auto* NestedGraph = dynamic_cast<NodeGraph*>(&Node))
+        {
+            if (auto NestedResult = ResolveNodeHandleByPhysicsBodyRecursive(*NestedGraph, TargetBody, VisitedGraphs))
+            {
+                ResolvedHandle = *NestedResult;
+            }
+        }
+    });
+
+    return ResolvedHandle;
+}
+#endif
 } // namespace
 
 std::string_view EditorCommandService::Name() const
@@ -405,6 +690,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
 
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
+    m_hasPendingHierarchyActionRequest = false;
+    m_pendingHierarchyActionRequest = {};
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -412,12 +699,16 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingAssetPlaceKey.clear();
     m_hasPendingAssetSaveRequest = false;
     m_pendingAssetSaveKey.clear();
+    m_hasPendingAssetDeleteRequest = false;
+    m_pendingAssetDeleteKey.clear();
+    m_hasPendingAssetRenameRequest = false;
+    m_pendingAssetRenameKey.clear();
+    m_pendingAssetRenameValue.clear();
     m_hasPendingAssetRefreshRequest = false;
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
+    m_assetDetailsSignature = 0;
 
-    ApplyAssetBrowserState(Context);
-    m_assetListSignature = ComputeAssetListSignature(AssetService->Assets());
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
                                               SceneService->ActiveCameraComponent(),
@@ -431,6 +722,12 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_pendingSelectionRequest = Handle;
         m_hasPendingSelectionRequest = true;
     }));
+    m_layout.SetHierarchyActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::HierarchyActionRequest&)>::Bind(
+            [this](const EditorLayout::HierarchyActionRequest& Request) {
+                m_pendingHierarchyActionRequest = Request;
+                m_hasPendingHierarchyActionRequest = true;
+            }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
             m_pendingAssetSelectionKey = AssetKey;
@@ -445,10 +742,22 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_pendingAssetSaveKey = AssetKey;
         m_hasPendingAssetSaveRequest = true;
     }));
+    m_layout.SetContentAssetDeleteHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingAssetDeleteKey = AssetKey;
+        m_hasPendingAssetDeleteRequest = true;
+    }));
+    m_layout.SetContentAssetRenameHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const std::string&)>::Bind(
+            [this](const std::string& AssetKey, const std::string& NewName) {
+                m_pendingAssetRenameKey = AssetKey;
+                m_pendingAssetRenameValue = NewName;
+                m_hasPendingAssetRenameRequest = true;
+            }));
     m_layout.SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetRefreshRequest = true;
     }));
 
+    ApplyAssetBrowserState(Context);
     return Ok();
 }
 
@@ -505,18 +814,37 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     {
         m_hasPendingAssetSaveRequest = false;
 
-        if (!m_pendingAssetSaveKey.empty() && AssetService->SelectAssetByKey(m_pendingAssetSaveKey))
+        if (!m_pendingAssetSaveKey.empty())
         {
-            (void)AssetService->SaveSelectedAssetUpdate();
+            (void)AssetService->SaveAssetByKey(m_pendingAssetSaveKey);
         }
 
         m_pendingAssetSaveKey.clear();
     }
 
-    const std::size_t CurrentAssetSignature = ComputeAssetListSignature(AssetService->Assets());
-    if (CurrentAssetSignature != m_assetListSignature)
+    if (m_hasPendingAssetRenameRequest)
     {
-        m_assetListSignature = CurrentAssetSignature;
+        m_hasPendingAssetRenameRequest = false;
+
+        if (!m_pendingAssetRenameKey.empty())
+        {
+            (void)AssetService->RenameAssetByKey(m_pendingAssetRenameKey, m_pendingAssetRenameValue);
+        }
+
+        m_pendingAssetRenameKey.clear();
+        m_pendingAssetRenameValue.clear();
+    }
+
+    if (m_hasPendingAssetDeleteRequest)
+    {
+        m_hasPendingAssetDeleteRequest = false;
+
+        if (!m_pendingAssetDeleteKey.empty())
+        {
+            (void)AssetService->DeleteAssetByKey(m_pendingAssetDeleteKey);
+        }
+
+        m_pendingAssetDeleteKey.clear();
     }
 
     if (m_hasPendingSelectionRequest)
@@ -539,6 +867,14 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         }
     }
 
+    if (m_hasPendingHierarchyActionRequest)
+    {
+        const EditorLayout::HierarchyActionRequest Request = m_pendingHierarchyActionRequest;
+        m_hasPendingHierarchyActionRequest = false;
+        m_pendingHierarchyActionRequest = {};
+        (void)ExecuteHierarchyAction(Context, Request);
+    }
+
     ApplyAssetBrowserState(Context);
     m_layout.Sync(Context.Runtime(), SceneService->ActiveCameraComponent(), &SelectionService->Model(), DeltaSeconds);
 }
@@ -551,18 +887,27 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         return;
     }
 
-    std::vector<EditorLayout::ContentAssetEntry> Entries{};
-    Entries.reserve(AssetService->Assets().size());
-    for (const auto& Asset : AssetService->Assets())
+    const auto& Assets = AssetService->Assets();
+    const std::size_t AssetSignature = ComputeAssetListSignature(Assets);
+    if (AssetSignature != m_assetListSignature)
     {
-        EditorLayout::ContentAssetEntry Entry{};
-        Entry.Key = Asset.Key;
-        Entry.Name = Asset.Name;
-        Entry.Type = Asset.TypeLabel;
-        Entry.Variant = Asset.Variant;
-        Entries.emplace_back(std::move(Entry));
+        std::vector<EditorLayout::ContentAssetEntry> Entries{};
+        Entries.reserve(Assets.size());
+        for (const auto& Asset : Assets)
+        {
+            EditorLayout::ContentAssetEntry Entry{};
+            Entry.Key = Asset.Key;
+            Entry.Name = Asset.Name;
+            Entry.Type = Asset.TypeLabel;
+            Entry.Variant = Asset.Variant;
+            Entry.IsRuntime = Asset.IsRuntime;
+            Entry.IsDirty = Asset.IsDirty;
+            Entries.emplace_back(std::move(Entry));
+        }
+
+        m_layout.SetContentAssets(std::move(Entries));
+        m_assetListSignature = AssetSignature;
     }
-    m_layout.SetContentAssets(std::move(Entries));
 
     EditorLayout::ContentAssetDetails Details{};
     if (const auto* SelectedAsset = AssetService->SelectedAsset())
@@ -571,11 +916,15 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         Details.Type = SelectedAsset->TypeLabel;
         Details.Variant = SelectedAsset->Variant.empty() ? std::string("default") : SelectedAsset->Variant;
         Details.AssetId = SelectedAsset->Key;
+        Details.IsRuntime = SelectedAsset->IsRuntime;
+        Details.IsDirty = SelectedAsset->IsDirty;
         Details.CanPlace = true;
-        Details.CanSave = true;
+        Details.CanSave = SelectedAsset->CanSave && (!SelectedAsset->IsRuntime || SelectedAsset->IsDirty);
     }
     else
     {
+        Details.IsRuntime = false;
+        Details.IsDirty = false;
         Details.CanPlace = false;
         Details.CanSave = false;
     }
@@ -597,7 +946,12 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         Details.Status = "Ready";
     }
 
-    m_layout.SetContentAssetDetails(std::move(Details));
+    const std::size_t DetailsSignature = ComputeAssetDetailsSignature(Details);
+    if (DetailsSignature != m_assetDetailsSignature)
+    {
+        m_layout.SetContentAssetDetails(std::move(Details));
+        m_assetDetailsSignature = DetailsSignature;
+    }
 }
 
 void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
@@ -612,7 +966,10 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     }
 
     m_layout.Shutdown(&Context.Runtime());
-    ApplyAssetBrowserState(Context);
+    m_assetListSignature = 0;
+    m_assetDetailsSignature = 0;
+    m_hasPendingHierarchyActionRequest = false;
+    m_pendingHierarchyActionRequest = {};
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
@@ -628,6 +985,12 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
         m_pendingSelectionRequest = Handle;
         m_hasPendingSelectionRequest = true;
     }));
+    m_layout.SetHierarchyActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::HierarchyActionRequest&)>::Bind(
+            [this](const EditorLayout::HierarchyActionRequest& Request) {
+                m_pendingHierarchyActionRequest = Request;
+                m_hasPendingHierarchyActionRequest = true;
+            }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
             m_pendingAssetSelectionKey = AssetKey;
@@ -642,10 +1005,22 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
         m_pendingAssetSaveKey = AssetKey;
         m_hasPendingAssetSaveRequest = true;
     }));
+    m_layout.SetContentAssetDeleteHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingAssetDeleteKey = AssetKey;
+        m_hasPendingAssetDeleteRequest = true;
+    }));
+    m_layout.SetContentAssetRenameHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const std::string&)>::Bind(
+            [this](const std::string& AssetKey, const std::string& NewName) {
+                m_pendingAssetRenameKey = AssetKey;
+                m_pendingAssetRenameValue = NewName;
+                m_hasPendingAssetRenameRequest = true;
+            }));
     m_layout.SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetRefreshRequest = true;
     }));
 
+    ApplyAssetBrowserState(Context);
     m_layoutRebuildRequested = false;
 }
 
@@ -654,10 +1029,15 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetContentAssetSelectionHandler({});
     m_layout.SetContentAssetPlaceHandler({});
     m_layout.SetContentAssetSaveHandler({});
+    m_layout.SetContentAssetDeleteHandler({});
+    m_layout.SetContentAssetRenameHandler({});
     m_layout.SetContentAssetRefreshHandler({});
     m_layout.SetHierarchySelectionHandler({});
+    m_layout.SetHierarchyActionHandler({});
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
+    m_hasPendingHierarchyActionRequest = false;
+    m_pendingHierarchyActionRequest = {};
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -665,9 +1045,15 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingAssetPlaceKey.clear();
     m_hasPendingAssetSaveRequest = false;
     m_pendingAssetSaveKey.clear();
+    m_hasPendingAssetDeleteRequest = false;
+    m_pendingAssetDeleteKey.clear();
+    m_hasPendingAssetRenameRequest = false;
+    m_pendingAssetRenameKey.clear();
+    m_pendingAssetRenameValue.clear();
     m_hasPendingAssetRefreshRequest = false;
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
+    m_assetDetailsSignature = 0;
     m_layout.Shutdown(&Context.Runtime());
 }
 
@@ -1286,30 +1672,15 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
         return false;
     }
 
-    bool Found = false;
     const SnAPI::Physics::BodyHandle HitBody = Hits[0].Body;
-    WorldPtr->NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
-        if (Found)
-        {
-            return;
-        }
+    std::unordered_set<const NodeGraph*> VisitedGraphs{};
+    if (auto Resolved = ResolveNodeHandleByPhysicsBodyRecursive(*WorldPtr, HitBody, VisitedGraphs))
+    {
+        OutNode = *Resolved;
+        return true;
+    }
 
-        auto RigidBodyResult = Node.Component<RigidBodyComponent>();
-        if (!RigidBodyResult || !RigidBodyResult->HasBody())
-        {
-            return;
-        }
-
-        if (RigidBodyResult->PhysicsBodyHandle() != HitBody)
-        {
-            return;
-        }
-
-        OutNode = Handle;
-        Found = true;
-    });
-
-    return Found;
+    return false;
 #endif
 }
 

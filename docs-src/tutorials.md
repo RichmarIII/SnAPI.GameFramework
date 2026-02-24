@@ -67,6 +67,8 @@ Run examples:
 ## Core Ideas You Should Keep In Mind
 
 - Handles are identity; pointers are borrowed views.
+- Pass `NodeHandle` / `ComponentHandle` by `const&` in hot/runtime APIs so runtime-key refresh persists on the caller handle.
+- Passing handles by value in hot paths can repeatedly hit UUID fallback.
 - Reflection metadata is lazy-registered on first use.
 - Serialization and networking both read reflection metadata.
 - Gameplay RPC call sites can stay small with `INode::CallRPC(...)` / `IComponent::CallRPC(...)`.

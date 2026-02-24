@@ -177,6 +177,18 @@ if (SNAPI_GF_BUILD_EDITOR)
 
     add_executable(SnAPI.GameFramework.Editor ${SNAPI_GF_EDITOR_SOURCES})
     target_link_libraries(SnAPI.GameFramework.Editor PRIVATE SnAPI.GameFramework)
+
+    set(SNAPI_GF_EDITOR_ASSET_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/Editor/Assets")
+    if (EXISTS "${SNAPI_GF_EDITOR_ASSET_SOURCE_DIR}")
+        add_custom_command(TARGET SnAPI.GameFramework.Editor POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SnAPI.GameFramework.Editor>/Editor/Assets"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${SNAPI_GF_EDITOR_ASSET_SOURCE_DIR}"
+                "$<TARGET_FILE_DIR:SnAPI.GameFramework.Editor>/Editor/Assets"
+            COMMENT "Copying editor SVG assets to output directory"
+            VERBATIM
+        )
+    endif()
 endif()
 
 # Lua

@@ -37,7 +37,8 @@ TEST_CASE("Runtime and UUID-only node handles resolve consistently")
 
     REQUIRE(Graph.NodePool().Borrowed(RuntimeHandle) != nullptr);
     REQUIRE(Graph.NodePool().Borrowed(UuidOnlyHandle) == nullptr);
-    REQUIRE(UuidOnlyHandle.Borrowed() == nullptr);
+    REQUIRE(UuidOnlyHandle.Borrowed() != nullptr);
+    REQUIRE(UuidOnlyHandle.HasRuntimeKey());
     REQUIRE(UuidOnlyHandle.BorrowedSlowByUuid() != nullptr);
 }
 

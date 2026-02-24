@@ -18,12 +18,14 @@ Because `Level` and `NodeGraph` are nodes, graphs can be nested.
 
 You will use two access patterns constantly:
 
-- `NodeHandle` / `ComponentHandle`: stable identity (UUID-based)
+- `NodeHandle` / `ComponentHandle`: stable identity (UUID + runtime-key cache)
 - `Borrowed()` pointer: quick lookup for immediate use
 
 Important rule:
 
 - Do not cache borrowed pointers long-term. Resolve from the handle when needed.
+- In hot/runtime APIs, pass handles by `const&` so runtime-key refresh survives the call.
+- Passing handles by value can force repeated UUID fallback lookups.
 
 ## 3. Create a World, Level, Graph, and Nodes
 

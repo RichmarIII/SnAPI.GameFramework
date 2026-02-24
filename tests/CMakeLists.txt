@@ -1,4 +1,5 @@
 add_executable(GameFrameworkTests
+    ComponentStorageFallbackTests.cpp
     HandleTests.cpp
     GameRuntimeTests.cpp
     GameplayHostTests.cpp

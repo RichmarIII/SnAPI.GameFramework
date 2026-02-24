@@ -185,6 +185,8 @@ private:
     EditorLayout m_layout{};
     bool m_hasPendingSelectionRequest = false;
     NodeHandle m_pendingSelectionRequest{};
+    bool m_hasPendingHierarchyActionRequest = false;
+    EditorLayout::HierarchyActionRequest m_pendingHierarchyActionRequest{};
     bool m_hasPendingAssetSelection = false;
     bool m_pendingAssetSelectionDoubleClick = false;
     std::string m_pendingAssetSelectionKey{};
@@ -192,9 +194,15 @@ private:
     std::string m_pendingAssetPlaceKey{};
     bool m_hasPendingAssetSaveRequest = false;
     std::string m_pendingAssetSaveKey{};
+    bool m_hasPendingAssetDeleteRequest = false;
+    std::string m_pendingAssetDeleteKey{};
+    bool m_hasPendingAssetRenameRequest = false;
+    std::string m_pendingAssetRenameKey{};
+    std::string m_pendingAssetRenameValue{};
     bool m_hasPendingAssetRefreshRequest = false;
     bool m_layoutRebuildRequested = false;
     std::size_t m_assetListSignature = 0;
+    std::size_t m_assetDetailsSignature = 0;
 };
 
 /**

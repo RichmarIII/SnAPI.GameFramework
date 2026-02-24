@@ -6,11 +6,15 @@
 
 #include <UIHandles.h>
 #include <UIDelegates.h>
+#include <UIContextMenu.h>
+#include <UIProperties.h>
 
 #include "UIBuilder.h"
 
 #include <cstdint>
 #include <chrono>
+#include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,8 +25,15 @@ class UIContext;
 class UIPanel;
 class UITabs;
 class UIText;
+class UITextInput;
+class UIImage;
+class UIBadge;
+class UIBreadcrumbs;
 class UIListView;
+class UISwitch;
 class UITreeView;
+class ITreeItemSource;
+class UIContextMenu;
 template<typename TElement>
 class TElementBuilder;
 } // namespace SnAPI::UI
@@ -53,6 +64,8 @@ public:
         std::string Name{};
         std::string Type{};
         std::string Variant{};
+        bool IsRuntime = false;
+        bool IsDirty = false;
     };
 
     struct ContentAssetDetails
@@ -62,8 +75,27 @@ public:
         std::string Variant{};
         std::string AssetId{};
         std::string Status{};
+        bool IsRuntime = false;
+        bool IsDirty = false;
         bool CanPlace = true;
         bool CanSave = true;
+    };
+
+    enum class EHierarchyAction : std::uint8_t
+    {
+        AddNodeType,
+        AddComponentType,
+        RemoveComponentType,
+        DeleteNode,
+        CreatePrefab,
+    };
+
+    struct HierarchyActionRequest
+    {
+        EHierarchyAction Action = EHierarchyAction::AddNodeType;
+        NodeHandle TargetNode{};
+        bool TargetIsWorldRoot = false;
+        TypeId Type{};
     };
 
     Result Build(GameRuntime& Runtime,
@@ -77,21 +109,32 @@ public:
     [[nodiscard]] UIRenderViewport* GameViewport() const;
     [[nodiscard]] int32_t GameViewportTabIndex() const;
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)> Handler);
+    void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetContentAssets(std::vector<ContentAssetEntry> Assets);
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
     void SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     void SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    void SetContentAssetDeleteHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    void SetContentAssetRenameHandler(SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler);
     void SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()> Handler);
     void SetContentAssetDetails(ContentAssetDetails Details);
 
 private:
     using PanelBuilder = SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel>;
 
+    enum class EHierarchyEntryKind : std::uint8_t
+    {
+        World,
+        Level,
+        Node,
+    };
+
     struct HierarchyEntry
     {
         NodeHandle Handle{};
         int Depth = 0;
         std::string Label{};
+        EHierarchyEntryKind Kind = EHierarchyEntryKind::Node;
     };
 
     [[nodiscard]] bool RegisterExternalElements(GameRuntime& Runtime);
@@ -110,6 +153,7 @@ private:
                         CameraComponent* ActiveCamera,
                         EditorSelectionModel* SelectionModel);
     void BuildContentBrowser(PanelBuilder& Root);
+    void BuildContextMenuOverlay(PanelBuilder& Root);
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
@@ -122,6 +166,7 @@ private:
     void EnsureDefaultSelection(CameraComponent* ActiveCamera);
     void SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCamera);
     void RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, NodeHandle SelectedNode);
+    void SyncHierarchySelection(NodeHandle SelectedNode);
     [[nodiscard]] bool CollectHierarchyEntries(World& WorldRef, std::vector<HierarchyEntry>& OutEntries) const;
     [[nodiscard]] std::uint64_t ComputeHierarchySignature(const std::vector<HierarchyEntry>& Entries) const;
     void OnHierarchyNodeChosen(NodeHandle Handle);
@@ -130,14 +175,34 @@ private:
     void SetInvalidationDebugOverlayEnabled(bool Enabled);
     void ToggleInvalidationDebugOverlay();
     void SyncInvalidationDebugOverlay();
-    void UpdateInvalidationDebugToggleLabel();
+    void PublishInvalidationDebugState();
     void HandleContentAssetCardClicked(std::size_t AssetIndex);
+    void SelectContentAsset(std::size_t AssetIndex, bool NotifySelection, bool IsDoubleClick);
+    void OpenHierarchyContextMenu(std::size_t ItemIndex, const SnAPI::UI::PointerEvent& Event);
+    void OpenHierarchyAddTypeMenu(bool AddComponents);
+    void OpenContentAssetContextMenu(std::size_t AssetIndex, const SnAPI::UI::PointerEvent& Event);
+    void OpenInspectorComponentContextMenu(NodeHandle OwnerNode,
+                                           const TypeId& ComponentType,
+                                           const SnAPI::UI::PointerEvent& Event);
+    void OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& Event);
+    void OpenContextMenu(const SnAPI::UI::UIPoint& ScreenPosition, std::vector<SnAPI::UI::UIContextMenuItem> Items);
+    void CloseContextMenu();
+    void OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& Item);
     void EnsureContentAssetCardCapacity();
     void UpdateContentAssetCardWidgets();
     void ApplyContentAssetFilter();
+    void RebuildContentBrowserEntries();
+    void RefreshContentBrowserPath();
     void RefreshContentAssetCardSelectionStyles();
-    void UpdateContentAssetDetailsWidgets();
+    void RefreshContentAssetDetailsViewModel();
     [[nodiscard]] std::size_t ResolveSelectedContentAssetIndex() const;
+    void InitializeViewModel();
+
+    template<typename TValue>
+    SnAPI::UI::TPropertyRef<TValue> ViewModelProperty(const SnAPI::UI::PropertyKey Key)
+    {
+        return SnAPI::UI::TPropertyRef<TValue>(&m_viewModel, Key);
+    }
 
     void BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* ActiveCamera);
     void SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent* ActiveCamera);
@@ -152,9 +217,13 @@ private:
     SnAPI::UI::ElementHandle<UIRenderViewport> m_gameViewport{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_inspectorPropertyPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_hierarchyTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIContextMenu> m_contextMenu{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIBadge> m_hierarchyCountBadge{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UISwitch> m_invalidationDebugToggleSwitch{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_invalidationDebugToggleLabel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_contentSearchInput{};
-    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetNameValue{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIBreadcrumbs> m_contentPathBreadcrumbs{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_contentAssetNameValue{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetTypeValue{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetVariantValue{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetIdValue{};
@@ -167,24 +236,64 @@ private:
     struct ContentAssetCardWidgets
     {
         SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> Button{};
+        SnAPI::UI::ElementHandle<SnAPI::UI::UIImage> Icon{};
         SnAPI::UI::ElementHandle<SnAPI::UI::UIText> Type{};
         SnAPI::UI::ElementHandle<SnAPI::UI::UIText> Name{};
         SnAPI::UI::ElementHandle<SnAPI::UI::UIText> Variant{};
+    };
+    struct ContentBrowserEntry
+    {
+        bool IsFolder = false;
+        std::size_t AssetIndex = 0;
+        std::string FolderPath{};
+        std::string DisplayName{};
     };
 
     std::vector<ContentAssetCardWidgets> m_contentAssetCards{};
     std::vector<SnAPI::UI::ElementHandle<SnAPI::UI::UIButton>> m_contentAssetCardButtons{};
     std::vector<std::size_t> m_contentAssetCardIndices{};
+    std::vector<ContentBrowserEntry> m_contentBrowserEntries{};
     std::vector<ContentAssetEntry> m_contentAssets{};
     ContentAssetDetails m_contentAssetDetails{};
     std::string m_contentAssetFilterText{};
+    std::string m_contentCurrentFolder{};
     std::string m_selectedContentAssetKey{};
+    std::string m_selectedContentFolderPath{};
     std::string m_lastContentAssetClickKey{};
     std::chrono::steady_clock::time_point m_lastContentAssetClickTime{};
     SnAPI::UI::TDelegate<void(const std::string&, bool)> m_onContentAssetSelected{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetPlaceRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetSaveRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetDeleteRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> m_onContentAssetRenameRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetRefreshRequested{};
+    std::shared_ptr<SnAPI::UI::ITreeItemSource> m_hierarchyItemSource{};
+    enum class EContextMenuScope : std::uint8_t
+    {
+        None,
+        HierarchyItem,
+        InspectorComponent,
+        ContentAssetItem,
+        ContentBrowser,
+    };
+    enum class EPendingHierarchyMenu : std::uint8_t
+    {
+        None,
+        Root,
+        AddNodeTypes,
+        AddComponentTypes,
+    };
+    EContextMenuScope m_contextMenuScope = EContextMenuScope::None;
+    EPendingHierarchyMenu m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
+    std::optional<std::size_t> m_pendingHierarchyMenuIndex{};
+    SnAPI::UI::UIPoint m_pendingHierarchyMenuOpenPosition{};
+    std::optional<std::size_t> m_contextMenuHierarchyIndex{};
+    std::optional<std::size_t> m_contextMenuAssetIndex{};
+    std::optional<NodeHandle> m_contextMenuComponentOwner{};
+    TypeId m_contextMenuComponentType{};
+    std::vector<TypeId> m_contextMenuNodeTypes{};
+    std::vector<TypeId> m_contextMenuComponentTypes{};
+    SnAPI::UI::UIPoint m_contextMenuOpenPosition{};
     std::vector<NodeHandle> m_hierarchyVisibleNodes{};
     std::uint64_t m_hierarchySignature = 0;
     std::size_t m_hierarchyNodeCount = 0;
@@ -192,10 +301,12 @@ private:
     std::string m_hierarchyFilterText{};
     EditorSelectionModel* m_selection = nullptr;
     SnAPI::UI::TDelegate<void(NodeHandle)> m_onHierarchyNodeChosen{};
+    SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onHierarchyActionRequested{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
     std::size_t m_boundInspectorComponentSignature = 0;
     bool m_invalidationDebugOverlayEnabled = false;
+    SnAPI::UI::PropertyMap m_viewModel{};
     bool m_built = false;
 };
 

@@ -13,6 +13,8 @@
 #include "RigidBodyComponent.h"
 #endif
 #include "GameRuntime.h"
+#include "Level.h"
+#include "NodeGraph.h"
 #include "StaticMeshComponent.h"
 #include "TransformComponent.h"
 #include "World.h"
@@ -202,9 +204,9 @@ bool ConfigurePhysics(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
 }
 #endif
 
-bool SpawnPrimitive(World& WorldRef, const PrimitiveSpawnSpec& Spec, std::vector<NodeHandle>& OutNodes)
+bool SpawnPrimitive(NodeGraph& GraphRef, const PrimitiveSpawnSpec& Spec, std::vector<NodeHandle>& OutNodes)
 {
-    auto NodeResult = WorldRef.CreateNode(Spec.Name);
+    auto NodeResult = GraphRef.CreateNode(Spec.Name);
     if (!NodeResult)
     {
         return false;
@@ -214,7 +216,7 @@ bool SpawnPrimitive(World& WorldRef, const PrimitiveSpawnSpec& Spec, std::vector
     BaseNode* Node = Handle.Borrowed();
     if (!Node)
     {
-        (void)WorldRef.DestroyNode(Handle);
+        (void)GraphRef.DestroyNode(Handle);
         return false;
     }
 
@@ -224,7 +226,7 @@ bool SpawnPrimitive(World& WorldRef, const PrimitiveSpawnSpec& Spec, std::vector
 #endif
     if (!Success)
     {
-        (void)WorldRef.DestroyNode(Handle);
+        (void)GraphRef.DestroyNode(Handle);
         return false;
     }
 
@@ -238,7 +240,7 @@ Quat PitchDegrees(const float Degrees)
                                          SnAPI::Math::Vector3::UnitX()));
 }
 
-void BuildPlatformingScene(World& WorldRef, std::vector<NodeHandle>& OutNodes)
+void BuildPlatformingScene(NodeGraph& GraphRef, std::vector<NodeHandle>& OutNodes)
 {
     std::vector<PrimitiveSpawnSpec> Specs{};
     Specs.reserve(16);
@@ -453,7 +455,7 @@ void BuildPlatformingScene(World& WorldRef, std::vector<NodeHandle>& OutNodes)
 
     for (const PrimitiveSpawnSpec& Spec : Specs)
     {
-        (void)SpawnPrimitive(WorldRef, Spec, OutNodes);
+        (void)SpawnPrimitive(GraphRef, Spec, OutNodes);
     }
 }
 } // namespace
@@ -471,6 +473,10 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(MakeError(EErrorCode::NotReady, "Renderer system is not initialized"));
     }
 
+    if (!m_levelNode.IsNull() && m_levelNode.Borrowed() == nullptr)
+    {
+        m_levelNode = {};
+    }
     if (!m_cameraNode.IsNull() && m_cameraNode.Borrowed() == nullptr)
     {
         m_cameraNode = {};
@@ -480,7 +486,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
                                       [](const NodeHandle& Handle) { return Handle.IsNull() || Handle.Borrowed() == nullptr; }),
                        m_sceneNodes.end());
 
-    if (!m_cameraNode.IsNull() && !m_sceneNodes.empty())
+    if (!m_levelNode.IsNull() && !m_cameraNode.IsNull() && !m_sceneNodes.empty())
     {
         SyncActiveCamera(*WorldPtr);
         if (m_cameraComponent)
@@ -493,10 +499,25 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
     {
         if (!It->IsNull())
         {
-            (void)WorldPtr->DestroyNode(*It);
+            BaseNode* Node = It->Borrowed();
+            NodeGraph* OwnerGraph = Node ? Node->OwnerGraph() : nullptr;
+            if (OwnerGraph)
+            {
+                (void)OwnerGraph->DestroyNode(*It);
+            }
+            else
+            {
+                (void)WorldPtr->DestroyNode(*It);
+            }
         }
     }
     m_sceneNodes.clear();
+
+    if (!m_levelNode.IsNull())
+    {
+        (void)WorldPtr->DestroyNode(m_levelNode);
+        m_levelNode = {};
+    }
 
     if (!m_cameraNode.IsNull())
     {
@@ -504,6 +525,20 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         m_cameraNode = {};
     }
     m_cameraComponent = nullptr;
+
+    auto LevelNodeResult = WorldPtr->CreateLevel("Level");
+    if (!LevelNodeResult)
+    {
+        return std::unexpected(LevelNodeResult.error());
+    }
+
+    auto* LevelNode = dynamic_cast<Level*>(LevelNodeResult->Borrowed());
+    if (!LevelNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow editor level node"));
+    }
+
+    m_levelNode = LevelNodeResult.value();
 
     auto CameraNodeResult = WorldPtr->CreateNode("EditorCamera");
     if (!CameraNodeResult)
@@ -561,7 +596,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
     m_cameraNode = CameraNodeResult.value();
     m_cameraComponent = Camera;
 
-    BuildPlatformingScene(*WorldPtr, m_sceneNodes);
+    BuildPlatformingScene(*LevelNode, m_sceneNodes);
 
     SyncActiveCamera(*WorldPtr);
     return Ok();
@@ -577,8 +612,22 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
             {
                 if (!It->IsNull())
                 {
-                    (void)WorldPtr->DestroyNode(*It);
+                    BaseNode* Node = It->Borrowed();
+                    NodeGraph* OwnerGraph = Node ? Node->OwnerGraph() : nullptr;
+                    if (OwnerGraph)
+                    {
+                        (void)OwnerGraph->DestroyNode(*It);
+                    }
+                    else
+                    {
+                        (void)WorldPtr->DestroyNode(*It);
+                    }
                 }
+            }
+
+            if (!m_levelNode.IsNull())
+            {
+                (void)WorldPtr->DestroyNode(m_levelNode);
             }
 
             if (!m_cameraNode.IsNull())
@@ -588,6 +637,7 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
         }
     }
 
+    m_levelNode = {};
     m_cameraNode = {};
     m_sceneNodes.clear();
     m_cameraComponent = nullptr;
@@ -677,6 +727,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
 void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
 {
     (void)Runtime;
+    m_levelNode = {};
     m_cameraNode = {};
     m_sceneNodes.clear();
     m_cameraComponent = nullptr;

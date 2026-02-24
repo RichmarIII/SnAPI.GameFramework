@@ -3,18 +3,22 @@
 #if defined(SNAPI_GF_ENABLE_UI)
 
 #include <cstdint>
+#include <cstddef>
 #include <array>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 #include "Export.h"
+#include "Handles.h"
 #include "Math.h"
 #include "StaticTypeId.h"
 #include "TypeRegistry.h"
 #include "Uuid.h"
 
 #include <UIAccordion.h>
+#include <UIDelegates.h>
+#include <UIEvents.h>
 #include <UIScrollContainer.h>
 
 namespace SnAPI::GameFramework
@@ -44,6 +48,8 @@ public:
   bool BindNode(BaseNode* Node);
   void ClearObject();
   void RefreshFromModel();
+  void SetComponentContextMenuHandler(
+    SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)> Handler);
 
   void OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context) override;
   void Paint(SnAPI::UI::UIPaintContext& Context) const override;
@@ -81,12 +87,12 @@ private:
     TypeId FieldType{};
     EEditorKind EditorKind = EEditorKind::Unsupported;
     bool ReadOnly = false;
+    std::uint64_t Generation = 0;
     SnAPI::UI::ElementId EditorId{};
     std::array<SnAPI::UI::ElementId, 4> ComponentEditorIds{};
     std::uint8_t ComponentCount = 0;
-    std::array<double, 4> LastComponents{};
-    std::string LastText{};
-    bool LastBool = false;
+    std::size_t EditorHookHandle = 0;
+    std::array<std::size_t, 4> ComponentHookHandles{};
   };
 
   struct BoundSection
@@ -94,6 +100,8 @@ private:
     TypeId Type{};
     void* Instance = nullptr;
     std::string Heading{};
+    NodeHandle ComponentOwner{};
+    bool IsComponent = false;
   };
 
   bool RebuildUi();
@@ -150,17 +158,32 @@ private:
   [[nodiscard]] std::string FormatQuat(const Quat& Value) const;
   [[nodiscard]] std::string FormatColor(const SnAPI::UI::Color& Value) const;
 
+  FieldBinding* ResolveLiveBinding(std::size_t BindingIndex, std::uint64_t Generation);
+  [[nodiscard]] bool IsEditorFocused(const FieldBinding& Binding) const;
+  void AttachEditorHooks(std::size_t BindingIndex);
+  void ClearBindingHooks();
+  void CommitBindingFromEditor(
+    std::size_t BindingIndex,
+    std::uint64_t Generation,
+    std::string_view TextValue,
+    bool BoolValue);
+  void CommitBindingFromComponents(std::size_t BindingIndex, std::uint64_t Generation);
+  void SyncBindingToEditor(FieldBinding& Binding);
+
   void SyncModelToEditors();
-  void SyncEditorsToModel();
 
   TypeId m_BoundType{};
   void* m_BoundInstance = nullptr;
   std::vector<BoundSection> m_BoundSections{};
   SnAPI::UI::ElementId m_ContentRoot{};
   std::vector<FieldBinding> m_Bindings{};
+  std::uint64_t m_BindingGeneration = 0;
   bool m_Built = false;
   bool m_RebuildInProgress = false;
-  mutable bool m_PaintSyncInProgress = false;
+  bool m_SyncingModelToEditors = false;
+  bool m_CommittingEditorToModel = false;
+  SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)>
+    m_OnComponentContextMenuRequested{};
 };
 
 } // namespace SnAPI::GameFramework

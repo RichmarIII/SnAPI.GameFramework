@@ -154,6 +154,22 @@ constexpr Color kAxisW{220, 196, 138, 255};
   return std::fabs(A - B) <= Epsilon;
 }
 
+struct ScopedFlag
+{
+  explicit ScopedFlag(bool& FlagRef)
+    : Flag(FlagRef)
+  {
+    Flag = true;
+  }
+
+  ~ScopedFlag()
+  {
+    Flag = false;
+  }
+
+  bool& Flag;
+};
+
 [[nodiscard]] bool ParseComponentList(std::string_view Text, double* OutValues, const size_t Count)
 {
   if (!OutValues || Count == 0)
@@ -430,7 +446,9 @@ bool UIPropertyPanel::BindObject(const TypeId& Type, void* Instance)
   m_BoundSections.push_back(BoundSection{
     .Type = Type,
     .Instance = Instance,
-    .Heading = PrettyTypeName(Type)});
+    .Heading = PrettyTypeName(Type),
+    .ComponentOwner = {},
+    .IsComponent = false});
 
   if (!RebuildUi())
   {
@@ -467,7 +485,9 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
   m_BoundSections.push_back(BoundSection{
     .Type = Node->TypeKey(),
     .Instance = Node,
-    .Heading = std::move(nodeHeading)});
+    .Heading = std::move(nodeHeading),
+    .ComponentOwner = {},
+    .IsComponent = false});
 
   NodeHandle ComponentOwner = Node->Handle();
   if (auto* OwnerGraph = Node->OwnerGraph())
@@ -509,7 +529,9 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
     m_BoundSections.push_back(BoundSection{
       .Type = ComponentType,
       .Instance = ComponentInstance,
-      .Heading = PrettyTypeName(ComponentType)});
+      .Heading = PrettyTypeName(ComponentType),
+      .ComponentOwner = ComponentOwner,
+      .IsComponent = true});
   }
 
   if (!RebuildUi())
@@ -523,6 +545,9 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
 
 void UIPropertyPanel::ClearObject()
 {
+  ++m_BindingGeneration;
+  ClearBindingHooks();
+
   m_BoundType = TypeId{};
   m_BoundInstance = nullptr;
   m_BoundSections.clear();
@@ -542,37 +567,19 @@ void UIPropertyPanel::RefreshFromModel()
   SyncModelToEditors();
 }
 
+void UIPropertyPanel::SetComponentContextMenuHandler(
+  SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)> Handler)
+{
+  m_OnComponentContextMenuRequested = std::move(Handler);
+}
+
 void UIPropertyPanel::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 {
   UIScrollContainer::OnRoutedEvent(Context);
-
-  if (!m_BoundInstance)
-  {
-    return;
-  }
-
-  const uint32_t typeId = Context.TypeId();
-  if (typeId == SnAPI::UI::RoutedEventTypes::PointerUp.Id ||
-      typeId == SnAPI::UI::RoutedEventTypes::KeyDown.Id ||
-      typeId == SnAPI::UI::RoutedEventTypes::TextInput.Id)
-  {
-    SyncEditorsToModel();
-  }
 }
 
 void UIPropertyPanel::Paint(SnAPI::UI::UIPaintContext& Context) const
 {
-  if (m_BoundInstance && !m_PaintSyncInProgress)
-  {
-    auto* self = const_cast<UIPropertyPanel*>(this);
-    self->m_PaintSyncInProgress = true;
-    // Pull current control state first so interaction changes from this frame
-    // are not overwritten by the model->editor refresh pass below.
-    self->SyncEditorsToModel();
-    self->SyncModelToEditors();
-    self->m_PaintSyncInProgress = false;
-  }
-
   UIScrollContainer::Paint(Context);
 }
 
@@ -590,6 +597,8 @@ bool UIPropertyPanel::RebuildUi()
   m_RebuildInProgress = true;
 
   // Property panel is single-content by design.
+  ++m_BindingGeneration;
+  ClearBindingHooks();
   m_ContentRoot = {};
   std::fill(std::begin(m_Children), std::end(m_Children), SnAPI::UI::ElementId{});
   m_ChildCount = 0;
@@ -623,7 +632,9 @@ bool UIPropertyPanel::RebuildUi()
     m_BoundSections.push_back(BoundSection{
       .Type = m_BoundType,
       .Instance = m_BoundInstance,
-      .Heading = PrettyTypeName(m_BoundType)});
+      .Heading = PrettyTypeName(m_BoundType),
+      .ComponentOwner = {},
+      .IsComponent = false});
   }
 
   if (m_BoundSections.size() == 1)
@@ -670,8 +681,21 @@ bool UIPropertyPanel::RebuildUi()
         accordion->HeaderTextExpandedColor().Set(Color{230, 234, 241, 255});
         accordion->HeaderBorderColor().Set(kCardBorder);
         accordion->HeaderBorderThickness().Set(1.0f);
-        accordion->ArrowSize().Set(6.0f);
+        accordion->ArrowSize().Set(18.0f);
         accordion->ArrowGap().Set(6.0f);
+        if (Section.IsComponent && !Section.ComponentOwner.IsNull())
+        {
+          const NodeHandle ComponentOwner = Section.ComponentOwner;
+          const TypeId ComponentType = Section.Type;
+          accordion->OnSectionContextMenuRequested(
+            [this, ComponentOwner, ComponentType](
+              const int32_t, const SnAPI::UI::ElementId, const SnAPI::UI::PointerEvent& Event) {
+              if (m_OnComponentContextMenuRequested)
+              {
+                m_OnComponentContextMenuRequested(ComponentOwner, ComponentType, Event);
+              }
+            });
+        }
       }
 
       const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.SectionBody");
@@ -834,7 +858,7 @@ void UIPropertyPanel::AddFieldEditor(
       accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
       accordion->HeaderBorderColor().Set(kCardBorder);
       accordion->HeaderBorderThickness().Set(1.0f);
-      accordion->ArrowSize().Set(6.0f);
+      accordion->ArrowSize().Set(18.0f);
       accordion->ArrowGap().Set(6.0f);
     }
 
@@ -954,6 +978,7 @@ void UIPropertyPanel::AddFieldEditor(
   binding.FieldType = Field.FieldType;
   binding.EditorKind = editorKind;
   binding.ReadOnly = readOnly;
+  binding.Generation = m_BindingGeneration;
 
   if (editorKind == EEditorKind::Bool && !readOnly)
   {
@@ -972,10 +997,8 @@ void UIPropertyPanel::AddFieldEditor(
       checkbox->VAlign().Set(SnAPI::UI::EAlignment::Center);
       checkbox->Label().Set(std::string{});
       checkbox->BoxSize().Set(12.0f);
-      checkbox->BorderThickness().Set(1.0f);
       checkbox->CheckInset().Set(2.0f);
-      checkbox->BoxColor().Set(kValueBg);
-      checkbox->CheckColor().Set(Color{220, 202, 168, 255});
+      checkbox->ElementStyle().Apply("editor.checkbox");
     }
   }
   else if (editorKind == EEditorKind::Enum)
@@ -1038,7 +1061,7 @@ void UIPropertyPanel::AddFieldEditor(
     {
       numberField->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
       numberField->Height().Set(SnAPI::UI::Sizing::Auto());
-      numberField->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      numberField->HAlign().Set(SnAPI::UI::EAlignment::Center);
       numberField->VAlign().Set(SnAPI::UI::EAlignment::Center);
       numberField->ShowSpinButtons().Set(true);
       numberField->AllowTextInput().Set(true);
@@ -1174,7 +1197,7 @@ void UIPropertyPanel::AddFieldEditor(
       {
         numberField->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
         numberField->Height().Set(SnAPI::UI::Sizing::Auto());
-        numberField->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        numberField->HAlign().Set(SnAPI::UI::EAlignment::Center);
         numberField->VAlign().Set(SnAPI::UI::EAlignment::Center);
         numberField->ShowSpinButtons().Set(true);
         numberField->AllowTextInput().Set(true);
@@ -1243,7 +1266,9 @@ void UIPropertyPanel::AddFieldEditor(
     }
   }
 
+  const std::size_t bindingIndex = m_Bindings.size();
   m_Bindings.push_back(std::move(binding));
+  AttachEditorHooks(bindingIndex);
 }
 
 void UIPropertyPanel::AddUnsupportedRow(
@@ -2094,6 +2119,446 @@ std::string UIPropertyPanel::FormatColor(const SnAPI::UI::Color& Value) const
   return FormatComponentValues(components);
 }
 
+UIPropertyPanel::FieldBinding* UIPropertyPanel::ResolveLiveBinding(
+  const std::size_t BindingIndex,
+  const std::uint64_t Generation)
+{
+  if (Generation != m_BindingGeneration || BindingIndex >= m_Bindings.size())
+  {
+    return nullptr;
+  }
+
+  FieldBinding& binding = m_Bindings[BindingIndex];
+  if (binding.Generation != Generation)
+  {
+    return nullptr;
+  }
+
+  return &binding;
+}
+
+bool UIPropertyPanel::IsEditorFocused(const FieldBinding& Binding) const
+{
+  if (!m_Context)
+  {
+    return false;
+  }
+
+  if (Binding.ComponentCount > 0)
+  {
+    for (std::uint8_t index = 0; index < Binding.ComponentCount; ++index)
+    {
+      const SnAPI::UI::ElementId componentId = Binding.ComponentEditorIds[index];
+      if (componentId.Value == 0)
+      {
+        continue;
+      }
+
+      auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+      if (numberField && numberField->IsFocused())
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (Binding.EditorKind == EEditorKind::Enum)
+  {
+    auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(Binding.EditorId));
+    return comboBox && comboBox->IsFocused();
+  }
+
+  if (Binding.EditorKind == EEditorKind::Bool)
+  {
+    auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(Binding.EditorId));
+    return checkbox && checkbox->IsFocused();
+  }
+
+  auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(Binding.EditorId));
+  return textInput && textInput->IsFocused();
+}
+
+void UIPropertyPanel::AttachEditorHooks(const std::size_t BindingIndex)
+{
+  if (!m_Context || BindingIndex >= m_Bindings.size())
+  {
+    return;
+  }
+
+  FieldBinding& binding = m_Bindings[BindingIndex];
+  if (binding.ReadOnly || binding.EditorId.Value == 0)
+  {
+    return;
+  }
+
+  const std::uint64_t generation = binding.Generation;
+
+  if (binding.EditorKind == EEditorKind::Bool)
+  {
+    auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(binding.EditorId));
+    if (!checkbox)
+    {
+      return;
+    }
+
+    binding.EditorHookHandle = checkbox->Checked().AddSetHook([this, BindingIndex, generation](const bool Value) {
+      CommitBindingFromEditor(BindingIndex, generation, {}, Value);
+    });
+    return;
+  }
+
+  if (binding.EditorKind == EEditorKind::Enum)
+  {
+    auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(binding.EditorId));
+    if (!comboBox)
+    {
+      return;
+    }
+
+    binding.EditorHookHandle =
+      comboBox->SelectedIndex().AddSetHook([this, BindingIndex, generation](const std::int32_t Index) {
+        if (Index < 0)
+        {
+          return;
+        }
+
+        FieldBinding* liveBinding = ResolveLiveBinding(BindingIndex, generation);
+        if (!liveBinding || !m_Context)
+        {
+          return;
+        }
+
+        auto* liveComboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(liveBinding->EditorId));
+        if (!liveComboBox)
+        {
+          return;
+        }
+
+        const std::string selectedText = liveComboBox->SelectedText();
+        if (selectedText.empty())
+        {
+          return;
+        }
+
+        CommitBindingFromEditor(BindingIndex, generation, selectedText, false);
+      });
+    return;
+  }
+
+  if (binding.ComponentCount > 0)
+  {
+    for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+    {
+      const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
+      if (componentId.Value == 0)
+      {
+        continue;
+      }
+
+      auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+      if (!numberField)
+      {
+        continue;
+      }
+
+      binding.ComponentHookHandles[index] = numberField->Value().AddSetHook(
+        [this, BindingIndex, generation](const double /*Value*/) {
+          CommitBindingFromComponents(BindingIndex, generation);
+        });
+    }
+    return;
+  }
+
+  auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(binding.EditorId));
+  if (!textInput)
+  {
+    return;
+  }
+
+  binding.EditorHookHandle = textInput->Text().AddSetHook([this, BindingIndex, generation](const std::string& Value) {
+    CommitBindingFromEditor(BindingIndex, generation, Value, false);
+  });
+}
+
+void UIPropertyPanel::ClearBindingHooks()
+{
+  if (!m_Context)
+  {
+    return;
+  }
+
+  for (FieldBinding& binding : m_Bindings)
+  {
+    if (binding.EditorHookHandle != 0 && binding.EditorId.Value != 0)
+    {
+      if (binding.EditorKind == EEditorKind::Bool)
+      {
+        if (auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(binding.EditorId)))
+        {
+          (void)checkbox->Checked().RemoveSetHook(binding.EditorHookHandle);
+        }
+      }
+      else if (binding.EditorKind == EEditorKind::Enum)
+      {
+        if (auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(binding.EditorId)))
+        {
+          (void)comboBox->SelectedIndex().RemoveSetHook(binding.EditorHookHandle);
+        }
+      }
+      else if (auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(binding.EditorId)))
+      {
+        (void)textInput->Text().RemoveSetHook(binding.EditorHookHandle);
+      }
+    }
+    binding.EditorHookHandle = 0;
+
+    for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
+    {
+      const std::size_t handle = binding.ComponentHookHandles[index];
+      const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
+      if (handle == 0 || componentId.Value == 0)
+      {
+        continue;
+      }
+
+      if (auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId)))
+      {
+        (void)numberField->Value().RemoveSetHook(handle);
+      }
+      binding.ComponentHookHandles[index] = 0;
+    }
+  }
+}
+
+void UIPropertyPanel::CommitBindingFromEditor(
+  const std::size_t BindingIndex,
+  const std::uint64_t Generation,
+  const std::string_view TextValue,
+  const bool BoolValue)
+{
+  if (m_SyncingModelToEditors || m_CommittingEditorToModel)
+  {
+    return;
+  }
+
+  FieldBinding* binding = ResolveLiveBinding(BindingIndex, Generation);
+  if (!binding || binding->ReadOnly)
+  {
+    return;
+  }
+
+  ScopedFlag guard(m_CommittingEditorToModel);
+  if (!WriteFieldValue(*binding, TextValue, BoolValue) && !IsEditorFocused(*binding))
+  {
+    SyncBindingToEditor(*binding);
+  }
+}
+
+void UIPropertyPanel::CommitBindingFromComponents(
+  const std::size_t BindingIndex,
+  const std::uint64_t Generation)
+{
+  if (m_SyncingModelToEditors || m_CommittingEditorToModel || !m_Context)
+  {
+    return;
+  }
+
+  FieldBinding* binding = ResolveLiveBinding(BindingIndex, Generation);
+  if (!binding || binding->ReadOnly || binding->ComponentCount == 0)
+  {
+    return;
+  }
+
+  std::array<double, 4> currentComponents{};
+  bool hasAnyComponent = false;
+  for (std::uint8_t index = 0; index < binding->ComponentCount; ++index)
+  {
+    const SnAPI::UI::ElementId componentId = binding->ComponentEditorIds[index];
+    if (componentId.Value == 0)
+    {
+      continue;
+    }
+
+    auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+    if (!numberField)
+    {
+      continue;
+    }
+
+    hasAnyComponent = true;
+    currentComponents[index] = numberField->GetValue();
+  }
+
+  if (!hasAnyComponent)
+  {
+    return;
+  }
+
+  std::string nextText{};
+  switch (binding->EditorKind)
+  {
+  case EEditorKind::Signed:
+    nextText = std::to_string(static_cast<std::int64_t>(std::llround(currentComponents[0])));
+    break;
+  case EEditorKind::Unsigned:
+    nextText = std::to_string(static_cast<std::uint64_t>(std::max<std::int64_t>(
+      0,
+      static_cast<std::int64_t>(std::llround(currentComponents[0])))));
+    break;
+  case EEditorKind::Float:
+  case EEditorKind::Double:
+    nextText = FormatNumber(currentComponents[0]);
+    break;
+  case EEditorKind::Vec2:
+    nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 2));
+    break;
+  case EEditorKind::Vec3:
+    nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 3));
+    break;
+  case EEditorKind::Vec4:
+  case EEditorKind::Quat:
+    nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 4));
+    break;
+  case EEditorKind::Color:
+    {
+      std::array<double, 4> colorChannels{
+        static_cast<double>(std::clamp(std::llround(currentComponents[0]), 0ll, 255ll)),
+        static_cast<double>(std::clamp(std::llround(currentComponents[1]), 0ll, 255ll)),
+        static_cast<double>(std::clamp(std::llround(currentComponents[2]), 0ll, 255ll)),
+        static_cast<double>(std::clamp(std::llround(currentComponents[3]), 0ll, 255ll))};
+      nextText = FormatComponentValues(colorChannels);
+      break;
+    }
+  default:
+    break;
+  }
+
+  if (nextText.empty())
+  {
+    return;
+  }
+
+  ScopedFlag guard(m_CommittingEditorToModel);
+  if (!WriteFieldValue(*binding, nextText, false) && !IsEditorFocused(*binding))
+  {
+    SyncBindingToEditor(*binding);
+  }
+}
+
+void UIPropertyPanel::SyncBindingToEditor(FieldBinding& Binding)
+{
+  if (!m_Context || Binding.EditorId.Value == 0)
+  {
+    return;
+  }
+
+  std::string textValue{};
+  bool boolValue = false;
+  if (!ReadFieldValue(Binding, textValue, boolValue))
+  {
+    return;
+  }
+
+  SnAPI::UI::IUIElement& element = m_Context->GetElement(Binding.EditorId);
+  if (Binding.EditorKind == EEditorKind::Bool && !Binding.ReadOnly)
+  {
+    auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&element);
+    if (!checkbox)
+    {
+      return;
+    }
+
+    if (checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false) != boolValue)
+    {
+      checkbox->Checked().Set(boolValue);
+    }
+    return;
+  }
+
+  if (Binding.EditorKind == EEditorKind::Enum)
+  {
+    auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&element);
+    if (!comboBox || comboBox->IsFocused())
+    {
+      return;
+    }
+
+    if (!comboBox->SelectByText(textValue, false))
+    {
+      comboBox->SetSelectedIndex(-1, false);
+    }
+    return;
+  }
+
+  if (Binding.ComponentCount > 0)
+  {
+    std::array<double, 4> nextComponents{};
+    bool parseOk = true;
+
+    switch (Binding.EditorKind)
+    {
+    case EEditorKind::Signed:
+    case EEditorKind::Unsigned:
+    case EEditorKind::Float:
+    case EEditorKind::Double:
+      parseOk = ParseDouble(textValue, nextComponents[0]);
+      break;
+    case EEditorKind::Vec2:
+      parseOk = ParseComponentList(textValue, nextComponents.data(), 2);
+      break;
+    case EEditorKind::Vec3:
+      parseOk = ParseComponentList(textValue, nextComponents.data(), 3);
+      break;
+    case EEditorKind::Vec4:
+    case EEditorKind::Quat:
+    case EEditorKind::Color:
+      parseOk = ParseComponentList(textValue, nextComponents.data(), 4);
+      break;
+    default:
+      parseOk = false;
+      break;
+    }
+
+    if (!parseOk || IsEditorFocused(Binding))
+    {
+      return;
+    }
+
+    for (std::uint8_t index = 0; index < Binding.ComponentCount; ++index)
+    {
+      const SnAPI::UI::ElementId componentId = Binding.ComponentEditorIds[index];
+      if (componentId.Value == 0)
+      {
+        continue;
+      }
+
+      auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
+      if (!numberField)
+      {
+        continue;
+      }
+
+      if (!NearlyEqual(numberField->GetValue(), nextComponents[index]))
+      {
+        (void)numberField->SetValue(nextComponents[index], false);
+      }
+    }
+    return;
+  }
+
+  auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&element);
+  if (!textInput || textInput->IsFocused())
+  {
+    return;
+  }
+
+  if (textInput->Properties().GetPropertyOr(SnAPI::UI::UITextInput::TextKey, std::string{}) != textValue)
+  {
+    textInput->Text().Set(textValue);
+  }
+}
+
 void UIPropertyPanel::SyncModelToEditors()
 {
   if (!m_Context || !m_BoundInstance)
@@ -2101,407 +2566,10 @@ void UIPropertyPanel::SyncModelToEditors()
     return;
   }
 
+  ScopedFlag guard(m_SyncingModelToEditors);
   for (FieldBinding& binding : m_Bindings)
   {
-    if (binding.EditorId.Value == 0)
-    {
-      continue;
-    }
-
-    std::string textValue{};
-    bool boolValue = false;
-    if (!ReadFieldValue(binding, textValue, boolValue))
-    {
-      continue;
-    }
-
-    SnAPI::UI::IUIElement& element = m_Context->GetElement(binding.EditorId);
-    if (binding.EditorKind == EEditorKind::Bool && !binding.ReadOnly)
-    {
-      auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&element);
-      if (!checkbox)
-      {
-        continue;
-      }
-
-      if (checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false) != boolValue)
-      {
-        checkbox->Checked().Set(boolValue);
-      }
-      binding.LastBool = boolValue;
-      continue;
-    }
-
-    if (binding.EditorKind == EEditorKind::Enum)
-    {
-      auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&element);
-      if (!comboBox)
-      {
-        continue;
-      }
-
-      // Preserve in-progress user interaction.
-      if (comboBox->IsFocused())
-      {
-        continue;
-      }
-
-      if (!comboBox->SelectByText(textValue, false))
-      {
-        comboBox->SetSelectedIndex(-1, false);
-      }
-      binding.LastText = textValue;
-      continue;
-    }
-
-    if (binding.ComponentCount > 0)
-    {
-      bool hasFocusedComponent = false;
-      std::array<double, 4> nextComponents{};
-      bool parseOk = true;
-
-      switch (binding.EditorKind)
-      {
-      case EEditorKind::Signed:
-      case EEditorKind::Unsigned:
-      case EEditorKind::Float:
-      case EEditorKind::Double:
-        {
-          parseOk = ParseDouble(textValue, nextComponents[0]);
-          break;
-        }
-      case EEditorKind::Vec2:
-        parseOk = ParseComponentList(textValue, nextComponents.data(), 2);
-        break;
-      case EEditorKind::Vec3:
-        parseOk = ParseComponentList(textValue, nextComponents.data(), 3);
-        break;
-      case EEditorKind::Vec4:
-      case EEditorKind::Quat:
-      case EEditorKind::Color:
-        parseOk = ParseComponentList(textValue, nextComponents.data(), 4);
-        break;
-      default:
-        parseOk = false;
-        break;
-      }
-
-      if (!parseOk)
-      {
-        continue;
-      }
-
-      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
-      {
-        const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
-        if (componentId.Value == 0)
-        {
-          continue;
-        }
-
-        auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
-        if (!numberField)
-        {
-          continue;
-        }
-
-        hasFocusedComponent = hasFocusedComponent || numberField->IsFocused();
-      }
-
-      if (hasFocusedComponent)
-      {
-        continue;
-      }
-
-      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
-      {
-        const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
-        if (componentId.Value == 0)
-        {
-          continue;
-        }
-
-        auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
-        if (!numberField)
-        {
-          continue;
-        }
-
-        (void)numberField->SetValue(nextComponents[index], false);
-      }
-
-      binding.LastComponents = nextComponents;
-      binding.LastText = textValue;
-      continue;
-    }
-
-    auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&element);
-    if (!textInput)
-    {
-      continue;
-    }
-
-    // Preserve in-progress user edits.
-    if (textInput->IsFocused())
-    {
-      continue;
-    }
-
-    if (textInput->Properties().GetPropertyOr(SnAPI::UI::UITextInput::TextKey, std::string{}) != textValue)
-    {
-      textInput->Text().Set(textValue);
-    }
-    binding.LastText = textValue;
-  }
-}
-
-void UIPropertyPanel::SyncEditorsToModel()
-{
-  if (!m_Context || !m_BoundInstance)
-  {
-    return;
-  }
-
-  for (FieldBinding& binding : m_Bindings)
-  {
-    if (binding.EditorId.Value == 0 || binding.ReadOnly)
-    {
-      continue;
-    }
-
-    SnAPI::UI::IUIElement& element = m_Context->GetElement(binding.EditorId);
-
-    if (binding.EditorKind == EEditorKind::Bool)
-    {
-      auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&element);
-      if (!checkbox)
-      {
-        continue;
-      }
-
-      const bool currentValue = checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false);
-      if (currentValue == binding.LastBool)
-      {
-        continue;
-      }
-
-      if (WriteFieldValue(binding, {}, currentValue))
-      {
-        binding.LastBool = currentValue;
-      }
-      continue;
-    }
-
-    if (binding.EditorKind == EEditorKind::Enum)
-    {
-      auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&element);
-      if (!comboBox)
-      {
-        continue;
-      }
-
-      const std::string currentText = comboBox->SelectedText();
-      if (currentText.empty() || currentText == binding.LastText)
-      {
-        continue;
-      }
-
-      if (WriteFieldValue(binding, currentText, false))
-      {
-        binding.LastText = currentText;
-        continue;
-      }
-
-      if (!comboBox->IsFocused())
-      {
-        std::string modelText{};
-        bool modelBool = false;
-        if (ReadFieldValue(binding, modelText, modelBool))
-        {
-          if (!comboBox->SelectByText(modelText, false))
-          {
-            comboBox->SetSelectedIndex(-1, false);
-          }
-          binding.LastText = modelText;
-        }
-      }
-      continue;
-    }
-
-    if (binding.ComponentCount > 0)
-    {
-      std::array<double, 4> currentComponents = binding.LastComponents;
-      bool hasFocusedComponent = false;
-      bool hasAnyComponent = false;
-
-      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
-      {
-        const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
-        if (componentId.Value == 0)
-        {
-          continue;
-        }
-
-        auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
-        if (!numberField)
-        {
-          continue;
-        }
-
-        hasAnyComponent = true;
-        currentComponents[index] = numberField->GetValue();
-        hasFocusedComponent = hasFocusedComponent || numberField->IsFocused();
-      }
-
-      if (!hasAnyComponent)
-      {
-        continue;
-      }
-
-      bool changed = false;
-      for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
-      {
-        if (!NearlyEqual(currentComponents[index], binding.LastComponents[index]))
-        {
-          changed = true;
-          break;
-        }
-      }
-
-      if (!changed)
-      {
-        continue;
-      }
-
-      std::string nextText{};
-      switch (binding.EditorKind)
-      {
-      case EEditorKind::Signed:
-        nextText = std::to_string(static_cast<std::int64_t>(std::llround(currentComponents[0])));
-        break;
-      case EEditorKind::Unsigned:
-        nextText = std::to_string(static_cast<std::uint64_t>(std::max<std::int64_t>(
-          0,
-          static_cast<std::int64_t>(std::llround(currentComponents[0])))));
-        break;
-      case EEditorKind::Float:
-      case EEditorKind::Double:
-        nextText = FormatNumber(currentComponents[0]);
-        break;
-      case EEditorKind::Vec2:
-        nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 2));
-        break;
-      case EEditorKind::Vec3:
-        nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 3));
-        break;
-      case EEditorKind::Vec4:
-      case EEditorKind::Quat:
-        nextText = FormatComponentValues(std::span<const double>(currentComponents.data(), 4));
-        break;
-      case EEditorKind::Color:
-        {
-          std::array<double, 4> colorChannels{
-            static_cast<double>(std::clamp(std::llround(currentComponents[0]), 0ll, 255ll)),
-            static_cast<double>(std::clamp(std::llround(currentComponents[1]), 0ll, 255ll)),
-            static_cast<double>(std::clamp(std::llround(currentComponents[2]), 0ll, 255ll)),
-            static_cast<double>(std::clamp(std::llround(currentComponents[3]), 0ll, 255ll))};
-          nextText = FormatComponentValues(colorChannels);
-          break;
-        }
-      default:
-        break;
-      }
-
-      if (!nextText.empty() && WriteFieldValue(binding, nextText, false))
-      {
-        binding.LastComponents = currentComponents;
-        binding.LastText = nextText;
-        continue;
-      }
-
-      if (!hasFocusedComponent)
-      {
-        std::string modelText{};
-        bool modelBool = false;
-        if (ReadFieldValue(binding, modelText, modelBool))
-        {
-          std::array<double, 4> modelComponents{};
-          bool parsed = false;
-          switch (binding.EditorKind)
-          {
-          case EEditorKind::Signed:
-          case EEditorKind::Unsigned:
-          case EEditorKind::Float:
-          case EEditorKind::Double:
-            parsed = ParseDouble(modelText, modelComponents[0]);
-            break;
-          case EEditorKind::Vec2:
-            parsed = ParseComponentList(modelText, modelComponents.data(), 2);
-            break;
-          case EEditorKind::Vec3:
-            parsed = ParseComponentList(modelText, modelComponents.data(), 3);
-            break;
-          case EEditorKind::Vec4:
-          case EEditorKind::Quat:
-          case EEditorKind::Color:
-            parsed = ParseComponentList(modelText, modelComponents.data(), 4);
-            break;
-          default:
-            break;
-          }
-
-          if (parsed)
-          {
-            for (std::uint8_t index = 0; index < binding.ComponentCount; ++index)
-            {
-              const SnAPI::UI::ElementId componentId = binding.ComponentEditorIds[index];
-              if (componentId.Value == 0)
-              {
-                continue;
-              }
-              auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(componentId));
-              if (!numberField)
-              {
-                continue;
-              }
-              (void)numberField->SetValue(modelComponents[index], false);
-            }
-            binding.LastComponents = modelComponents;
-            binding.LastText = modelText;
-          }
-        }
-      }
-      continue;
-    }
-
-    auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&element);
-    if (!textInput)
-    {
-      continue;
-    }
-
-    const std::string currentText = textInput->Properties().GetPropertyOr(SnAPI::UI::UITextInput::TextKey, std::string{});
-    if (currentText == binding.LastText)
-    {
-      continue;
-    }
-
-    if (WriteFieldValue(binding, currentText, false))
-    {
-      binding.LastText = currentText;
-      continue;
-    }
-
-    if (!textInput->IsFocused())
-    {
-      std::string modelText{};
-      bool modelBool = false;
-      if (ReadFieldValue(binding, modelText, modelBool))
-      {
-        textInput->Text().Set(modelText);
-        binding.LastText = modelText;
-      }
-    }
+    SyncBindingToEditor(binding);
   }
 }
 

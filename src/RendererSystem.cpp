@@ -2097,7 +2097,17 @@ bool RendererSystem::EnsureUiMaterialResources()
     if (!m_uiFallbackTexture)
     {
         SnAPI::Graphics::ImageCreateInfo ImageCI =
-            SnAPI::Graphics::ImageCreateInfo::DataDefault(SnAPI::Size2DU{1u, 1u}, SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm);
+            SnAPI::Graphics::ImageCreateInfo::VisualDefault(SnAPI::Size2DU{1u, 1u}, SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm, 1);
+        if (ImageCI.SamplerCreateInfo)
+        {
+            auto& Sampler = *ImageCI.SamplerCreateInfo;
+            Sampler.AddressModeU = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+            Sampler.AddressModeV = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+            Sampler.AddressModeW = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+            Sampler.MipmapMode = SnAPI::Graphics::EImageSamplerMipmapMode::Nearest;
+            Sampler.MinLod = 0.0f;
+            Sampler.MaxLod = 0.0f;
+        }
         ImageCI.Data = {255, 255, 255, 255};
         m_uiFallbackTexture = std::shared_ptr<SnAPI::Graphics::IGPUImage>(m_graphics->CreateImage2D(ImageCI).release());
         if (!m_uiFallbackTexture)
@@ -2192,8 +2202,18 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         return m_uiFallbackMaterialInstance;
     }
 
-    SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::DataDefault(
-        SnAPI::Size2DU{Pending.Width, Pending.Height}, SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm);
+    SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::VisualDefault(
+        SnAPI::Size2DU{Pending.Width, Pending.Height}, SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm, 1);
+    if (ImageCI.SamplerCreateInfo)
+    {
+        auto& Sampler = *ImageCI.SamplerCreateInfo;
+        Sampler.AddressModeU = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+        Sampler.AddressModeV = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+        Sampler.AddressModeW = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+        Sampler.MipmapMode = SnAPI::Graphics::EImageSamplerMipmapMode::Nearest;
+        Sampler.MinLod = 0.0f;
+        Sampler.MaxLod = 0.0f;
+    }
     ImageCI.Data = Pending.Pixels;
     auto Texture = std::shared_ptr<SnAPI::Graphics::IGPUImage>(m_graphics->CreateImage2D(ImageCI).release());
     if (!Texture)
@@ -2354,9 +2374,20 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         }
     }
 
-    SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::DataDefault(
+    SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::VisualDefault(
         SnAPI::Size2DU{kUiGradientTextureSize, kUiGradientTextureSize},
-        SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm);
+        SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm,
+        1);
+    if (ImageCI.SamplerCreateInfo)
+    {
+        auto& Sampler = *ImageCI.SamplerCreateInfo;
+        Sampler.AddressModeU = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+        Sampler.AddressModeV = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+        Sampler.AddressModeW = SnAPI::Graphics::EImageSamplerAddressMode::ClampToEdge;
+        Sampler.MipmapMode = SnAPI::Graphics::EImageSamplerMipmapMode::Nearest;
+        Sampler.MinLod = 0.0f;
+        Sampler.MaxLod = 0.0f;
+    }
     ImageCI.Data = std::move(PixelData);
     auto Texture = std::shared_ptr<SnAPI::Graphics::IGPUImage>(m_graphics->CreateImage2D(ImageCI).release());
     if (!Texture)
