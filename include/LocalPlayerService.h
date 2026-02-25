@@ -26,7 +26,7 @@ public:
 
     Result Initialize(GameplayHost& Host) override;
     void Tick(GameplayHost& Host, float DeltaSeconds) override;
-    void OnLocalPlayerAdded(GameplayHost& Host, NodeHandle PlayerHandle) override;
+    void OnLocalPlayerAdded(GameplayHost& Host, const NodeHandle& PlayerHandle) override;
     void OnLocalPlayerRemoved(GameplayHost& Host, const Uuid& PlayerId) override;
     void Shutdown(GameplayHost& Host) override;
 

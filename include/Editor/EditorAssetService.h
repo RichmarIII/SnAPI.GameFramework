@@ -58,7 +58,7 @@ public:
     Result DeleteSelectedAsset();
     Result RenameAssetByKey(std::string_view Key, std::string_view NewName);
     Result RenameSelectedAsset(std::string_view NewName);
-    Result CreateRuntimePrefabFromNode(EditorServiceContext& Context, NodeHandle SourceHandle);
+    Result CreateRuntimePrefabFromNode(EditorServiceContext& Context, const NodeHandle& SourceHandle);
 
     Result InstantiateArmedAsset(EditorServiceContext& Context);
     Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
@@ -77,7 +77,6 @@ private:
         const DiscoveredAsset& Asset) const;
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> BuildCookedPayloadForAsset(
         const DiscoveredAsset& Asset);
-    Result InstantiateNodeGraphAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
 

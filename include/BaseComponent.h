@@ -8,12 +8,14 @@
 
 #include "Handle.h"
 #include "Handles.h"
+#include "NodeComponentContracts.h"
 #include "Uuid.h"
+#include "WorldEcsRuntime.h"
 
 namespace SnAPI::GameFramework
 {
 
-class NodeGraph;
+class Level;
 class BaseNode;
 class IWorld;
 class Variant;
@@ -33,49 +35,49 @@ class Variant;
  * - `OwnerNode()` and `World()` are resolved dynamically through handle/graph links.
  * - Role helpers (`IsServer`/`IsClient`/`IsListenServer`) proxy world networking state.
  */
-class IComponent
+class BaseComponent
 {
 public:
     /**
-     * @brief Virtual destructor for interface.
+     * @brief Destructor.
      */
-    virtual ~IComponent() = default;
+    ~BaseComponent() = default;
 
     /**
      * @brief Called immediately after component creation.
      * @remarks Runs once after storage/owner identity is assigned and registration is complete.
      */
-    virtual void OnCreate() {}
+    void OnCreate() {}
     /**
      * @brief Called just before component destruction.
      * @remarks Runs during end-of-frame destroy flush or immediate clear path.
      */
-    virtual void OnDestroy() {}
+    void OnDestroy() {}
     /**
      * @brief Per-frame update hook.
      * @param DeltaSeconds Time since last tick.
      * @remarks Called from owning node traversal when node/component are active.
      */
-    virtual void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
+    void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Fixed-step update hook.
      * @param DeltaSeconds Fixed time step.
      * @remarks Intended for deterministic simulation work.
      */
-    virtual void FixedTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    void FixedTick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Late update hook.
      * @param DeltaSeconds Time since last tick.
      * @remarks Invoked after regular per-frame tick traversal.
      */
-    virtual void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
 
     /**
      * @brief Set the owning node handle.
      * @param InOwner Owner node handle.
      * @remarks Storage-managed setter; identity linkage should generally be mutated only by graph/storage code.
      */
-    void Owner(NodeHandle InOwner)
+    void Owner(const NodeHandle& InOwner)
     {
         m_owner = InOwner;
         m_ownerNode = InOwner.IsNull() ? nullptr : InOwner.Borrowed();
@@ -154,7 +156,7 @@ public:
      * @return TypeId value.
      * @remarks
      * Required for reflection RPC/serialization lookup when working through
-     * erased `IComponent` pointers.
+     * erased `BaseComponent` pointers.
      */
     const TypeId& TypeKey() const
     {
@@ -254,5 +256,7 @@ private:
     bool m_active = true; /**< @brief Runtime tick gate for this component instance. */
     bool m_replicated = false; /**< @brief Runtime replication gate for this component instance. */
 };
+
+static_assert(ComponentContractConcept<BaseComponent>);
 
 } // namespace SnAPI::GameFramework

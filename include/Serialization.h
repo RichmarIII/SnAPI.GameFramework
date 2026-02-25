@@ -23,7 +23,7 @@
 #include "Expected.h"
 #include "Handle.h"
 #include "Math.h"
-#include "NodeGraph.h"
+#include "Level.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
@@ -43,7 +43,8 @@ class World;
  */
 struct TSerializationContext
 {
-    const NodeGraph* Graph = nullptr; /**< @brief Graph being serialized/deserialized. */
+    const IWorld* World = nullptr; /**< @brief World context for world-owned node-handle resolution. */
+    const Level* Graph = nullptr; /**< @brief Optional level context for level-scoped handle resolution. */
 };
 
 /**
@@ -178,6 +179,14 @@ struct TValueCodec
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
             const Uuid Id(Bytes);
+            if (Context.World)
+            {
+                auto HandleResult = Context.World->NodeHandleById(Id);
+                if (HandleResult)
+                {
+                    return HandleResult.value();
+                }
+            }
             if (Context.Graph)
             {
                 auto HandleResult = Context.Graph->NodeHandleByIdSlow(Id);
@@ -199,7 +208,7 @@ struct TValueCodec
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
             const Uuid Id(Bytes);
-            if (auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(Id))
+            if (auto* Component = ObjectRegistry::Instance().Resolve<BaseComponent>(Id))
             {
                 return Component->Handle();
             }
@@ -269,6 +278,15 @@ struct TValueCodec
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
             const Uuid Id(Bytes);
+            if (Context.World)
+            {
+                auto HandleResult = Context.World->NodeHandleById(Id);
+                if (HandleResult)
+                {
+                    Value = HandleResult.value();
+                    return Ok();
+                }
+            }
             if (Context.Graph)
             {
                 auto HandleResult = Context.Graph->NodeHandleByIdSlow(Id);
@@ -295,7 +313,7 @@ struct TValueCodec
             std::array<uint8_t, 16> Bytes{};
             std::memcpy(Bytes.data(), Data.data(), Bytes.size());
             const Uuid Id(Bytes);
-            if (auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(Id))
+            if (auto* Component = ObjectRegistry::Instance().Resolve<BaseComponent>(Id))
             {
                 Value = Component->Handle();
             }
@@ -470,7 +488,7 @@ public:
      * @param Owner Owner node handle.
      * @return Pointer to created component (type-erased).
      */
-    using CreateFn = std::function<TExpected<void*>(NodeGraph& Graph, NodeHandle Owner)>;
+    using CreateFn = std::function<TExpected<void*>(Level& Graph, const NodeHandle& Owner)>;
     /**
      * @brief Callback to create a component with explicit UUID.
      * @param Graph Owning graph.
@@ -478,7 +496,7 @@ public:
      * @param Id Component UUID.
      * @return Pointer to created component (type-erased).
      */
-    using CreateWithIdFn = std::function<TExpected<void*>(NodeGraph& Graph, NodeHandle Owner, const Uuid& Id)>;
+    using CreateWithIdFn = std::function<TExpected<void*>(Level& Graph, const NodeHandle& Owner, const Uuid& Id)>;
     /**
      * @brief Callback to serialize a component instance.
      * @param Instance Pointer to component instance.
@@ -520,21 +538,51 @@ public:
             }
         }
         Entry EntryValue;
-        EntryValue.Create = [](NodeGraph& Graph, NodeHandle Owner) -> TExpected<void*> {
-            auto Result = Graph.template AddComponent<T>(Owner);
-            if (!Result)
+        EntryValue.Create = [](Level& Graph, const NodeHandle& Owner) -> TExpected<void*> {
+            (void)Graph;
+            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
             {
-                return std::unexpected(Result.error());
+                BaseNode* OwnerNode = Owner.Borrowed();
+                if (OwnerNode)
+                {
+                    auto AddResult = OwnerNode->AddRuntimeComponent<T>();
+                    if (AddResult)
+                    {
+                        auto ComponentResult = OwnerNode->RuntimeComponent<T>();
+                        if (!ComponentResult)
+                        {
+                            return std::unexpected(ComponentResult.error());
+                        }
+                        return static_cast<void*>(&*ComponentResult);
+                    }
+                }
             }
-            return static_cast<void*>(&*Result);
+
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "ECS-only components must be runtime-compatible and move constructible"));
         };
-        EntryValue.CreateWithId = [](NodeGraph& Graph, NodeHandle Owner, const Uuid& Id) -> TExpected<void*> {
-            auto Result = Graph.template AddComponentWithId<T>(Owner, Id);
-            if (!Result)
+        EntryValue.CreateWithId = [](Level& Graph, const NodeHandle& Owner, const Uuid& Id) -> TExpected<void*> {
+            (void)Graph;
+            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
             {
-                return std::unexpected(Result.error());
+                BaseNode* OwnerNode = Owner.Borrowed();
+                if (OwnerNode)
+                {
+                    auto AddResult = OwnerNode->AddRuntimeComponentWithId<T>(Id);
+                    if (AddResult)
+                    {
+                        auto ComponentResult = OwnerNode->RuntimeComponent<T>();
+                        if (!ComponentResult)
+                        {
+                            return std::unexpected(ComponentResult.error());
+                        }
+                        return static_cast<void*>(&*ComponentResult);
+                    }
+                }
             }
-            return static_cast<void*>(&*Result);
+
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "ECS-only components must be runtime-compatible and move constructible"));
         };
         EntryValue.Serialize = [Type](const void* Instance, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context) -> TExpected<void> {
             return SerializeByReflection(Type, Instance, Archive, Context);
@@ -560,21 +608,51 @@ public:
     {
         const TypeId Type = StaticTypeId<T>();
         Entry EntryValue;
-        EntryValue.Create = [](NodeGraph& Graph, NodeHandle Owner) -> TExpected<void*> {
-            auto Result = Graph.template AddComponent<T>(Owner);
-            if (!Result)
+        EntryValue.Create = [](Level& Graph, const NodeHandle& Owner) -> TExpected<void*> {
+            (void)Graph;
+            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
             {
-                return std::unexpected(Result.error());
+                BaseNode* OwnerNode = Owner.Borrowed();
+                if (OwnerNode)
+                {
+                    auto AddResult = OwnerNode->AddRuntimeComponent<T>();
+                    if (AddResult)
+                    {
+                        auto ComponentResult = OwnerNode->RuntimeComponent<T>();
+                        if (!ComponentResult)
+                        {
+                            return std::unexpected(ComponentResult.error());
+                        }
+                        return static_cast<void*>(&*ComponentResult);
+                    }
+                }
             }
-            return static_cast<void*>(&*Result);
+
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "ECS-only components must be runtime-compatible and move constructible"));
         };
-        EntryValue.CreateWithId = [](NodeGraph& Graph, NodeHandle Owner, const Uuid& Id) -> TExpected<void*> {
-            auto Result = Graph.template AddComponentWithId<T>(Owner, Id);
-            if (!Result)
+        EntryValue.CreateWithId = [](Level& Graph, const NodeHandle& Owner, const Uuid& Id) -> TExpected<void*> {
+            (void)Graph;
+            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
             {
-                return std::unexpected(Result.error());
+                BaseNode* OwnerNode = Owner.Borrowed();
+                if (OwnerNode)
+                {
+                    auto AddResult = OwnerNode->AddRuntimeComponentWithId<T>(Id);
+                    if (AddResult)
+                    {
+                        auto ComponentResult = OwnerNode->RuntimeComponent<T>();
+                        if (!ComponentResult)
+                        {
+                            return std::unexpected(ComponentResult.error());
+                        }
+                        return static_cast<void*>(&*ComponentResult);
+                    }
+                }
             }
-            return static_cast<void*>(&*Result);
+
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "ECS-only components must be runtime-compatible and move constructible"));
         };
         EntryValue.Serialize = std::move(Serialize);
         EntryValue.Deserialize = std::move(Deserialize);
@@ -616,7 +694,7 @@ public:
      * @param Type Component TypeId.
      * @return Pointer to created component or error.
      */
-    TExpected<void*> Create(NodeGraph& Graph, NodeHandle Owner, const TypeId& Type) const;
+    TExpected<void*> Create(Level& Graph, const NodeHandle& Owner, const TypeId& Type) const;
     /**
      * @brief Create a component by type id with explicit UUID.
      * @param Graph Owning graph.
@@ -625,7 +703,7 @@ public:
      * @param Id Component UUID.
      * @return Pointer to created component or error.
      */
-    TExpected<void*> CreateWithId(NodeGraph& Graph, NodeHandle Owner, const TypeId& Type, const Uuid& Id) const;
+    TExpected<void*> CreateWithId(Level& Graph, const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) const;
     /**
      * @brief Serialize a component instance to bytes.
      * @param Type Component TypeId.
@@ -649,7 +727,7 @@ public:
     TExpected<void> Deserialize(const TypeId& Type, void* Instance, const uint8_t* Bytes, size_t Size, const TSerializationContext& Context) const;
 
 private:
-    friend class NodeGraphSerializer;
+    friend class LevelGraphSerializer;
 
     /**
      * @brief Registry entry storing creation and serialization callbacks.
@@ -722,9 +800,9 @@ struct NodePayload
 
 /**
  * @brief Serialized node graph payload.
- * @remarks Graph-level serialized representation consumed by NodeGraphSerializer.
+ * @remarks Graph-level serialized representation consumed by LevelGraphSerializer.
  */
-struct NodeGraphPayload
+struct LevelGraphPayload
 {
     std::string Name{}; /**< @brief Graph name. */
     std::vector<NodePayload> Nodes{}; /**< @brief Node payloads. */
@@ -737,7 +815,7 @@ struct NodeGraphPayload
 struct LevelPayload
 {
     std::string Name{}; /**< @brief Level name. */
-    NodeGraphPayload Graph{}; /**< @brief Level root graph payload. */
+    LevelGraphPayload Graph{}; /**< @brief Level root graph payload. */
 };
 
 /**
@@ -746,17 +824,17 @@ struct LevelPayload
  */
 struct WorldPayload
 {
-    NodeGraphPayload Graph{}; /**< @brief World root graph payload. */
+    LevelGraphPayload Graph{}; /**< @brief World root graph payload. */
 };
 
 /**
- * @brief Serializer for NodeGraph to/from NodeGraphPayload.
+ * @brief Serializer for Level to/from LevelGraphPayload.
  * @remarks Reflection-driven serializer preserving UUID identity and hierarchy structure.
  */
-class NodeGraphSerializer
+class LevelGraphSerializer
 {
 public:
-    /** @brief Current schema version for NodeGraph payloads. */
+    /** @brief Current schema version for Level payloads. */
     static constexpr uint32_t kSchemaVersion = 4;
 
     /**
@@ -764,19 +842,19 @@ public:
      * @param Graph Source graph.
      * @return Payload or error.
      */
-    static TExpected<NodeGraphPayload> Serialize(const NodeGraph& Graph);
+    static TExpected<LevelGraphPayload> Serialize(const Level& Graph);
     /**
      * @brief Deserialize a graph from a payload.
      * @param Payload Payload to read.
      * @param Graph Destination graph.
      * @return Success or error.
      */
-    static TExpected<void> Deserialize(const NodeGraphPayload& Payload, NodeGraph& Graph);
+    static TExpected<void> Deserialize(const LevelGraphPayload& Payload, Level& Graph);
 };
 
 /**
  * @brief Serializer for Level to/from LevelPayload.
- * @remarks Delegates graph serialization to NodeGraphSerializer with level envelope semantics.
+ * @remarks Delegates graph serialization to LevelGraphSerializer with level envelope semantics.
  */
 class LevelSerializer
 {
@@ -801,7 +879,7 @@ public:
 
 /**
  * @brief Serializer for World to/from WorldPayload.
- * @remarks Delegates graph serialization to NodeGraphSerializer with world envelope semantics.
+ * @remarks Delegates graph serialization to LevelGraphSerializer with world envelope semantics.
  */
 class WorldSerializer
 {
@@ -825,19 +903,19 @@ public:
 };
 
 /**
- * @brief Serialize a NodeGraphPayload to bytes.
+ * @brief Serialize a LevelGraphPayload to bytes.
  * @param Payload Payload to serialize.
  * @param OutBytes Output byte vector.
  * @return Success or error.
  */
-TExpected<void> SerializeNodeGraphPayload(const NodeGraphPayload& Payload, std::vector<uint8_t>& OutBytes);
+TExpected<void> SerializeLevelGraphPayload(const LevelGraphPayload& Payload, std::vector<uint8_t>& OutBytes);
 /**
- * @brief Deserialize a NodeGraphPayload from bytes.
+ * @brief Deserialize a LevelGraphPayload from bytes.
  * @param Bytes Byte buffer.
  * @param Size Byte count.
  * @return Payload or error.
  */
-TExpected<NodeGraphPayload> DeserializeNodeGraphPayload(const uint8_t* Bytes, size_t Size);
+TExpected<LevelGraphPayload> DeserializeLevelGraphPayload(const uint8_t* Bytes, size_t Size);
 /**
  * @brief Serialize a LevelPayload to bytes.
  * @param Payload Payload to serialize.

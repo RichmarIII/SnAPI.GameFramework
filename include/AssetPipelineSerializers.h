@@ -8,11 +8,11 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Create the payload serializer for NodeGraph cooked data.
+ * @brief Create the payload serializer for Level cooked data.
  * @return Serializer instance.
- * @remarks Serializer encodes/decodes `NodeGraphPayload` byte format.
+ * @remarks Serializer encodes/decodes `LevelGraphPayload` byte format.
  */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateNodeGraphPayloadSerializer();
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelGraphPayloadSerializer();
 /**
  * @brief Create the payload serializer for Level cooked data.
  * @return Serializer instance.

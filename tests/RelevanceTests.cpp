@@ -18,7 +18,7 @@ struct RelevanceTickNode : public BaseNode
     {
     }
 
-    void Tick(float) override
+    void Tick(float)
     {
         if (Counter)
         {
@@ -34,7 +34,7 @@ SNAPI_REFLECT_TYPE(RelevanceTickNode, (TTypeBuilder<RelevanceTickNode>(Relevance
 /**
  * @brief Tick-counting component used to verify relevance-gated component ticking.
  */
-struct RelevanceCounterComponent : public IComponent
+struct RelevanceCounterComponent : public BaseComponent, public ComponentCRTP<RelevanceCounterComponent>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RelevanceCounterComponent";
     int* Counter = nullptr;
@@ -46,7 +46,7 @@ struct RelevanceCounterComponent : public IComponent
     {
     }
 
-    void Tick(float) override
+    void Tick(float)
     {
         if (Counter)
         {
@@ -73,7 +73,7 @@ struct AlwaysInactivePolicy
 
 TEST_CASE("Relevance can disable node ticking")
 {
-    NodeGraph Graph;
+    Level Graph;
     int Ticks = 0;
     int ComponentTicks = 0;
 

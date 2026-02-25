@@ -80,7 +80,7 @@ struct ReplicatedNode final : public BaseNode
 /**
  * @brief Replicated test component type for spawn/update verification.
  */
-struct ReplicatedComponent final : public IComponent
+struct ReplicatedComponent final : public BaseComponent, public ComponentCRTP<ReplicatedComponent>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ReplicatedComponent";
 
@@ -163,8 +163,8 @@ TEST_CASE("NetReplicationBridge spawns nodes and components")
 {
     RegisterReplicationTestTypes();
 
-    NodeGraph ServerGraph("ServerGraph");
-    auto NodeResult = ServerGraph.CreateNode<ReplicatedNode>("Actor");
+    World ServerWorld("ServerWorld");
+    auto NodeResult = ServerWorld.CreateNode<ReplicatedNode>("Actor");
     REQUIRE(NodeResult);
     auto* ServerNode = static_cast<ReplicatedNode*>(NodeResult->Borrowed());
     REQUIRE(ServerNode != nullptr);
@@ -181,7 +181,7 @@ TEST_CASE("NetReplicationBridge spawns nodes and components")
     const Uuid NodeId = ServerNode->Id();
     const Uuid ComponentId = ServerComponent->Id();
 
-    NetReplicationBridge ServerBridge(ServerGraph);
+    NetReplicationBridge ServerBridge(ServerWorld);
     std::vector<ReplicationEntityState> Entities;
     ServerBridge.GatherEntities(Entities);
     REQUIRE(Entities.size() == 2);
@@ -198,10 +198,10 @@ TEST_CASE("NetReplicationBridge spawns nodes and components")
     }
 
     // Avoid ObjectRegistry collisions by clearing the server graph before spawning on client.
-    ServerGraph.Clear();
+    ServerWorld.Clear();
 
-    NodeGraph ClientGraph("ClientGraph");
-    NetReplicationBridge ClientBridge(ClientGraph);
+    World ClientWorld("ClientWorld");
+    NetReplicationBridge ClientBridge(ClientWorld);
 
     for (const auto& Payload : Payloads)
     {
@@ -217,9 +217,9 @@ TEST_CASE("NetReplicationBridge spawns nodes and components")
     REQUIRE(ClientNode != nullptr);
     REQUIRE(ClientNode->Health == 12);
 
-    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<IComponent>(ComponentId);
+    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<BaseComponent>(ComponentId);
     REQUIRE(ClientComponentBase != nullptr);
-    auto* ClientComponent = dynamic_cast<ReplicatedComponent*>(ClientComponentBase);
+    auto* ClientComponent = static_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientComponent != nullptr);
     REQUIRE(ClientComponent->Value == 42);
     REQUIRE(ClientComponent->Offset.x() == 1.0f);
@@ -231,8 +231,8 @@ TEST_CASE("NetReplicationBridge updates replicated fields")
 {
     RegisterReplicationTestTypes();
 
-    NodeGraph ServerGraph("ServerGraph");
-    auto NodeResult = ServerGraph.CreateNode<ReplicatedNode>("Actor");
+    World ServerWorld("ServerWorld");
+    auto NodeResult = ServerWorld.CreateNode<ReplicatedNode>("Actor");
     REQUIRE(NodeResult);
     auto* ServerNode = static_cast<ReplicatedNode*>(NodeResult->Borrowed());
     REQUIRE(ServerNode != nullptr);
@@ -249,9 +249,9 @@ TEST_CASE("NetReplicationBridge updates replicated fields")
     const Uuid NodeId = ServerNode->Id();
     const Uuid ComponentId = ServerComponent->Id();
 
-    NetReplicationBridge ServerBridge(ServerGraph);
-    NodeGraph ClientGraph("ClientGraph");
-    NetReplicationBridge ClientBridge(ClientGraph);
+    NetReplicationBridge ServerBridge(ServerWorld);
+    World ClientWorld("ClientWorld");
+    NetReplicationBridge ClientBridge(ClientWorld);
 
     std::vector<ReplicationEntityState> Entities;
     ServerBridge.GatherEntities(Entities);
@@ -288,9 +288,9 @@ TEST_CASE("NetReplicationBridge updates replicated fields")
     REQUIRE(ClientNode != nullptr);
     REQUIRE(ClientNode->Health == 9);
 
-    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<IComponent>(ComponentId);
+    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<BaseComponent>(ComponentId);
     REQUIRE(ClientComponentBase != nullptr);
-    auto* ClientComponent = dynamic_cast<ReplicatedComponent*>(ClientComponentBase);
+    auto* ClientComponent = static_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientComponent != nullptr);
     REQUIRE(ClientComponent->Value == 18);
     REQUIRE(ClientComponent->Offset.x() == 4.0f);
@@ -302,12 +302,12 @@ TEST_CASE("NetReplicationBridge resolves pending parents and components")
 {
     RegisterReplicationTestTypes();
 
-    NodeGraph ServerGraph("ServerGraph");
-    auto ParentResult = ServerGraph.CreateNode<ReplicatedNode>("Parent");
-    auto ChildResult = ServerGraph.CreateNode<ReplicatedNode>("Child");
+    World ServerWorld("ServerWorld");
+    auto ParentResult = ServerWorld.CreateNode<ReplicatedNode>("Parent");
+    auto ChildResult = ServerWorld.CreateNode<ReplicatedNode>("Child");
     REQUIRE(ParentResult);
     REQUIRE(ChildResult);
-    REQUIRE(ServerGraph.AttachChild(ParentResult.value(), ChildResult.value()));
+    REQUIRE(ServerWorld.AttachChild(ParentResult.value(), ChildResult.value()));
 
     auto* ParentNode = static_cast<ReplicatedNode*>(ParentResult->Borrowed());
     auto* ChildNode = static_cast<ReplicatedNode*>(ChildResult->Borrowed());
@@ -326,7 +326,7 @@ TEST_CASE("NetReplicationBridge resolves pending parents and components")
     const Uuid ChildId = ChildResult->Id;
     const Uuid ComponentId = ChildComponent->Id();
 
-    NetReplicationBridge ServerBridge(ServerGraph);
+    NetReplicationBridge ServerBridge(ServerWorld);
     std::vector<ReplicationEntityState> Entities;
     ServerBridge.GatherEntities(Entities);
     REQUIRE(Entities.size() == 3);
@@ -342,10 +342,10 @@ TEST_CASE("NetReplicationBridge resolves pending parents and components")
         Payloads.push_back(std::move(Payload));
     }
 
-    ServerGraph.Clear();
+    ServerWorld.Clear();
 
-    NodeGraph ClientGraph("ClientGraph");
-    NetReplicationBridge ClientBridge(ClientGraph);
+    World ClientWorld("ClientWorld");
+    NetReplicationBridge ClientBridge(ClientWorld);
 
     const ReplicationPayload* ParentPayload = nullptr;
     const ReplicationPayload* ChildPayload = nullptr;
@@ -397,9 +397,9 @@ TEST_CASE("NetReplicationBridge resolves pending parents and components")
     REQUIRE(ClientChild != nullptr);
     REQUIRE(ClientChild->Parent().Id == ParentId);
 
-    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<IComponent>(ComponentId);
+    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<BaseComponent>(ComponentId);
     REQUIRE(ClientComponentBase != nullptr);
-    auto* ClientComponent = dynamic_cast<ReplicatedComponent*>(ClientComponentBase);
+    auto* ClientComponent = static_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientComponent != nullptr);
     REQUIRE(ClientComponent->Owner().Id == ChildId);
     REQUIRE(ClientComponent->Value == 5);
@@ -437,17 +437,17 @@ TEST_CASE("ReplicationService replicates node/component snapshots over a session
     auto ServerReplication = ReplicationService::Create(Server);
     auto ClientReplication = ReplicationService::Create(Client);
 
-    NodeGraph ServerGraph("ServerGraph");
-    NodeGraph ClientGraph("ClientGraph");
-    NetReplicationBridge ServerBridge(ServerGraph);
-    NetReplicationBridge ClientBridge(ClientGraph);
+    World ServerWorld("ServerWorld");
+    World ClientWorld("ClientWorld");
+    NetReplicationBridge ServerBridge(ServerWorld);
+    NetReplicationBridge ClientBridge(ClientWorld);
 
     ServerReplication->EntityProvider(&ServerBridge);
     ServerReplication->InterestProvider(&ServerBridge);
     ServerReplication->PriorityProvider(&ServerBridge);
     ClientReplication->Receiver(&ClientBridge);
 
-    auto NodeResult = ServerGraph.CreateNode<ReplicatedNode>("Actor");
+    auto NodeResult = ServerWorld.CreateNode<ReplicatedNode>("Actor");
     REQUIRE(NodeResult);
     auto* ServerNode = static_cast<ReplicatedNode*>(NodeResult->Borrowed());
     REQUIRE(ServerNode != nullptr);
@@ -468,12 +468,12 @@ TEST_CASE("ReplicationService replicates node/component snapshots over a session
     PumpPair(Client, Server, Now, 12);
 
     auto* ClientNodeBase = ObjectRegistry::Instance().Resolve<BaseNode>(NodeId);
-    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<IComponent>(ComponentId);
+    auto* ClientComponentBase = ObjectRegistry::Instance().Resolve<BaseComponent>(ComponentId);
     REQUIRE(ClientNodeBase != nullptr);
     REQUIRE(ClientComponentBase != nullptr);
 
     auto* ClientNode = dynamic_cast<ReplicatedNode*>(ClientNodeBase);
-    auto* ClientComponent = dynamic_cast<ReplicatedComponent*>(ClientComponentBase);
+    auto* ClientComponent = static_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientNode != nullptr);
     REQUIRE(ClientComponent != nullptr);
     REQUIRE(ClientNode->Health == 3);

@@ -2,7 +2,7 @@
 
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -22,7 +22,7 @@ namespace SnAPI::GameFramework
  * - Attach this component to the same node as `CameraComponent`.
  * - Keep `CameraComponent::Settings::SyncFromTransform = true`.
  */
-class EditorCameraComponent final : public IComponent
+class EditorCameraComponent final : public BaseComponent, public ComponentCRTP<EditorCameraComponent>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::EditorCameraComponent";
@@ -53,7 +53,8 @@ public:
         return m_settings;
     }
 
-    void Tick(float DeltaSeconds) override;
+    void Tick(float DeltaSeconds);
+    void TickImpl(IWorld&, float DeltaSeconds) { Tick(DeltaSeconds); }
 
 private:
     void SynchronizeOrientationFromRotation(const Quat& Rotation);

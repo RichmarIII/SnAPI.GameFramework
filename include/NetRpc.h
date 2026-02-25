@@ -10,8 +10,9 @@
 #include <vector>
 
 #include "Export.h"
-#include "IComponent.h"
-#include "NodeGraph.h"
+#include "BaseComponent.h"
+#include "IWorld.h"
+#include "StaticTypeId.h"
 #include "TypeName.h"
 #include "TypeRegistry.h"
 #include "Variant.h"
@@ -116,15 +117,15 @@ public:
     using CompletionFn = std::function<void(const TExpected<Variant>& Result)>;
 
     /**
-     * @brief Construct bridge for an optional graph context.
-     * @param Graph Graph used for target resolution.
+     * @brief Construct bridge for an optional world graph context.
+     * @param WorldRef World used for target resolution.
      */
-    explicit NetRpcBridge(NodeGraph* Graph = nullptr);
+    explicit NetRpcBridge(IWorld* WorldRef = nullptr);
 
-    /** @brief Set target graph used for node/component lookup on invoke. */
-    void Graph(NodeGraph* Graph);
-    /** @brief Get target graph used for invoke routing. */
-    NodeGraph* Graph() const;
+    /** @brief Set target world used for node/component lookup on invoke. */
+    void World(IWorld* WorldRef);
+    /** @brief Get target world used for invoke routing. */
+    IWorld* World() const;
 
     /**
      * @brief Bind bridge to RpcService target id.
@@ -168,7 +169,7 @@ public:
      * @return RpcId assigned by underlying RpcService.
      */
     SnAPI::Networking::RpcId Call(NetConnectionHandle Handle,
-                                  const IComponent& Target,
+                                  const BaseComponent& Target,
                                   const TypeId& TargetType,
                                   std::string_view MethodName,
                                   std::span<const Variant> Args,
@@ -183,9 +184,9 @@ public:
                                   CompletionFn Completion = {},
                                   SnAPI::Networking::RpcCallOptions Options = {})
     {
-        static_assert(std::is_base_of_v<IComponent, T>, "T must derive from IComponent");
+        static_assert(std::is_base_of_v<BaseComponent, T>, "T must derive from BaseComponent");
         return Call(Handle,
-                    static_cast<const IComponent&>(Target),
+                    static_cast<const BaseComponent&>(Target),
                     StaticTypeId<T>(),
                     MethodName,
                     Args,
@@ -258,7 +259,7 @@ private:
                                           CompletionFn Completion,
                                           SnAPI::Networking::RpcCallOptions Options);
 
-    NodeGraph* m_graph = nullptr; /**< @brief Non-owning graph context for target UUID resolution. */
+    IWorld* m_world = nullptr; /**< @brief Non-owning world context for target UUID resolution. */
     SnAPI::Networking::RpcService* m_rpc = nullptr; /**< @brief Non-owning bound RpcService pointer. */
     SnAPI::Networking::RpcTargetId m_targetId = 1; /**< @brief Bound target id namespace/channel. */
     std::unordered_map<SnAPI::Networking::MethodId, RpcMethodEntry> m_methods{}; /**< @brief MethodId -> reflected method mapping table. */

@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <string>
 
-#include "INode.h"
-#include "IComponent.h"
+#include "BaseNode.h"
+#include "BaseComponent.h"
 #include "Math.h"
 #include "CollisionFilters.h"
 #include "TypeName.h"

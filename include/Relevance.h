@@ -7,7 +7,7 @@
 #include <unordered_map>
 
 #include "Expected.h"
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
@@ -15,7 +15,7 @@
 namespace SnAPI::GameFramework
 {
 
-class NodeGraph;
+class Level;
 
 /**
  * @brief Context passed to relevance policy evaluation.
@@ -24,14 +24,14 @@ class NodeGraph;
 struct RelevanceContext
 {
     NodeHandle Node; /**< @brief Node being evaluated. */
-    std::reference_wrapper<NodeGraph> Graph; /**< @brief Owning graph. */
+    std::reference_wrapper<Level> Graph; /**< @brief Owning graph. */
 };
 
 /**
  * @brief Registry for relevance policy types.
  * @remarks
  * Static process-wide registry that binds policy type ids to evaluate callbacks.
- * Relevance components store policy data + type id, while NodeGraph executes callbacks
+ * Relevance components store policy data + type id, while Level executes callbacks
  * during relevance evaluation passes.
  */
 class RelevancePolicyRegistry
@@ -109,9 +109,9 @@ private:
  * @brief Component that drives relevance evaluation for a node.
  * @remarks
  * Holds type-erased policy instance and latest evaluation outputs.
- * NodeGraph relevance pass reads this component to decide node activation.
+ * Level relevance pass reads this component to decide node activation.
  */
-class RelevanceComponent : public IComponent
+class RelevanceComponent : public BaseComponent, public ComponentCRTP<RelevanceComponent>
 {
 public:
     /** @brief Stable type name for reflection. */

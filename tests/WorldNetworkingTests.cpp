@@ -28,7 +28,7 @@ struct RpcTestNode final : BaseNode
     }
 };
 
-struct RpcTestComponent final : IComponent
+struct RpcTestComponent final : BaseComponent, ComponentCRTP<RpcTestComponent>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::RpcTestComponent";
 

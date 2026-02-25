@@ -54,6 +54,11 @@ Quat NlerpShortestPath(const Quat& A, const Quat& B, const float Alpha)
 
 void FollowTargetComponent::Tick(const float DeltaSeconds)
 {
+    RuntimeTick(DeltaSeconds);
+}
+
+void FollowTargetComponent::RuntimeTick(const float DeltaSeconds)
+{
     (void)ApplyFollow(DeltaSeconds);
 }
 

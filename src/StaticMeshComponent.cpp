@@ -183,6 +183,11 @@ void StaticMeshComponent::OnDestroy()
 
 void StaticMeshComponent::Tick(float DeltaSeconds)
 {
+    RuntimeTick(DeltaSeconds);
+}
+
+void StaticMeshComponent::RuntimeTick(float DeltaSeconds)
+{
     (void)DeltaSeconds;
 
     if (m_settings.MeshPath.empty() && !m_streamSource)

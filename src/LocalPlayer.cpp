@@ -85,7 +85,7 @@ const bool& LocalPlayer::GetUseAssignedInputDevice() const
 }
 #endif
 
-void LocalPlayer::RequestPossess(const NodeHandle Target)
+void LocalPlayer::RequestPossess(const NodeHandle& Target)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     if (CallRPC("ServerRequestPossess", {Variant::FromValue(Target)}))
@@ -105,7 +105,7 @@ void LocalPlayer::RequestUnpossess()
     ServerRequestUnpossess();
 }
 
-void LocalPlayer::ServerRequestPossess(const NodeHandle Target)
+void LocalPlayer::ServerRequestPossess(const NodeHandle& Target)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     if (!IsServer())
@@ -147,7 +147,7 @@ void LocalPlayer::ServerRequestUnpossess()
     m_possessedNode = {};
 }
 
-bool LocalPlayer::CanPossessTarget(const NodeHandle Target) const
+bool LocalPlayer::CanPossessTarget(const NodeHandle& Target) const
 {
     if (Target.IsNull())
     {

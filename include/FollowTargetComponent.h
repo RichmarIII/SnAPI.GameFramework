@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -18,7 +18,7 @@ namespace SnAPI::GameFramework
  * - Optional UUID fallback can be enabled for replication/serialization restore
  *   paths where runtime slot keys are not yet populated.
  */
-class FollowTargetComponent : public IComponent
+class FollowTargetComponent : public BaseComponent, public ComponentCRTP<FollowTargetComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -56,7 +56,14 @@ public:
     }
 
     /** @brief Variable-step follow update. */
-    void Tick(float DeltaSeconds) override;
+    void Tick(float DeltaSeconds);
+
+    /**
+     * @brief Non-virtual follow update entry used by ECS runtime bridge.
+     * @param DeltaSeconds Variable-step delta used for smoothing filters.
+     */
+    void RuntimeTick(float DeltaSeconds);
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
 private:
     /**

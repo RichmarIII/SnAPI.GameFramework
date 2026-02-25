@@ -12,14 +12,13 @@ TEST_CASE("Level serialization round-trips with nested graphs")
     RegisterBuiltinTypes();
 
     Level LevelRef("MainLevel");
-    auto GraphHandleResult = LevelRef.CreateGraph("Gameplay");
+    auto GraphHandleResult = LevelRef.CreateNode<Level>("Gameplay");
     REQUIRE(GraphHandleResult);
 
-    auto GraphResult = LevelRef.Graph(GraphHandleResult.value());
-    REQUIRE(GraphResult);
-    auto& Graph = *GraphResult;
+    auto* Graph = dynamic_cast<Level*>(GraphHandleResult.value().Borrowed());
+    REQUIRE(Graph != nullptr);
 
-    auto NodeResult = Graph.CreateNode("Hero");
+    auto NodeResult = Graph->CreateNode("Hero");
     REQUIRE(NodeResult);
     auto* Node = NodeResult.value().Borrowed();
     REQUIRE(Node != nullptr);
@@ -41,11 +40,11 @@ TEST_CASE("Level serialization round-trips with nested graphs")
     Level LoadedLevel;
     REQUIRE(LevelSerializer::Deserialize(PayloadRoundTrip.value(), LoadedLevel));
 
-    NodeGraph* LoadedGraph = nullptr;
+    Level* LoadedGraph = nullptr;
     LoadedLevel.NodePool().ForEach([&](const NodeHandle&, BaseNode& NodeRef) {
         if (NodeRef.Name() == "Gameplay")
         {
-            LoadedGraph = dynamic_cast<NodeGraph*>(&NodeRef);
+            LoadedGraph = dynamic_cast<Level*>(&NodeRef);
         }
     });
     REQUIRE(LoadedGraph != nullptr);

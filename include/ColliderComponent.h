@@ -5,7 +5,7 @@
 #include <Physics.h>
 
 #include "CollisionFilters.h"
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -14,7 +14,7 @@ namespace SnAPI::GameFramework
 /**
  * @brief Collider definition component used by physics-backed nodes.
  */
-class ColliderComponent : public IComponent
+class ColliderComponent : public BaseComponent, public ComponentCRTP<ColliderComponent>
 {
 public:
     /** @brief Stable type name for reflection. */

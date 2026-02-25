@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -22,7 +22,7 @@ struct NodeTransform
  * @brief Basic transform component (position, quaternion rotation, scale).
  * @remarks Minimal spatial state component used by examples and built-in systems.
  */
-class TransformComponent : public IComponent
+class TransformComponent : public BaseComponent, public ComponentCRTP<TransformComponent>
 {
 public:
     /** @brief Stable type name for reflection. */

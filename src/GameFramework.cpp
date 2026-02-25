@@ -5,7 +5,6 @@
 #include "GameplayRpcGateway.h"
 #include "Level.h"
 #include "LocalPlayer.h"
-#include "NodeGraph.h"
 #include "FollowTargetComponent.h"
 #include "Relevance.h"
 #include "Serialization.h"
@@ -36,26 +35,45 @@
 #include "World.h"
 
 #include <initializer_list>
+#include <type_traits>
 
 namespace SnAPI::GameFramework
 {
+
+static_assert(!std::is_polymorphic_v<TransformComponent>, "TransformComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<FollowTargetComponent>, "FollowTargetComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<RelevanceComponent>, "RelevanceComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<ScriptComponent>, "ScriptComponent must be non-polymorphic runtime type");
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+static_assert(!std::is_polymorphic_v<AudioSourceComponent>, "AudioSourceComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<AudioListenerComponent>, "AudioListenerComponent must be non-polymorphic runtime type");
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+static_assert(!std::is_polymorphic_v<ColliderComponent>, "ColliderComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<RigidBodyComponent>, "RigidBodyComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<CharacterMovementController>,
+              "CharacterMovementController must be non-polymorphic runtime type");
+#if defined(SNAPI_GF_ENABLE_INPUT)
+static_assert(!std::is_polymorphic_v<InputComponent>, "InputComponent must be non-polymorphic runtime type");
+#endif
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+static_assert(!std::is_polymorphic_v<CameraComponent>, "CameraComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<StaticMeshComponent>, "StaticMeshComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshComponent must be non-polymorphic runtime type");
+#endif
 
 SNAPI_REFLECT_TYPE(BaseNode, (TTypeBuilder<BaseNode>(BaseNode::kTypeName)
     .Constructor<>()
     .Register()));
 
-SNAPI_REFLECT_TYPE(NodeGraph, (TTypeBuilder<NodeGraph>(NodeGraph::kTypeName)
+SNAPI_REFLECT_TYPE(Level, (TTypeBuilder<Level>(Level::kTypeName)
     .Base<BaseNode>()
     .Constructor<>()
     .Register()));
 
-SNAPI_REFLECT_TYPE(Level, (TTypeBuilder<Level>(Level::kTypeName)
-    .Base<NodeGraph>()
-    .Constructor<>()
-    .Register()));
-
 SNAPI_REFLECT_TYPE(World, (TTypeBuilder<World>(World::kTypeName)
-    .Base<NodeGraph>()
+    .Base<Level>()
     .Constructor<>()
     .Register()));
 

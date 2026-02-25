@@ -4,7 +4,7 @@
 
 #include <memory>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 
 namespace SnAPI::Graphics
 {
@@ -22,7 +22,7 @@ class RendererSystem;
  * Uses owning node `TransformComponent` as pose source when enabled and can
  * become the world's active renderer camera.
  */
-class CameraComponent : public IComponent
+class CameraComponent : public BaseComponent, public ComponentCRTP<CameraComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -43,7 +43,12 @@ public:
         bool SyncFromTransform = true; /**< @brief Pull camera pose from owner `TransformComponent`. */
     };
 
-    ~CameraComponent() override;
+    ~CameraComponent();
+    CameraComponent() = default;
+    CameraComponent(const CameraComponent&) = delete;
+    CameraComponent& operator=(const CameraComponent&) = delete;
+    CameraComponent(CameraComponent&&) noexcept = default;
+    CameraComponent& operator=(CameraComponent&&) noexcept = default;
 
     /** @brief Access settings (const). */
     const Settings& GetSettings() const
@@ -71,10 +76,19 @@ public:
     /** @brief Enable/disable this camera as world active camera. */
     void SetActive(bool Active);
 
-    void OnCreate() override;
-    void OnDestroy() override;
-    void Tick(float DeltaSeconds) override;
-    void LateTick(float DeltaSeconds) override;
+    void OnCreate();
+    void OnDestroy();
+    void Tick(float DeltaSeconds);
+    void LateTick(float DeltaSeconds);
+
+    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    /** @brief Non-virtual late-tick entry used by ECS runtime bridge. */
+    void RuntimeLateTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { OnCreate(); }
+    void OnDestroyImpl(IWorld&) { OnDestroy(); }
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
+    void LateTickImpl(IWorld&, float DeltaSeconds) { RuntimeLateTick(DeltaSeconds); }
 
 private:
     struct CameraDeleter
@@ -86,6 +100,7 @@ private:
     void EnsureCamera();
     void ApplyCameraSettings();
     void SyncFromTransform();
+    void UpdateCamera(float DeltaSeconds);
 
     Settings m_settings{}; /**< @brief Camera configuration. */
     std::unique_ptr<SnAPI::Graphics::CameraBase, CameraDeleter> m_camera{}; /**< @brief Owned renderer camera instance. */

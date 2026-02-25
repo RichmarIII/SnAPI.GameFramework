@@ -4,7 +4,7 @@
 
 #include <Input.h>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -25,7 +25,7 @@ namespace SnAPI::GameFramework
  * - When `LocalPlayer` possession exists, input is automatically routed through the
  *   possessing local player and its assigned input device.
  */
-class InputComponent : public IComponent
+class InputComponent : public BaseComponent, public ComponentCRTP<InputComponent>
 {
 public:
     /** @brief Stable type name used for reflection and serialization registration. */
@@ -85,7 +85,10 @@ public:
      * @param DeltaSeconds Time since last variable tick.
      * @remarks `DeltaSeconds` is currently unused; this method is edge/state driven.
      */
-    void Tick(float DeltaSeconds) override;
+    void Tick(float DeltaSeconds);
+    /** @brief Non-virtual per-frame entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
 private:
     /**

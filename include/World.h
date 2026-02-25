@@ -8,7 +8,7 @@
 #include "IWorld.h"
 #include "JobSystem.h"
 #include "Level.h"
-#include "NodeGraph.h"
+#include "WorldEcsRuntime.h"
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include "InputSystem.h"
 #endif
@@ -45,7 +45,7 @@ struct WorldExecutionProfile
     bool TickInput = true; /**< @brief Pump world input in variable tick. */
     bool TickUI = true; /**< @brief Tick world UI contexts in variable tick. */
     bool PumpNetworking = true; /**< @brief Pump networking queues/sessions each frame. */
-    bool TickNodeGraph = true; /**< @brief Run node/component tick traversal phases. */
+    bool TickEcsRuntime = true; /**< @brief Run world ECS runtime storage phases. */
     bool TickPhysicsSimulation = true; /**< @brief Advance physics simulation in variable/fixed phases. */
     bool AllowPhysicsQueries = true; /**< @brief Allow query-only physics access even when simulation is disabled. */
     bool TickAudio = true; /**< @brief Update world audio subsystem. */
@@ -74,7 +74,7 @@ struct WorldExecutionProfile
  * @brief Concrete world root that owns levels and subsystems.
  * @remarks
  * `World` is the top-level runtime orchestration object:
- * - derives from `NodeGraph` for hierarchical node traversal
+ * - derives from `Level` for hierarchical node traversal
  * - implements `IWorld` for level/subsystem contracts
  * - owns subsystem instances (job system + optional input/ui/audio/networking/
  *   physics/renderer adapters)
@@ -84,9 +84,11 @@ struct WorldExecutionProfile
  * - levels are represented as child nodes/graphs under the world
  * - nodes/components can query world context through `Owner()->World()`
  */
-class World : public NodeGraph, public IWorld, public ITaskDispatcher
+class World : public Level, public IWorld, public ITaskDispatcher
 {
 public:
+    using Level::CreateNode;
+    using Level::CreateNodeWithId;
     using WorkTask = std::function<void(World&)>;
     using CompletionTask = std::function<void(const TaskHandle&)>;
 
@@ -113,13 +115,27 @@ public:
     bool ShouldTickInput() const override;
     bool ShouldTickUI() const override;
     bool ShouldPumpNetworking() const override;
-    bool ShouldTickNodeGraph() const override;
+    bool ShouldTickEcsRuntime() const override;
     bool ShouldSimulatePhysics() const override;
     bool ShouldAllowPhysicsQueries() const override;
     bool ShouldTickAudio() const override;
     bool ShouldRunNodeEndFrame() const override;
     bool ShouldBuildUiRenderPackets() const override;
     bool ShouldRenderFrame() const override;
+    TObjectPool<BaseNode>& NodePool() override;
+    const TObjectPool<BaseNode>& NodePool() const override;
+    void ForEachNode(NodeVisitor Visitor, void* UserData) override;
+    TExpected<NodeHandle> NodeHandleById(const Uuid& Id) const override;
+    TExpected<NodeHandle> CreateNode(const TypeId& Type, std::string Name) override;
+    TExpected<NodeHandle> CreateNodeWithId(const TypeId& Type, std::string Name, const Uuid& Id) override;
+    Result DestroyNode(const NodeHandle& Handle) override;
+    Result AttachChild(const NodeHandle& Parent, const NodeHandle& Child) override;
+    Result DetachChild(const NodeHandle& Child) override;
+    void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) override;
+    const void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) const override;
+    Result RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type) override;
+    TExpected<void*> CreateComponent(const NodeHandle& Owner, const TypeId& Type) override;
+    TExpected<void*> CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) override;
     void SetWorldKind(EWorldKind Kind);
     const WorldExecutionProfile& ExecutionProfile() const;
     void SetExecutionProfile(const WorldExecutionProfile& Profile);
@@ -175,6 +191,7 @@ public:
      * session again to flush post-tick outbound traffic.
      */
     void EndFrame() override;
+    void Clear();
 
     /**
      * @brief Check whether fixed-step simulation is enabled for this frame.
@@ -214,7 +231,27 @@ public:
      * @param Handle Level handle.
      * @return Reference wrapper or error.
      */
-    TExpectedRef<Level> LevelRef(NodeHandle Handle) override;
+    TExpectedRef<Level> LevelRef(const NodeHandle& Handle) override;
+    TExpected<RuntimeNodeHandle> CreateRuntimeNode(std::string Name, const TypeId& Type) override;
+    TExpected<RuntimeNodeHandle> CreateRuntimeNodeWithId(const Uuid& Id, std::string Name, const TypeId& Type) override;
+    Result DestroyRuntimeNode(RuntimeNodeHandle Handle) override;
+    Result AttachRuntimeChild(RuntimeNodeHandle Parent, RuntimeNodeHandle Child) override;
+    Result DetachRuntimeChild(RuntimeNodeHandle Child) override;
+    TExpected<RuntimeNodeHandle> RuntimeNodeById(const Uuid& Id) const override;
+    RuntimeNodeHandle RuntimeParent(RuntimeNodeHandle Child) const override;
+    std::vector<RuntimeNodeHandle> RuntimeChildren(RuntimeNodeHandle Parent) const override;
+    void ForEachRuntimeChild(RuntimeNodeHandle Parent, RuntimeChildVisitor Visitor, void* UserData) const override;
+    std::vector<RuntimeNodeHandle> RuntimeRoots() const override;
+    TExpected<RuntimeComponentHandle> AddRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) override;
+    TExpected<RuntimeComponentHandle> AddRuntimeComponentWithId(RuntimeNodeHandle Owner,
+                                                                const TypeId& Type,
+                                                                const Uuid& Id) override;
+    Result RemoveRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) override;
+    bool HasRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) const override;
+    TExpected<RuntimeComponentHandle> RuntimeComponentByType(RuntimeNodeHandle Owner,
+                                                             const TypeId& Type) const override;
+    void* ResolveRuntimeComponentRaw(RuntimeComponentHandle Handle, const TypeId& Type) override;
+    const void* ResolveRuntimeComponentRaw(RuntimeComponentHandle Handle, const TypeId& Type) const override;
     /**
      * @brief Get all level handles.
      * @return Vector of level handles.
@@ -243,6 +280,16 @@ public:
      * @remarks Current implementation is minimal but provides a stable integration point.
      */
     JobSystem& Jobs();
+
+    /**
+     * @brief Access centralized world ECS runtime storage.
+     */
+    WorldEcsRuntime& EcsRuntime() override;
+
+    /**
+     * @brief Access centralized world ECS runtime storage (const).
+     */
+    const WorldEcsRuntime& EcsRuntime() const override;
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
     /**
@@ -323,9 +370,13 @@ public:
 #endif
 
 private:
+    std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief World-owned node storage. */
+    std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root nodes in world hierarchy. */
+    std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Deferred node-destroy queue. */
     mutable GameMutex m_threadMutex{}; /**< @brief World-thread affinity guard for queued task execution. */
     TSystemTaskQueue<World> m_taskQueue{}; /**< @brief Cross-thread task handoff queue for world-thread callbacks. */
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
+    WorldEcsRuntime m_ecsRuntime{}; /**< @brief Centralized typed ECS storage owner for node/component runtime refactor. */
     GameplayHost* m_gameplayHost = nullptr; /**< @brief Non-owning gameplay host pointer for runtime bridge access. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     InputSystem m_inputSystem{}; /**< @brief World-scoped input subsystem instance. */

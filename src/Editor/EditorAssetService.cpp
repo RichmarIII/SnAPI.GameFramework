@@ -8,8 +8,9 @@
 #include "ComponentStorage.h"
 #include "GameRuntime.h"
 #include "Level.h"
-#include "NodeGraph.h"
+#include "NodeCast.h"
 #include "Serialization.h"
+#include "StaticTypeId.h"
 #include "TransformComponent.h"
 #include "TypeRegistry.h"
 #include "World.h"
@@ -143,7 +144,7 @@ struct DefaultShapePackSpec
 [[nodiscard]] std::expected<::SnAPI::AssetPipeline::AssetPackEntry, std::string> BuildDefaultShapePackEntry(
     const DefaultShapePackSpec& Spec)
 {
-    NodeGraph Graph(std::string(Spec.AssetName) + ".Graph");
+    Level Graph(std::string(Spec.AssetName) + ".Graph");
     auto NodeResult = Graph.CreateNode(std::string(Spec.AssetName));
     if (!NodeResult)
     {
@@ -217,14 +218,14 @@ struct DefaultShapePackSpec
     }
 #endif
 
-    auto GraphPayloadResult = NodeGraphSerializer::Serialize(Graph);
+    auto GraphPayloadResult = LevelGraphSerializer::Serialize(Graph);
     if (!GraphPayloadResult)
     {
         return std::unexpected(GraphPayloadResult.error().Message);
     }
 
     std::vector<uint8_t> CookedBytes{};
-    auto SerializeResult = SerializeNodeGraphPayload(*GraphPayloadResult, CookedBytes);
+    auto SerializeResult = SerializeLevelGraphPayload(*GraphPayloadResult, CookedBytes);
     if (!SerializeResult)
     {
         return std::unexpected(SerializeResult.error().Message);
@@ -232,11 +233,11 @@ struct DefaultShapePackSpec
 
     ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
     Entry.Id = AssetPipelineAssetIdFromName(std::string("SnAPI.Editor.DefaultShape.") + Spec.AssetName);
-    Entry.AssetKind = AssetKindNodeGraph();
+    Entry.AssetKind = AssetKindLevel();
     Entry.Name = Spec.AssetName;
     Entry.VariantKey = "default";
-    Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadNodeGraph(),
-                                                         NodeGraphSerializer::kSchemaVersion,
+    Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(),
+                                                         LevelGraphSerializer::kSchemaVersion,
                                                          std::move(CookedBytes));
     return Entry;
 }
@@ -286,14 +287,14 @@ struct DefaultShapePackSpec
     return CreatedCount;
 }
 
-[[nodiscard]] std::size_t CountNodes(const NodeGraph& Graph)
+[[nodiscard]] std::size_t CountNodes(const Level& Graph)
 {
     std::size_t NodeCount = 0;
     Graph.NodePool().ForEach([&NodeCount](const NodeHandle&, BaseNode&) { ++NodeCount; });
     return NodeCount;
 }
 
-[[nodiscard]] std::size_t CountComponents(const NodeGraph& Graph)
+[[nodiscard]] std::size_t CountComponents(const Level& Graph)
 {
     std::size_t ComponentCount = 0;
     Graph.NodePool().ForEach([&ComponentCount](const NodeHandle&, BaseNode& Node) {
@@ -400,6 +401,35 @@ void AppendUniquePath(std::vector<std::string>& Paths,
     return std::string(QualifiedTypeName.substr(Delimiter + 2));
 }
 
+[[nodiscard]] Level* ResolveLevelContext(const BaseNode& Node)
+{
+    BaseNode* Cursor = const_cast<BaseNode*>(&Node);
+    if (!Cursor)
+    {
+        return nullptr;
+    }
+
+    if (TypeRegistry::Instance().IsA(Cursor->TypeKey(), StaticTypeId<Level>()))
+    {
+        return static_cast<Level*>(Cursor);
+    }
+
+    while (!Cursor->Parent().IsNull())
+    {
+        Cursor = Cursor->Parent().Borrowed();
+        if (!Cursor)
+        {
+            return nullptr;
+        }
+        if (TypeRegistry::Instance().IsA(Cursor->TypeKey(), StaticTypeId<Level>()))
+        {
+            return static_cast<Level*>(Cursor);
+        }
+    }
+
+    return nullptr;
+}
+
 [[nodiscard]] std::string MakeUniqueLogicalName(::SnAPI::AssetPipeline::AssetManager& AssetManagerRef,
                                                 const std::string& Prefix,
                                                 std::string BaseName)
@@ -426,10 +456,10 @@ void AppendUniquePath(std::vector<std::string>& Paths,
     return Candidate;
 }
 
-TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle DestinationHandle, NodeGraph& DestinationGraph)
+TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle DestinationHandle, Level& DestinationLevel)
 {
-    NodeGraph* SourceGraph = SourceNode.OwnerGraph();
-    if (!SourceGraph)
+    Level* SourceLevel = ResolveLevelContext(SourceNode);
+    if (!SourceLevel)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Source node is not owned by a graph"));
     }
@@ -439,9 +469,9 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Source node handle is null"));
     }
-    if (SourceGraph->NodePool().Borrowed(SourceHandle) == nullptr)
+    if (SourceLevel->NodePool().Borrowed(SourceHandle) == nullptr)
     {
-        if (const auto RefreshedHandle = SourceGraph->NodeHandleByIdSlow(SourceNode.Id()); RefreshedHandle)
+        if (const auto RefreshedHandle = SourceLevel->NodeHandleByIdSlow(SourceNode.Id()); RefreshedHandle)
         {
             SourceHandle = *RefreshedHandle;
         }
@@ -452,14 +482,14 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
     for (std::size_t ComponentIndex = 0; ComponentIndex < ComponentTypes.size(); ++ComponentIndex)
     {
         const TypeId& ComponentType = ComponentTypes[ComponentIndex];
-        IComponentStorage* Storage =
+        ComponentStorageView* Storage =
             (ComponentIndex < ComponentStorages.size()) ? ComponentStorages[ComponentIndex] : nullptr;
 
         if ((!Storage || Storage->TypeKey() != ComponentType) && !ComponentStorages.empty())
         {
             auto MatchIt = std::find_if(ComponentStorages.begin(),
                                         ComponentStorages.end(),
-                                        [&](IComponentStorage* Candidate) {
+                                        [&](ComponentStorageView* Candidate) {
                                             return Candidate && Candidate->TypeKey() == ComponentType;
                                         });
             Storage = (MatchIt != ComponentStorages.end()) ? *MatchIt : nullptr;
@@ -476,7 +506,7 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
         const void* SourceComponent = Storage->Borrowed(SourceHandle);
         if (!SourceComponent && !SourceHandle.Id.is_nil())
         {
-            if (const auto RefreshedHandle = SourceGraph->NodeHandleByIdSlow(SourceHandle.Id); RefreshedHandle)
+            if (const auto RefreshedHandle = SourceLevel->NodeHandleByIdSlow(SourceHandle.Id); RefreshedHandle)
             {
                 SourceHandle = *RefreshedHandle;
                 SourceComponent = Storage->Borrowed(SourceHandle);
@@ -494,7 +524,7 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
                 MakeError(EErrorCode::NotFound, "Failed to resolve source component '" + ComponentLabel + "' while cloning prefab"));
         }
 
-        auto CreateResult = ComponentSerializationRegistry::Instance().Create(DestinationGraph, DestinationHandle, ComponentType);
+        auto CreateResult = ComponentSerializationRegistry::Instance().Create(DestinationLevel, DestinationHandle, ComponentType);
         if (!CreateResult)
         {
             return std::unexpected(CreateResult.error());
@@ -506,7 +536,7 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
         }
 
         std::vector<uint8_t> SerializedBytes{};
-        const TSerializationContext SerializeContext{.Graph = SourceGraph};
+        const TSerializationContext SerializeContext{.Graph = SourceLevel};
         auto SerializeResult = ComponentSerializationRegistry::Instance().Serialize(
             ComponentType,
             SourceComponent,
@@ -517,7 +547,7 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
             return std::unexpected(SerializeResult.error());
         }
 
-        const TSerializationContext DeserializeContext{.Graph = &DestinationGraph};
+        const TSerializationContext DeserializeContext{.Graph = &DestinationLevel};
         auto DeserializeResult = ComponentSerializationRegistry::Instance().Deserialize(
             ComponentType,
             DestinationComponent,
@@ -533,7 +563,7 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
     return Ok();
 }
 
-[[nodiscard]] BaseNode* ResolveNodeForClone(NodeGraph* Graph, const NodeHandle Handle)
+[[nodiscard]] BaseNode* ResolveNodeForClone(Level* Graph, const NodeHandle& Handle)
 {
     if (Graph)
     {
@@ -560,7 +590,7 @@ TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle Desti
     return Handle.BorrowedSlowByUuid();
 }
 
-TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, NodeGraph& DestinationGraph, const NodeHandle DestinationParent)
+TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, Level& DestinationLevel, const NodeHandle& DestinationParent)
 {
     std::string NodeName = SourceNode.Name();
     if (NodeName.empty())
@@ -575,7 +605,7 @@ TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, NodeGraph& De
         }
     }
 
-    auto CreateResult = DestinationGraph.CreateNode(SourceNode.TypeKey(), NodeName);
+    auto CreateResult = DestinationLevel.CreateNode(SourceNode.TypeKey(), NodeName);
     if (!CreateResult)
     {
         return std::unexpected(CreateResult.error());
@@ -588,7 +618,7 @@ TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, NodeGraph& De
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to resolve cloned node"));
     }
 
-    auto CopyComponentsResult = CloneNodeComponents(SourceNode, CreatedHandle, DestinationGraph);
+    auto CopyComponentsResult = CloneNodeComponents(SourceNode, CreatedHandle, DestinationLevel);
     if (!CopyComponentsResult)
     {
         return std::unexpected(CopyComponentsResult.error());
@@ -596,23 +626,23 @@ TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, NodeGraph& De
 
     if (!DestinationParent.IsNull())
     {
-        auto AttachResult = DestinationGraph.AttachChild(DestinationParent, CreatedHandle);
+        auto AttachResult = DestinationLevel.AttachChild(DestinationParent, CreatedHandle);
         if (!AttachResult)
         {
             return std::unexpected(AttachResult.error());
         }
     }
 
-    NodeGraph* SourceGraph = SourceNode.OwnerGraph();
+    Level* SourceLevel = ResolveLevelContext(SourceNode);
     for (const NodeHandle ChildHandle : SourceNode.Children())
     {
-        BaseNode* ChildNode = ResolveNodeForClone(SourceGraph, ChildHandle);
+        BaseNode* ChildNode = ResolveNodeForClone(SourceLevel, ChildHandle);
         if (!ChildNode)
         {
             continue;
         }
 
-        auto ChildCloneResult = CloneNodeSubtree(*ChildNode, DestinationGraph, CreatedHandle);
+        auto ChildCloneResult = CloneNodeSubtree(*ChildNode, DestinationLevel, CreatedHandle);
         if (!ChildCloneResult)
         {
             return std::unexpected(ChildCloneResult.error());
@@ -622,18 +652,18 @@ TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, NodeGraph& De
     return CreatedHandle;
 }
 
-TExpected<void> CloneNodeChildrenAsRoots(const BaseNode& SourceNode, NodeGraph& DestinationGraph)
+TExpected<void> CloneNodeChildrenAsRoots(const BaseNode& SourceNode, Level& DestinationLevel)
 {
-    NodeGraph* SourceGraph = SourceNode.OwnerGraph();
+    Level* SourceLevel = ResolveLevelContext(SourceNode);
     for (const NodeHandle ChildHandle : SourceNode.Children())
     {
-        BaseNode* ChildNode = ResolveNodeForClone(SourceGraph, ChildHandle);
+        BaseNode* ChildNode = ResolveNodeForClone(SourceLevel, ChildHandle);
         if (!ChildNode)
         {
             continue;
         }
 
-        auto CloneResult = CloneNodeSubtree(*ChildNode, DestinationGraph, NodeHandle{});
+        auto CloneResult = CloneNodeSubtree(*ChildNode, DestinationLevel, NodeHandle{});
         if (!CloneResult)
         {
             return std::unexpected(CloneResult.error());
@@ -910,19 +940,7 @@ Result EditorAssetService::OpenSelectedAssetPreview()
     std::ostringstream Summary;
     Summary << Asset->TypeLabel << " '" << Asset->Name << "'";
 
-    if (Asset->AssetKind == AssetKindNodeGraph())
-    {
-        auto GraphResult = m_assetManager->Load<NodeGraph>(Asset->AssetId);
-        if (!GraphResult)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, GraphResult.error()));
-        }
-
-        const std::size_t NodeCount = CountNodes(*GraphResult.value());
-        const std::size_t ComponentCount = CountComponents(*GraphResult.value());
-        Summary << " preview loaded (" << NodeCount << " nodes, " << ComponentCount << " components).";
-    }
-    else if (Asset->AssetKind == AssetKindLevel())
+    if (Asset->AssetKind == AssetKindLevel())
     {
         auto LevelResult = m_assetManager->Load<Level>(Asset->AssetId);
         if (!LevelResult)
@@ -1293,7 +1311,7 @@ Result EditorAssetService::RenameSelectedAsset(const std::string_view NewName)
     return RenameAssetByKey(m_selectedAssetKey, NewName);
 }
 
-Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Context, const NodeHandle SourceHandle)
+Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Context, const NodeHandle& SourceHandle)
 {
     if (!m_assetManager)
     {
@@ -1322,7 +1340,7 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
 
     if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<Level>()))
     {
-        auto* LevelNode = dynamic_cast<Level*>(SourceNode);
+        auto* LevelNode = NodeCast<Level>(SourceNode);
         if (!LevelNode)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError, "Selected level node could not be resolved"));
@@ -1366,7 +1384,7 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
     }
     else
     {
-        NodeGraph PrefabGraph{};
+        Level PrefabGraph{};
         std::string BaseName = SourceNode->Name();
         if (BaseName.empty())
         {
@@ -1381,15 +1399,15 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
         }
         PrefabGraph.Name(BaseName + ".Graph");
 
-        if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<NodeGraph>()))
+        if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<Level>()))
         {
-            auto* SourceGraph = dynamic_cast<NodeGraph*>(SourceNode);
-            if (!SourceGraph)
+            auto* SourceLevel = NodeCast<Level>(SourceNode);
+            if (!SourceLevel)
             {
                 return std::unexpected(MakeError(EErrorCode::InternalError, "Selected graph node could not be resolved"));
             }
 
-            auto PayloadResult = NodeGraphSerializer::Serialize(*SourceGraph);
+            auto PayloadResult = LevelGraphSerializer::Serialize(*SourceLevel);
             if (!PayloadResult)
             {
                 return std::unexpected(PayloadResult.error());
@@ -1402,7 +1420,7 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
                 {
                     return std::unexpected(CloneResult.error());
                 }
-                auto FallbackPayloadResult = NodeGraphSerializer::Serialize(PrefabGraph);
+                auto FallbackPayloadResult = LevelGraphSerializer::Serialize(PrefabGraph);
                 if (!FallbackPayloadResult)
                 {
                     return std::unexpected(FallbackPayloadResult.error());
@@ -1411,17 +1429,17 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
             }
 
             std::vector<uint8_t> Bytes{};
-            auto SerializeResult = SerializeNodeGraphPayload(*PayloadResult, Bytes);
+            auto SerializeResult = SerializeLevelGraphPayload(*PayloadResult, Bytes);
             if (!SerializeResult)
             {
                 return std::unexpected(SerializeResult.error());
             }
 
             RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Graphs", BaseName);
-            RuntimeAsset.AssetKind = AssetKindNodeGraph();
+            RuntimeAsset.AssetKind = AssetKindLevel();
             RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
-                PayloadNodeGraph(),
-                NodeGraphSerializer::kSchemaVersion,
+                PayloadLevel(),
+                LevelGraphSerializer::kSchemaVersion,
                 std::move(Bytes));
         }
         else
@@ -1432,7 +1450,7 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
                 return std::unexpected(CloneResult.error());
             }
 
-            auto PayloadResult = NodeGraphSerializer::Serialize(PrefabGraph);
+            auto PayloadResult = LevelGraphSerializer::Serialize(PrefabGraph);
             if (!PayloadResult)
             {
                 return std::unexpected(PayloadResult.error());
@@ -1443,17 +1461,17 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
             }
 
             std::vector<uint8_t> Bytes{};
-            auto SerializeResult = SerializeNodeGraphPayload(*PayloadResult, Bytes);
+            auto SerializeResult = SerializeLevelGraphPayload(*PayloadResult, Bytes);
             if (!SerializeResult)
             {
                 return std::unexpected(SerializeResult.error());
             }
 
             RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Prefabs", BaseName);
-            RuntimeAsset.AssetKind = AssetKindNodeGraph();
+            RuntimeAsset.AssetKind = AssetKindLevel();
             RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
-                PayloadNodeGraph(),
-                NodeGraphSerializer::kSchemaVersion,
+                PayloadLevel(),
+                LevelGraphSerializer::kSchemaVersion,
                 std::move(Bytes));
         }
     }
@@ -1508,10 +1526,6 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
     }
 
-    if (Asset->AssetKind == AssetKindNodeGraph())
-    {
-        return InstantiateNodeGraphAsset(Context, *Asset);
-    }
     if (Asset->AssetKind == AssetKindLevel())
     {
         return InstantiateLevelAsset(Context, *Asset);
@@ -1595,10 +1609,6 @@ std::string EditorAssetService::AssetKindToLabel(const ::SnAPI::AssetPipeline::T
     if (AssetKind == AssetKindLevel())
     {
         return "Level";
-    }
-    if (AssetKind == AssetKindNodeGraph())
-    {
-        return "NodeGraph";
     }
     return "Asset";
 }
@@ -1701,30 +1711,6 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
         return std::unexpected("Asset manager is not initialized");
     }
 
-    if (Asset.AssetKind == AssetKindNodeGraph())
-    {
-        auto GraphResult = m_assetManager->Load<NodeGraph>(Asset.AssetId);
-        if (!GraphResult)
-        {
-            return std::unexpected(GraphResult.error());
-        }
-
-        auto PayloadResult = NodeGraphSerializer::Serialize(*GraphResult.value());
-        if (!PayloadResult)
-        {
-            return std::unexpected(PayloadResult.error().Message);
-        }
-
-        std::vector<uint8_t> Bytes{};
-        auto BytesResult = SerializeNodeGraphPayload(*PayloadResult, Bytes);
-        if (!BytesResult)
-        {
-            return std::unexpected(BytesResult.error().Message);
-        }
-
-        return ::SnAPI::AssetPipeline::TypedPayload(PayloadNodeGraph(), NodeGraphSerializer::kSchemaVersion, std::move(Bytes));
-    }
-
     if (Asset.AssetKind == AssetKindLevel())
     {
         auto LevelResult = m_assetManager->Load<Level>(Asset.AssetId);
@@ -1776,48 +1762,6 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
     return std::unexpected("Unsupported asset kind for payload serialization");
 }
 
-Result EditorAssetService::InstantiateNodeGraphAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
-{
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
-    }
-
-    auto GraphResult = m_assetManager->Load<NodeGraph>(Asset.AssetId);
-    if (!GraphResult)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, GraphResult.error()));
-    }
-
-    auto PayloadResult = NodeGraphSerializer::Serialize(*GraphResult.value());
-    if (!PayloadResult)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
-    }
-
-    auto CreateResult = WorldPtr->CreateNode<NodeGraph>(Asset.Name.empty() ? std::string("NodeGraphAsset") : Asset.Name);
-    if (!CreateResult)
-    {
-        return std::unexpected(CreateResult.error());
-    }
-
-    auto* CreatedNodeGraph = dynamic_cast<NodeGraph*>(CreateResult->Borrowed());
-    if (!CreatedNodeGraph)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create destination NodeGraph"));
-    }
-
-    auto DeserializeResult = NodeGraphSerializer::Deserialize(*PayloadResult, *CreatedNodeGraph);
-    if (!DeserializeResult)
-    {
-        return std::unexpected(DeserializeResult.error());
-    }
-
-    m_statusMessage = "Instantiated NodeGraph asset: " + Asset.Name;
-    return Ok();
-}
-
 Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
 {
     auto* WorldPtr = Context.Runtime().WorldPtr();
@@ -1844,7 +1788,7 @@ Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, 
         return std::unexpected(CreateResult.error());
     }
 
-    auto* CreatedLevel = dynamic_cast<Level*>(CreateResult->Borrowed());
+    auto* CreatedLevel = NodeCast<Level>(CreateResult->Borrowed());
     if (!CreatedLevel)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create destination Level"));
@@ -1880,19 +1824,19 @@ Result EditorAssetService::InstantiateWorldAsset(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
     }
 
-    auto CreateResult = WorldPtr->CreateNode<NodeGraph>(Asset.Name.empty() ? std::string("WorldAsset") : Asset.Name);
+    auto CreateResult = WorldPtr->CreateNode<Level>(Asset.Name.empty() ? std::string("WorldAsset") : Asset.Name);
     if (!CreateResult)
     {
         return std::unexpected(CreateResult.error());
     }
 
-    auto* CreatedNodeGraph = dynamic_cast<NodeGraph*>(CreateResult->Borrowed());
-    if (!CreatedNodeGraph)
+    auto* CreatedLevel = NodeCast<Level>(CreateResult->Borrowed());
+    if (!CreatedLevel)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create destination graph for world asset"));
     }
 
-    auto DeserializeResult = NodeGraphSerializer::Deserialize(PayloadResult->Graph, *CreatedNodeGraph);
+    auto DeserializeResult = LevelGraphSerializer::Deserialize(PayloadResult->Graph, *CreatedLevel);
     if (!DeserializeResult)
     {
         return std::unexpected(DeserializeResult.error());

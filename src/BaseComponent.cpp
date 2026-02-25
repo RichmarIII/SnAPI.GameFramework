@@ -1,21 +1,22 @@
-#include "INode.h"
+#include "BaseComponent.h"
 
+#include "BaseNode.h"
 #include "IWorld.h"
 #include "Profiling.h"
 #include "TypeRegistry.h"
 #include "Variant.h"
-
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 #include "NetworkSystem.h"
 #endif
 
 #include <cstdint>
+#include <vector>
 
 namespace SnAPI::GameFramework
 {
 namespace
 {
-constexpr std::uint8_t kRpcTargetNode = 0;
+constexpr std::uint8_t kRpcTargetComponent = 1;
 
 bool IsRpcMethod(const MethodInfo& Method)
 {
@@ -82,12 +83,67 @@ bool InvokeLocal(void* Instance, const MethodInfo& Method, std::span<const Varia
 
 } // namespace
 
-bool INode::CallRPC(std::string_view MethodName, std::initializer_list<Variant> Args)
+BaseNode* BaseComponent::OwnerNode() const
 {
-    return CallRPC(MethodName, std::span<const Variant>(Args.begin(), Args.size()));
+    if (!m_ownerNode && !m_owner.IsNull())
+    {
+        m_ownerNode = m_owner.Borrowed();
+    }
+    return m_ownerNode;
 }
 
-bool INode::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
+IWorld* BaseComponent::World() const
+{
+    auto* Node = OwnerNode();
+    if (!Node)
+    {
+        return nullptr;
+    }
+    return Node->World();
+}
+
+bool BaseComponent::IsServer() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (auto* WorldPtr = World())
+    {
+        return WorldPtr->Networking().IsServer();
+    }
+#endif
+    return true;
+}
+
+bool BaseComponent::IsClient() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (auto* WorldPtr = World())
+    {
+        return WorldPtr->Networking().IsClient();
+    }
+#endif
+    return false;
+}
+
+bool BaseComponent::IsListenServer() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    if (auto* WorldPtr = World())
+    {
+        return WorldPtr->Networking().IsListenServer();
+    }
+#endif
+    return false;
+}
+
+bool BaseComponent::CallRPC(std::string_view MethodName, std::initializer_list<Variant> Args)
+{
+    // GCC 15 with libstdc++ currently rejects direct span(pointer, size) construction here.
+    // Materialize a contiguous buffer and pass it as a span to keep semantics unchanged.
+    std::vector<Variant> ArgCopy{Args};
+    return CallRPC(MethodName, std::span<const Variant>(ArgCopy.data(), ArgCopy.size()));
+}
+
+bool BaseComponent::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
 {
     TypeId MethodOwner{};
     const MethodInfo* Method = FindRpcMethod(TypeKey(), MethodName, Args, MethodOwner);
@@ -124,7 +180,7 @@ bool INode::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
         }
 
         return Bridge->Call(*Connection,
-                            kRpcTargetNode,
+                            kRpcTargetComponent,
                             Id(),
                             TypeKey(),
                             MethodOwner,
@@ -150,7 +206,7 @@ bool INode::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
                 if (Connection)
                 {
                     return Bridge->Call(*Connection,
-                                        kRpcTargetNode,
+                                        kRpcTargetComponent,
                                         Id(),
                                         TypeKey(),
                                         MethodOwner,
@@ -187,7 +243,7 @@ bool INode::CallRPC(std::string_view MethodName, std::span<const Variant> Args)
             if (Network && Network->Session() && Network->Rpc() && Bridge)
             {
                 return Bridge->Call(0,
-                                    kRpcTargetNode,
+                                    kRpcTargetComponent,
                                     Id(),
                                     TypeKey(),
                                     MethodOwner,

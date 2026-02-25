@@ -4,7 +4,8 @@
 #include <string>
 
 #include "Expected.h"
-#include "INode.h"
+#include "Handles.h"
+#include "Uuid.h"
 
 namespace SnAPI::GameFramework
 {
@@ -20,6 +21,16 @@ enum class EWorldKind : std::uint8_t
 };
 
 class Level;
+class BaseNode;
+class WorldEcsRuntime;
+template<typename TObject>
+class TObjectPool;
+template<typename TObject>
+struct TDenseRuntimeHandle;
+struct RuntimeNodeRecord;
+using RuntimeNodeHandle = TDenseRuntimeHandle<RuntimeNodeRecord>;
+struct RuntimeComponentRecord;
+using RuntimeComponentHandle = TDenseRuntimeHandle<RuntimeComponentRecord>;
 #if defined(SNAPI_GF_ENABLE_INPUT)
 class InputSystem;
 #endif
@@ -50,6 +61,9 @@ class RendererSystem;
 class IWorld
 {
 public:
+    using RuntimeChildVisitor = void(*)(void* UserData, RuntimeNodeHandle Child);
+    using NodeVisitor = void(*)(void* UserData, const NodeHandle& Handle, BaseNode& Node);
+
     /** @brief Virtual destructor. */
     virtual ~IWorld() = default;
 
@@ -78,9 +92,9 @@ public:
      */
     virtual bool ShouldPumpNetworking() const = 0;
     /**
-     * @brief Whether node/component tick traversal should run.
+     * @brief Whether ECS runtime storage phases should run.
      */
-    virtual bool ShouldTickNodeGraph() const = 0;
+    virtual bool ShouldTickEcsRuntime() const = 0;
     /**
      * @brief Whether physics simulation stepping should run.
      * @remarks
@@ -110,6 +124,102 @@ public:
      * @brief Whether renderer end-frame submission should run.
      */
     virtual bool ShouldRenderFrame() const = 0;
+
+    /**
+     * @brief Access world-owned node pool storage.
+     * @return Mutable node pool reference.
+     * @remarks
+     * World is the single owner of node object storage in the ECS-only model.
+     */
+    virtual TObjectPool<BaseNode>& NodePool() = 0;
+    /**
+     * @brief Access world-owned node pool storage (const).
+     * @return Const node pool reference.
+     */
+    virtual const TObjectPool<BaseNode>& NodePool() const = 0;
+
+    /**
+     * @brief Iterate all world-owned nodes.
+     * @param Visitor Callback invoked for each node.
+     * @param UserData Opaque callback context pointer.
+     */
+    virtual void ForEachNode(NodeVisitor Visitor, void* UserData) = 0;
+    /**
+     * @brief Resolve node handle by UUID (slow path).
+     * @param Id Node UUID.
+     * @return Node handle or error.
+     */
+    virtual TExpected<NodeHandle> NodeHandleById(const Uuid& Id) const = 0;
+    /**
+     * @brief Create a node by reflected type.
+     * @param Type Reflected node type id.
+     * @param Name Node name.
+     * @return Node handle or error.
+     */
+    virtual TExpected<NodeHandle> CreateNode(const TypeId& Type, std::string Name) = 0;
+    /**
+     * @brief Create a node by reflected type with explicit UUID.
+     * @param Type Reflected node type id.
+     * @param Name Node name.
+     * @param Id Explicit node UUID.
+     * @return Node handle or error.
+     */
+    virtual TExpected<NodeHandle> CreateNodeWithId(const TypeId& Type, std::string Name, const Uuid& Id) = 0;
+    /**
+     * @brief Destroy a node.
+     * @param Handle Node handle.
+     * @return Success or error.
+     */
+    virtual Result DestroyNode(const NodeHandle& Handle) = 0;
+    /**
+     * @brief Attach child under parent.
+     * @param Parent Parent node handle.
+     * @param Child Child node handle.
+     * @return Success or error.
+     */
+    virtual Result AttachChild(const NodeHandle& Parent, const NodeHandle& Child) = 0;
+    /**
+     * @brief Detach child from parent.
+     * @param Child Child node handle.
+     * @return Success or error.
+     */
+    virtual Result DetachChild(const NodeHandle& Child) = 0;
+    /**
+     * @brief Borrow component instance by owner/type.
+     * @param Owner Owner node handle.
+     * @param Type Component reflected type id.
+     * @return Component pointer or nullptr.
+     */
+    virtual void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) = 0;
+    /**
+     * @brief Borrow component instance by owner/type (const).
+     * @param Owner Owner node handle.
+     * @param Type Component reflected type id.
+     * @return Component pointer or nullptr.
+     */
+    virtual const void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) const = 0;
+    /**
+     * @brief Remove a component by owner/type.
+     * @param Owner Owner node handle.
+     * @param Type Component reflected type id.
+     * @return Success or error.
+     */
+    virtual Result RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type) = 0;
+    /**
+     * @brief Create a component by owner/type.
+     * @param Owner Owner node handle.
+     * @param Type Component reflected type id.
+     * @return Raw component pointer or error.
+     */
+    virtual TExpected<void*> CreateComponent(const NodeHandle& Owner, const TypeId& Type) = 0;
+    /**
+     * @brief Create a component by owner/type with explicit UUID.
+     * @param Owner Owner node handle.
+     * @param Type Component reflected type id.
+     * @param Id Explicit component UUID.
+     * @return Raw component pointer or error.
+     */
+    virtual TExpected<void*> CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) = 0;
 
     /**
      * @brief Per-frame tick.
@@ -173,7 +283,141 @@ public:
      * @return Reference wrapper or error.
      * @remarks Returns typed level reference if handle resolves and is level-compatible.
      */
-    virtual TExpectedRef<Level> LevelRef(NodeHandle Handle) = 0;
+    virtual TExpectedRef<Level> LevelRef(const NodeHandle& Handle) = 0;
+
+    /**
+     * @brief Create a world-owned runtime node record in ECS storage.
+     * @param Name Node display/debug name.
+     * @param Type Runtime type id.
+     * @return Runtime node handle or error.
+     */
+    virtual TExpected<RuntimeNodeHandle> CreateRuntimeNode(std::string Name, const TypeId& Type) = 0;
+    /**
+     * @brief Create a world-owned runtime node record with explicit UUID.
+     * @param Id Explicit node UUID.
+     * @param Name Node display/debug name.
+     * @param Type Runtime type id.
+     * @return Runtime node handle or error.
+     */
+    virtual TExpected<RuntimeNodeHandle> CreateRuntimeNodeWithId(const Uuid& Id, std::string Name, const TypeId& Type) = 0;
+    /**
+     * @brief Destroy a runtime node (recursive for descendants).
+     * @param Handle Runtime node handle.
+     * @return Success or error.
+     */
+    virtual Result DestroyRuntimeNode(RuntimeNodeHandle Handle) = 0;
+    /**
+     * @brief Attach a runtime child node to a parent.
+     * @param Parent Parent runtime node handle.
+     * @param Child Child runtime node handle.
+     * @return Success or error.
+     */
+    virtual Result AttachRuntimeChild(RuntimeNodeHandle Parent, RuntimeNodeHandle Child) = 0;
+    /**
+     * @brief Detach a runtime child node from its parent.
+     * @param Child Child runtime node handle.
+     * @return Success or error.
+     */
+    virtual Result DetachRuntimeChild(RuntimeNodeHandle Child) = 0;
+    /**
+     * @brief Resolve runtime node handle by UUID.
+     * @param Id Runtime node UUID.
+     * @return Runtime node handle or error.
+     */
+    virtual TExpected<RuntimeNodeHandle> RuntimeNodeById(const Uuid& Id) const = 0;
+    /**
+     * @brief Get runtime parent for a node.
+     * @param Child Child runtime node handle.
+     * @return Parent runtime node handle (null when root or invalid).
+     */
+    virtual RuntimeNodeHandle RuntimeParent(RuntimeNodeHandle Child) const = 0;
+    /**
+     * @brief Get runtime children for a node.
+     * @param Parent Parent runtime node handle.
+     * @return Child runtime handles.
+     */
+    virtual std::vector<RuntimeNodeHandle> RuntimeChildren(RuntimeNodeHandle Parent) const = 0;
+    /**
+     * @brief Iterate runtime children for a node without allocating snapshots.
+     * @param Parent Parent runtime node handle.
+     * @param Visitor Callback invoked for each alive child.
+     * @param UserData Opaque callback context pointer.
+     */
+    virtual void ForEachRuntimeChild(RuntimeNodeHandle Parent, RuntimeChildVisitor Visitor, void* UserData) const = 0;
+    /**
+     * @brief Get runtime root nodes for the world.
+     * @return Root runtime handles.
+     */
+    virtual std::vector<RuntimeNodeHandle> RuntimeRoots() const = 0;
+    /**
+     * @brief Add a runtime component to a runtime node by reflected type.
+     * @param Owner Runtime owner node handle.
+     * @param Type Runtime component type id.
+     * @return Runtime component handle or error.
+     * @remarks
+     * This path requires a pre-registered runtime storage for the type and a
+     * default constructible runtime type.
+     */
+    virtual TExpected<RuntimeComponentHandle> AddRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) = 0;
+    /**
+     * @brief Add a runtime component with explicit UUID identity.
+     * @param Owner Runtime owner node handle.
+     * @param Type Runtime component type id.
+     * @param Id Explicit runtime component UUID.
+     * @return Runtime component handle or error.
+     */
+    virtual TExpected<RuntimeComponentHandle> AddRuntimeComponentWithId(RuntimeNodeHandle Owner,
+                                                                        const TypeId& Type,
+                                                                        const Uuid& Id) = 0;
+    /**
+     * @brief Remove a runtime component from a runtime node by type.
+     * @param Owner Runtime owner node handle.
+     * @param Type Runtime component type id.
+     * @return Success or error.
+     */
+    virtual Result RemoveRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) = 0;
+    /**
+     * @brief Check if runtime node has a runtime component type attached.
+     * @param Owner Runtime owner node handle.
+     * @param Type Runtime component type id.
+     * @return True when attached.
+     */
+    virtual bool HasRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) const = 0;
+    /**
+     * @brief Get runtime component handle attached to runtime node by type.
+     * @param Owner Runtime owner node handle.
+     * @param Type Runtime component type id.
+     * @return Runtime component handle or error.
+     */
+    virtual TExpected<RuntimeComponentHandle> RuntimeComponentByType(RuntimeNodeHandle Owner,
+                                                                     const TypeId& Type) const = 0;
+    /**
+     * @brief Resolve runtime component raw pointer from handle and type.
+     * @param Handle Runtime component handle.
+     * @param Type Runtime component type id.
+     * @return Mutable raw pointer or nullptr.
+     */
+    virtual void* ResolveRuntimeComponentRaw(RuntimeComponentHandle Handle, const TypeId& Type) = 0;
+    /**
+     * @brief Resolve runtime component raw pointer from handle and type (const).
+     * @param Handle Runtime component handle.
+     * @param Type Runtime component type id.
+     * @return Const raw pointer or nullptr.
+     */
+    virtual const void* ResolveRuntimeComponentRaw(RuntimeComponentHandle Handle, const TypeId& Type) const = 0;
+
+    /**
+     * @brief Access world-owned ECS typed storage runtime.
+     * @return Mutable runtime storage registry.
+     * @remarks
+     * This is the centralized owner for next-generation node/component storage.
+     */
+    virtual WorldEcsRuntime& EcsRuntime() = 0;
+    /**
+     * @brief Access world-owned ECS typed storage runtime (const).
+     * @return Const runtime storage registry.
+     */
+    virtual const WorldEcsRuntime& EcsRuntime() const = 0;
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
     /**

@@ -6,7 +6,7 @@
 #include "Profiling.h"
 
 #include "ComponentStorage.h"
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "ObjectRegistry.h"
 #include "Serialization.h"
 #include "TypeRegistry.h"
@@ -511,22 +511,22 @@ TExpected<void> DeserializeReplicatedFields(const TypeId& Type,
 
 } // namespace
 
-NetReplicationBridge::NetReplicationBridge(NodeGraph& Graph)
-    : m_graph(&Graph)
+NetReplicationBridge::NetReplicationBridge(IWorld& WorldRef)
+    : m_world(&WorldRef)
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
 }
 
-NodeGraph& NetReplicationBridge::Graph()
+IWorld& NetReplicationBridge::World()
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    return *m_graph;
+    return *m_world;
 }
 
-const NodeGraph& NetReplicationBridge::Graph() const
+const IWorld& NetReplicationBridge::World() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    return *m_graph;
+    return *m_world;
 }
 
 void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& OutEntities)
@@ -535,7 +535,7 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
     OutEntities.clear();
     m_entityRefs.clear();
 
-    if (!m_graph)
+    if (!m_world)
     {
         return;
     }
@@ -568,13 +568,59 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
         }
     };
 
-    m_graph->NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    struct GatherContext
+    {
+        NetReplicationBridge* Bridge = nullptr;
+        std::unordered_set<EntityId>* AddedNodes = nullptr;
+        std::vector<ReplicationEntityState>* OutEntities = nullptr;
+        std::vector<BaseNode*>* ReplicatedNodes = nullptr;
+    };
+
+    GatherContext Context{
+        .Bridge = this,
+        .AddedNodes = &AddedNodes,
+        .OutEntities = &OutEntities,
+        .ReplicatedNodes = &ReplicatedNodes};
+
+    m_world->ForEachNode([](void* UserData, const NodeHandle& Handle, BaseNode& Node) {
+        auto* Context = static_cast<GatherContext*>(UserData);
+        if (!Context || !Context->Bridge || !Context->AddedNodes || !Context->OutEntities || !Context->ReplicatedNodes)
+        {
+            return;
+        }
+
+        auto AddNodeEntity = [&](BaseNode& InnerNode) {
+            const EntityId NodeEntityId = MakeEntityId(InnerNode.Id());
+            if (!Context->AddedNodes->insert(NodeEntityId).second)
+            {
+                return;
+            }
+            const SnAPI::Networking::TypeId NodeTypeId = MakeNetTypeId(InnerNode.TypeKey(), ENetObjectKind::Node);
+            Context->OutEntities->push_back({NodeEntityId, NodeTypeId});
+            Context->Bridge->m_entityRefs.emplace(
+                NodeEntityId,
+                EntityRef{static_cast<std::uint8_t>(ENetObjectKind::Node), InnerNode.TypeKey(), &InnerNode, nullptr});
+        };
+
+        auto AddNodeWithParents = [&](BaseNode& InnerNode) {
+            BaseNode* Current = &InnerNode;
+            while (Current)
+            {
+                AddNodeEntity(*Current);
+                if (Current->Parent().IsNull())
+                {
+                    break;
+                }
+                Current = Current->Parent().Borrowed();
+            }
+        };
+
         bool ShouldReplicateNode = Node.Replicated();
         bool HasReplicatedComponent = false;
         for (const auto& Type : Node.ComponentTypes())
         {
-            void* ComponentPtr = m_graph->BorrowedComponent(Handle, Type);
-            auto* Component = static_cast<IComponent*>(ComponentPtr);
+            void* ComponentPtr = Context->Bridge->m_world->BorrowedComponent(Handle, Type);
+            auto* Component = static_cast<BaseComponent*>(ComponentPtr);
             if (Component && Component->Replicated())
             {
                 HasReplicatedComponent = true;
@@ -585,9 +631,11 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
         {
             return;
         }
+
         AddNodeWithParents(Node);
-        ReplicatedNodes.push_back(&Node);
-    });
+        Context->ReplicatedNodes->push_back(&Node);
+    },
+                            &Context);
 
     for (auto* Node : ReplicatedNodes)
     {
@@ -598,8 +646,8 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
         NodeHandle Handle = Node->Handle();
         for (const auto& Type : Node->ComponentTypes())
         {
-            void* ComponentPtr = m_graph->BorrowedComponent(Handle, Type);
-            auto* Component = static_cast<IComponent*>(ComponentPtr);
+            void* ComponentPtr = m_world->BorrowedComponent(Handle, Type);
+            auto* Component = static_cast<BaseComponent*>(ComponentPtr);
             if (!Component || !Component->Replicated())
             {
                 continue;
@@ -626,7 +674,7 @@ bool NetReplicationBridge::BuildSnapshot(EntityId EntityIdValue,
 
     const auto& Ref = It->second;
     TSerializationContext Context;
-    Context.Graph = m_graph;
+    Context.World = m_world;
 
     std::vector<uint8_t> FieldBytes;
     NetReplicationHeader Header{};
@@ -744,7 +792,7 @@ void NetReplicationBridge::OnDespawn(NetConnectionHandle,
                                      EntityId EntityIdValue)
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    if (!m_graph)
+    if (!m_world)
     {
         return;
     }
@@ -760,23 +808,16 @@ void NetReplicationBridge::OnDespawn(NetConnectionHandle,
         auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Info.ObjectId);
         if (Node)
         {
-            m_graph->DestroyNode(Node->Handle());
+            (void)m_world->DestroyNode(Node->Handle());
         }
     }
     else
     {
-        auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(Info.ObjectId);
+        auto* Component = ObjectRegistry::Instance().Resolve<BaseComponent>(Info.ObjectId);
         if (Component)
         {
             NodeHandle Owner = Component->Owner();
-            if (auto* Storage = m_graph->Storage(Info.Type))
-            {
-                Storage->Remove(Owner);
-                if (auto* OwnerNode = Owner.Borrowed())
-                {
-                    m_graph->UnregisterComponentOnNode(*OwnerNode, Info.Type);
-                }
-            }
+            (void)m_world->RemoveComponentByType(Owner, Info.Type);
         }
     }
 
@@ -797,7 +838,7 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
                                         ConstByteSpan Payload)
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    if (!m_graph)
+    if (!m_world)
     {
         return false;
     }
@@ -818,14 +859,14 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
     const size_t FieldSize = Payload.size() - PayloadOffset;
 
     TSerializationContext Context;
-    Context.Graph = m_graph;
+    Context.World = m_world;
 
     if (Header.Kind == ENetObjectKind::Node)
     {
         BaseNode* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Header.ObjectId);
         if (!Node)
         {
-            auto CreateResult = m_graph->CreateNode(Header.ObjectType, "Node", Header.ObjectId);
+            auto CreateResult = m_world->CreateNodeWithId(Header.ObjectType, "Node", Header.ObjectId);
             if (!CreateResult)
             {
                 return false;
@@ -847,9 +888,9 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
                 {
                     if (!Node->Parent().IsNull())
                     {
-                        m_graph->DetachChild(Node->Handle());
+                        (void)m_world->DetachChild(Node->Handle());
                     }
-                    m_graph->AttachChild(Parent->Handle(), Node->Handle());
+                    (void)m_world->AttachChild(Parent->Handle(), Node->Handle());
                 }
             }
             else
@@ -859,7 +900,7 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
         }
         else if (Node && !Node->Parent().IsNull())
         {
-            m_graph->DetachChild(Node->Handle());
+            (void)m_world->DetachChild(Node->Handle());
         }
 
         if (Node && FieldSize > 0)
@@ -880,7 +921,7 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
 
     if (Header.Kind == ENetObjectKind::Component)
     {
-        IComponent* Component = ObjectRegistry::Instance().Resolve<IComponent>(Header.ObjectId);
+        BaseComponent* Component = ObjectRegistry::Instance().Resolve<BaseComponent>(Header.ObjectId);
         if (!Component)
         {
             auto* OwnerNode = ObjectRegistry::Instance().Resolve<BaseNode>(Header.OwnerId);
@@ -895,13 +936,12 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
                 return true;
             }
 
-            auto CreateResult = ComponentSerializationRegistry::Instance()
-                .CreateWithId(*m_graph, OwnerNode->Handle(), Header.ObjectType, Header.ObjectId);
+            auto CreateResult = m_world->CreateComponentWithId(OwnerNode->Handle(), Header.ObjectType, Header.ObjectId);
             if (!CreateResult)
             {
                 return false;
             }
-            Component = ObjectRegistry::Instance().Resolve<IComponent>(Header.ObjectId);
+            Component = ObjectRegistry::Instance().Resolve<BaseComponent>(Header.ObjectId);
         }
 
         if (Component && FieldSize > 0)
@@ -924,7 +964,7 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
 void NetReplicationBridge::ResolvePendingAttachments()
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    if (!m_graph || m_pendingParents.empty())
+    if (!m_world || m_pendingParents.empty())
     {
         return;
     }
@@ -943,9 +983,9 @@ void NetReplicationBridge::ResolvePendingAttachments()
         {
             if (!Child->Parent().IsNull())
             {
-                m_graph->DetachChild(Child->Handle());
+                (void)m_world->DetachChild(Child->Handle());
             }
-            m_graph->AttachChild(Parent->Handle(), Child->Handle());
+            (void)m_world->AttachChild(Parent->Handle(), Child->Handle());
         }
         It = m_pendingParents.erase(It);
     }
@@ -954,7 +994,7 @@ void NetReplicationBridge::ResolvePendingAttachments()
 void NetReplicationBridge::ResolvePendingComponents()
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    if (!m_graph || m_pendingComponents.empty())
+    if (!m_world || m_pendingComponents.empty())
     {
         return;
     }
@@ -969,19 +1009,18 @@ void NetReplicationBridge::ResolvePendingComponents()
             continue;
         }
 
-        auto CreateResult = ComponentSerializationRegistry::Instance()
-            .CreateWithId(*m_graph, OwnerNode->Handle(), It->ComponentType, It->ComponentId);
+        auto CreateResult = m_world->CreateComponentWithId(OwnerNode->Handle(), It->ComponentType, It->ComponentId);
         if (!CreateResult)
         {
             ++It;
             continue;
         }
 
-        auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(It->ComponentId);
+        auto* Component = ObjectRegistry::Instance().Resolve<BaseComponent>(It->ComponentId);
         if (Component)
         {
             TSerializationContext Context;
-            Context.Graph = m_graph;
+            Context.World = m_world;
             if (!It->FieldBytes.empty())
             {
                 auto Result = DeserializeReplicatedFields(It->ComponentType,

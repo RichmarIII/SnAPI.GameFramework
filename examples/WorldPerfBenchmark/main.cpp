@@ -13,7 +13,7 @@
 
 using namespace SnAPI::GameFramework;
 
-class PerfComponentA final : public IComponent
+class PerfComponentA final : public BaseComponent
 {
 public:
     static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentA";
@@ -24,7 +24,7 @@ public:
     std::vector<uint8_t> m_blob{};
 };
 
-class PerfComponentB final : public IComponent
+class PerfComponentB final : public BaseComponent
 {
 public:
     static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentB";
@@ -55,7 +55,7 @@ double ToMilliseconds(const Clock::duration& Duration)
     return std::chrono::duration<double, std::milli>(Duration).count();
 }
 
-NodeHandle FindNodeByName(NodeGraph& Graph, const std::string& Name)
+NodeHandle FindNodeByName(Level& Graph, const std::string& Name)
 {
     NodeHandle Found;
     Graph.NodePool().ForEach([&](const NodeHandle& Handle, const BaseNode& Node) {
@@ -77,14 +77,14 @@ Level* FindLevelByName(World& WorldRef, const std::string& Name)
     return dynamic_cast<Level*>(Handle.Borrowed());
 }
 
-NodeGraph* FindGraphByName(Level& LevelRef, const std::string& Name)
+Level* FindGraphByName(Level& LevelRef, const std::string& Name)
 {
     NodeHandle Handle = FindNodeByName(LevelRef, Name);
     if (Handle.IsNull())
     {
         return nullptr;
     }
-    return dynamic_cast<NodeGraph*>(Handle.Borrowed());
+    return dynamic_cast<Level*>(Handle.Borrowed());
 }
 } // namespace
 
@@ -113,17 +113,17 @@ int main()
         return 1;
     }
 
-    auto GraphHandleResult = LevelRef->CreateGraph(kGraphName);
+    auto GraphHandleResult = LevelRef->CreateNode<Level>(kGraphName);
     if (!GraphHandleResult)
     {
-        std::cerr << "Failed to create graph" << std::endl;
+        std::cerr << "Failed to create level partition" << std::endl;
         return 1;
     }
 
-    auto* GraphRef = dynamic_cast<NodeGraph*>(GraphHandleResult->Borrowed());
+    auto* GraphRef = dynamic_cast<Level*>(GraphHandleResult->Borrowed());
     if (!GraphRef)
     {
-        std::cerr << "Failed to resolve graph" << std::endl;
+        std::cerr << "Failed to resolve level partition" << std::endl;
         return 1;
     }
 

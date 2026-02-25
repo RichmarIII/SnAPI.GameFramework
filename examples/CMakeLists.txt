@@ -1,3 +1,4 @@
 add_subdirectory(FeatureShowcase)
 add_subdirectory(MultiplayerExample)
 add_subdirectory(WorldPerfBenchmark)
+add_subdirectory(NodeComponentTickBenchmark)

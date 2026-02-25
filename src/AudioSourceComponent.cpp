@@ -6,7 +6,7 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
-#include "NodeGraph.h"
+#include "Level.h"
 #include "TransformComponent.h"
 #include "World.h"
 
@@ -36,6 +36,10 @@ AudioSystem* AudioSourceComponent::ResolveAudioSystem() const
     {
         return nullptr;
     }
+    if (!WorldPtr->ShouldTickAudio())
+    {
+        return nullptr;
+    }
     return &WorldPtr->Audio();
 }
 
@@ -62,6 +66,11 @@ void AudioSourceComponent::OnDestroy()
 }
 
 void AudioSourceComponent::Tick(float DeltaSeconds)
+{
+    RuntimeTick(DeltaSeconds);
+}
+
+void AudioSourceComponent::RuntimeTick(float DeltaSeconds)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     EnsureEmitter();

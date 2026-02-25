@@ -6,7 +6,7 @@
 #include <string>
 #include <cstdint>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 
 namespace SnAPI::Graphics
 {
@@ -23,7 +23,7 @@ class RendererSystem;
 /**
  * @brief Component that loads and registers a static mesh with the renderer.
  */
-class StaticMeshComponent : public IComponent
+class StaticMeshComponent : public BaseComponent, public ComponentCRTP<StaticMeshComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -81,9 +81,15 @@ public:
         return m_streamSource;
     }
 
-    void OnCreate() override;
-    void OnDestroy() override;
-    void Tick(float DeltaSeconds) override;
+    void OnCreate();
+    void OnDestroy();
+    void Tick(float DeltaSeconds);
+
+    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { OnCreate(); }
+    void OnDestroyImpl(IWorld&) { OnDestroy(); }
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
 private:
     RendererSystem* ResolveRendererSystem() const;

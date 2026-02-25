@@ -4,7 +4,7 @@
 #include "CameraComponent.h"
 #include "InputSystem.h"
 #include "Level.h"
-#include "NodeGraph.h"
+#include "NodeCast.h"
 #include "Serialization.h"
 #include "TransformComponent.h"
 #include "TypeRegistry.h"
@@ -52,7 +52,7 @@ namespace SnAPI::GameFramework::Editor
 {
 namespace
 {
-void ApplySelection(EditorSelectionModel& Model, const NodeHandle Node)
+void ApplySelection(EditorSelectionModel& Model, const NodeHandle& Node)
 {
     if (Node.IsNull())
     {
@@ -66,7 +66,7 @@ void ApplySelection(EditorSelectionModel& Model, const NodeHandle Node)
 class SelectNodeCommand final : public IEditorCommand
 {
 public:
-    SelectNodeCommand(const NodeHandle Previous, const NodeHandle Next)
+    SelectNodeCommand(const NodeHandle& Previous, const NodeHandle& Next)
         : m_previous(Previous)
         , m_next(Next)
     {
@@ -258,13 +258,7 @@ private:
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World cannot be deleted"));
         }
 
-        NodeGraph* OwnerGraph = TargetNode->OwnerGraph();
-        if (!OwnerGraph)
-        {
-            return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
-        }
-
-        auto DestroyResult = OwnerGraph->DestroyNode(TargetNode->Handle());
+        auto DestroyResult = WorldPtr->DestroyNode(TargetNode->Handle());
         if (!DestroyResult)
         {
             return std::unexpected(DestroyResult.error());
@@ -289,13 +283,7 @@ private:
             return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
         }
 
-        NodeGraph* OwnerGraph = TargetNode->OwnerGraph();
-        if (!OwnerGraph)
-        {
-            return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
-        }
-
-        auto RemoveResult = OwnerGraph->RemoveComponentByType(TargetNode->Handle(), Request.Type);
+        auto RemoveResult = WorldPtr->RemoveComponentByType(TargetNode->Handle(), Request.Type);
         if (!RemoveResult)
         {
             return std::unexpected(RemoveResult.error());
@@ -334,19 +322,13 @@ private:
             }
         }
 
-        NodeGraph* OwnerGraph = Request.TargetIsWorldRoot ? static_cast<NodeGraph*>(WorldPtr) : ParentNode->OwnerGraph();
-        if (!OwnerGraph)
-        {
-            return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
-        }
-
         std::string NodeName = ShortTypeLabel(Type->Name);
         if (NodeName.empty())
         {
             NodeName = "Node";
         }
 
-        auto CreateResult = OwnerGraph->CreateNode(Type->Id, NodeName);
+        auto CreateResult = WorldPtr->CreateNode(Type->Id, NodeName);
         if (!CreateResult)
         {
             return std::unexpected(CreateResult.error());
@@ -354,7 +336,7 @@ private:
 
         if (!Request.TargetIsWorldRoot)
         {
-            auto AttachResult = OwnerGraph->AttachChild(ParentNode->Handle(), *CreateResult);
+            auto AttachResult = WorldPtr->AttachChild(ParentNode->Handle(), *CreateResult);
             if (!AttachResult)
             {
                 return std::unexpected(AttachResult.error());
@@ -383,13 +365,7 @@ private:
         return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
     }
 
-    NodeGraph* OwnerGraph = TargetNode->OwnerGraph();
-    if (!OwnerGraph)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotReady, "Target node is not owned by a graph"));
-    }
-
-    auto CreateComponentResult = ComponentSerializationRegistry::Instance().Create(*OwnerGraph, TargetNode->Handle(), Type->Id);
+    auto CreateComponentResult = WorldPtr->CreateComponent(TargetNode->Handle(), Type->Id);
     if (!CreateComponentResult)
     {
         return std::unexpected(CreateComponentResult.error());
@@ -400,9 +376,9 @@ private:
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 [[nodiscard]] std::optional<NodeHandle> ResolveNodeHandleByPhysicsBodyRecursive(
-    NodeGraph& Graph,
+    Level& Graph,
     const SnAPI::Physics::BodyHandle& TargetBody,
-    std::unordered_set<const NodeGraph*>& VisitedGraphs)
+    std::unordered_set<const Level*>& VisitedGraphs)
 {
     if (!VisitedGraphs.insert(&Graph).second)
     {
@@ -423,7 +399,7 @@ private:
             return;
         }
 
-        if (auto* NestedGraph = dynamic_cast<NodeGraph*>(&Node))
+        if (auto* NestedGraph = NodeCast<Level>(&Node))
         {
             if (auto NestedResult = ResolveNodeHandleByPhysicsBodyRecursive(*NestedGraph, TargetBody, VisitedGraphs))
             {
@@ -718,7 +694,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         return BuildResult;
     }
 
-    m_layout.SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)>::Bind([this](const NodeHandle Handle) {
+    m_layout.SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)>::Bind([this](const NodeHandle& Handle) {
         m_pendingSelectionRequest = Handle;
         m_hasPendingSelectionRequest = true;
     }));
@@ -981,7 +957,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
         return;
     }
 
-    m_layout.SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)>::Bind([this](const NodeHandle Handle) {
+    m_layout.SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)>::Bind([this](const NodeHandle& Handle) {
         m_pendingSelectionRequest = Handle;
         m_hasPendingSelectionRequest = true;
     }));
@@ -1673,7 +1649,7 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
     }
 
     const SnAPI::Physics::BodyHandle HitBody = Hits[0].Body;
-    std::unordered_set<const NodeGraph*> VisitedGraphs{};
+    std::unordered_set<const Level*> VisitedGraphs{};
     if (auto Resolved = ResolveNodeHandleByPhysicsBodyRecursive(*WorldPtr, HitBody, VisitedGraphs))
     {
         OutNode = *Resolved;

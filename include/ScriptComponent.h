@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "ScriptEngine.h"
 
 namespace SnAPI::GameFramework
@@ -17,7 +17,7 @@ namespace SnAPI::GameFramework
  * - create/destroy `Instance`
  * - drive scripted lifecycle callbacks as desired
  */
-class ScriptComponent : public IComponent
+class ScriptComponent : public BaseComponent, public ComponentCRTP<ScriptComponent>
 {
 public:
     /** @brief Stable type name for reflection. */

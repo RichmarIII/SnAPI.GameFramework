@@ -14,7 +14,7 @@
 #endif
 #include "GameRuntime.h"
 #include "Level.h"
-#include "NodeGraph.h"
+#include "NodeCast.h"
 #include "StaticMeshComponent.h"
 #include "TransformComponent.h"
 #include "World.h"
@@ -204,7 +204,7 @@ bool ConfigurePhysics(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
 }
 #endif
 
-bool SpawnPrimitive(NodeGraph& GraphRef, const PrimitiveSpawnSpec& Spec, std::vector<NodeHandle>& OutNodes)
+bool SpawnPrimitive(Level& GraphRef, const PrimitiveSpawnSpec& Spec, std::vector<NodeHandle>& OutNodes)
 {
     auto NodeResult = GraphRef.CreateNode(Spec.Name);
     if (!NodeResult)
@@ -240,7 +240,7 @@ Quat PitchDegrees(const float Degrees)
                                          SnAPI::Math::Vector3::UnitX()));
 }
 
-void BuildPlatformingScene(NodeGraph& GraphRef, std::vector<NodeHandle>& OutNodes)
+void BuildPlatformingScene(Level& GraphRef, std::vector<NodeHandle>& OutNodes)
 {
     std::vector<PrimitiveSpawnSpec> Specs{};
     Specs.reserve(16);
@@ -499,16 +499,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
     {
         if (!It->IsNull())
         {
-            BaseNode* Node = It->Borrowed();
-            NodeGraph* OwnerGraph = Node ? Node->OwnerGraph() : nullptr;
-            if (OwnerGraph)
-            {
-                (void)OwnerGraph->DestroyNode(*It);
-            }
-            else
-            {
-                (void)WorldPtr->DestroyNode(*It);
-            }
+            (void)WorldPtr->DestroyNode(*It);
         }
     }
     m_sceneNodes.clear();
@@ -532,7 +523,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(LevelNodeResult.error());
     }
 
-    auto* LevelNode = dynamic_cast<Level*>(LevelNodeResult->Borrowed());
+    auto* LevelNode = NodeCast<Level>(LevelNodeResult->Borrowed());
     if (!LevelNode)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow editor level node"));
@@ -612,16 +603,7 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
             {
                 if (!It->IsNull())
                 {
-                    BaseNode* Node = It->Borrowed();
-                    NodeGraph* OwnerGraph = Node ? Node->OwnerGraph() : nullptr;
-                    if (OwnerGraph)
-                    {
-                        (void)OwnerGraph->DestroyNode(*It);
-                    }
-                    else
-                    {
-                        (void)WorldPtr->DestroyNode(*It);
-                    }
+                    (void)WorldPtr->DestroyNode(*It);
                 }
             }
 

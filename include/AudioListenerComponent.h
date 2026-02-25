@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -21,7 +21,7 @@ class AudioSystem;
  * - Gameplay entry (`SetActive`) routes by role.
  * - Server endpoint fans out to client endpoint.
  */
-class AudioListenerComponent : public IComponent
+class AudioListenerComponent : public BaseComponent, public ComponentCRTP<AudioListenerComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -51,13 +51,17 @@ public:
     }
 
     /** @brief Lifecycle hook after creation; prepares listener-side runtime state. */
-    void OnCreate() override;
+    void OnCreate();
     /**
      * @brief Per-frame update.
      * @param DeltaSeconds Frame delta seconds.
      * @remarks If active, synchronizes listener transform into audio engine.
      */
-    void Tick(float DeltaSeconds) override;
+    void Tick(float DeltaSeconds);
+    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { OnCreate(); }
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
     /**
      * @brief Gameplay-facing setter.

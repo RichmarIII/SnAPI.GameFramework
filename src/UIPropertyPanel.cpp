@@ -4,7 +4,7 @@
 
 #include "BaseNode.h"
 #include "ComponentStorage.h"
-#include "NodeGraph.h"
+#include "IWorld.h"
 
 #include <algorithm>
 #include <array>
@@ -490,12 +490,11 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
     .IsComponent = false});
 
   NodeHandle ComponentOwner = Node->Handle();
-  if (auto* OwnerGraph = Node->OwnerGraph())
+  if (ComponentOwner.IsNull() || ComponentOwner.Borrowed() == nullptr)
   {
-    const bool OwnerHandleValid = !ComponentOwner.IsNull() && OwnerGraph->NodePool().Borrowed(ComponentOwner) != nullptr;
-    if (!OwnerHandleValid)
+    if (auto* WorldRef = Node->World())
     {
-      const auto FreshOwnerHandle = OwnerGraph->NodeHandleByIdSlow(Node->Id());
+      const auto FreshOwnerHandle = WorldRef->NodeHandleById(Node->Id());
       if (FreshOwnerHandle)
       {
         ComponentOwner = *FreshOwnerHandle;
@@ -508,7 +507,7 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
   const size_t ComponentCount = std::min(ComponentTypes.size(), ComponentStorages.size());
   for (size_t Index = 0; Index < ComponentCount; ++Index)
   {
-    IComponentStorage* Storage = ComponentStorages[Index];
+    ComponentStorageView* Storage = ComponentStorages[Index];
     if (!Storage)
     {
       continue;

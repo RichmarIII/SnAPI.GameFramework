@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
@@ -31,7 +31,7 @@ class AudioSystem;
  *   through reflected RPC endpoints (`PlayServer`/`PlayClient`, `StopServer`/`StopClient`).
  * - Dedicated server instances skip local audio emission in client endpoints.
  */
-class AudioSourceComponent : public IComponent
+class AudioSourceComponent : public BaseComponent, public ComponentCRTP<AudioSourceComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -80,18 +80,23 @@ public:
      * @brief Lifecycle hook after component creation.
      * @remarks Ensures emitter allocation and honors `Settings::AutoPlay`.
      */
-    void OnCreate() override;
+    void OnCreate();
     /**
      * @brief Lifecycle hook before destruction.
      * @remarks Clears local audio state without world/network virtual dispatch during teardown.
      */
-    void OnDestroy() override;
+    void OnDestroy();
     /**
      * @brief Per-frame maintenance tick.
      * @param DeltaSeconds Frame delta time.
      * @remarks Keeps emitter parameters and transform synchronized with current settings/owner state.
      */
-    void Tick(float DeltaSeconds) override;
+    void Tick(float DeltaSeconds);
+    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { OnCreate(); }
+    void OnDestroyImpl(IWorld&) { OnDestroy(); }
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
     /**
      * @brief Start playback.

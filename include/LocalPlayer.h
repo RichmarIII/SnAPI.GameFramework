@@ -56,7 +56,7 @@ public:
      * @brief Request possession of target node.
      * @remarks Clients forward to `ServerRequestPossess`; server executes directly.
      */
-    void RequestPossess(NodeHandle Target);
+    void RequestPossess(const NodeHandle& Target);
 
     /**
      * @brief Request possession clear.
@@ -67,7 +67,7 @@ public:
     /**
      * @brief Server-authoritative possession RPC endpoint.
      */
-    void ServerRequestPossess(NodeHandle Target);
+    void ServerRequestPossess(const NodeHandle& Target);
 
     /**
      * @brief Server-authoritative unpossession RPC endpoint.
@@ -75,7 +75,7 @@ public:
     void ServerRequestUnpossess();
 
 private:
-    bool CanPossessTarget(NodeHandle Target) const;
+    bool CanPossessTarget(const NodeHandle& Target) const;
 
     unsigned int m_playerIndex = 0;
     NodeHandle m_possessedNode{};

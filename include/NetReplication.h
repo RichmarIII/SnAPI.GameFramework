@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "Export.h"
-#include "NodeGraph.h"
+#include "IWorld.h"
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 #include <Services/ReplicationService.h>
@@ -17,9 +17,9 @@ namespace SnAPI::GameFramework
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 
 /**
- * @brief Reflection-driven replication bridge for NodeGraph objects.
+ * @brief Reflection-driven replication bridge for world-owned graph objects.
  * @remarks
- * Adapts runtime graph objects (nodes/components) to SnAPI.Networking replication interfaces.
+ * Adapts world-owned graph objects (nodes/components) to SnAPI.Networking replication interfaces.
  *
  * Key responsibilities:
  * - enumerate replicated entities from graph state
@@ -40,21 +40,21 @@ class SNAPI_GAMEFRAMEWORK_API NetReplicationBridge final
 {
 public:
     /**
-     * @brief Construct a bridge for a node graph.
-     * @param Graph Graph to replicate.
-     * @remarks Graph reference must outlive the bridge.
+ * @brief Construct a bridge for a world graph context.
+ * @param WorldRef World to replicate.
+ * @remarks World reference must outlive the bridge.
      */
-    explicit NetReplicationBridge(NodeGraph& Graph);
+    explicit NetReplicationBridge(IWorld& WorldRef);
 
     /**
-     * @brief Access the replicated graph.
+     * @brief Access the replicated world context.
      */
-    NodeGraph& Graph();
+    IWorld& World();
 
     /**
-     * @brief Access the replicated graph (const).
+     * @brief Access the replicated world context (const).
      */
-    const NodeGraph& Graph() const;
+    const IWorld& World() const;
 
     // IReplicationEntityProvider
     /** @brief Enumerate currently replicated entities visible from graph state. */
@@ -107,7 +107,7 @@ private:
         std::uint8_t Kind = 0; /**< @brief Local object kind discriminator (node/component). */
         TypeId Type{}; /**< @brief Reflected type of mapped object. */
         BaseNode* Node = nullptr; /**< @brief Borrowed node pointer when kind is node. */
-        IComponent* Component = nullptr; /**< @brief Borrowed component pointer when kind is component. */
+        BaseComponent* Component = nullptr; /**< @brief Borrowed component pointer when kind is component. */
     };
 
     struct EntityInfo
@@ -122,7 +122,7 @@ private:
     void ResolvePendingAttachments();
     void ResolvePendingComponents();
 
-    NodeGraph* m_graph = nullptr; /**< @brief Non-owning graph context for replication operations. */
+    IWorld* m_world = nullptr; /**< @brief Non-owning world context for replication operations. */
     std::unordered_map<SnAPI::Networking::EntityId, EntityRef> m_entityRefs{}; /**< @brief EntityId -> live local object references. */
     std::unordered_map<SnAPI::Networking::EntityId, EntityInfo> m_entityInfo{}; /**< @brief EntityId -> persisted identity/type metadata. */
     std::unordered_map<Uuid, Uuid, UuidHash> m_pendingParents{}; /**< @brief Child node id -> unresolved parent id map for out-of-order spawn handling. */

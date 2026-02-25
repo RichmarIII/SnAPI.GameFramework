@@ -11,7 +11,7 @@
 
 #include "Expected.h"
 #include "Handle.h"
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "ObjectPool.h"
 #include "ObjectRegistry.h"
 #include "Profiling.h"
@@ -81,12 +81,12 @@ private:
 
 /**
  * @brief Type-erased interface for component storage.
- * @remarks NodeGraph uses this to manage components generically.
+ * @remarks Level uses this to manage components generically.
  * @note Handle parameters are `const&` by design. Handle resolution may refresh
  * runtime-key fields on the caller-owned handle instance; passing by value would
  * drop that refresh and can force repeated UUID fallback lookups.
  */
-class IComponentStorage
+class ComponentStorageView
 {
 public:
     /**
@@ -98,7 +98,7 @@ public:
     using NodeActivePredicate = bool(*)(void* UserData, const BaseNode& Node);
 
     /** @brief Virtual destructor. */
-    virtual ~IComponentStorage() = default;
+    virtual ~ComponentStorageView() = default;
     /**
      * @brief Get the component type id stored by this storage.
      * @return TypeId value.
@@ -189,10 +189,10 @@ public:
  * - lifecycle callbacks (`OnCreate`/`OnDestroy`)
  */
 template<typename T>
-class TComponentStorage final : public IComponentStorage
+class TComponentStorage final : public ComponentStorageView
 {
 public:
-    static_assert(std::is_base_of_v<IComponent, T>, "Components must derive from IComponent");
+    static_assert(std::is_base_of_v<BaseComponent, T>, "Components must derive from BaseComponent");
 
     /**
      * @brief Get the component type id.
@@ -208,7 +208,7 @@ public:
      * @param Owner Owner node handle.
      * @return Reference wrapper or error.
      */
-    TExpectedRef<T> Add(NodeHandle Owner)
+    TExpectedRef<T> Add(const NodeHandle& Owner)
     {
         return AddWithId(Owner, NewUuid());
     }
@@ -220,7 +220,7 @@ public:
      * @return Reference wrapper or error.
      */
     template<typename... Args>
-    TExpectedRef<T> Add(NodeHandle Owner, Args&&... args)
+    TExpectedRef<T> Add(const NodeHandle& Owner, Args&&... args)
     {
         return AddWithId(Owner, NewUuid(), std::forward<Args>(args)...);
     }
@@ -234,7 +234,7 @@ public:
      * @remarks Used by deserialization/replication restore paths to preserve identity continuity.
      */
     template<typename... Args>
-    TExpectedRef<T> AddWithId(NodeHandle Owner, const Uuid& Id, Args&&... args)
+    TExpectedRef<T> AddWithId(const NodeHandle& Owner, const Uuid& Id, Args&&... args)
     {
         if (Has(Owner))
         {

@@ -6,7 +6,7 @@ namespace SnAPI::GameFramework
 {
 
 class BaseNode;
-class IComponent;
+class BaseComponent;
 
 /**
  * @brief Handle type for nodes.
@@ -15,8 +15,8 @@ class IComponent;
 using NodeHandle = THandle<BaseNode>;
 /**
  * @brief Handle type for components.
- * @remarks Resolves to IComponent instances via the global registry.
+ * @remarks Resolves to BaseComponent instances via the global registry.
  */
-using ComponentHandle = THandle<IComponent>;
+using ComponentHandle = THandle<BaseComponent>;
 
 } // namespace SnAPI::GameFramework

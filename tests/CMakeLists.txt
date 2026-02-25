@@ -1,17 +1,6 @@
 add_executable(GameFrameworkTests
-    ComponentStorageFallbackTests.cpp
-    HandleTests.cpp
-    GameRuntimeTests.cpp
-    GameplayHostTests.cpp
-    InputSystemTests.cpp
-    LevelWorldSerializationTests.cpp
-    ReflectionTests.cpp
-    NetReplicationTests.cpp
-    NodeGraphTests.cpp
-    PhysicsIntegrationTests.cpp
-    RelevanceTests.cpp
-    SerializationTests.cpp
-    WorldNetworkingTests.cpp
+    EcsOnlyWorldTests.cpp
+    WorldEcsRuntimeTests.cpp
 )
 
 target_link_libraries(GameFrameworkTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)

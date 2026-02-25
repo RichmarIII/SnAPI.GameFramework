@@ -6,7 +6,7 @@
 #include <string>
 #include <cstdint>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 
 namespace SnAPI::Graphics
 {
@@ -21,7 +21,7 @@ class RendererSystem;
 /**
  * @brief Component that loads an animated mesh and updates rigid-part animations.
  */
-class SkeletalMeshComponent : public IComponent
+class SkeletalMeshComponent : public BaseComponent, public ComponentCRTP<SkeletalMeshComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -68,9 +68,15 @@ public:
     /** @brief Stop all rigid animations on loaded mesh. */
     void StopAnimations();
 
-    void OnCreate() override;
-    void OnDestroy() override;
-    void Tick(float DeltaSeconds) override;
+    void OnCreate();
+    void OnDestroy();
+    void Tick(float DeltaSeconds);
+
+    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { OnCreate(); }
+    void OnDestroyImpl(IWorld&) { OnDestroy(); }
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
 private:
     RendererSystem* ResolveRendererSystem() const;

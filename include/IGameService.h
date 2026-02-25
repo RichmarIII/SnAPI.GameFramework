@@ -140,7 +140,7 @@ public:
     /**
      * @brief Level lifecycle callback.
      */
-    virtual void OnLevelLoaded(GameplayHost& Host, NodeHandle LevelHandle)
+    virtual void OnLevelLoaded(GameplayHost& Host, const NodeHandle& LevelHandle)
     {
         (void)Host;
         (void)LevelHandle;
@@ -158,7 +158,7 @@ public:
     /**
      * @brief Local-player lifecycle callback.
      */
-    virtual void OnLocalPlayerAdded(GameplayHost& Host, NodeHandle PlayerHandle)
+    virtual void OnLocalPlayerAdded(GameplayHost& Host, const NodeHandle& PlayerHandle)
     {
         (void)Host;
         (void)PlayerHandle;

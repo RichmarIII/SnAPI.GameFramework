@@ -23,7 +23,7 @@ public:
     [[nodiscard]] NodeHandle SelectedNode() const { return m_selectedNode; }
     [[nodiscard]] bool HasSelection() const { return !m_selectedNode.IsNull(); }
 
-    bool SelectNode(NodeHandle Node);
+    bool SelectNode(const NodeHandle& Node);
     void Clear();
 
     [[nodiscard]] BaseNode* ResolveSelectedNode(World& WorldRef) const;

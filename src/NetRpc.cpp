@@ -425,22 +425,22 @@ bool NetRpcCodec::DecodeResponse(NetByteReader& Reader, NetRpcResponse& Response
     return DecodePayload(Reader, ResponseValue.Payload);
 }
 
-NetRpcBridge::NetRpcBridge(NodeGraph* Graph)
-    : m_graph(Graph)
+NetRpcBridge::NetRpcBridge(IWorld* WorldRef)
+    : m_world(WorldRef)
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
 }
 
-void NetRpcBridge::Graph(NodeGraph* Graph)
+void NetRpcBridge::World(IWorld* WorldRef)
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    m_graph = Graph;
+    m_world = WorldRef;
 }
 
-NodeGraph* NetRpcBridge::Graph() const
+IWorld* NetRpcBridge::World() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    return m_graph;
+    return m_world;
 }
 
 bool NetRpcBridge::Bind(SnAPI::Networking::RpcService& Service, RpcTargetId TargetIdValue)
@@ -511,26 +511,42 @@ void NetRpcBridge::RegisterType(const TypeId& Type)
 void NetRpcBridge::RegisterGraphTypes()
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
-    if (!m_graph)
+    if (!m_world)
     {
         return;
     }
-    std::unordered_map<TypeId, bool, UuidHash> Registered;
-    m_graph->NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+
+    struct RegisterContext
+    {
+        NetRpcBridge* Bridge = nullptr;
+        std::unordered_map<TypeId, bool, UuidHash>* Registered = nullptr;
+    };
+
+    std::unordered_map<TypeId, bool, UuidHash> Registered{};
+    RegisterContext Context{.Bridge = this, .Registered = &Registered};
+
+    m_world->ForEachNode([](void* UserData, const NodeHandle& Handle, BaseNode& Node) {
         (void)Handle;
-        if (!Registered.emplace(Node.TypeKey(), true).second)
+        auto* Context = static_cast<RegisterContext*>(UserData);
+        if (!Context || !Context->Bridge || !Context->Registered)
         {
             return;
         }
-        RegisterType(Node.TypeKey());
+
+        if (!Context->Registered->emplace(Node.TypeKey(), true).second)
+        {
+            return;
+        }
+        Context->Bridge->RegisterType(Node.TypeKey());
         for (const auto& Type : Node.ComponentTypes())
         {
-            if (Registered.emplace(Type, true).second)
+            if (Context->Registered->emplace(Type, true).second)
             {
-                RegisterType(Type);
+                Context->Bridge->RegisterType(Type);
             }
         }
-    });
+    },
+                              &Context);
 }
 
 SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
@@ -563,7 +579,7 @@ SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
 }
 
 SnAPI::Networking::RpcId NetRpcBridge::Call(NetConnectionHandle Handle,
-                                            const IComponent& Target,
+                                            const BaseComponent& Target,
                                             const TypeId& TargetType,
                                             std::string_view MethodName,
                                             std::span<const Variant> Args,
@@ -697,7 +713,7 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
     NetRpcResponse Response{};
-    if (!m_graph)
+    if (!m_world)
     {
         Response.Status = ERpcReflectionStatus::TargetNotFound;
         return Response;
@@ -717,12 +733,12 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
 
     const auto& Entry = MethodIt->second;
     auto ResolveNodeInGraph = [&](const Uuid& TargetId) -> BaseNode* {
-        if (!m_graph || TargetId.is_nil())
+        if (!m_world || TargetId.is_nil())
         {
             return nullptr;
         }
 
-        auto HandleResult = m_graph->NodeHandleByIdSlow(TargetId);
+        auto HandleResult = m_world->NodeHandleById(TargetId);
         if (!HandleResult)
         {
             return nullptr;
@@ -731,40 +747,53 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
         return HandleResult.value().Borrowed();
     };
 
-    auto ResolveComponentInGraph = [&](const Uuid& TargetId) -> IComponent* {
-        if (!m_graph || TargetId.is_nil())
+    auto ResolveComponentInGraph = [&](const Uuid& TargetId) -> BaseComponent* {
+        if (!m_world || TargetId.is_nil())
         {
             return nullptr;
         }
 
-        IComponent* Found = nullptr;
-        m_graph->NodePool().ForEach([&](const NodeHandle& OwnerHandle, BaseNode& Node) {
-            if (Found != nullptr)
+        BaseComponent* Found = nullptr;
+        struct ResolveComponentContext
+        {
+            IWorld* World = nullptr;
+            const Uuid* TargetId = nullptr;
+            BaseComponent** Found = nullptr;
+        };
+
+        ResolveComponentContext Context{
+            .World = m_world,
+            .TargetId = &TargetId,
+            .Found = &Found};
+
+        m_world->ForEachNode([](void* UserData, const NodeHandle& OwnerHandle, BaseNode& Node) {
+            auto* Context = static_cast<ResolveComponentContext*>(UserData);
+            if (!Context || !Context->World || !Context->TargetId || !Context->Found)
+            {
+                return;
+            }
+            if (*Context->Found != nullptr)
             {
                 return;
             }
 
-            for (IComponentStorage* Storage : Node.ComponentStorages())
+            for (const auto& Type : Node.ComponentTypes())
             {
-                if (!Storage)
-                {
-                    continue;
-                }
-
-                auto* Component = static_cast<IComponent*>(Storage->Borrowed(OwnerHandle));
+                void* RawComponent = Context->World->BorrowedComponent(OwnerHandle, Type);
+                auto* Component = static_cast<BaseComponent*>(RawComponent);
                 if (!Component)
                 {
                     continue;
                 }
-                if (Component->Id() != TargetId)
+                if (Component->Id() != *Context->TargetId)
                 {
                     continue;
                 }
-
-                Found = Component;
+                *Context->Found = Component;
                 return;
             }
-        });
+        },
+                                  &Context);
 
         return Found;
     };
@@ -773,7 +802,7 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
     if (RequestValue.TargetKind == static_cast<std::uint8_t>(ENetObjectKind::Node))
     {
         auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(RequestValue.TargetId);
-        if (!Node || Node->OwnerGraph() != m_graph)
+        if (!Node || Node->World() != m_world)
         {
             Node = ResolveNodeInGraph(RequestValue.TargetId);
         }
@@ -781,9 +810,9 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
     }
     else if (RequestValue.TargetKind == static_cast<std::uint8_t>(ENetObjectKind::Component))
     {
-        auto* Component = ObjectRegistry::Instance().Resolve<IComponent>(RequestValue.TargetId);
+        auto* Component = ObjectRegistry::Instance().Resolve<BaseComponent>(RequestValue.TargetId);
         auto* OwnerNode = Component ? Component->OwnerNode() : nullptr;
-        if (!Component || !OwnerNode || OwnerNode->OwnerGraph() != m_graph)
+        if (!Component || !OwnerNode || OwnerNode->World() != m_world)
         {
             Component = ResolveComponentInGraph(RequestValue.TargetId);
         }
@@ -797,7 +826,7 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
     }
 
     TSerializationContext Context;
-    Context.Graph = m_graph;
+    Context.World = m_world;
     auto ArgsResult = DecodeArgs(Entry.Method.ParamTypes,
                                  ConstByteSpan(RequestValue.Payload.data(), RequestValue.Payload.size()),
                                  Context);
@@ -869,7 +898,7 @@ RpcId NetRpcBridge::CallInternal(NetConnectionHandle Handle,
     }
 
     TSerializationContext Context;
-    Context.Graph = m_graph;
+    Context.World = m_world;
 
     NetRpcRequest Request{};
     Request.TargetKind = TargetKind;

@@ -3,7 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
 #include "CollisionFilters.h"
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -15,7 +15,7 @@ namespace SnAPI::GameFramework
  * This controller applies movement forces to a sibling `RigidBodyComponent` and
  * performs a downward probe to determine grounded state.
  */
-class CharacterMovementController : public IComponent
+class CharacterMovementController : public BaseComponent, public ComponentCRTP<CharacterMovementController>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -48,7 +48,10 @@ public:
         return m_settings;
     }
 
-    void FixedTick(float DeltaSeconds) override;
+    void FixedTick(float DeltaSeconds);
+    /** @brief Non-virtual fixed-step entry used by ECS runtime bridge. */
+    void RuntimeFixedTick(float DeltaSeconds);
+    void FixedTickImpl(IWorld&, float DeltaSeconds) { RuntimeFixedTick(DeltaSeconds); }
 
     /** @brief Replace current movement input vector. */
     void SetMoveInput(const Vec3& Input);

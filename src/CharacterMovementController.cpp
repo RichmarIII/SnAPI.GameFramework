@@ -10,7 +10,7 @@
 #include "BaseNode.h"
 #include "ColliderComponent.h"
 #include "IWorld.h"
-#include "NodeGraph.h"
+#include "Level.h"
 #include "PhysicsSystem.h"
 #include "RigidBodyComponent.h"
 #include "TransformComponent.h"
@@ -70,6 +70,11 @@ float GroundProbeHalfHeight(BaseNode* Owner)
 } // namespace
 
 void CharacterMovementController::FixedTick(float DeltaSeconds)
+{
+    RuntimeFixedTick(DeltaSeconds);
+}
+
+void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
 {
     if (DeltaSeconds <= 0.0f)
     {

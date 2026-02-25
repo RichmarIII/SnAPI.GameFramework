@@ -5,13 +5,15 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <utility>
 
 #include "BaseNode.h"
 #include "CharacterMovementController.h"
 #include "IWorld.h"
 #include "InputSystem.h"
 #include "LocalPlayer.h"
-#include "NodeGraph.h"
+#include "Level.h"
+#include "NodeCast.h"
 
 namespace SnAPI::GameFramework
 {
@@ -40,36 +42,40 @@ struct LocalPlayerInputRouting
 LocalPlayerInputRouting ResolveLocalPlayerRouting(const BaseNode& ControlledNode)
 {
     LocalPlayerInputRouting Routing{};
-    auto* Graph = ControlledNode.OwnerGraph();
-    if (!Graph)
+    auto* WorldRef = ControlledNode.World();
+    if (!WorldRef)
     {
         return Routing;
     }
 
     const NodeHandle ControlledHandle = ControlledNode.Handle();
-    Graph->NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
-        auto* Player = dynamic_cast<LocalPlayer*>(&Node);
-        if (!Player)
-        {
-            return;
-        }
+    std::pair<LocalPlayerInputRouting*, NodeHandle> VisitContext{&Routing, ControlledHandle};
+    WorldRef->ForEachNode(
+        [](void* UserData, const NodeHandle&, BaseNode& Node) {
+            auto* Context = static_cast<std::pair<LocalPlayerInputRouting*, NodeHandle>*>(UserData);
+            auto* Player = NodeCast<LocalPlayer>(&Node);
+            if (!Player)
+            {
+                return;
+            }
 
-        Routing.HasAnyLocalPlayers = true;
+            Context->first->HasAnyLocalPlayers = true;
 
-        // Local input assignment is runtime-local state and is represented by owner connection id 0.
-        if (Player->GetOwnerConnectionId() != 0)
-        {
-            return;
-        }
-        if (Player->GetPossessedNode() != ControlledHandle)
-        {
-            return;
-        }
-        if (!Routing.Controller)
-        {
-            Routing.Controller = Player;
-        }
-    });
+            // Local input assignment is runtime-local state and is represented by owner connection id 0.
+            if (Player->GetOwnerConnectionId() != 0)
+            {
+                return;
+            }
+            if (Player->GetPossessedNode() != Context->second)
+            {
+                return;
+            }
+            if (!Context->first->Controller)
+            {
+                Context->first->Controller = Player;
+            }
+        },
+        &VisitContext);
 
     return Routing;
 }
@@ -88,6 +94,11 @@ bool IsGamepadConnected(const SnAPI::Input::InputSnapshot& Snapshot, const SnAPI
 } // namespace
 
 void InputComponent::Tick(float DeltaSeconds)
+{
+    RuntimeTick(DeltaSeconds);
+}
+
+void InputComponent::RuntimeTick(float DeltaSeconds)
 {
     (void)DeltaSeconds;
 

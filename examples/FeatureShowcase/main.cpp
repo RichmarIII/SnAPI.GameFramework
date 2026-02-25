@@ -35,7 +35,7 @@ public:
     NodeHandle m_target{};
 };
 
-class DemoComponent final : public IComponent
+class DemoComponent final : public BaseComponent
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::DemoComponent";
@@ -64,7 +64,7 @@ SNAPI_REFLECT_TYPE(DemoComponent, (TTypeBuilder<DemoComponent>(DemoComponent::kT
 
 namespace
 {
-NodeHandle FindNodeByName(NodeGraph& Graph, const std::string& Name)
+NodeHandle FindNodeByName(Level& Graph, const std::string& Name)
 {
     NodeHandle Found;
     Graph.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
@@ -76,18 +76,18 @@ NodeHandle FindNodeByName(NodeGraph& Graph, const std::string& Name)
     return Found;
 }
 
-NodeGraph* FindGraphByName(NodeGraph& Graph, const std::string& Name)
+Level* FindGraphByName(Level& Graph, const std::string& Name)
 {
     NodeHandle Handle = FindNodeByName(Graph, Name);
     if (Handle.IsNull())
     {
         return nullptr;
     }
-    return dynamic_cast<NodeGraph*>(Handle.Borrowed());
+    return dynamic_cast<Level*>(Handle.Borrowed());
 }
 
 bool ValidateDemoNode(
-    NodeGraph& Graph,
+    Level& Graph,
     const std::string& NodeName,
     const std::string& TargetName,
     int ExpectedHealth,
@@ -163,17 +163,17 @@ int main()
         return 1;
     }
 
-    auto GraphHandleResult = LevelRef->CreateGraph("Gameplay");
-    if (!GraphHandleResult)
+    auto LevelPartitionHandleResult = LevelRef->CreateNode<Level>("Gameplay");
+    if (!LevelPartitionHandleResult)
     {
-        std::cerr << "Failed to create graph" << std::endl;
+        std::cerr << "Failed to create level partition" << std::endl;
         return 1;
     }
 
-    auto GraphRef = dynamic_cast<NodeGraph*>(GraphHandleResult->Borrowed());
+    auto GraphRef = dynamic_cast<Level*>(LevelPartitionHandleResult->Borrowed());
     if (!GraphRef)
     {
-        std::cerr << "Failed to resolve graph" << std::endl;
+        std::cerr << "Failed to resolve level partition" << std::endl;
         return 1;
     }
 
@@ -222,7 +222,7 @@ int main()
         RelevanceResult->Policy(AlwaysActivePolicy{});
     }
 
-    NodeGraph StandaloneGraph("StandaloneGraph");
+    Level StandaloneGraph("StandaloneGraph");
     auto PrefabTargetResult = StandaloneGraph.CreateNode("PrefabTarget");
     if (!PrefabTargetResult)
     {
@@ -269,7 +269,7 @@ int main()
         std::cerr << "Failed to serialize level: " << LevelPayloadResult.error().Message << std::endl;
         return 1;
     }
-    auto GraphPayloadResult = NodeGraphSerializer::Serialize(StandaloneGraph);
+    auto GraphPayloadResult = LevelGraphSerializer::Serialize(StandaloneGraph);
     if (!GraphPayloadResult)
     {
         std::cerr << "Failed to serialize graph: " << GraphPayloadResult.error().Message << std::endl;
@@ -289,7 +289,7 @@ int main()
         std::cerr << "Failed to serialize level bytes" << std::endl;
         return 1;
     }
-    if (!SerializeNodeGraphPayload(GraphPayloadResult.value(), GraphBytes))
+    if (!SerializeLevelGraphPayload(GraphPayloadResult.value(), GraphBytes))
     {
         std::cerr << "Failed to serialize graph bytes" << std::endl;
         return 1;
@@ -319,10 +319,10 @@ int main()
     {
         ::SnAPI::AssetPipeline::AssetPackEntry Entry;
         Entry.Id = AssetPipelineAssetIdFromName("feature.graph");
-        Entry.AssetKind = AssetKindNodeGraph();
+        Entry.AssetKind = AssetKindLevel();
         Entry.Name = "feature.graph";
         Entry.VariantKey = "";
-        Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadNodeGraph(), NodeGraphSerializer::kSchemaVersion, GraphBytes);
+        Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(), LevelGraphSerializer::kSchemaVersion, GraphBytes);
         Writer.AddAsset(std::move(Entry));
     }
 
@@ -355,7 +355,7 @@ int main()
         std::cerr << "Failed to load level from AssetManager: " << LoadedLevel.error() << std::endl;
         return 1;
     }
-    auto LoadedGraph = Manager.Load<NodeGraph>("feature.graph");
+    auto LoadedGraph = Manager.Load<Level>("feature.graph");
     if (!LoadedGraph.has_value())
     {
         std::cerr << "Failed to load graph from AssetManager: " << LoadedGraph.error() << std::endl;

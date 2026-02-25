@@ -13,7 +13,7 @@ namespace SnAPI::GameFramework
 
 /**
  * @brief Strongly typed UUID handle for framework objects.
- * @tparam T Resolved object type (e.g., BaseNode, IComponent).
+ * @tparam T Resolved object type (e.g., BaseNode, BaseComponent).
  * @remarks Handles do not own objects; they resolve via ObjectRegistry.
  * @note Borrowed pointers must not be cached.
  * @note Pass handles by reference in hot/runtime APIs. `Borrowed()` refreshes

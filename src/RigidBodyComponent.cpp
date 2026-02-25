@@ -9,7 +9,7 @@
 #include "BaseNode.h"
 #include "ColliderComponent.h"
 #include "IWorld.h"
-#include "NodeGraph.h"
+#include "Level.h"
 #include "PhysicsSystem.h"
 #include "TransformComponent.h"
 
@@ -232,6 +232,11 @@ void RigidBodyComponent::OnDestroy()
 
 void RigidBodyComponent::Tick(float DeltaSeconds)
 {
+    RuntimeTick(DeltaSeconds);
+}
+
+void RigidBodyComponent::RuntimeTick(float DeltaSeconds)
+{
     (void)DeltaSeconds;
 
     if (m_bodyHandle.IsValid() && m_settingsDirty)
@@ -265,6 +270,11 @@ void RigidBodyComponent::Tick(float DeltaSeconds)
 }
 
 void RigidBodyComponent::FixedTick(float DeltaSeconds)
+{
+    RuntimeFixedTick(DeltaSeconds);
+}
+
+void RigidBodyComponent::RuntimeFixedTick(float DeltaSeconds)
 {
     (void)DeltaSeconds;
 

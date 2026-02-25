@@ -51,7 +51,7 @@ struct TValueCodec<CustomPackedValue>
 /**
  * @brief Simple component containing a node-handle link used for serialization tests.
  */
-struct LinkComponent : public IComponent
+struct LinkComponent : public BaseComponent, public ComponentCRTP<LinkComponent>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::LinkComponent";
     NodeHandle Target{};
@@ -82,7 +82,7 @@ struct DerivedStatsNode : public BaseStatsNode
 /**
  * @brief Cross-graph handle component used for reference remap tests.
  */
-struct CrossRefComponent : public IComponent
+struct CrossRefComponent : public BaseComponent, public ComponentCRTP<CrossRefComponent>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::CrossRefComponent";
     NodeHandle Target{};
@@ -113,11 +113,11 @@ SNAPI_REFLECT_TYPE(CrossRefComponent, (TTypeBuilder<CrossRefComponent>(CrossRefC
     .Constructor<>()
     .Register()));
 
-TEST_CASE("NodeGraph serialization round-trips with components and handles")
+TEST_CASE("Level serialization round-trips with components and handles")
 {
     RegisterBuiltinTypes();
 
-    NodeGraph Graph;
+    Level Graph;
     auto AResult = Graph.CreateNode("A");
     REQUIRE(AResult);
     auto BResult = Graph.CreateNode("B");
@@ -143,19 +143,19 @@ TEST_CASE("NodeGraph serialization round-trips with components and handles")
     ScriptResult->ScriptType = "PlayerController";
     ScriptResult->Instance = 42;
 
-    auto PayloadResult = NodeGraphSerializer::Serialize(Graph);
+    auto PayloadResult = LevelGraphSerializer::Serialize(Graph);
     REQUIRE(PayloadResult);
 
     std::vector<uint8_t> Bytes;
-    auto BytesResult = SerializeNodeGraphPayload(PayloadResult.value(), Bytes);
+    auto BytesResult = SerializeLevelGraphPayload(PayloadResult.value(), Bytes);
     REQUIRE(BytesResult);
     REQUIRE_FALSE(Bytes.empty());
 
-    auto PayloadRoundTrip = DeserializeNodeGraphPayload(Bytes.data(), Bytes.size());
+    auto PayloadRoundTrip = DeserializeLevelGraphPayload(Bytes.data(), Bytes.size());
     REQUIRE(PayloadRoundTrip);
 
-    NodeGraph Graph2;
-    auto LoadResult = NodeGraphSerializer::Deserialize(PayloadRoundTrip.value(), Graph2);
+    Level Graph2;
+    auto LoadResult = LevelGraphSerializer::Deserialize(PayloadRoundTrip.value(), Graph2);
     REQUIRE(LoadResult);
 
     std::unordered_map<std::string, NodeHandle> NodesByName;
@@ -182,11 +182,11 @@ TEST_CASE("NodeGraph serialization round-trips with components and handles")
     REQUIRE(LinkedNode->Name() == "B");
 }
 
-TEST_CASE("NodeGraph serialization round-trips node fields across inheritance")
+TEST_CASE("Level serialization round-trips node fields across inheritance")
 {
     RegisterBuiltinTypes();
 
-    NodeGraph Graph;
+    Level Graph;
     auto TargetResult = Graph.CreateNode("Target");
     REQUIRE(TargetResult);
 
@@ -200,19 +200,19 @@ TEST_CASE("NodeGraph serialization round-trips node fields across inheritance")
     Actor->m_spawn = Vec3(1.0f, 2.0f, 3.0f);
     Actor->m_target = TargetResult.value();
 
-    auto PayloadResult = NodeGraphSerializer::Serialize(Graph);
+    auto PayloadResult = LevelGraphSerializer::Serialize(Graph);
     REQUIRE(PayloadResult);
 
     std::vector<uint8_t> Bytes;
-    auto BytesResult = SerializeNodeGraphPayload(PayloadResult.value(), Bytes);
+    auto BytesResult = SerializeLevelGraphPayload(PayloadResult.value(), Bytes);
     REQUIRE(BytesResult);
     REQUIRE_FALSE(Bytes.empty());
 
-    auto PayloadRoundTrip = DeserializeNodeGraphPayload(Bytes.data(), Bytes.size());
+    auto PayloadRoundTrip = DeserializeLevelGraphPayload(Bytes.data(), Bytes.size());
     REQUIRE(PayloadRoundTrip);
 
-    NodeGraph Graph2;
-    auto LoadResult = NodeGraphSerializer::Deserialize(PayloadRoundTrip.value(), Graph2);
+    Level Graph2;
+    auto LoadResult = LevelGraphSerializer::Deserialize(PayloadRoundTrip.value(), Graph2);
     REQUIRE(LoadResult);
 
     NodeHandle LoadedActorHandle;
@@ -240,8 +240,8 @@ TEST_CASE("Cross-graph node handles use explicit UUID slow resolve after deseria
 {
     RegisterBuiltinTypes();
 
-    NodeGraph GraphA("GraphA");
-    NodeGraph GraphB("GraphB");
+    Level GraphA("GraphA");
+    Level GraphB("GraphB");
 
     auto TargetResult = GraphB.CreateNode("TargetNode");
     REQUIRE(TargetResult);
@@ -255,28 +255,28 @@ TEST_CASE("Cross-graph node handles use explicit UUID slow resolve after deseria
     REQUIRE(RefResult);
     RefResult->Target = TargetResult.value();
 
-    auto PayloadA = NodeGraphSerializer::Serialize(GraphA);
+    auto PayloadA = LevelGraphSerializer::Serialize(GraphA);
     REQUIRE(PayloadA);
-    auto PayloadB = NodeGraphSerializer::Serialize(GraphB);
+    auto PayloadB = LevelGraphSerializer::Serialize(GraphB);
     REQUIRE(PayloadB);
 
     std::vector<uint8_t> BytesA;
     std::vector<uint8_t> BytesB;
-    REQUIRE(SerializeNodeGraphPayload(PayloadA.value(), BytesA));
-    REQUIRE(SerializeNodeGraphPayload(PayloadB.value(), BytesB));
+    REQUIRE(SerializeLevelGraphPayload(PayloadA.value(), BytesA));
+    REQUIRE(SerializeLevelGraphPayload(PayloadB.value(), BytesB));
 
     GraphA.Clear();
     GraphB.Clear();
 
-    NodeGraph LoadedA("LoadedA");
-    NodeGraph LoadedB("LoadedB");
+    Level LoadedA("LoadedA");
+    Level LoadedB("LoadedB");
 
-    auto PayloadARoundTrip = DeserializeNodeGraphPayload(BytesA.data(), BytesA.size());
+    auto PayloadARoundTrip = DeserializeLevelGraphPayload(BytesA.data(), BytesA.size());
     REQUIRE(PayloadARoundTrip);
-    auto PayloadBRoundTrip = DeserializeNodeGraphPayload(BytesB.data(), BytesB.size());
+    auto PayloadBRoundTrip = DeserializeLevelGraphPayload(BytesB.data(), BytesB.size());
     REQUIRE(PayloadBRoundTrip);
 
-    REQUIRE(NodeGraphSerializer::Deserialize(PayloadARoundTrip.value(), LoadedA));
+    REQUIRE(LevelGraphSerializer::Deserialize(PayloadARoundTrip.value(), LoadedA));
 
     NodeHandle LoadedOwner;
     LoadedA.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
@@ -293,7 +293,7 @@ TEST_CASE("Cross-graph node handles use explicit UUID slow resolve after deseria
     REQUIRE(LoadedRef);
     REQUIRE(LoadedRef->Target.Borrowed() == nullptr);
 
-    REQUIRE(NodeGraphSerializer::Deserialize(PayloadBRoundTrip.value(), LoadedB));
+    REQUIRE(LevelGraphSerializer::Deserialize(PayloadBRoundTrip.value(), LoadedB));
 
     auto* ResolvedTarget = LoadedRef->Target.BorrowedSlowByUuid();
     REQUIRE(ResolvedTarget != nullptr);

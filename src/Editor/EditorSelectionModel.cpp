@@ -1,6 +1,7 @@
 #include "Editor/EditorSelectionModel.h"
 
-#include "NodeGraph.h"
+#include "Level.h"
+#include "NodeCast.h"
 #include "StaticTypeId.h"
 #include "TypeRegistry.h"
 #include "World.h"
@@ -12,9 +13,9 @@ namespace SnAPI::GameFramework::Editor
 namespace
 {
 
-BaseNode* ResolveNodeInGraphById(NodeGraph& Graph,
+BaseNode* ResolveNodeInGraphById(Level& Graph,
                                  const Uuid& TargetId,
-                                 std::unordered_set<const NodeGraph*>& VisitedGraphs)
+                                 std::unordered_set<const Level*>& VisitedGraphs)
 {
     if (TargetId.is_nil())
     {
@@ -42,11 +43,7 @@ BaseNode* ResolveNodeInGraphById(NodeGraph& Graph,
             return;
         }
 
-        NodeGraph* Nested = dynamic_cast<NodeGraph*>(&Node);
-        if (!Nested && TypeRegistry::Instance().IsA(Node.TypeKey(), StaticTypeId<NodeGraph>()))
-        {
-            Nested = static_cast<NodeGraph*>(&Node);
-        }
+        Level* Nested = NodeCast<Level>(&Node);
         if (Nested)
         {
             Resolved = ResolveNodeInGraphById(*Nested, TargetId, VisitedGraphs);
@@ -56,9 +53,9 @@ BaseNode* ResolveNodeInGraphById(NodeGraph& Graph,
     return Resolved;
 }
 
-const BaseNode* ResolveNodeInGraphById(const NodeGraph& Graph,
+const BaseNode* ResolveNodeInGraphById(const Level& Graph,
                                        const Uuid& TargetId,
-                                       std::unordered_set<const NodeGraph*>& VisitedGraphs)
+                                       std::unordered_set<const Level*>& VisitedGraphs)
 {
     if (TargetId.is_nil())
     {
@@ -86,11 +83,7 @@ const BaseNode* ResolveNodeInGraphById(const NodeGraph& Graph,
             return;
         }
 
-        const NodeGraph* Nested = dynamic_cast<const NodeGraph*>(&Node);
-        if (!Nested && TypeRegistry::Instance().IsA(Node.TypeKey(), StaticTypeId<NodeGraph>()))
-        {
-            Nested = static_cast<const NodeGraph*>(&Node);
-        }
+        const Level* Nested = NodeCast<Level>(&Node);
         if (Nested)
         {
             Resolved = ResolveNodeInGraphById(*Nested, TargetId, VisitedGraphs);
@@ -102,7 +95,7 @@ const BaseNode* ResolveNodeInGraphById(const NodeGraph& Graph,
 
 } // namespace
 
-bool EditorSelectionModel::SelectNode(const NodeHandle Node)
+bool EditorSelectionModel::SelectNode(const NodeHandle& Node)
 {
     if (m_selectedNode == Node)
     {
@@ -130,7 +123,7 @@ BaseNode* EditorSelectionModel::ResolveSelectedNode(World& WorldRef) const
         return Node;
     }
 
-    std::unordered_set<const NodeGraph*> VisitedGraphs{};
+    std::unordered_set<const Level*> VisitedGraphs{};
     if (auto* Node = ResolveNodeInGraphById(WorldRef, m_selectedNode.Id, VisitedGraphs))
     {
         return Node;
@@ -151,7 +144,7 @@ const BaseNode* EditorSelectionModel::ResolveSelectedNode(const World& WorldRef)
         return Node;
     }
 
-    std::unordered_set<const NodeGraph*> VisitedGraphs{};
+    std::unordered_set<const Level*> VisitedGraphs{};
     if (const auto* Node = ResolveNodeInGraphById(WorldRef, m_selectedNode.Id, VisitedGraphs))
     {
         return Node;

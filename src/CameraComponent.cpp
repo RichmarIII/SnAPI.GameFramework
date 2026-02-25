@@ -115,31 +115,25 @@ void CameraComponent::OnDestroy()
 
 void CameraComponent::Tick(float DeltaSeconds)
 {
-    (void)DeltaSeconds;
-    EnsureCamera();
-    ApplyCameraSettings();
-    SyncFromTransform();
+    RuntimeTick(DeltaSeconds);
+}
 
-    auto* Renderer = ResolveRendererSystem();
-    if (!Renderer || !Renderer->IsInitialized())
-    {
-        return;
-    }
-
-    if (m_settings.Active)
-    {
-        if (Renderer->ActiveCamera() != m_camera.get())
-        {
-            (void)Renderer->SetActiveCamera(m_camera.get());
-        }
-    }
-    else if (Renderer->ActiveCamera() == m_camera.get())
-    {
-        (void)Renderer->SetActiveCamera(nullptr);
-    }
+void CameraComponent::RuntimeTick(const float DeltaSeconds)
+{
+    UpdateCamera(DeltaSeconds);
 }
 
 void CameraComponent::LateTick(float DeltaSeconds)
+{
+    RuntimeLateTick(DeltaSeconds);
+}
+
+void CameraComponent::RuntimeLateTick(const float DeltaSeconds)
+{
+    UpdateCamera(DeltaSeconds);
+}
+
+void CameraComponent::UpdateCamera(const float DeltaSeconds)
 {
     (void)DeltaSeconds;
     EnsureCamera();

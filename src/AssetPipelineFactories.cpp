@@ -13,10 +13,10 @@ namespace SnAPI::GameFramework
 namespace
 {
 /**
- * @brief AssetFactory for NodeGraph runtime objects.
- * @remarks Converts cooked NodeGraph payloads into NodeGraph instances.
+ * @brief AssetFactory for Level runtime objects.
+ * @remarks Converts cooked Level payloads into Level instances.
  */
-class TNodeGraphFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<NodeGraph>
+class TLevelGraphFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<Level>
 {
 public:
     /**
@@ -25,25 +25,25 @@ public:
      */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
-        return PayloadNodeGraph();
+        return PayloadLevelGraph();
     }
 
 protected:
     /**
-     * @brief Load a NodeGraph from cooked data.
+     * @brief Load a Level from cooked data.
      * @param Context Asset load context.
-     * @return Loaded NodeGraph or error.
+     * @return Loaded Level or error.
      */
-    std::expected<NodeGraph, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    std::expected<Level, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
-        auto PayloadResult = Context.DeserializeCooked<NodeGraphPayload>();
+        auto PayloadResult = Context.DeserializeCooked<LevelGraphPayload>();
         if (!PayloadResult)
         {
             return std::unexpected(PayloadResult.error());
         }
 
-        NodeGraph Graph;
-        auto DeserializeResult = NodeGraphSerializer::Deserialize(*PayloadResult, Graph);
+        Level Graph;
+        auto DeserializeResult = LevelGraphSerializer::Deserialize(*PayloadResult, Graph);
         if (!DeserializeResult)
         {
             return std::unexpected(DeserializeResult.error().Message);
@@ -135,7 +135,7 @@ protected:
  */
 void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Registry)
 {
-    Registry.Register(CreateNodeGraphPayloadSerializer());
+    Registry.Register(CreateLevelGraphPayloadSerializer());
     Registry.Register(CreateLevelPayloadSerializer());
     Registry.Register(CreateWorldPayloadSerializer());
 }
@@ -146,7 +146,7 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
  */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager)
 {
-    Manager.RegisterFactory<NodeGraph>(std::make_unique<TNodeGraphFactory>());
+    Manager.RegisterFactory<Level>(std::make_unique<TLevelGraphFactory>());
     Manager.RegisterFactory<Level>(std::make_unique<TLevelFactory>());
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
 }

@@ -175,7 +175,7 @@ public:
     /**
      * @brief Authoritatively remove one local-player node.
      */
-    Result LeavePlayer(NodeHandle PlayerHandle);
+    Result LeavePlayer(const NodeHandle& PlayerHandle);
 
     /**
      * @brief Authoritatively remove one local-player by id.
@@ -270,7 +270,7 @@ public:
      * @brief Schedule one level for end-of-frame unload.
      * @remarks Server-authoritative in multiplayer.
      */
-    Result UnloadLevel(NodeHandle LevelHandle);
+    Result UnloadLevel(const NodeHandle& LevelHandle);
 
     /**
      * @brief Schedule one level for end-of-frame unload by UUID.
@@ -324,9 +324,9 @@ private:
 
     void RefreshObservedWorldState(bool SeedOnly);
     void RefreshObservedConnectionState(bool SeedOnly);
-    void NotifyLevelLoaded(NodeHandle LevelHandle);
+    void NotifyLevelLoaded(const NodeHandle& LevelHandle);
     void NotifyLevelUnloaded(const Uuid& LevelId);
-    void NotifyLocalPlayerAdded(NodeHandle PlayerHandle);
+    void NotifyLocalPlayerAdded(const NodeHandle& PlayerHandle);
     void NotifyLocalPlayerRemoved(const Uuid& PlayerId);
     void NotifyConnectionAdded(std::uint64_t OwnerConnectionId);
     void NotifyConnectionRemoved(std::uint64_t OwnerConnectionId);

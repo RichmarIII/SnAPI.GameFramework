@@ -22,7 +22,7 @@
 namespace SnAPI::GameFramework
 {
 
-class NodeGraph;
+class IWorld;
 
 /**
  * @brief Settings used when `NetworkSystem` owns the session/transport.
@@ -61,10 +61,10 @@ public:
     using WorkTask = std::function<void(NetworkSystem&)>;
     using CompletionTask = std::function<void(const TaskHandle&)>;
     /**
-     * @brief Construct the system for a graph/world.
-     * @param Graph Graph used for replication and RPC target resolution.
+     * @brief Construct the system for a world context.
+     * @param WorldRef World used for replication and RPC target resolution.
      */
-    explicit NetworkSystem(NodeGraph& Graph);
+    explicit NetworkSystem(IWorld& WorldRef);
 
     /**
      * @brief Enqueue work on the networking system thread.
@@ -189,7 +189,7 @@ private:
 
     mutable GameMutex m_threadMutex{}; /**< @brief Networking-system thread affinity guard. */
     TSystemTaskQueue<NetworkSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
-    NodeGraph* m_graph = nullptr; /**< @brief Non-owning graph context used by replication/rpc bridges. */
+    IWorld* m_world = nullptr; /**< @brief Non-owning world context used by replication/rpc bridges. */
     SnAPI::Networking::NetSession* m_session = nullptr; /**< @brief Attached session pointer (owned). */
     std::unique_ptr<SnAPI::Networking::NetSession> m_ownedSession{}; /**< @brief Owned session for bootstrap path. */
     std::shared_ptr<SnAPI::Networking::UdpTransportAsio> m_transport{}; /**< @brief Owned UDP transport for bootstrap path. */

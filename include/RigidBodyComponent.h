@@ -6,7 +6,7 @@
 
 #include <Physics.h>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Math.h"
 
 namespace SnAPI::GameFramework
@@ -17,7 +17,7 @@ class PhysicsSystem;
 /**
  * @brief Physics rigid-body component bound to an owning node.
  */
-class RigidBodyComponent : public IComponent
+class RigidBodyComponent : public BaseComponent, public ComponentCRTP<RigidBodyComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
@@ -49,7 +49,7 @@ public:
     };
 
     RigidBodyComponent() = default;
-    ~RigidBodyComponent() override = default;
+    ~RigidBodyComponent() = default;
     explicit RigidBodyComponent(const Settings& Settings)
     {
         m_settings = Settings;
@@ -69,12 +69,20 @@ public:
         return m_settings;
     }
 
-    void OnCreate() override;
-    void OnDestroy() override;
+    void OnCreate();
+    void OnDestroy();
     /** @brief Variable-step sync phase; updates dynamic transform interpolation and variable-rate kinematic/static push when needed. */
-    void Tick(float DeltaSeconds) override;
+    void Tick(float DeltaSeconds);
     /** @brief Fixed-step sync phase; pushes static/kinematic owner transform into physics before fixed-step simulation. */
-    void FixedTick(float DeltaSeconds) override;
+    void FixedTick(float DeltaSeconds);
+    /** @brief Non-virtual variable-step sync entry used by ECS runtime bridge. */
+    void RuntimeTick(float DeltaSeconds);
+    /** @brief Non-virtual fixed-step sync entry used by ECS runtime bridge. */
+    void RuntimeFixedTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { OnCreate(); }
+    void OnDestroyImpl(IWorld&) { OnDestroy(); }
+    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
+    void FixedTickImpl(IWorld&, float DeltaSeconds) { RuntimeFixedTick(DeltaSeconds); }
 
     /** @brief Ensure the physics body exists for this component. */
     bool CreateBody();

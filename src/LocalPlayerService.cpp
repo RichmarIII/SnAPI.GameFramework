@@ -2,6 +2,7 @@
 
 #include "GameplayHost.h"
 #include "LocalPlayer.h"
+#include "NodeCast.h"
 #include "Profiling.h"
 
 #include <algorithm>
@@ -36,7 +37,7 @@ void LocalPlayerService::Tick(GameplayHost& Host, const float DeltaSeconds)
     RefreshAssignments(Host);
 }
 
-void LocalPlayerService::OnLocalPlayerAdded(GameplayHost& Host, const NodeHandle PlayerHandle)
+void LocalPlayerService::OnLocalPlayerAdded(GameplayHost& Host, const NodeHandle& PlayerHandle)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     (void)PlayerHandle;
@@ -105,7 +106,7 @@ void LocalPlayerService::RefreshAssignments(GameplayHost& Host)
     LocalOwnedPlayers.reserve(Players.size());
     for (const NodeHandle PlayerHandle : Players)
     {
-        auto* Player = dynamic_cast<LocalPlayer*>(PlayerHandle.Borrowed());
+        auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (!Player)
         {
             continue;
@@ -128,9 +129,9 @@ void LocalPlayerService::RefreshAssignments(GameplayHost& Host)
         LocalOwnedPlayers.push_back(PlayerHandle);
     }
 
-    std::sort(LocalOwnedPlayers.begin(), LocalOwnedPlayers.end(), [](const NodeHandle Left, const NodeHandle Right) {
-        const auto* LeftPlayer = dynamic_cast<const LocalPlayer*>(Left.Borrowed());
-        const auto* RightPlayer = dynamic_cast<const LocalPlayer*>(Right.Borrowed());
+    std::sort(LocalOwnedPlayers.begin(), LocalOwnedPlayers.end(), [](const NodeHandle& Left, const NodeHandle& Right) {
+        const auto* LeftPlayer = NodeCast<LocalPlayer>(Left.Borrowed());
+        const auto* RightPlayer = NodeCast<LocalPlayer>(Right.Borrowed());
         const unsigned int LeftIndex = LeftPlayer ? LeftPlayer->GetPlayerIndex() : 0U;
         const unsigned int RightIndex = RightPlayer ? RightPlayer->GetPlayerIndex() : 0U;
         return LeftIndex < RightIndex;
@@ -138,7 +139,7 @@ void LocalPlayerService::RefreshAssignments(GameplayHost& Host)
 
     for (const NodeHandle PlayerHandle : LocalOwnedPlayers)
     {
-        auto* Player = dynamic_cast<LocalPlayer*>(PlayerHandle.Borrowed());
+        auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (!Player)
         {
             continue;

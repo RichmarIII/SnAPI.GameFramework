@@ -15,7 +15,7 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
 /**
  * @brief Register GameFramework runtime factories with the AssetManager.
  * @param Manager Asset manager to register factories with.
- * @remarks Enables runtime object materialization for `World`, `Level`, and `NodeGraph` assets.
+ * @remarks Enables runtime object materialization for `World`, `Level`, and `Level` assets.
  */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager);
 

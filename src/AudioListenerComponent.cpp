@@ -6,7 +6,7 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
-#include "NodeGraph.h"
+#include "Level.h"
 #include "TransformComponent.h"
 #include "Variant.h"
 #include "World.h"
@@ -55,6 +55,10 @@ AudioSystem* AudioListenerComponent::ResolveAudioSystem() const
     {
         return nullptr;
     }
+    if (!WorldPtr->ShouldTickAudio())
+    {
+        return nullptr;
+    }
     return &WorldPtr->Audio();
 }
 
@@ -95,6 +99,11 @@ void AudioListenerComponent::SetActiveClient(bool ActiveValue)
 }
 
 void AudioListenerComponent::Tick(float DeltaSeconds)
+{
+    RuntimeTick(DeltaSeconds);
+}
+
+void AudioListenerComponent::RuntimeTick(float DeltaSeconds)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (!m_active)

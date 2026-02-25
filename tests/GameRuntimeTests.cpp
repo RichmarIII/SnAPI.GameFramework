@@ -15,17 +15,17 @@ struct RuntimeTickNode final : BaseNode
     int FixedTickCount = 0;
     int LateTickCount = 0;
 
-    void Tick(float) override
+    void Tick(float)
     {
         ++TickCount;
     }
 
-    void FixedTick(float) override
+    void FixedTick(float)
     {
         ++FixedTickCount;
     }
 
-    void LateTick(float) override
+    void LateTick(float)
     {
         ++LateTickCount;
     }

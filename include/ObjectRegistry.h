@@ -17,7 +17,7 @@ namespace SnAPI::GameFramework
 {
 
 class BaseNode;
-class IComponent;
+class BaseComponent;
 
 /**
  * @brief Kind of object stored in the registry.
@@ -26,7 +26,7 @@ class IComponent;
 enum class EObjectKind
 {
     Node,      /**< @brief BaseNode-derived object. */
-    Component, /**< @brief IComponent-derived object. */
+    Component, /**< @brief BaseComponent-derived object. */
     Other      /**< @brief Arbitrary registered type. */
 };
 
@@ -74,6 +74,12 @@ public:
     uint32_t AcquireRuntimePoolToken()
     {
         GameLockGuard Lock(m_mutex);
+        // Slot 0 is permanently reserved as the invalid runtime-pool token.
+        if (m_runtimeSlotsByPool.empty())
+        {
+            m_runtimeSlotsByPool.emplace_back();
+        }
+
         const uint64_t Next = static_cast<uint64_t>(m_runtimeSlotsByPool.size());
         if (Next > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()))
         {
@@ -161,7 +167,7 @@ public:
      * @param Id UUID of the component.
      * @param Component Pointer to the component.
      */
-    void RegisterComponent(const Uuid& Id, IComponent* Component)
+    void RegisterComponent(const Uuid& Id, BaseComponent* Component)
     {
         RegisterInternal(Id,
             EObjectKind::Component,
@@ -183,7 +189,7 @@ public:
      * @param RuntimeGeneration Runtime slot generation in owning pool.
      */
     void RegisterComponent(const Uuid& Id,
-        IComponent* Component,
+        BaseComponent* Component,
         uint32_t RuntimePoolToken,
         uint32_t RuntimeIndex,
         uint32_t RuntimeGeneration)
@@ -453,7 +459,7 @@ private:
         Uuid Id{};
         EObjectKind Kind = EObjectKind::Other;
         BaseNode* Node = nullptr;
-        IComponent* Component = nullptr;
+        BaseComponent* Component = nullptr;
         void* Other = nullptr;
         std::type_index Type = std::type_index(typeid(void));
         uint32_t RuntimePoolToken = kInvalidRuntimePoolToken;
@@ -467,7 +473,7 @@ private:
         uint32_t Generation = 0;
         EObjectKind Kind = EObjectKind::Other;
         BaseNode* Node = nullptr;
-        IComponent* Component = nullptr;
+        BaseComponent* Component = nullptr;
         void* Other = nullptr;
         std::type_index Type = std::type_index(typeid(void));
         bool Occupied = false;
@@ -490,7 +496,7 @@ private:
         {
             return (EntryRef.Kind == EObjectKind::Node) ? EntryRef.Node : nullptr;
         }
-        else if constexpr (std::is_same_v<T, IComponent>)
+        else if constexpr (std::is_same_v<T, BaseComponent>)
         {
             return (EntryRef.Kind == EObjectKind::Component) ? EntryRef.Component : nullptr;
         }
@@ -511,7 +517,7 @@ private:
         {
             return (Slot.Kind == EObjectKind::Node) ? Slot.Node : nullptr;
         }
-        else if constexpr (std::is_same_v<T, IComponent>)
+        else if constexpr (std::is_same_v<T, BaseComponent>)
         {
             return (Slot.Kind == EObjectKind::Component) ? Slot.Component : nullptr;
         }
@@ -595,7 +601,7 @@ private:
     void RegisterInternal(const Uuid& Id,
         EObjectKind Kind,
         BaseNode* Node,
-        IComponent* Component,
+        BaseComponent* Component,
         void* Other,
         std::type_index Type,
         uint32_t RuntimePoolToken,

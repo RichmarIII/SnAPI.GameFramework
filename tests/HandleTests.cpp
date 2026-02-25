@@ -6,7 +6,7 @@ using namespace SnAPI::GameFramework;
 
 TEST_CASE("Handle lifecycle honors end-of-frame deletion")
 {
-    NodeGraph Graph;
+    Level Graph;
     auto NodeResult = Graph.CreateNode("NodeA");
     REQUIRE(NodeResult);
     auto Handle = NodeResult.value();
@@ -26,7 +26,7 @@ TEST_CASE("Handle lifecycle honors end-of-frame deletion")
 
 TEST_CASE("Runtime and UUID-only node handles resolve consistently")
 {
-    NodeGraph Graph;
+    Level Graph;
     auto NodeResult = Graph.CreateNode("NodeA");
     REQUIRE(NodeResult);
     const NodeHandle RuntimeHandle = NodeResult.value();
@@ -44,7 +44,7 @@ TEST_CASE("Runtime and UUID-only node handles resolve consistently")
 
 TEST_CASE("DestroyNode is idempotent while deferred destruction is pending")
 {
-    NodeGraph Graph;
+    Level Graph;
     auto NodeResult = Graph.CreateNode("NodeA");
     REQUIRE(NodeResult);
     const NodeHandle Handle = NodeResult.value();

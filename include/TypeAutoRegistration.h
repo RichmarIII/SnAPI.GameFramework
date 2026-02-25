@@ -126,7 +126,7 @@ public:
  * @param ComponentType Component C++ type.
  * @param BuilderExpr Expression that builds and registers the type's TypeInfo.
  * @remarks Components are automatically registered with ComponentSerializationRegistry
- *          by TTypeBuilder<>::Register when they derive from IComponent.
+ *          by TTypeBuilder<>::Register when they derive from BaseComponent.
  */
 #define SNAPI_REFLECT_COMPONENT(ComponentType, BuilderExpr) \
     SNAPI_REFLECT_TYPE(ComponentType, BuilderExpr)

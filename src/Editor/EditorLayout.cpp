@@ -4,9 +4,9 @@
 #include "CameraComponent.h"
 #include "Editor/EditorSelectionModel.h"
 #include "GameRuntime.h"
-#include "IComponent.h"
-#include "INode.h"
+#include "BaseComponent.h"
 #include "Level.h"
+#include "NodeCast.h"
 #include "RendererSystem.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
@@ -1666,7 +1666,7 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
         int Depth = 0;
     };
 
-    const auto CollectGraphRoots = [](NodeGraph& Graph, const int Depth, std::vector<TraversalNode>& OutNodes) {
+    const auto CollectGraphRoots = [](Level& Graph, const int Depth, std::vector<TraversalNode>& OutNodes) {
         Graph.NodePool().ForEach([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
             if (Node.Parent().IsNull())
             {
@@ -1738,7 +1738,6 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
         std::vector<TraversalNode> ChildNodes{};
         ChildNodes.reserve(Node->Children().size() + 8u);
 
-        NodeGraph* OwnerGraph = Node->OwnerGraph();
         for (const NodeHandle ChildHandle : Node->Children())
         {
             if (ChildHandle.IsNull())
@@ -1746,24 +1745,7 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
                 continue;
             }
 
-            BaseNode* ChildNode = nullptr;
-            if (OwnerGraph)
-            {
-                ChildNode = OwnerGraph->NodePool().Borrowed(ChildHandle);
-                if (!ChildNode)
-                {
-                    auto FreshChildHandle = OwnerGraph->NodeHandleByIdSlow(ChildHandle.Id);
-                    if (FreshChildHandle)
-                    {
-                        ChildNode = OwnerGraph->NodePool().Borrowed(*FreshChildHandle);
-                    }
-                }
-            }
-
-            if (!ChildNode)
-            {
-                ChildNode = ChildHandle.Borrowed();
-            }
+            BaseNode* ChildNode = ChildHandle.Borrowed();
             if (!ChildNode)
             {
                 ChildNode = ChildHandle.BorrowedSlowByUuid();
@@ -1776,10 +1758,10 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
             ChildNodes.push_back(TraversalNode{ChildNode->Handle(), ChildNode, Current.Depth + 1});
         }
 
-        NodeGraph* NestedGraph = dynamic_cast<NodeGraph*>(Node);
-        if (!NestedGraph && TypeRegistry::Instance().IsA(Node->TypeKey(), StaticTypeId<NodeGraph>()))
+        Level* NestedGraph = NodeCast<Level>(Node);
+        if (!NestedGraph && TypeRegistry::Instance().IsA(Node->TypeKey(), StaticTypeId<Level>()))
         {
-            NestedGraph = static_cast<NodeGraph*>(Node);
+            NestedGraph = static_cast<Level*>(Node);
         }
         if (NestedGraph)
         {
@@ -1818,7 +1800,7 @@ std::uint64_t EditorLayout::ComputeHierarchySignature(const std::vector<Hierarch
     return Hash;
 }
 
-void EditorLayout::RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, const NodeHandle SelectedNode)
+void EditorLayout::RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, const NodeHandle& SelectedNode)
 {
     if (!m_context || m_hierarchyTree.Id.Value == 0)
     {
@@ -1890,7 +1872,7 @@ void EditorLayout::RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entri
     m_context->MarkLayoutDirty();
 }
 
-void EditorLayout::SyncHierarchySelection(const NodeHandle SelectedNode)
+void EditorLayout::SyncHierarchySelection(const NodeHandle& SelectedNode)
 {
     if (!m_context || m_hierarchyTree.Id.Value == 0)
     {
@@ -1916,7 +1898,7 @@ void EditorLayout::SyncHierarchySelection(const NodeHandle SelectedNode)
     Tree->SetSelectedIndex(SelectedIndex, false);
 }
 
-void EditorLayout::OnHierarchyNodeChosen(const NodeHandle Handle)
+void EditorLayout::OnHierarchyNodeChosen(const NodeHandle& Handle)
 {
     if (m_onHierarchyNodeChosen)
     {
@@ -1932,7 +1914,7 @@ void EditorLayout::OnHierarchyNodeChosen(const NodeHandle Handle)
     (void)m_selection->SelectNode(Handle);
 }
 
-void EditorLayout::SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)> Handler)
+void EditorLayout::SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler)
 {
     m_onHierarchyNodeChosen = std::move(Handler);
 }
@@ -2439,7 +2421,7 @@ void EditorLayout::OpenContentAssetContextMenu(const std::size_t CardIndex, cons
     OpenContextMenu(Event.Position, std::move(Items));
 }
 
-void EditorLayout::OpenInspectorComponentContextMenu(const NodeHandle OwnerNode,
+void EditorLayout::OpenInspectorComponentContextMenu(const NodeHandle& OwnerNode,
                                                      const TypeId& ComponentType,
                                                      const SnAPI::UI::PointerEvent& Event)
 {

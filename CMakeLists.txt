@@ -102,17 +102,15 @@ set(SNAPI_GF_SOURCES
     src/GameplayRpcGateway.cpp
     src/GameFramework.cpp
     src/GameRuntime.cpp
-    src/IComponent.cpp
+    src/BaseComponent.cpp
     src/InputComponent.cpp
     src/InputSystem.cpp
     src/UISystem.cpp
     src/UIPropertyPanel.cpp
     src/UIRenderViewport.cpp
-    src/INode.cpp
     src/Level.cpp
     src/LocalPlayer.cpp
     src/LocalPlayerService.cpp
-    src/NodeGraph.cpp
     src/NetworkSystem.cpp
     src/PhysicsSystem.cpp
     src/NetReplication.cpp

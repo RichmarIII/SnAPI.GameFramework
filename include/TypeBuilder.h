@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "IComponent.h"
+#include "BaseComponent.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
@@ -322,13 +322,13 @@ public:
      * @brief Register the built TypeInfo into the global TypeRegistry.
      * @return Pointer to stored TypeInfo or error.
      * @remarks
-     * If `T` derives from `IComponent`, this also auto-registers component serialization
+     * If `T` derives from `BaseComponent`, this also auto-registers component serialization
      * in `ComponentSerializationRegistry`.
      */
     TExpected<TypeInfo*> Register()
     {
         auto Result = TypeRegistry::Instance().Register(std::move(m_info));
-        if constexpr (std::is_base_of_v<IComponent, T>)
+        if constexpr (std::is_base_of_v<BaseComponent, T>)
         {
             ComponentSerializationRegistry::Instance().Register<T>();
         }

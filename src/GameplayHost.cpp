@@ -15,6 +15,7 @@
 #include "Level.h"
 #include "LocalPlayer.h"
 #include "LocalPlayerService.h"
+#include "NodeCast.h"
 #include "Profiling.h"
 #include "Variant.h"
 #include "World.h"
@@ -40,7 +41,7 @@ namespace
 
 [[nodiscard]] int ScoreAutoPossessTarget(const BaseNode& Node)
 {
-    if (dynamic_cast<const LocalPlayer*>(&Node) != nullptr)
+    if (NodeCast<LocalPlayer>(&Node) != nullptr)
     {
         return -1;
     }
@@ -71,7 +72,7 @@ namespace
     return Score;
 }
 
-[[nodiscard]] bool IsValidPossessionTargetForPlayer(const LocalPlayer& Player, const NodeHandle Target)
+[[nodiscard]] bool IsValidPossessionTargetForPlayer(const LocalPlayer& Player, const NodeHandle& Target)
 {
     if (Target.IsNull())
     {
@@ -453,7 +454,7 @@ TExpected<GameFramework::NodeHandle> GameplayHost::CreateLocalPlayer(std::string
     }
 
     NodeHandle Handle = CreateResult.value();
-    auto* Player = dynamic_cast<LocalPlayer*>(Handle.Borrowed());
+    auto* Player = NodeCast<LocalPlayer>(Handle.Borrowed());
     if (!Player)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Created local-player node type mismatch"));
@@ -494,7 +495,7 @@ TExpected<GameFramework::NodeHandle> GameplayHost::JoinPlayer(const std::uint64_
     const NodeHandle Existing = FindLocalPlayerByOwnerAndIndex(OwnerConnectionId, PlayerIndex);
     if (!Existing.IsNull())
     {
-        if (auto* ExistingPlayer = dynamic_cast<LocalPlayer*>(Existing.Borrowed()))
+        if (auto* ExistingPlayer = NodeCast<LocalPlayer>(Existing.Borrowed()))
         {
             EnsurePlayerHasPossession(*ExistingPlayer);
         }
@@ -521,14 +522,14 @@ TExpected<GameFramework::NodeHandle> GameplayHost::JoinPlayer(const std::uint64_
         return std::unexpected(CreateResult.error());
     }
 
-    if (auto* Player = dynamic_cast<LocalPlayer*>(CreateResult.value().Borrowed()))
+    if (auto* Player = NodeCast<LocalPlayer>(CreateResult.value().Borrowed()))
     {
         EnsurePlayerHasPossession(*Player);
     }
     return CreateResult.value();
 }
 
-Result GameplayHost::LeavePlayer(const NodeHandle PlayerHandle)
+Result GameplayHost::LeavePlayer(const NodeHandle& PlayerHandle)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     if (PlayerHandle.IsNull())
@@ -545,7 +546,7 @@ Result GameplayHost::LeavePlayer(const NodeHandle PlayerHandle)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Local-player node not found"));
     }
-    if (!dynamic_cast<LocalPlayer*>(Node))
+    if (!NodeCast<LocalPlayer>(Node))
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node is not a LocalPlayer"));
     }
@@ -638,7 +639,7 @@ Result GameplayHost::HandleLeavePlayerRequest(const std::uint64_t OwnerConnectio
 
     for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
-        const auto* Player = dynamic_cast<const LocalPlayer*>(PlayerHandle.Borrowed());
+        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (!Player)
         {
             continue;
@@ -847,7 +848,7 @@ std::vector<GameFramework::NodeHandle> GameplayHost::LocalPlayers() const
     }
 
     World().NodePool().ForEach([&Handles](const NodeHandle& Handle, BaseNode& Node) {
-        if (dynamic_cast<LocalPlayer*>(&Node))
+        if (NodeCast<LocalPlayer>(&Node))
         {
             Handles.push_back(Handle);
         }
@@ -861,7 +862,7 @@ std::vector<GameFramework::NodeHandle> GameplayHost::LocalPlayersForConnection(c
     std::vector<NodeHandle> Matches{};
     for (const NodeHandle PlayerHandle : LocalPlayers())
     {
-        const auto* Player = dynamic_cast<const LocalPlayer*>(PlayerHandle.Borrowed());
+        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (!Player)
         {
             continue;
@@ -890,7 +891,7 @@ TExpected<GameFramework::NodeHandle> GameplayHost::LoadLevel(std::string Name)
     return World().CreateLevel(std::move(EffectiveName));
 }
 
-Result GameplayHost::UnloadLevel(const NodeHandle LevelHandle)
+Result GameplayHost::UnloadLevel(const NodeHandle& LevelHandle)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     if (LevelHandle.IsNull())
@@ -907,7 +908,7 @@ Result GameplayHost::UnloadLevel(const NodeHandle LevelHandle)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Level node not found"));
     }
-    if (!dynamic_cast<Level*>(Node))
+    if (!NodeCast<Level>(Node))
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node is not a Level"));
     }
@@ -1344,7 +1345,7 @@ void GameplayHost::RefreshObservedConnectionState(const bool SeedOnly)
 #endif
 }
 
-void GameplayHost::NotifyLevelLoaded(const NodeHandle LevelHandle)
+void GameplayHost::NotifyLevelLoaded(const NodeHandle& LevelHandle)
 {
     if (m_game)
     {
@@ -1392,7 +1393,7 @@ void GameplayHost::NotifyLevelUnloaded(const Uuid& LevelId)
     }
 }
 
-void GameplayHost::NotifyLocalPlayerAdded(const NodeHandle PlayerHandle)
+void GameplayHost::NotifyLocalPlayerAdded(const NodeHandle& PlayerHandle)
 {
     if (m_game)
     {
@@ -1509,7 +1510,7 @@ void GameplayHost::NotifyConnectionRemoved(const std::uint64_t OwnerConnectionId
 Result GameplayHost::EnsureRpcGatewayNode()
 {
     NodeHandle LookupHandle{GameplayRpcGateway::GatewayNodeId()};
-    if (auto* Existing = dynamic_cast<GameplayRpcGateway*>(LookupHandle.BorrowedSlowByUuid());
+    if (auto* Existing = NodeCast<GameplayRpcGateway>(LookupHandle.BorrowedSlowByUuid());
         Existing != nullptr && Existing->World() == &World())
     {
         return Ok();
@@ -1522,7 +1523,7 @@ Result GameplayHost::EnsureRpcGatewayNode()
         return std::unexpected(CreateResult.error());
     }
 
-    auto* Gateway = dynamic_cast<GameplayRpcGateway*>(CreateResult.value().Borrowed());
+    auto* Gateway = NodeCast<GameplayRpcGateway>(CreateResult.value().Borrowed());
     if (!Gateway)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Created gameplay RPC gateway type mismatch"));
@@ -1534,7 +1535,7 @@ Result GameplayHost::EnsureRpcGatewayNode()
 GameplayRpcGateway* GameplayHost::ResolveRpcGatewayNode() const
 {
     NodeHandle LookupHandle{GameplayRpcGateway::GatewayNodeId()};
-    auto* Gateway = dynamic_cast<GameplayRpcGateway*>(LookupHandle.BorrowedSlowByUuid());
+    auto* Gateway = NodeCast<GameplayRpcGateway>(LookupHandle.BorrowedSlowByUuid());
     if (!Gateway)
     {
         return nullptr;
@@ -1699,7 +1700,7 @@ NodeHandle GameplayHost::FindAutoPossessTarget(const std::uint64_t OwnerConnecti
     std::unordered_set<Uuid, UuidHash> ClaimedTargets{};
     for (const NodeHandle PlayerHandle : LocalPlayers())
     {
-        const auto* Player = dynamic_cast<const LocalPlayer*>(PlayerHandle.Borrowed());
+        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (!Player)
         {
             continue;
@@ -1819,7 +1820,7 @@ Result GameplayHost::AutoCreateConfiguredLocalPlayer()
         return std::unexpected(CreateResult.error());
     }
 
-    if (auto* Player = dynamic_cast<LocalPlayer*>(CreateResult.value().Borrowed()))
+    if (auto* Player = NodeCast<LocalPlayer>(CreateResult.value().Borrowed()))
     {
         EnsurePlayerHasPossession(*Player);
     }
@@ -1831,7 +1832,7 @@ std::optional<unsigned int> GameplayHost::FirstAvailablePlayerIndexForOwner(cons
     std::unordered_set<unsigned int> UsedIndices{};
     for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
-        const auto* Player = dynamic_cast<const LocalPlayer*>(PlayerHandle.Borrowed());
+        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (Player)
         {
             UsedIndices.insert(Player->GetPlayerIndex());
@@ -1854,7 +1855,7 @@ NodeHandle GameplayHost::FindLocalPlayerByOwnerAndIndex(const std::uint64_t Owne
 {
     for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
-        const auto* Player = dynamic_cast<const LocalPlayer*>(PlayerHandle.Borrowed());
+        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
         if (!Player)
         {
             continue;

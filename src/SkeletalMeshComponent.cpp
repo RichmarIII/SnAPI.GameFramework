@@ -144,6 +144,11 @@ void SkeletalMeshComponent::OnDestroy()
 
 void SkeletalMeshComponent::Tick(const float DeltaSeconds)
 {
+    RuntimeTick(DeltaSeconds);
+}
+
+void SkeletalMeshComponent::RuntimeTick(const float DeltaSeconds)
+{
     
     if (m_settings.MeshPath.empty())
     {

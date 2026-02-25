@@ -7,7 +7,7 @@ using namespace SnAPI::GameFramework;
 
 TEST_CASE("Component storage resolves owner UUID-only handles")
 {
-    NodeGraph Graph{};
+    Level Graph{};
     auto OwnerResult = Graph.CreateNode<BaseNode>("StorageFallbackOwner");
     REQUIRE(OwnerResult.has_value());
 

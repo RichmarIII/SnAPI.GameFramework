@@ -108,7 +108,7 @@ public:
     [[nodiscard]] bool IsBuilt() const { return m_built; }
     [[nodiscard]] UIRenderViewport* GameViewport() const;
     [[nodiscard]] int32_t GameViewportTabIndex() const;
-    void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(NodeHandle)> Handler);
+    void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetContentAssets(std::vector<ContentAssetEntry> Assets);
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
@@ -165,11 +165,11 @@ private:
 
     void EnsureDefaultSelection(CameraComponent* ActiveCamera);
     void SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCamera);
-    void RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, NodeHandle SelectedNode);
-    void SyncHierarchySelection(NodeHandle SelectedNode);
+    void RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, const NodeHandle& SelectedNode);
+    void SyncHierarchySelection(const NodeHandle& SelectedNode);
     [[nodiscard]] bool CollectHierarchyEntries(World& WorldRef, std::vector<HierarchyEntry>& OutEntries) const;
     [[nodiscard]] std::uint64_t ComputeHierarchySignature(const std::vector<HierarchyEntry>& Entries) const;
-    void OnHierarchyNodeChosen(NodeHandle Handle);
+    void OnHierarchyNodeChosen(const NodeHandle& Handle);
     [[nodiscard]] BaseNode* ResolveSelectedNode(GameRuntime& Runtime, CameraComponent* ActiveCamera) const;
     [[nodiscard]] bool QueryInvalidationDebugOverlayEnabled() const;
     void SetInvalidationDebugOverlayEnabled(bool Enabled);
@@ -181,7 +181,7 @@ private:
     void OpenHierarchyContextMenu(std::size_t ItemIndex, const SnAPI::UI::PointerEvent& Event);
     void OpenHierarchyAddTypeMenu(bool AddComponents);
     void OpenContentAssetContextMenu(std::size_t AssetIndex, const SnAPI::UI::PointerEvent& Event);
-    void OpenInspectorComponentContextMenu(NodeHandle OwnerNode,
+    void OpenInspectorComponentContextMenu(const NodeHandle& OwnerNode,
                                            const TypeId& ComponentType,
                                            const SnAPI::UI::PointerEvent& Event);
     void OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& Event);
@@ -300,7 +300,7 @@ private:
     NodeHandle m_hierarchyVisualSelection{};
     std::string m_hierarchyFilterText{};
     EditorSelectionModel* m_selection = nullptr;
-    SnAPI::UI::TDelegate<void(NodeHandle)> m_onHierarchyNodeChosen{};
+    SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onHierarchyNodeChosen{};
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onHierarchyActionRequested{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};

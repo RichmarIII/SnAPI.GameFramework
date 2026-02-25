@@ -19,7 +19,7 @@
 
 #include "Math.h"
 #include "Level.h"
-#include "NodeGraph.h"
+#include "NodeCast.h"
 #include "Relevance.h"
 #include "ScriptComponent.h"
 #include "TransformComponent.h"
@@ -162,12 +162,12 @@ void serialize(Archive& ArchiveRef, NodePayload& Value)
 }
 
 /**
- * @brief cereal serialize for NodeGraphPayload.
+ * @brief cereal serialize for LevelGraphPayload.
  * @param ArchiveRef Archive.
  * @param Value Payload to serialize.
  */
 template <class Archive>
-void serialize(Archive& ArchiveRef, NodeGraphPayload& Value)
+void serialize(Archive& ArchiveRef, LevelGraphPayload& Value)
 {
     ArchiveRef(Value.Name, Value.Nodes);
 }
@@ -397,7 +397,14 @@ TExpected<void> SerializeFieldsRecursive(
         }
         else
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "No serializer for field type"));
+            std::string FieldTypeName = "<unknown>";
+            if (const auto* FieldTypeInfo = TypeRegistry::Instance().Find(Field->FieldType))
+            {
+                FieldTypeName = FieldTypeInfo->Name;
+            }
+            return std::unexpected(
+                MakeError(EErrorCode::NotFound,
+                          "No serializer for field '" + Field->Name + "' of type '" + FieldTypeName + "'"));
         }
     }
 
@@ -499,7 +506,14 @@ TExpected<void> DeserializeFieldsRecursive(
         }
         else
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "No deserializer for field type"));
+            std::string FieldTypeName = "<unknown>";
+            if (const auto* FieldTypeInfo = TypeRegistry::Instance().Find(Field->FieldType))
+            {
+                FieldTypeName = FieldTypeInfo->Name;
+            }
+            return std::unexpected(
+                MakeError(EErrorCode::NotFound,
+                          "No deserializer for field '" + Field->Name + "' of type '" + FieldTypeName + "'"));
         }
     }
 
@@ -563,7 +577,7 @@ ComponentSerializationRegistry& ComponentSerializationRegistry::Instance()
     return Instance;
 }
 
-TExpected<void*> ComponentSerializationRegistry::Create(NodeGraph& Graph, NodeHandle Owner, const TypeId& Type) const
+TExpected<void*> ComponentSerializationRegistry::Create(Level& Graph, const NodeHandle& Owner, const TypeId& Type) const
 {
     CreateFn CreateValue;
     {
@@ -591,7 +605,7 @@ TExpected<void*> ComponentSerializationRegistry::Create(NodeGraph& Graph, NodeHa
     return CreateValue(Graph, Owner);
 }
 
-TExpected<void*> ComponentSerializationRegistry::CreateWithId(NodeGraph& Graph, NodeHandle Owner, const TypeId& Type, const Uuid& Id) const
+TExpected<void*> ComponentSerializationRegistry::CreateWithId(Level& Graph, const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) const
 {
     CreateWithIdFn CreateValue;
     {
@@ -725,12 +739,13 @@ TExpected<void> ComponentSerializationRegistry::DeserializeByReflection(const Ty
     return DeserializeFieldsRecursive(Type, Instance, Archive, Context, Visited);
 }
 
-TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Graph)
+TExpected<LevelGraphPayload> LevelGraphSerializer::Serialize(const Level& Graph)
 {
-    NodeGraphPayload Payload;
+    LevelGraphPayload Payload;
     Payload.Name = Graph.Name();
 
     TSerializationContext Context;
+    Context.World = Graph.World();
     Context.Graph = &Graph;
 
     std::vector<NodeHandle> Handles;
@@ -787,7 +802,7 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
                 return std::unexpected(MakeError(EErrorCode::NotFound, "Component instance missing"));
             }
             NodeComponentPayload ComponentPayload;
-            const auto* Component = static_cast<const IComponent*>(ComponentPtr);
+            const auto* Component = static_cast<const BaseComponent*>(ComponentPtr);
             ComponentPayload.ComponentId = Component ? Component->Id() : Uuid{};
             ComponentPayload.ComponentType = Type;
             auto SerializeResult = ComponentSerializationRegistry::Instance().Serialize(Type, ComponentPtr, ComponentPayload.Bytes, Context);
@@ -798,15 +813,15 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
             NodeData.Components.push_back(std::move(ComponentPayload));
         }
 
-        if (const auto* GraphNode = dynamic_cast<const NodeGraph*>(Node))
+        if (const auto* LevelNode = NodeCast<Level>(Node))
         {
-            auto GraphPayloadResult = NodeGraphSerializer::Serialize(*GraphNode);
+            auto GraphPayloadResult = LevelGraphSerializer::Serialize(*LevelNode);
             if (!GraphPayloadResult)
             {
                 return std::unexpected(GraphPayloadResult.error());
             }
             NodeData.HasGraph = true;
-            auto BytesResult = SerializeNodeGraphPayload(GraphPayloadResult.value(), NodeData.GraphBytes);
+            auto BytesResult = SerializeLevelGraphPayload(GraphPayloadResult.value(), NodeData.GraphBytes);
             if (!BytesResult)
             {
                 return std::unexpected(BytesResult.error());
@@ -819,12 +834,13 @@ TExpected<NodeGraphPayload> NodeGraphSerializer::Serialize(const NodeGraph& Grap
     return Payload;
 }
 
-TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload, NodeGraph& Graph)
+TExpected<void> LevelGraphSerializer::Deserialize(const LevelGraphPayload& Payload, Level& Graph)
 {
     Graph.Clear();
     Graph.Name(Payload.Name);
 
     TSerializationContext Context;
+    Context.World = Graph.World();
     Context.Graph = &Graph;
     std::vector<NodeHandle> CreatedHandles;
     std::unordered_map<Uuid, NodeHandle, UuidHash> HandlesById{};
@@ -934,17 +950,17 @@ TExpected<void> NodeGraphSerializer::Deserialize(const NodeGraphPayload& Payload
             {
                 return std::unexpected(MakeError(EErrorCode::NotFound, "Graph node missing"));
             }
-            auto* GraphNode = dynamic_cast<NodeGraph*>(Node);
-            if (!GraphNode)
+            auto* LevelNode = NodeCast<Level>(Node);
+            if (!LevelNode)
             {
                 return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Node is not a graph"));
             }
-            auto GraphPayloadResult = DeserializeNodeGraphPayload(NodeData.GraphBytes.data(), NodeData.GraphBytes.size());
+            auto GraphPayloadResult = DeserializeLevelGraphPayload(NodeData.GraphBytes.data(), NodeData.GraphBytes.size());
             if (!GraphPayloadResult)
             {
                 return std::unexpected(GraphPayloadResult.error());
             }
-            auto GraphResult = NodeGraphSerializer::Deserialize(GraphPayloadResult.value(), *GraphNode);
+            auto GraphResult = LevelGraphSerializer::Deserialize(GraphPayloadResult.value(), *LevelNode);
             if (!GraphResult)
             {
                 return std::unexpected(GraphResult.error());
@@ -960,7 +976,7 @@ TExpected<LevelPayload> LevelSerializer::Serialize(const Level& LevelRef)
     LevelPayload Payload;
     Payload.Name = LevelRef.Name();
 
-    auto GraphResult = NodeGraphSerializer::Serialize(LevelRef);
+    auto GraphResult = LevelGraphSerializer::Serialize(LevelRef);
     if (!GraphResult)
     {
         return std::unexpected(GraphResult.error());
@@ -972,13 +988,13 @@ TExpected<LevelPayload> LevelSerializer::Serialize(const Level& LevelRef)
 TExpected<void> LevelSerializer::Deserialize(const LevelPayload& Payload, Level& LevelRef)
 {
     LevelRef.Name(Payload.Name);
-    return NodeGraphSerializer::Deserialize(Payload.Graph, LevelRef);
+    return LevelGraphSerializer::Deserialize(Payload.Graph, LevelRef);
 }
 
 TExpected<WorldPayload> WorldSerializer::Serialize(const World& WorldRef)
 {
     WorldPayload Payload;
-    auto GraphResult = NodeGraphSerializer::Serialize(WorldRef);
+    auto GraphResult = LevelGraphSerializer::Serialize(WorldRef);
     if (!GraphResult)
     {
         return std::unexpected(GraphResult.error());
@@ -989,10 +1005,10 @@ TExpected<WorldPayload> WorldSerializer::Serialize(const World& WorldRef)
 
 TExpected<void> WorldSerializer::Deserialize(const WorldPayload& Payload, World& WorldRef)
 {
-    return NodeGraphSerializer::Deserialize(Payload.Graph, WorldRef);
+    return LevelGraphSerializer::Deserialize(Payload.Graph, WorldRef);
 }
 
-TExpected<void> SerializeNodeGraphPayload(const NodeGraphPayload& Payload, std::vector<uint8_t>& OutBytes)
+TExpected<void> SerializeLevelGraphPayload(const LevelGraphPayload& Payload, std::vector<uint8_t>& OutBytes)
 {
     try
     {
@@ -1009,7 +1025,7 @@ TExpected<void> SerializeNodeGraphPayload(const NodeGraphPayload& Payload, std::
     }
 }
 
-TExpected<NodeGraphPayload> DeserializeNodeGraphPayload(const uint8_t* Bytes, size_t Size)
+TExpected<LevelGraphPayload> DeserializeLevelGraphPayload(const uint8_t* Bytes, size_t Size)
 {
     if (!Bytes || Size == 0)
     {
@@ -1020,7 +1036,7 @@ TExpected<NodeGraphPayload> DeserializeNodeGraphPayload(const uint8_t* Bytes, si
         MemoryReadStreambuf Buffer(Bytes, Size);
         std::istream Is(&Buffer);
         cereal::BinaryInputArchive Archive(Is);
-        NodeGraphPayload Payload;
+        LevelGraphPayload Payload;
         Archive(Payload);
         return Payload;
     }

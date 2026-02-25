@@ -7,10 +7,10 @@
 namespace SnAPI::GameFramework
 {
 
-NetworkSystem::NetworkSystem(NodeGraph& Graph)
-    : m_graph(&Graph)
-    , m_replicationBridge(std::make_unique<NetReplicationBridge>(Graph))
-    , m_rpcBridge(std::make_unique<NetRpcBridge>(&Graph))
+NetworkSystem::NetworkSystem(IWorld& WorldRef)
+    : m_world(&WorldRef)
+    , m_replicationBridge(std::make_unique<NetReplicationBridge>(WorldRef))
+    , m_rpcBridge(std::make_unique<NetRpcBridge>(&WorldRef))
 {
     SNAPI_GF_PROFILE_FUNCTION("Networking");
 }
@@ -98,9 +98,9 @@ bool NetworkSystem::WireSession(SnAPI::Networking::NetSession& Session,
             m_rpc.reset();
             return false;
         }
-        if (m_graph)
+        if (m_world)
         {
-            m_rpcBridge = std::make_unique<NetRpcBridge>(m_graph);
+            m_rpcBridge = std::make_unique<NetRpcBridge>(m_world);
         }
     }
 
@@ -136,9 +136,9 @@ void NetworkSystem::ShutdownOwnedSession()
     m_ownedSession.reset();
 
     // Reset RPC bridge binding state so a new session can bind cleanly.
-    if (m_graph)
+    if (m_world)
     {
-        m_rpcBridge = std::make_unique<NetRpcBridge>(m_graph);
+        m_rpcBridge = std::make_unique<NetRpcBridge>(m_world);
     }
     else
     {
