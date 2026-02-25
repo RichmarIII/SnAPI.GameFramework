@@ -1,6 +1,8 @@
 add_executable(GameFrameworkTests
     EcsOnlyWorldTests.cpp
     WorldEcsRuntimeTests.cpp
+    SerializationTests.cpp
+    LevelWorldSerializationTests.cpp
 )
 
 target_link_libraries(GameFrameworkTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)

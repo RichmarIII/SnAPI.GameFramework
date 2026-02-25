@@ -5,6 +5,7 @@
 #include "BaseNode.h"
 #include "CameraBase.hpp"
 #include "CameraComponent.h"
+#include "DirectionalLightComponent.h"
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include "Editor/EditorCameraComponent.h"
 #endif
@@ -18,11 +19,6 @@
 #include "StaticMeshComponent.h"
 #include "TransformComponent.h"
 #include "World.h"
-
-#include <BoxStreamSource.hpp>
-#include <ConeStreamSource.hpp>
-#include <PyramidStreamSource.hpp>
-#include <SphereStreamSource.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -70,53 +66,56 @@ struct PrimitiveSpawnSpec
 #endif
 };
 
-SnAPI::Vector3DF ToVector3DF(const Vec3& Value)
+const char* PrimitiveMeshPathToken(const EPrimitiveKind Kind)
 {
-    return SnAPI::Vector3DF{
-        static_cast<float>(Value.x()),
-        static_cast<float>(Value.y()),
-        static_cast<float>(Value.z())};
+    switch (Kind)
+    {
+    case EPrimitiveKind::Box:
+        return "primitive://box";
+    case EPrimitiveKind::Cone:
+        return "primitive://cone";
+    case EPrimitiveKind::Pyramid:
+        return "primitive://pyramid";
+    case EPrimitiveKind::Sphere:
+        return "primitive://sphere";
+    default:
+        return "primitive://box";
+    }
 }
 
-SnAPI::Graphics::SharedVertexStreamSourcePtr CreatePrimitiveSource(const PrimitiveSpawnSpec& Spec)
+Vec3 PrimitiveVisualScale(const PrimitiveSpawnSpec& Spec)
 {
-    using namespace SnAPI::Graphics;
+    Vec3 Result = Spec.Scale;
 
     switch (Spec.VisualKind)
     {
     case EPrimitiveKind::Box:
-    {
-        auto Source = std::make_shared<BoxStreamSource>();
-        Source->SetSize(ToVector3DF(Spec.VisualSize));
-        return Source;
-    }
+        return Vec3(Result.x() * Spec.VisualSize.x(),
+                    Result.y() * Spec.VisualSize.y(),
+                    Result.z() * Spec.VisualSize.z());
     case EPrimitiveKind::Cone:
     {
-        auto Source = std::make_shared<ConeStreamSource>();
-        Source->SetRadius(static_cast<float>(Spec.VisualRadius));
-        Source->SetHeight(static_cast<float>(Spec.VisualHeight));
-        Source->SetRadialSegments(Spec.VisualSegments);
-        return Source;
+        const Vec3 ConeScale(Spec.VisualRadius * 2.0f, Spec.VisualHeight, Spec.VisualRadius * 2.0f);
+        return Vec3(Result.x() * ConeScale.x(),
+                    Result.y() * ConeScale.y(),
+                    Result.z() * ConeScale.z());
     }
     case EPrimitiveKind::Pyramid:
-    {
-        auto Source = std::make_shared<PyramidStreamSource>();
-        Source->SetSize(ToVector3DF(Spec.VisualSize));
-        return Source;
-    }
+        return Vec3(Result.x() * Spec.VisualSize.x(),
+                    Result.y() * Spec.VisualSize.y(),
+                    Result.z() * Spec.VisualSize.z());
     case EPrimitiveKind::Sphere:
     {
-        auto Source = std::make_shared<SphereStreamSource>();
-        Source->SetRadius(static_cast<float>(Spec.VisualRadius));
-        const std::uint32_t Longitude = std::max<std::uint32_t>(Spec.VisualSegments, 8u);
-        Source->SetSegments(Longitude, std::max<std::uint32_t>(Longitude / 2u, 6u));
-        return Source;
+        const Vec3 SphereScale(Spec.VisualRadius * 2.0f, Spec.VisualRadius * 2.0f, Spec.VisualRadius * 2.0f);
+        return Vec3(Result.x() * SphereScale.x(),
+                    Result.y() * SphereScale.y(),
+                    Result.z() * SphereScale.z());
     }
     default:
         break;
     }
 
-    return {};
+    return Result;
 }
 
 bool ConfigureTransform(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
@@ -130,7 +129,7 @@ bool ConfigureTransform(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
     auto& Transform = *TransformResult;
     Transform.Position = Spec.Position;
     Transform.Rotation = Spec.Rotation;
-    Transform.Scale = Spec.Scale;
+    Transform.Scale = PrimitiveVisualScale(Spec);
     return true;
 }
 
@@ -144,12 +143,11 @@ bool ConfigureVisual(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
 
     auto& Mesh = *MeshResult;
     auto& Settings = Mesh.EditSettings();
-    Settings.MeshPath.clear();
+    Settings.MeshPath = PrimitiveMeshPathToken(Spec.VisualKind);
     Settings.Visible = true;
     Settings.CastShadows = true;
     Settings.SyncFromTransform = true;
     Settings.RegisterWithRenderer = true;
-    Mesh.SetVertexStreamSource(CreatePrimitiveSource(Spec));
     return true;
 }
 
@@ -586,6 +584,40 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
 
     m_cameraNode = CameraNodeResult.value();
     m_cameraComponent = Camera;
+
+    auto LightNodeResult = LevelNode->CreateNode("DirectionalLight");
+    if (!LightNodeResult)
+    {
+        return std::unexpected(LightNodeResult.error());
+    }
+
+    auto* LightNode = LightNodeResult->Borrowed();
+    if (!LightNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow directional-light node"));
+    }
+
+    auto DirectionalLightResult = LightNode->Add<DirectionalLightComponent>();
+    if (!DirectionalLightResult)
+    {
+        return std::unexpected(DirectionalLightResult.error());
+    }
+
+    auto& LightSettings = DirectionalLightResult->EditSettings();
+    LightSettings.Enabled = true;
+    LightSettings.Direction = Vec3(-0.5f, -1.0f, -0.3f);
+    LightSettings.Color = Vec3(1.0f, 1.0f, 1.0f);
+    LightSettings.Intensity = 1.0f;
+    LightSettings.CastShadows = true;
+    LightSettings.CascadeCount = 4u;
+    LightSettings.ShadowMapSize = 2048u;
+    LightSettings.ShadowBias = 0.005f;
+    LightSettings.ShadowFarDistance = 300.0f;
+    LightSettings.SoftnessFactor = 1.0f;
+    LightSettings.SoftShadows = true;
+    LightSettings.ContactHardening = false;
+    LightSettings.CascadeBlending = true;
+    m_sceneNodes.push_back(*LightNodeResult);
 
     BuildPlatformingScene(*LevelNode, m_sceneNodes);
 

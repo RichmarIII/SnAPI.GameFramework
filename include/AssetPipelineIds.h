@@ -43,11 +43,13 @@ inline ::SnAPI::AssetPipeline::AssetId AssetPipelineAssetIdFromName(std::string_
 
 /** @brief Asset kind name for Level assets. */
 constexpr const char* kAssetKindLevelName = "SnAPI.GameFramework.AssetKind.Level";
+/** @brief Asset kind name for Node assets. */
+constexpr const char* kAssetKindNodeName = "SnAPI.GameFramework.AssetKind.Node";
 /** @brief Asset kind name for World assets. */
 constexpr const char* kAssetKindWorldName = "SnAPI.GameFramework.AssetKind.World";
 
-/** @brief Payload type name for Level cooked data. */
-constexpr const char* kPayloadLevelGraphName = "SnAPI.GameFramework.LevelGraphPayload";
+/** @brief Payload type name for Node cooked data. */
+constexpr const char* kPayloadNodeName = "SnAPI.GameFramework.NodePayload";
 /** @brief Payload type name for Level cooked data. */
 constexpr const char* kPayloadLevelName = "SnAPI.GameFramework.LevelPayload";
 /** @brief Payload type name for World cooked data. */
@@ -63,6 +65,15 @@ inline ::SnAPI::AssetPipeline::TypeId AssetKindLevel()
 }
 
 /**
+ * @brief Get the AssetPipeline TypeId for Node assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindNode()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindNodeName);
+}
+
+/**
  * @brief Get the AssetPipeline TypeId for World assets.
  * @return TypeId value.
  */
@@ -72,12 +83,12 @@ inline ::SnAPI::AssetPipeline::TypeId AssetKindWorld()
 }
 
 /**
- * @brief Get the payload TypeId for Level graph payloads.
+ * @brief Get the payload TypeId for Node payloads.
  * @return TypeId value.
  */
-inline ::SnAPI::AssetPipeline::TypeId PayloadLevelGraph()
+inline ::SnAPI::AssetPipeline::TypeId PayloadNode()
 {
-    return AssetPipelineTypeIdFromName(kPayloadLevelGraphName);
+    return AssetPipelineTypeIdFromName(kPayloadNodeName);
 }
 
 /**

@@ -6,6 +6,7 @@
 #include "AssetPackWriter.h"
 
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 using namespace SnAPI::GameFramework;
 
@@ -35,7 +36,7 @@ public:
     NodeHandle m_target{};
 };
 
-class DemoComponent final : public BaseComponent
+class DemoComponent final : public BaseComponent, public ComponentCRTP<DemoComponent>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::DemoComponent";
@@ -64,7 +65,8 @@ SNAPI_REFLECT_TYPE(DemoComponent, (TTypeBuilder<DemoComponent>(DemoComponent::kT
 
 namespace
 {
-NodeHandle FindNodeByName(Level& Graph, const std::string& Name)
+template<typename TGraphLike>
+NodeHandle FindNodeByName(TGraphLike& Graph, const std::string& Name)
 {
     NodeHandle Found;
     Graph.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
@@ -83,7 +85,7 @@ Level* FindGraphByName(Level& Graph, const std::string& Name)
     {
         return nullptr;
     }
-    return dynamic_cast<Level*>(Handle.Borrowed());
+    return NodeCast<Level>(Handle.Borrowed());
 }
 
 bool ValidateDemoNode(
@@ -99,7 +101,7 @@ bool ValidateDemoNode(
     const Vec3& ExpectedTint)
 {
     NodeHandle Handle = FindNodeByName(Graph, NodeName);
-    auto* Node = dynamic_cast<DemoNode*>(Handle.Borrowed());
+    auto* Node = NodeCast<DemoNode>(Handle.Borrowed());
     if (!Node)
     {
         std::cerr << "Missing demo node: " << NodeName << std::endl;
@@ -156,7 +158,7 @@ int main()
         return 1;
     }
 
-    auto LevelRef = dynamic_cast<Level*>(LevelHandleResult->Borrowed());
+    auto LevelRef = NodeCast<Level>(LevelHandleResult->Borrowed());
     if (!LevelRef)
     {
         std::cerr << "Failed to resolve level" << std::endl;
@@ -170,7 +172,7 @@ int main()
         return 1;
     }
 
-    auto GraphRef = dynamic_cast<Level*>(LevelPartitionHandleResult->Borrowed());
+    auto GraphRef = NodeCast<Level>(LevelPartitionHandleResult->Borrowed());
     if (!GraphRef)
     {
         std::cerr << "Failed to resolve level partition" << std::endl;
@@ -190,7 +192,7 @@ int main()
         std::cerr << "Failed to create player node" << std::endl;
         return 1;
     }
-    auto* Player = dynamic_cast<DemoNode*>(PlayerResult.value().Borrowed());
+    auto* Player = NodeCast<DemoNode>(PlayerResult.value().Borrowed());
     if (!Player)
     {
         std::cerr << "Failed to resolve player node" << std::endl;
@@ -222,23 +224,28 @@ int main()
         RelevanceResult->Policy(AlwaysActivePolicy{});
     }
 
-    Level StandaloneGraph("StandaloneGraph");
-    auto PrefabTargetResult = StandaloneGraph.CreateNode("PrefabTarget");
+    World StandalonePrefabWorld("StandalonePrefabWorld");
+    auto PrefabTargetResult = StandalonePrefabWorld.CreateNode("PrefabTarget");
     if (!PrefabTargetResult)
     {
         std::cerr << "Failed to create prefab target" << std::endl;
         return 1;
     }
-    auto PrefabActorResult = StandaloneGraph.CreateNode<DemoNode>("PrefabActor");
+    auto PrefabActorResult = StandalonePrefabWorld.CreateNode<DemoNode>("PrefabActor");
     if (!PrefabActorResult)
     {
         std::cerr << "Failed to create prefab actor" << std::endl;
         return 1;
     }
-    auto* PrefabActor = dynamic_cast<DemoNode*>(PrefabActorResult.value().Borrowed());
+    auto* PrefabActor = NodeCast<DemoNode>(PrefabActorResult.value().Borrowed());
     if (!PrefabActor)
     {
         std::cerr << "Failed to resolve prefab actor" << std::endl;
+        return 1;
+    }
+    if (auto AttachResult = StandalonePrefabWorld.AttachChild(PrefabActorResult.value(), PrefabTargetResult.value()); !AttachResult)
+    {
+        std::cerr << "Failed to attach prefab target: " << AttachResult.error().Message << std::endl;
         return 1;
     }
     PrefabActor->m_health = 60;
@@ -269,16 +276,16 @@ int main()
         std::cerr << "Failed to serialize level: " << LevelPayloadResult.error().Message << std::endl;
         return 1;
     }
-    auto GraphPayloadResult = LevelGraphSerializer::Serialize(StandaloneGraph);
-    if (!GraphPayloadResult)
+    auto NodePayloadResult = NodeSerializer::Serialize(*PrefabActor);
+    if (!NodePayloadResult)
     {
-        std::cerr << "Failed to serialize graph: " << GraphPayloadResult.error().Message << std::endl;
+        std::cerr << "Failed to serialize node: " << NodePayloadResult.error().Message << std::endl;
         return 1;
     }
 
     std::vector<uint8_t> WorldBytes;
     std::vector<uint8_t> LevelBytes;
-    std::vector<uint8_t> GraphBytes;
+    std::vector<uint8_t> NodeBytes;
     if (!SerializeWorldPayload(WorldPayloadResult.value(), WorldBytes))
     {
         std::cerr << "Failed to serialize world bytes" << std::endl;
@@ -289,9 +296,9 @@ int main()
         std::cerr << "Failed to serialize level bytes" << std::endl;
         return 1;
     }
-    if (!SerializeLevelGraphPayload(GraphPayloadResult.value(), GraphBytes))
+    if (!SerializeNodePayload(NodePayloadResult.value(), NodeBytes))
     {
-        std::cerr << "Failed to serialize graph bytes" << std::endl;
+        std::cerr << "Failed to serialize node bytes" << std::endl;
         return 1;
     }
 
@@ -319,10 +326,10 @@ int main()
     {
         ::SnAPI::AssetPipeline::AssetPackEntry Entry;
         Entry.Id = AssetPipelineAssetIdFromName("feature.graph");
-        Entry.AssetKind = AssetKindLevel();
+        Entry.AssetKind = AssetKindNode();
         Entry.Name = "feature.graph";
         Entry.VariantKey = "";
-        Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(), LevelGraphSerializer::kSchemaVersion, GraphBytes);
+        Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadNode(), NodeSerializer::kSchemaVersion, NodeBytes);
         Writer.AddAsset(std::move(Entry));
     }
 
@@ -343,26 +350,15 @@ int main()
         return 1;
     }
 
-    auto LoadedWorld = Manager.Load<World>("feature.world");
-    if (!LoadedWorld.has_value())
+    auto LoadedWorldResult = Manager.Load<World>("feature.world");
+    if (!LoadedWorldResult.has_value())
     {
-        std::cerr << "Failed to load world from AssetManager: " << LoadedWorld.error() << std::endl;
+        std::cerr << "Failed to load world from AssetManager: " << LoadedWorldResult.error() << std::endl;
         return 1;
     }
-    auto LoadedLevel = Manager.Load<Level>("feature.level");
-    if (!LoadedLevel.has_value())
-    {
-        std::cerr << "Failed to load level from AssetManager: " << LoadedLevel.error() << std::endl;
-        return 1;
-    }
-    auto LoadedGraph = Manager.Load<Level>("feature.graph");
-    if (!LoadedGraph.has_value())
-    {
-        std::cerr << "Failed to load graph from AssetManager: " << LoadedGraph.error() << std::endl;
-        return 1;
-    }
+    World& LoadedWorld = *LoadedWorldResult.value();
 
-    auto* WorldLevel = dynamic_cast<Level*>(FindNodeByName(*LoadedWorld.value(), "MainLevel").Borrowed());
+    auto* WorldLevel = NodeCast<Level>(FindNodeByName(LoadedWorld, "MainLevel").Borrowed());
     if (!WorldLevel)
     {
         std::cerr << "World missing MainLevel node" << std::endl;
@@ -389,7 +385,30 @@ int main()
         return 1;
     }
 
-    auto* LevelGameplay = FindGraphByName(*LoadedLevel.value(), "Gameplay");
+    World LoadedLevelWorld("LoadedLevelWorld");
+    LevelAssetLoadParams LevelLoadParams{};
+    LevelLoadParams.TargetWorld = &LoadedLevelWorld;
+    LevelLoadParams.NameOverride = "LoadedLevel";
+    auto LoadedLevelResult = Manager.Load<Level>("feature.level", LevelLoadParams);
+    if (!LoadedLevelResult.has_value())
+    {
+        std::cerr << "Failed to load level from AssetManager: " << LoadedLevelResult.error() << std::endl;
+        return 1;
+    }
+
+    NodeHandle LoadedLevelHandle = FindNodeByName(LoadedLevelWorld, "LoadedLevel");
+    if (LoadedLevelHandle.IsNull())
+    {
+        LoadedLevelHandle = FindNodeByName(LoadedLevelWorld, "MainLevel");
+    }
+    auto* LoadedLevel = NodeCast<Level>(LoadedLevelHandle.Borrowed());
+    if (!LoadedLevel)
+    {
+        std::cerr << "Failed to resolve loaded level destination" << std::endl;
+        return 1;
+    }
+
+    auto* LevelGameplay = FindGraphByName(*LoadedLevel, "Gameplay");
     if (!LevelGameplay)
     {
         std::cerr << "Loaded level missing Gameplay graph" << std::endl;
@@ -410,8 +429,32 @@ int main()
         return 1;
     }
 
+    World LoadedPrefabWorld("LoadedPrefabWorld");
+    auto PrefabLevelHandleResult = LoadedPrefabWorld.CreateLevel("PrefabLevel");
+    if (!PrefabLevelHandleResult)
+    {
+        std::cerr << "Failed to create prefab validation level" << std::endl;
+        return 1;
+    }
+    auto* PrefabLevel = NodeCast<Level>(PrefabLevelHandleResult->Borrowed());
+    if (!PrefabLevel)
+    {
+        std::cerr << "Failed to resolve prefab validation level" << std::endl;
+        return 1;
+    }
+
+    NodeAssetLoadParams NodeLoadParams{};
+    NodeLoadParams.TargetWorld = &LoadedPrefabWorld;
+    NodeLoadParams.Parent = PrefabLevel->Handle();
+    auto LoadedNodeResult = Manager.Load<BaseNode>("feature.graph", NodeLoadParams);
+    if (!LoadedNodeResult.has_value())
+    {
+        std::cerr << "Failed to load node from AssetManager: " << LoadedNodeResult.error() << std::endl;
+        return 1;
+    }
+
     if (!ValidateDemoNode(
-            *LoadedGraph.value(),
+            *PrefabLevel,
             "PrefabActor",
             "PrefabTarget",
             60,

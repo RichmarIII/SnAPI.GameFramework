@@ -10,10 +10,11 @@
 #include "AssetPackWriter.h"
 
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 using namespace SnAPI::GameFramework;
 
-class PerfComponentA final : public BaseComponent
+class PerfComponentA final : public BaseComponent, public ComponentCRTP<PerfComponentA>
 {
 public:
     static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentA";
@@ -24,7 +25,7 @@ public:
     std::vector<uint8_t> m_blob{};
 };
 
-class PerfComponentB final : public BaseComponent
+class PerfComponentB final : public BaseComponent, public ComponentCRTP<PerfComponentB>
 {
 public:
     static constexpr auto kTypeName = "SnAPI::GameFramework::PerfComponentB";
@@ -55,7 +56,8 @@ double ToMilliseconds(const Clock::duration& Duration)
     return std::chrono::duration<double, std::milli>(Duration).count();
 }
 
-NodeHandle FindNodeByName(Level& Graph, const std::string& Name)
+template<typename TGraphLike>
+NodeHandle FindNodeByName(TGraphLike& Graph, const std::string& Name)
 {
     NodeHandle Found;
     Graph.NodePool().ForEach([&](const NodeHandle& Handle, const BaseNode& Node) {
@@ -74,7 +76,7 @@ Level* FindLevelByName(World& WorldRef, const std::string& Name)
     {
         return nullptr;
     }
-    return dynamic_cast<Level*>(Handle.Borrowed());
+    return NodeCast<Level>(Handle.Borrowed());
 }
 
 Level* FindGraphByName(Level& LevelRef, const std::string& Name)
@@ -84,7 +86,7 @@ Level* FindGraphByName(Level& LevelRef, const std::string& Name)
     {
         return nullptr;
     }
-    return dynamic_cast<Level*>(Handle.Borrowed());
+    return NodeCast<Level>(Handle.Borrowed());
 }
 } // namespace
 
@@ -106,7 +108,7 @@ int main()
         return 1;
     }
 
-    auto* LevelRef = dynamic_cast<Level*>(LevelHandleResult->Borrowed());
+    auto* LevelRef = NodeCast<Level>(LevelHandleResult->Borrowed());
     if (!LevelRef)
     {
         std::cerr << "Failed to resolve level" << std::endl;
@@ -120,7 +122,7 @@ int main()
         return 1;
     }
 
-    auto* GraphRef = dynamic_cast<Level*>(GraphHandleResult->Borrowed());
+    auto* GraphRef = NodeCast<Level>(GraphHandleResult->Borrowed());
     if (!GraphRef)
     {
         std::cerr << "Failed to resolve level partition" << std::endl;
@@ -219,16 +221,16 @@ int main()
     auto MountEnd = Clock::now();
 
     auto LoadStart = Clock::now();
-    auto LoadedWorld = Manager.Get<World>("perf.world");
-    auto LoadEnd = Clock::now();
-
-    if (!LoadedWorld.has_value())
+    auto LoadedWorldResult = Manager.Load<World>("perf.world");
+    if (!LoadedWorldResult.has_value())
     {
-        std::cerr << "Failed to load world from AssetManager: " << LoadedWorld.error() << std::endl;
+        std::cerr << "Failed to load world from AssetManager: " << LoadedWorldResult.error() << std::endl;
         return 1;
     }
+    World& LoadedWorld = *LoadedWorldResult.value();
+    auto LoadEnd = Clock::now();
 
-    auto* LoadedLevel = FindLevelByName(*LoadedWorld.value(), kLevelName);
+    auto* LoadedLevel = FindLevelByName(LoadedWorld, kLevelName);
     if (!LoadedLevel)
     {
         std::cerr << "Loaded world missing level: " << kLevelName << std::endl;
@@ -246,6 +248,11 @@ int main()
     size_t ComponentACount = 0;
     size_t ComponentBCount = 0;
     LoadedGraph->NodePool().ForEach([&](const NodeHandle&, BaseNode& NodeRef) {
+        if (NodeRef.Name().rfind("Node_", 0) != 0)
+        {
+            return;
+        }
+
         ++NodeCount;
         if (NodeRef.Component<PerfComponentA>())
         {

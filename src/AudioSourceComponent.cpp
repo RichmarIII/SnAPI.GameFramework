@@ -6,7 +6,6 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
-#include "Level.h"
 #include "TransformComponent.h"
 #include "World.h"
 
@@ -17,9 +16,9 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
-SnAPI::Audio::Vector3F ToAudioVector(const Vec3& Value)
+Audio::Vector3F ToAudioVector(const Vec3& Value)
 {
-    return SnAPI::Audio::Vector3F(Value.x(), Value.y(), Value.z());
+    return Math::Vector3(Value.x(), Value.y(), Value.z());
 }
 } // namespace
 

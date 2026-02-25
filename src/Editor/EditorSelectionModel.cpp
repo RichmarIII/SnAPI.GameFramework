@@ -13,84 +13,40 @@ namespace SnAPI::GameFramework::Editor
 namespace
 {
 
-BaseNode* ResolveNodeInGraphById(Level& Graph,
-                                 const Uuid& TargetId,
-                                 std::unordered_set<const Level*>& VisitedGraphs)
+BaseNode* ResolveNodeInWorldById(World& WorldRef, const Uuid& TargetId)
 {
     if (TargetId.is_nil())
     {
         return nullptr;
     }
 
-    if (!VisitedGraphs.insert(&Graph).second)
-    {
-        return nullptr;
-    }
-
-    const auto HandleResult = Graph.NodeHandleByIdSlow(TargetId);
+    const auto HandleResult = WorldRef.NodeHandleById(TargetId);
     if (HandleResult)
     {
-        if (auto* Direct = Graph.NodePool().Borrowed(*HandleResult))
+        if (auto* Direct = WorldRef.NodePool().Borrowed(*HandleResult))
         {
             return Direct;
         }
     }
-
-    BaseNode* Resolved = nullptr;
-    Graph.NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
-        if (Resolved != nullptr)
-        {
-            return;
-        }
-
-        Level* Nested = NodeCast<Level>(&Node);
-        if (Nested)
-        {
-            Resolved = ResolveNodeInGraphById(*Nested, TargetId, VisitedGraphs);
-        }
-    });
-
-    return Resolved;
+    return nullptr;
 }
 
-const BaseNode* ResolveNodeInGraphById(const Level& Graph,
-                                       const Uuid& TargetId,
-                                       std::unordered_set<const Level*>& VisitedGraphs)
+const BaseNode* ResolveNodeInWorldById(const World& WorldRef, const Uuid& TargetId)
 {
     if (TargetId.is_nil())
     {
         return nullptr;
     }
 
-    if (!VisitedGraphs.insert(&Graph).second)
-    {
-        return nullptr;
-    }
-
-    const auto HandleResult = Graph.NodeHandleByIdSlow(TargetId);
+    const auto HandleResult = WorldRef.NodeHandleById(TargetId);
     if (HandleResult)
     {
-        if (const auto* Direct = Graph.NodePool().Borrowed(*HandleResult))
+        if (const auto* Direct = WorldRef.NodePool().Borrowed(*HandleResult))
         {
             return Direct;
         }
     }
-
-    const BaseNode* Resolved = nullptr;
-    Graph.NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
-        if (Resolved != nullptr)
-        {
-            return;
-        }
-
-        const Level* Nested = NodeCast<Level>(&Node);
-        if (Nested)
-        {
-            Resolved = ResolveNodeInGraphById(*Nested, TargetId, VisitedGraphs);
-        }
-    });
-
-    return Resolved;
+    return nullptr;
 }
 
 } // namespace
@@ -123,8 +79,7 @@ BaseNode* EditorSelectionModel::ResolveSelectedNode(World& WorldRef) const
         return Node;
     }
 
-    std::unordered_set<const Level*> VisitedGraphs{};
-    if (auto* Node = ResolveNodeInGraphById(WorldRef, m_selectedNode.Id, VisitedGraphs))
+    if (auto* Node = ResolveNodeInWorldById(WorldRef, m_selectedNode.Id))
     {
         return Node;
     }
@@ -144,8 +99,7 @@ const BaseNode* EditorSelectionModel::ResolveSelectedNode(const World& WorldRef)
         return Node;
     }
 
-    std::unordered_set<const Level*> VisitedGraphs{};
-    if (const auto* Node = ResolveNodeInGraphById(WorldRef, m_selectedNode.Id, VisitedGraphs))
+    if (const auto* Node = ResolveNodeInWorldById(WorldRef, m_selectedNode.Id))
     {
         return Node;
     }

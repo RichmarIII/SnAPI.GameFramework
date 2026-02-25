@@ -11,12 +11,12 @@ namespace SnAPI::GameFramework
 /**
  * @brief Register the GameFramework AssetPipeline plugin.
  * @param Registrar AssetPipeline plugin registrar.
- * @remarks Registers payload serializers for Level, Level, and World.
+ * @remarks Registers payload serializers for Node, Level, and World.
  */
 static void RegisterAssetPipelinePlugin(::SnAPI::AssetPipeline::IPluginRegistrar& Registrar)
 {
     Registrar.RegisterPluginInfo("SnAPI.GameFramework", "0.1.0");
-    Registrar.RegisterPayloadSerializer(CreateLevelGraphPayloadSerializer());
+    Registrar.RegisterPayloadSerializer(CreateNodePayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateLevelPayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateWorldPayloadSerializer());
 }

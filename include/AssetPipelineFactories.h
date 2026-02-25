@@ -1,10 +1,55 @@
 #pragma once
 
+#include <string>
+
 #include "AssetManager.h"
+#include "Handle.h"
+#include "Handles.h"
 #include "PayloadRegistry.h"
 
 namespace SnAPI::GameFramework
 {
+
+class Level;
+class World;
+class IWorld;
+
+/**
+ * @brief Runtime load params for node assets.
+ * @remarks
+ * When `TargetWorld` is provided, node payload content is instantiated directly
+ * into that world under `Parent` (or world root if null).
+ */
+struct NodeAssetLoadParams
+{
+    IWorld* TargetWorld = nullptr;
+    NodeHandle Parent{};
+    bool InstantiateAsCopy = true; /**< @brief When true, regenerate node/component UUIDs during load to avoid collisions. */
+};
+
+/**
+ * @brief Runtime load params for level assets.
+ * @remarks
+ * When `TargetWorld` is provided, a new level is created and deserialized into
+ * the target world. Optional name override is applied to the created level.
+ */
+struct LevelAssetLoadParams
+{
+    World* TargetWorld = nullptr;
+    std::string NameOverride{};
+    bool InstantiateAsCopy = true; /**< @brief When true, regenerate node/component UUIDs during load to avoid collisions. */
+};
+
+/**
+ * @brief Runtime load params for world assets.
+ * @remarks
+ * When `TargetWorld` is provided, payload content is deserialized into that world.
+ */
+struct WorldAssetLoadParams
+{
+    World* TargetWorld = nullptr;
+    bool InstantiateAsCopy = true; /**< @brief When true, regenerate node/component UUIDs during load to avoid collisions. */
+};
 
 /**
  * @brief Register GameFramework payload serializers with the AssetPipeline registry.
@@ -15,7 +60,7 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
 /**
  * @brief Register GameFramework runtime factories with the AssetManager.
  * @param Manager Asset manager to register factories with.
- * @remarks Enables runtime object materialization for `World`, `Level`, and `Level` assets.
+ * @remarks Enables runtime object materialization for `BaseNode`, `Level`, and `World` assets.
  */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager);
 

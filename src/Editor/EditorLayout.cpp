@@ -1666,8 +1666,8 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
         int Depth = 0;
     };
 
-    const auto CollectGraphRoots = [](Level& Graph, const int Depth, std::vector<TraversalNode>& OutNodes) {
-        Graph.NodePool().ForEach([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
+    const auto CollectWorldRoots = [](World& WorldContext, const int Depth, std::vector<TraversalNode>& OutNodes) {
+        WorldContext.NodePool().ForEach([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
             if (Node.Parent().IsNull())
             {
                 OutNodes.push_back(TraversalNode{Handle, &Node, Depth});
@@ -1676,7 +1676,7 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
     };
 
     std::vector<TraversalNode> RootNodes{};
-    CollectGraphRoots(WorldRef, 1, RootNodes);
+    CollectWorldRoots(WorldRef, 1, RootNodes);
 
     std::vector<TraversalNode> Stack{};
     Stack.reserve(RootNodes.size());
@@ -1756,16 +1756,6 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
             }
 
             ChildNodes.push_back(TraversalNode{ChildNode->Handle(), ChildNode, Current.Depth + 1});
-        }
-
-        Level* NestedGraph = NodeCast<Level>(Node);
-        if (!NestedGraph && TypeRegistry::Instance().IsA(Node->TypeKey(), StaticTypeId<Level>()))
-        {
-            NestedGraph = static_cast<Level*>(Node);
-        }
-        if (NestedGraph)
-        {
-            CollectGraphRoots(*NestedGraph, Current.Depth + 1, ChildNodes);
         }
 
         for (auto ChildIt = ChildNodes.rbegin(); ChildIt != ChildNodes.rend(); ++ChildIt)
@@ -2225,6 +2215,16 @@ void EditorLayout::OpenHierarchyAddTypeMenu(const bool AddComponents)
     else
     {
         CandidateTypes = TypeRegistry::Instance().Derived(StaticTypeId<BaseNode>());
+        if (const TypeInfo* BaseNodeInfo = TypeRegistry::Instance().Find(StaticTypeId<BaseNode>()))
+        {
+            const bool AlreadyPresent = std::ranges::any_of(CandidateTypes, [BaseNodeInfo](const TypeInfo* Type) {
+                return Type && Type->Id == BaseNodeInfo->Id;
+            });
+            if (!AlreadyPresent)
+            {
+                CandidateTypes.push_back(BaseNodeInfo);
+            }
+        }
     }
     std::sort(CandidateTypes.begin(), CandidateTypes.end(), [](const TypeInfo* Left, const TypeInfo* Right) {
         if (!Left || !Right)

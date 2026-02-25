@@ -65,7 +65,7 @@ struct RendererBootstrapSettings
     bool Minimized = false; /**< @brief Start window minimized. */
     bool Closeable = true; /**< @brief Allow platform close actions. */
     bool AllowTransparency = true; /**< @brief Enable transparent compositor support when available. */
-    bool CreateDefaultLighting = true; /**< @brief Create a default directional light used by shadow/deferred passes. */
+    bool CreateDefaultLighting = false; /**< @brief Create a default directional light used by shadow/deferred passes. */
     bool RegisterDefaultPassGraph = true; /**< @brief Register the default renderer pass DAG (shadow/gbuffer/deferred/present). */
     bool EnableSsao = true; /**< @brief Register SSAO pass chain in default pass graph. */
     bool EnableSsr = true; /**< @brief Register SSR + composite passes in default pass graph. */
@@ -475,11 +475,22 @@ public:
     void EndFrame();
 
     /**
-     * @brief Gets the Light Manager
-     *
-     * @return The LightManager
+     * @brief Get mutable world light manager.
+     * @return Light manager pointer or nullptr when unavailable.
      */
-    const Graphics::LightManager* LightManager()const;
+    Graphics::LightManager* LightManager();
+
+    /**
+     * @brief Get immutable world light manager.
+     * @return Light manager pointer or nullptr when unavailable.
+     */
+    const Graphics::LightManager* LightManager() const;
+
+    /**
+     * @brief Ensure the world light manager exists.
+     * @return Light manager pointer or nullptr when creation is unavailable.
+     */
+    Graphics::LightManager* EnsureLightManager();
 
 private:
 #if defined(SNAPI_GF_ENABLE_UI)
@@ -501,6 +512,7 @@ private:
 
     void ShutdownUnlocked();
     bool EnsureDefaultMaterials();
+    bool EnsureLightManagerInternal();
     bool EnsureDefaultLighting();
     bool EnsureDefaultEnvironmentProbe();
     bool EnsureDefaultFont();

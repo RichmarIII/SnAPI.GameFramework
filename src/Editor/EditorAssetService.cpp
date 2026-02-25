@@ -5,7 +5,6 @@
 #include "AssetPackWriter.h"
 #include "AssetPipelineFactories.h"
 #include "AssetPipelineIds.h"
-#include "ComponentStorage.h"
 #include "GameRuntime.h"
 #include "Level.h"
 #include "NodeCast.h"
@@ -144,8 +143,8 @@ struct DefaultShapePackSpec
 [[nodiscard]] std::expected<::SnAPI::AssetPipeline::AssetPackEntry, std::string> BuildDefaultShapePackEntry(
     const DefaultShapePackSpec& Spec)
 {
-    Level Graph(std::string(Spec.AssetName) + ".Graph");
-    auto NodeResult = Graph.CreateNode(std::string(Spec.AssetName));
+    World PrefabWorld(std::string(Spec.AssetName) + ".PrefabWorld");
+    auto NodeResult = PrefabWorld.CreateNode(std::string(Spec.AssetName));
     if (!NodeResult)
     {
         return std::unexpected(NodeResult.error().Message);
@@ -218,14 +217,14 @@ struct DefaultShapePackSpec
     }
 #endif
 
-    auto GraphPayloadResult = LevelGraphSerializer::Serialize(Graph);
-    if (!GraphPayloadResult)
+    auto NodePayloadResult = NodeSerializer::Serialize(*Node);
+    if (!NodePayloadResult)
     {
-        return std::unexpected(GraphPayloadResult.error().Message);
+        return std::unexpected(NodePayloadResult.error().Message);
     }
 
     std::vector<uint8_t> CookedBytes{};
-    auto SerializeResult = SerializeLevelGraphPayload(*GraphPayloadResult, CookedBytes);
+    auto SerializeResult = SerializeNodePayload(*NodePayloadResult, CookedBytes);
     if (!SerializeResult)
     {
         return std::unexpected(SerializeResult.error().Message);
@@ -233,11 +232,11 @@ struct DefaultShapePackSpec
 
     ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
     Entry.Id = AssetPipelineAssetIdFromName(std::string("SnAPI.Editor.DefaultShape.") + Spec.AssetName);
-    Entry.AssetKind = AssetKindLevel();
+    Entry.AssetKind = AssetKindNode();
     Entry.Name = Spec.AssetName;
     Entry.VariantKey = "default";
-    Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(),
-                                                         LevelGraphSerializer::kSchemaVersion,
+    Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadNode(),
+                                                         NodeSerializer::kSchemaVersion,
                                                          std::move(CookedBytes));
     return Entry;
 }
@@ -287,20 +286,20 @@ struct DefaultShapePackSpec
     return CreatedCount;
 }
 
-[[nodiscard]] std::size_t CountNodes(const Level& Graph)
+struct RuntimeWorldCounts
 {
-    std::size_t NodeCount = 0;
-    Graph.NodePool().ForEach([&NodeCount](const NodeHandle&, BaseNode&) { ++NodeCount; });
-    return NodeCount;
-}
+    std::size_t Nodes = 0;
+    std::size_t Components = 0;
+};
 
-[[nodiscard]] std::size_t CountComponents(const Level& Graph)
+[[nodiscard]] RuntimeWorldCounts CountRuntimeWorldObjects(World& WorldRef)
 {
-    std::size_t ComponentCount = 0;
-    Graph.NodePool().ForEach([&ComponentCount](const NodeHandle&, BaseNode& Node) {
-        ComponentCount += Node.ComponentTypes().size();
+    RuntimeWorldCounts Counts{};
+    WorldRef.NodePool().ForEach([&](const NodeHandle&, BaseNode& NodeRef) {
+        ++Counts.Nodes;
+        Counts.Components += NodeRef.ComponentTypes().size();
     });
-    return ComponentCount;
+    return Counts;
 }
 
 void AppendUniquePath(std::vector<std::string>& Paths,
@@ -401,35 +400,6 @@ void AppendUniquePath(std::vector<std::string>& Paths,
     return std::string(QualifiedTypeName.substr(Delimiter + 2));
 }
 
-[[nodiscard]] Level* ResolveLevelContext(const BaseNode& Node)
-{
-    BaseNode* Cursor = const_cast<BaseNode*>(&Node);
-    if (!Cursor)
-    {
-        return nullptr;
-    }
-
-    if (TypeRegistry::Instance().IsA(Cursor->TypeKey(), StaticTypeId<Level>()))
-    {
-        return static_cast<Level*>(Cursor);
-    }
-
-    while (!Cursor->Parent().IsNull())
-    {
-        Cursor = Cursor->Parent().Borrowed();
-        if (!Cursor)
-        {
-            return nullptr;
-        }
-        if (TypeRegistry::Instance().IsA(Cursor->TypeKey(), StaticTypeId<Level>()))
-        {
-            return static_cast<Level*>(Cursor);
-        }
-    }
-
-    return nullptr;
-}
-
 [[nodiscard]] std::string MakeUniqueLogicalName(::SnAPI::AssetPipeline::AssetManager& AssetManagerRef,
                                                 const std::string& Prefix,
                                                 std::string BaseName)
@@ -454,222 +424,6 @@ void AppendUniquePath(std::vector<std::string>& Paths,
     }
 
     return Candidate;
-}
-
-TExpected<void> CloneNodeComponents(const BaseNode& SourceNode, NodeHandle DestinationHandle, Level& DestinationLevel)
-{
-    Level* SourceLevel = ResolveLevelContext(SourceNode);
-    if (!SourceLevel)
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Source node is not owned by a graph"));
-    }
-
-    NodeHandle SourceHandle = SourceNode.Handle();
-    if (SourceHandle.IsNull())
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Source node handle is null"));
-    }
-    if (SourceLevel->NodePool().Borrowed(SourceHandle) == nullptr)
-    {
-        if (const auto RefreshedHandle = SourceLevel->NodeHandleByIdSlow(SourceNode.Id()); RefreshedHandle)
-        {
-            SourceHandle = *RefreshedHandle;
-        }
-    }
-
-    const auto& ComponentTypes = SourceNode.ComponentTypes();
-    const auto& ComponentStorages = SourceNode.ComponentStorages();
-    for (std::size_t ComponentIndex = 0; ComponentIndex < ComponentTypes.size(); ++ComponentIndex)
-    {
-        const TypeId& ComponentType = ComponentTypes[ComponentIndex];
-        ComponentStorageView* Storage =
-            (ComponentIndex < ComponentStorages.size()) ? ComponentStorages[ComponentIndex] : nullptr;
-
-        if ((!Storage || Storage->TypeKey() != ComponentType) && !ComponentStorages.empty())
-        {
-            auto MatchIt = std::find_if(ComponentStorages.begin(),
-                                        ComponentStorages.end(),
-                                        [&](ComponentStorageView* Candidate) {
-                                            return Candidate && Candidate->TypeKey() == ComponentType;
-                                        });
-            Storage = (MatchIt != ComponentStorages.end()) ? *MatchIt : nullptr;
-        }
-
-        if (!Storage)
-        {
-            const TypeInfo* ComponentInfo = TypeRegistry::Instance().Find(ComponentType);
-            const std::string ComponentLabel = ComponentInfo ? ShortTypeName(ComponentInfo->Name) : std::string("UnknownComponent");
-            return std::unexpected(
-                MakeError(EErrorCode::NotFound, "Missing component storage for '" + ComponentLabel + "' while cloning prefab"));
-        }
-
-        const void* SourceComponent = Storage->Borrowed(SourceHandle);
-        if (!SourceComponent && !SourceHandle.Id.is_nil())
-        {
-            if (const auto RefreshedHandle = SourceLevel->NodeHandleByIdSlow(SourceHandle.Id); RefreshedHandle)
-            {
-                SourceHandle = *RefreshedHandle;
-                SourceComponent = Storage->Borrowed(SourceHandle);
-            }
-        }
-        if (!SourceComponent && !SourceHandle.Id.is_nil())
-        {
-            SourceComponent = Storage->Borrowed(NodeHandle{SourceHandle.Id});
-        }
-        if (!SourceComponent)
-        {
-            const TypeInfo* ComponentInfo = TypeRegistry::Instance().Find(ComponentType);
-            const std::string ComponentLabel = ComponentInfo ? ShortTypeName(ComponentInfo->Name) : std::string("UnknownComponent");
-            return std::unexpected(
-                MakeError(EErrorCode::NotFound, "Failed to resolve source component '" + ComponentLabel + "' while cloning prefab"));
-        }
-
-        auto CreateResult = ComponentSerializationRegistry::Instance().Create(DestinationLevel, DestinationHandle, ComponentType);
-        if (!CreateResult)
-        {
-            return std::unexpected(CreateResult.error());
-        }
-        void* DestinationComponent = CreateResult.value();
-        if (!DestinationComponent)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to allocate destination component"));
-        }
-
-        std::vector<uint8_t> SerializedBytes{};
-        const TSerializationContext SerializeContext{.Graph = SourceLevel};
-        auto SerializeResult = ComponentSerializationRegistry::Instance().Serialize(
-            ComponentType,
-            SourceComponent,
-            SerializedBytes,
-            SerializeContext);
-        if (!SerializeResult)
-        {
-            return std::unexpected(SerializeResult.error());
-        }
-
-        const TSerializationContext DeserializeContext{.Graph = &DestinationLevel};
-        auto DeserializeResult = ComponentSerializationRegistry::Instance().Deserialize(
-            ComponentType,
-            DestinationComponent,
-            SerializedBytes.data(),
-            SerializedBytes.size(),
-            DeserializeContext);
-        if (!DeserializeResult)
-        {
-            return std::unexpected(DeserializeResult.error());
-        }
-    }
-
-    return Ok();
-}
-
-[[nodiscard]] BaseNode* ResolveNodeForClone(Level* Graph, const NodeHandle& Handle)
-{
-    if (Graph)
-    {
-        if (BaseNode* Node = Graph->NodePool().Borrowed(Handle))
-        {
-            return Node;
-        }
-        if (!Handle.Id.is_nil())
-        {
-            if (const auto RefreshedHandle = Graph->NodeHandleByIdSlow(Handle.Id); RefreshedHandle)
-            {
-                if (BaseNode* Node = Graph->NodePool().Borrowed(*RefreshedHandle))
-                {
-                    return Node;
-                }
-            }
-        }
-    }
-
-    if (BaseNode* Node = Handle.Borrowed())
-    {
-        return Node;
-    }
-    return Handle.BorrowedSlowByUuid();
-}
-
-TExpected<NodeHandle> CloneNodeSubtree(const BaseNode& SourceNode, Level& DestinationLevel, const NodeHandle& DestinationParent)
-{
-    std::string NodeName = SourceNode.Name();
-    if (NodeName.empty())
-    {
-        if (const TypeInfo* Info = TypeRegistry::Instance().Find(SourceNode.TypeKey()))
-        {
-            NodeName = ShortTypeName(Info->Name);
-        }
-        else
-        {
-            NodeName = "Node";
-        }
-    }
-
-    auto CreateResult = DestinationLevel.CreateNode(SourceNode.TypeKey(), NodeName);
-    if (!CreateResult)
-    {
-        return std::unexpected(CreateResult.error());
-    }
-
-    NodeHandle CreatedHandle = CreateResult.value();
-    BaseNode* CreatedNode = CreatedHandle.Borrowed();
-    if (!CreatedNode)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to resolve cloned node"));
-    }
-
-    auto CopyComponentsResult = CloneNodeComponents(SourceNode, CreatedHandle, DestinationLevel);
-    if (!CopyComponentsResult)
-    {
-        return std::unexpected(CopyComponentsResult.error());
-    }
-
-    if (!DestinationParent.IsNull())
-    {
-        auto AttachResult = DestinationLevel.AttachChild(DestinationParent, CreatedHandle);
-        if (!AttachResult)
-        {
-            return std::unexpected(AttachResult.error());
-        }
-    }
-
-    Level* SourceLevel = ResolveLevelContext(SourceNode);
-    for (const NodeHandle ChildHandle : SourceNode.Children())
-    {
-        BaseNode* ChildNode = ResolveNodeForClone(SourceLevel, ChildHandle);
-        if (!ChildNode)
-        {
-            continue;
-        }
-
-        auto ChildCloneResult = CloneNodeSubtree(*ChildNode, DestinationLevel, CreatedHandle);
-        if (!ChildCloneResult)
-        {
-            return std::unexpected(ChildCloneResult.error());
-        }
-    }
-
-    return CreatedHandle;
-}
-
-TExpected<void> CloneNodeChildrenAsRoots(const BaseNode& SourceNode, Level& DestinationLevel)
-{
-    Level* SourceLevel = ResolveLevelContext(SourceNode);
-    for (const NodeHandle ChildHandle : SourceNode.Children())
-    {
-        BaseNode* ChildNode = ResolveNodeForClone(SourceLevel, ChildHandle);
-        if (!ChildNode)
-        {
-            continue;
-        }
-
-        auto CloneResult = CloneNodeSubtree(*ChildNode, DestinationLevel, NodeHandle{});
-        if (!CloneResult)
-        {
-            return std::unexpected(CloneResult.error());
-        }
-    }
-    return Ok();
 }
 } // namespace
 
@@ -940,17 +694,33 @@ Result EditorAssetService::OpenSelectedAssetPreview()
     std::ostringstream Summary;
     Summary << Asset->TypeLabel << " '" << Asset->Name << "'";
 
-    if (Asset->AssetKind == AssetKindLevel())
+    if (Asset->AssetKind == AssetKindNode())
     {
-        auto LevelResult = m_assetManager->Load<Level>(Asset->AssetId);
+        World PreviewWorld("EditorNodePreview");
+        NodeAssetLoadParams LoadParams{};
+        LoadParams.TargetWorld = &PreviewWorld;
+        auto NodeResult = m_assetManager->Load<BaseNode>(Asset->AssetId, LoadParams);
+        if (!NodeResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, NodeResult.error()));
+        }
+
+        const RuntimeWorldCounts Counts = CountRuntimeWorldObjects(PreviewWorld);
+        Summary << " preview loaded (" << Counts.Nodes << " nodes, " << Counts.Components << " components).";
+    }
+    else if (Asset->AssetKind == AssetKindLevel())
+    {
+        World PreviewWorld("EditorLevelPreview");
+        LevelAssetLoadParams LoadParams{};
+        LoadParams.TargetWorld = &PreviewWorld;
+        auto LevelResult = m_assetManager->Load<Level>(Asset->AssetId, LoadParams);
         if (!LevelResult)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError, LevelResult.error()));
         }
 
-        const std::size_t NodeCount = CountNodes(*LevelResult.value());
-        const std::size_t ComponentCount = CountComponents(*LevelResult.value());
-        Summary << " preview loaded (" << NodeCount << " nodes, " << ComponentCount << " components).";
+        const RuntimeWorldCounts Counts = CountRuntimeWorldObjects(PreviewWorld);
+        Summary << " preview loaded (" << Counts.Nodes << " nodes, " << Counts.Components << " components).";
     }
     else if (Asset->AssetKind == AssetKindWorld())
     {
@@ -960,9 +730,8 @@ Result EditorAssetService::OpenSelectedAssetPreview()
             return std::unexpected(MakeError(EErrorCode::InternalError, WorldResult.error()));
         }
 
-        const std::size_t NodeCount = CountNodes(*WorldResult.value());
-        const std::size_t ComponentCount = CountComponents(*WorldResult.value());
-        Summary << " preview loaded (" << NodeCount << " nodes, " << ComponentCount << " components).";
+        const RuntimeWorldCounts Counts = CountRuntimeWorldObjects(*WorldResult.value());
+        Summary << " preview loaded (" << Counts.Nodes << " nodes, " << Counts.Components << " components).";
     }
     else
     {
@@ -1333,6 +1102,19 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World cannot be converted into a prefab asset"));
     }
 
+    std::string BaseName = SourceNode->Name();
+    if (BaseName.empty())
+    {
+        if (const TypeInfo* Type = TypeRegistry::Instance().Find(SourceNode->TypeKey()))
+        {
+            BaseName = ShortTypeName(Type->Name);
+        }
+        else
+        {
+            BaseName = "Node";
+        }
+    }
+
     ::SnAPI::AssetPipeline::RuntimeAssetUpsert RuntimeAsset{};
     RuntimeAsset.Id = ::SnAPI::AssetPipeline::AssetId::Generate();
     RuntimeAsset.Bulk.clear();
@@ -1351,22 +1133,6 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
         {
             return std::unexpected(PayloadResult.error());
         }
-        if (PayloadResult->Graph.Nodes.empty()
-            && (!SourceNode->Children().empty() || !SourceNode->ComponentTypes().empty()))
-        {
-            Level FallbackLevel(SourceNode->Name().empty() ? std::string("Level") : SourceNode->Name());
-            auto CloneResult = CloneNodeChildrenAsRoots(*SourceNode, FallbackLevel);
-            if (!CloneResult)
-            {
-                return std::unexpected(CloneResult.error());
-            }
-            auto FallbackPayloadResult = LevelSerializer::Serialize(FallbackLevel);
-            if (!FallbackPayloadResult)
-            {
-                return std::unexpected(FallbackPayloadResult.error());
-            }
-            PayloadResult = std::move(FallbackPayloadResult);
-        }
 
         std::vector<uint8_t> Bytes{};
         auto SerializeResult = SerializeLevelPayload(*PayloadResult, Bytes);
@@ -1375,7 +1141,7 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
             return std::unexpected(SerializeResult.error());
         }
 
-        RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Levels", SourceNode->Name());
+        RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Levels", BaseName);
         RuntimeAsset.AssetKind = AssetKindLevel();
         RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
             PayloadLevel(),
@@ -1384,96 +1150,25 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
     }
     else
     {
-        Level PrefabGraph{};
-        std::string BaseName = SourceNode->Name();
-        if (BaseName.empty())
+        auto PayloadResult = NodeSerializer::Serialize(*SourceNode);
+        if (!PayloadResult)
         {
-            if (const TypeInfo* Type = TypeRegistry::Instance().Find(SourceNode->TypeKey()))
-            {
-                BaseName = ShortTypeName(Type->Name);
-            }
-            else
-            {
-                BaseName = "Node";
-            }
+            return std::unexpected(PayloadResult.error());
         }
-        PrefabGraph.Name(BaseName + ".Graph");
 
-        if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<Level>()))
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeNodePayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
         {
-            auto* SourceLevel = NodeCast<Level>(SourceNode);
-            if (!SourceLevel)
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError, "Selected graph node could not be resolved"));
-            }
-
-            auto PayloadResult = LevelGraphSerializer::Serialize(*SourceLevel);
-            if (!PayloadResult)
-            {
-                return std::unexpected(PayloadResult.error());
-            }
-            if (PayloadResult->Nodes.empty()
-                && (!SourceNode->Children().empty() || !SourceNode->ComponentTypes().empty()))
-            {
-                auto CloneResult = CloneNodeSubtree(*SourceNode, PrefabGraph, NodeHandle{});
-                if (!CloneResult)
-                {
-                    return std::unexpected(CloneResult.error());
-                }
-                auto FallbackPayloadResult = LevelGraphSerializer::Serialize(PrefabGraph);
-                if (!FallbackPayloadResult)
-                {
-                    return std::unexpected(FallbackPayloadResult.error());
-                }
-                PayloadResult = std::move(FallbackPayloadResult);
-            }
-
-            std::vector<uint8_t> Bytes{};
-            auto SerializeResult = SerializeLevelGraphPayload(*PayloadResult, Bytes);
-            if (!SerializeResult)
-            {
-                return std::unexpected(SerializeResult.error());
-            }
-
-            RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Graphs", BaseName);
-            RuntimeAsset.AssetKind = AssetKindLevel();
-            RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
-                PayloadLevel(),
-                LevelGraphSerializer::kSchemaVersion,
-                std::move(Bytes));
+            return std::unexpected(SerializeResult.error());
         }
-        else
-        {
-            auto CloneResult = CloneNodeSubtree(*SourceNode, PrefabGraph, NodeHandle{});
-            if (!CloneResult)
-            {
-                return std::unexpected(CloneResult.error());
-            }
 
-            auto PayloadResult = LevelGraphSerializer::Serialize(PrefabGraph);
-            if (!PayloadResult)
-            {
-                return std::unexpected(PayloadResult.error());
-            }
-            if (PayloadResult->Nodes.empty())
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError, "Prefab clone produced an empty graph payload"));
-            }
-
-            std::vector<uint8_t> Bytes{};
-            auto SerializeResult = SerializeLevelGraphPayload(*PayloadResult, Bytes);
-            if (!SerializeResult)
-            {
-                return std::unexpected(SerializeResult.error());
-            }
-
-            RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Prefabs", BaseName);
-            RuntimeAsset.AssetKind = AssetKindLevel();
-            RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
-                PayloadLevel(),
-                LevelGraphSerializer::kSchemaVersion,
-                std::move(Bytes));
-        }
+        RuntimeAsset.Name = MakeUniqueLogicalName(*m_assetManager, "Prefabs", BaseName);
+        RuntimeAsset.AssetKind = AssetKindNode();
+        RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+            PayloadNode(),
+            NodeSerializer::kSchemaVersion,
+            std::move(Bytes));
     }
 
     auto UpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(RuntimeAsset));
@@ -1490,7 +1185,7 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
 
     const std::string AssetKey = UpsertResult->ToString();
     (void)SelectAssetByKey(AssetKey);
-    m_statusMessage = "Created runtime prefab asset: " + SourceNode->Name();
+    m_statusMessage = "Created runtime prefab asset: " + RuntimeAsset.Name;
     (void)Context;
     return Ok();
 }
@@ -1506,6 +1201,7 @@ Result EditorAssetService::InstantiateArmedAsset(EditorServiceContext& Context)
     auto InstantiateResult = InstantiateAssetByKey(Context, PlacementKey);
     if (!InstantiateResult)
     {
+        m_statusMessage = "Placement failed: " + InstantiateResult.error().Message;
         return InstantiateResult;
     }
 
@@ -1529,6 +1225,10 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context, 
     if (Asset->AssetKind == AssetKindLevel())
     {
         return InstantiateLevelAsset(Context, *Asset);
+    }
+    if (Asset->AssetKind == AssetKindNode())
+    {
+        return InstantiateNodeAsset(Context, *Asset);
     }
     if (Asset->AssetKind == AssetKindWorld())
     {
@@ -1602,6 +1302,10 @@ std::vector<std::string> EditorAssetService::ParsePackSearchPathEnv(const std::s
 
 std::string EditorAssetService::AssetKindToLabel(const ::SnAPI::AssetPipeline::TypeId& AssetKind)
 {
+    if (AssetKind == AssetKindNode())
+    {
+        return "Node";
+    }
     if (AssetKind == AssetKindWorld())
     {
         return "World";
@@ -1711,55 +1415,31 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
         return std::unexpected("Asset manager is not initialized");
     }
 
-    if (Asset.AssetKind == AssetKindLevel())
+    if (Asset.IsRuntime)
     {
-        auto LevelResult = m_assetManager->Load<Level>(Asset.AssetId);
-        if (!LevelResult)
-        {
-            return std::unexpected(LevelResult.error());
-        }
-
-        auto PayloadResult = LevelSerializer::Serialize(*LevelResult.value());
-        if (!PayloadResult)
-        {
-            return std::unexpected(PayloadResult.error().Message);
-        }
-
-        std::vector<uint8_t> Bytes{};
-        auto BytesResult = SerializeLevelPayload(*PayloadResult, Bytes);
-        if (!BytesResult)
-        {
-            return std::unexpected(BytesResult.error().Message);
-        }
-
-        return ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(), LevelSerializer::kSchemaVersion, std::move(Bytes));
+        return std::unexpected("Runtime memory assets are saved via SaveRuntimeAsset");
     }
 
-    if (Asset.AssetKind == AssetKindWorld())
+    auto PackPathResult = ResolveOwningPackPath(Asset);
+    if (!PackPathResult)
     {
-        auto WorldResult = m_assetManager->Load<World>(Asset.AssetId);
-        if (!WorldResult)
-        {
-            return std::unexpected(WorldResult.error());
-        }
-
-        auto PayloadResult = WorldSerializer::Serialize(*WorldResult.value());
-        if (!PayloadResult)
-        {
-            return std::unexpected(PayloadResult.error().Message);
-        }
-
-        std::vector<uint8_t> Bytes{};
-        auto BytesResult = SerializeWorldPayload(*PayloadResult, Bytes);
-        if (!BytesResult)
-        {
-            return std::unexpected(BytesResult.error().Message);
-        }
-
-        return ::SnAPI::AssetPipeline::TypedPayload(PayloadWorld(), WorldSerializer::kSchemaVersion, std::move(Bytes));
+        return std::unexpected(PackPathResult.error());
     }
 
-    return std::unexpected("Unsupported asset kind for payload serialization");
+    ::SnAPI::AssetPipeline::AssetPackReader Reader{};
+    auto OpenResult = Reader.Open(PackPathResult.value());
+    if (!OpenResult)
+    {
+        return std::unexpected(OpenResult.error());
+    }
+
+    auto CookedResult = Reader.LoadCookedPayload(Asset.AssetId);
+    if (!CookedResult)
+    {
+        return std::unexpected(CookedResult.error());
+    }
+
+    return std::move(*CookedResult);
 }
 
 Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
@@ -1770,37 +1450,52 @@ Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
     }
 
-    auto LevelResult = m_assetManager->Load<Level>(Asset.AssetId);
-    if (!LevelResult)
+    LevelAssetLoadParams LoadParams{};
+    LoadParams.TargetWorld = WorldPtr;
+    LoadParams.NameOverride = Asset.Name.empty() ? std::string("LevelAsset") : Asset.Name;
+    auto LoadResult = m_assetManager->Load<Level>(Asset.AssetId, LoadParams);
+    if (!LoadResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, LevelResult.error()));
-    }
-
-    auto PayloadResult = LevelSerializer::Serialize(*LevelResult.value());
-    if (!PayloadResult)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
-    }
-
-    auto CreateResult = WorldPtr->CreateLevel(Asset.Name.empty() ? std::string("LevelAsset") : Asset.Name);
-    if (!CreateResult)
-    {
-        return std::unexpected(CreateResult.error());
-    }
-
-    auto* CreatedLevel = NodeCast<Level>(CreateResult->Borrowed());
-    if (!CreatedLevel)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create destination Level"));
-    }
-
-    auto DeserializeResult = LevelSerializer::Deserialize(*PayloadResult, *CreatedLevel);
-    if (!DeserializeResult)
-    {
-        return std::unexpected(DeserializeResult.error());
+        return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
     }
 
     m_statusMessage = "Instantiated Level asset: " + Asset.Name;
+    return Ok();
+}
+
+Result EditorAssetService::InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
+{
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+
+    NodeHandle ParentHandle{};
+    const auto Levels = WorldPtr->Levels();
+    if (!Levels.empty())
+    {
+        ParentHandle = Levels.front();
+    }
+    else
+    {
+        auto DefaultLevelResult = WorldPtr->CreateLevel("Level");
+        if (DefaultLevelResult)
+        {
+            ParentHandle = *DefaultLevelResult;
+        }
+    }
+
+    NodeAssetLoadParams LoadParams{};
+    LoadParams.TargetWorld = WorldPtr;
+    LoadParams.Parent = ParentHandle;
+    auto LoadResult = m_assetManager->Load<BaseNode>(Asset.AssetId, LoadParams);
+    if (!LoadResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+    }
+
+    m_statusMessage = "Instantiated Node asset: " + Asset.Name;
     return Ok();
 }
 
@@ -1812,37 +1507,15 @@ Result EditorAssetService::InstantiateWorldAsset(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
     }
 
-    auto SourceWorldResult = m_assetManager->Load<World>(Asset.AssetId);
-    if (!SourceWorldResult)
+    WorldAssetLoadParams LoadParams{};
+    LoadParams.TargetWorld = WorldPtr;
+    auto LoadResult = m_assetManager->Load<World>(Asset.AssetId, LoadParams);
+    if (!LoadResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, SourceWorldResult.error()));
+        return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
     }
 
-    auto PayloadResult = WorldSerializer::Serialize(*SourceWorldResult.value());
-    if (!PayloadResult)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
-    }
-
-    auto CreateResult = WorldPtr->CreateNode<Level>(Asset.Name.empty() ? std::string("WorldAsset") : Asset.Name);
-    if (!CreateResult)
-    {
-        return std::unexpected(CreateResult.error());
-    }
-
-    auto* CreatedLevel = NodeCast<Level>(CreateResult->Borrowed());
-    if (!CreatedLevel)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create destination graph for world asset"));
-    }
-
-    auto DeserializeResult = LevelGraphSerializer::Deserialize(PayloadResult->Graph, *CreatedLevel);
-    if (!DeserializeResult)
-    {
-        return std::unexpected(DeserializeResult.error());
-    }
-
-    m_statusMessage = "Instantiated World asset graph: " + Asset.Name;
+    m_statusMessage = "Instantiated World asset: " + Asset.Name;
     return Ok();
 }
 

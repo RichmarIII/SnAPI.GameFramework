@@ -4,7 +4,9 @@
 
 #include "AssetPipelineIds.h"
 #include "AssetPipelineSerializers.h"
+#include "BaseNode.h"
 #include "Level.h"
+#include "NodeCast.h"
 #include "Serialization.h"
 #include "World.h"
 
@@ -13,43 +15,53 @@ namespace SnAPI::GameFramework
 namespace
 {
 /**
- * @brief AssetFactory for Level runtime objects.
- * @remarks Converts cooked Level payloads into Level instances.
+ * @brief AssetFactory for Node runtime objects.
  */
-class TLevelGraphFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<Level>
+class TNodeFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<BaseNode>
 {
 public:
-    /**
-     * @brief Get the cooked payload type handled by this factory.
-     * @return Payload TypeId.
-     */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
-        return PayloadLevelGraph();
+        return PayloadNode();
     }
 
 protected:
-    /**
-     * @brief Load a Level from cooked data.
-     * @param Context Asset load context.
-     * @return Loaded Level or error.
-     */
-    std::expected<Level, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    std::expected<BaseNode, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
-        auto PayloadResult = Context.DeserializeCooked<LevelGraphPayload>();
+        auto PayloadResult = Context.DeserializeCooked<NodePayload>();
         if (!PayloadResult)
         {
             return std::unexpected(PayloadResult.error());
         }
 
-        Level Graph;
-        auto DeserializeResult = LevelGraphSerializer::Deserialize(*PayloadResult, Graph);
-        if (!DeserializeResult)
+        BaseNode Loaded(PayloadResult->Name);
+        Loaded.TypeKey(PayloadResult->NodeType);
+
+        const auto* Params = std::any_cast<NodeAssetLoadParams>(&Context.Params);
+        if (Params && Params->TargetWorld)
         {
-            return std::unexpected(DeserializeResult.error().Message);
+            TDeserializeOptions DeserializeOptions{};
+            DeserializeOptions.RegenerateObjectIds = Params->InstantiateAsCopy;
+            auto DeserializeResult = NodeSerializer::Deserialize(
+                *PayloadResult,
+                *Params->TargetWorld,
+                Params->Parent,
+                DeserializeOptions);
+            if (!DeserializeResult)
+            {
+                return std::unexpected(DeserializeResult.error().Message);
+            }
+
+            if (BaseNode* CreatedNode = DeserializeResult->Borrowed())
+            {
+                Loaded.Name(CreatedNode->Name());
+                Loaded.TypeKey(CreatedNode->TypeKey());
+                Loaded.Active(CreatedNode->Active());
+                Loaded.Replicated(CreatedNode->Replicated());
+            }
         }
 
-        return Graph;
+        return Loaded;
     }
 };
 
@@ -59,18 +71,12 @@ protected:
 class TLevelFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<Level>
 {
 public:
-    /** @brief Get the cooked payload type handled by this factory. */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
         return PayloadLevel();
     }
 
 protected:
-    /**
-     * @brief Load a Level from cooked data.
-     * @param Context Asset load context.
-     * @return Loaded Level or error.
-     */
     std::expected<Level, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
         auto PayloadResult = Context.DeserializeCooked<LevelPayload>();
@@ -79,36 +85,51 @@ protected:
             return std::unexpected(PayloadResult.error());
         }
 
-        Level Loaded;
-        auto DeserializeResult = LevelSerializer::Deserialize(*PayloadResult, Loaded);
-        if (!DeserializeResult)
+        const auto* Params = std::any_cast<LevelAssetLoadParams>(&Context.Params);
+        const std::string ResolvedName = (Params && !Params->NameOverride.empty())
+            ? Params->NameOverride
+            : (PayloadResult->Name.empty() ? Context.Info.Name : PayloadResult->Name);
+
+        if (Params && Params->TargetWorld)
         {
-            return std::unexpected(DeserializeResult.error().Message);
+            auto CreateResult = Params->TargetWorld->CreateLevel(ResolvedName);
+            if (!CreateResult)
+            {
+                return std::unexpected(CreateResult.error().Message);
+            }
+
+            auto* CreatedLevel = NodeCast<Level>(CreateResult->Borrowed());
+            if (!CreatedLevel)
+            {
+                return std::unexpected("Failed to resolve created level node");
+            }
+
+            TDeserializeOptions DeserializeOptions{};
+            DeserializeOptions.RegenerateObjectIds = Params->InstantiateAsCopy;
+            auto DeserializeResult = LevelSerializer::Deserialize(*PayloadResult, *CreatedLevel, DeserializeOptions);
+            if (!DeserializeResult)
+            {
+                return std::unexpected(DeserializeResult.error().Message);
+            }
         }
 
-        return Loaded;
+        return Level(ResolvedName);
     }
 };
 
 /**
  * @brief AssetFactory for World runtime objects.
  */
-class TWorldFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<World>
+class TWorldFactory final : public ::SnAPI::AssetPipeline::IAssetFactory
 {
 public:
-    /** @brief Get the cooked payload type handled by this factory. */
     ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
     {
         return PayloadWorld();
     }
 
-protected:
-    /**
-     * @brief Load a World from cooked data.
-     * @param Context Asset load context.
-     * @return Loaded World or error.
-     */
-    std::expected<World, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    std::expected<::SnAPI::AssetPipeline::UniqueVoidPtr, std::string> Load(
+        const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
     {
         auto PayloadResult = Context.DeserializeCooked<WorldPayload>();
         if (!PayloadResult)
@@ -116,14 +137,32 @@ protected:
             return std::unexpected(PayloadResult.error());
         }
 
-        World Loaded;
-        auto DeserializeResult = WorldSerializer::Deserialize(*PayloadResult, Loaded);
-        if (!DeserializeResult)
+        auto* LoadedWorld = new World();
+        const auto* Params = std::any_cast<WorldAssetLoadParams>(&Context.Params);
+        if (Params && Params->TargetWorld)
         {
-            return std::unexpected(DeserializeResult.error().Message);
+            TDeserializeOptions DeserializeOptions{};
+            DeserializeOptions.RegenerateObjectIds = Params->InstantiateAsCopy;
+            auto DeserializeIntoTarget = WorldSerializer::Deserialize(*PayloadResult, *Params->TargetWorld, DeserializeOptions);
+            if (!DeserializeIntoTarget)
+            {
+                delete LoadedWorld;
+                return std::unexpected(DeserializeIntoTarget.error().Message);
+            }
+            return ::SnAPI::AssetPipeline::UniqueVoidPtr(LoadedWorld, [](void* Ptr) {
+                delete static_cast<World*>(Ptr);
+            });
         }
 
-        return Loaded;
+        auto DeserializeResult = WorldSerializer::Deserialize(*PayloadResult, *LoadedWorld);
+        if (!DeserializeResult)
+        {
+            delete LoadedWorld;
+            return std::unexpected(DeserializeResult.error().Message);
+        }
+        return ::SnAPI::AssetPipeline::UniqueVoidPtr(LoadedWorld, [](void* Ptr) {
+            delete static_cast<World*>(Ptr);
+        });
     }
 };
 
@@ -135,7 +174,7 @@ protected:
  */
 void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Registry)
 {
-    Registry.Register(CreateLevelGraphPayloadSerializer());
+    Registry.Register(CreateNodePayloadSerializer());
     Registry.Register(CreateLevelPayloadSerializer());
     Registry.Register(CreateWorldPayloadSerializer());
 }
@@ -146,7 +185,7 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
  */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager)
 {
-    Manager.RegisterFactory<Level>(std::make_unique<TLevelGraphFactory>());
+    Manager.RegisterFactory<BaseNode>(std::make_unique<TNodeFactory>());
     Manager.RegisterFactory<Level>(std::make_unique<TLevelFactory>());
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
 }

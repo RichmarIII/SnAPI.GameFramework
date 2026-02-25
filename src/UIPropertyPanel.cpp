@@ -3,7 +3,6 @@
 #if defined(SNAPI_GF_ENABLE_UI)
 
 #include "BaseNode.h"
-#include "ComponentStorage.h"
 #include "IWorld.h"
 
 #include <algorithm>
@@ -503,22 +502,17 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
   }
 
   const auto& ComponentTypes = Node->ComponentTypes();
-  const auto& ComponentStorages = Node->ComponentStorages();
-  const size_t ComponentCount = std::min(ComponentTypes.size(), ComponentStorages.size());
-  for (size_t Index = 0; Index < ComponentCount; ++Index)
+  for (const TypeId& ComponentType : ComponentTypes)
   {
-    ComponentStorageView* Storage = ComponentStorages[Index];
-    if (!Storage)
+    void* ComponentInstance = nullptr;
+    if (auto* WorldRef = Node->World())
     {
-      continue;
-    }
-
-    const TypeId& ComponentType = ComponentTypes[Index];
-    void* ComponentInstance = Storage->Borrowed(ComponentOwner);
-    if (!ComponentInstance)
-    {
-      // UUID-resolved fallback keeps inspector usable when runtime key fields drift.
-      ComponentInstance = Storage->Borrowed(NodeHandle{Node->Id()});
+      ComponentInstance = WorldRef->BorrowedComponent(ComponentOwner, ComponentType);
+      if (!ComponentInstance)
+      {
+        // UUID-resolved fallback keeps inspector usable when runtime key fields drift.
+        ComponentInstance = WorldRef->BorrowedComponent(NodeHandle{Node->Id()}, ComponentType);
+      }
     }
     if (!ComponentInstance)
     {

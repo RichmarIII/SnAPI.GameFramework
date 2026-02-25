@@ -242,29 +242,23 @@ WorldExecutionProfile WorldExecutionProfile::PIE()
 }
 
 World::World()
-    : Level("World")
+    : m_name("World")
     , m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     , m_networkSystem(*this)
 #endif
 {
-    
-    TypeKey(StaticTypeId<World>());
-    BaseNode::World(this);
     m_worldKind = EWorldKind::Runtime;
     m_executionProfile = WorldExecutionProfile::Runtime();
 }
 
 World::World(std::string Name)
-    : Level(std::move(Name))
+    : m_name(std::move(Name))
     , m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     , m_networkSystem(*this)
 #endif
 {
-    
-    TypeKey(StaticTypeId<World>());
-    BaseNode::World(this);
     m_worldKind = EWorldKind::Runtime;
     m_executionProfile = WorldExecutionProfile::Runtime();
 }
@@ -272,7 +266,16 @@ World::World(std::string Name)
 World::~World()
 {
     Clear();
-    BaseNode::World(nullptr);
+}
+
+const std::string& World::Name() const
+{
+    return m_name;
+}
+
+void World::Name(std::string NameValue)
+{
+    m_name = std::move(NameValue);
 }
 
 TaskHandle World::EnqueueTask(WorkTask InTask, CompletionTask OnComplete)
@@ -775,6 +778,33 @@ TExpected<void*> World::CreateComponent(const NodeHandle& Owner, const TypeId& T
 TExpected<void*> World::CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id)
 {
     return ComponentSerializationRegistry::Instance().CreateWithId(*this, Owner, Type, Id);
+}
+
+bool World::IsServer() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    return m_networkSystem.IsServer();
+#else
+    return true;
+#endif
+}
+
+bool World::IsClient() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    return m_networkSystem.IsClient();
+#else
+    return false;
+#endif
+}
+
+bool World::IsListenServer() const
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    return m_networkSystem.IsListenServer();
+#else
+    return false;
+#endif
 }
 
 void World::SetWorldKind(const EWorldKind Kind)

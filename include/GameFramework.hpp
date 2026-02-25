@@ -14,6 +14,7 @@
 #include "CollisionFilters.h"
 #include "ColliderComponent.h"
 #include "ComponentStorage.h"
+#include "DirectionalLightComponent.h"
 #include "Expected.h"
 #include "FollowTargetComponent.h"
 #include "GameplayHost.h"

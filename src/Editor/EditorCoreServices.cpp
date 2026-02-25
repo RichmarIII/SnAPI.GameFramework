@@ -196,7 +196,7 @@ private:
 {
     if (Handle.IsNull())
     {
-        return &WorldRef;
+        return nullptr;
     }
 
     if (auto* Node = Handle.Borrowed())
@@ -209,7 +209,7 @@ private:
         return Node;
     }
 
-    if (const auto HandleResult = WorldRef.NodeHandleByIdSlow(Handle.Id); HandleResult.has_value())
+    if (const auto HandleResult = WorldRef.NodeHandleById(Handle.Id); HandleResult.has_value())
     {
         return WorldRef.NodePool().Borrowed(*HandleResult);
     }
@@ -375,18 +375,11 @@ private:
 }
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
-[[nodiscard]] std::optional<NodeHandle> ResolveNodeHandleByPhysicsBodyRecursive(
-    Level& Graph,
-    const SnAPI::Physics::BodyHandle& TargetBody,
-    std::unordered_set<const Level*>& VisitedGraphs)
+[[nodiscard]] std::optional<NodeHandle> ResolveNodeHandleByPhysicsBody(World& WorldRef,
+                                                                        const SnAPI::Physics::BodyHandle& TargetBody)
 {
-    if (!VisitedGraphs.insert(&Graph).second)
-    {
-        return std::nullopt;
-    }
-
     std::optional<NodeHandle> ResolvedHandle{};
-    Graph.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
         if (ResolvedHandle.has_value())
         {
             return;
@@ -396,15 +389,6 @@ private:
         if (RigidBodyResult && RigidBodyResult->HasBody() && RigidBodyResult->PhysicsBodyHandle() == TargetBody)
         {
             ResolvedHandle = Handle;
-            return;
-        }
-
-        if (auto* NestedGraph = NodeCast<Level>(&Node))
-        {
-            if (auto NestedResult = ResolveNodeHandleByPhysicsBodyRecursive(*NestedGraph, TargetBody, VisitedGraphs))
-            {
-                ResolvedHandle = *NestedResult;
-            }
         }
     });
 
@@ -1649,8 +1633,7 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
     }
 
     const SnAPI::Physics::BodyHandle HitBody = Hits[0].Body;
-    std::unordered_set<const Level*> VisitedGraphs{};
-    if (auto Resolved = ResolveNodeHandleByPhysicsBodyRecursive(*WorldPtr, HitBody, VisitedGraphs))
+    if (auto Resolved = ResolveNodeHandleByPhysicsBody(*WorldPtr, HitBody))
     {
         OutNode = *Resolved;
         return true;

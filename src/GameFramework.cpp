@@ -25,6 +25,7 @@
 #endif
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "CameraComponent.h"
+#include "DirectionalLightComponent.h"
 #include "SkeletalMeshComponent.h"
 #include "StaticMeshComponent.h"
 #endif
@@ -59,6 +60,7 @@ static_assert(!std::is_polymorphic_v<InputComponent>, "InputComponent must be no
 #endif
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 static_assert(!std::is_polymorphic_v<CameraComponent>, "CameraComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<DirectionalLightComponent>, "DirectionalLightComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<StaticMeshComponent>, "StaticMeshComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshComponent must be non-polymorphic runtime type");
 #endif
@@ -73,7 +75,6 @@ SNAPI_REFLECT_TYPE(Level, (TTypeBuilder<Level>(Level::kTypeName)
     .Register()));
 
 SNAPI_REFLECT_TYPE(World, (TTypeBuilder<World>(World::kTypeName)
-    .Base<Level>()
     .Constructor<>()
     .Register()));
 
@@ -340,6 +341,31 @@ SNAPI_REFLECT_TYPE(CameraComponent, (TTypeBuilder<CameraComponent>(CameraCompone
            &CameraComponent::GetSettings,
            EFieldFlagBits::Replication)
     .Method("SetActive", &CameraComponent::SetActive)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(DirectionalLightComponent::Settings, (TTypeBuilder<DirectionalLightComponent::Settings>(DirectionalLightComponent::Settings::kTypeName)
+    .Field("Enabled", &DirectionalLightComponent::Settings::Enabled, EFieldFlagBits::Replication)
+    .Field("Direction", &DirectionalLightComponent::Settings::Direction, EFieldFlagBits::Replication)
+    .Field("Color", &DirectionalLightComponent::Settings::Color, EFieldFlagBits::Replication)
+    .Field("Intensity", &DirectionalLightComponent::Settings::Intensity, EFieldFlagBits::Replication)
+    .Field("CastShadows", &DirectionalLightComponent::Settings::CastShadows, EFieldFlagBits::Replication)
+    .Field("CascadeCount", &DirectionalLightComponent::Settings::CascadeCount, EFieldFlagBits::Replication)
+    .Field("ShadowMapSize", &DirectionalLightComponent::Settings::ShadowMapSize, EFieldFlagBits::Replication)
+    .Field("ShadowBias", &DirectionalLightComponent::Settings::ShadowBias, EFieldFlagBits::Replication)
+    .Field("ShadowFarDistance", &DirectionalLightComponent::Settings::ShadowFarDistance, EFieldFlagBits::Replication)
+    .Field("SoftnessFactor", &DirectionalLightComponent::Settings::SoftnessFactor, EFieldFlagBits::Replication)
+    .Field("SoftShadows", &DirectionalLightComponent::Settings::SoftShadows, EFieldFlagBits::Replication)
+    .Field("ContactHardening", &DirectionalLightComponent::Settings::ContactHardening, EFieldFlagBits::Replication)
+    .Field("CascadeBlending", &DirectionalLightComponent::Settings::CascadeBlending, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(DirectionalLightComponent, (TTypeBuilder<DirectionalLightComponent>(DirectionalLightComponent::kTypeName)
+    .Field("Settings",
+           &DirectionalLightComponent::EditSettings,
+           &DirectionalLightComponent::GetSettings,
+           EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
 

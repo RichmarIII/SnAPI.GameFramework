@@ -8,10 +8,10 @@ namespace SnAPI::GameFramework
 namespace
 {
 /**
- * @brief AssetPipeline serializer for LevelGraphPayload.
+ * @brief AssetPipeline serializer for NodePayload.
  * @remarks Wraps reflection-based serialization into AssetPipeline payloads.
  */
-class LevelGraphPayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
+class NodePayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
 {
 public:
     /**
@@ -20,7 +20,7 @@ public:
      */
     ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
     {
-        return PayloadLevelGraph();
+        return PayloadNode();
     }
 
     /**
@@ -29,7 +29,7 @@ public:
      */
     const char* GetTypeName() const override
     {
-        return kPayloadLevelGraphName;
+        return kPayloadNodeName;
     }
 
     /**
@@ -38,24 +38,24 @@ public:
      */
     uint32_t GetSchemaVersion() const override
     {
-        return LevelGraphSerializer::kSchemaVersion;
+        return NodeSerializer::kSchemaVersion;
     }
 
     /**
-     * @brief Serialize a LevelGraphPayload into bytes.
-     * @param Object Pointer to LevelGraphPayload.
+     * @brief Serialize a NodePayload into bytes.
+     * @param Object Pointer to NodePayload.
      * @param OutBytes Output byte buffer.
      * @remarks Clears OutBytes on failure.
      */
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
     {
-        const auto* Payload = static_cast<const LevelGraphPayload*>(Object);
+        const auto* Payload = static_cast<const NodePayload*>(Object);
         if (!Payload)
         {
             OutBytes.clear();
             return;
         }
-        auto Result = SerializeLevelGraphPayload(*Payload, OutBytes);
+        auto Result = SerializeNodePayload(*Payload, OutBytes);
         if (!Result)
         {
             OutBytes.clear();
@@ -63,7 +63,7 @@ public:
     }
 
     /**
-     * @brief Deserialize a LevelGraphPayload from bytes.
+     * @brief Deserialize a NodePayload from bytes.
      * @param Object Pointer to destination payload.
      * @param Bytes Byte buffer.
      * @param Size Byte count.
@@ -71,12 +71,12 @@ public:
      */
     bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
     {
-        auto* Payload = static_cast<LevelGraphPayload*>(Object);
+        auto* Payload = static_cast<NodePayload*>(Object);
         if (!Payload)
         {
             return false;
         }
-        auto Result = DeserializeLevelGraphPayload(Bytes, Size);
+        auto Result = DeserializeNodePayload(Bytes, Size);
         if (!Result)
         {
             return false;
@@ -225,12 +225,12 @@ public:
 } // namespace
 
 /**
- * @brief Create the Level payload serializer.
+ * @brief Create the Node payload serializer.
  * @return Serializer instance.
  */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelGraphPayloadSerializer()
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateNodePayloadSerializer()
 {
-    return std::make_unique<LevelGraphPayloadSerializer>();
+    return std::make_unique<NodePayloadSerializer>();
 }
 
 /**

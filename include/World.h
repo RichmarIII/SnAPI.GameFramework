@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "GameThreading.h"
@@ -74,21 +75,18 @@ struct WorldExecutionProfile
  * @brief Concrete world root that owns levels and subsystems.
  * @remarks
  * `World` is the top-level runtime orchestration object:
- * - derives from `Level` for hierarchical node traversal
- * - implements `IWorld` for level/subsystem contracts
+ * - implements `IWorld` for node/component storage and subsystem contracts
  * - owns subsystem instances (job system + optional input/ui/audio/networking/
  *   physics/renderer adapters)
  *
  * Responsibility boundaries:
  * - world controls frame lifecycle and end-of-frame flush
- * - levels are represented as child nodes/graphs under the world
+ * - levels are regular `BaseNode`-derived nodes stored by world
  * - nodes/components can query world context through `Owner()->World()`
  */
-class World : public Level, public IWorld, public ITaskDispatcher
+class World : public IWorld, public ITaskDispatcher
 {
 public:
-    using Level::CreateNode;
-    using Level::CreateNodeWithId;
     using WorkTask = std::function<void(World&)>;
     using CompletionTask = std::function<void(const TaskHandle&)>;
 
@@ -109,6 +107,40 @@ public:
     World& operator=(const World&) = delete;
     World(World&&) noexcept = default;
     World& operator=(World&&) noexcept = default;
+
+    /**
+     * @brief Get world display name.
+     */
+    const std::string& Name() const;
+    /**
+     * @brief Set world display name.
+     * @param NameValue New world name.
+     */
+    void Name(std::string NameValue);
+
+    template<typename T = BaseNode, typename... Args>
+    TExpected<NodeHandle> CreateNode(std::string NameValue, Args&&... args)
+    {
+        static_assert(std::is_base_of_v<BaseNode, T>, "Nodes must derive from BaseNode");
+        if constexpr (sizeof...(args) != 0)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "ECS-only node creation requires default-constructible reflected nodes"));
+        }
+        return CreateNode(StaticTypeId<T>(), std::move(NameValue));
+    }
+
+    template<typename T = BaseNode, typename... Args>
+    TExpected<NodeHandle> CreateNodeWithId(const Uuid& Id, std::string NameValue, Args&&... args)
+    {
+        static_assert(std::is_base_of_v<BaseNode, T>, "Nodes must derive from BaseNode");
+        if constexpr (sizeof...(args) != 0)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "ECS-only node creation requires default-constructible reflected nodes"));
+        }
+        return CreateNodeWithId(StaticTypeId<T>(), std::move(NameValue), Id);
+    }
 
     EWorldKind Kind() const override;
     bool ShouldRunGameplay() const override;
@@ -136,6 +168,9 @@ public:
     Result RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type) override;
     TExpected<void*> CreateComponent(const NodeHandle& Owner, const TypeId& Type) override;
     TExpected<void*> CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) override;
+    bool IsServer() const;
+    bool IsClient() const;
+    bool IsListenServer() const;
     void SetWorldKind(EWorldKind Kind);
     const WorldExecutionProfile& ExecutionProfile() const;
     void SetExecutionProfile(const WorldExecutionProfile& Profile);
@@ -370,6 +405,7 @@ public:
 #endif
 
 private:
+    std::string m_name{"World"}; /**< @brief World display/debug name. */
     std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief World-owned node storage. */
     std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root nodes in world hierarchy. */
     std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Deferred node-destroy queue. */

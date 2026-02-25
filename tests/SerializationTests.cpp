@@ -1,10 +1,10 @@
 #include <sstream>
-#include <unordered_map>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 using namespace SnAPI::GameFramework;
 
@@ -57,6 +57,15 @@ struct LinkComponent : public BaseComponent, public ComponentCRTP<LinkComponent>
     NodeHandle Target{};
 };
 
+/**
+ * @brief Component containing a component-handle link for serialization remap tests.
+ */
+struct ComponentLinkComponent : public BaseComponent, public ComponentCRTP<ComponentLinkComponent>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::ComponentLinkComponent";
+    ComponentHandle TargetComponent{};
+};
+
 namespace
 {
 /**
@@ -80,17 +89,34 @@ struct DerivedStatsNode : public BaseStatsNode
 };
 
 /**
- * @brief Cross-graph handle component used for reference remap tests.
+ * @brief Cross-world handle component used for reference remap tests.
  */
 struct CrossRefComponent : public BaseComponent, public ComponentCRTP<CrossRefComponent>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::CrossRefComponent";
     NodeHandle Target{};
 };
+
+NodeHandle FindNodeByName(const World& WorldRef, const std::string& Name)
+{
+    NodeHandle Found{};
+    WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+        if (Node.Name() == Name)
+        {
+            Found = Handle;
+        }
+    });
+    return Found;
+}
 } // namespace
 
 SNAPI_REFLECT_TYPE(LinkComponent, (TTypeBuilder<LinkComponent>(LinkComponent::kTypeName)
     .Field("Target", &LinkComponent::Target)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(ComponentLinkComponent, (TTypeBuilder<ComponentLinkComponent>(ComponentLinkComponent::kTypeName)
+    .Field("TargetComponent", &ComponentLinkComponent::TargetComponent)
     .Constructor<>()
     .Register()));
 
@@ -113,21 +139,19 @@ SNAPI_REFLECT_TYPE(CrossRefComponent, (TTypeBuilder<CrossRefComponent>(CrossRefC
     .Constructor<>()
     .Register()));
 
-TEST_CASE("Level serialization round-trips with components and handles")
+TEST_CASE("Node serialization round-trips subtree with components and handles")
 {
     RegisterBuiltinTypes();
 
-    Level Graph;
-    auto AResult = Graph.CreateNode("A");
+    World SourceWorld("Source");
+    auto AResult = SourceWorld.CreateNode("A");
     REQUIRE(AResult);
-    auto BResult = Graph.CreateNode("B");
+    auto BResult = SourceWorld.CreateNode("B");
     REQUIRE(BResult);
-    REQUIRE(Graph.AttachChild(AResult.value(), BResult.value()));
+    REQUIRE(SourceWorld.AttachChild(AResult.value(), BResult.value()));
 
     auto* NodeA = AResult.value().Borrowed();
     REQUIRE(NodeA != nullptr);
-    auto* NodeB = BResult.value().Borrowed();
-    REQUIRE(NodeB != nullptr);
 
     auto TransformResult = NodeA->Add<TransformComponent>();
     REQUIRE(TransformResult);
@@ -137,93 +161,76 @@ TEST_CASE("Level serialization round-trips with components and handles")
     REQUIRE(LinkResult);
     LinkResult->Target = BResult.value();
 
-    auto ScriptResult = NodeB->Add<ScriptComponent>();
-    REQUIRE(ScriptResult);
-    ScriptResult->ScriptModule = "Player.lua";
-    ScriptResult->ScriptType = "PlayerController";
-    ScriptResult->Instance = 42;
-
-    auto PayloadResult = LevelGraphSerializer::Serialize(Graph);
+    auto PayloadResult = NodeSerializer::Serialize(*NodeA);
     REQUIRE(PayloadResult);
 
-    std::vector<uint8_t> Bytes;
-    auto BytesResult = SerializeLevelGraphPayload(PayloadResult.value(), Bytes);
-    REQUIRE(BytesResult);
+    std::vector<uint8_t> Bytes{};
+    REQUIRE(SerializeNodePayload(PayloadResult.value(), Bytes));
     REQUIRE_FALSE(Bytes.empty());
 
-    auto PayloadRoundTrip = DeserializeLevelGraphPayload(Bytes.data(), Bytes.size());
+    auto PayloadRoundTrip = DeserializeNodePayload(Bytes.data(), Bytes.size());
     REQUIRE(PayloadRoundTrip);
 
-    Level Graph2;
-    auto LoadResult = LevelGraphSerializer::Deserialize(PayloadRoundTrip.value(), Graph2);
-    REQUIRE(LoadResult);
+    World LoadedWorld("Loaded");
+    auto DeserializeResult = NodeSerializer::Deserialize(PayloadRoundTrip.value(), LoadedWorld);
+    REQUIRE(DeserializeResult);
 
-    std::unordered_map<std::string, NodeHandle> NodesByName;
-    Graph2.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
-        NodesByName.emplace(Node.Name(), Handle);
-    });
+    NodeHandle LoadedAHandle = FindNodeByName(LoadedWorld, "A");
+    NodeHandle LoadedBHandle = FindNodeByName(LoadedWorld, "B");
+    REQUIRE(LoadedAHandle.IsValid());
+    REQUIRE(LoadedBHandle.IsValid());
 
-    REQUIRE(NodesByName.size() == 2);
-    REQUIRE(NodesByName.find("A") != NodesByName.end());
-    REQUIRE(NodesByName.find("B") != NodesByName.end());
-
-    auto* LoadedA = NodesByName["A"].Borrowed();
+    auto* LoadedA = LoadedAHandle.Borrowed();
     REQUIRE(LoadedA != nullptr);
-    auto TransformLoaded = LoadedA->Component<TransformComponent>();
-    REQUIRE(TransformLoaded);
-    REQUIRE(TransformLoaded->Position.x() == Catch::Approx(4.0f));
-    REQUIRE(TransformLoaded->Position.y() == Catch::Approx(5.0f));
-    REQUIRE(TransformLoaded->Position.z() == Catch::Approx(6.0f));
+    auto LoadedTransform = LoadedA->Component<TransformComponent>();
+    REQUIRE(LoadedTransform);
+    REQUIRE(LoadedTransform->Position.x() == Catch::Approx(4.0f));
+    REQUIRE(LoadedTransform->Position.y() == Catch::Approx(5.0f));
+    REQUIRE(LoadedTransform->Position.z() == Catch::Approx(6.0f));
 
-    auto LinkLoaded = LoadedA->Component<LinkComponent>();
-    REQUIRE(LinkLoaded);
-    auto* LinkedNode = LinkLoaded->Target.Borrowed();
+    auto LoadedLink = LoadedA->Component<LinkComponent>();
+    REQUIRE(LoadedLink);
+    auto* LinkedNode = LoadedLink->Target.Borrowed();
     REQUIRE(LinkedNode != nullptr);
     REQUIRE(LinkedNode->Name() == "B");
 }
 
-TEST_CASE("Level serialization round-trips node fields across inheritance")
+TEST_CASE("Node serialization round-trips node fields across inheritance")
 {
     RegisterBuiltinTypes();
 
-    Level Graph;
-    auto TargetResult = Graph.CreateNode("Target");
+    World SourceWorld("Source");
+    auto TargetResult = SourceWorld.CreateNode("Target");
     REQUIRE(TargetResult);
 
-    auto ActorResult = Graph.CreateNode<DerivedStatsNode>("Actor");
+    auto ActorResult = SourceWorld.CreateNode<DerivedStatsNode>("Actor");
     REQUIRE(ActorResult);
 
-    auto* Actor = dynamic_cast<DerivedStatsNode*>(ActorResult.value().Borrowed());
+    auto* Actor = NodeCast<DerivedStatsNode>(ActorResult.value().Borrowed());
     REQUIRE(Actor != nullptr);
     Actor->m_baseValue = 7;
     Actor->m_health = 42;
     Actor->m_spawn = Vec3(1.0f, 2.0f, 3.0f);
     Actor->m_target = TargetResult.value();
 
-    auto PayloadResult = LevelGraphSerializer::Serialize(Graph);
+    auto PayloadResult = NodeSerializer::Serialize(*Actor);
     REQUIRE(PayloadResult);
 
-    std::vector<uint8_t> Bytes;
-    auto BytesResult = SerializeLevelGraphPayload(PayloadResult.value(), Bytes);
-    REQUIRE(BytesResult);
+    std::vector<uint8_t> Bytes{};
+    REQUIRE(SerializeNodePayload(PayloadResult.value(), Bytes));
     REQUIRE_FALSE(Bytes.empty());
 
-    auto PayloadRoundTrip = DeserializeLevelGraphPayload(Bytes.data(), Bytes.size());
+    auto PayloadRoundTrip = DeserializeNodePayload(Bytes.data(), Bytes.size());
     REQUIRE(PayloadRoundTrip);
 
-    Level Graph2;
-    auto LoadResult = LevelGraphSerializer::Deserialize(PayloadRoundTrip.value(), Graph2);
-    REQUIRE(LoadResult);
+    World LoadedWorld("Loaded");
+    auto DeserializeResult = NodeSerializer::Deserialize(PayloadRoundTrip.value(), LoadedWorld);
+    REQUIRE(DeserializeResult);
 
-    NodeHandle LoadedActorHandle;
-    Graph2.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
-        if (Node.Name() == "Actor")
-        {
-            LoadedActorHandle = Handle;
-        }
-    });
+    NodeHandle LoadedActorHandle = FindNodeByName(LoadedWorld, "Actor");
+    REQUIRE(LoadedActorHandle.IsValid());
 
-    auto* LoadedActor = dynamic_cast<DerivedStatsNode*>(LoadedActorHandle.Borrowed());
+    auto* LoadedActor = NodeCast<DerivedStatsNode>(LoadedActorHandle.Borrowed());
     REQUIRE(LoadedActor != nullptr);
     REQUIRE(LoadedActor->m_baseValue == 7);
     REQUIRE(LoadedActor->m_health == 42);
@@ -236,55 +243,52 @@ TEST_CASE("Level serialization round-trips node fields across inheritance")
     REQUIRE(LoadedTarget->Name() == "Target");
 }
 
-TEST_CASE("Cross-graph node handles use explicit UUID slow resolve after deserialization")
+TEST_CASE("Cross-world node handles use explicit UUID slow resolve after deserialization")
 {
     RegisterBuiltinTypes();
 
-    Level GraphA("GraphA");
-    Level GraphB("GraphB");
+    std::vector<uint8_t> OwnerBytes{};
+    std::vector<uint8_t> TargetBytes{};
 
-    auto TargetResult = GraphB.CreateNode("TargetNode");
-    REQUIRE(TargetResult);
+    {
+        World SourceA("SourceA");
+        World SourceB("SourceB");
 
-    auto OwnerResult = GraphA.CreateNode("OwnerNode");
-    REQUIRE(OwnerResult);
-    auto* OwnerNode = OwnerResult.value().Borrowed();
-    REQUIRE(OwnerNode != nullptr);
+        auto TargetResult = SourceB.CreateNode("TargetNode");
+        REQUIRE(TargetResult);
 
-    auto RefResult = OwnerNode->Add<CrossRefComponent>();
-    REQUIRE(RefResult);
-    RefResult->Target = TargetResult.value();
+        auto OwnerResult = SourceA.CreateNode("OwnerNode");
+        REQUIRE(OwnerResult);
+        auto* OwnerNode = OwnerResult.value().Borrowed();
+        REQUIRE(OwnerNode != nullptr);
 
-    auto PayloadA = LevelGraphSerializer::Serialize(GraphA);
-    REQUIRE(PayloadA);
-    auto PayloadB = LevelGraphSerializer::Serialize(GraphB);
-    REQUIRE(PayloadB);
+        auto RefResult = OwnerNode->Add<CrossRefComponent>();
+        REQUIRE(RefResult);
+        RefResult->Target = TargetResult.value();
 
-    std::vector<uint8_t> BytesA;
-    std::vector<uint8_t> BytesB;
-    REQUIRE(SerializeLevelGraphPayload(PayloadA.value(), BytesA));
-    REQUIRE(SerializeLevelGraphPayload(PayloadB.value(), BytesB));
+        auto OwnerPayload = NodeSerializer::Serialize(*OwnerNode);
+        REQUIRE(OwnerPayload);
 
-    GraphA.Clear();
-    GraphB.Clear();
+        auto* TargetNode = TargetResult.value().Borrowed();
+        REQUIRE(TargetNode != nullptr);
+        auto TargetPayload = NodeSerializer::Serialize(*TargetNode);
+        REQUIRE(TargetPayload);
 
-    Level LoadedA("LoadedA");
-    Level LoadedB("LoadedB");
+        REQUIRE(SerializeNodePayload(OwnerPayload.value(), OwnerBytes));
+        REQUIRE(SerializeNodePayload(TargetPayload.value(), TargetBytes));
+    }
 
-    auto PayloadARoundTrip = DeserializeLevelGraphPayload(BytesA.data(), BytesA.size());
-    REQUIRE(PayloadARoundTrip);
-    auto PayloadBRoundTrip = DeserializeLevelGraphPayload(BytesB.data(), BytesB.size());
-    REQUIRE(PayloadBRoundTrip);
+    World LoadedA("LoadedA");
+    World LoadedB("LoadedB");
 
-    REQUIRE(LevelGraphSerializer::Deserialize(PayloadARoundTrip.value(), LoadedA));
+    auto OwnerRoundTrip = DeserializeNodePayload(OwnerBytes.data(), OwnerBytes.size());
+    REQUIRE(OwnerRoundTrip);
+    auto TargetRoundTrip = DeserializeNodePayload(TargetBytes.data(), TargetBytes.size());
+    REQUIRE(TargetRoundTrip);
 
-    NodeHandle LoadedOwner;
-    LoadedA.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
-        if (Node.Name() == "OwnerNode")
-        {
-            LoadedOwner = Handle;
-        }
-    });
+    REQUIRE(NodeSerializer::Deserialize(OwnerRoundTrip.value(), LoadedA));
+
+    NodeHandle LoadedOwner = FindNodeByName(LoadedA, "OwnerNode");
     REQUIRE(LoadedOwner.IsValid());
     auto* LoadedOwnerNode = LoadedOwner.Borrowed();
     REQUIRE(LoadedOwnerNode != nullptr);
@@ -293,16 +297,99 @@ TEST_CASE("Cross-graph node handles use explicit UUID slow resolve after deseria
     REQUIRE(LoadedRef);
     REQUIRE(LoadedRef->Target.Borrowed() == nullptr);
 
-    REQUIRE(LevelGraphSerializer::Deserialize(PayloadBRoundTrip.value(), LoadedB));
+    REQUIRE(NodeSerializer::Deserialize(TargetRoundTrip.value(), LoadedB));
 
     auto* ResolvedTarget = LoadedRef->Target.BorrowedSlowByUuid();
     REQUIRE(ResolvedTarget != nullptr);
     REQUIRE(ResolvedTarget->Name() == "TargetNode");
 
-    auto RehydratedHandle = LoadedB.NodeHandleByIdSlow(LoadedRef->Target.Id);
+    auto RehydratedHandle = LoadedB.NodeHandleById(LoadedRef->Target.Id);
     REQUIRE(RehydratedHandle);
-    LoadedRef->Target = RehydratedHandle.value();
+    LoadedRef->Target = *RehydratedHandle;
     REQUIRE(LoadedRef->Target.Borrowed() == ResolvedTarget);
+}
+
+TEST_CASE("Node deserialization can regenerate object UUIDs and remap handles")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("Source");
+    auto OwnerResult = SourceWorld.CreateNode("Owner");
+    REQUIRE(OwnerResult);
+    auto TargetResult = SourceWorld.CreateNode("Target");
+    REQUIRE(TargetResult);
+    REQUIRE(SourceWorld.AttachChild(OwnerResult.value(), TargetResult.value()));
+
+    auto* OwnerNode = OwnerResult.value().Borrowed();
+    REQUIRE(OwnerNode != nullptr);
+    auto* TargetNode = TargetResult.value().Borrowed();
+    REQUIRE(TargetNode != nullptr);
+
+    auto TargetTransform = TargetNode->Add<TransformComponent>();
+    REQUIRE(TargetTransform);
+
+    auto OwnerLink = OwnerNode->Add<LinkComponent>();
+    REQUIRE(OwnerLink);
+    OwnerLink->Target = TargetResult.value();
+
+    auto OwnerComponentLink = OwnerNode->Add<ComponentLinkComponent>();
+    REQUIRE(OwnerComponentLink);
+    OwnerComponentLink->TargetComponent = TargetTransform->Handle();
+
+    const Uuid SourceOwnerId = OwnerNode->Id();
+    const Uuid SourceTargetId = TargetNode->Id();
+    const Uuid SourceTransformId = TargetTransform->Id();
+    const Uuid SourceLinkId = OwnerLink->Id();
+    const Uuid SourceComponentLinkId = OwnerComponentLink->Id();
+
+    auto PayloadResult = NodeSerializer::Serialize(*OwnerNode);
+    REQUIRE(PayloadResult);
+
+    std::vector<uint8_t> Bytes{};
+    REQUIRE(SerializeNodePayload(PayloadResult.value(), Bytes));
+    REQUIRE_FALSE(Bytes.empty());
+
+    auto PayloadRoundTrip = DeserializeNodePayload(Bytes.data(), Bytes.size());
+    REQUIRE(PayloadRoundTrip);
+
+    World LoadedWorld("Loaded");
+
+    auto FirstResult = NodeSerializer::Deserialize(PayloadRoundTrip.value(), LoadedWorld);
+    REQUIRE(FirstResult);
+    REQUIRE(FirstResult->Id == SourceOwnerId);
+
+    TDeserializeOptions CopyOptions{};
+    CopyOptions.RegenerateObjectIds = true;
+    auto SecondResult = NodeSerializer::Deserialize(PayloadRoundTrip.value(), LoadedWorld, {}, CopyOptions);
+    REQUIRE(SecondResult);
+    REQUIRE(SecondResult->Id != SourceOwnerId);
+    REQUIRE(SecondResult->Id != FirstResult->Id);
+
+    auto* SecondOwner = SecondResult->Borrowed();
+    REQUIRE(SecondOwner != nullptr);
+    REQUIRE(SecondOwner->Children().size() == 1);
+    NodeHandle SecondTargetHandle = SecondOwner->Children().front();
+    auto* SecondTarget = SecondTargetHandle.Borrowed();
+    REQUIRE(SecondTarget != nullptr);
+
+    auto SecondLink = SecondOwner->Component<LinkComponent>();
+    REQUIRE(SecondLink);
+    REQUIRE(SecondLink->Id() != SourceLinkId);
+    REQUIRE(SecondLink->Target.Id == SecondTarget->Id());
+    REQUIRE(SecondLink->Target.Borrowed() == SecondTarget);
+
+    auto SecondComponentLink = SecondOwner->Component<ComponentLinkComponent>();
+    REQUIRE(SecondComponentLink);
+    REQUIRE(SecondComponentLink->Id() != SourceComponentLinkId);
+
+    auto SecondTargetTransform = SecondTarget->Component<TransformComponent>();
+    REQUIRE(SecondTargetTransform);
+    REQUIRE(SecondTarget->Id() != SourceTargetId);
+    REQUIRE(SecondTargetTransform->Id() != SourceTransformId);
+
+    BaseComponent* LinkedComponent = SecondComponentLink->TargetComponent.Borrowed();
+    REQUIRE(LinkedComponent != nullptr);
+    REQUIRE(LinkedComponent->Id() == SecondTargetTransform->Id());
 }
 
 TEST_CASE("ValueCodecRegistry forwards to TValueCodec specializations")

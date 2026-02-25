@@ -77,6 +77,7 @@ private:
         const DiscoveredAsset& Asset) const;
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> BuildCookedPayloadForAsset(
         const DiscoveredAsset& Asset);
+    Result InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
 

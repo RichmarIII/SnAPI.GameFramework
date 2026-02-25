@@ -97,6 +97,7 @@ set(SNAPI_GF_SOURCES
     src/CharacterMovementController.cpp
     src/CameraComponent.cpp
     src/ColliderComponent.cpp
+    src/DirectionalLightComponent.cpp
     src/FollowTargetComponent.cpp
     src/GameplayHost.cpp
     src/GameplayRpcGateway.cpp
