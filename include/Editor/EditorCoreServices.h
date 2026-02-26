@@ -254,6 +254,7 @@ private:
     bool m_layoutRebuildRequested = false;
     std::size_t m_assetListSignature = 0;
     std::size_t m_assetDetailsSignature = 0;
+    std::uint64_t m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
 };
 
 /**

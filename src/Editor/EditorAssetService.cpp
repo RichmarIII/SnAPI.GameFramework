@@ -1656,6 +1656,7 @@ Result EditorAssetService::AddAssetEditorNode(const NodeHandle& Parent, const Ty
         m_assetEditorSelectedNode = *CreateResult;
     }
 
+    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
     return Ok();
 }
@@ -1689,6 +1690,7 @@ Result EditorAssetService::DeleteAssetEditorNode(const NodeHandle& Node)
     }
 
     m_assetEditorSelectedNode = NextSelection;
+    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
     return Ok();
 }
@@ -1725,7 +1727,9 @@ Result EditorAssetService::AddAssetEditorComponent(const NodeHandle& Owner, cons
     }
 
     m_assetEditorSelectedNode = OwnerNode->Handle();
+    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
+    ++m_assetEditorSessionRevision;
     return Ok();
 }
 
@@ -1757,11 +1761,13 @@ Result EditorAssetService::RemoveAssetEditorComponent(const NodeHandle& Owner, c
     }
 
     m_assetEditorSelectedNode = OwnerNode->Handle();
+    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
+    ++m_assetEditorSessionRevision;
     return Ok();
 }
 
-void EditorAssetService::TickAssetEditorSession()
+void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
 {
     if (m_assetEditorAssetKey.empty() || m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
     {
@@ -1775,8 +1781,14 @@ void EditorAssetService::TickAssetEditorSession()
         return;
     }
 
+    const bool PreviousCanSave = m_assetEditorCanSave;
+    const std::string PreviousTitle = m_assetEditorTitle;
     m_assetEditorCanSave = Asset->CanSave;
     m_assetEditorTitle = Asset->TypeLabel + " - " + Asset->Name;
+    if (PreviousCanSave != m_assetEditorCanSave || PreviousTitle != m_assetEditorTitle)
+    {
+        ++m_assetEditorSessionRevision;
+    }
 
     if (Asset->AssetKind != AssetKindWorld())
     {
@@ -1805,10 +1817,17 @@ void EditorAssetService::TickAssetEditorSession()
         }
     }
 
-    if (m_assetEditorCanEditHierarchy)
+    if (m_assetEditorCanEditHierarchy && m_assetEditorHierarchyDirty)
     {
         RefreshAssetEditorHierarchy();
     }
+
+    m_assetEditorDirtyCheckCooldownSeconds -= std::max(0.0f, DeltaSeconds);
+    if (m_assetEditorDirtyCheckCooldownSeconds > 0.0f)
+    {
+        return;
+    }
+    m_assetEditorDirtyCheckCooldownSeconds = 0.2f;
 
     auto SerializedPayloadResult = SerializeAssetEditorPayload();
     if (!SerializedPayloadResult)
@@ -1829,6 +1848,7 @@ void EditorAssetService::TickAssetEditorSession()
     if (IsDirtyNow != m_assetEditorDirty)
     {
         m_assetEditorDirty = IsDirtyNow;
+        ++m_assetEditorSessionRevision;
         (void)RefreshDiscovery();
     }
 }
@@ -1846,16 +1866,22 @@ Result EditorAssetService::SaveActiveAssetEditor()
         return SaveResult;
     }
 
+    const bool WasDirty = m_assetEditorDirty;
     auto SerializedPayloadResult = SerializeAssetEditorPayload();
     if (SerializedPayloadResult)
     {
         m_assetEditorBaselineCookedBytes = SerializedPayloadResult->Bytes;
     }
     m_assetEditorDirty = false;
+    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     if (m_assetEditorCanEditHierarchy)
     {
         RefreshAssetEditorHierarchy();
+    }
+    if (WasDirty)
+    {
+        ++m_assetEditorSessionRevision;
     }
     return Ok();
 }
@@ -1957,17 +1983,35 @@ BaseNode* EditorAssetService::ResolveAssetEditorNode(const NodeHandle& Node) con
 
 void EditorAssetService::RefreshAssetEditorHierarchy()
 {
-    m_assetEditorHierarchy.clear();
+    const NodeHandle PreviousSelection = m_assetEditorSelectedNode;
+    const std::vector<AssetEditorSessionView::NodeEntry> PreviousHierarchy = m_assetEditorHierarchy;
+    std::vector<AssetEditorSessionView::NodeEntry> NextHierarchy{};
+    NodeHandle NextSelection = m_assetEditorSelectedNode;
+
     if (!m_assetEditorCanEditHierarchy || !m_assetEditorWorld || m_assetEditorRootHandle.IsNull())
     {
-        m_assetEditorSelectedNode = {};
+        NextSelection = {};
+        m_assetEditorHierarchy = std::move(NextHierarchy);
+        m_assetEditorSelectedNode = NextSelection;
+        m_assetEditorHierarchyDirty = false;
+        if (!PreviousHierarchy.empty() || !PreviousSelection.IsNull())
+        {
+            ++m_assetEditorSessionRevision;
+        }
         return;
     }
 
     BaseNode* RootNode = ResolveAssetEditorNode(m_assetEditorRootHandle);
     if (!RootNode)
     {
-        m_assetEditorSelectedNode = {};
+        NextSelection = {};
+        m_assetEditorHierarchy = std::move(NextHierarchy);
+        m_assetEditorSelectedNode = NextSelection;
+        m_assetEditorHierarchyDirty = false;
+        if (!PreviousHierarchy.empty() || !PreviousSelection.IsNull())
+        {
+            ++m_assetEditorSessionRevision;
+        }
         return;
     }
 
@@ -2008,7 +2052,7 @@ void EditorAssetService::RefreshAssetEditorHierarchy()
             Label = "<unnamed>";
         }
 
-        m_assetEditorHierarchy.push_back(AssetEditorSessionView::NodeEntry{
+        NextHierarchy.push_back(AssetEditorSessionView::NodeEntry{
             .Handle = Node->Handle(),
             .Depth = Current.Depth,
             .Label = std::move(Label),
@@ -2025,21 +2069,49 @@ void EditorAssetService::RefreshAssetEditorHierarchy()
         }
     }
 
-    if (m_assetEditorSelectedNode.IsNull())
+    if (NextSelection.IsNull())
     {
-        m_assetEditorSelectedNode = m_assetEditorRootHandle;
+        NextSelection = m_assetEditorRootHandle;
     }
-    if (!ResolveAssetEditorNode(m_assetEditorSelectedNode))
+    if (!ResolveAssetEditorNode(NextSelection))
     {
-        m_assetEditorSelectedNode = m_assetEditorRootHandle;
+        NextSelection = m_assetEditorRootHandle;
     }
     const bool SelectionPresent = std::ranges::any_of(
-        m_assetEditorHierarchy, [this](const AssetEditorSessionView::NodeEntry& Entry) {
-            return Entry.Handle == m_assetEditorSelectedNode;
+        NextHierarchy, [&NextSelection](const AssetEditorSessionView::NodeEntry& Entry) {
+            return Entry.Handle == NextSelection;
         });
     if (!SelectionPresent)
     {
-        m_assetEditorSelectedNode = m_assetEditorHierarchy.empty() ? NodeHandle{} : m_assetEditorHierarchy.front().Handle;
+        NextSelection = NextHierarchy.empty() ? NodeHandle{} : NextHierarchy.front().Handle;
+    }
+
+    const bool HierarchyChanged = [&PreviousHierarchy, &NextHierarchy]() -> bool {
+        if (PreviousHierarchy.size() != NextHierarchy.size())
+        {
+            return true;
+        }
+
+        for (std::size_t Index = 0; Index < NextHierarchy.size(); ++Index)
+        {
+            const auto& Left = PreviousHierarchy[Index];
+            const auto& Right = NextHierarchy[Index];
+            if (Left.Handle != Right.Handle || Left.Depth != Right.Depth || Left.Label != Right.Label)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }();
+    const bool SelectionChanged = PreviousSelection != NextSelection;
+
+    m_assetEditorHierarchy = std::move(NextHierarchy);
+    m_assetEditorSelectedNode = NextSelection;
+    m_assetEditorHierarchyDirty = false;
+    if (HierarchyChanged || SelectionChanged)
+    {
+        ++m_assetEditorSessionRevision;
     }
 }
 
@@ -2127,6 +2199,12 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
 void EditorAssetService::ClearAssetEditorState()
 {
+    const bool HadActiveSession = !m_assetEditorAssetKey.empty() ||
+                                  m_assetEditorTargetObject != nullptr ||
+                                  m_assetEditorTargetType != TypeId{} ||
+                                  !m_assetEditorHierarchy.empty() ||
+                                  !m_assetEditorSelectedNode.IsNull() ||
+                                  m_assetEditorDirty;
     m_assetEditorWorld.reset();
     m_assetEditorRootHandle = {};
     m_assetEditorAssetKey.clear();
@@ -2141,6 +2219,12 @@ void EditorAssetService::ClearAssetEditorState()
     m_assetEditorTitle.clear();
     m_assetEditorSelectedNode = {};
     m_assetEditorHierarchy.clear();
+    m_assetEditorHierarchyDirty = false;
+    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
+    if (HadActiveSession)
+    {
+        ++m_assetEditorSessionRevision;
+    }
 }
 
 std::vector<std::string> EditorAssetService::BuildPackSearchPaths()

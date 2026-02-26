@@ -736,6 +736,8 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
 {
     (void)Runtime;
     CloseContextMenu();
+    DestroyContentAssetCreateModalOverlay();
+    DestroyContentAssetInspectorModalOverlay();
     m_context = nullptr;
     m_runtime = nullptr;
     m_gameViewTabs = {};
@@ -864,7 +866,6 @@ void EditorLayout::Sync(GameRuntime& Runtime,
     SyncHierarchy(Runtime, ActiveCamera);
     BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
-    RefreshContentAssetInspectorModalState();
     (void)DeltaSeconds;
 #endif
 }
@@ -934,9 +935,6 @@ void EditorLayout::BuildShell(SnAPI::UI::UIContext& Context,
     auto BrowserHost = MainAreaSplit.Add(SnAPI::UI::UIPanel("Editor.ContentBrowserHost"));
     ConfigureHostPanel(BrowserHost.Element());
     BuildContentBrowser(BrowserHost);
-    BuildContextMenuOverlay(Root);
-    BuildCreateAssetModalOverlay(Root);
-    BuildAssetInspectorModalOverlay(Root);
 }
 
 void EditorLayout::ConfigureRoot(SnAPI::UI::UIContext& Context)
@@ -1437,19 +1435,14 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     RefreshContentAssetDetailsViewModel();
 }
 
-void EditorLayout::BuildContextMenuOverlay(PanelBuilder& Root)
+void EditorLayout::EnsureContextMenuOverlay()
 {
-    m_contextMenu = {};
-    m_contextMenuScope = EContextMenuScope::None;
-    m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
-    m_pendingHierarchyMenuIndex.reset();
-    m_pendingHierarchyMenuOpenPosition = {};
-    m_contextMenuHierarchyIndex.reset();
-    m_contextMenuAssetIndex.reset();
-    m_contextMenuContentInspectorNode = {};
-    m_contextMenuComponentOwner.reset();
-    m_contextMenuComponentType = {};
+    if (!m_context || m_contextMenu.Id.Value != 0)
+    {
+        return;
+    }
 
+    auto Root = m_context->Root();
     auto ContextMenu = Root.Add(SnAPI::UI::UIContextMenu{});
     auto& ContextMenuElement = ContextMenu.Element();
     ContextMenuElement.Width().Set(SnAPI::UI::Sizing::Fixed(0.0f));
@@ -1515,24 +1508,22 @@ void EditorLayout::BuildContextMenuOverlay(PanelBuilder& Root)
     m_contextMenu = ContextMenu.Handle();
 }
 
-void EditorLayout::BuildCreateAssetModalOverlay(PanelBuilder& Root)
+void EditorLayout::EnsureContentAssetCreateModalOverlay()
 {
-    m_contentCreateModalOverlay = {};
-    m_contentCreateTypeTree = {};
-    m_contentCreateSearchInput = {};
-    m_contentCreateNameInput = {};
-    m_contentCreateOkButton = {};
-    m_contentCreateVisibleTypes.clear();
-    m_contentCreateSelectedType = {};
-    m_contentCreateModalOpen = false;
+    if (!m_context || m_contentCreateModalOverlay.Id.Value != 0)
+    {
+        return;
+    }
+
     if (!m_contentCreateTypeSource)
     {
         m_contentCreateTypeSource = std::make_shared<VectorTreeItemSource>();
     }
 
+    auto Root = m_context->Root();
     auto Overlay = Root.Add(SnAPI::UI::UIModal{});
     auto& OverlayPanel = Overlay.Element();
-    OverlayPanel.IsOpen().Set(false);
+    OverlayPanel.IsOpen().Set(m_contentCreateModalOpen);
     OverlayPanel.CloseOnBackdropClick().Set(false);
     OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
     OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
@@ -1541,7 +1532,6 @@ void EditorLayout::BuildCreateAssetModalOverlay(PanelBuilder& Root)
     OverlayPanel.Resizable().Set(true);
     OverlayPanel.DragRegionHeight().Set(30.0f);
     OverlayPanel.ResizeBorderThickness().Set(12.0f);
-    OverlayPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::Collapsed);
     OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
@@ -1685,32 +1675,24 @@ void EditorLayout::BuildCreateAssetModalOverlay(PanelBuilder& Root)
     auto CreateLabel = CreateButton.Add(SnAPI::UI::UIText("Create"));
     CreateLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
     m_contentCreateOkButton = CreateButton.Handle();
-
-    RebuildContentAssetCreateTypeTree();
-    RefreshContentAssetCreateOkButtonState();
-    RefreshContentAssetCreateModalVisibility();
 }
 
-void EditorLayout::BuildAssetInspectorModalOverlay(PanelBuilder& Root)
+void EditorLayout::EnsureContentAssetInspectorModalOverlay()
 {
-    m_contentInspectorModalOverlay = {};
-    m_contentInspectorTitleText = {};
-    m_contentInspectorStatusText = {};
-    m_contentInspectorHierarchyTree = {};
-    m_contentInspectorPropertyPanel = {};
-    m_contentInspectorSaveButton = {};
-    m_contentInspectorVisibleNodes.clear();
-    m_contentInspectorTargetBound = false;
-    m_contentInspectorBoundObject = nullptr;
-    m_contentInspectorBoundType = {};
+    if (!m_context || m_contentInspectorModalOverlay.Id.Value != 0)
+    {
+        return;
+    }
+
     if (!m_contentInspectorHierarchySource)
     {
         m_contentInspectorHierarchySource = std::make_shared<VectorTreeItemSource>();
     }
 
+    auto Root = m_context->Root();
     auto Overlay = Root.Add(SnAPI::UI::UIModal{});
     auto& OverlayPanel = Overlay.Element();
-    OverlayPanel.IsOpen().Set(false);
+    OverlayPanel.IsOpen().Set(m_contentAssetInspectorState.Open);
     OverlayPanel.CloseOnBackdropClick().Set(false);
     OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
     OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
@@ -1721,7 +1703,6 @@ void EditorLayout::BuildAssetInspectorModalOverlay(PanelBuilder& Root)
     OverlayPanel.ResizeBorderThickness().Set(12.0f);
     OverlayPanel.DialogWidth().Set(1060.0f);
     OverlayPanel.DialogHeight().Set(700.0f);
-    OverlayPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::Collapsed);
     OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(7, 10, 15, 214));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 23, 32, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(84, 97, 117, 242));
@@ -1878,10 +1859,6 @@ void EditorLayout::BuildAssetInspectorModalOverlay(PanelBuilder& Root)
     auto SaveLabel = SaveButton.Add(SnAPI::UI::UIText("Save"));
     SaveLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
     m_contentInspectorSaveButton = SaveButton.Handle();
-
-    RebuildContentAssetInspectorHierarchyTree();
-    RefreshContentAssetInspectorModalState();
-    RefreshContentAssetInspectorModalVisibility();
 }
 
 void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
@@ -2739,7 +2716,13 @@ void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState Stat
         (m_contentAssetInspectorState.CanEditHierarchy != State.CanEditHierarchy) ||
         (m_contentAssetInspectorState.IsDirty != State.IsDirty) ||
         (m_contentAssetInspectorState.CanSave != State.CanSave) ||
+        (m_contentAssetInspectorState.SessionRevision != State.SessionRevision) ||
         NodesChanged;
+
+    if (!Changed)
+    {
+        return;
+    }
 
     m_contentAssetInspectorState = std::move(State);
     if (!m_contentAssetInspectorState.Open)
@@ -2748,12 +2731,21 @@ void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState Stat
         m_contentAssetInspectorState.TargetType = {};
         m_contentAssetInspectorState.SelectedNode = {};
         m_contentAssetInspectorState.Nodes.clear();
+
+        RefreshContentAssetInspectorModalVisibility();
+        if (m_context)
+        {
+            m_context->MarkLayoutDirty();
+        }
+        return;
     }
+
+    EnsureContentAssetInspectorModalOverlay();
 
     RebuildContentAssetInspectorHierarchyTree();
     RefreshContentAssetInspectorModalState();
     RefreshContentAssetInspectorModalVisibility();
-    if (m_context && Changed)
+    if (m_context)
     {
         m_context->MarkLayoutDirty();
     }
@@ -3450,7 +3442,13 @@ void EditorLayout::OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& 
 void EditorLayout::OpenContextMenu(const SnAPI::UI::UIPoint& ScreenPosition,
                                    std::vector<SnAPI::UI::UIContextMenuItem> Items)
 {
-    if (!m_context || m_contextMenu.Id.Value == 0 || Items.empty())
+    if (!m_context || Items.empty())
+    {
+        return;
+    }
+
+    EnsureContextMenuOverlay();
+    if (m_contextMenu.Id.Value == 0)
     {
         return;
     }
@@ -3484,9 +3482,10 @@ void EditorLayout::OpenContextMenu(const SnAPI::UI::UIPoint& ScreenPosition,
 
 void EditorLayout::CloseContextMenu()
 {
-    if (m_context && m_contextMenu.Id.Value != 0)
+    const SnAPI::UI::ElementId MenuId = m_contextMenu.Id;
+    if (m_context && MenuId.Value != 0)
     {
-        if (auto* Menu = dynamic_cast<SnAPI::UI::UIContextMenu*>(&m_context->GetElement(m_contextMenu.Id)))
+        if (auto* Menu = dynamic_cast<SnAPI::UI::UIContextMenu*>(&m_context->GetElement(MenuId)))
         {
             if (Menu->IsOpen().Get())
             {
@@ -3494,12 +3493,15 @@ void EditorLayout::CloseContextMenu()
             }
         }
 
-        if (m_context->GetCapture() == m_contextMenu.Id)
+        if (m_context->GetCapture() == MenuId)
         {
             m_context->ReleaseCapture();
         }
+
+        m_context->DestroyElement(MenuId);
     }
 
+    m_contextMenu = {};
     m_contextMenuScope = EContextMenuScope::None;
     m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
     m_pendingHierarchyMenuIndex.reset();
@@ -4176,6 +4178,29 @@ void EditorLayout::ApplyContentAssetFilter()
     m_context->MarkLayoutDirty();
 }
 
+void EditorLayout::DestroyContentAssetCreateModalOverlay()
+{
+    if (m_context && m_contentCreateModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_contentCreateModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_contentCreateModalOverlay = {};
+    m_contentCreateTypeTree = {};
+    m_contentCreateSearchInput = {};
+    m_contentCreateNameInput = {};
+    m_contentCreateOkButton = {};
+    m_contentCreateVisibleTypes.clear();
+    m_contentCreateSelectedType = {};
+}
+
 void EditorLayout::OpenContentAssetCreateModal()
 {
     if (!m_context)
@@ -4188,15 +4213,15 @@ void EditorLayout::OpenContentAssetCreateModal()
     m_contentCreateSelectedType = {};
     ViewModelProperty<std::string>(kVmContentCreateTypeFilterKey).Set(std::string{});
     ViewModelProperty<std::string>(kVmContentCreateAssetNameKey).Set(std::string("NewAsset"));
+    RefreshContentAssetCreateModalVisibility();
     RebuildContentAssetCreateTypeTree();
     RefreshContentAssetCreateOkButtonState();
-    RefreshContentAssetCreateModalVisibility();
     m_context->MarkLayoutDirty();
 }
 
 void EditorLayout::CloseContentAssetCreateModal()
 {
-    if (!m_contentCreateModalOpen)
+    if (!m_contentCreateModalOpen && m_contentCreateModalOverlay.Id.Value == 0)
     {
         return;
     }
@@ -4245,27 +4270,25 @@ void EditorLayout::ConfirmContentAssetCreate()
 
 void EditorLayout::RefreshContentAssetCreateModalVisibility()
 {
-    if (!m_context || m_contentCreateModalOverlay.Id.Value == 0)
+    if (!m_context)
     {
         return;
     }
 
-    if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentCreateModalOverlay.Id)))
+    if (m_contentCreateModalOpen)
     {
-        Overlay->IsOpen().Set(m_contentCreateModalOpen);
-        Overlay->Properties().SetProperty(
-            SnAPI::UI::UIElementBase::VisibilityKey,
-            m_contentCreateModalOpen ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+        EnsureContentAssetCreateModalOverlay();
+        if (m_contentCreateModalOverlay.Id.Value != 0)
+        {
+            if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentCreateModalOverlay.Id)))
+            {
+                Overlay->IsOpen().Set(true);
+            }
+        }
+        return;
     }
 
-    if (!m_contentCreateModalOpen)
-    {
-        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
-        if (IsElementWithinSubtree(*m_context, CapturedElement, m_contentCreateModalOverlay.Id))
-        {
-            m_context->ReleaseCapture();
-        }
-    }
+    DestroyContentAssetCreateModalOverlay();
 }
 
 void EditorLayout::RebuildContentAssetCreateTypeTree()
@@ -4372,6 +4395,40 @@ void EditorLayout::RefreshContentAssetCreateOkButtonState()
     }
 }
 
+void EditorLayout::DestroyContentAssetInspectorModalOverlay()
+{
+    if (m_context && m_contentInspectorPropertyPanel.Id.Value != 0)
+    {
+        if (auto* PropertyPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorPropertyPanel.Id)))
+        {
+            PropertyPanel->ClearObject();
+        }
+    }
+
+    m_contentInspectorTargetBound = false;
+    m_contentInspectorBoundObject = nullptr;
+    m_contentInspectorBoundType = {};
+
+    if (m_context && m_contentInspectorModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_contentInspectorModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_contentInspectorModalOverlay = {};
+    m_contentInspectorTitleText = {};
+    m_contentInspectorStatusText = {};
+    m_contentInspectorHierarchyTree = {};
+    m_contentInspectorPropertyPanel = {};
+    m_contentInspectorSaveButton = {};
+    m_contentInspectorVisibleNodes.clear();
+}
+
 void EditorLayout::CloseContentAssetInspectorModal(const bool NotifyHandler)
 {
     const bool WasOpen = m_contentAssetInspectorState.Open;
@@ -4384,8 +4441,6 @@ void EditorLayout::CloseContentAssetInspectorModal(const bool NotifyHandler)
     m_contentAssetInspectorState.IsDirty = false;
     m_contentAssetInspectorState.CanSave = false;
 
-    RebuildContentAssetInspectorHierarchyTree();
-    RefreshContentAssetInspectorModalState();
     RefreshContentAssetInspectorModalVisibility();
 
     if (NotifyHandler && WasOpen && m_onContentAssetInspectorCloseRequested)
@@ -4401,27 +4456,25 @@ void EditorLayout::CloseContentAssetInspectorModal(const bool NotifyHandler)
 
 void EditorLayout::RefreshContentAssetInspectorModalVisibility()
 {
-    if (!m_context || m_contentInspectorModalOverlay.Id.Value == 0)
+    if (!m_context)
     {
         return;
     }
 
-    if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentInspectorModalOverlay.Id)))
+    if (m_contentAssetInspectorState.Open)
     {
-        Overlay->IsOpen().Set(m_contentAssetInspectorState.Open);
-        Overlay->Properties().SetProperty(
-            SnAPI::UI::UIElementBase::VisibilityKey,
-            m_contentAssetInspectorState.Open ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+        EnsureContentAssetInspectorModalOverlay();
+        if (m_contentInspectorModalOverlay.Id.Value != 0)
+        {
+            if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentInspectorModalOverlay.Id)))
+            {
+                Overlay->IsOpen().Set(true);
+            }
+        }
+        return;
     }
 
-    if (!m_contentAssetInspectorState.Open)
-    {
-        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
-        if (IsElementWithinSubtree(*m_context, CapturedElement, m_contentInspectorModalOverlay.Id))
-        {
-            m_context->ReleaseCapture();
-        }
-    }
+    DestroyContentAssetInspectorModalOverlay();
 }
 
 void EditorLayout::RebuildContentAssetInspectorHierarchyTree()

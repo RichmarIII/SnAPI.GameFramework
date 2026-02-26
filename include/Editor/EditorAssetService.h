@@ -98,9 +98,10 @@ public:
     Result DeleteAssetEditorNode(const NodeHandle& Node);
     Result AddAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType);
     Result RemoveAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType);
-    void TickAssetEditorSession();
+    void TickAssetEditorSession(float DeltaSeconds = 0.0f);
     Result SaveActiveAssetEditor();
     [[nodiscard]] AssetEditorSessionView AssetEditorSession() const;
+    [[nodiscard]] std::uint64_t AssetEditorSessionRevision() const { return m_assetEditorSessionRevision; }
 
     Result InstantiateArmedAsset(EditorServiceContext& Context);
     Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
@@ -151,6 +152,9 @@ private:
     std::string m_assetEditorTitle{};
     NodeHandle m_assetEditorSelectedNode{};
     std::vector<AssetEditorSessionView::NodeEntry> m_assetEditorHierarchy{};
+    bool m_assetEditorHierarchyDirty = false;
+    float m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
+    std::uint64_t m_assetEditorSessionRevision = 0;
 };
 
 } // namespace SnAPI::GameFramework::Editor

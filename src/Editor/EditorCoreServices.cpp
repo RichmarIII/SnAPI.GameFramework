@@ -942,6 +942,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
+    m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
@@ -1262,7 +1263,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
     SceneService->Tick(Context, 0.0f);
     CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
-    AssetService->TickAssetEditorSession();
+    AssetService->TickAssetEditorSession(DeltaSeconds);
     ApplyAssetBrowserState(Context);
     m_layout.Sync(Context.Runtime(), ActiveCamera, &SelectionService->Model(), DeltaSeconds);
 }
@@ -1341,33 +1342,39 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         m_assetDetailsSignature = DetailsSignature;
     }
 
-    const EditorAssetService::AssetEditorSessionView SessionView = AssetService->AssetEditorSession();
-    EditorLayout::ContentAssetInspectorState InspectorState{};
-    InspectorState.Open = SessionView.IsOpen;
-    InspectorState.AssetKey = SessionView.AssetKey;
-    InspectorState.Title = SessionView.Title;
-    InspectorState.TargetType = SessionView.TargetType;
-    InspectorState.TargetObject = SessionView.TargetObject;
-    InspectorState.SelectedNode = SessionView.SelectedNode;
-    InspectorState.CanEditHierarchy = SessionView.CanEditHierarchy;
-    InspectorState.Nodes.reserve(SessionView.Nodes.size());
-    for (const auto& Entry : SessionView.Nodes)
+    const std::uint64_t InspectorRevision = AssetService->AssetEditorSessionRevision();
+    if (InspectorRevision != m_assetInspectorSessionRevision)
     {
-        EditorLayout::ContentAssetInspectorState::NodeEntry NodeEntry{};
-        NodeEntry.Handle = Entry.Handle;
-        NodeEntry.Depth = Entry.Depth;
-        NodeEntry.Label = Entry.Label;
-        InspectorState.Nodes.emplace_back(std::move(NodeEntry));
+        const EditorAssetService::AssetEditorSessionView SessionView = AssetService->AssetEditorSession();
+        EditorLayout::ContentAssetInspectorState InspectorState{};
+        InspectorState.Open = SessionView.IsOpen;
+        InspectorState.AssetKey = SessionView.AssetKey;
+        InspectorState.Title = SessionView.Title;
+        InspectorState.TargetType = SessionView.TargetType;
+        InspectorState.TargetObject = SessionView.TargetObject;
+        InspectorState.SelectedNode = SessionView.SelectedNode;
+        InspectorState.CanEditHierarchy = SessionView.CanEditHierarchy;
+        InspectorState.Nodes.reserve(SessionView.Nodes.size());
+        for (const auto& Entry : SessionView.Nodes)
+        {
+            EditorLayout::ContentAssetInspectorState::NodeEntry NodeEntry{};
+            NodeEntry.Handle = Entry.Handle;
+            NodeEntry.Depth = Entry.Depth;
+            NodeEntry.Label = Entry.Label;
+            InspectorState.Nodes.emplace_back(std::move(NodeEntry));
+        }
+        InspectorState.IsDirty = SessionView.IsDirty;
+        InspectorState.CanSave = SessionView.CanSave;
+        InspectorState.SessionRevision = InspectorRevision;
+        if (SessionView.IsOpen)
+        {
+            InspectorState.Status = SessionView.IsDirty
+                                        ? "Unsaved changes. Click Save to persist."
+                                        : "No pending edits.";
+        }
+        m_layout.SetContentAssetInspectorState(std::move(InspectorState));
+        m_assetInspectorSessionRevision = InspectorRevision;
     }
-    InspectorState.IsDirty = SessionView.IsDirty;
-    InspectorState.CanSave = SessionView.CanSave;
-    if (SessionView.IsOpen)
-    {
-        InspectorState.Status = SessionView.IsDirty
-                                    ? "Unsaved changes. Click Save to persist."
-                                    : "No pending edits.";
-    }
-    m_layout.SetContentAssetInspectorState(std::move(InspectorState));
 }
 
 void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
@@ -1384,6 +1391,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_layout.Shutdown(&Context.Runtime());
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
+    m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
@@ -1526,6 +1534,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
+    m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_layout.Shutdown(&Context.Runtime());
 }
 

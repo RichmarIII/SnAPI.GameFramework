@@ -401,7 +401,10 @@ Result UISystem::BuildBoundViewportRenderPackets(std::vector<ViewportPacketBatch
 {
     SNAPI_GF_PROFILE_FUNCTION("UI");
     TaskDispatcherScope DispatcherScope(*this);
-    ExecuteQueuedTasks();
+    {
+        SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.ExecuteQueuedTasks", "UI");
+        ExecuteQueuedTasks();
+    }
 
     struct BuildEntry
     {
@@ -412,12 +415,14 @@ Result UISystem::BuildBoundViewportRenderPackets(std::vector<ViewportPacketBatch
 
     std::vector<BuildEntry> BuildEntries{};
     {
+        SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.SnapshotViewportBindings", "UI");
         GameLockGuard Lock(m_mutex);
         if (!m_initialized || m_rootContextId == 0)
         {
             return std::unexpected(MakeError(EErrorCode::NotReady, "UI system is not initialized"));
         }
 
+        SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.SnapshotViewportBindings.CollectEntries", "UI");
         BuildEntries.reserve(m_viewportToContext.size());
         for (const auto& [Viewport, ContextIdValue] : m_viewportToContext)
         {
@@ -431,17 +436,27 @@ Result UISystem::BuildBoundViewportRenderPackets(std::vector<ViewportPacketBatch
         }
     }
 
-    OutBatches.clear();
-    OutBatches.reserve(BuildEntries.size());
+    {
+        SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.PrepareOutputBatches", "UI");
+        OutBatches.clear();
+        OutBatches.reserve(BuildEntries.size());
+    }
 
     for (const auto& Entry : BuildEntries)
     {
+        SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.BuildBatch", "UI");
         ViewportPacketBatch Batch{};
         Batch.Viewport = Entry.Viewport;
         Batch.Context = Entry.Context;
         Batch.ContextPtr = Entry.ContextPtr;
-        Entry.ContextPtr->BuildRenderPackets(Batch.Packets);
-        OutBatches.emplace_back(std::move(Batch));
+        {
+            SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.BuildBatch.BuildRenderPackets", "UI");
+            Entry.ContextPtr->BuildRenderPackets(Batch.Packets);
+        }
+        {
+            SNAPI_GF_PROFILE_SCOPE("UISystem.BuildBoundViewportRenderPackets.BuildBatch.AppendBatch", "UI");
+            OutBatches.emplace_back(std::move(Batch));
+        }
     }
 
     return Ok();
@@ -459,11 +474,82 @@ void UISystem::PushInput(const SnAPI::UI::PointerEvent& EventValue)
     m_lastPointerPosition = EventValue.Position;
     m_hasLastPointerPosition = true;
 
-    std::vector<ContextId> ContextOrder{};
-    ContextOrder.reserve(m_contextNodes.size());
-    BuildContextOrderLocked(m_rootContextId, ContextOrder);
+    const auto IsLiveContext = [this](const ContextId Context) {
+        return Context != 0 && m_contextNodes.contains(Context) && FindContextLocked(Context) != nullptr;
+    };
+    if (!IsLiveContext(m_pointerCaptureContext))
+    {
+        m_pointerCaptureContext = 0;
+    }
+    if (!IsLiveContext(m_activeInputContext))
+    {
+        m_activeInputContext = m_rootContextId;
+    }
 
-    for (const auto ContextIdValue : ContextOrder)
+    std::vector<ContextId> DispatchContexts{};
+    DispatchContexts.reserve(4);
+    const auto AppendUnique = [&DispatchContexts](const ContextId Context) {
+        if (Context == 0)
+        {
+            return;
+        }
+        if (std::find(DispatchContexts.begin(), DispatchContexts.end(), Context) == DispatchContexts.end())
+        {
+            DispatchContexts.push_back(Context);
+        }
+    };
+    const auto AppendContextAndAncestors = [this, &AppendUnique](const ContextId LeafContext) {
+        if (LeafContext == 0)
+        {
+            return;
+        }
+
+        std::vector<ContextId> Chain{};
+        Chain.reserve(8);
+        ContextId Current = LeafContext;
+        while (Current != 0)
+        {
+            Chain.push_back(Current);
+            const auto It = m_contextNodes.find(Current);
+            if (It == m_contextNodes.end())
+            {
+                break;
+            }
+            Current = It->second.Parent;
+        }
+
+        for (auto It = Chain.rbegin(); It != Chain.rend(); ++It)
+        {
+            AppendUnique(*It);
+        }
+    };
+
+    if (m_pointerCaptureContext != 0)
+    {
+        AppendUnique(m_pointerCaptureContext);
+    }
+    else
+    {
+        const ContextId PreviousActiveContext = m_activeInputContext;
+        ContextId TargetContext = FindDeepestPointerTargetLocked(m_rootContextId, EventValue.Position);
+        if (TargetContext == 0)
+        {
+            // Keep sending to the previous context so hover/capture state can clear when pointer exits.
+            TargetContext = PreviousActiveContext;
+        }
+
+        if (TargetContext != 0)
+        {
+            AppendContextAndAncestors(TargetContext);
+            m_activeInputContext = TargetContext;
+        }
+        if (PreviousActiveContext != 0 && PreviousActiveContext != TargetContext)
+        {
+            AppendUnique(PreviousActiveContext);
+        }
+    }
+
+    for (const auto ContextIdValue : DispatchContexts)
     {
         if (auto* ContextValue = FindContextLocked(ContextIdValue))
         {
@@ -474,6 +560,28 @@ void UISystem::PushInput(const SnAPI::UI::PointerEvent& EventValue)
     m_pointerLeftDown = EventValue.LeftDown;
     m_pointerRightDown = EventValue.RightDown;
     m_pointerMiddleDown = EventValue.MiddleDown;
+
+    // Track cross-context capture so drag interactions stop fanning out to unrelated contexts.
+    if (m_pointerCaptureContext != 0)
+    {
+        auto* CaptureContext = FindContextLocked(m_pointerCaptureContext);
+        if (!CaptureContext || CaptureContext->GetCapture().Value == 0)
+        {
+            m_pointerCaptureContext = 0;
+        }
+    }
+    if (m_pointerCaptureContext == 0)
+    {
+        for (auto It = DispatchContexts.rbegin(); It != DispatchContexts.rend(); ++It)
+        {
+            auto* ContextValue = FindContextLocked(*It);
+            if (ContextValue && ContextValue->GetCapture().Value != 0)
+            {
+                m_pointerCaptureContext = *It;
+                break;
+            }
+        }
+    }
 }
 
 void UISystem::PushInput(const SnAPI::UI::KeyEvent& EventValue)
@@ -532,16 +640,43 @@ void UISystem::PushInput(const SnAPI::UI::WheelEvent& EventValue)
     m_lastPointerPosition = EventValue.Position;
     m_hasLastPointerPosition = true;
 
-    std::vector<ContextId> ContextOrder{};
-    ContextOrder.reserve(m_contextNodes.size());
-    BuildContextOrderLocked(m_rootContextId, ContextOrder);
-
-    for (const auto ContextIdValue : ContextOrder)
+    const auto IsLiveContext = [this](const ContextId Context) {
+        return Context != 0 && m_contextNodes.contains(Context) && FindContextLocked(Context) != nullptr;
+    };
+    if (!IsLiveContext(m_pointerCaptureContext))
     {
-        if (auto* ContextValue = FindContextLocked(ContextIdValue))
+        m_pointerCaptureContext = 0;
+    }
+    if (!IsLiveContext(m_activeInputContext))
+    {
+        m_activeInputContext = m_rootContextId;
+    }
+
+    ContextId TargetContext = 0;
+    if (m_pointerCaptureContext != 0)
+    {
+        TargetContext = m_pointerCaptureContext;
+    }
+    else
+    {
+        TargetContext = FindDeepestPointerTargetLocked(m_rootContextId, EventValue.Position);
+        if (TargetContext == 0)
         {
-            ContextValue->PushInput(EventValue);
+            TargetContext = m_activeInputContext;
         }
+        if (TargetContext == 0)
+        {
+            TargetContext = m_rootContextId;
+        }
+        if (TargetContext != 0)
+        {
+            m_activeInputContext = TargetContext;
+        }
+    }
+
+    if (auto* ContextValue = FindContextLocked(TargetContext))
+    {
+        ContextValue->PushInput(EventValue);
     }
 }
 

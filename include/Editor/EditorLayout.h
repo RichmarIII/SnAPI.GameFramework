@@ -109,6 +109,7 @@ public:
         bool CanEditHierarchy = false;
         bool IsDirty = false;
         bool CanSave = false;
+        std::uint64_t SessionRevision = 0;
     };
 
     enum class EHierarchyAction : std::uint8_t
@@ -198,9 +199,11 @@ private:
                         CameraComponent* ActiveCamera,
                         EditorSelectionModel* SelectionModel);
     void BuildContentBrowser(PanelBuilder& Root);
-    void BuildContextMenuOverlay(PanelBuilder& Root);
-    void BuildCreateAssetModalOverlay(PanelBuilder& Root);
-    void BuildAssetInspectorModalOverlay(PanelBuilder& Root);
+    void EnsureContextMenuOverlay();
+    void EnsureContentAssetCreateModalOverlay();
+    void DestroyContentAssetCreateModalOverlay();
+    void EnsureContentAssetInspectorModalOverlay();
+    void DestroyContentAssetInspectorModalOverlay();
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
