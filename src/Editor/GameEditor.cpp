@@ -206,6 +206,12 @@ Result GameEditor::InitializeRuntime(const GameEditorSettings& Settings)
 {
     GameRuntimeSettings EffectiveSettings = Settings.Runtime;
 
+    if (!EffectiveSettings.Gameplay.has_value())
+    {
+        // Editor PIE should run the same gameplay pipeline as runtime by default.
+        EffectiveSettings.Gameplay = GameRuntimeGameplaySettings{};
+    }
+
     if (!EffectiveSettings.WorldFactory)
     {
         EffectiveSettings.WorldFactory = [](std::string Name) -> std::unique_ptr<SnAPI::GameFramework::World> {
@@ -248,6 +254,7 @@ void GameEditor::EnsureDefaultServicesRegistered()
     (void)RegisterService<EditorSceneService>();
     (void)RegisterService<EditorRootViewportService>();
     (void)RegisterService<EditorSelectionService>();
+    (void)RegisterService<EditorPieService>();
     (void)RegisterService<EditorAssetService>();
     (void)RegisterService<EditorLayoutService>();
     (void)RegisterService<EditorGameViewportOverlayService>();

@@ -25,6 +25,7 @@ struct NodeAssetLoadParams
     IWorld* TargetWorld = nullptr;
     NodeHandle Parent{};
     bool InstantiateAsCopy = true; /**< @brief When true, regenerate node/component UUIDs during load to avoid collisions. */
+    NodeHandle* OutCreatedRoot = nullptr; /**< @brief Optional out-pointer receiving the created node handle when instantiated into a world. */
 };
 
 /**
@@ -38,6 +39,7 @@ struct LevelAssetLoadParams
     World* TargetWorld = nullptr;
     std::string NameOverride{};
     bool InstantiateAsCopy = true; /**< @brief When true, regenerate node/component UUIDs during load to avoid collisions. */
+    NodeHandle* OutCreatedLevel = nullptr; /**< @brief Optional out-pointer receiving the created level handle when deserialized into a world. */
 };
 
 /**

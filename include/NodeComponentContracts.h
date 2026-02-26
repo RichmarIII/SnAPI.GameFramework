@@ -66,6 +66,9 @@ concept NodeContractConcept =
     { ConstNode.IsClient() } -> std::same_as<bool>;
     { ConstNode.IsListenServer() } -> std::same_as<bool>;
 
+    { Node.OnPossess(HandleValue) } -> std::same_as<void>;
+    { Node.OnUnpossess(HandleValue) } -> std::same_as<void>;
+
     { Node.CallRPC(MethodName, SpanArgs) } -> std::same_as<bool>;
     { Node.CallRPC(MethodName, InitArgs) } -> std::same_as<bool>;
 

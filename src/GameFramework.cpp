@@ -1,15 +1,21 @@
 #include "TypeRegistration.h"
 
+#include "AssetRef.h"
 #include "BaseNode.h"
 #include "BuiltinTypes.h"
 #include "GameplayRpcGateway.h"
 #include "Level.h"
 #include "LocalPlayer.h"
+#include "MultiplayerConfigNode.h"
+#include "PawnBase.h"
+#include "PlayerStart.h"
 #include "FollowTargetComponent.h"
 #include "Relevance.h"
 #include "Serialization.h"
 #include "ScriptComponent.h"
+#include "SubClassOf.h"
 #include "TransformComponent.h"
+#include "InputIntentComponent.h"
 #include "TypeAutoRegistration.h"
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include "CharacterMovementController.h"
@@ -27,6 +33,7 @@
 #include "CameraComponent.h"
 #include "DirectionalLightComponent.h"
 #include "SkeletalMeshComponent.h"
+#include "SprintArmComponent.h"
 #include "StaticMeshComponent.h"
 #endif
 #if defined(SNAPI_GF_ENABLE_UI)
@@ -38,10 +45,13 @@
 #include <initializer_list>
 #include <type_traits>
 
+#include "CameraComponent.h"
+
 namespace SnAPI::GameFramework
 {
 
 static_assert(!std::is_polymorphic_v<TransformComponent>, "TransformComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<InputIntentComponent>, "InputIntentComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<FollowTargetComponent>, "FollowTargetComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<RelevanceComponent>, "RelevanceComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<ScriptComponent>, "ScriptComponent must be non-polymorphic runtime type");
@@ -61,11 +71,14 @@ static_assert(!std::is_polymorphic_v<InputComponent>, "InputComponent must be no
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 static_assert(!std::is_polymorphic_v<CameraComponent>, "CameraComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<DirectionalLightComponent>, "DirectionalLightComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<SprintArmComponent>, "SprintArmComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<StaticMeshComponent>, "StaticMeshComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshComponent must be non-polymorphic runtime type");
 #endif
 
 SNAPI_REFLECT_TYPE(BaseNode, (TTypeBuilder<BaseNode>(BaseNode::kTypeName)
+    .Method("OnPossess", &BaseNode::OnPossess)
+    .Method("OnUnpossess", &BaseNode::OnUnpossess)
     .Constructor<>()
     .Register()));
 
@@ -113,6 +126,59 @@ SNAPI_REFLECT_TYPE(LocalPlayer, (TTypeBuilder<LocalPlayer>(LocalPlayer::kTypeNam
     .Constructor<>()
     .Register()));
 
+SNAPI_REFLECT_TYPE(TSubClassOf<PawnBase>, (TTypeBuilder<TSubClassOf<PawnBase>>(TTypeNameV<TSubClassOf<PawnBase>>)
+    .Field("TypeName",
+           &TSubClassOf<PawnBase>::EditTypeName,
+           &TSubClassOf<PawnBase>::GetTypeName)
+    .Field("TypeId",
+           &TSubClassOf<PawnBase>::EditTypeId,
+           &TSubClassOf<PawnBase>::GetTypeId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(TAssetRef<PawnBase>, (TTypeBuilder<TAssetRef<PawnBase>>(TTypeNameV<TAssetRef<PawnBase>>)
+    .Field("AssetName",
+           &TAssetRef<PawnBase>::EditAssetName,
+           &TAssetRef<PawnBase>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<PawnBase>::EditAssetId,
+           &TAssetRef<PawnBase>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(PawnBase, (TTypeBuilder<PawnBase>(PawnBase::kTypeName)
+    .Base<BaseNode>()
+    .Method("OnPossess", &PawnBase::OnPossess)
+    .Method("OnUnpossess", &PawnBase::OnUnpossess)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(PlayerStart, (TTypeBuilder<PlayerStart>(PlayerStart::kTypeName)
+    .Base<BaseNode>()
+    .Field("SpawnPawnAsset",
+           &PlayerStart::EditSpawnPawnAsset,
+           &PlayerStart::GetSpawnPawnAsset,
+           EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(MultiplayerConfigNode, (TTypeBuilder<MultiplayerConfigNode>(MultiplayerConfigNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("LocalPlayerCount",
+           &MultiplayerConfigNode::EditLocalPlayerCount,
+           &MultiplayerConfigNode::GetLocalPlayerCount)
+    .Field("Splitscreen",
+           &MultiplayerConfigNode::EditSplitscreen,
+           &MultiplayerConfigNode::GetSplitscreen)
+    .Field("AutoJoinAdditionalLocalPlayers",
+           &MultiplayerConfigNode::EditAutoJoinAdditionalLocalPlayers,
+           &MultiplayerConfigNode::GetAutoJoinAdditionalLocalPlayers)
+    .Field("RequireGamepadForAdditionalPlayers",
+           &MultiplayerConfigNode::EditRequireGamepadForAdditionalPlayers,
+           &MultiplayerConfigNode::GetRequireGamepadForAdditionalPlayers)
+    .Constructor<>()
+    .Register()));
+
 SNAPI_REFLECT_TYPE(GameplayRpcGateway, (TTypeBuilder<GameplayRpcGateway>(GameplayRpcGateway::kTypeName)
     .Base<BaseNode>()
     .Method("ServerRequestJoinPlayer",
@@ -134,6 +200,10 @@ SNAPI_REFLECT_TYPE(TransformComponent, (TTypeBuilder<TransformComponent>(Transfo
     .Field("Position", &TransformComponent::Position, EFieldFlagBits::Replication)
     .Field("Rotation", &TransformComponent::Rotation, EFieldFlagBits::Replication)
     .Field("Scale", &TransformComponent::Scale, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(InputIntentComponent, (TTypeBuilder<InputIntentComponent>(InputIntentComponent::kTypeName)
     .Constructor<>()
     .Register()));
 
@@ -273,6 +343,7 @@ SNAPI_REFLECT_TYPE(CharacterMovementController::Settings, (TTypeBuilder<Characte
     .Field("GroundProbeDistance", &CharacterMovementController::Settings::GroundProbeDistance)
     .Field("GroundMask", &CharacterMovementController::Settings::GroundMask)
     .Field("ConsumeInputEachTick", &CharacterMovementController::Settings::ConsumeInputEachTick)
+    .Field("KeepUpright", &CharacterMovementController::Settings::KeepUpright)
     .Constructor<>()
     .Register()));
 
@@ -296,9 +367,17 @@ SNAPI_REFLECT_TYPE(InputComponent::Settings, (TTypeBuilder<InputComponent::Setti
     .Field("RequireInputFocus", &InputComponent::Settings::RequireInputFocus)
     .Field("NormalizeMove", &InputComponent::Settings::NormalizeMove)
     .Field("ClearMoveWhenUnavailable", &InputComponent::Settings::ClearMoveWhenUnavailable)
+    .Field("LookEnabled", &InputComponent::Settings::LookEnabled)
+    .Field("MouseLookEnabled", &InputComponent::Settings::MouseLookEnabled)
+    .Field("GamepadLookEnabled", &InputComponent::Settings::GamepadLookEnabled)
+    .Field("RequireRightMouseButtonForLook", &InputComponent::Settings::RequireRightMouseButtonForLook)
     .Field("MoveScale", &InputComponent::Settings::MoveScale)
     .Field("GamepadDeadzone", &InputComponent::Settings::GamepadDeadzone)
     .Field("InvertGamepadY", &InputComponent::Settings::InvertGamepadY)
+    .Field("MouseLookSensitivity", &InputComponent::Settings::MouseLookSensitivity)
+    .Field("InvertMouseY", &InputComponent::Settings::InvertMouseY)
+    .Field("GamepadLookSensitivity", &InputComponent::Settings::GamepadLookSensitivity)
+    .Field("InvertGamepadLookY", &InputComponent::Settings::InvertGamepadLookY)
     .Field("MoveForwardKey", &InputComponent::Settings::MoveForwardKey)
     .Field("MoveBackwardKey", &InputComponent::Settings::MoveBackwardKey)
     .Field("MoveLeftKey", &InputComponent::Settings::MoveLeftKey)
@@ -306,6 +385,8 @@ SNAPI_REFLECT_TYPE(InputComponent::Settings, (TTypeBuilder<InputComponent::Setti
     .Field("JumpKey", &InputComponent::Settings::JumpKey)
     .Field("MoveGamepadXAxis", &InputComponent::Settings::MoveGamepadXAxis)
     .Field("MoveGamepadYAxis", &InputComponent::Settings::MoveGamepadYAxis)
+    .Field("LookGamepadXAxis", &InputComponent::Settings::LookGamepadXAxis)
+    .Field("LookGamepadYAxis", &InputComponent::Settings::LookGamepadYAxis)
     .Field("JumpGamepadButton", &InputComponent::Settings::JumpGamepadButton)
     .Field("PreferredGamepad", &InputComponent::Settings::PreferredGamepad)
     .Field("UseAnyGamepadWhenPreferredMissing", &InputComponent::Settings::UseAnyGamepadWhenPreferredMissing)
@@ -332,6 +413,31 @@ SNAPI_REFLECT_TYPE(CameraComponent::Settings, (TTypeBuilder<CameraComponent::Set
     .Field("Aspect", &CameraComponent::Settings::Aspect)
     .Field("Active", &CameraComponent::Settings::Active)
     .Field("SyncFromTransform", &CameraComponent::Settings::SyncFromTransform)
+    .Field("LocalPositionOffset", &CameraComponent::Settings::LocalPositionOffset)
+    .Field("LocalRotationOffsetEuler", &CameraComponent::Settings::LocalRotationOffsetEuler)
+    .Field("AutoActivateForPlayer", &CameraComponent::Settings::AutoActivateForPlayer)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(SprintArmComponent::Settings, (TTypeBuilder<SprintArmComponent::Settings>(SprintArmComponent::Settings::kTypeName)
+    .Field("Enabled", &SprintArmComponent::Settings::Enabled)
+    .Field("DriveOwnerYaw", &SprintArmComponent::Settings::DriveOwnerYaw)
+    .Field("ArmLength", &SprintArmComponent::Settings::ArmLength)
+    .Field("SocketOffset", &SprintArmComponent::Settings::SocketOffset)
+    .Field("YawDegrees", &SprintArmComponent::Settings::YawDegrees)
+    .Field("PitchDegrees", &SprintArmComponent::Settings::PitchDegrees)
+    .Field("MinPitchDegrees", &SprintArmComponent::Settings::MinPitchDegrees)
+    .Field("MaxPitchDegrees", &SprintArmComponent::Settings::MaxPitchDegrees)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(SprintArmComponent, (TTypeBuilder<SprintArmComponent>(SprintArmComponent::kTypeName)
+    .Field("Settings",
+           &SprintArmComponent::EditSettings,
+           &SprintArmComponent::GetSettings,
+           EFieldFlagBits::Replication)
+    .Method("AddLookInput", &SprintArmComponent::AddLookInput)
+    .Method("SetViewAngles", &SprintArmComponent::SetViewAngles)
     .Constructor<>()
     .Register()));
 

@@ -38,7 +38,7 @@ struct GameRuntimeGameplaySettings
 
     GameFactory CreateGame = nullptr; /**< @brief Optional session-game factory. */
     GameModeFactory CreateServerGameMode = nullptr; /**< @brief Optional server-mode factory override. */
-    bool AutoCreateLocalPlayer = false; /**< @brief Create one local-player node during initialize. */
+    bool AutoCreateLocalPlayer = true; /**< @brief Create one local-player node during initialize. */
     bool AutoCreateReplicatedLocalPlayer = true; /**< @brief Replication gate for auto-created local player. */
     unsigned int AutoCreateLocalPlayerIndex = 0; /**< @brief Player index used for auto-created local player. */
     std::string AutoCreateLocalPlayerName = "LocalPlayer"; /**< @brief Name used for auto-created local player node. */
@@ -341,6 +341,9 @@ private:
                                       std::optional<unsigned int> PlayerIndex);
     Result EvaluateLoadLevelRequestPolicy(std::uint64_t OwnerConnectionId, const std::string& RequestedName);
     Result EvaluateUnloadLevelRequestPolicy(std::uint64_t OwnerConnectionId, const Uuid& LevelId);
+    void SyncLocalPlayerPossessionCallbacks();
+    NodeHandle ResolvePlayerStart(LocalPlayer& Player);
+    NodeHandle SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& PlayerStart);
     NodeHandle FindAutoPossessTarget(std::uint64_t OwnerConnectionId) const;
     void EnsurePlayerHasPossession(LocalPlayer& Player);
     std::optional<unsigned int> FirstAvailablePlayerIndexForOwner(std::uint64_t OwnerConnectionId) const;

@@ -14,6 +14,9 @@ namespace SnAPI::GameFramework
  * @remarks
  * This controller applies movement forces to a sibling `RigidBodyComponent` and
  * performs a downward probe to determine grounded state.
+ *
+ * Input can be provided directly through `SetMoveInput`/`Jump` or indirectly
+ * through sibling `InputIntentComponent` when present.
  */
 class CharacterMovementController : public BaseComponent, public ComponentCRTP<CharacterMovementController>
 {
@@ -34,6 +37,7 @@ public:
         float GroundProbeDistance = 1.2f; /**< @brief Extra downward reach below collider bottom used for grounded checks. */
         CollisionMaskFlags GroundMask = kCollisionMaskAll; /**< @brief Collision mask for ground probe query. */
         bool ConsumeInputEachTick = false; /**< @brief Clear movement input after each fixed tick when true. */
+        bool KeepUpright = true; /**< @brief Lock character roll/pitch by writing yaw-only body rotation each fixed tick. */
     };
 
     /** @brief Access settings (const). */

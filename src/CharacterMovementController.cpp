@@ -7,9 +7,12 @@
 #include <cmath>
 #include <cstdint>
 
+#include <SnAPI/Math/LinearAlgebra.h>
+
 #include "BaseNode.h"
 #include "ColliderComponent.h"
 #include "IWorld.h"
+#include "InputIntentComponent.h"
 #include "Level.h"
 #include "PhysicsSystem.h"
 #include "RigidBodyComponent.h"
@@ -38,6 +41,69 @@ Vec3 NormalizeOrZero(const Vec3& Value)
 
     const Scalar InvLen = Scalar(1) / std::sqrt(Len2);
     return Value * InvLen;
+}
+
+Quat NormalizeQuatOrIdentity(const Quat& Rotation)
+{
+    Quat Out = Rotation;
+    if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
+    {
+        Out.normalize();
+    }
+    else
+    {
+        Out = Quat::Identity();
+    }
+    return Out;
+}
+
+float WrapDegrees(float Degrees)
+{
+    if (!std::isfinite(Degrees))
+    {
+        return 0.0f;
+    }
+
+    while (Degrees > 180.0f)
+    {
+        Degrees -= 360.0f;
+    }
+    while (Degrees < -180.0f)
+    {
+        Degrees += 360.0f;
+    }
+    return Degrees;
+}
+
+float ExtractYawDegrees(const Quat& Rotation)
+{
+    Vec3 Forward = NormalizeQuatOrIdentity(Rotation) * Vec3(0.0f, 0.0f, -1.0f);
+    Forward.y() = 0.0f;
+    const Scalar ForwardLengthSquared = Forward.squaredNorm();
+    if (ForwardLengthSquared <= Scalar(1.0e-6))
+    {
+        return 0.0f;
+    }
+
+    Forward /= std::sqrt(ForwardLengthSquared);
+    const float YawRadians = std::atan2(static_cast<float>(-Forward.x()), static_cast<float>(-Forward.z()));
+    return WrapDegrees(static_cast<float>(
+        SnAPI::Math::SLinearAlgebra::RadiansToDegrees(static_cast<SnAPI::Math::Scalar>(YawRadians))));
+}
+
+Quat YawOnlyRotation(const Quat& Rotation)
+{
+    const SnAPI::Math::Scalar YawRadians = SnAPI::Math::SLinearAlgebra::DegreesToRadians(
+        static_cast<SnAPI::Math::Scalar>(ExtractYawDegrees(Rotation)));
+    return NormalizeQuatOrIdentity(Quat(SnAPI::Math::AngleAxis3D(YawRadians, SnAPI::Math::Vector3::UnitY())));
+}
+
+bool AreNearlySameRotation(const Quat& A, const Quat& B)
+{
+    const Quat NormalizedA = NormalizeQuatOrIdentity(A);
+    const Quat NormalizedB = NormalizeQuatOrIdentity(B);
+    const double Dot = std::abs(static_cast<double>(NormalizedA.dot(NormalizedB)));
+    return Dot >= 0.9999995;
 }
 
 float GroundProbeHalfHeight(BaseNode* Owner)
@@ -116,6 +182,15 @@ void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
         return;
     }
 
+    if (auto InputIntent = Owner->Component<InputIntentComponent>())
+    {
+        m_moveInput = InputIntent->MoveWorldInput();
+        if (InputIntent->ConsumeJumpRequested())
+        {
+            m_jumpRequested = true;
+        }
+    }
+
     if (m_jumpRequested)
     {
         m_jumpBufferSecondsRemaining = kJumpBufferSeconds;
@@ -124,7 +199,9 @@ void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
 
     float VerticalVelocity = 0.0f;
     bool HasPositionSample = false;
+    bool HasRotationSample = false;
     Vec3 PositionSample = Vec3::Zero();
+    Quat RotationSample = Quat::Identity();
     {
         auto* WorldPtr = Owner->World();
         auto* Physics = WorldPtr ? &WorldPtr->Physics() : nullptr;
@@ -137,6 +214,8 @@ void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
                 const SnAPI::Physics::Vec3 BodyPhysicsPosition = SnAPI::Physics::TransformPosition(*BodyTransformResult);
                 PositionSample = Physics ? Physics->PhysicsToWorldPosition(BodyPhysicsPosition) : BodyPhysicsPosition;
                 HasPositionSample = true;
+                RotationSample = NormalizeQuatOrIdentity(SnAPI::Physics::TransformRotation(*BodyTransformResult));
+                HasRotationSample = true;
             }
         }
 
@@ -147,6 +226,8 @@ void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
             {
                 PositionSample = WorldTransform.Position;
                 HasPositionSample = true;
+                RotationSample = NormalizeQuatOrIdentity(WorldTransform.Rotation);
+                HasRotationSample = true;
             }
         }
 
@@ -174,6 +255,23 @@ void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
         else if (m_groundCoyoteSecondsRemaining > 0.0f)
         {
             m_groundCoyoteSecondsRemaining = std::max(0.0f, m_groundCoyoteSecondsRemaining - DeltaSeconds);
+        }
+    }
+
+    if (m_settings.KeepUpright)
+    {
+        NodeTransform OwnerWorldTransform{};
+        if (TransformComponent::TryGetNodeWorldTransform(*Owner, OwnerWorldTransform))
+        {
+            const Quat SourceRotation = HasRotationSample
+                ? RotationSample
+                : NormalizeQuatOrIdentity(OwnerWorldTransform.Rotation);
+            const Quat UprightRotation = YawOnlyRotation(SourceRotation);
+            if (!AreNearlySameRotation(SourceRotation, UprightRotation))
+            {
+                const Vec3 UprightPosition = HasPositionSample ? PositionSample : OwnerWorldTransform.Position;
+                (void)RigidBody.Teleport(UprightPosition, UprightRotation, false);
+            }
         }
     }
 

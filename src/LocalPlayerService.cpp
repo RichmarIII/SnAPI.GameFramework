@@ -1,17 +1,53 @@
 #include "LocalPlayerService.h"
 
 #include "GameplayHost.h"
+#include "IWorld.h"
 #include "LocalPlayer.h"
 #include "NodeCast.h"
 #include "Profiling.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "GameRuntime.h"
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include "NetworkSystem.h"
+#endif
 
 namespace SnAPI::GameFramework
 {
+namespace
+{
+std::optional<std::uint64_t> ResolveLocalOwnerConnectionId(const IWorld& WorldRef)
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    const auto& Network = WorldRef.Networking();
+    if (Network.IsClient() && !Network.IsListenServer())
+    {
+        const auto Primary = Network.PrimaryConnection();
+        if (Primary.has_value())
+        {
+            return static_cast<std::uint64_t>(*Primary);
+        }
+        return std::nullopt;
+    }
+#endif
+
+    return std::uint64_t{0};
+}
+
+bool IsLocallyOwnedPlayer(const LocalPlayer& Player, const std::optional<std::uint64_t>& LocalOwnerConnectionId)
+{
+    if (!LocalOwnerConnectionId.has_value())
+    {
+        return false;
+    }
+
+    return Player.GetOwnerConnectionId() == *LocalOwnerConnectionId;
+}
+} // namespace
 
 std::string_view LocalPlayerService::Name() const
 {
@@ -67,32 +103,22 @@ void LocalPlayerService::RefreshAssignments(GameplayHost& Host)
         return;
     }
 
-    const auto* Devices = WorldPtr->Input().Devices();
-    if (!Devices)
+    const auto* Snapshot = WorldPtr->Input().Snapshot();
+    if (!Snapshot)
     {
         return;
     }
 
     std::vector<SnAPI::Input::DeviceId> GamepadIds{};
-    GamepadIds.reserve(Devices->size());
-    for (const auto& Device : *Devices)
+    GamepadIds.reserve(Snapshot->Gamepads().size());
+    for (const auto& [DeviceId, State] : Snapshot->Gamepads())
     {
-        if (!Device || !Device->IsConnected())
+        if (!DeviceId.IsValid() || !State.Connected)
         {
             continue;
         }
 
-        const auto& Identity = Device->Identity();
-        if (Identity.DeviceType != SnAPI::Input::EInputDeviceType::Gamepad)
-        {
-            continue;
-        }
-        if (!Identity.Id.IsValid())
-        {
-            continue;
-        }
-
-        GamepadIds.push_back(Identity.Id);
+        GamepadIds.push_back(DeviceId);
     }
 
     std::sort(GamepadIds.begin(),
@@ -100,6 +126,8 @@ void LocalPlayerService::RefreshAssignments(GameplayHost& Host)
               [](const SnAPI::Input::DeviceId Left, const SnAPI::Input::DeviceId Right) {
                   return Left.Value < Right.Value;
               });
+
+    const auto LocalOwnerConnectionId = ResolveLocalOwnerConnectionId(*WorldPtr);
 
     auto Players = Host.LocalPlayers();
     std::vector<NodeHandle> LocalOwnedPlayers{};
@@ -112,7 +140,7 @@ void LocalPlayerService::RefreshAssignments(GameplayHost& Host)
             continue;
         }
 
-        if (Player->GetOwnerConnectionId() != 0)
+        if (!IsLocallyOwnedPlayer(*Player, LocalOwnerConnectionId))
         {
             // Remote-owned players should never consume local runtime input devices.
             if (Player->GetAssignedInputDevice().IsValid())

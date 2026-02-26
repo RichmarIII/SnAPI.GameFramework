@@ -23,6 +23,7 @@ namespace SnAPI::UI
 class Theme;
 class UIContext;
 class UIPanel;
+class UIModal;
 class UITabs;
 class UIText;
 class UITextInput;
@@ -81,6 +82,35 @@ public:
         bool CanSave = true;
     };
 
+    struct ContentAssetCreateRequest
+    {
+        TypeId Type{};
+        std::string Name{};
+        std::string FolderPath{};
+    };
+
+    struct ContentAssetInspectorState
+    {
+        struct NodeEntry
+        {
+            NodeHandle Handle{};
+            int Depth = 0;
+            std::string Label{};
+        };
+
+        bool Open = false;
+        std::string AssetKey{};
+        std::string Title{};
+        std::string Status{};
+        TypeId TargetType{};
+        void* TargetObject = nullptr;
+        std::vector<NodeEntry> Nodes{};
+        NodeHandle SelectedNode{};
+        bool CanEditHierarchy = false;
+        bool IsDirty = false;
+        bool CanSave = false;
+    };
+
     enum class EHierarchyAction : std::uint8_t
     {
         AddNodeType,
@@ -98,6 +128,14 @@ public:
         TypeId Type{};
     };
 
+    enum class EToolbarAction : std::uint8_t
+    {
+        Play,
+        Pause,
+        Stop,
+        JoinLocalPlayer2,
+    };
+
     Result Build(GameRuntime& Runtime,
                  SnAPI::UI::Theme& Theme,
                  CameraComponent* ActiveCamera,
@@ -110,6 +148,7 @@ public:
     [[nodiscard]] int32_t GameViewportTabIndex() const;
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
+    void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
     void SetContentAssets(std::vector<ContentAssetEntry> Assets);
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
     void SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
@@ -117,7 +156,13 @@ public:
     void SetContentAssetDeleteHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     void SetContentAssetRenameHandler(SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler);
     void SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()> Handler);
+    void SetContentAssetCreateHandler(SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> Handler);
+    void SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()> Handler);
+    void SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler);
+    void SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
+    void SetContentAssetInspectorHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetContentAssetDetails(ContentAssetDetails Details);
+    void SetContentAssetInspectorState(ContentAssetInspectorState State);
 
 private:
     using PanelBuilder = SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel>;
@@ -154,6 +199,8 @@ private:
                         EditorSelectionModel* SelectionModel);
     void BuildContentBrowser(PanelBuilder& Root);
     void BuildContextMenuOverlay(PanelBuilder& Root);
+    void BuildCreateAssetModalOverlay(PanelBuilder& Root);
+    void BuildAssetInspectorModalOverlay(PanelBuilder& Root);
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
@@ -191,6 +238,20 @@ private:
     void EnsureContentAssetCardCapacity();
     void UpdateContentAssetCardWidgets();
     void ApplyContentAssetFilter();
+    void OpenContentAssetCreateModal();
+    void CloseContentAssetCreateModal();
+    void ConfirmContentAssetCreate();
+    void RefreshContentAssetCreateModalVisibility();
+    void RebuildContentAssetCreateTypeTree();
+    void RefreshContentAssetCreateOkButtonState();
+    void CloseContentAssetInspectorModal(bool NotifyHandler);
+    void RefreshContentAssetInspectorModalVisibility();
+    void RefreshContentAssetInspectorModalState();
+    void RebuildContentAssetInspectorHierarchyTree();
+    void OpenContentAssetInspectorHierarchyContextMenu(std::size_t ItemIndex, const SnAPI::UI::PointerEvent& Event);
+    void OpenContentAssetInspectorComponentContextMenu(const NodeHandle& OwnerNode,
+                                                       const TypeId& ComponentType,
+                                                       const SnAPI::UI::PointerEvent& Event);
     void RebuildContentBrowserEntries();
     void RefreshContentBrowserPath();
     void RefreshContentAssetCardSelectionStyles();
@@ -232,6 +293,17 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentSaveButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIListView> m_contentAssetsList{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetsEmptyHint{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_contentCreateModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_contentCreateTypeTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_contentCreateSearchInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_contentCreateNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentCreateOkButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_contentInspectorModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorTitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorStatusText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_contentInspectorHierarchyTree{};
+    SnAPI::UI::ElementHandle<UIPropertyPanel> m_contentInspectorPropertyPanel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentInspectorSaveButton{};
 
     struct ContentAssetCardWidgets
     {
@@ -261,12 +333,29 @@ private:
     std::string m_selectedContentFolderPath{};
     std::string m_lastContentAssetClickKey{};
     std::chrono::steady_clock::time_point m_lastContentAssetClickTime{};
+    bool m_contentCreateModalOpen = false;
+    std::string m_contentCreateTypeFilterText{};
+    std::string m_contentCreateNameText{};
+    TypeId m_contentCreateSelectedType{};
+    std::vector<TypeId> m_contentCreateVisibleTypes{};
+    std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentCreateTypeSource{};
+    ContentAssetInspectorState m_contentAssetInspectorState{};
+    std::vector<NodeHandle> m_contentInspectorVisibleNodes{};
+    std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentInspectorHierarchySource{};
+    bool m_contentInspectorTargetBound = false;
+    void* m_contentInspectorBoundObject = nullptr;
+    TypeId m_contentInspectorBoundType{};
     SnAPI::UI::TDelegate<void(const std::string&, bool)> m_onContentAssetSelected{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetPlaceRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetSaveRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetDeleteRequested{};
     SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> m_onContentAssetRenameRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetRefreshRequested{};
+    SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> m_onContentAssetCreateRequested{};
+    SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorSaveRequested{};
+    SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorCloseRequested{};
+    SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onContentAssetInspectorNodeSelected{};
+    SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onContentAssetInspectorHierarchyActionRequested{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_hierarchyItemSource{};
     enum class EContextMenuScope : std::uint8_t
     {
@@ -275,6 +364,8 @@ private:
         InspectorComponent,
         ContentAssetItem,
         ContentBrowser,
+        ContentInspectorHierarchyItem,
+        ContentInspectorComponent,
     };
     enum class EPendingHierarchyMenu : std::uint8_t
     {
@@ -289,6 +380,7 @@ private:
     SnAPI::UI::UIPoint m_pendingHierarchyMenuOpenPosition{};
     std::optional<std::size_t> m_contextMenuHierarchyIndex{};
     std::optional<std::size_t> m_contextMenuAssetIndex{};
+    NodeHandle m_contextMenuContentInspectorNode{};
     std::optional<NodeHandle> m_contextMenuComponentOwner{};
     TypeId m_contextMenuComponentType{};
     std::vector<TypeId> m_contextMenuNodeTypes{};
@@ -302,6 +394,7 @@ private:
     EditorSelectionModel* m_selection = nullptr;
     SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onHierarchyNodeChosen{};
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onHierarchyActionRequested{};
+    SnAPI::UI::TDelegate<void(EToolbarAction)> m_onToolbarActionRequested{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
     std::size_t m_boundInspectorComponentSignature = 0;

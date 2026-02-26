@@ -633,14 +633,11 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
 #endif
 
-    if (m_settings.Gameplay)
+    if (m_settings.Gameplay && m_world->ShouldRunGameplay())
     {
-        m_gameplayHost = std::make_unique<GameplayHost>();
-        m_world->SetGameplayHost(m_gameplayHost.get());
-        auto InitGameplay = m_gameplayHost->Initialize(*this, *m_settings.Gameplay);
+        auto InitGameplay = StartGameplayHost();
         if (!InitGameplay)
         {
-            m_world->SetGameplayHost(nullptr);
             Shutdown();
             return std::unexpected(InitGameplay.error());
         }
@@ -652,15 +649,7 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
 void GameRuntime::Shutdown()
 {
     SNAPI_GF_PROFILE_FUNCTION("Runtime");
-    if (m_gameplayHost)
-    {
-        m_gameplayHost->Shutdown();
-        if (m_world)
-        {
-            m_world->SetGameplayHost(nullptr);
-        }
-        m_gameplayHost.reset();
-    }
+    StopGameplayHost();
 
     if (m_world)
     {
@@ -1226,6 +1215,59 @@ const GameplayHost* GameRuntime::Gameplay() const
 {
     SNAPI_GF_PROFILE_FUNCTION("Runtime");
     return m_gameplayHost.get();
+}
+
+Result GameRuntime::StartGameplayHost()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Runtime");
+    if (!m_world)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "GameRuntime is not initialized"));
+    }
+
+    if (!m_settings.Gameplay.has_value())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime gameplay settings are not configured"));
+    }
+
+    if (m_gameplayHost && m_gameplayHost->IsInitialized())
+    {
+        return Ok();
+    }
+
+    if (m_gameplayHost)
+    {
+        m_gameplayHost->Shutdown();
+        m_gameplayHost.reset();
+    }
+
+    m_gameplayHost = std::make_unique<GameplayHost>();
+    m_world->SetGameplayHost(m_gameplayHost.get());
+    auto InitGameplay = m_gameplayHost->Initialize(*this, *m_settings.Gameplay);
+    if (!InitGameplay)
+    {
+        m_world->SetGameplayHost(nullptr);
+        m_gameplayHost.reset();
+        return std::unexpected(InitGameplay.error());
+    }
+
+    return Ok();
+}
+
+void GameRuntime::StopGameplayHost()
+{
+    SNAPI_GF_PROFILE_FUNCTION("Runtime");
+    if (m_gameplayHost)
+    {
+        m_gameplayHost->Shutdown();
+    }
+
+    if (m_world)
+    {
+        m_world->SetGameplayHost(nullptr);
+    }
+
+    m_gameplayHost.reset();
 }
 
 #if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)

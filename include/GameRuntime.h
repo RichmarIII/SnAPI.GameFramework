@@ -170,6 +170,20 @@ public:
      */
     const GameplayHost* Gameplay() const;
 
+    /**
+     * @brief Start gameplay host from current runtime gameplay settings.
+     * @return Success or error.
+     * @remarks
+     * Requires initialized runtime and configured `Settings().Gameplay`.
+     * Safe to call repeatedly; when already initialized this is a no-op.
+     */
+    Result StartGameplayHost();
+
+    /**
+     * @brief Shutdown and detach current gameplay host if present.
+     */
+    void StopGameplayHost();
+
 #if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
     /**
      * @brief Bind one renderer viewport to one UI context.

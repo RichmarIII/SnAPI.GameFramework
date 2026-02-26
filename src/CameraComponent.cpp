@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <SnAPI/Math/LinearAlgebra.h>
 #include <LinearAlgebra.hpp>
 #include <CameraBase.hpp>
 
@@ -51,6 +52,27 @@ SnAPI::QuaternionF ToRendererRotation(const Quat& Rotation)
     else
     {
         Out = SnAPI::QuaternionF::Identity();
+    }
+    return Out;
+}
+
+Quat EulerToQuat(const Vec3& Euler)
+{
+    const SnAPI::Math::Quaternion Rotation = SnAPI::Math::AngleAxis3D(Euler.z(), SnAPI::Math::Vector3::UnitZ())
+                                           * SnAPI::Math::AngleAxis3D(Euler.y(), SnAPI::Math::Vector3::UnitY())
+                                           * SnAPI::Math::AngleAxis3D(Euler.x(), SnAPI::Math::Vector3::UnitX());
+    Quat Out = Quat::Identity();
+    Out.x() = static_cast<Quat::Scalar>(Rotation.x());
+    Out.y() = static_cast<Quat::Scalar>(Rotation.y());
+    Out.z() = static_cast<Quat::Scalar>(Rotation.z());
+    Out.w() = static_cast<Quat::Scalar>(Rotation.w());
+    if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
+    {
+        Out.normalize();
+    }
+    else
+    {
+        Out = Quat::Identity();
     }
     return Out;
 }
@@ -226,8 +248,34 @@ void CameraComponent::SyncFromTransform()
         return;
     }
 
-    m_camera->Position(ToRendererVector3(WorldTransform.Position));
-    m_camera->Rotation(ToRendererRotation(WorldTransform.Rotation));
+    Vec3 CameraPosition = WorldTransform.Position;
+    Quat CameraRotation = WorldTransform.Rotation;
+
+    if (IsFiniteVec3(m_settings.LocalPositionOffset))
+    {
+        CameraPosition += CameraRotation * m_settings.LocalPositionOffset;
+    }
+
+    if (IsFiniteVec3(m_settings.LocalRotationOffsetEuler))
+    {
+        CameraRotation *= EulerToQuat(m_settings.LocalRotationOffsetEuler);
+        if (CameraRotation.squaredNorm() > static_cast<Quat::Scalar>(0))
+        {
+            CameraRotation.normalize();
+        }
+        else
+        {
+            CameraRotation = Quat::Identity();
+        }
+    }
+
+    if (!IsFiniteVec3(CameraPosition) || !IsFiniteQuat(CameraRotation))
+    {
+        return;
+    }
+
+    m_camera->Position(ToRendererVector3(CameraPosition));
+    m_camera->Rotation(ToRendererRotation(CameraRotation));
 }
 
 } // namespace SnAPI::GameFramework

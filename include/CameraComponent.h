@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "BaseComponent.h"
+#include "Math.h"
 
 namespace SnAPI::Graphics
 {
@@ -39,8 +40,11 @@ public:
         float FarClip = 1000.0f; /**< @brief Far clipping plane (reserved by some pipelines). */
         float FovDegrees = 60.0f; /**< @brief Vertical field of view in degrees. */
         float Aspect = 16.0f / 9.0f; /**< @brief Camera aspect ratio. */
-        bool Active = true; /**< @brief When true this camera is selected as world active camera. */
+        bool Active = false; /**< @brief When true this camera is selected as world active camera. */
         bool SyncFromTransform = true; /**< @brief Pull camera pose from owner `TransformComponent`. */
+        Vec3 LocalPositionOffset{}; /**< @brief Local translation offset applied after owner world transform. */
+        Vec3 LocalRotationOffsetEuler{}; /**< @brief Local rotation offset (XYZ euler radians) applied after owner world rotation. */
+        bool AutoActivateForPlayer = false; /**< @brief When true, will activate the camera for the player possessing the owned node */
     };
 
     ~CameraComponent();

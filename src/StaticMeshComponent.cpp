@@ -13,6 +13,7 @@
 #include <string_view>
 
 #include <BoxStreamSource.hpp>
+#include <CapsuleStreamSource.hpp>
 #include <ConeStreamSource.hpp>
 #include <LinearAlgebra.hpp>
 #include <MeshManager.hpp>
@@ -104,6 +105,15 @@ SnAPI::Graphics::SharedVertexStreamSourcePtr BuildPrimitiveSourceFromMeshPath(co
         auto Source = std::make_shared<SnAPI::Graphics::SphereStreamSource>();
         Source->SetRadius(0.5f);
         Source->SetSegments(32u, 16u);
+        return Source;
+    }
+
+    if (Token == "primitive://capsule" || Token == "__primitive_capsule__")
+    {
+        auto Source = std::make_shared<SnAPI::Graphics::CapsuleStreamSource>();
+        Source->SetRadius(0.35f);
+        Source->SetHalfHeight(0.6f);
+        Source->SetSegments(24u, 8u);
         return Source;
     }
 

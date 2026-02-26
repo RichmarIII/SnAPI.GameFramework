@@ -2,9 +2,14 @@
 
 #include "BaseNode.h"
 #include "CameraComponent.h"
+#if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
+#include "Editor/EditorCameraComponent.h"
+#endif
 #include "InputSystem.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PawnBase.h"
+#include "PlayerStart.h"
 #include "Serialization.h"
 #include "TransformComponent.h"
 #include "TypeRegistry.h"
@@ -29,6 +34,7 @@
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "ICamera.hpp"
+#include "WindowBase.hpp"
 #endif
 
 #include <SnAPI/Math/LinearAlgebra.h>
@@ -47,6 +53,13 @@
 #include <utility>
 
 #include "GameRuntime.h"
+
+#if defined(SNAPI_GF_ENABLE_RENDERER) && __has_include(<SDL3/SDL.h>)
+#include <SDL3/SDL.h>
+#define SNAPI_GF_EDITOR_HAS_SDL3 1
+#else
+#define SNAPI_GF_EDITOR_HAS_SDL3 0
+#endif
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -217,6 +230,45 @@ private:
     return nullptr;
 }
 
+void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
+{
+    if (auto* Start = NodeCast<PlayerStart>(&Node))
+    {
+        Start->OnCreateImpl(WorldRef);
+    }
+
+    if (auto* Pawn = NodeCast<PawnBase>(&Node))
+    {
+        Pawn->OnCreateImpl(WorldRef);
+    }
+}
+
+void SetEditorCameraEnabledForPie(World& WorldRef, const bool Enabled)
+{
+#if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
+    WorldRef.NodePool().ForEach([Enabled](const NodeHandle&, BaseNode& Node) {
+        auto EditorCamera = Node.Component<EditorCameraComponent>();
+        if (!EditorCamera)
+        {
+            return;
+        }
+
+        EditorCamera->EditSettings().Enabled = Enabled;
+
+        auto Camera = Node.Component<CameraComponent>();
+        if (!Camera)
+        {
+            return;
+        }
+
+        Camera->EditSettings().Active = Enabled;
+    });
+#else
+    (void)WorldRef;
+    (void)Enabled;
+#endif
+}
+
 [[nodiscard]] Result ExecuteHierarchyAction(EditorServiceContext& Context,
                                             const EditorLayout::HierarchyActionRequest& Request)
 {
@@ -342,6 +394,11 @@ private:
                 return std::unexpected(AttachResult.error());
             }
         }
+
+        if (BaseNode* CreatedNode = CreateResult->Borrowed())
+        {
+            InitializeCreatedNodeDefaults(*WorldPtr, *CreatedNode);
+        }
         return Ok();
     }
 
@@ -381,6 +438,10 @@ private:
     std::optional<NodeHandle> ResolvedHandle{};
     WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
         if (ResolvedHandle.has_value())
+        {
+            return;
+        }
+        if (Node.EditorTransient())
         {
             return;
         }
@@ -622,6 +683,211 @@ void EditorSelectionService::EnsureSelectionValid(EditorServiceContext& Context,
     m_selection.Clear();
 }
 
+std::string_view EditorPieService::Name() const
+{
+    return "EditorPieService";
+}
+
+Result EditorPieService::Initialize(EditorServiceContext& Context)
+{
+    (void)Context;
+    m_state = EState::Stopped;
+    m_editorSnapshot.reset();
+    m_editorWorldKind = EWorldKind::Editor;
+    m_editorExecutionProfile = WorldExecutionProfile::Editor();
+    return Ok();
+}
+
+void EditorPieService::Shutdown(EditorServiceContext& Context)
+{
+    (void)StopSession(Context);
+    m_state = EState::Stopped;
+    m_editorSnapshot.reset();
+}
+
+Result EditorPieService::Play(EditorServiceContext& Context)
+{
+    if (m_state == EState::Playing)
+    {
+        return Ok();
+    }
+
+    if (m_state == EState::Paused)
+    {
+        return ResumeSession(Context);
+    }
+
+    return StartSession(Context);
+}
+
+Result EditorPieService::Pause(EditorServiceContext& Context)
+{
+    if (m_state != EState::Playing)
+    {
+        return Ok();
+    }
+
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+
+    WorldPtr->SetWorldKind(EWorldKind::PIE);
+    WorldPtr->SetExecutionProfile(PausedExecutionProfile());
+    m_state = EState::Paused;
+    return Ok();
+}
+
+Result EditorPieService::Stop(EditorServiceContext& Context)
+{
+    if (m_state == EState::Stopped)
+    {
+        return Ok();
+    }
+
+    return StopSession(Context);
+}
+
+Result EditorPieService::StartSession(EditorServiceContext& Context)
+{
+    auto& Runtime = Context.Runtime();
+    Runtime.StopGameplayHost();
+
+    auto* WorldPtr = Runtime.WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+
+    auto SnapshotResult = WorldSerializer::Serialize(*WorldPtr);
+    if (!SnapshotResult)
+    {
+        return std::unexpected(SnapshotResult.error());
+    }
+
+    m_editorSnapshot = std::move(*SnapshotResult);
+    m_editorWorldKind = WorldPtr->Kind();
+    m_editorExecutionProfile = WorldPtr->ExecutionProfile();
+
+    WorldPtr->SetWorldKind(EWorldKind::PIE);
+    WorldPtr->SetExecutionProfile(WorldExecutionProfile::PIE());
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    (void)WorldPtr->Renderer().SetActiveCamera(nullptr);
+#endif
+
+    TDeserializeOptions PieOptions{};
+    PieOptions.RegenerateObjectIds = true;
+    auto PieLoadResult = WorldSerializer::Deserialize(*m_editorSnapshot, *WorldPtr, PieOptions);
+    if (!PieLoadResult)
+    {
+        TDeserializeOptions RestoreOptions{};
+        RestoreOptions.RegenerateObjectIds = false;
+        (void)WorldSerializer::Deserialize(*m_editorSnapshot, *WorldPtr, RestoreOptions);
+        WorldPtr->SetWorldKind(m_editorWorldKind);
+        WorldPtr->SetExecutionProfile(m_editorExecutionProfile);
+        return std::unexpected(PieLoadResult.error());
+    }
+
+    SetEditorCameraEnabledForPie(*WorldPtr, false);
+
+    if (Runtime.Settings().Gameplay.has_value())
+    {
+        auto StartGameplayResult = Runtime.StartGameplayHost();
+        if (!StartGameplayResult)
+        {
+            TDeserializeOptions RestoreOptions{};
+            RestoreOptions.RegenerateObjectIds = false;
+            (void)WorldSerializer::Deserialize(*m_editorSnapshot, *WorldPtr, RestoreOptions);
+            WorldPtr->SetWorldKind(m_editorWorldKind);
+            WorldPtr->SetExecutionProfile(m_editorExecutionProfile);
+            return std::unexpected(StartGameplayResult.error());
+        }
+    }
+
+    m_state = EState::Playing;
+    return Ok();
+}
+
+Result EditorPieService::ResumeSession(EditorServiceContext& Context)
+{
+    auto& Runtime = Context.Runtime();
+    auto* WorldPtr = Runtime.WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+
+    WorldPtr->SetWorldKind(EWorldKind::PIE);
+    WorldPtr->SetExecutionProfile(WorldExecutionProfile::PIE());
+    SetEditorCameraEnabledForPie(*WorldPtr, false);
+
+    if (Runtime.Settings().Gameplay.has_value())
+    {
+        auto StartGameplayResult = Runtime.StartGameplayHost();
+        if (!StartGameplayResult)
+        {
+            return std::unexpected(StartGameplayResult.error());
+        }
+    }
+
+    m_state = EState::Playing;
+    return Ok();
+}
+
+Result EditorPieService::StopSession(EditorServiceContext& Context)
+{
+    auto& Runtime = Context.Runtime();
+    Runtime.StopGameplayHost();
+
+    auto* WorldPtr = Runtime.WorldPtr();
+    if (!WorldPtr)
+    {
+        m_state = EState::Stopped;
+        m_editorSnapshot.reset();
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+
+    if (!m_editorSnapshot.has_value())
+    {
+        WorldPtr->SetWorldKind(m_editorWorldKind);
+        WorldPtr->SetExecutionProfile(m_editorExecutionProfile);
+        SetEditorCameraEnabledForPie(*WorldPtr, true);
+        m_state = EState::Stopped;
+        return Ok();
+    }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    (void)WorldPtr->Renderer().SetActiveCamera(nullptr);
+#endif
+
+    TDeserializeOptions RestoreOptions{};
+    RestoreOptions.RegenerateObjectIds = false;
+    auto RestoreResult = WorldSerializer::Deserialize(*m_editorSnapshot, *WorldPtr, RestoreOptions);
+    if (!RestoreResult)
+    {
+        return std::unexpected(RestoreResult.error());
+    }
+
+    WorldPtr->SetWorldKind(m_editorWorldKind);
+    WorldPtr->SetExecutionProfile(m_editorExecutionProfile);
+    m_editorSnapshot.reset();
+    m_state = EState::Stopped;
+    return Ok();
+}
+
+WorldExecutionProfile EditorPieService::PausedExecutionProfile()
+{
+    auto Profile = WorldExecutionProfile::PIE();
+    Profile.RunGameplay = false;
+    Profile.TickEcsRuntime = false;
+    Profile.TickPhysicsSimulation = false;
+    Profile.TickAudio = false;
+    Profile.PumpNetworking = false;
+    return Profile;
+}
+
 std::string_view EditorLayoutService::Name() const
 {
     return "EditorLayoutService";
@@ -632,6 +898,7 @@ std::vector<std::type_index> EditorLayoutService::Dependencies() const
     return {std::type_index(typeid(EditorThemeService)),
             std::type_index(typeid(EditorSceneService)),
             std::type_index(typeid(EditorSelectionService)),
+            std::type_index(typeid(EditorPieService)),
             std::type_index(typeid(EditorRootViewportService)),
             std::type_index(typeid(EditorCommandService)),
             std::type_index(typeid(EditorAssetService))};
@@ -642,8 +909,9 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     auto* ThemeService = Context.GetService<EditorThemeService>();
     auto* SceneService = Context.GetService<EditorSceneService>();
     auto* SelectionService = Context.GetService<EditorSelectionService>();
+    auto* PieService = Context.GetService<EditorPieService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
-    if (!ThemeService || !SceneService || !SelectionService || !AssetService)
+    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService)
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Missing required editor services for layout"));
     }
@@ -652,6 +920,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingSelectionRequest = {};
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
+    m_hasPendingToolbarAction = false;
+    m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -665,6 +935,10 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingAssetRenameKey.clear();
     m_pendingAssetRenameValue.clear();
     m_hasPendingAssetRefreshRequest = false;
+    m_hasPendingAssetCreateRequest = false;
+    m_pendingAssetCreateRequest = {};
+    m_hasPendingAssetInspectorSaveRequest = false;
+    m_hasPendingAssetInspectorCloseRequest = false;
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
@@ -688,6 +962,11 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
                 m_pendingHierarchyActionRequest = Request;
                 m_hasPendingHierarchyActionRequest = true;
             }));
+    m_layout.SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EditorLayout::EToolbarAction)>::Bind(
+        [this](const EditorLayout::EToolbarAction Action) {
+            m_pendingToolbarAction = Action;
+            m_hasPendingToolbarAction = true;
+        }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
             m_pendingAssetSelectionKey = AssetKey;
@@ -716,6 +995,29 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_layout.SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetRefreshRequest = true;
     }));
+    m_layout.SetContentAssetCreateHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ContentAssetCreateRequest&)>::Bind(
+            [this](const EditorLayout::ContentAssetCreateRequest& Request) {
+                m_pendingAssetCreateRequest = Request;
+                m_hasPendingAssetCreateRequest = true;
+            }));
+    m_layout.SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetInspectorSaveRequest = true;
+    }));
+    m_layout.SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetInspectorCloseRequest = true;
+    }));
+    m_layout.SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)>::Bind(
+        [this](const NodeHandle& Handle) {
+            m_pendingAssetInspectorNodeSelection = Handle;
+            m_hasPendingAssetInspectorNodeSelectionRequest = true;
+        }));
+    m_layout.SetContentAssetInspectorHierarchyActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::HierarchyActionRequest&)>::Bind(
+            [this](const EditorLayout::HierarchyActionRequest& Request) {
+                m_pendingAssetInspectorHierarchyActionRequest = Request;
+                m_hasPendingAssetInspectorHierarchyActionRequest = true;
+            }));
 
     ApplyAssetBrowserState(Context);
     return Ok();
@@ -725,9 +1027,10 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 {
     auto* SceneService = Context.GetService<EditorSceneService>();
     auto* SelectionService = Context.GetService<EditorSelectionService>();
+    auto* PieService = Context.GetService<EditorPieService>();
     auto* CommandService = Context.GetService<EditorCommandService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
-    if (!SceneService || !SelectionService || !AssetService)
+    if (!SceneService || !SelectionService || !PieService || !AssetService)
     {
         return;
     }
@@ -750,7 +1053,11 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         {
             if (AssetService->SelectAssetByKey(m_pendingAssetSelectionKey) && m_pendingAssetSelectionDoubleClick)
             {
-                (void)AssetService->OpenSelectedAssetPreview();
+                auto OpenEditorResult = AssetService->OpenAssetEditorByKey(m_pendingAssetSelectionKey);
+                if (!OpenEditorResult)
+                {
+                    (void)AssetService->OpenSelectedAssetPreview();
+                }
             }
         }
 
@@ -762,7 +1069,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     {
         m_hasPendingAssetPlaceRequest = false;
 
-        if (!m_pendingAssetPlaceKey.empty())
+        if (!PieService->IsSessionActive() && !m_pendingAssetPlaceKey.empty())
         {
             (void)AssetService->ArmPlacementByKey(m_pendingAssetPlaceKey);
         }
@@ -807,6 +1114,63 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_pendingAssetDeleteKey.clear();
     }
 
+    if (m_hasPendingAssetCreateRequest)
+    {
+        m_hasPendingAssetCreateRequest = false;
+        if (!PieService->IsSessionActive() && m_pendingAssetCreateRequest.Type != TypeId{})
+        {
+            (void)AssetService->CreateRuntimeNodeAssetByType(Context,
+                                                             m_pendingAssetCreateRequest.Type,
+                                                             m_pendingAssetCreateRequest.Name,
+                                                             m_pendingAssetCreateRequest.FolderPath);
+        }
+        m_pendingAssetCreateRequest = {};
+    }
+
+    if (m_hasPendingAssetInspectorSaveRequest)
+    {
+        m_hasPendingAssetInspectorSaveRequest = false;
+        (void)AssetService->SaveActiveAssetEditor();
+    }
+
+    if (m_hasPendingAssetInspectorCloseRequest)
+    {
+        m_hasPendingAssetInspectorCloseRequest = false;
+        AssetService->CloseAssetEditor();
+    }
+
+    if (m_hasPendingAssetInspectorNodeSelectionRequest)
+    {
+        m_hasPendingAssetInspectorNodeSelectionRequest = false;
+        (void)AssetService->SelectAssetEditorNode(m_pendingAssetInspectorNodeSelection);
+        m_pendingAssetInspectorNodeSelection = {};
+    }
+
+    if (m_hasPendingAssetInspectorHierarchyActionRequest)
+    {
+        m_hasPendingAssetInspectorHierarchyActionRequest = false;
+        const EditorLayout::HierarchyActionRequest Request = m_pendingAssetInspectorHierarchyActionRequest;
+        m_pendingAssetInspectorHierarchyActionRequest = {};
+
+        switch (Request.Action)
+        {
+        case EditorLayout::EHierarchyAction::AddNodeType:
+            (void)AssetService->AddAssetEditorNode(Request.TargetNode, Request.Type);
+            break;
+        case EditorLayout::EHierarchyAction::AddComponentType:
+            (void)AssetService->AddAssetEditorComponent(Request.TargetNode, Request.Type);
+            break;
+        case EditorLayout::EHierarchyAction::RemoveComponentType:
+            (void)AssetService->RemoveAssetEditorComponent(Request.TargetNode, Request.Type);
+            break;
+        case EditorLayout::EHierarchyAction::DeleteNode:
+            (void)AssetService->DeleteAssetEditorNode(Request.TargetNode);
+            break;
+        default:
+            break;
+        }
+    }
+
     if (m_hasPendingSelectionRequest)
     {
         const NodeHandle Previous = SelectionService->Model().SelectedNode();
@@ -832,11 +1196,75 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         const EditorLayout::HierarchyActionRequest Request = m_pendingHierarchyActionRequest;
         m_hasPendingHierarchyActionRequest = false;
         m_pendingHierarchyActionRequest = {};
-        (void)ExecuteHierarchyAction(Context, Request);
+        if (!PieService->IsSessionActive())
+        {
+            (void)ExecuteHierarchyAction(Context, Request);
+        }
     }
 
+    if (m_hasPendingToolbarAction)
+    {
+        const EditorLayout::EToolbarAction Action = m_pendingToolbarAction;
+        m_hasPendingToolbarAction = false;
+        bool WorldReloaded = false;
+        Result ActionResult = Ok();
+        switch (Action)
+        {
+        case EditorLayout::EToolbarAction::Play:
+        {
+            const auto PreviousState = PieService->State();
+            ActionResult = PieService->Play(Context);
+            WorldReloaded = (PreviousState == EditorPieService::EState::Stopped && ActionResult.has_value());
+            break;
+        }
+        case EditorLayout::EToolbarAction::Pause:
+            ActionResult = PieService->Pause(Context);
+            break;
+        case EditorLayout::EToolbarAction::Stop:
+        {
+            const auto PreviousState = PieService->State();
+            ActionResult = PieService->Stop(Context);
+            WorldReloaded = (PreviousState != EditorPieService::EState::Stopped && ActionResult.has_value());
+            break;
+        }
+        case EditorLayout::EToolbarAction::JoinLocalPlayer2:
+        {
+            if (!PieService->IsSessionActive())
+            {
+                break;
+            }
+
+            GameplayHost* Host = Context.Runtime().Gameplay();
+            if (!Host)
+            {
+                ActionResult = std::unexpected(MakeError(
+                    EErrorCode::NotReady,
+                    "Gameplay host is not available while PIE is running"));
+                break;
+            }
+
+            ActionResult = Host->RequestJoinPlayer("LocalPlayer2", 1u, true);
+            break;
+        }
+        default:
+            break;
+        }
+
+        if (ActionResult && WorldReloaded)
+        {
+            SelectionService->Model().Clear();
+            if (CommandService)
+            {
+                CommandService->ClearHistory();
+            }
+        }
+    }
+
+    SceneService->Tick(Context, 0.0f);
+    CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
+    AssetService->TickAssetEditorSession();
     ApplyAssetBrowserState(Context);
-    m_layout.Sync(Context.Runtime(), SceneService->ActiveCameraComponent(), &SelectionService->Model(), DeltaSeconds);
+    m_layout.Sync(Context.Runtime(), ActiveCamera, &SelectionService->Model(), DeltaSeconds);
 }
 
 void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
@@ -912,6 +1340,34 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         m_layout.SetContentAssetDetails(std::move(Details));
         m_assetDetailsSignature = DetailsSignature;
     }
+
+    const EditorAssetService::AssetEditorSessionView SessionView = AssetService->AssetEditorSession();
+    EditorLayout::ContentAssetInspectorState InspectorState{};
+    InspectorState.Open = SessionView.IsOpen;
+    InspectorState.AssetKey = SessionView.AssetKey;
+    InspectorState.Title = SessionView.Title;
+    InspectorState.TargetType = SessionView.TargetType;
+    InspectorState.TargetObject = SessionView.TargetObject;
+    InspectorState.SelectedNode = SessionView.SelectedNode;
+    InspectorState.CanEditHierarchy = SessionView.CanEditHierarchy;
+    InspectorState.Nodes.reserve(SessionView.Nodes.size());
+    for (const auto& Entry : SessionView.Nodes)
+    {
+        EditorLayout::ContentAssetInspectorState::NodeEntry NodeEntry{};
+        NodeEntry.Handle = Entry.Handle;
+        NodeEntry.Depth = Entry.Depth;
+        NodeEntry.Label = Entry.Label;
+        InspectorState.Nodes.emplace_back(std::move(NodeEntry));
+    }
+    InspectorState.IsDirty = SessionView.IsDirty;
+    InspectorState.CanSave = SessionView.CanSave;
+    if (SessionView.IsOpen)
+    {
+        InspectorState.Status = SessionView.IsDirty
+                                    ? "Unsaved changes. Click Save to persist."
+                                    : "No pending edits.";
+    }
+    m_layout.SetContentAssetInspectorState(std::move(InspectorState));
 }
 
 void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
@@ -930,10 +1386,22 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_assetDetailsSignature = 0;
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
+    m_hasPendingToolbarAction = false;
+    m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
+    m_hasPendingAssetCreateRequest = false;
+    m_pendingAssetCreateRequest = {};
+    m_hasPendingAssetInspectorSaveRequest = false;
+    m_hasPendingAssetInspectorCloseRequest = false;
+    m_hasPendingAssetInspectorNodeSelectionRequest = false;
+    m_pendingAssetInspectorNodeSelection = {};
+    m_hasPendingAssetInspectorHierarchyActionRequest = false;
+    m_pendingAssetInspectorHierarchyActionRequest = {};
 
+    SceneService->Tick(Context, 0.0f);
+    CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
-                                              SceneService->ActiveCameraComponent(),
+                                              ActiveCamera,
                                               &SelectionService->Model());
     if (!BuildResult)
     {
@@ -951,6 +1419,11 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
                 m_pendingHierarchyActionRequest = Request;
                 m_hasPendingHierarchyActionRequest = true;
             }));
+    m_layout.SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EditorLayout::EToolbarAction)>::Bind(
+        [this](const EditorLayout::EToolbarAction Action) {
+            m_pendingToolbarAction = Action;
+            m_hasPendingToolbarAction = true;
+        }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
             m_pendingAssetSelectionKey = AssetKey;
@@ -979,6 +1452,29 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_layout.SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetRefreshRequest = true;
     }));
+    m_layout.SetContentAssetCreateHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ContentAssetCreateRequest&)>::Bind(
+            [this](const EditorLayout::ContentAssetCreateRequest& Request) {
+                m_pendingAssetCreateRequest = Request;
+                m_hasPendingAssetCreateRequest = true;
+            }));
+    m_layout.SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetInspectorSaveRequest = true;
+    }));
+    m_layout.SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetInspectorCloseRequest = true;
+    }));
+    m_layout.SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)>::Bind(
+        [this](const NodeHandle& Handle) {
+            m_pendingAssetInspectorNodeSelection = Handle;
+            m_hasPendingAssetInspectorNodeSelectionRequest = true;
+        }));
+    m_layout.SetContentAssetInspectorHierarchyActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::HierarchyActionRequest&)>::Bind(
+            [this](const EditorLayout::HierarchyActionRequest& Request) {
+                m_pendingAssetInspectorHierarchyActionRequest = Request;
+                m_hasPendingAssetInspectorHierarchyActionRequest = true;
+            }));
 
     ApplyAssetBrowserState(Context);
     m_layoutRebuildRequested = false;
@@ -992,12 +1488,20 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetContentAssetDeleteHandler({});
     m_layout.SetContentAssetRenameHandler({});
     m_layout.SetContentAssetRefreshHandler({});
+    m_layout.SetContentAssetCreateHandler({});
+    m_layout.SetContentAssetInspectorSaveHandler({});
+    m_layout.SetContentAssetInspectorCloseHandler({});
+    m_layout.SetContentAssetInspectorNodeSelectionHandler({});
+    m_layout.SetContentAssetInspectorHierarchyActionHandler({});
     m_layout.SetHierarchySelectionHandler({});
     m_layout.SetHierarchyActionHandler({});
+    m_layout.SetToolbarActionHandler({});
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
+    m_hasPendingToolbarAction = false;
+    m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -1011,6 +1515,14 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingAssetRenameKey.clear();
     m_pendingAssetRenameValue.clear();
     m_hasPendingAssetRefreshRequest = false;
+    m_hasPendingAssetCreateRequest = false;
+    m_pendingAssetCreateRequest = {};
+    m_hasPendingAssetInspectorSaveRequest = false;
+    m_hasPendingAssetInspectorCloseRequest = false;
+    m_hasPendingAssetInspectorNodeSelectionRequest = false;
+    m_pendingAssetInspectorNodeSelection = {};
+    m_hasPendingAssetInspectorHierarchyActionRequest = false;
+    m_pendingAssetInspectorHierarchyActionRequest = {};
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
@@ -1328,6 +1840,7 @@ std::vector<std::type_index> EditorSelectionInteractionService::Dependencies() c
             std::type_index(typeid(EditorSelectionService)),
             std::type_index(typeid(EditorLayoutService)),
             std::type_index(typeid(EditorCommandService)),
+            std::type_index(typeid(EditorPieService)),
             std::type_index(typeid(EditorAssetService))};
 }
 
@@ -1337,6 +1850,7 @@ Result EditorSelectionInteractionService::Initialize(EditorServiceContext& Conte
     m_pointerPressedInside = false;
     m_pointerDragged = false;
     m_pointerPressPosition = {};
+    m_pieMouseCaptureEnabled = false;
     RebindViewportHandler(Context);
     return Ok();
 }
@@ -1346,10 +1860,12 @@ void EditorSelectionInteractionService::Tick(EditorServiceContext& Context, cons
     (void)DeltaSeconds;
     m_host = &Context.Host();
     RebindViewportHandler(Context);
+    UpdatePieMouseCaptureState(Context);
 }
 
 void EditorSelectionInteractionService::Shutdown(EditorServiceContext& Context)
 {
+    SetPieMouseCapture(Context, false);
     (void)Context;
 #if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
     if (m_boundViewport)
@@ -1362,6 +1878,7 @@ void EditorSelectionInteractionService::Shutdown(EditorServiceContext& Context)
     m_pointerPressedInside = false;
     m_pointerDragged = false;
     m_pointerPressPosition = {};
+    m_pieMouseCaptureEnabled = false;
     m_host = nullptr;
 }
 
@@ -1407,6 +1924,97 @@ void EditorSelectionInteractionService::RebindViewportHandler(EditorServiceConte
 #endif
 }
 
+void EditorSelectionInteractionService::UpdatePieMouseCaptureState(EditorServiceContext& Context)
+{
+    auto* PieService = Context.GetService<EditorPieService>();
+    const bool PieActive = PieService && PieService->IsSessionActive();
+    if (!PieActive)
+    {
+        if (m_pieMouseCaptureEnabled)
+        {
+            SetPieMouseCapture(Context, false);
+        }
+        return;
+    }
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr || !WorldPtr->Input().IsInitialized())
+    {
+        return;
+    }
+
+    const auto* Snapshot = WorldPtr->Input().Snapshot();
+    if (!Snapshot)
+    {
+        return;
+    }
+
+    if (!Snapshot->IsWindowFocused() ||
+        Snapshot->KeyPressed(SnAPI::Input::EKey::Escape))
+    {
+        SetPieMouseCapture(Context, false);
+    }
+#else
+    (void)Context;
+#endif
+}
+
+void EditorSelectionInteractionService::SetPieMouseCapture(EditorServiceContext& Context, const bool CaptureEnabled)
+{
+#if !defined(SNAPI_GF_ENABLE_RENDERER) || !SNAPI_GF_EDITOR_HAS_SDL3
+    (void)Context;
+    m_pieMouseCaptureEnabled = false;
+    (void)CaptureEnabled;
+    return;
+#else
+    if (m_pieMouseCaptureEnabled == CaptureEnabled)
+    {
+        return;
+    }
+
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr || !WorldPtr->Renderer().IsInitialized())
+    {
+        m_pieMouseCaptureEnabled = false;
+        return;
+    }
+
+    auto* Window = WorldPtr->Renderer().Window();
+    if (!Window)
+    {
+        m_pieMouseCaptureEnabled = false;
+        return;
+    }
+
+    auto* NativeWindow = reinterpret_cast<SDL_Window*>(Window->Handle());
+    if (!NativeWindow)
+    {
+        m_pieMouseCaptureEnabled = false;
+        return;
+    }
+
+    if (CaptureEnabled)
+    {
+        const bool RelativeEnabled = SDL_SetWindowRelativeMouseMode(NativeWindow, true);
+        const bool GrabEnabled = SDL_SetWindowMouseGrab(NativeWindow, true);
+        if (RelativeEnabled && GrabEnabled)
+        {
+            (void)SDL_CaptureMouse(true);
+            (void)SDL_HideCursor();
+            m_pieMouseCaptureEnabled = true;
+            return;
+        }
+    }
+
+    (void)SDL_SetWindowRelativeMouseMode(NativeWindow, false);
+    (void)SDL_SetWindowMouseGrab(NativeWindow, false);
+    (void)SDL_CaptureMouse(false);
+    (void)SDL_ShowCursor();
+    m_pieMouseCaptureEnabled = false;
+#endif
+}
+
 void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorServiceContext& Context,
                                                                    const SnAPI::UI::PointerEvent& Event,
                                                                    const std::uint32_t RoutedTypeId,
@@ -1419,6 +2027,20 @@ void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorService
     (void)ContainsPointer;
     return;
 #else
+    auto* PieService = Context.GetService<EditorPieService>();
+    if (PieService && PieService->IsSessionActive())
+    {
+        if (RoutedTypeId == SnAPI::UI::RoutedEventTypes::PointerDown.Id &&
+            ContainsPointer &&
+            (Event.LeftDown || Event.RightDown || Event.MiddleDown))
+        {
+            SetPieMouseCapture(Context, true);
+        }
+        m_pointerPressedInside = false;
+        m_pointerDragged = false;
+        return;
+    }
+
     constexpr float kDragThresholdPixels = 3.0f;
     constexpr float kDragThresholdSquared = kDragThresholdPixels * kDragThresholdPixels;
 
@@ -1672,6 +2294,7 @@ std::vector<std::type_index> EditorTransformInteractionService::Dependencies() c
 {
     return {std::type_index(typeid(EditorSceneService)),
             std::type_index(typeid(EditorSelectionService)),
+            std::type_index(typeid(EditorPieService)),
             std::type_index(typeid(EditorLayoutService))};
 }
 
@@ -1694,6 +2317,12 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     m_dragging = false;
     return;
 #else
+    if (auto* PieService = Context.GetService<EditorPieService>(); PieService && PieService->IsSessionActive())
+    {
+        m_dragging = false;
+        return;
+    }
+
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr || !WorldPtr->Input().IsInitialized())
     {

@@ -4,16 +4,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <utility>
 
 #include "BaseNode.h"
-#include "CharacterMovementController.h"
+#include "BaseNode.inl"
 #include "IWorld.h"
+#include "InputIntentComponent.h"
 #include "InputSystem.h"
 #include "LocalPlayer.h"
-#include "Level.h"
 #include "NodeCast.h"
+#include "TransformComponent.h"
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include "NetworkSystem.h"
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -39,6 +44,24 @@ struct LocalPlayerInputRouting
     bool HasAnyLocalPlayers = false;
 };
 
+std::optional<std::uint64_t> ResolveLocalOwnerConnectionId(const IWorld& WorldRef)
+{
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    const auto& Network = WorldRef.Networking();
+    if (Network.IsClient() && !Network.IsListenServer())
+    {
+        const auto Primary = Network.PrimaryConnection();
+        if (Primary.has_value())
+        {
+            return static_cast<std::uint64_t>(*Primary);
+        }
+        return std::nullopt;
+    }
+#endif
+
+    return std::uint64_t{0};
+}
+
 LocalPlayerInputRouting ResolveLocalPlayerRouting(const BaseNode& ControlledNode)
 {
     LocalPlayerInputRouting Routing{};
@@ -48,34 +71,48 @@ LocalPlayerInputRouting ResolveLocalPlayerRouting(const BaseNode& ControlledNode
         return Routing;
     }
 
+    const auto LocalOwnerConnectionId = ResolveLocalOwnerConnectionId(*WorldRef);
+    if (!LocalOwnerConnectionId.has_value())
+    {
+        return Routing;
+    }
+
     const NodeHandle ControlledHandle = ControlledNode.Handle();
-    std::pair<LocalPlayerInputRouting*, NodeHandle> VisitContext{&Routing, ControlledHandle};
+    struct VisitContext
+    {
+        LocalPlayerInputRouting* Routing = nullptr;
+        NodeHandle Controlled{};
+        std::uint64_t OwnerConnectionId = 0;
+    };
+    VisitContext Context{};
+    Context.Routing = &Routing;
+    Context.Controlled = ControlledHandle;
+    Context.OwnerConnectionId = *LocalOwnerConnectionId;
     WorldRef->ForEachNode(
         [](void* UserData, const NodeHandle&, BaseNode& Node) {
-            auto* Context = static_cast<std::pair<LocalPlayerInputRouting*, NodeHandle>*>(UserData);
+            auto* Context = static_cast<VisitContext*>(UserData);
             auto* Player = NodeCast<LocalPlayer>(&Node);
             if (!Player)
             {
                 return;
             }
 
-            Context->first->HasAnyLocalPlayers = true;
+            if (Player->GetOwnerConnectionId() != Context->OwnerConnectionId)
+            {
+                return;
+            }
 
-            // Local input assignment is runtime-local state and is represented by owner connection id 0.
-            if (Player->GetOwnerConnectionId() != 0)
+            Context->Routing->HasAnyLocalPlayers = true;
+            if (Player->GetPossessedNode() != Context->Controlled)
             {
                 return;
             }
-            if (Player->GetPossessedNode() != Context->second)
+            if (!Context->Routing->Controller)
             {
-                return;
-            }
-            if (!Context->first->Controller)
-            {
-                Context->first->Controller = Player;
+                Context->Routing->Controller = Player;
             }
         },
-        &VisitContext);
+        &Context);
 
     return Routing;
 }
@@ -91,7 +128,80 @@ bool IsGamepadConnected(const SnAPI::Input::InputSnapshot& Snapshot, const SnAPI
     const auto It = Gamepads.find(Device);
     return It != Gamepads.end() && It->second.Connected;
 }
+
+float ReadGamepadAxis(const SnAPI::Input::InputSnapshot& Snapshot,
+                      const SnAPI::Input::DeviceId Device,
+                      const SnAPI::Input::EGamepadAxis Axis)
+{
+    return Snapshot.GamepadAxis(Device, Axis);
+}
+
+bool ReadGamepadButtonPressed(const SnAPI::Input::InputSnapshot& Snapshot,
+                              const SnAPI::Input::DeviceId Device,
+                              const SnAPI::Input::EGamepadButton Button)
+{
+    return Snapshot.GamepadButtonPressed(Device, Button);
+}
+
+Vec3 FlattenAndNormalizeOrFallback(const Vec3& Direction, const Vec3& Fallback)
+{
+    Vec3 Flattened = Direction;
+    Flattened.y() = 0.0f;
+
+    const Vec3 Normalized = NormalizeOrZero(Flattened);
+    if (Normalized.squaredNorm() <= static_cast<Vec3::Scalar>(1.0e-6))
+    {
+        return Fallback;
+    }
+
+    return Normalized;
+}
+
+void ResolveMoveBasis(BaseNode& Owner, Vec3& OutRight, Vec3& OutForward)
+{
+    OutRight = Vec3(1.0f, 0.0f, 0.0f);
+    OutForward = Vec3(0.0f, 0.0f, -1.0f);
+
+    NodeTransform OwnerWorld{};
+    if (!TransformComponent::TryGetNodeWorldTransform(Owner, OwnerWorld))
+    {
+        return;
+    }
+
+    Quat Rotation = OwnerWorld.Rotation;
+    if (Rotation.squaredNorm() > static_cast<Quat::Scalar>(0))
+    {
+        Rotation.normalize();
+    }
+    else
+    {
+        Rotation = Quat::Identity();
+    }
+
+    OutRight = FlattenAndNormalizeOrFallback(
+        Rotation * Vec3(1.0f, 0.0f, 0.0f),
+        OutRight);
+    OutForward = FlattenAndNormalizeOrFallback(
+        Rotation * Vec3(0.0f, 0.0f, -1.0f),
+        OutForward);
+}
 } // namespace
+
+void InputComponent::OnCreate()
+{
+    RuntimeOnCreate();
+}
+
+void InputComponent::RuntimeOnCreate()
+{
+    auto* Owner = OwnerNode();
+    if (!Owner || Owner->Has<InputIntentComponent>())
+    {
+        return;
+    }
+
+    (void)Owner->Add<InputIntentComponent>();
+}
 
 void InputComponent::Tick(float DeltaSeconds)
 {
@@ -100,7 +210,7 @@ void InputComponent::Tick(float DeltaSeconds)
 
 void InputComponent::RuntimeTick(float DeltaSeconds)
 {
-    (void)DeltaSeconds;
+    const float ClampedDeltaSeconds = std::max(0.0f, DeltaSeconds);
 
     auto* Owner = OwnerNode();
     if (!Owner)
@@ -108,49 +218,51 @@ void InputComponent::RuntimeTick(float DeltaSeconds)
         return;
     }
 
-    auto MovementResult = Owner->Component<CharacterMovementController>();
-    if (!MovementResult)
+    auto IntentResult = Owner->Component<InputIntentComponent>();
+    if (!IntentResult)
     {
         return;
     }
-    auto& Movement = *MovementResult;
+    auto& Intent = *IntentResult;
+
+    const auto ClearMoveIntent = [&]() {
+        if (m_settings.ClearMoveWhenUnavailable)
+        {
+            Intent.SetMoveWorldInput(Vec3::Zero());
+        }
+    };
+    const auto ClearLookIntent = [&]() {
+        Intent.SetLookInput(0.0f, 0.0f);
+    };
 
     auto* WorldPtr = Owner->World();
     if (!WorldPtr)
     {
-        if (m_settings.ClearMoveWhenUnavailable)
-        {
-            Movement.SetMoveInput(Vec3::Zero());
-        }
+        ClearMoveIntent();
+        ClearLookIntent();
         return;
     }
 
     auto& InputSystemRef = WorldPtr->Input();
     if (!InputSystemRef.IsInitialized())
     {
-        if (m_settings.ClearMoveWhenUnavailable)
-        {
-            Movement.SetMoveInput(Vec3::Zero());
-        }
+        ClearMoveIntent();
+        ClearLookIntent();
         return;
     }
 
     const auto* Snapshot = InputSystemRef.Snapshot();
     if (!Snapshot)
     {
-        if (m_settings.ClearMoveWhenUnavailable)
-        {
-            Movement.SetMoveInput(Vec3::Zero());
-        }
+        ClearMoveIntent();
+        ClearLookIntent();
         return;
     }
 
     if (m_settings.RequireInputFocus && !Snapshot->IsWindowFocused())
     {
-        if (m_settings.ClearMoveWhenUnavailable)
-        {
-            Movement.SetMoveInput(Vec3::Zero());
-        }
+        ClearMoveIntent();
+        ClearLookIntent();
         return;
     }
 
@@ -163,10 +275,8 @@ void InputComponent::RuntimeTick(float DeltaSeconds)
     {
         if (!LocalRouting.Controller->GetAcceptInput())
         {
-            if (m_settings.ClearMoveWhenUnavailable)
-            {
-                Movement.SetMoveInput(Vec3::Zero());
-            }
+            ClearMoveIntent();
+            ClearLookIntent();
             return;
         }
 
@@ -186,10 +296,8 @@ void InputComponent::RuntimeTick(float DeltaSeconds)
     else if (LocalRouting.HasAnyLocalPlayers)
     {
         // When local-player possession is active globally, unpossessed actors must not consume global input.
-        if (m_settings.ClearMoveWhenUnavailable)
-        {
-            Movement.SetMoveInput(Vec3::Zero());
-        }
+        ClearMoveIntent();
+        ClearLookIntent();
         return;
     }
 
@@ -234,8 +342,9 @@ void InputComponent::RuntimeTick(float DeltaSeconds)
 
     if (GamepadEnabled && Gamepad.IsValid())
     {
-        const float AxisX = ApplyDeadzone(Snapshot->GamepadAxis(Gamepad, m_settings.MoveGamepadXAxis));
-        float AxisY = ApplyDeadzone(Snapshot->GamepadAxis(Gamepad, m_settings.MoveGamepadYAxis));
+        const float AxisX =
+            ApplyDeadzone(ReadGamepadAxis(*Snapshot, Gamepad, m_settings.MoveGamepadXAxis));
+        float AxisY = ApplyDeadzone(ReadGamepadAxis(*Snapshot, Gamepad, m_settings.MoveGamepadYAxis));
         if (m_settings.InvertGamepadY)
         {
             AxisY = -AxisY;
@@ -245,41 +354,88 @@ void InputComponent::RuntimeTick(float DeltaSeconds)
         MoveZ += AxisY;
     }
 
-    auto MoveInput = Vec3(MoveX, 0.0f, MoveZ);
+    Vec3 MoveInputLocal = Vec3(MoveX, 0.0f, MoveZ);
     if (m_settings.NormalizeMove)
     {
-        MoveInput = NormalizeOrZero(MoveInput);
+        MoveInputLocal = NormalizeOrZero(MoveInputLocal);
     }
+
+    Vec3 MoveBasisRight = Vec3(1.0f, 0.0f, 0.0f);
+    Vec3 MoveBasisForward = Vec3(0.0f, 0.0f, -1.0f);
+    ResolveMoveBasis(*Owner, MoveBasisRight, MoveBasisForward);
+
+    // Input local space uses -Z as forward; map into world space using the resolved view basis.
+    Vec3 MoveInput = (MoveBasisRight * MoveInputLocal.x()) - (MoveBasisForward * MoveInputLocal.z());
     MoveInput *= static_cast<Vec3::Scalar>(m_settings.MoveScale);
 
     if (m_settings.MovementEnabled)
     {
-        Movement.SetMoveInput(MoveInput);
+        Intent.SetMoveWorldInput(MoveInput);
     }
     else if (m_settings.ClearMoveWhenUnavailable)
     {
-        Movement.SetMoveInput(Vec3::Zero());
+        Intent.SetMoveWorldInput(Vec3::Zero());
     }
 
-    if (!m_settings.JumpEnabled)
+    if (m_settings.JumpEnabled)
     {
-        return;
+        bool JumpTriggered = false;
+        if (KeyboardEnabled)
+        {
+            JumpTriggered = Snapshot->KeyPressed(m_settings.JumpKey);
+        }
+        if (!JumpTriggered && GamepadEnabled && Gamepad.IsValid())
+        {
+            JumpTriggered = ReadGamepadButtonPressed(*Snapshot, Gamepad, m_settings.JumpGamepadButton);
+        }
+
+        if (JumpTriggered)
+        {
+            Intent.QueueJump();
+        }
     }
 
-    bool JumpTriggered = false;
-    if (KeyboardEnabled)
+    float LookYawDelta = 0.0f;
+    float LookPitchDelta = 0.0f;
+
+    if (m_settings.LookEnabled)
     {
-        JumpTriggered = Snapshot->KeyPressed(m_settings.JumpKey);
-    }
-    if (!JumpTriggered && GamepadEnabled && Gamepad.IsValid())
-    {
-        JumpTriggered = Snapshot->GamepadButtonPressed(Gamepad, m_settings.JumpGamepadButton);
+        if (m_settings.MouseLookEnabled)
+        {
+            const bool MouseLookAllowed = !m_settings.RequireRightMouseButtonForLook
+                                       || Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Right);
+            if (MouseLookAllowed)
+            {
+                const float MouseDeltaX = Snapshot->Mouse().DeltaX;
+                const float MouseDeltaY = Snapshot->Mouse().DeltaY;
+                if (std::isfinite(MouseDeltaX) && std::isfinite(MouseDeltaY))
+                {
+                    const float Sensitivity = std::max(0.0f, m_settings.MouseLookSensitivity);
+                    // Positive screen-space X motion should yaw the camera to the right.
+                    LookYawDelta -= MouseDeltaX * Sensitivity;
+                    const float PitchSign = m_settings.InvertMouseY ? 1.0f : -1.0f;
+                    LookPitchDelta += MouseDeltaY * Sensitivity * PitchSign;
+                }
+            }
+        }
+
+        if (m_settings.GamepadLookEnabled && GamepadEnabled && Gamepad.IsValid())
+        {
+            const float AxisX =
+                ApplyDeadzone(ReadGamepadAxis(*Snapshot, Gamepad, m_settings.LookGamepadXAxis));
+            float AxisY = ApplyDeadzone(ReadGamepadAxis(*Snapshot, Gamepad, m_settings.LookGamepadYAxis));
+            if (m_settings.InvertGamepadLookY)
+            {
+                AxisY = -AxisY;
+            }
+
+            const float DegreesPerSecond = std::max(0.0f, m_settings.GamepadLookSensitivity);
+            LookYawDelta += AxisX * DegreesPerSecond * ClampedDeltaSeconds;
+            LookPitchDelta += AxisY * DegreesPerSecond * ClampedDeltaSeconds;
+        }
     }
 
-    if (JumpTriggered)
-    {
-        Movement.Jump();
-    }
+    Intent.SetLookInput(LookYawDelta, LookPitchDelta);
 }
 
 SnAPI::Input::DeviceId InputComponent::ResolveGamepadDevice(const SnAPI::Input::InputSnapshot& Snapshot) const

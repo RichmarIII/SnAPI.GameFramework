@@ -1081,6 +1081,11 @@ PlayerActor CreatePlayerActor(World& Graph, const bool EnableInput, const bool D
         Player.Movement = &*Movement;
     }
 
+    if (auto InputIntent = PlayerNode->Add<InputIntentComponent>())
+    {
+        InputIntent->Replicated(false);
+    }
+
 #if defined(SNAPI_GF_ENABLE_INPUT)
     if (EnableInput)
     {

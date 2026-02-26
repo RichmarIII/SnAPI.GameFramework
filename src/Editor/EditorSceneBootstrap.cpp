@@ -659,9 +659,16 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
 
 void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
 {
+    m_cameraComponent = nullptr;
+
     if (CameraComponent* Active = ResolveActiveCameraComponent(WorldRef))
     {
         m_cameraComponent = Active;
+        return;
+    }
+
+    if (WorldRef.Kind() != EWorldKind::Editor)
+    {
         return;
     }
 
@@ -672,6 +679,7 @@ void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
             if (auto Camera = CameraNode->Component<CameraComponent>())
             {
                 m_cameraComponent = &*Camera;
+                return;
             }
         }
     }

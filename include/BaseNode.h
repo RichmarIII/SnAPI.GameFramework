@@ -300,6 +300,27 @@ public:
     }
 
     /**
+     * @brief Check whether this node is editor-transient and should be excluded from persistence.
+     * @return True when the node is flagged transient for editor preview/runtime-only use.
+     */
+    bool EditorTransient() const
+    {
+        return m_editorTransient;
+    }
+
+    /**
+     * @brief Mark this node as editor-transient.
+     * @param Transient New transient state.
+     * @remarks
+     * Editor-transient nodes are intended for visualization helpers (for example, preview-only instances)
+     * and should not be serialized into level/world assets.
+     */
+    void EditorTransient(const bool Transient)
+    {
+        m_editorTransient = Transient;
+    }
+
+    /**
      * @brief True when this node executes with server authority.
      * @remarks Derived from world networking role; false when unbound to a world/session.
      */
@@ -314,6 +335,26 @@ public:
      * @remarks True when both server and client roles are active in the attached session.
      */
     bool IsListenServer() const;
+
+    /**
+     * @brief Possession callback invoked when a LocalPlayer begins possessing this node.
+     * @param PlayerHandle Handle of the possessing LocalPlayer.
+     * @remarks Default implementation is a no-op.
+     */
+    void OnPossess(const NodeHandle& PlayerHandle)
+    {
+        (void)PlayerHandle;
+    }
+
+    /**
+     * @brief Possession callback invoked when a LocalPlayer stops possessing this node.
+     * @param PlayerHandle Handle of the unpossessing LocalPlayer.
+     * @remarks Default implementation is a no-op.
+     */
+    void OnUnpossess(const NodeHandle& PlayerHandle)
+    {
+        (void)PlayerHandle;
+    }
 
     /**
      * @brief Dispatch a reflected RPC method for this node.
@@ -574,6 +615,7 @@ private:
     bool m_active = true; /**< @brief Local execution gate used by tree traversal. */
     bool m_replicated = false; /**< @brief Runtime replication gate for networking bridges. */
     bool m_pendingDestroy = false; /**< @brief True when this node has been scheduled for end-of-frame destruction. */
+    bool m_editorTransient = false; /**< @brief True when this node is an editor-only transient helper and must not be persisted. */
     std::vector<TypeId> m_componentTypes{}; /**< @brief Attached component type ids for introspection and fast feature checks. */
     std::vector<ComponentStorageView*> m_componentStorages{}; /**< @brief Attached component storage cache aligned with m_componentTypes. */
     RelevanceComponent* m_relevanceComponent = nullptr; /**< @brief Cached relevance component pointer for hot-path activation checks. */

@@ -3,6 +3,9 @@
 
 #include "Assert.h"
 
+#include <optional>
+#include <vector>
+
 namespace SnAPI::GameFramework
 {
 
@@ -48,6 +51,38 @@ Result TypeAutoRegistry::Ensure(const TypeId& Id) const
     return Fn ? Fn() : std::unexpected(MakeError(EErrorCode::NotFound, "No auto-registration function"));
 }
 
+Result TypeAutoRegistry::EnsureAll() const
+{
+    std::vector<TypeId> TypeIds{};
+    {
+        GameLockGuard Lock(m_mutex);
+        TypeIds.reserve(m_entries.size());
+        for (const auto& [Type, Fn] : m_entries)
+        {
+            if (Fn)
+            {
+                TypeIds.push_back(Type);
+            }
+        }
+    }
+
+    std::optional<Error> FirstError{};
+    for (const TypeId& Type : TypeIds)
+    {
+        const Result EnsureResult = Ensure(Type);
+        if (!EnsureResult && !FirstError.has_value())
+        {
+            FirstError = EnsureResult.error();
+        }
+    }
+
+    if (FirstError.has_value())
+    {
+        return std::unexpected(*FirstError);
+    }
+    return Ok();
+}
+
 bool TypeAutoRegistry::Has(const TypeId& Id) const
 {
     GameLockGuard Lock(m_mutex);
@@ -55,4 +90,3 @@ bool TypeAutoRegistry::Has(const TypeId& Id) const
 }
 
 } // namespace SnAPI::GameFramework
-

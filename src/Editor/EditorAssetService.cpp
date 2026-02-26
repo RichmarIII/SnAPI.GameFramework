@@ -1,5 +1,6 @@
 #include "Editor/EditorAssetService.h"
 
+#include "AssetRef.h"
 #include "BaseNode.h"
 #include "AssetPackReader.h"
 #include "AssetPackWriter.h"
@@ -8,6 +9,8 @@
 #include "GameRuntime.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PawnBase.h"
+#include "PlayerStart.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TransformComponent.h"
@@ -28,6 +31,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <ranges>
 #include <sstream>
 #include <unordered_set>
 
@@ -400,6 +404,30 @@ void AppendUniquePath(std::vector<std::string>& Paths,
     return std::string(QualifiedTypeName.substr(Delimiter + 2));
 }
 
+[[nodiscard]] std::string LeafLogicalName(std::string Value)
+{
+    Value = NormalizeAssetLogicalName(Value);
+    const std::size_t Delimiter = Value.rfind('/');
+    if (Delimiter == std::string::npos)
+    {
+        return Value;
+    }
+    return Value.substr(Delimiter + 1u);
+}
+
+void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
+{
+    if (auto* Start = NodeCast<PlayerStart>(&Node))
+    {
+        Start->OnCreateImpl(WorldRef);
+    }
+
+    if (auto* Pawn = NodeCast<PawnBase>(&Node))
+    {
+        Pawn->OnCreateImpl(WorldRef);
+    }
+}
+
 [[nodiscard]] std::string MakeUniqueLogicalName(::SnAPI::AssetPipeline::AssetManager& AssetManagerRef,
                                                 const std::string& Prefix,
                                                 std::string BaseName)
@@ -438,10 +466,12 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     m_assets.clear();
     m_assetIndexByKey.clear();
     m_assetRenameOverrides.clear();
+    m_assetPayloadOverrides.clear();
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
     m_statusMessage.clear();
+    ClearAssetEditorState();
 
     std::size_t BootstrappedPackCount = 0;
     std::string BootstrapError{};
@@ -462,6 +492,9 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     ::SnAPI::AssetPipeline::AssetManagerConfig Config{};
     Config.PackSearchPaths = BuildPackSearchPaths();
     m_assetManager = std::make_unique<::SnAPI::AssetPipeline::AssetManager>(Config);
+    SetDefaultAssetManagerResolver([this]() -> ::SnAPI::AssetPipeline::AssetManager* {
+        return m_assetManager.get();
+    });
 
     RegisterAssetPipelinePayloads(m_assetManager->GetRegistry());
     RegisterAssetPipelineFactories(*m_assetManager);
@@ -487,14 +520,17 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
 void EditorAssetService::Shutdown(EditorServiceContext& Context)
 {
     (void)Context;
+    ClearDefaultAssetManagerResolver();
     m_assetManager.reset();
     m_assets.clear();
     m_assetIndexByKey.clear();
     m_assetRenameOverrides.clear();
+    m_assetPayloadOverrides.clear();
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
     m_statusMessage.clear();
+    ClearAssetEditorState();
 }
 
 const EditorAssetService::DiscoveredAsset* EditorAssetService::SelectedAsset() const
@@ -593,6 +629,7 @@ Result EditorAssetService::RefreshDiscovery()
                 HasRenameOverride = (OverriddenName != NormalizeAssetLogicalName(Info.Name));
             }
         }
+        const bool HasPayloadOverride = m_assetPayloadOverrides.contains(Info.Id);
 
         Entry.TypeLabel = AssetKindToLabel(Info.AssetKind);
         Entry.Variant = Info.VariantKey;
@@ -601,7 +638,7 @@ Result EditorAssetService::RefreshDiscovery()
         Entry.CookedPayloadType = Info.CookedPayloadType;
         Entry.SchemaVersion = Info.SchemaVersion;
         Entry.IsRuntime = (CatalogEntry.Origin == ::SnAPI::AssetPipeline::EAssetOrigin::RuntimeMemory);
-        Entry.IsDirty = CatalogEntry.Dirty || HasRenameOverride;
+        Entry.IsDirty = CatalogEntry.Dirty || HasRenameOverride || HasPayloadOverride;
         Entry.CanSave = CatalogEntry.CanSave;
         Entry.OwningPackPath = CatalogEntry.OwningPackPath;
         if (Entry.IsRuntime)
@@ -625,6 +662,18 @@ Result EditorAssetService::RefreshDiscovery()
         else
         {
             It = m_assetRenameOverrides.erase(It);
+        }
+    }
+
+    for (auto It = m_assetPayloadOverrides.begin(); It != m_assetPayloadOverrides.end();)
+    {
+        if (SeenAssetIds.contains(It->first))
+        {
+            ++It;
+        }
+        else
+        {
+            It = m_assetPayloadOverrides.erase(It);
         }
     }
 
@@ -667,6 +716,10 @@ Result EditorAssetService::RefreshDiscovery()
     if (!m_placementAssetKey.empty() && !m_assetIndexByKey.contains(m_placementAssetKey))
     {
         m_placementAssetKey.clear();
+    }
+    if (!m_assetEditorAssetKey.empty() && !m_assetIndexByKey.contains(m_assetEditorAssetKey))
+    {
+        ClearAssetEditorState();
     }
 
     std::ostringstream Message;
@@ -766,8 +819,28 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
     }
 
+    const std::string AssetKeySnapshot = Asset->Key;
+
     if (Asset->IsRuntime)
     {
+        if (const auto PayloadOverrideIt = m_assetPayloadOverrides.find(Asset->AssetId);
+            PayloadOverrideIt != m_assetPayloadOverrides.end())
+        {
+            ::SnAPI::AssetPipeline::RuntimeAssetUpsert RuntimeAsset{};
+            RuntimeAsset.Id = Asset->AssetId;
+            RuntimeAsset.Name = Asset->Name;
+            RuntimeAsset.AssetKind = Asset->AssetKind;
+            RuntimeAsset.Cooked = PayloadOverrideIt->second;
+            RuntimeAsset.Bulk.clear();
+            RuntimeAsset.Dirty = true;
+
+            auto UpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(RuntimeAsset));
+            if (!UpsertResult)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, UpsertResult.error()));
+            }
+        }
+
         auto SavePathResult = ResolveRuntimeSavePath(*Asset);
         if (!SavePathResult)
         {
@@ -781,10 +854,20 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         }
 
         m_assetRenameOverrides.erase(Asset->AssetId);
+        m_assetPayloadOverrides.erase(Asset->AssetId);
         auto RefreshResult = RefreshDiscovery();
         if (!RefreshResult)
         {
             return RefreshResult;
+        }
+
+        if (m_assetEditorAssetKey == AssetKeySnapshot)
+        {
+            if (auto PayloadResult = SerializeAssetEditorPayload(); PayloadResult)
+            {
+                m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
+            }
+            m_assetEditorDirty = false;
         }
 
         m_statusMessage = "Saved runtime asset to pack: " + SavePathResult.value();
@@ -797,10 +880,20 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         return std::unexpected(MakeError(EErrorCode::NotFound, PackPathResult.error()));
     }
 
-    auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
-    if (!CookedPayloadResult)
+    ::SnAPI::AssetPipeline::TypedPayload CookedPayload{};
+    if (const auto PayloadOverrideIt = m_assetPayloadOverrides.find(Asset->AssetId);
+        PayloadOverrideIt != m_assetPayloadOverrides.end())
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+        CookedPayload = PayloadOverrideIt->second;
+    }
+    else
+    {
+        auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+        if (!CookedPayloadResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+        }
+        CookedPayload = std::move(CookedPayloadResult.value());
     }
 
     ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
@@ -808,7 +901,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
     Entry.AssetKind = Asset->AssetKind;
     Entry.Name = Asset->Name;
     Entry.VariantKey = Asset->Variant;
-    Entry.Cooked = std::move(CookedPayloadResult.value());
+    Entry.Cooked = std::move(CookedPayload);
 
     ::SnAPI::AssetPipeline::AssetPackWriter Writer{};
     Writer.AddAsset(std::move(Entry));
@@ -818,11 +911,47 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
     }
 
+    // Refresh mounted pack readers so immediate reopen reflects freshly written payloads.
+    const bool WasHotReloadEnabled = m_assetManager->IsHotReloadEnabled();
+    if (!WasHotReloadEnabled)
+    {
+        m_assetManager->SetHotReloadEnabled(true);
+    }
+    const std::vector<std::string> ReloadedPacks = m_assetManager->CheckForChanges();
+    if (!WasHotReloadEnabled)
+    {
+        m_assetManager->SetHotReloadEnabled(false);
+    }
+
+    const bool PackReloaded = std::ranges::any_of(ReloadedPacks, [&PackPathResult](const std::string& Path) {
+        return Path == PackPathResult.value();
+    });
+    if (!PackReloaded)
+    {
+        m_assetManager->UnmountPack(PackPathResult.value());
+        auto RemountResult = m_assetManager->MountPack(PackPathResult.value());
+        if (!RemountResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, RemountResult.error()));
+        }
+    }
+    m_assetManager->ClearCache();
+
     m_assetRenameOverrides.erase(Asset->AssetId);
+    m_assetPayloadOverrides.erase(Asset->AssetId);
     auto RefreshResult = RefreshDiscovery();
     if (!RefreshResult)
     {
         return RefreshResult;
+    }
+
+    if (m_assetEditorAssetKey == AssetKeySnapshot)
+    {
+        if (auto PayloadResult = SerializeAssetEditorPayload(); PayloadResult)
+        {
+            m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
+        }
+        m_assetEditorDirty = false;
     }
 
     m_statusMessage = "Saved asset update into pack: " + PackPathResult.value();
@@ -856,6 +985,7 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
 
         m_assetManager->ClearCache();
         m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
+        m_assetPayloadOverrides.erase(AssetSnapshot.AssetId);
         if (m_selectedAssetKey == DeletedAssetKey)
         {
             m_selectedAssetKey.clear();
@@ -864,6 +994,10 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
         if (m_placementAssetKey == DeletedAssetKey)
         {
             m_placementAssetKey.clear();
+        }
+        if (m_assetEditorAssetKey == DeletedAssetKey)
+        {
+            ClearAssetEditorState();
         }
 
         auto RefreshResult = RefreshDiscovery();
@@ -981,6 +1115,7 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
 
     m_assetManager->ClearCache();
     m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
+    m_assetPayloadOverrides.erase(AssetSnapshot.AssetId);
     if (m_selectedAssetKey == DeletedAssetKey)
     {
         m_selectedAssetKey.clear();
@@ -989,6 +1124,10 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
     if (m_placementAssetKey == DeletedAssetKey)
     {
         m_placementAssetKey.clear();
+    }
+    if (m_assetEditorAssetKey == DeletedAssetKey)
+    {
+        ClearAssetEditorState();
     }
 
     auto RefreshResult = RefreshDiscovery();
@@ -1190,6 +1329,558 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
     return Ok();
 }
 
+Result EditorAssetService::CreateRuntimeNodeAssetByType(EditorServiceContext& Context,
+                                                        const TypeId& NodeType,
+                                                        const std::string_view AssetName,
+                                                        const std::string_view FolderPath)
+{
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+    if (NodeType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Create asset requires a valid node type"));
+    }
+
+    const TypeInfo* Type = TypeRegistry::Instance().Find(NodeType);
+    if (!Type)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node type is not registered"));
+    }
+    if (!TypeRegistry::Instance().IsA(NodeType, StaticTypeId<BaseNode>()))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Selected type does not inherit from BaseNode"));
+    }
+
+    std::string BaseName = LeafLogicalName(std::string(AssetName));
+    if (BaseName.empty())
+    {
+        BaseName = ShortTypeName(Type->Name);
+        if (BaseName.empty())
+        {
+            BaseName = "Node";
+        }
+    }
+    const std::string TargetFolder = NormalizeAssetLogicalName(FolderPath);
+    const std::string LogicalName = MakeUniqueLogicalName(*m_assetManager, TargetFolder, BaseName);
+
+    World ScratchWorld("Editor.CreateAssetScratch");
+    auto CreateResult = ScratchWorld.CreateNode(NodeType, BaseName);
+    if (!CreateResult)
+    {
+        return std::unexpected(CreateResult.error());
+    }
+
+    BaseNode* CreatedNode = CreateResult->Borrowed();
+    if (!CreatedNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Created node could not be resolved"));
+    }
+
+    InitializeCreatedNodeDefaults(ScratchWorld, *CreatedNode);
+
+    ::SnAPI::AssetPipeline::RuntimeAssetUpsert RuntimeAsset{};
+    RuntimeAsset.Id = ::SnAPI::AssetPipeline::AssetId::Generate();
+    RuntimeAsset.Name = LogicalName;
+    RuntimeAsset.Bulk.clear();
+    RuntimeAsset.Dirty = true;
+
+    std::string KindLabel = "node";
+    if (TypeRegistry::Instance().IsA(NodeType, StaticTypeId<Level>()))
+    {
+        auto* LevelNode = NodeCast<Level>(CreatedNode);
+        if (!LevelNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Created level node could not be resolved"));
+        }
+
+        auto PayloadResult = LevelSerializer::Serialize(*LevelNode);
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeLevelPayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error());
+        }
+
+        RuntimeAsset.AssetKind = AssetKindLevel();
+        RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+            PayloadLevel(),
+            LevelSerializer::kSchemaVersion,
+            std::move(Bytes));
+        KindLabel = "level";
+    }
+    else
+    {
+        auto PayloadResult = NodeSerializer::Serialize(*CreatedNode);
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeNodePayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error());
+        }
+
+        RuntimeAsset.AssetKind = AssetKindNode();
+        RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+            PayloadNode(),
+            NodeSerializer::kSchemaVersion,
+            std::move(Bytes));
+    }
+
+    auto UpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(RuntimeAsset));
+    if (!UpsertResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, UpsertResult.error()));
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    const std::string AssetKey = UpsertResult->ToString();
+    (void)SelectAssetByKey(AssetKey);
+    m_statusMessage = "Created runtime " + KindLabel + " asset: " + LogicalName;
+    (void)Context;
+    return Ok();
+}
+
+Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
+{
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    const DiscoveredAsset* Asset = FindAssetByKey(Key);
+    if (!Asset)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found for editing"));
+    }
+
+    ClearAssetEditorState();
+    m_assetEditorAssetKey = Asset->Key;
+    m_assetEditorAssetId = Asset->AssetId;
+    m_assetEditorAssetKind = Asset->AssetKind;
+    m_assetEditorCanSave = Asset->CanSave;
+    m_assetEditorCanEditHierarchy = false;
+    m_assetEditorSelectedNode = {};
+    m_assetEditorHierarchy.clear();
+    m_assetEditorTitle = Asset->TypeLabel + " - " + Asset->Name;
+
+    if (Asset->AssetKind == AssetKindNode())
+    {
+        m_assetEditorWorld = std::make_unique<World>("Editor.AssetInspector.NodeWorld");
+        NodeAssetLoadParams LoadParams{};
+        LoadParams.TargetWorld = m_assetEditorWorld.get();
+        LoadParams.InstantiateAsCopy = false;
+        LoadParams.OutCreatedRoot = &m_assetEditorRootHandle;
+        auto LoadResult = m_assetManager->Load<BaseNode>(Asset->AssetId, LoadParams);
+        if (!LoadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+        }
+
+        BaseNode* RootNode = m_assetEditorRootHandle.Borrowed();
+        if (!RootNode)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Loaded node asset root was not created"));
+        }
+
+        m_assetEditorTargetObject = RootNode;
+        m_assetEditorTargetType = RootNode->TypeKey();
+        m_assetEditorCanEditHierarchy = true;
+        m_assetEditorSelectedNode = m_assetEditorRootHandle;
+    }
+    else if (Asset->AssetKind == AssetKindLevel())
+    {
+        m_assetEditorWorld = std::make_unique<World>("Editor.AssetInspector.LevelWorld");
+        LevelAssetLoadParams LoadParams{};
+        LoadParams.TargetWorld = m_assetEditorWorld.get();
+        LoadParams.InstantiateAsCopy = false;
+        LoadParams.OutCreatedLevel = &m_assetEditorRootHandle;
+        auto LoadResult = m_assetManager->Load<Level>(Asset->AssetId, LoadParams);
+        if (!LoadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+        }
+
+        auto* LevelNode = NodeCast<Level>(m_assetEditorRootHandle.Borrowed());
+        if (!LevelNode)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Loaded level asset root was not created"));
+        }
+
+        m_assetEditorTargetObject = LevelNode;
+        m_assetEditorTargetType = StaticTypeId<Level>();
+        m_assetEditorCanEditHierarchy = true;
+        m_assetEditorSelectedNode = m_assetEditorRootHandle;
+    }
+    else if (Asset->AssetKind == AssetKindWorld())
+    {
+        auto LoadResult = m_assetManager->Load<World>(Asset->AssetId);
+        if (!LoadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+        }
+
+        m_assetEditorWorld = std::move(*LoadResult);
+        m_assetEditorTargetObject = m_assetEditorWorld.get();
+        m_assetEditorTargetType = StaticTypeId<World>();
+    }
+    else
+    {
+        ClearAssetEditorState();
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported asset kind for inspector editing"));
+    }
+
+    auto InitialPayloadResult = SerializeAssetEditorPayload();
+    if (!InitialPayloadResult)
+    {
+        const std::string ErrorMessage = InitialPayloadResult.error();
+        ClearAssetEditorState();
+        return std::unexpected(MakeError(EErrorCode::InternalError, ErrorMessage));
+    }
+
+    m_assetEditorBaselineCookedBytes = InitialPayloadResult->Bytes;
+    m_assetEditorDirty = false;
+    m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+    RefreshAssetEditorHierarchy();
+    m_statusMessage = "Opened asset inspector: " + Asset->Name;
+    return Ok();
+}
+
+void EditorAssetService::CloseAssetEditor()
+{
+    ClearAssetEditorState();
+}
+
+Result EditorAssetService::SelectAssetEditorNode(const NodeHandle& Node)
+{
+    if (!m_assetEditorCanEditHierarchy || m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset editor hierarchy is not available"));
+    }
+
+    NodeHandle RequestedNode = Node;
+    if (RequestedNode.IsNull())
+    {
+        RequestedNode = m_assetEditorRootHandle;
+    }
+
+    BaseNode* ResolvedNode = ResolveAssetEditorNode(RequestedNode);
+    if (!ResolvedNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset editor node was not found"));
+    }
+
+    m_assetEditorSelectedNode = ResolvedNode->Handle();
+    RefreshAssetEditorHierarchy();
+    return Ok();
+}
+
+Result EditorAssetService::AddAssetEditorNode(const NodeHandle& Parent, const TypeId& NodeType)
+{
+    if (!m_assetEditorWorld || !m_assetEditorCanEditHierarchy || m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset editor hierarchy is not available"));
+    }
+    if (NodeType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node type is required"));
+    }
+
+    const TypeInfo* Type = TypeRegistry::Instance().Find(NodeType);
+    if (!Type)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Requested node type is not registered"));
+    }
+    if (!TypeRegistry::Instance().IsA(NodeType, StaticTypeId<BaseNode>()))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Requested type is not a node type"));
+    }
+    if (TypeRegistry::Instance().IsA(NodeType, StaticTypeId<World>()) ||
+        TypeRegistry::Instance().IsA(NodeType, StaticTypeId<Level>()))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World/Level types cannot be added inside node assets"));
+    }
+
+    const NodeHandle ParentHandle = Parent.IsNull() ? m_assetEditorRootHandle : Parent;
+    BaseNode* ParentNode = ResolveAssetEditorNode(ParentHandle);
+    if (!ParentNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Parent node was not found"));
+    }
+
+    std::string NodeName = ShortTypeName(Type->Name);
+    if (NodeName.empty())
+    {
+        NodeName = "Node";
+    }
+
+    auto CreateResult = m_assetEditorWorld->CreateNode(NodeType, NodeName);
+    if (!CreateResult)
+    {
+        return std::unexpected(CreateResult.error());
+    }
+
+    auto AttachResult = m_assetEditorWorld->AttachChild(ParentNode->Handle(), *CreateResult);
+    if (!AttachResult)
+    {
+        return std::unexpected(AttachResult.error());
+    }
+
+    if (BaseNode* CreatedNode = CreateResult->Borrowed())
+    {
+        InitializeCreatedNodeDefaults(*m_assetEditorWorld, *CreatedNode);
+        m_assetEditorSelectedNode = CreatedNode->Handle();
+    }
+    else
+    {
+        m_assetEditorSelectedNode = *CreateResult;
+    }
+
+    RefreshAssetEditorHierarchy();
+    return Ok();
+}
+
+Result EditorAssetService::DeleteAssetEditorNode(const NodeHandle& Node)
+{
+    if (!m_assetEditorWorld || !m_assetEditorCanEditHierarchy || m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset editor hierarchy is not available"));
+    }
+    if (Node.IsNull())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is required"));
+    }
+
+    BaseNode* TargetNode = ResolveAssetEditorNode(Node);
+    if (!TargetNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Target node was not found"));
+    }
+    if (TargetNode->Handle() == m_assetEditorRootHandle)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Root node cannot be deleted"));
+    }
+
+    const NodeHandle NextSelection = !TargetNode->Parent().IsNull() ? TargetNode->Parent() : m_assetEditorRootHandle;
+    auto DestroyResult = m_assetEditorWorld->DestroyNode(TargetNode->Handle());
+    if (!DestroyResult)
+    {
+        return std::unexpected(DestroyResult.error());
+    }
+
+    m_assetEditorSelectedNode = NextSelection;
+    RefreshAssetEditorHierarchy();
+    return Ok();
+}
+
+Result EditorAssetService::AddAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType)
+{
+    if (!m_assetEditorWorld || !m_assetEditorCanEditHierarchy || m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset editor hierarchy is not available"));
+    }
+    if (Owner.IsNull())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Owner node is required"));
+    }
+    if (ComponentType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Component type is required"));
+    }
+    if (!ComponentSerializationRegistry::Instance().Has(ComponentType))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Requested type is not a component type"));
+    }
+
+    BaseNode* OwnerNode = ResolveAssetEditorNode(Owner);
+    if (!OwnerNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node was not found"));
+    }
+
+    auto AddResult = m_assetEditorWorld->CreateComponent(OwnerNode->Handle(), ComponentType);
+    if (!AddResult)
+    {
+        return std::unexpected(AddResult.error());
+    }
+
+    m_assetEditorSelectedNode = OwnerNode->Handle();
+    RefreshAssetEditorHierarchy();
+    return Ok();
+}
+
+Result EditorAssetService::RemoveAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType)
+{
+    if (!m_assetEditorWorld || !m_assetEditorCanEditHierarchy || m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset editor hierarchy is not available"));
+    }
+    if (Owner.IsNull())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Owner node is required"));
+    }
+    if (ComponentType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Component type is required"));
+    }
+
+    BaseNode* OwnerNode = ResolveAssetEditorNode(Owner);
+    if (!OwnerNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node was not found"));
+    }
+
+    auto RemoveResult = m_assetEditorWorld->RemoveComponentByType(OwnerNode->Handle(), ComponentType);
+    if (!RemoveResult)
+    {
+        return std::unexpected(RemoveResult.error());
+    }
+
+    m_assetEditorSelectedNode = OwnerNode->Handle();
+    RefreshAssetEditorHierarchy();
+    return Ok();
+}
+
+void EditorAssetService::TickAssetEditorSession()
+{
+    if (m_assetEditorAssetKey.empty() || m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
+    {
+        return;
+    }
+
+    const DiscoveredAsset* Asset = FindAssetByKey(m_assetEditorAssetKey);
+    if (!Asset)
+    {
+        ClearAssetEditorState();
+        return;
+    }
+
+    m_assetEditorCanSave = Asset->CanSave;
+    m_assetEditorTitle = Asset->TypeLabel + " - " + Asset->Name;
+
+    if (Asset->AssetKind != AssetKindWorld())
+    {
+        BaseNode* RootNode = m_assetEditorRootHandle.Borrowed();
+        if (!RootNode)
+        {
+            ClearAssetEditorState();
+            return;
+        }
+
+        if (Asset->AssetKind == AssetKindLevel())
+        {
+            auto* LevelNode = NodeCast<Level>(RootNode);
+            if (!LevelNode)
+            {
+                ClearAssetEditorState();
+                return;
+            }
+            m_assetEditorTargetObject = LevelNode;
+            m_assetEditorTargetType = StaticTypeId<Level>();
+        }
+        else
+        {
+            m_assetEditorTargetObject = RootNode;
+            m_assetEditorTargetType = RootNode->TypeKey();
+        }
+    }
+
+    if (m_assetEditorCanEditHierarchy)
+    {
+        RefreshAssetEditorHierarchy();
+    }
+
+    auto SerializedPayloadResult = SerializeAssetEditorPayload();
+    if (!SerializedPayloadResult)
+    {
+        return;
+    }
+
+    const bool IsDirtyNow = SerializedPayloadResult->Bytes != m_assetEditorBaselineCookedBytes;
+    if (IsDirtyNow)
+    {
+        m_assetPayloadOverrides[m_assetEditorAssetId] = *SerializedPayloadResult;
+    }
+    else
+    {
+        m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+    }
+
+    if (IsDirtyNow != m_assetEditorDirty)
+    {
+        m_assetEditorDirty = IsDirtyNow;
+        (void)RefreshDiscovery();
+    }
+}
+
+Result EditorAssetService::SaveActiveAssetEditor()
+{
+    if (m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No active asset editor to save"));
+    }
+
+    Result SaveResult = SaveAssetByKey(m_assetEditorAssetKey);
+    if (!SaveResult)
+    {
+        return SaveResult;
+    }
+
+    auto SerializedPayloadResult = SerializeAssetEditorPayload();
+    if (SerializedPayloadResult)
+    {
+        m_assetEditorBaselineCookedBytes = SerializedPayloadResult->Bytes;
+    }
+    m_assetEditorDirty = false;
+    m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+    if (m_assetEditorCanEditHierarchy)
+    {
+        RefreshAssetEditorHierarchy();
+    }
+    return Ok();
+}
+
+EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSession() const
+{
+    AssetEditorSessionView View{};
+    if (m_assetEditorAssetKey.empty() || m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
+    {
+        return View;
+    }
+
+    View.IsOpen = true;
+    View.AssetKey = m_assetEditorAssetKey;
+    View.Title = m_assetEditorTitle;
+    View.TargetType = m_assetEditorTargetType;
+    View.TargetObject = m_assetEditorTargetObject;
+    View.Nodes = m_assetEditorHierarchy;
+    View.SelectedNode = m_assetEditorSelectedNode;
+    View.CanEditHierarchy = m_assetEditorCanEditHierarchy;
+    View.IsDirty = m_assetEditorDirty;
+    View.CanSave = m_assetEditorCanSave;
+    return View;
+}
+
 Result EditorAssetService::InstantiateArmedAsset(EditorServiceContext& Context)
 {
     if (m_placementAssetKey.empty())
@@ -1236,6 +1927,220 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context, 
     }
 
     return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported asset kind for instantiation"));
+}
+
+BaseNode* EditorAssetService::ResolveAssetEditorNode(const NodeHandle& Node) const
+{
+    if (Node.IsNull())
+    {
+        return nullptr;
+    }
+
+    if (BaseNode* Direct = Node.Borrowed())
+    {
+        return Direct;
+    }
+
+    if (m_assetEditorWorld)
+    {
+        if (const auto HandleResult = m_assetEditorWorld->NodeHandleById(Node.Id); HandleResult.has_value())
+        {
+            if (BaseNode* Resolved = HandleResult->Borrowed())
+            {
+                return Resolved;
+            }
+        }
+    }
+
+    return Node.BorrowedSlowByUuid();
+}
+
+void EditorAssetService::RefreshAssetEditorHierarchy()
+{
+    m_assetEditorHierarchy.clear();
+    if (!m_assetEditorCanEditHierarchy || !m_assetEditorWorld || m_assetEditorRootHandle.IsNull())
+    {
+        m_assetEditorSelectedNode = {};
+        return;
+    }
+
+    BaseNode* RootNode = ResolveAssetEditorNode(m_assetEditorRootHandle);
+    if (!RootNode)
+    {
+        m_assetEditorSelectedNode = {};
+        return;
+    }
+
+    struct PendingNode
+    {
+        NodeHandle Handle{};
+        int Depth = 0;
+    };
+    std::vector<PendingNode> Stack{};
+    Stack.push_back(PendingNode{RootNode->Handle(), 0});
+
+    while (!Stack.empty())
+    {
+        PendingNode Current = Stack.back();
+        Stack.pop_back();
+
+        BaseNode* Node = ResolveAssetEditorNode(Current.Handle);
+        if (!Node)
+        {
+            continue;
+        }
+
+        std::string Label = Node->Name();
+        if (const TypeInfo* Type = TypeRegistry::Instance().Find(Node->TypeKey()))
+        {
+            const std::string TypeLabel = ShortTypeName(Type->Name);
+            if (Label.empty())
+            {
+                Label = TypeLabel;
+            }
+            else if (!TypeLabel.empty())
+            {
+                Label += " (" + TypeLabel + ")";
+            }
+        }
+        if (Label.empty())
+        {
+            Label = "<unnamed>";
+        }
+
+        m_assetEditorHierarchy.push_back(AssetEditorSessionView::NodeEntry{
+            .Handle = Node->Handle(),
+            .Depth = Current.Depth,
+            .Label = std::move(Label),
+        });
+
+        const auto& Children = Node->Children();
+        for (auto It = Children.rbegin(); It != Children.rend(); ++It)
+        {
+            if (It->IsNull())
+            {
+                continue;
+            }
+            Stack.push_back(PendingNode{*It, Current.Depth + 1});
+        }
+    }
+
+    if (m_assetEditorSelectedNode.IsNull())
+    {
+        m_assetEditorSelectedNode = m_assetEditorRootHandle;
+    }
+    if (!ResolveAssetEditorNode(m_assetEditorSelectedNode))
+    {
+        m_assetEditorSelectedNode = m_assetEditorRootHandle;
+    }
+    const bool SelectionPresent = std::ranges::any_of(
+        m_assetEditorHierarchy, [this](const AssetEditorSessionView::NodeEntry& Entry) {
+            return Entry.Handle == m_assetEditorSelectedNode;
+        });
+    if (!SelectionPresent)
+    {
+        m_assetEditorSelectedNode = m_assetEditorHierarchy.empty() ? NodeHandle{} : m_assetEditorHierarchy.front().Handle;
+    }
+}
+
+std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetService::SerializeAssetEditorPayload() const
+{
+    if (m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
+    {
+        return std::unexpected("No active asset editor object is available");
+    }
+
+    if (m_assetEditorAssetKind == AssetKindNode())
+    {
+        auto* Node = static_cast<BaseNode*>(m_assetEditorTargetObject);
+        if (!Node)
+        {
+            return std::unexpected("Asset editor node target is null");
+        }
+
+        auto PayloadResult = NodeSerializer::Serialize(*Node);
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeNodePayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error().Message);
+        }
+
+        return ::SnAPI::AssetPipeline::TypedPayload(PayloadNode(), NodeSerializer::kSchemaVersion, std::move(Bytes));
+    }
+
+    if (m_assetEditorAssetKind == AssetKindLevel())
+    {
+        auto* LevelNode = static_cast<Level*>(m_assetEditorTargetObject);
+        if (!LevelNode)
+        {
+            return std::unexpected("Asset editor level target is null");
+        }
+
+        auto PayloadResult = LevelSerializer::Serialize(*LevelNode);
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeLevelPayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error().Message);
+        }
+
+        return ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(), LevelSerializer::kSchemaVersion, std::move(Bytes));
+    }
+
+    if (m_assetEditorAssetKind == AssetKindWorld())
+    {
+        auto* WorldRef = static_cast<World*>(m_assetEditorTargetObject);
+        if (!WorldRef)
+        {
+            return std::unexpected("Asset editor world target is null");
+        }
+
+        auto PayloadResult = WorldSerializer::Serialize(*WorldRef);
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeWorldPayload(*PayloadResult, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error().Message);
+        }
+
+        return ::SnAPI::AssetPipeline::TypedPayload(PayloadWorld(), WorldSerializer::kSchemaVersion, std::move(Bytes));
+    }
+
+    return std::unexpected("Unsupported asset kind for serialization");
+}
+
+void EditorAssetService::ClearAssetEditorState()
+{
+    m_assetEditorWorld.reset();
+    m_assetEditorRootHandle = {};
+    m_assetEditorAssetKey.clear();
+    m_assetEditorAssetId = {};
+    m_assetEditorAssetKind = {};
+    m_assetEditorTargetType = {};
+    m_assetEditorTargetObject = nullptr;
+    m_assetEditorDirty = false;
+    m_assetEditorCanSave = false;
+    m_assetEditorCanEditHierarchy = false;
+    m_assetEditorBaselineCookedBytes.clear();
+    m_assetEditorTitle.clear();
+    m_assetEditorSelectedNode = {};
+    m_assetEditorHierarchy.clear();
 }
 
 std::vector<std::string> EditorAssetService::BuildPackSearchPaths()

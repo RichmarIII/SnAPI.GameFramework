@@ -61,6 +61,45 @@ public:
     }
 
     /**
+     * @brief Optional player-start resolver for newly joined players.
+     * @remarks Return null handle to defer to host fallback selection.
+     */
+    virtual NodeHandle SelectPlayerStart(GameplayHost& Host, LocalPlayer& Player)
+    {
+        (void)Host;
+        (void)Player;
+        return {};
+    }
+
+    /**
+     * @brief Optional spawned-pawn class override for newly joined players.
+     * @remarks Return nullopt to keep host/default player-start class.
+     */
+    virtual std::optional<TypeId> SelectSpawnedPawnType(GameplayHost& Host,
+                                                        LocalPlayer& Player,
+                                                        const NodeHandle& PlayerStart)
+    {
+        (void)Host;
+        (void)Player;
+        (void)PlayerStart;
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Optional spawned-pawn replication override for newly joined players.
+     * @remarks Return nullopt to keep host default (`true`).
+     */
+    virtual std::optional<bool> SelectSpawnedPawnReplicated(GameplayHost& Host,
+                                                            LocalPlayer& Player,
+                                                            const NodeHandle& PlayerStart)
+    {
+        (void)Host;
+        (void)Player;
+        (void)PlayerStart;
+        return std::nullopt;
+    }
+
+    /**
      * @brief Policy hook for connection-authored join requests.
      * @remarks Return false to deny the request before host mutation occurs.
      */

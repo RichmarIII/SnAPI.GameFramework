@@ -55,6 +55,13 @@ public:
      */
     Result Ensure(const TypeId& Id) const;
 
+    /**
+     * @brief Ensure every auto-registered type has been registered with TypeRegistry.
+     * @return Success or first encountered error.
+     * @remarks Continues best-effort through all entries so late entries can still register.
+     */
+    Result EnsureAll() const;
+
     /** @brief Check whether an ensure callback is registered for Id. */
     bool Has(const TypeId& Id) const;
 

@@ -16,7 +16,10 @@
 #include "LocalPlayer.h"
 #include "LocalPlayerService.h"
 #include "NodeCast.h"
+#include "PawnBase.h"
+#include "PlayerStart.h"
 #include "Profiling.h"
+#include "TransformComponent.h"
 #include "Variant.h"
 #include "World.h"
 
@@ -87,6 +90,59 @@ namespace
     }
 
     return TargetNode->World() == PlayerWorld;
+}
+
+[[nodiscard]] bool IsValidPlayerStartForPlayer(const LocalPlayer& Player, const NodeHandle& Candidate)
+{
+    if (Candidate.IsNull())
+    {
+        return true;
+    }
+
+    const auto* PlayerWorld = Player.World();
+    auto* StartNode = Candidate.Borrowed();
+    if (!PlayerWorld || !StartNode)
+    {
+        return false;
+    }
+
+    if (StartNode->World() != PlayerWorld)
+    {
+        return false;
+    }
+
+    if (NodeCast<PlayerStart>(StartNode) == nullptr)
+    {
+        return false;
+    }
+
+    if (!StartNode->Active() || StartNode->PendingDestroy())
+    {
+        return false;
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool IsValidPawnType(const TypeId& PawnType)
+{
+    if (PawnType.is_nil())
+    {
+        return false;
+    }
+
+    return TypeRegistry::Instance().IsA(PawnType, StaticTypeId<PawnBase>());
+}
+
+[[nodiscard]] std::string BuildDefaultPawnName(const LocalPlayer& Player)
+{
+    if (Player.GetOwnerConnectionId() == 0)
+    {
+        return std::string("Pawn_") + std::to_string(Player.GetPlayerIndex());
+    }
+
+    return std::string("RemotePawn_") + std::to_string(Player.GetOwnerConnectionId()) + "_" +
+           std::to_string(Player.GetPlayerIndex());
 }
 } // namespace
 
@@ -263,6 +319,7 @@ void GameplayHost::Tick(const float DeltaSeconds)
     }
 
     RefreshObservedWorldState(false);
+    SyncLocalPlayerPossessionCallbacks();
     TickServices(DeltaSeconds);
 
     if (m_game)
@@ -546,10 +603,13 @@ Result GameplayHost::LeavePlayer(const NodeHandle& PlayerHandle)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Local-player node not found"));
     }
-    if (!NodeCast<LocalPlayer>(Node))
+    auto* Player = NodeCast<LocalPlayer>(Node);
+    if (!Player)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node is not a LocalPlayer"));
     }
+
+    Player->SetPossessedNode({});
     return World().DestroyNode(PlayerHandle);
 }
 
@@ -1693,6 +1753,207 @@ Result GameplayHost::EvaluateUnloadLevelRequestPolicy(const std::uint64_t OwnerC
     return Ok();
 }
 
+void GameplayHost::SyncLocalPlayerPossessionCallbacks()
+{
+    for (const NodeHandle PlayerHandle : LocalPlayers())
+    {
+        if (auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed()))
+        {
+            Player->SyncPossessionCallbacks();
+        }
+    }
+}
+
+NodeHandle GameplayHost::ResolvePlayerStart(LocalPlayer& Player)
+{
+    NodeHandle SelectedStart{};
+
+    if (m_game)
+    {
+        SelectedStart = m_game->SelectPlayerStart(*this, Player);
+        if (!IsValidPlayerStartForPlayer(Player, SelectedStart))
+        {
+            SelectedStart = {};
+        }
+    }
+
+    if (m_gameMode && IsServer())
+    {
+        NodeHandle GameModeStart = m_gameMode->SelectPlayerStart(*this, Player);
+        if (IsValidPlayerStartForPlayer(Player, GameModeStart))
+        {
+            SelectedStart = GameModeStart;
+        }
+    }
+
+    if (!SelectedStart.IsNull())
+    {
+        return SelectedStart;
+    }
+
+    World().NodePool().ForEach([&SelectedStart, &Player](const NodeHandle& Handle, BaseNode& Node) {
+        if (!SelectedStart.IsNull())
+        {
+            return;
+        }
+
+        if (NodeCast<PlayerStart>(&Node) == nullptr)
+        {
+            return;
+        }
+
+        if (!IsValidPlayerStartForPlayer(Player, Handle))
+        {
+            return;
+        }
+
+        SelectedStart = Handle;
+    });
+
+    return SelectedStart;
+}
+
+NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& PlayerStartHandle)
+{
+    TypeId PawnType = StaticTypeId<PawnBase>();
+    bool SpawnReplicated = true;
+    bool AttemptSpawnFromAsset = false;
+    const TAssetRef<PawnBase>* SpawnAssetRef = nullptr;
+
+    if (const auto* PlayerStartNodeTyped = NodeCast<PlayerStart>(PlayerStartHandle.Borrowed()))
+    {
+        SpawnAssetRef = &PlayerStartNodeTyped->GetSpawnPawnAsset();
+        AttemptSpawnFromAsset = SpawnAssetRef != nullptr && !SpawnAssetRef->IsNull();
+    }
+
+    if (m_game)
+    {
+        if (const auto OverrideType = m_game->SelectSpawnedPawnType(*this, Player, PlayerStartHandle);
+            OverrideType && IsValidPawnType(*OverrideType))
+        {
+            PawnType = *OverrideType;
+            AttemptSpawnFromAsset = false;
+        }
+
+        if (const auto OverrideReplicated = m_game->SelectSpawnedPawnReplicated(*this, Player, PlayerStartHandle))
+        {
+            SpawnReplicated = *OverrideReplicated;
+        }
+    }
+
+    if (m_gameMode && IsServer())
+    {
+        if (const auto OverrideType = m_gameMode->SelectSpawnedPawnType(*this, Player, PlayerStartHandle);
+            OverrideType && IsValidPawnType(*OverrideType))
+        {
+            PawnType = *OverrideType;
+            AttemptSpawnFromAsset = false;
+        }
+
+        if (const auto OverrideReplicated = m_gameMode->SelectSpawnedPawnReplicated(*this, Player, PlayerStartHandle))
+        {
+            SpawnReplicated = *OverrideReplicated;
+        }
+    }
+
+    NodeHandle PawnHandle{};
+    if (AttemptSpawnFromAsset && SpawnAssetRef != nullptr)
+    {
+        NodeHandle ParentHandle{};
+        if (auto* PlayerStartNode = PlayerStartHandle.Borrowed();
+            PlayerStartNode && !PlayerStartNode->Parent().IsNull())
+        {
+            ParentHandle = PlayerStartNode->Parent();
+        }
+
+        if (auto SpawnFromAsset = SpawnAssetRef->Instantiate(World(), ParentHandle, true))
+        {
+            PawnHandle = *SpawnFromAsset;
+        }
+    }
+
+    if (PawnHandle.IsNull())
+    {
+        if (!IsValidPawnType(PawnType))
+        {
+            PawnType = StaticTypeId<PawnBase>();
+        }
+
+        auto SpawnResult = World().CreateNode(PawnType, BuildDefaultPawnName(Player));
+        if (!SpawnResult)
+        {
+            return {};
+        }
+
+        PawnHandle = SpawnResult.value();
+    }
+
+    auto* PawnNode = PawnHandle.Borrowed();
+    if (!PawnNode)
+    {
+        if (!PawnHandle.IsNull())
+        {
+            (void)World().DestroyNode(PawnHandle);
+        }
+        return {};
+    }
+
+    if (AttemptSpawnFromAsset && !IsValidPawnType(PawnNode->TypeKey()))
+    {
+        (void)World().DestroyNode(PawnHandle);
+        PawnHandle = {};
+        PawnType = StaticTypeId<PawnBase>();
+        auto SpawnFallback = World().CreateNode(PawnType, BuildDefaultPawnName(Player));
+        if (!SpawnFallback)
+        {
+            return {};
+        }
+        PawnHandle = *SpawnFallback;
+        PawnNode = PawnHandle.Borrowed();
+        if (!PawnNode)
+        {
+            (void)World().DestroyNode(PawnHandle);
+            return {};
+        }
+    }
+
+    PawnNode->Replicated(SpawnReplicated);
+
+    auto* PlayerStartNode = PlayerStartHandle.Borrowed();
+    if (PlayerStartNode && !PlayerStartNode->Parent().IsNull() && PawnNode->Parent() != PlayerStartNode->Parent())
+    {
+        if (const Result AttachResult = World().AttachChild(PlayerStartNode->Parent(), PawnHandle); !AttachResult)
+        {
+            (void)World().DestroyNode(PawnHandle);
+            return {};
+        }
+    }
+
+    if (auto* Pawn = NodeCast<PawnBase>(PawnNode))
+    {
+        Pawn->OnCreateImpl(World());
+    }
+
+    if (PlayerStartNode)
+    {
+        if (auto* PlayerStartTyped = NodeCast<PlayerStart>(PlayerStartNode))
+        {
+            PlayerStartTyped->OnCreateImpl(World());
+        }
+
+        auto StartTransform = PlayerStartNode->Component<TransformComponent>();
+        auto PawnTransform = PawnNode->Component<TransformComponent>();
+        if (StartTransform && PawnTransform)
+        {
+            PawnTransform->Position = StartTransform->Position;
+            PawnTransform->Rotation = StartTransform->Rotation;
+            PawnTransform->Scale = StartTransform->Scale;
+        }
+    }
+
+    return PawnHandle;
+}
+
 NodeHandle GameplayHost::FindAutoPossessTarget(const std::uint64_t OwnerConnectionId) const
 {
     (void)OwnerConnectionId;
@@ -1741,6 +2002,17 @@ void GameplayHost::EnsurePlayerHasPossession(LocalPlayer& Player)
     if (!Player.GetPossessedNode().IsNull())
     {
         return;
+    }
+
+    if (IsServer())
+    {
+        const NodeHandle PlayerStartHandle = ResolvePlayerStart(Player);
+        const NodeHandle SpawnedPawn = SpawnPlayerPawn(Player, PlayerStartHandle);
+        if (!SpawnedPawn.IsNull() && IsValidPossessionTargetForPlayer(Player, SpawnedPawn))
+        {
+            Player.SetPossessedNode(SpawnedPawn);
+            return;
+        }
     }
 
     NodeHandle SelectedTarget{};
@@ -1802,7 +2074,7 @@ void GameplayHost::EnsurePlayerHasPossession(LocalPlayer& Player)
         return;
     }
 
-    Player.EditPossessedNode() = SelectedTarget;
+    Player.SetPossessedNode(SelectedTarget);
 }
 
 Result GameplayHost::AutoCreateConfiguredLocalPlayer()

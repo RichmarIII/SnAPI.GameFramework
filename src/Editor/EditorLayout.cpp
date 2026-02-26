@@ -7,9 +7,12 @@
 #include "BaseComponent.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PawnBase.h"
+#include "PlayerStart.h"
 #include "RendererSystem.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
+#include "TypeAutoRegistry.h"
 #include "TypeRegistry.h"
 #include "UIPropertyPanel.h"
 #include "UIRenderViewport.h"
@@ -24,6 +27,7 @@
 #include <UIImage.h>
 #include <UIListView.h>
 #include <UIMenuBar.h>
+#include <UIModal.h>
 #include <UINumberField.h>
 #include <UIPanel.h>
 #include <UIPagination.h>
@@ -47,11 +51,13 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "CameraBase.hpp"
@@ -108,16 +114,18 @@ constexpr SnAPI::UI::Color kIconPlayGreen = SnAPI::UI::Color::RGB(73, 199, 112);
 
 struct ToolbarActionSpec
 {
+    EditorLayout::EToolbarAction Action = EditorLayout::EToolbarAction::Play;
     std::string_view IconPath;
     SnAPI::UI::Color Tint = kIconWhite;
 };
 
 constexpr std::array<std::string_view, 6> kMenuItems{
     "File", "Edit", "Assets", "Tools", "Window", "Help"};
-constexpr std::array<ToolbarActionSpec, 3> kToolbarActions{{
-    {"Editor/Assets/play.svg", kIconPlayGreen},
-    {"Editor/Assets/pause.svg", kIconWhite},
-    {"Editor/Assets/stop.svg", kIconWhite},
+constexpr std::array<ToolbarActionSpec, 4> kToolbarActions{{
+    {EditorLayout::EToolbarAction::Play, "Editor/Assets/play.svg", kIconPlayGreen},
+    {EditorLayout::EToolbarAction::Pause, "Editor/Assets/pause.svg", kIconWhite},
+    {EditorLayout::EToolbarAction::Stop, "Editor/Assets/stop.svg", kIconWhite},
+    {EditorLayout::EToolbarAction::JoinLocalPlayer2, "Editor/Assets/world.svg", SnAPI::UI::Color::RGB(112, 169, 255)},
 }};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
@@ -156,6 +164,10 @@ constexpr auto kVmContentAssetCanPlaceKey =
     SnAPI::UI::MakePropertyKey<bool>("EditorLayout.ContentAssetCanPlace");
 constexpr auto kVmContentAssetCanSaveKey =
     SnAPI::UI::MakePropertyKey<bool>("EditorLayout.ContentAssetCanSave");
+constexpr auto kVmContentCreateTypeFilterKey =
+    SnAPI::UI::MakePropertyKey<std::string>("EditorLayout.ContentCreateTypeFilter");
+constexpr auto kVmContentCreateAssetNameKey =
+    SnAPI::UI::MakePropertyKey<std::string>("EditorLayout.ContentCreateAssetName");
 constexpr auto kHierarchyRowIconIdKey =
     SnAPI::UI::MakePropertyKey<SnAPI::UI::ElementId>("EditorLayout.HierarchyRow.IconId");
 constexpr auto kHierarchyRowTextIdKey =
@@ -180,6 +192,12 @@ constexpr std::string_view kContextMenuItemAssetSaveId = "asset.save";
 constexpr std::string_view kContextMenuItemAssetDeleteId = "asset.delete";
 constexpr std::string_view kContextMenuItemAssetRenameId = "asset.rename";
 constexpr std::string_view kContextMenuItemAssetRescanId = "asset.rescan";
+constexpr std::string_view kContextMenuItemAssetCreateId = "asset.create";
+constexpr std::string_view kContextMenuItemContentInspectorSelectId = "asset_inspector.select";
+constexpr std::string_view kContextMenuItemContentInspectorDeleteNodeId = "asset_inspector.delete_node";
+constexpr std::string_view kContextMenuItemContentInspectorDeleteComponentId = "asset_inspector.delete_component";
+constexpr std::string_view kContextMenuItemContentInspectorAddNodeTypePrefix = "asset_inspector.add_node.type.";
+constexpr std::string_view kContextMenuItemContentInspectorAddComponentTypePrefix = "asset_inspector.add_component.type.";
 
 void ApplyHierarchyRowIcon(SnAPI::UI::UIImage& Icon,
                            const std::string& Source,
@@ -337,6 +355,21 @@ void ConfigureFolderCardIcon(SnAPI::UI::UIImage& Image)
     return LabelLower.find(FilterLower) != std::string::npos;
 }
 
+[[nodiscard]] bool IsElementWithinSubtree(SnAPI::UI::UIContext& Context,
+                                          SnAPI::UI::ElementId Element,
+                                          const SnAPI::UI::ElementId SubtreeRoot)
+{
+    while (Element.Value != 0)
+    {
+        if (Element == SubtreeRoot)
+        {
+            return true;
+        }
+        Element = Context.GetParent(Element);
+    }
+    return false;
+}
+
 [[nodiscard]] std::string NormalizeBrowserPath(std::string_view Value)
 {
     std::string Path(Value);
@@ -430,6 +463,234 @@ void ConfigureFolderCardIcon(SnAPI::UI::UIImage& Image)
 
     return Seed;
 }
+
+struct CreateNodeTypeEntry
+{
+    TypeId Type{};
+    std::string Label{};
+    std::string QualifiedName{};
+    int Depth = 0;
+    bool HasChildren = false;
+};
+
+[[nodiscard]] std::vector<CreateNodeTypeEntry> BuildCreateNodeTypeEntries(const std::string& FilterLower)
+{
+    (void)TypeAutoRegistry::Instance().EnsureAll();
+
+    const TypeId BaseNodeType = StaticTypeId<BaseNode>();
+    const TypeInfo* BaseNodeInfo = TypeRegistry::Instance().Find(BaseNodeType);
+    if (!BaseNodeInfo)
+    {
+        return {};
+    }
+
+    std::vector<const TypeInfo*> CandidateTypes = TypeRegistry::Instance().Derived(BaseNodeType);
+    const bool HasBaseNode = std::ranges::any_of(CandidateTypes, [BaseNodeInfo](const TypeInfo* Type) {
+        return Type && Type->Id == BaseNodeInfo->Id;
+    });
+    if (!HasBaseNode)
+    {
+        CandidateTypes.push_back(BaseNodeInfo);
+    }
+
+    CandidateTypes.erase(
+        std::remove_if(CandidateTypes.begin(), CandidateTypes.end(), [](const TypeInfo* Type) {
+            return !Type || !HasDefaultConstructor(*Type) || !TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<BaseNode>());
+        }),
+        CandidateTypes.end());
+
+    std::unordered_map<TypeId, const TypeInfo*, UuidHash> TypeById{};
+    TypeById.reserve(CandidateTypes.size());
+    for (const TypeInfo* Type : CandidateTypes)
+    {
+        TypeById[Type->Id] = Type;
+    }
+
+    std::unordered_map<TypeId, std::vector<const TypeInfo*>, UuidHash> ChildrenByType{};
+    ChildrenByType.reserve(TypeById.size());
+    for (const TypeInfo* Type : CandidateTypes)
+    {
+        if (!Type || Type->Id == BaseNodeType)
+        {
+            continue;
+        }
+
+        TypeId ParentType = BaseNodeType;
+        for (const TypeId& BaseType : Type->BaseTypes)
+        {
+            if (TypeById.contains(BaseType) && TypeRegistry::Instance().IsA(BaseType, BaseNodeType))
+            {
+                ParentType = BaseType;
+                break;
+            }
+        }
+
+        ChildrenByType[ParentType].push_back(Type);
+    }
+
+    for (auto& [ParentType, Children] : ChildrenByType)
+    {
+        (void)ParentType;
+        std::sort(Children.begin(), Children.end(), [](const TypeInfo* Left, const TypeInfo* Right) {
+            if (!Left || !Right)
+            {
+                return Left < Right;
+            }
+            const std::string LeftLabel = ShortTypeLabel(Left->Name);
+            const std::string RightLabel = ShortTypeLabel(Right->Name);
+            return LeftLabel < RightLabel;
+        });
+    }
+
+    std::unordered_map<TypeId, bool, UuidHash> VisibleCache{};
+    const std::function<bool(const TypeInfo*)> IsVisible = [&](const TypeInfo* Type) -> bool {
+        if (!Type)
+        {
+            return false;
+        }
+
+        if (const auto Cached = VisibleCache.find(Type->Id); Cached != VisibleCache.end())
+        {
+            return Cached->second;
+        }
+
+        const bool LabelMatch = FilterLower.empty() ||
+                                LabelMatchesFilter(ShortTypeLabel(Type->Name), FilterLower) ||
+                                LabelMatchesFilter(Type->Name, FilterLower);
+
+        bool ChildVisible = false;
+        if (const auto ChildrenIt = ChildrenByType.find(Type->Id); ChildrenIt != ChildrenByType.end())
+        {
+            for (const TypeInfo* Child : ChildrenIt->second)
+            {
+                if (IsVisible(Child))
+                {
+                    ChildVisible = true;
+                    break;
+                }
+            }
+        }
+
+        const bool Visible = LabelMatch || ChildVisible;
+        VisibleCache[Type->Id] = Visible;
+        return Visible;
+    };
+
+    std::vector<CreateNodeTypeEntry> Entries{};
+    const std::function<void(const TypeInfo*, int)> Append = [&](const TypeInfo* Type, const int Depth) {
+        if (!Type || !IsVisible(Type))
+        {
+            return;
+        }
+
+        std::vector<const TypeInfo*> VisibleChildren{};
+        if (const auto ChildrenIt = ChildrenByType.find(Type->Id); ChildrenIt != ChildrenByType.end())
+        {
+            for (const TypeInfo* Child : ChildrenIt->second)
+            {
+                if (IsVisible(Child))
+                {
+                    VisibleChildren.push_back(Child);
+                }
+            }
+        }
+
+        Entries.push_back(CreateNodeTypeEntry{
+            .Type = Type->Id,
+            .Label = ShortTypeLabel(Type->Name),
+            .QualifiedName = Type->Name,
+            .Depth = Depth,
+            .HasChildren = !VisibleChildren.empty(),
+        });
+
+        for (const TypeInfo* Child : VisibleChildren)
+        {
+            Append(Child, Depth + 1);
+        }
+    };
+
+    Append(BaseNodeInfo, 0);
+    return Entries;
+}
+
+[[nodiscard]] std::vector<const TypeInfo*> CollectContentInspectorCreatableNodeTypes()
+{
+    (void)TypeAutoRegistry::Instance().EnsureAll();
+
+    std::vector<const TypeInfo*> CandidateTypes = TypeRegistry::Instance().Derived(StaticTypeId<BaseNode>());
+    if (const TypeInfo* BaseNodeInfo = TypeRegistry::Instance().Find(StaticTypeId<BaseNode>()))
+    {
+        const bool AlreadyPresent = std::ranges::any_of(CandidateTypes, [BaseNodeInfo](const TypeInfo* Type) {
+            return Type && Type->Id == BaseNodeInfo->Id;
+        });
+        if (!AlreadyPresent)
+        {
+            CandidateTypes.push_back(BaseNodeInfo);
+        }
+    }
+
+    CandidateTypes.erase(
+        std::remove_if(CandidateTypes.begin(), CandidateTypes.end(), [](const TypeInfo* Type) {
+            if (!Type || !HasDefaultConstructor(*Type))
+            {
+                return true;
+            }
+            if (!TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<BaseNode>()))
+            {
+                return true;
+            }
+            if (TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<World>()))
+            {
+                return true;
+            }
+            if (TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<Level>()))
+            {
+                return true;
+            }
+            return false;
+        }),
+        CandidateTypes.end());
+
+    std::sort(CandidateTypes.begin(), CandidateTypes.end(), [](const TypeInfo* Left, const TypeInfo* Right) {
+        if (!Left || !Right)
+        {
+            return Left < Right;
+        }
+        const std::string LeftName = ShortTypeLabel(Left->Name);
+        const std::string RightName = ShortTypeLabel(Right->Name);
+        return LeftName < RightName;
+    });
+    return CandidateTypes;
+}
+
+[[nodiscard]] std::vector<const TypeInfo*> CollectContentInspectorCreatableComponentTypes()
+{
+    (void)TypeAutoRegistry::Instance().EnsureAll();
+
+    std::vector<const TypeInfo*> CandidateTypes{};
+    const auto RegisteredComponentTypes = ComponentSerializationRegistry::Instance().Types();
+    CandidateTypes.reserve(RegisteredComponentTypes.size());
+    for (const TypeId& ComponentType : RegisteredComponentTypes)
+    {
+        const TypeInfo* Info = TypeRegistry::Instance().Find(ComponentType);
+        if (!Info || !HasDefaultConstructor(*Info))
+        {
+            continue;
+        }
+        CandidateTypes.push_back(Info);
+    }
+
+    std::sort(CandidateTypes.begin(), CandidateTypes.end(), [](const TypeInfo* Left, const TypeInfo* Right) {
+        if (!Left || !Right)
+        {
+            return Left < Right;
+        }
+        const std::string LeftName = ShortTypeLabel(Left->Name);
+        const std::string RightName = ShortTypeLabel(Right->Name);
+        return LeftName < RightName;
+    });
+    return CandidateTypes;
+}
 } // namespace
 
 Result EditorLayout::Build(GameRuntime& Runtime,
@@ -496,6 +757,17 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentSaveButton = {};
     m_contentAssetsList = {};
     m_contentAssetsEmptyHint = {};
+    m_contentCreateModalOverlay = {};
+    m_contentCreateTypeTree = {};
+    m_contentCreateSearchInput = {};
+    m_contentCreateNameInput = {};
+    m_contentCreateOkButton = {};
+    m_contentInspectorModalOverlay = {};
+    m_contentInspectorTitleText = {};
+    m_contentInspectorStatusText = {};
+    m_contentInspectorHierarchyTree = {};
+    m_contentInspectorPropertyPanel = {};
+    m_contentInspectorSaveButton = {};
     m_contentAssetCards.clear();
     m_contentAssetCardButtons.clear();
     m_contentAssetCardIndices.clear();
@@ -507,6 +779,18 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_selectedContentFolderPath.clear();
     m_lastContentAssetClickKey.clear();
     m_lastContentAssetClickTime = {};
+    m_contentCreateModalOpen = false;
+    m_contentCreateTypeFilterText.clear();
+    m_contentCreateNameText.clear();
+    m_contentCreateSelectedType = {};
+    m_contentCreateVisibleTypes.clear();
+    m_contentCreateTypeSource.reset();
+    m_contentAssetInspectorState = {};
+    m_contentInspectorVisibleNodes.clear();
+    m_contentInspectorHierarchySource.reset();
+    m_contentInspectorTargetBound = false;
+    m_contentInspectorBoundObject = nullptr;
+    m_contentInspectorBoundType = {};
     m_contentAssetDetails = {};
     m_onContentAssetSelected = {};
     m_onContentAssetPlaceRequested = {};
@@ -514,6 +798,11 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onContentAssetDeleteRequested = {};
     m_onContentAssetRenameRequested = {};
     m_onContentAssetRefreshRequested = {};
+    m_onContentAssetCreateRequested = {};
+    m_onContentAssetInspectorSaveRequested = {};
+    m_onContentAssetInspectorCloseRequested = {};
+    m_onContentAssetInspectorNodeSelected = {};
+    m_onContentAssetInspectorHierarchyActionRequested = {};
     m_hierarchyItemSource.reset();
     m_contextMenuScope = EContextMenuScope::None;
     m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
@@ -521,6 +810,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_pendingHierarchyMenuOpenPosition = {};
     m_contextMenuHierarchyIndex.reset();
     m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
     m_contextMenuNodeTypes.clear();
@@ -534,6 +824,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_selection = nullptr;
     m_onHierarchyNodeChosen.Reset();
     m_onHierarchyActionRequested = {};
+    m_onToolbarActionRequested = {};
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
     m_boundInspectorComponentSignature = 0;
@@ -573,6 +864,7 @@ void EditorLayout::Sync(GameRuntime& Runtime,
     SyncHierarchy(Runtime, ActiveCamera);
     BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
+    RefreshContentAssetInspectorModalState();
     (void)DeltaSeconds;
 #endif
 }
@@ -643,6 +935,8 @@ void EditorLayout::BuildShell(SnAPI::UI::UIContext& Context,
     ConfigureHostPanel(BrowserHost.Element());
     BuildContentBrowser(BrowserHost);
     BuildContextMenuOverlay(Root);
+    BuildCreateAssetModalOverlay(Root);
+    BuildAssetInspectorModalOverlay(Root);
 }
 
 void EditorLayout::ConfigureRoot(SnAPI::UI::UIContext& Context)
@@ -706,6 +1000,16 @@ void EditorLayout::InitializeViewModel()
         ApplyContentAssetFilter();
     });
 
+    ViewModelProperty<std::string>(kVmContentCreateTypeFilterKey).AddSetHook([this](const std::string& Value) {
+        m_contentCreateTypeFilterText = ToLower(Value);
+        RebuildContentAssetCreateTypeTree();
+    });
+
+    ViewModelProperty<std::string>(kVmContentCreateAssetNameKey).AddSetHook([this](const std::string& Value) {
+        m_contentCreateNameText = Value;
+        RefreshContentAssetCreateOkButtonState();
+    });
+
     ViewModelProperty<std::string>(kVmSelectedContentAssetKey).AddSetHook([this](const std::string& Value) {
         m_selectedContentAssetKey = Value;
         if (!Value.empty())
@@ -749,6 +1053,8 @@ void EditorLayout::InitializeViewModel()
     ViewModelProperty<std::string>(kVmContentAssetVariantKey).Set(std::string("--"));
     ViewModelProperty<std::string>(kVmContentAssetIdKey).Set(std::string("--"));
     ViewModelProperty<std::string>(kVmContentAssetStatusKey).Set(std::string("Ready"));
+    ViewModelProperty<std::string>(kVmContentCreateTypeFilterKey).Set(std::string{});
+    ViewModelProperty<std::string>(kVmContentCreateAssetNameKey).Set(std::string{});
     ViewModelProperty<bool>(kVmContentAssetCanPlaceKey).Set(false);
     ViewModelProperty<bool>(kVmContentAssetCanSaveKey).Set(false);
     ViewModelProperty<bool>(kVmInvalidationDebugEnabledKey).Set(m_invalidationDebugOverlayEnabled);
@@ -851,6 +1157,14 @@ void EditorLayout::BuildToolbar(PanelBuilder& Root)
         auto Icon = Button.Add(SnAPI::UI::UIImage(kToolbarActions[Index].IconPath));
         auto& IconImage = Icon.Element();
         ConfigureSvgIcon(IconImage, kToolbarActionIconDisplaySize, kToolbarActions[Index].Tint);
+        ButtonElement.OnClick([this, Index]() {
+            if (!m_onToolbarActionRequested)
+            {
+                return;
+            }
+
+            m_onToolbarActionRequested(kToolbarActions[Index].Action);
+        });
     }
 
     auto Spacer = Toolbar.Add(SnAPI::UI::UIPanel("Editor.ToolbarSpacer"));
@@ -1132,6 +1446,7 @@ void EditorLayout::BuildContextMenuOverlay(PanelBuilder& Root)
     m_pendingHierarchyMenuOpenPosition = {};
     m_contextMenuHierarchyIndex.reset();
     m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
 
@@ -1200,9 +1515,378 @@ void EditorLayout::BuildContextMenuOverlay(PanelBuilder& Root)
     m_contextMenu = ContextMenu.Handle();
 }
 
+void EditorLayout::BuildCreateAssetModalOverlay(PanelBuilder& Root)
+{
+    m_contentCreateModalOverlay = {};
+    m_contentCreateTypeTree = {};
+    m_contentCreateSearchInput = {};
+    m_contentCreateNameInput = {};
+    m_contentCreateOkButton = {};
+    m_contentCreateVisibleTypes.clear();
+    m_contentCreateSelectedType = {};
+    m_contentCreateModalOpen = false;
+    if (!m_contentCreateTypeSource)
+    {
+        m_contentCreateTypeSource = std::make_shared<VectorTreeItemSource>();
+    }
+
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.IsOpen().Set(false);
+    OverlayPanel.CloseOnBackdropClick().Set(false);
+    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(true);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.ResizeBorderThickness().Set(12.0f);
+    OverlayPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::Collapsed);
+    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(8.0f);
+    OverlayPanel.ContentPadding().Set(10.0f);
+    OverlayPanel.DialogMaxWidthRatio().Set(0.76f);
+    OverlayPanel.DialogMaxHeightRatio().Set(0.84f);
+    m_contentCreateModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ContentCreateModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(0.0f);
+    ModalPanel.Gap().Set(10.0f);
+    ModalPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderThickness().Set(0.0f);
+    ModalPanel.CornerRadius().Set(0.0f);
+    ModalPanel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.DropShadowBlur().Set(0.0f);
+    ModalPanel.DropShadowSpread().Set(0.0f);
+    ModalPanel.DropShadowOffsetX().Set(0.0f);
+    ModalPanel.DropShadowOffsetY().Set(0.0f);
+
+    auto Title = Modal.Add(SnAPI::UI::UIText("Create Asset"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.panel_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+
+    auto Subtitle = Modal.Add(SnAPI::UI::UIText("Select a BaseNode-derived class, set the asset name, then click Create."));
+    auto& SubtitleText = Subtitle.Element();
+    SubtitleText.ElementStyle().Apply("editor.panel_subtitle");
+    SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto Search = Modal.Add(SnAPI::UI::UITextInput{});
+    auto& SearchInput = Search.Element();
+    SearchInput.ElementStyle().Apply("editor.search");
+    SearchInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    SearchInput.Resizable().Set(false);
+    SearchInput.Placeholder().Set(std::string("Filter classes..."));
+    auto vmContentCreateTypeFilter = ViewModelProperty<std::string>(kVmContentCreateTypeFilterKey);
+    SearchInput.Text().BindTo(vmContentCreateTypeFilter, SnAPI::UI::EBindMode::TwoWay);
+    m_contentCreateSearchInput = Search.Handle();
+
+    auto Tree = Modal.Add(SnAPI::UI::UITreeView{});
+    auto& TreeElement = Tree.Element();
+    TreeElement.ElementStyle().Apply("editor.tree");
+    TreeElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    TreeElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    TreeElement.RowHeight().Set(38.0f);
+    TreeElement.IndentWidth().Set(20.0f);
+    TreeElement.PaddingX().Set(6.0f);
+    TreeElement.PaddingY().Set(4.0f);
+    TreeElement.SetItemSource(m_contentCreateTypeSource.get());
+    TreeElement.OnSelectionChanged(SnAPI::UI::TDelegate<void(int32_t)>::Bind([this](const int32_t ItemIndex) {
+        if (ItemIndex < 0 || static_cast<std::size_t>(ItemIndex) >= m_contentCreateVisibleTypes.size())
+        {
+            m_contentCreateSelectedType = {};
+            RefreshContentAssetCreateOkButtonState();
+            return;
+        }
+
+        m_contentCreateSelectedType = m_contentCreateVisibleTypes[static_cast<std::size_t>(ItemIndex)];
+        RefreshContentAssetCreateOkButtonState();
+    }));
+    m_contentCreateTypeTree = Tree.Handle();
+
+    auto NameRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentCreate.NameRow"));
+    auto& NameRowPanel = NameRow.Element();
+    NameRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    NameRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    NameRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    NameRowPanel.Gap().Set(4.0f);
+    NameRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    NameRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    NameRowPanel.BorderThickness().Set(0.0f);
+    NameRowPanel.CornerRadius().Set(0.0f);
+
+    auto NameLabel = NameRow.Add(SnAPI::UI::UIText("Asset Name"));
+    auto& NameLabelText = NameLabel.Element();
+    NameLabelText.ElementStyle().Apply("editor.menu_item");
+    NameLabelText.Width().Set(SnAPI::UI::Sizing::Auto());
+    NameLabelText.HAlign().Set(SnAPI::UI::EAlignment::Start);
+
+    auto NameInputBuilder = NameRow.Add(SnAPI::UI::UITextInput{});
+    auto& NameInput = NameInputBuilder.Element();
+    NameInput.ElementStyle().Apply("editor.text_input");
+    NameInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    NameInput.Resizable().Set(false);
+    NameInput.Multiline().Set(false);
+    NameInput.AcceptTab().Set(false);
+    NameInput.Placeholder().Set("NewAsset");
+    auto vmContentCreateAssetName = ViewModelProperty<std::string>(kVmContentCreateAssetNameKey);
+    NameInput.Text().BindTo(vmContentCreateAssetName, SnAPI::UI::EBindMode::TwoWay);
+    NameInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string&) {
+        ConfirmContentAssetCreate();
+    }));
+    m_contentCreateNameInput = NameInputBuilder.Handle();
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentCreate.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ButtonsRowPanel.Gap().Set(8.0f);
+    ButtonsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderThickness().Set(0.0f);
+    ButtonsRowPanel.CornerRadius().Set(0.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ContentCreate.ButtonSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpacerPanel.Background().Set(SnAPI::UI::Color::Transparent());
+
+    auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& CancelButtonElement = CancelButton.Element();
+    CancelButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    CancelButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    CancelButtonElement.OnClick([this]() {
+        CloseContentAssetCreateModal();
+    });
+    auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
+    CancelLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+
+    auto CreateButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& CreateButtonElement = CreateButton.Element();
+    CreateButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    CreateButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CreateButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CreateButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    CreateButtonElement.OnClick([this]() {
+        ConfirmContentAssetCreate();
+    });
+    auto CreateLabel = CreateButton.Add(SnAPI::UI::UIText("Create"));
+    CreateLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    m_contentCreateOkButton = CreateButton.Handle();
+
+    RebuildContentAssetCreateTypeTree();
+    RefreshContentAssetCreateOkButtonState();
+    RefreshContentAssetCreateModalVisibility();
+}
+
+void EditorLayout::BuildAssetInspectorModalOverlay(PanelBuilder& Root)
+{
+    m_contentInspectorModalOverlay = {};
+    m_contentInspectorTitleText = {};
+    m_contentInspectorStatusText = {};
+    m_contentInspectorHierarchyTree = {};
+    m_contentInspectorPropertyPanel = {};
+    m_contentInspectorSaveButton = {};
+    m_contentInspectorVisibleNodes.clear();
+    m_contentInspectorTargetBound = false;
+    m_contentInspectorBoundObject = nullptr;
+    m_contentInspectorBoundType = {};
+    if (!m_contentInspectorHierarchySource)
+    {
+        m_contentInspectorHierarchySource = std::make_shared<VectorTreeItemSource>();
+    }
+
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.IsOpen().Set(false);
+    OverlayPanel.CloseOnBackdropClick().Set(false);
+    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(true);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.ResizeBorderThickness().Set(12.0f);
+    OverlayPanel.DialogWidth().Set(1060.0f);
+    OverlayPanel.DialogHeight().Set(700.0f);
+    OverlayPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::Collapsed);
+    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(7, 10, 15, 214));
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 23, 32, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(84, 97, 117, 242));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(8.0f);
+    OverlayPanel.ContentPadding().Set(10.0f);
+    OverlayPanel.DialogMaxWidthRatio().Set(0.92f);
+    OverlayPanel.DialogMaxHeightRatio().Set(0.92f);
+    m_contentInspectorModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ContentInspectorModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(0.0f);
+    ModalPanel.Gap().Set(8.0f);
+    ModalPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderThickness().Set(0.0f);
+    ModalPanel.CornerRadius().Set(0.0f);
+    ModalPanel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.DropShadowBlur().Set(0.0f);
+    ModalPanel.DropShadowSpread().Set(0.0f);
+    ModalPanel.DropShadowOffsetX().Set(0.0f);
+    ModalPanel.DropShadowOffsetY().Set(0.0f);
+
+    auto Title = Modal.Add(SnAPI::UI::UIText("Asset Inspector"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.panel_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+    m_contentInspectorTitleText = Title.Handle();
+
+    auto Status = Modal.Add(SnAPI::UI::UIText("Double-click an asset to inspect and edit properties."));
+    auto& StatusText = Status.Element();
+    StatusText.ElementStyle().Apply("editor.panel_subtitle");
+    StatusText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_contentInspectorStatusText = Status.Handle();
+
+    auto BodySplit = Modal.Add(SnAPI::UI::UIDockZone{});
+    auto& BodySplitElement = BodySplit.Element();
+    ConfigureSplitZone(BodySplitElement, SnAPI::UI::EDockSplit::Horizontal, 0.32f, 240.0f, 300.0f);
+    BodySplitElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    BodySplitElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto HierarchyHost = BodySplit.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.HierarchyHost"));
+    auto& HierarchyHostPanel = HierarchyHost.Element();
+    ConfigureHostPanel(HierarchyHostPanel);
+    HierarchyHostPanel.ElementStyle().Apply("editor.sidebar");
+    HierarchyHostPanel.Padding().Set(6.0f);
+    HierarchyHostPanel.Gap().Set(6.0f);
+
+    auto HierarchyTitle = HierarchyHost.Add(SnAPI::UI::UIText("Asset Hierarchy"));
+    HierarchyTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto HierarchyTree = HierarchyHost.Add(SnAPI::UI::UITreeView{});
+    auto& HierarchyTreeElement = HierarchyTree.Element();
+    HierarchyTreeElement.ElementStyle().Apply("editor.tree");
+    HierarchyTreeElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    HierarchyTreeElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HierarchyTreeElement.RowHeight().Set(32.0f);
+    HierarchyTreeElement.IndentWidth().Set(20.0f);
+    HierarchyTreeElement.PaddingX().Set(6.0f);
+    HierarchyTreeElement.PaddingY().Set(4.0f);
+    HierarchyTreeElement.SetItemSource(m_contentInspectorHierarchySource.get());
+    HierarchyTreeElement.OnSelectionChanged(SnAPI::UI::TDelegate<void(int32_t)>::Bind([this](const int32_t ItemIndex) {
+        if (ItemIndex < 0 || static_cast<std::size_t>(ItemIndex) >= m_contentInspectorVisibleNodes.size())
+        {
+            return;
+        }
+
+        m_contentAssetInspectorState.SelectedNode = m_contentInspectorVisibleNodes[static_cast<std::size_t>(ItemIndex)];
+        if (m_onContentAssetInspectorNodeSelected)
+        {
+            m_onContentAssetInspectorNodeSelected(m_contentAssetInspectorState.SelectedNode);
+        }
+        RefreshContentAssetInspectorModalState();
+        if (m_context)
+        {
+            m_context->MarkLayoutDirty();
+        }
+    }));
+    HierarchyTreeElement.OnContextMenuRequested(
+        SnAPI::UI::TDelegate<void(int32_t, const SnAPI::UI::UITreeItem&, const SnAPI::UI::PointerEvent&)>::Bind(
+            [this](const int32_t ItemIndex, const SnAPI::UI::UITreeItem&, const SnAPI::UI::PointerEvent& Event) {
+                if (ItemIndex < 0)
+                {
+                    return;
+                }
+                OpenContentAssetInspectorHierarchyContextMenu(static_cast<std::size_t>(ItemIndex), Event);
+            }));
+    m_contentInspectorHierarchyTree = HierarchyTree.Handle();
+
+    auto InspectorHost = BodySplit.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.PropertyHost"));
+    auto& InspectorHostPanel = InspectorHost.Element();
+    ConfigureHostPanel(InspectorHostPanel);
+    InspectorHostPanel.ElementStyle().Apply("editor.section_card");
+    InspectorHostPanel.Padding().Set(6.0f);
+    InspectorHostPanel.Gap().Set(6.0f);
+
+    auto PropertyPanelBuilder = InspectorHost.Add(UIPropertyPanel{});
+    auto& PropertyPanel = PropertyPanelBuilder.Element();
+    PropertyPanel.ElementStyle().Apply("editor.inspector_properties");
+    PropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    PropertyPanel.SetComponentContextMenuHandler(
+        SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)>::Bind(
+            [this](const NodeHandle OwnerNode, const TypeId& ComponentType, const SnAPI::UI::PointerEvent& Event) {
+                OpenContentAssetInspectorComponentContextMenu(OwnerNode, ComponentType, Event);
+            }));
+    m_contentInspectorPropertyPanel = PropertyPanelBuilder.Handle();
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ButtonsRowPanel.Gap().Set(8.0f);
+    ButtonsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderThickness().Set(0.0f);
+    ButtonsRowPanel.CornerRadius().Set(0.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.ButtonSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpacerPanel.Background().Set(SnAPI::UI::Color::Transparent());
+
+    auto CloseButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& CloseButtonElement = CloseButton.Element();
+    CloseButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    CloseButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CloseButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CloseButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    CloseButtonElement.OnClick([this]() {
+        CloseContentAssetInspectorModal(true);
+    });
+    auto CloseLabel = CloseButton.Add(SnAPI::UI::UIText("Close"));
+    CloseLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+
+    auto SaveButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& SaveButtonElement = SaveButton.Element();
+    SaveButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    SaveButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    SaveButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SaveButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    SaveButtonElement.OnClick([this]() {
+        if (m_onContentAssetInspectorSaveRequested)
+        {
+            m_onContentAssetInspectorSaveRequested();
+        }
+    });
+    auto SaveLabel = SaveButton.Add(SnAPI::UI::UIText("Save"));
+    SaveLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    m_contentInspectorSaveButton = SaveButton.Handle();
+
+    RebuildContentAssetInspectorHierarchyTree();
+    RefreshContentAssetInspectorModalState();
+    RefreshContentAssetInspectorModalVisibility();
+}
+
 void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
 {
-    auto Instructions = DetailsTab.Add(SnAPI::UI::UIText("Double-click an asset to preview. Edit Name + press Enter to rename. Click Place then click the viewport to instantiate."));
+    auto Instructions = DetailsTab.Add(SnAPI::UI::UIText("Double-click an asset to open the inspector. Edit Name + press Enter to rename. Click Place then click the viewport to instantiate."));
     Instructions.Element().ElementStyle().Apply("editor.panel_subtitle");
     Instructions.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
 
@@ -1574,7 +2258,12 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
         std::size_t NodeCount = 1; // Include synthetic World root row.
         if (auto* WorldPtr = Runtime.WorldPtr())
         {
-            WorldPtr->NodePool().ForEach([&](const NodeHandle&, BaseNode&) { ++NodeCount; });
+            WorldPtr->NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
+                if (!Node.EditorTransient())
+                {
+                    ++NodeCount;
+                }
+            });
         }
         ViewModelProperty<std::string>(kVmHierarchyCountTextKey).Set(std::to_string(NodeCount));
     }
@@ -1668,6 +2357,11 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
 
     const auto CollectWorldRoots = [](World& WorldContext, const int Depth, std::vector<TraversalNode>& OutNodes) {
         WorldContext.NodePool().ForEach([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
+            if (Node.EditorTransient())
+            {
+                return;
+            }
+
             if (Node.Parent().IsNull())
             {
                 OutNodes.push_back(TraversalNode{Handle, &Node, Depth});
@@ -1703,6 +2397,10 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
             Node = Current.Handle.BorrowedSlowByUuid();
         }
         if (!Node)
+        {
+            continue;
+        }
+        if (Node->EditorTransient())
         {
             continue;
         }
@@ -1751,6 +2449,10 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
                 ChildNode = ChildHandle.BorrowedSlowByUuid();
             }
             if (!ChildNode)
+            {
+                continue;
+            }
+            if (ChildNode->EditorTransient())
             {
                 continue;
             }
@@ -1914,6 +2616,11 @@ void EditorLayout::SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const Hie
     m_onHierarchyActionRequested = std::move(Handler);
 }
 
+void EditorLayout::SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler)
+{
+    m_onToolbarActionRequested = std::move(Handler);
+}
+
 void EditorLayout::SetContentAssets(std::vector<ContentAssetEntry> Assets)
 {
     m_contentAssets = std::move(Assets);
@@ -1970,10 +2677,86 @@ void EditorLayout::SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()> Ha
     m_onContentAssetRefreshRequested = std::move(Handler);
 }
 
+void EditorLayout::SetContentAssetCreateHandler(SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> Handler)
+{
+    m_onContentAssetCreateRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onContentAssetInspectorSaveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onContentAssetInspectorCloseRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler)
+{
+    m_onContentAssetInspectorNodeSelected = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetInspectorHierarchyActionHandler(
+    SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler)
+{
+    m_onContentAssetInspectorHierarchyActionRequested = std::move(Handler);
+}
+
 void EditorLayout::SetContentAssetDetails(ContentAssetDetails Details)
 {
     m_contentAssetDetails = std::move(Details);
     RefreshContentAssetDetailsViewModel();
+}
+
+void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState State)
+{
+    const bool NodesChanged = [&]() -> bool {
+        if (m_contentAssetInspectorState.Nodes.size() != State.Nodes.size())
+        {
+            return true;
+        }
+        for (std::size_t Index = 0; Index < State.Nodes.size(); ++Index)
+        {
+            const auto& Left = m_contentAssetInspectorState.Nodes[Index];
+            const auto& Right = State.Nodes[Index];
+            if (Left.Handle != Right.Handle || Left.Depth != Right.Depth || Left.Label != Right.Label)
+            {
+                return true;
+            }
+        }
+        return false;
+    }();
+
+    const bool Changed =
+        (m_contentAssetInspectorState.Open != State.Open) ||
+        (m_contentAssetInspectorState.AssetKey != State.AssetKey) ||
+        (m_contentAssetInspectorState.Title != State.Title) ||
+        (m_contentAssetInspectorState.Status != State.Status) ||
+        (m_contentAssetInspectorState.TargetType != State.TargetType) ||
+        (m_contentAssetInspectorState.TargetObject != State.TargetObject) ||
+        (m_contentAssetInspectorState.SelectedNode != State.SelectedNode) ||
+        (m_contentAssetInspectorState.CanEditHierarchy != State.CanEditHierarchy) ||
+        (m_contentAssetInspectorState.IsDirty != State.IsDirty) ||
+        (m_contentAssetInspectorState.CanSave != State.CanSave) ||
+        NodesChanged;
+
+    m_contentAssetInspectorState = std::move(State);
+    if (!m_contentAssetInspectorState.Open)
+    {
+        m_contentAssetInspectorState.TargetObject = nullptr;
+        m_contentAssetInspectorState.TargetType = {};
+        m_contentAssetInspectorState.SelectedNode = {};
+        m_contentAssetInspectorState.Nodes.clear();
+    }
+
+    RebuildContentAssetInspectorHierarchyTree();
+    RefreshContentAssetInspectorModalState();
+    RefreshContentAssetInspectorModalVisibility();
+    if (m_context && Changed)
+    {
+        m_context->MarkLayoutDirty();
+    }
 }
 
 void EditorLayout::HandleContentAssetCardClicked(const std::size_t CardIndex)
@@ -2071,6 +2854,7 @@ void EditorLayout::OpenHierarchyContextMenu(const std::size_t ItemIndex, const S
     m_contextMenuScope = EContextMenuScope::HierarchyItem;
     m_contextMenuHierarchyIndex = ItemIndex;
     m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
     m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
@@ -2214,6 +2998,9 @@ void EditorLayout::OpenHierarchyAddTypeMenu(const bool AddComponents)
     }
     else
     {
+        EnsureReflectionRegistered<PawnBase>();
+        EnsureReflectionRegistered<PlayerStart>();
+
         CandidateTypes = TypeRegistry::Instance().Derived(StaticTypeId<BaseNode>());
         if (const TypeInfo* BaseNodeInfo = TypeRegistry::Instance().Find(StaticTypeId<BaseNode>()))
         {
@@ -2342,6 +3129,7 @@ void EditorLayout::OpenContentAssetContextMenu(const std::size_t CardIndex, cons
     m_contextMenuScope = EContextMenuScope::ContentAssetItem;
     m_contextMenuAssetIndex = AssetIndex;
     m_contextMenuHierarchyIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
     m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
@@ -2434,6 +3222,7 @@ void EditorLayout::OpenInspectorComponentContextMenu(const NodeHandle& OwnerNode
     m_contextMenuScope = EContextMenuScope::InspectorComponent;
     m_contextMenuHierarchyIndex.reset();
     m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner = OwnerNode;
     m_contextMenuComponentType = ComponentType;
     m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
@@ -2460,12 +3249,169 @@ void EditorLayout::OpenInspectorComponentContextMenu(const NodeHandle& OwnerNode
     OpenContextMenu(Event.Position, std::move(Items));
 }
 
+void EditorLayout::OpenContentAssetInspectorHierarchyContextMenu(const std::size_t ItemIndex,
+                                                                 const SnAPI::UI::PointerEvent& Event)
+{
+    if (ItemIndex >= m_contentInspectorVisibleNodes.size())
+    {
+        return;
+    }
+
+    const NodeHandle TargetNode = m_contentInspectorVisibleNodes[ItemIndex];
+    if (TargetNode.IsNull())
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_contextMenuScope = EContextMenuScope::ContentInspectorHierarchyItem;
+    m_contextMenuHierarchyIndex.reset();
+    m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = TargetNode;
+    m_contextMenuComponentOwner.reset();
+    m_contextMenuComponentType = {};
+    m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
+    m_pendingHierarchyMenuIndex.reset();
+    m_pendingHierarchyMenuOpenPosition = {};
+    m_contextMenuNodeTypes.clear();
+    m_contextMenuComponentTypes.clear();
+    m_contextMenuOpenPosition = Event.Position;
+
+    const bool IsRootNode = !m_contentInspectorVisibleNodes.empty() && (TargetNode == m_contentInspectorVisibleNodes.front());
+    const bool IsSelected = (m_contentAssetInspectorState.SelectedNode == TargetNode);
+
+    std::vector<SnAPI::UI::UIContextMenuItem> Items{};
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemContentInspectorSelectId),
+        .Label = "Select",
+        .Shortcut = std::string("Enter"),
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = IsSelected,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = "asset_inspector.sep.add_node",
+        .Label = {},
+        .Shortcut = std::nullopt,
+        .Enabled = false,
+        .IsSeparator = true,
+        .Checked = false,
+    });
+
+    for (const TypeInfo* Type : CollectContentInspectorCreatableNodeTypes())
+    {
+        if (!Type)
+        {
+            continue;
+        }
+        const std::size_t TypeIndex = m_contextMenuNodeTypes.size();
+        m_contextMenuNodeTypes.push_back(Type->Id);
+        Items.push_back(SnAPI::UI::UIContextMenuItem{
+            .Id = std::string(kContextMenuItemContentInspectorAddNodeTypePrefix) + std::to_string(TypeIndex),
+            .Label = "Add Child Node: " + ShortTypeLabel(Type->Name),
+            .Shortcut = std::nullopt,
+            .Enabled = true,
+            .IsSeparator = false,
+            .Checked = false,
+        });
+    }
+
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = "asset_inspector.sep.add_component",
+        .Label = {},
+        .Shortcut = std::nullopt,
+        .Enabled = false,
+        .IsSeparator = true,
+        .Checked = false,
+    });
+
+    for (const TypeInfo* Type : CollectContentInspectorCreatableComponentTypes())
+    {
+        if (!Type)
+        {
+            continue;
+        }
+        const std::size_t TypeIndex = m_contextMenuComponentTypes.size();
+        m_contextMenuComponentTypes.push_back(Type->Id);
+        Items.push_back(SnAPI::UI::UIContextMenuItem{
+            .Id = std::string(kContextMenuItemContentInspectorAddComponentTypePrefix) + std::to_string(TypeIndex),
+            .Label = "Add Component: " + ShortTypeLabel(Type->Name),
+            .Shortcut = std::nullopt,
+            .Enabled = true,
+            .IsSeparator = false,
+            .Checked = false,
+        });
+    }
+
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = "asset_inspector.sep.delete",
+        .Label = {},
+        .Shortcut = std::nullopt,
+        .Enabled = false,
+        .IsSeparator = true,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemContentInspectorDeleteNodeId),
+        .Label = "Delete Node",
+        .Shortcut = std::string("Del"),
+        .Enabled = !IsRootNode,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+
+    OpenContextMenu(Event.Position, std::move(Items));
+}
+
+void EditorLayout::OpenContentAssetInspectorComponentContextMenu(const NodeHandle& OwnerNode,
+                                                                 const TypeId& ComponentType,
+                                                                 const SnAPI::UI::PointerEvent& Event)
+{
+    if (OwnerNode.IsNull() || ComponentType == TypeId{})
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_contextMenuScope = EContextMenuScope::ContentInspectorComponent;
+    m_contextMenuHierarchyIndex.reset();
+    m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = OwnerNode;
+    m_contextMenuComponentOwner = OwnerNode;
+    m_contextMenuComponentType = ComponentType;
+    m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
+    m_pendingHierarchyMenuIndex.reset();
+    m_pendingHierarchyMenuOpenPosition = {};
+    m_contextMenuNodeTypes.clear();
+    m_contextMenuComponentTypes.clear();
+    m_contextMenuOpenPosition = Event.Position;
+
+    std::string ComponentLabel = std::string("Delete Component");
+    if (const TypeInfo* Type = TypeRegistry::Instance().Find(ComponentType))
+    {
+        ComponentLabel = "Delete " + ShortTypeLabel(Type->Name);
+    }
+
+    std::vector<SnAPI::UI::UIContextMenuItem> Items{};
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemContentInspectorDeleteComponentId),
+        .Label = std::move(ComponentLabel),
+        .Shortcut = std::string("Del"),
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+
+    OpenContextMenu(Event.Position, std::move(Items));
+}
+
 void EditorLayout::OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& Event)
 {
     CloseContextMenu();
     m_contextMenuScope = EContextMenuScope::ContentBrowser;
     m_contextMenuHierarchyIndex.reset();
     m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
     m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
@@ -2473,6 +3419,22 @@ void EditorLayout::OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& 
     m_pendingHierarchyMenuOpenPosition = {};
 
     std::vector<SnAPI::UI::UIContextMenuItem> Items{};
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemAssetCreateId),
+        .Label = "Create...",
+        .Shortcut = std::string("N"),
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = "asset.sep.browser",
+        .Label = {},
+        .Shortcut = std::nullopt,
+        .Enabled = false,
+        .IsSeparator = true,
+        .Checked = false,
+    });
     Items.push_back(SnAPI::UI::UIContextMenuItem{
         .Id = std::string(kContextMenuItemAssetRescanId),
         .Label = "Rescan Assets",
@@ -2544,6 +3506,7 @@ void EditorLayout::CloseContextMenu()
     m_pendingHierarchyMenuOpenPosition = {};
     m_contextMenuHierarchyIndex.reset();
     m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
 }
@@ -2682,6 +3645,90 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
         return;
     }
 
+    if (m_contextMenuScope == EContextMenuScope::ContentInspectorHierarchyItem)
+    {
+        if (m_contextMenuContentInspectorNode.IsNull())
+        {
+            return;
+        }
+
+        const NodeHandle TargetNode = m_contextMenuContentInspectorNode;
+        if (Item.Id == kContextMenuItemContentInspectorSelectId)
+        {
+            m_contentAssetInspectorState.SelectedNode = TargetNode;
+            if (m_onContentAssetInspectorNodeSelected)
+            {
+                m_onContentAssetInspectorNodeSelected(TargetNode);
+            }
+            RebuildContentAssetInspectorHierarchyTree();
+            RefreshContentAssetInspectorModalState();
+            return;
+        }
+
+        if (Item.Id == kContextMenuItemContentInspectorDeleteNodeId)
+        {
+            if (m_onContentAssetInspectorHierarchyActionRequested)
+            {
+                HierarchyActionRequest Request{};
+                Request.Action = EHierarchyAction::DeleteNode;
+                Request.TargetNode = TargetNode;
+                Request.TargetIsWorldRoot = false;
+                m_onContentAssetInspectorHierarchyActionRequested(Request);
+            }
+            return;
+        }
+
+        if (const auto NodeTypeIndex =
+                TryParsePrefixedIndex(Item.Id, kContextMenuItemContentInspectorAddNodeTypePrefix))
+        {
+            if (m_onContentAssetInspectorHierarchyActionRequested && *NodeTypeIndex < m_contextMenuNodeTypes.size())
+            {
+                HierarchyActionRequest Request{};
+                Request.Action = EHierarchyAction::AddNodeType;
+                Request.TargetNode = TargetNode;
+                Request.TargetIsWorldRoot = false;
+                Request.Type = m_contextMenuNodeTypes[*NodeTypeIndex];
+                m_onContentAssetInspectorHierarchyActionRequested(Request);
+            }
+            return;
+        }
+
+        if (const auto ComponentTypeIndex =
+                TryParsePrefixedIndex(Item.Id, kContextMenuItemContentInspectorAddComponentTypePrefix))
+        {
+            if (m_onContentAssetInspectorHierarchyActionRequested && *ComponentTypeIndex < m_contextMenuComponentTypes.size())
+            {
+                HierarchyActionRequest Request{};
+                Request.Action = EHierarchyAction::AddComponentType;
+                Request.TargetNode = TargetNode;
+                Request.TargetIsWorldRoot = false;
+                Request.Type = m_contextMenuComponentTypes[*ComponentTypeIndex];
+                m_onContentAssetInspectorHierarchyActionRequested(Request);
+            }
+            return;
+        }
+
+        return;
+    }
+
+    if (m_contextMenuScope == EContextMenuScope::ContentInspectorComponent)
+    {
+        if (Item.Id == kContextMenuItemContentInspectorDeleteComponentId &&
+            m_onContentAssetInspectorHierarchyActionRequested &&
+            m_contextMenuComponentOwner.has_value() &&
+            !m_contextMenuComponentOwner->IsNull() &&
+            m_contextMenuComponentType != TypeId{})
+        {
+            HierarchyActionRequest Request{};
+            Request.Action = EHierarchyAction::RemoveComponentType;
+            Request.TargetNode = *m_contextMenuComponentOwner;
+            Request.TargetIsWorldRoot = false;
+            Request.Type = m_contextMenuComponentType;
+            m_onContentAssetInspectorHierarchyActionRequested(Request);
+        }
+        return;
+    }
+
     if (m_contextMenuScope == EContextMenuScope::ContentAssetItem)
     {
         if (!m_contextMenuAssetIndex.has_value())
@@ -2749,6 +3796,14 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
                 m_onContentAssetDeleteRequested(AssetKey);
             }
             return;
+        }
+    }
+
+    if (m_contextMenuScope == EContextMenuScope::ContentBrowser)
+    {
+        if (Item.Id == kContextMenuItemAssetCreateId)
+        {
+            OpenContentAssetCreateModal();
         }
     }
 }
@@ -3119,6 +4174,466 @@ void EditorLayout::ApplyContentAssetFilter()
     RefreshContentAssetCardSelectionStyles();
     RefreshContentAssetDetailsViewModel();
     m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::OpenContentAssetCreateModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_contentCreateModalOpen = true;
+    m_contentCreateSelectedType = {};
+    ViewModelProperty<std::string>(kVmContentCreateTypeFilterKey).Set(std::string{});
+    ViewModelProperty<std::string>(kVmContentCreateAssetNameKey).Set(std::string("NewAsset"));
+    RebuildContentAssetCreateTypeTree();
+    RefreshContentAssetCreateOkButtonState();
+    RefreshContentAssetCreateModalVisibility();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::CloseContentAssetCreateModal()
+{
+    if (!m_contentCreateModalOpen)
+    {
+        return;
+    }
+
+    m_contentCreateModalOpen = false;
+    RefreshContentAssetCreateModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::ConfirmContentAssetCreate()
+{
+    if (!m_contentCreateModalOpen || m_contentCreateSelectedType == TypeId{})
+    {
+        return;
+    }
+
+    std::string RequestedName = LeafBrowserName(NormalizeBrowserPath(m_contentCreateNameText));
+    while (!RequestedName.empty() && std::isspace(static_cast<unsigned char>(RequestedName.front())))
+    {
+        RequestedName.erase(RequestedName.begin());
+    }
+    while (!RequestedName.empty() && std::isspace(static_cast<unsigned char>(RequestedName.back())))
+    {
+        RequestedName.pop_back();
+    }
+    if (RequestedName.empty())
+    {
+        RefreshContentAssetCreateOkButtonState();
+        return;
+    }
+
+    if (m_onContentAssetCreateRequested)
+    {
+        ContentAssetCreateRequest Request{};
+        Request.Type = m_contentCreateSelectedType;
+        Request.Name = RequestedName;
+        Request.FolderPath = NormalizeBrowserPath(m_contentCurrentFolder);
+        m_onContentAssetCreateRequested(Request);
+    }
+
+    CloseContentAssetCreateModal();
+}
+
+void EditorLayout::RefreshContentAssetCreateModalVisibility()
+{
+    if (!m_context || m_contentCreateModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentCreateModalOverlay.Id)))
+    {
+        Overlay->IsOpen().Set(m_contentCreateModalOpen);
+        Overlay->Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            m_contentCreateModalOpen ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    }
+
+    if (!m_contentCreateModalOpen)
+    {
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, m_contentCreateModalOverlay.Id))
+        {
+            m_context->ReleaseCapture();
+        }
+    }
+}
+
+void EditorLayout::RebuildContentAssetCreateTypeTree()
+{
+    if (!m_context || m_contentCreateTypeTree.Id.Value == 0)
+    {
+        return;
+    }
+
+    auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_contentCreateTypeTree.Id));
+    if (!Tree)
+    {
+        return;
+    }
+
+    auto* Source = dynamic_cast<VectorTreeItemSource*>(m_contentCreateTypeSource.get());
+    if (!Source)
+    {
+        m_contentCreateTypeSource = std::make_shared<VectorTreeItemSource>();
+        Source = static_cast<VectorTreeItemSource*>(m_contentCreateTypeSource.get());
+    }
+
+    if (Tree->ItemSource() != m_contentCreateTypeSource.get())
+    {
+        Tree->SetItemSource(m_contentCreateTypeSource.get());
+    }
+
+    const std::vector<CreateNodeTypeEntry> TypeEntries = BuildCreateNodeTypeEntries(m_contentCreateTypeFilterText);
+    std::vector<SnAPI::UI::UITreeItem> TreeItems{};
+    TreeItems.reserve(TypeEntries.size());
+    m_contentCreateVisibleTypes.clear();
+    m_contentCreateVisibleTypes.reserve(TypeEntries.size());
+
+    for (const CreateNodeTypeEntry& Entry : TypeEntries)
+    {
+        std::string Label = Entry.Label.empty() ? Entry.QualifiedName : Entry.Label;
+        if (Label.empty())
+        {
+            Label = "<unnamed>";
+        }
+
+        TreeItems.push_back(SnAPI::UI::UITreeItem{
+            .Label = std::move(Label),
+            .IconSource = std::string(kHierarchyNodeIconPath),
+            .IconTint = kIconWhite,
+            .Depth = static_cast<uint32_t>(std::max(0, Entry.Depth)),
+            .HasChildren = Entry.HasChildren,
+            .Expanded = true,
+        });
+        m_contentCreateVisibleTypes.push_back(Entry.Type);
+    }
+
+    Source->SetItems(std::move(TreeItems));
+    Tree->RefreshItemsFromSource();
+
+    int32_t SelectedIndex = -1;
+    if (m_contentCreateSelectedType != TypeId{})
+    {
+        const auto SelectedIt = std::find(m_contentCreateVisibleTypes.begin(),
+                                          m_contentCreateVisibleTypes.end(),
+                                          m_contentCreateSelectedType);
+        if (SelectedIt != m_contentCreateVisibleTypes.end())
+        {
+            SelectedIndex = static_cast<int32_t>(std::distance(m_contentCreateVisibleTypes.begin(), SelectedIt));
+        }
+    }
+
+    if (SelectedIndex < 0 && !m_contentCreateVisibleTypes.empty())
+    {
+        SelectedIndex = 0;
+        m_contentCreateSelectedType = m_contentCreateVisibleTypes.front();
+    }
+    else if (SelectedIndex < 0)
+    {
+        m_contentCreateSelectedType = {};
+    }
+
+    Tree->SetSelectedIndex(SelectedIndex, false);
+    RefreshContentAssetCreateOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::RefreshContentAssetCreateOkButtonState()
+{
+    if (!m_context || m_contentCreateOkButton.Id.Value == 0)
+    {
+        return;
+    }
+
+    std::string RequestedName = LeafBrowserName(NormalizeBrowserPath(m_contentCreateNameText));
+    while (!RequestedName.empty() && std::isspace(static_cast<unsigned char>(RequestedName.front())))
+    {
+        RequestedName.erase(RequestedName.begin());
+    }
+    while (!RequestedName.empty() && std::isspace(static_cast<unsigned char>(RequestedName.back())))
+    {
+        RequestedName.pop_back();
+    }
+
+    const bool CanCreate = m_contentCreateSelectedType != TypeId{} && !RequestedName.empty();
+    if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentCreateOkButton.Id)))
+    {
+        Button->SetDisabled(!CanCreate);
+    }
+}
+
+void EditorLayout::CloseContentAssetInspectorModal(const bool NotifyHandler)
+{
+    const bool WasOpen = m_contentAssetInspectorState.Open;
+    m_contentAssetInspectorState.Open = false;
+    m_contentAssetInspectorState.TargetObject = nullptr;
+    m_contentAssetInspectorState.TargetType = {};
+    m_contentAssetInspectorState.SelectedNode = {};
+    m_contentAssetInspectorState.Nodes.clear();
+    m_contentAssetInspectorState.CanEditHierarchy = false;
+    m_contentAssetInspectorState.IsDirty = false;
+    m_contentAssetInspectorState.CanSave = false;
+
+    RebuildContentAssetInspectorHierarchyTree();
+    RefreshContentAssetInspectorModalState();
+    RefreshContentAssetInspectorModalVisibility();
+
+    if (NotifyHandler && WasOpen && m_onContentAssetInspectorCloseRequested)
+    {
+        m_onContentAssetInspectorCloseRequested();
+    }
+
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::RefreshContentAssetInspectorModalVisibility()
+{
+    if (!m_context || m_contentInspectorModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentInspectorModalOverlay.Id)))
+    {
+        Overlay->IsOpen().Set(m_contentAssetInspectorState.Open);
+        Overlay->Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            m_contentAssetInspectorState.Open ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    }
+
+    if (!m_contentAssetInspectorState.Open)
+    {
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, m_contentInspectorModalOverlay.Id))
+        {
+            m_context->ReleaseCapture();
+        }
+    }
+}
+
+void EditorLayout::RebuildContentAssetInspectorHierarchyTree()
+{
+    if (!m_context || m_contentInspectorHierarchyTree.Id.Value == 0)
+    {
+        return;
+    }
+
+    auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_contentInspectorHierarchyTree.Id));
+    if (!Tree)
+    {
+        return;
+    }
+
+    auto* Source = dynamic_cast<VectorTreeItemSource*>(m_contentInspectorHierarchySource.get());
+    if (!Source)
+    {
+        m_contentInspectorHierarchySource = std::make_shared<VectorTreeItemSource>();
+        Source = static_cast<VectorTreeItemSource*>(m_contentInspectorHierarchySource.get());
+    }
+
+    if (Tree->ItemSource() != m_contentInspectorHierarchySource.get())
+    {
+        Tree->SetItemSource(m_contentInspectorHierarchySource.get());
+    }
+
+    std::vector<SnAPI::UI::UITreeItem> TreeItems{};
+    m_contentInspectorVisibleNodes.clear();
+    TreeItems.reserve(m_contentAssetInspectorState.Nodes.size());
+    m_contentInspectorVisibleNodes.reserve(m_contentAssetInspectorState.Nodes.size());
+
+    if (m_contentAssetInspectorState.Open && m_contentAssetInspectorState.CanEditHierarchy)
+    {
+        for (const auto& Entry : m_contentAssetInspectorState.Nodes)
+        {
+            std::string Label = Entry.Label.empty() ? std::string("<unnamed>") : Entry.Label;
+            TreeItems.push_back(SnAPI::UI::UITreeItem{
+                .Label = std::move(Label),
+                .IconSource = std::string(kHierarchyNodeIconPath),
+                .IconTint = kIconWhite,
+                .Depth = static_cast<uint32_t>(std::max(0, Entry.Depth)),
+                .HasChildren = false,
+                .Expanded = true,
+            });
+            m_contentInspectorVisibleNodes.push_back(Entry.Handle);
+        }
+    }
+
+    Source->SetItems(std::move(TreeItems));
+    Tree->RefreshItemsFromSource();
+
+    int32_t SelectedIndex = -1;
+    if (!m_contentAssetInspectorState.SelectedNode.IsNull())
+    {
+        const auto SelectedIt = std::find(
+            m_contentInspectorVisibleNodes.begin(),
+            m_contentInspectorVisibleNodes.end(),
+            m_contentAssetInspectorState.SelectedNode);
+        if (SelectedIt != m_contentInspectorVisibleNodes.end())
+        {
+            SelectedIndex = static_cast<int32_t>(std::distance(m_contentInspectorVisibleNodes.begin(), SelectedIt));
+        }
+    }
+    if (SelectedIndex < 0 && !m_contentInspectorVisibleNodes.empty())
+    {
+        SelectedIndex = 0;
+        m_contentAssetInspectorState.SelectedNode = m_contentInspectorVisibleNodes.front();
+    }
+    else if (SelectedIndex < 0)
+    {
+        m_contentAssetInspectorState.SelectedNode = {};
+    }
+
+    Tree->SetSelectedIndex(SelectedIndex, false);
+}
+
+void EditorLayout::RefreshContentAssetInspectorModalState()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    bool HasTarget = m_contentAssetInspectorState.TargetObject != nullptr &&
+                     m_contentAssetInspectorState.TargetType != TypeId{};
+    void* BindingTargetObject = m_contentAssetInspectorState.TargetObject;
+    TypeId BindingTargetType = m_contentAssetInspectorState.TargetType;
+    BaseNode* SelectedHierarchyNode = nullptr;
+    if (m_contentAssetInspectorState.CanEditHierarchy && !m_contentAssetInspectorState.SelectedNode.IsNull())
+    {
+        SelectedHierarchyNode = m_contentAssetInspectorState.SelectedNode.Borrowed();
+        if (!SelectedHierarchyNode)
+        {
+            SelectedHierarchyNode = m_contentAssetInspectorState.SelectedNode.BorrowedSlowByUuid();
+        }
+        if (SelectedHierarchyNode)
+        {
+            BindingTargetObject = SelectedHierarchyNode;
+            BindingTargetType = SelectedHierarchyNode->TypeKey();
+            HasTarget = true;
+        }
+    }
+
+    if (m_contentInspectorTitleText.Id.Value != 0)
+    {
+        if (auto* Title = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentInspectorTitleText.Id)))
+        {
+            std::string TitleText = m_contentAssetInspectorState.Title.empty()
+                                        ? std::string("Asset Inspector")
+                                        : m_contentAssetInspectorState.Title;
+            if (m_contentAssetInspectorState.IsDirty)
+            {
+                TitleText = "* " + TitleText;
+            }
+            Title->Text().Set(std::move(TitleText));
+        }
+    }
+
+    if (m_contentInspectorStatusText.Id.Value != 0)
+    {
+        if (auto* Status = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentInspectorStatusText.Id)))
+        {
+            std::string StatusText = m_contentAssetInspectorState.Status;
+            if (StatusText.empty())
+            {
+                if (!m_contentAssetInspectorState.Open)
+                {
+                    StatusText = "Double-click an asset to inspect and edit properties.";
+                }
+                else if (!HasTarget)
+                {
+                    StatusText = "No editable payload is available for this asset.";
+                }
+                else
+                {
+                    if (m_contentAssetInspectorState.CanEditHierarchy)
+                    {
+                        const bool HasSelection = !m_contentAssetInspectorState.SelectedNode.IsNull();
+                        StatusText = m_contentAssetInspectorState.IsDirty
+                                         ? "Unsaved changes. Right-click hierarchy rows to add/remove nodes/components."
+                                         : (HasSelection ? "Right-click hierarchy rows to edit structure."
+                                                         : "Select a node in the hierarchy to edit.");
+                    }
+                    else
+                    {
+                        StatusText = m_contentAssetInspectorState.IsDirty
+                                         ? "Unsaved changes. Click Save to persist."
+                                         : "No pending edits.";
+                    }
+                }
+            }
+            Status->Text().Set(std::move(StatusText));
+        }
+    }
+
+    if (m_contentInspectorPropertyPanel.Id.Value != 0)
+    {
+        if (auto* PropertyPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorPropertyPanel.Id)))
+        {
+            if (m_contentAssetInspectorState.Open && HasTarget)
+            {
+                if (!m_contentInspectorTargetBound ||
+                    m_contentInspectorBoundObject != BindingTargetObject ||
+                    m_contentInspectorBoundType != BindingTargetType)
+                {
+                    PropertyPanel->ClearObject();
+                    if (SelectedHierarchyNode && m_contentAssetInspectorState.CanEditHierarchy)
+                    {
+                        m_contentInspectorTargetBound = PropertyPanel->BindNode(SelectedHierarchyNode);
+                    }
+                    else
+                    {
+                        m_contentInspectorTargetBound = PropertyPanel->BindObject(BindingTargetType, BindingTargetObject);
+                    }
+                    if (m_contentInspectorTargetBound)
+                    {
+                        m_contentInspectorBoundObject = BindingTargetObject;
+                        m_contentInspectorBoundType = BindingTargetType;
+                    }
+                    else
+                    {
+                        m_contentInspectorBoundObject = nullptr;
+                        m_contentInspectorBoundType = {};
+                    }
+                }
+                else
+                {
+                    PropertyPanel->RefreshFromModel();
+                }
+            }
+            else if (m_contentInspectorTargetBound)
+            {
+                PropertyPanel->ClearObject();
+                m_contentInspectorTargetBound = false;
+                m_contentInspectorBoundObject = nullptr;
+                m_contentInspectorBoundType = {};
+            }
+        }
+    }
+
+    if (m_contentInspectorSaveButton.Id.Value != 0)
+    {
+        if (auto* SaveButton = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentInspectorSaveButton.Id)))
+        {
+            const bool CanSave = m_contentAssetInspectorState.Open &&
+                                 m_contentInspectorTargetBound &&
+                                 m_contentAssetInspectorState.CanSave &&
+                                 m_contentAssetInspectorState.IsDirty;
+            SaveButton->SetDisabled(!CanSave);
+        }
+    }
 }
 
 void EditorLayout::RefreshContentAssetCardSelectionStyles()

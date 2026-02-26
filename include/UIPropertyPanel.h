@@ -77,6 +77,8 @@ private:
     Color,
     Uuid,
     Enum,
+    SubClass,
+    AssetRef,
     Unsupported
   };
 

@@ -27,7 +27,7 @@ namespace SnAPI::GameFramework
 class SNAPI_GAMEFRAMEWORK_API LocalPlayer : public BaseNode
 {
 public:
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::LocalPlayer";
+    static constexpr auto kTypeName = "SnAPI::GameFramework::LocalPlayer";
 
     LocalPlayer();
     explicit LocalPlayer(std::string Name);
@@ -37,6 +37,8 @@ public:
 
     NodeHandle& EditPossessedNode();
     const NodeHandle& GetPossessedNode() const;
+    void SetPossessedNode(const NodeHandle& Target);
+    void SyncPossessionCallbacks();
 
     bool& EditAcceptInput();
     const bool& GetAcceptInput() const;
@@ -75,10 +77,13 @@ public:
     void ServerRequestUnpossess();
 
 private:
+    void DispatchPossessionTransition(const NodeHandle& PreviousTarget, const NodeHandle& NewTarget);
+
     bool CanPossessTarget(const NodeHandle& Target) const;
 
     unsigned int m_playerIndex = 0;
     NodeHandle m_possessedNode{};
+    NodeHandle m_lastNotifiedPossessedNode{};
     bool m_acceptInput = true;
     std::uint64_t m_ownerConnectionId = 0;
 

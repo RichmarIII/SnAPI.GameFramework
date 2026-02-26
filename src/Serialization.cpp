@@ -20,6 +20,8 @@
 #include "Math.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PawnBase.h"
+#include "PlayerStart.h"
 #include "Relevance.h"
 #include "ScriptComponent.h"
 #include "TransformComponent.h"
@@ -904,6 +906,11 @@ TExpected<NodePayload> SerializeNodePayloadRecursive(const BaseNode& NodeRef, co
             return std::unexpected(MakeError(EErrorCode::NotFound, "Child node could not be resolved during serialization"));
         }
 
+        if (ChildNode->EditorTransient())
+        {
+            continue;
+        }
+
         auto ChildPayloadResult = SerializeNodePayloadRecursive(*ChildNode, Context);
         if (!ChildPayloadResult)
         {
@@ -1047,6 +1054,19 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
         if (!DeserializeResult)
         {
             return std::unexpected(DeserializeResult.error());
+        }
+    }
+
+    if (BaseNode* Node = Owner.Borrowed())
+    {
+        if (auto* Pawn = NodeCast<PawnBase>(Node))
+        {
+            Pawn->OnCreateImpl(WorldRef);
+        }
+
+        if (auto* Start = NodeCast<PlayerStart>(Node))
+        {
+            Start->OnCreateImpl(WorldRef);
         }
     }
 
@@ -1217,6 +1237,11 @@ TExpected<LevelPayload> LevelSerializer::Serialize(const Level& LevelRef)
             return std::unexpected(MakeError(EErrorCode::NotFound, "Level root node could not be resolved"));
         }
 
+        if (Node->EditorTransient())
+        {
+            continue;
+        }
+
         auto NodePayloadResult = NodeSerializer::Serialize(*Node);
         if (!NodePayloadResult)
         {
@@ -1294,6 +1319,11 @@ TExpected<WorldPayload> WorldSerializer::Serialize(const World& WorldRef)
         if (!Node)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "World root node could not be resolved"));
+        }
+
+        if (Node->EditorTransient())
+        {
+            continue;
         }
 
         auto NodePayloadResult = NodeSerializer::Serialize(*Node);

@@ -7,11 +7,14 @@
 #include "Editor/EditorViewportBinding.h"
 #include "Editor/EditorAssetService.h"
 #include "Editor/IEditorService.h"
+#include "Serialization.h"
+#include "World.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace SnAPI::UI
@@ -164,6 +167,44 @@ private:
 };
 
 /**
+ * @brief Manages Play-In-Editor world session lifecycle.
+ */
+class SNAPI_GAMEFRAMEWORK_EDITOR_API EditorPieService final : public IEditorService
+{
+public:
+    enum class EState : std::uint8_t
+    {
+        Stopped = 0,
+        Playing,
+        Paused,
+    };
+
+    [[nodiscard]] std::string_view Name() const override;
+    Result Initialize(EditorServiceContext& Context) override;
+    void Shutdown(EditorServiceContext& Context) override;
+
+    Result Play(EditorServiceContext& Context);
+    Result Pause(EditorServiceContext& Context);
+    Result Stop(EditorServiceContext& Context);
+
+    [[nodiscard]] EState State() const { return m_state; }
+    [[nodiscard]] bool IsPlaying() const { return m_state == EState::Playing; }
+    [[nodiscard]] bool IsPaused() const { return m_state == EState::Paused; }
+    [[nodiscard]] bool IsSessionActive() const { return m_state != EState::Stopped; }
+
+private:
+    Result StartSession(EditorServiceContext& Context);
+    Result ResumeSession(EditorServiceContext& Context);
+    Result StopSession(EditorServiceContext& Context);
+    [[nodiscard]] static WorldExecutionProfile PausedExecutionProfile();
+
+    EState m_state = EState::Stopped;
+    std::optional<WorldPayload> m_editorSnapshot{};
+    EWorldKind m_editorWorldKind = EWorldKind::Editor;
+    WorldExecutionProfile m_editorExecutionProfile{};
+};
+
+/**
  * @brief Builds and synchronizes the editor shell UI layout.
  */
 class SNAPI_GAMEFRAMEWORK_EDITOR_API EditorLayoutService final : public IEditorService
@@ -187,6 +228,8 @@ private:
     NodeHandle m_pendingSelectionRequest{};
     bool m_hasPendingHierarchyActionRequest = false;
     EditorLayout::HierarchyActionRequest m_pendingHierarchyActionRequest{};
+    bool m_hasPendingToolbarAction = false;
+    EditorLayout::EToolbarAction m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     bool m_hasPendingAssetSelection = false;
     bool m_pendingAssetSelectionDoubleClick = false;
     std::string m_pendingAssetSelectionKey{};
@@ -200,6 +243,14 @@ private:
     std::string m_pendingAssetRenameKey{};
     std::string m_pendingAssetRenameValue{};
     bool m_hasPendingAssetRefreshRequest = false;
+    bool m_hasPendingAssetCreateRequest = false;
+    EditorLayout::ContentAssetCreateRequest m_pendingAssetCreateRequest{};
+    bool m_hasPendingAssetInspectorSaveRequest = false;
+    bool m_hasPendingAssetInspectorCloseRequest = false;
+    bool m_hasPendingAssetInspectorNodeSelectionRequest = false;
+    NodeHandle m_pendingAssetInspectorNodeSelection{};
+    bool m_hasPendingAssetInspectorHierarchyActionRequest = false;
+    EditorLayout::HierarchyActionRequest m_pendingAssetInspectorHierarchyActionRequest{};
     bool m_layoutRebuildRequested = false;
     std::size_t m_assetListSignature = 0;
     std::size_t m_assetDetailsSignature = 0;
@@ -259,6 +310,8 @@ private:
                                     const SnAPI::UI::PointerEvent& Event,
                                     std::uint32_t RoutedTypeId,
                                     bool ContainsPointer);
+    void UpdatePieMouseCaptureState(EditorServiceContext& Context);
+    void SetPieMouseCapture(EditorServiceContext& Context, bool CaptureEnabled);
     bool TryResolvePickedNode(EditorServiceContext& Context, const SnAPI::UI::UIPoint& ScreenPoint, NodeHandle& OutNode) const;
     bool TryResolvePickedNodePhysics(EditorServiceContext& Context,
                                      const SnAPI::UI::UIPoint& ScreenPoint,
@@ -272,6 +325,7 @@ private:
     bool m_pointerPressedInside = false;
     bool m_pointerDragged = false;
     SnAPI::UI::UIPoint m_pointerPressPosition{};
+    bool m_pieMouseCaptureEnabled = false;
 };
 
 class SNAPI_GAMEFRAMEWORK_EDITOR_API EditorTransformInteractionService final : public IEditorService

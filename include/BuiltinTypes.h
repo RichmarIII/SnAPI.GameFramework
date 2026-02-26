@@ -22,6 +22,13 @@
 namespace SnAPI::GameFramework
 {
 
+template<typename TBase>
+class TSubClassOf;
+template<typename TBase, typename TNameTag>
+class TAssetRef;
+class PawnBase;
+using PawnBaseAssetRef = TAssetRef<PawnBase, void>;
+
 /**
  * @brief Built-in type name registrations for reflection.
  * @remarks These are used by TypeIdFromName and Variant conversions.
@@ -40,6 +47,8 @@ SNAPI_DEFINE_TYPE_NAME(Vec2, "SnAPI::GameFramework::Vec2")
 SNAPI_DEFINE_TYPE_NAME(Vec3, "SnAPI::GameFramework::Vec3")
 SNAPI_DEFINE_TYPE_NAME(Vec4, "SnAPI::GameFramework::Vec4")
 SNAPI_DEFINE_TYPE_NAME(Quat, "SnAPI::GameFramework::Quat")
+SNAPI_DEFINE_TYPE_NAME(TSubClassOf<PawnBase>, "SnAPI::GameFramework::TSubClassOf<SnAPI::GameFramework::PawnBase>")
+SNAPI_DEFINE_TYPE_NAME(PawnBaseAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::PawnBase>")
 SNAPI_DEFINE_TYPE_NAME(NodeHandle, "SnAPI::GameFramework::NodeHandle")
 SNAPI_DEFINE_TYPE_NAME(ComponentHandle, "SnAPI::GameFramework::ComponentHandle")
 #if defined(SNAPI_GF_ENABLE_UI)

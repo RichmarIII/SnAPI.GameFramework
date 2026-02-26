@@ -1,14 +1,82 @@
 #include "LocalPlayer.h"
 
+#include <array>
+
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 #include "NetRpc.h"
 #endif
 
+#include "BaseNode.h"
 #include "Profiling.h"
+#include "TypeRegistry.h"
 #include "Variant.h"
 
 namespace SnAPI::GameFramework
 {
+namespace
+{
+const MethodInfo* FindPossessionCallback(const TypeId& Type,
+                                         const std::string_view MethodName,
+                                         const std::span<const Variant> Args)
+{
+    const TypeInfo* Info = TypeRegistry::Instance().Find(Type);
+    if (!Info)
+    {
+        return nullptr;
+    }
+
+    for (const auto& Method : Info->Methods)
+    {
+        if (Method.Name != MethodName || Method.ParamTypes.size() != Args.size())
+        {
+            continue;
+        }
+
+        bool Match = true;
+        for (std::size_t Index = 0; Index < Args.size(); ++Index)
+        {
+            if (Method.ParamTypes[Index] != Args[Index].Type())
+            {
+                Match = false;
+                break;
+            }
+        }
+
+        if (Match)
+        {
+            return &Method;
+        }
+    }
+
+    for (const TypeId& BaseType : Info->BaseTypes)
+    {
+        if (const MethodInfo* Method = FindPossessionCallback(BaseType, MethodName, Args))
+        {
+            return Method;
+        }
+    }
+
+    return nullptr;
+}
+
+void InvokePossessionCallback(BaseNode* Node, const std::string_view MethodName, const NodeHandle& PlayerHandle)
+{
+    if (!Node)
+    {
+        return;
+    }
+
+    const std::array<Variant, 1> Args{Variant::FromValue(PlayerHandle)};
+    const std::span<const Variant> ArgsSpan{Args};
+    const MethodInfo* Method = FindPossessionCallback(Node->TypeKey(), MethodName, ArgsSpan);
+    if (!Method)
+    {
+        return;
+    }
+
+    (void)Method->Invoke(Node, ArgsSpan);
+}
+} // namespace
 
 LocalPlayer::LocalPlayer()
 {
@@ -41,6 +109,28 @@ NodeHandle& LocalPlayer::EditPossessedNode()
 const NodeHandle& LocalPlayer::GetPossessedNode() const
 {
     return m_possessedNode;
+}
+
+void LocalPlayer::SetPossessedNode(const NodeHandle& Target)
+{
+    if (Target == m_possessedNode)
+    {
+        return;
+    }
+
+    const NodeHandle PreviousTarget = m_possessedNode;
+    m_possessedNode = Target;
+    DispatchPossessionTransition(PreviousTarget, m_possessedNode);
+}
+
+void LocalPlayer::SyncPossessionCallbacks()
+{
+    if (m_lastNotifiedPossessedNode == m_possessedNode)
+    {
+        return;
+    }
+
+    DispatchPossessionTransition(m_lastNotifiedPossessedNode, m_possessedNode);
 }
 
 bool& LocalPlayer::EditAcceptInput()
@@ -125,7 +215,7 @@ void LocalPlayer::ServerRequestPossess(const NodeHandle& Target)
     {
         return;
     }
-    m_possessedNode = Target;
+    SetPossessedNode(Target);
 }
 
 void LocalPlayer::ServerRequestUnpossess()
@@ -144,7 +234,7 @@ void LocalPlayer::ServerRequestUnpossess()
         }
     }
 #endif
-    m_possessedNode = {};
+    SetPossessedNode({});
 }
 
 bool LocalPlayer::CanPossessTarget(const NodeHandle& Target) const
@@ -162,6 +252,26 @@ bool LocalPlayer::CanPossessTarget(const NodeHandle& Target) const
     }
 
     return TargetNode->World() == SelfWorld;
+}
+
+void LocalPlayer::DispatchPossessionTransition(const NodeHandle& PreviousTarget, const NodeHandle& NewTarget)
+{
+    if (PreviousTarget == NewTarget)
+    {
+        return;
+    }
+
+    if (BaseNode* PreviousNode = PreviousTarget.Borrowed(); PreviousNode && PreviousNode->World() == World())
+    {
+        InvokePossessionCallback(PreviousNode, "OnUnpossess", Handle());
+    }
+
+    if (BaseNode* NewNode = NewTarget.Borrowed(); NewNode && NewNode->World() == World())
+    {
+        InvokePossessionCallback(NewNode, "OnPossess", Handle());
+    }
+
+    m_lastNotifiedPossessedNode = m_possessedNode;
 }
 
 } // namespace SnAPI::GameFramework

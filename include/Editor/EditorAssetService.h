@@ -4,6 +4,7 @@
 #include "Editor/IEditorService.h"
 
 #include "Handles.h"
+#include "TypeRegistration.h"
 #include "AssetManager.h"
 
 #include <memory>
@@ -11,6 +12,12 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
+
+namespace SnAPI::GameFramework
+{
+class BaseNode;
+class World;
+}
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -37,6 +44,27 @@ public:
         std::string OwningPackPath{};
     };
 
+    struct AssetEditorSessionView
+    {
+        struct NodeEntry
+        {
+            NodeHandle Handle{};
+            int Depth = 0;
+            std::string Label{};
+        };
+
+        bool IsOpen = false;
+        std::string AssetKey{};
+        std::string Title{};
+        TypeId TargetType{};
+        void* TargetObject = nullptr;
+        std::vector<NodeEntry> Nodes{};
+        NodeHandle SelectedNode{};
+        bool CanEditHierarchy = false;
+        bool IsDirty = false;
+        bool CanSave = false;
+    };
+
     [[nodiscard]] std::string_view Name() const override;
     Result Initialize(EditorServiceContext& Context) override;
     void Shutdown(EditorServiceContext& Context) override;
@@ -59,6 +87,20 @@ public:
     Result RenameAssetByKey(std::string_view Key, std::string_view NewName);
     Result RenameSelectedAsset(std::string_view NewName);
     Result CreateRuntimePrefabFromNode(EditorServiceContext& Context, const NodeHandle& SourceHandle);
+    Result CreateRuntimeNodeAssetByType(EditorServiceContext& Context,
+                                        const TypeId& NodeType,
+                                        std::string_view AssetName,
+                                        std::string_view FolderPath);
+    Result OpenAssetEditorByKey(std::string_view Key);
+    void CloseAssetEditor();
+    Result SelectAssetEditorNode(const NodeHandle& Node);
+    Result AddAssetEditorNode(const NodeHandle& Parent, const TypeId& NodeType);
+    Result DeleteAssetEditorNode(const NodeHandle& Node);
+    Result AddAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType);
+    Result RemoveAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType);
+    void TickAssetEditorSession();
+    Result SaveActiveAssetEditor();
+    [[nodiscard]] AssetEditorSessionView AssetEditorSession() const;
 
     Result InstantiateArmedAsset(EditorServiceContext& Context);
     Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
@@ -80,15 +122,35 @@ private:
     Result InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
+    [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> SerializeAssetEditorPayload() const;
+    [[nodiscard]] BaseNode* ResolveAssetEditorNode(const NodeHandle& Node) const;
+    void RefreshAssetEditorHierarchy();
+    void ClearAssetEditorState();
 
     std::unique_ptr<::SnAPI::AssetPipeline::AssetManager> m_assetManager{};
     std::vector<DiscoveredAsset> m_assets{};
     std::unordered_map<std::string, std::size_t> m_assetIndexByKey{};
     std::unordered_map<::SnAPI::AssetPipeline::AssetId, std::string, ::SnAPI::AssetPipeline::UuidHash> m_assetRenameOverrides{};
+    std::unordered_map<::SnAPI::AssetPipeline::AssetId, ::SnAPI::AssetPipeline::TypedPayload, ::SnAPI::AssetPipeline::UuidHash> m_assetPayloadOverrides{};
     std::string m_selectedAssetKey{};
     std::string m_placementAssetKey{};
     std::string m_previewSummary{};
     std::string m_statusMessage{};
+
+    std::unique_ptr<::SnAPI::GameFramework::World> m_assetEditorWorld{};
+    NodeHandle m_assetEditorRootHandle{};
+    std::string m_assetEditorAssetKey{};
+    ::SnAPI::AssetPipeline::AssetId m_assetEditorAssetId{};
+    ::SnAPI::AssetPipeline::TypeId m_assetEditorAssetKind{};
+    TypeId m_assetEditorTargetType{};
+    void* m_assetEditorTargetObject = nullptr;
+    bool m_assetEditorDirty = false;
+    bool m_assetEditorCanSave = false;
+    bool m_assetEditorCanEditHierarchy = false;
+    std::vector<uint8_t> m_assetEditorBaselineCookedBytes{};
+    std::string m_assetEditorTitle{};
+    NodeHandle m_assetEditorSelectedNode{};
+    std::vector<AssetEditorSessionView::NodeEntry> m_assetEditorHierarchy{};
 };
 
 } // namespace SnAPI::GameFramework::Editor

@@ -52,6 +52,11 @@ protected:
                 return std::unexpected(DeserializeResult.error().Message);
             }
 
+            if (Params->OutCreatedRoot)
+            {
+                *Params->OutCreatedRoot = *DeserializeResult;
+            }
+
             if (BaseNode* CreatedNode = DeserializeResult->Borrowed())
             {
                 Loaded.Name(CreatedNode->Name());
@@ -96,6 +101,11 @@ protected:
             if (!CreateResult)
             {
                 return std::unexpected(CreateResult.error().Message);
+            }
+
+            if (Params->OutCreatedLevel)
+            {
+                *Params->OutCreatedLevel = *CreateResult;
             }
 
             auto* CreatedLevel = NodeCast<Level>(CreateResult->Borrowed());

@@ -90,6 +90,7 @@ set(SNAPI_GF_SOURCES
     src/AudioListenerComponent.cpp
     src/AudioSourceComponent.cpp
     src/AudioSystem.cpp
+    src/AssetRef.cpp
     src/AssetPipelinePlugin.cpp
     src/AssetPipelineFactories.cpp
     src/AssetPipelineSerializers.cpp
@@ -105,6 +106,7 @@ set(SNAPI_GF_SOURCES
     src/GameRuntime.cpp
     src/BaseComponent.cpp
     src/InputComponent.cpp
+    src/InputIntentComponent.cpp
     src/InputSystem.cpp
     src/UISystem.cpp
     src/UIPropertyPanel.cpp
@@ -112,6 +114,9 @@ set(SNAPI_GF_SOURCES
     src/Level.cpp
     src/LocalPlayer.cpp
     src/LocalPlayerService.cpp
+    src/MultiplayerConfigNode.cpp
+    src/PawnBase.cpp
+    src/PlayerStart.cpp
     src/NetworkSystem.cpp
     src/PhysicsSystem.cpp
     src/NetReplication.cpp
@@ -119,6 +124,7 @@ set(SNAPI_GF_SOURCES
     src/RendererSystem.cpp
     src/RigidBodyComponent.cpp
     src/SkeletalMeshComponent.cpp
+    src/SprintArmComponent.cpp
     src/StaticMeshComponent.cpp
     src/TransformComponent.cpp
     src/Serialization.cpp

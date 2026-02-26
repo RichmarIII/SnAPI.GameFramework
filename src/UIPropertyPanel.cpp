@@ -2,8 +2,12 @@
 
 #if defined(SNAPI_GF_ENABLE_UI)
 
+#include "AssetRef.h"
 #include "BaseNode.h"
+#include "BuiltinTypes.h"
 #include "IWorld.h"
+#include "PawnBase.h"
+#include "SubClassOf.h"
 
 #include <algorithm>
 #include <array>
@@ -55,6 +59,7 @@ constexpr Color kAxisX{232, 110, 90, 255};
 constexpr Color kAxisY{118, 208, 142, 255};
 constexpr Color kAxisZ{116, 156, 235, 255};
 constexpr Color kAxisW{220, 196, 138, 255};
+constexpr std::string_view kAssetRefNoneOption = "<None>";
 
 [[nodiscard]] Color AxisTintForIndex(const size_t Index)
 {
@@ -994,7 +999,9 @@ void UIPropertyPanel::AddFieldEditor(
       checkbox->ElementStyle().Apply("editor.checkbox");
     }
   }
-  else if (editorKind == EEditorKind::Enum)
+  else if (editorKind == EEditorKind::Enum ||
+           editorKind == EEditorKind::SubClass ||
+           editorKind == EEditorKind::AssetRef)
   {
     const auto comboHandle = m_Context->CreateElement<SnAPI::UI::UIComboBox>();
     if (comboHandle.Id.Value == 0)
@@ -1025,13 +1032,35 @@ void UIPropertyPanel::AddFieldEditor(
       combo->RowHeight().Set(24.0f);
 
       std::vector<std::string> options;
-      if (const TypeInfo* enumInfo = TypeRegistry::Instance().Find(Field.FieldType);
-          enumInfo && enumInfo->IsEnum)
+      if (editorKind == EEditorKind::Enum)
       {
-        options.reserve(enumInfo->EnumValues.size());
-        for (const EnumValueInfo& enumValue : enumInfo->EnumValues)
+        if (const TypeInfo* enumInfo = TypeRegistry::Instance().Find(Field.FieldType);
+            enumInfo && enumInfo->IsEnum)
         {
-          options.push_back(enumValue.Name);
+          options.reserve(enumInfo->EnumValues.size());
+          for (const EnumValueInfo& enumValue : enumInfo->EnumValues)
+          {
+            options.push_back(enumValue.Name);
+          }
+        }
+      }
+      else if (editorKind == EEditorKind::SubClass && Field.FieldType == StaticTypeId<TSubClassOf<PawnBase>>())
+      {
+        const auto entries = TSubClassOf<PawnBase>::EnumerateTypes();
+        options.reserve(entries.size());
+        for (const auto& entry : entries)
+        {
+          options.push_back(entry.Name);
+        }
+      }
+      else if (editorKind == EEditorKind::AssetRef && Field.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
+      {
+        const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
+        options.reserve(entries.size() + 1);
+        options.emplace_back(kAssetRefNoneOption);
+        for (const auto& entry : entries)
+        {
+          options.push_back(entry.Label);
         }
       }
       combo->SetItems(std::move(options));
@@ -1371,6 +1400,14 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::Uuid;
   }
+  if (Type == StaticTypeId<TSubClassOf<PawnBase>>())
+  {
+    return EEditorKind::SubClass;
+  }
+  if (Type == StaticTypeId<TAssetRef<PawnBase>>())
+  {
+    return EEditorKind::AssetRef;
+  }
   if (const TypeInfo* typeInfo = TypeRegistry::Instance().Find(Type);
       typeInfo && typeInfo->IsEnum)
   {
@@ -1512,6 +1549,68 @@ bool UIPropertyPanel::ReadFieldValue(
   if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || !field->Getter)
   {
     return false;
+  }
+
+  if (Binding.EditorKind == EEditorKind::SubClass)
+  {
+    if (Binding.FieldType != StaticTypeId<TSubClassOf<PawnBase>>() || !field->ConstPointer)
+    {
+      return false;
+    }
+
+    const auto* subClassValue = static_cast<const TSubClassOf<PawnBase>*>(field->ConstPointer(owner));
+    if (!subClassValue)
+    {
+      return false;
+    }
+
+    OutText = subClassValue->ResolvedTypeName();
+    OutBool = false;
+    return true;
+  }
+
+  if (Binding.EditorKind == EEditorKind::AssetRef)
+  {
+    if (Binding.FieldType != StaticTypeId<TAssetRef<PawnBase>>() || !field->ConstPointer)
+    {
+      return false;
+    }
+
+    const auto* assetRefValue = static_cast<const TAssetRef<PawnBase>*>(field->ConstPointer(owner));
+    if (!assetRefValue)
+    {
+      return false;
+    }
+
+    const std::string selectedName = assetRefValue->ResolvedAssetName();
+    const std::string selectedId = TrimCopy(assetRefValue->GetAssetId());
+    if (selectedName.empty() && selectedId.empty())
+    {
+      OutText = std::string(kAssetRefNoneOption);
+      OutBool = false;
+      return true;
+    }
+
+    const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
+    const auto it = std::ranges::find_if(entries, [&](const TAssetRef<PawnBase>::TEntry& entry) {
+      if (!selectedId.empty())
+      {
+        return entry.AssetId == selectedId;
+      }
+      return entry.Name == selectedName;
+    });
+
+    if (it != entries.end())
+    {
+      OutText = it->Label;
+    }
+    else
+    {
+      OutText = assetRefValue->DisplayLabel();
+    }
+
+    OutBool = false;
+    return true;
   }
 
   if (Binding.EditorKind == EEditorKind::Enum)
@@ -1694,6 +1793,8 @@ bool UIPropertyPanel::ReadFieldValue(
       return true;
     }
   case EEditorKind::Enum:
+  case EEditorKind::SubClass:
+  case EEditorKind::AssetRef:
     return false;
   case EEditorKind::Unsupported:
   default:
@@ -1713,7 +1814,10 @@ bool UIPropertyPanel::WriteFieldValue(
 
   void* owner = nullptr;
   const FieldInfo* field = nullptr;
-  const bool requiresSetter = Binding.EditorKind != EEditorKind::Enum;
+  const bool requiresSetter =
+    Binding.EditorKind != EEditorKind::Enum &&
+    Binding.EditorKind != EEditorKind::SubClass &&
+    Binding.EditorKind != EEditorKind::AssetRef;
   if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || field->IsConst ||
       (requiresSetter && !field->Setter))
   {
@@ -1897,6 +2001,62 @@ bool UIPropertyPanel::WriteFieldValue(
 
       void* destination = field->MutablePointer(owner);
       return WriteUnsignedBits(destination, enumInfo->Size, enumBits);
+    }
+  case EEditorKind::SubClass:
+    {
+      if (Binding.FieldType != StaticTypeId<TSubClassOf<PawnBase>>() || !field->MutablePointer)
+      {
+        return false;
+      }
+
+      auto* value = static_cast<TSubClassOf<PawnBase>*>(field->MutablePointer(owner));
+      if (!value)
+      {
+        return false;
+      }
+
+      const std::string selected = TrimCopy(TextValue);
+      if (selected.empty())
+      {
+        value->Clear();
+        return true;
+      }
+
+      return value->SetTypeByName(selected);
+    }
+  case EEditorKind::AssetRef:
+    {
+      if (Binding.FieldType != StaticTypeId<TAssetRef<PawnBase>>() || !field->MutablePointer)
+      {
+        return false;
+      }
+
+      auto* value = static_cast<TAssetRef<PawnBase>*>(field->MutablePointer(owner));
+      if (!value)
+      {
+        return false;
+      }
+
+      const std::string selected = TrimCopy(TextValue);
+      if (selected.empty() || selected == kAssetRefNoneOption)
+      {
+        value->Clear();
+        return true;
+      }
+
+      const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
+      const auto it = std::ranges::find_if(entries, [&](const TAssetRef<PawnBase>::TEntry& entry) {
+        return entry.Label == selected || entry.Name == selected || entry.AssetId == selected;
+      });
+
+      if (it == entries.end())
+      {
+        value->SetAsset(selected, {});
+        return true;
+      }
+
+      value->SetAsset(it->Name, it->AssetId);
+      return true;
     }
   case EEditorKind::Unsupported:
   default:
@@ -2156,7 +2316,9 @@ bool UIPropertyPanel::IsEditorFocused(const FieldBinding& Binding) const
     return false;
   }
 
-  if (Binding.EditorKind == EEditorKind::Enum)
+  if (Binding.EditorKind == EEditorKind::Enum ||
+      Binding.EditorKind == EEditorKind::SubClass ||
+      Binding.EditorKind == EEditorKind::AssetRef)
   {
     auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(Binding.EditorId));
     return comboBox && comboBox->IsFocused();
@@ -2201,7 +2363,9 @@ void UIPropertyPanel::AttachEditorHooks(const std::size_t BindingIndex)
     return;
   }
 
-  if (binding.EditorKind == EEditorKind::Enum)
+  if (binding.EditorKind == EEditorKind::Enum ||
+      binding.EditorKind == EEditorKind::SubClass ||
+      binding.EditorKind == EEditorKind::AssetRef)
   {
     auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(binding.EditorId));
     if (!comboBox)
@@ -2292,7 +2456,9 @@ void UIPropertyPanel::ClearBindingHooks()
           (void)checkbox->Checked().RemoveSetHook(binding.EditorHookHandle);
         }
       }
-      else if (binding.EditorKind == EEditorKind::Enum)
+      else if (binding.EditorKind == EEditorKind::Enum ||
+               binding.EditorKind == EEditorKind::SubClass ||
+               binding.EditorKind == EEditorKind::AssetRef)
       {
         if (auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(binding.EditorId)))
         {
@@ -2469,7 +2635,9 @@ void UIPropertyPanel::SyncBindingToEditor(FieldBinding& Binding)
     return;
   }
 
-  if (Binding.EditorKind == EEditorKind::Enum)
+  if (Binding.EditorKind == EEditorKind::Enum ||
+      Binding.EditorKind == EEditorKind::SubClass ||
+      Binding.EditorKind == EEditorKind::AssetRef)
   {
     auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&element);
     if (!comboBox || comboBox->IsFocused())

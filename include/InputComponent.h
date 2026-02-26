@@ -11,15 +11,15 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Bridges normalized world input snapshot data into character movement commands.
+ * @brief Bridges normalized world input snapshots into `InputIntentComponent`.
  * @remarks
- * This component reads `World::Input().Snapshot()` each frame and translates configured
- * keyboard/gamepad bindings into:
- * - planar movement (`CharacterMovementController::SetMoveInput`)
- * - jump trigger edges (`CharacterMovementController::Jump`)
+ * This component samples `World::Input().Snapshot()` each frame and writes
+ * movement/jump/look intent to sibling `InputIntentComponent`, allowing movement
+ * and camera systems to consume input through a shared, decoupled contract.
  *
  * Intended usage:
- * - Add this component to a node that already owns `CharacterMovementController`.
+ * - Add this component to a controllable node (typically one that has
+ *   `CharacterMovementController` and/or `SprintArmComponent`).
  * - Tune bindings and analog shaping through `Settings`.
  * - Keep gameplay code backend-agnostic by consuming normalized input only.
  * - When `LocalPlayer` possession exists, input is automatically routed through the
@@ -42,17 +42,25 @@ public:
         /** @brief Stable type name used for reflection and serialization registration. */
         static constexpr const char* kTypeName = "SnAPI::GameFramework::InputComponent::Settings";
 
-        bool MovementEnabled = true; /**< @brief Enables movement vector dispatch into `CharacterMovementController`. */
-        bool JumpEnabled = true; /**< @brief Enables jump trigger dispatch into `CharacterMovementController`. */
+        bool MovementEnabled = true; /**< @brief Enables movement intent publishing into sibling `InputIntentComponent`. */
+        bool JumpEnabled = true; /**< @brief Enables jump intent publishing into sibling `InputIntentComponent`. */
         bool KeyboardEnabled = true; /**< @brief Enables keyboard source contribution. */
         bool GamepadEnabled = true; /**< @brief Enables gamepad source contribution. */
         bool RequireInputFocus = true; /**< @brief Suppresses movement/jump when input context reports focus lost. */
         bool NormalizeMove = true; /**< @brief Normalizes merged X/Z movement to unit length before scaling. */
-        bool ClearMoveWhenUnavailable = true; /**< @brief Writes zero movement when input system/snapshot/controller is unavailable. */
+        bool ClearMoveWhenUnavailable = true; /**< @brief Writes zero movement intent when input system/snapshot/focus is unavailable. */
+        bool LookEnabled = true; /**< @brief Enables look intent publishing into sibling `InputIntentComponent`. */
+        bool MouseLookEnabled = true; /**< @brief Enables mouse delta contribution to look input. */
+        bool GamepadLookEnabled = true; /**< @brief Enables right-stick look contribution. */
+        bool RequireRightMouseButtonForLook = false; /**< @brief Require RMB held for mouse look when true. */
 
         float MoveScale = 1.0f; /**< @brief Scalar multiplier applied after optional movement normalization. */
         float GamepadDeadzone = 0.2f; /**< @brief Per-axis deadzone in [0, 0.99] for gamepad analog movement. */
         bool InvertGamepadY = false; /**< @brief Inverts configured gamepad Y axis before mapping to world Z movement. */
+        float MouseLookSensitivity = 0.12f; /**< @brief Degrees applied per mouse pixel of movement. */
+        bool InvertMouseY = false; /**< @brief Invert vertical mouse look axis. */
+        float GamepadLookSensitivity = 180.0f; /**< @brief Degrees-per-second scale for gamepad look input. */
+        bool InvertGamepadLookY = false; /**< @brief Invert vertical gamepad look axis. */
 
         SnAPI::Input::EKey MoveForwardKey = SnAPI::Input::EKey::W; /**< @brief Keyboard key mapped to forward movement (negative Z by default in this component). */
         SnAPI::Input::EKey MoveBackwardKey = SnAPI::Input::EKey::S; /**< @brief Keyboard key mapped to backward movement (positive Z by default in this component). */
@@ -62,6 +70,8 @@ public:
 
         SnAPI::Input::EGamepadAxis MoveGamepadXAxis = SnAPI::Input::EGamepadAxis::LeftX; /**< @brief Gamepad axis used for X movement contribution. */
         SnAPI::Input::EGamepadAxis MoveGamepadYAxis = SnAPI::Input::EGamepadAxis::LeftY; /**< @brief Gamepad axis used for Z movement contribution. */
+        SnAPI::Input::EGamepadAxis LookGamepadXAxis = SnAPI::Input::EGamepadAxis::RightX; /**< @brief Gamepad axis used for yaw look contribution. */
+        SnAPI::Input::EGamepadAxis LookGamepadYAxis = SnAPI::Input::EGamepadAxis::RightY; /**< @brief Gamepad axis used for pitch look contribution. */
         SnAPI::Input::EGamepadButton JumpGamepadButton = SnAPI::Input::EGamepadButton::South; /**< @brief Gamepad button mapped to jump trigger. */
 
         SnAPI::Input::DeviceId PreferredGamepad{}; /**< @brief Optional preferred gamepad device id; zero means auto-select first connected pad. */
@@ -80,14 +90,19 @@ public:
         return m_settings;
     }
 
+    /** @brief Ensure required sibling intent component exists. */
+    void OnCreate();
+    /** @brief Non-virtual create entry used by ECS runtime bridge. */
+    void RuntimeOnCreate();
     /**
-     * @brief Per-frame input sampling and movement/jump dispatch.
+     * @brief Per-frame input sampling and intent publishing.
      * @param DeltaSeconds Time since last variable tick.
      * @remarks `DeltaSeconds` is currently unused; this method is edge/state driven.
      */
     void Tick(float DeltaSeconds);
     /** @brief Non-virtual per-frame entry used by ECS runtime bridge. */
     void RuntimeTick(float DeltaSeconds);
+    void OnCreateImpl(IWorld&) { RuntimeOnCreate(); }
     void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
 private:
