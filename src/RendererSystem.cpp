@@ -2801,6 +2801,16 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
     {
         if (ExistingIt->second == Preset)
         {
+            if (Preset == ERenderViewportPassGraphPreset::UiPresentOnly)
+            {
+                SetViewportFinalColorResource("UI_Opaque");
+            }
+            else if (Preset == ERenderViewportPassGraphPreset::DefaultWorld)
+            {
+                // Match legacy PresentPass behavior: present the fully composited LDR output.
+                SetViewportFinalColorResource("Composite_Out");
+            }
+
             RefreshTrackedPassPointers();
             if (TrackDefaultPassPointers && Preset != ERenderViewportPassGraphPreset::None)
             {
@@ -3022,16 +3032,9 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         }
     }
 
-    std::string FinalColorResourceName = "Composite_Out";
-    if (m_settings.EnableAtmosphere)
-    {
-        FinalColorResourceName = "AtmosComposite_Out";
-    }
-    if (m_settings.EnableBloom)
-    {
-        FinalColorResourceName = "BloomComposite_Out";
-    }
-    SetViewportFinalColorResource(std::move(FinalColorResourceName));
+    // Composite_Out is the fully display-ready LDR output (tone-mapped scene + UI).
+    // Keep this stable regardless of optional atmosphere/bloom passes.
+    SetViewportFinalColorResource("Composite_Out");
 
     m_registeredViewportPassGraphs.emplace(ViewportID, Preset);
     m_graphics->RequestFrameGraphRebuild(RendererViewportID);
