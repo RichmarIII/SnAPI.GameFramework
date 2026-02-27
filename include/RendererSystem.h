@@ -313,6 +313,50 @@ public:
     [[nodiscard]] std::optional<std::size_t> RenderViewportIndex(std::uint64_t ViewportID) const;
 
     /**
+     * @brief Create a non-presentable render-target swapchain.
+     * @param Width Target width in pixels.
+     * @param Height Target height in pixels.
+     * @param OutSwapChainID Receives created swapchain id on success.
+     * @param ImageCount Requested image count (minimum 1).
+     * @return True when swapchain creation succeeded.
+     */
+    bool CreateRenderTargetSwapChain(std::uint32_t Width,
+                                     std::uint32_t Height,
+                                     std::uint64_t& OutSwapChainID,
+                                     std::uint32_t ImageCount = 1);
+
+    /**
+     * @brief Resize an existing swapchain.
+     * @param SwapChainID Target swapchain id.
+     * @param Width New width in pixels.
+     * @param Height New height in pixels.
+     * @return True when resize succeeded.
+     */
+    bool ResizeSwapChain(std::uint64_t SwapChainID, std::uint32_t Width, std::uint32_t Height);
+
+    /**
+     * @brief Destroy an existing swapchain.
+     * @param SwapChainID Target swapchain id.
+     * @return True when swapchain was destroyed.
+     */
+    bool DestroySwapChain(std::uint64_t SwapChainID);
+
+    /**
+     * @brief Assign a swapchain to a render viewport.
+     * @param ViewportID Target viewport id.
+     * @param SwapChainID Target swapchain id.
+     * @return True when assignment succeeded.
+     */
+    bool AssignSwapChainToRenderViewport(std::uint64_t ViewportID, std::uint64_t SwapChainID);
+
+    /**
+     * @brief Query assigned swapchain for a render viewport.
+     * @param ViewportID Target viewport id.
+     * @return Assigned swapchain id when available.
+     */
+    [[nodiscard]] std::optional<std::uint64_t> RenderViewportSwapChain(std::uint64_t ViewportID) const;
+
+    /**
      * @brief Register a built-in pass graph preset for a viewport.
      * @param ViewportID Target viewport identifier.
      * @param Preset Pass-graph preset.
@@ -464,6 +508,27 @@ public:
      * @return True when packets were accepted.
      */
     bool QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const SnAPI::UI::RenderPacketList& Packets);
+
+    /**
+     * @brief Register an external viewport-backed UI texture binding for one context texture id.
+     * @param Context UI context that owns the texture id.
+     * @param TextureId Context-local texture id.
+     * @param SourceViewportID Render viewport id that provides the sampled image.
+     * @param HasTransparency True when sampled output should be alpha blended.
+     * @return True when binding was accepted.
+     */
+    bool RegisterExternalViewportUiTexture(const SnAPI::UI::UIContext& Context,
+                                           std::uint32_t TextureId,
+                                           std::uint64_t SourceViewportID,
+                                           bool HasTransparency);
+
+    /**
+     * @brief Remove one external viewport-backed UI texture binding.
+     * @param Context UI context that owns the texture id.
+     * @param TextureId Context-local texture id.
+     * @return True when a binding existed and was removed.
+     */
+    bool UnregisterExternalViewportUiTexture(const SnAPI::UI::UIContext& Context, std::uint32_t TextureId);
 #endif
 
     /**
@@ -656,6 +721,12 @@ private:
         bool HasTransparency = true;
         std::vector<std::uint8_t> Pixels{};
     };
+
+    struct UiExternalTextureBinding
+    {
+        std::uint64_t SourceViewportID = 0;
+        bool HasTransparency = true;
+    };
 #endif
 
     mutable GameMutex m_mutex{}; /**< @brief Renderer-system thread affinity guard. */
@@ -688,6 +759,8 @@ private:
     std::unordered_map<SnAPI::Graphics::IGPUImage*, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiFontMaterialInstances{}; /**< @brief Cached immutable UI material instances keyed by font atlas texture pointer. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
     std::unordered_map<UiTextureCacheKey, bool, UiTextureCacheKeyHasher> m_uiTextureHasTransparency{}; /**< @brief UI texture transparency hint keyed by (UIContext, texture-id); UI defaults this to true to avoid CPU alpha scans. */
+    std::unordered_map<UiTextureCacheKey, UiExternalTextureBinding, UiTextureCacheKeyHasher> m_uiExternalTextureBindings{}; /**< @brief External viewport-backed texture bindings keyed by (UIContext, texture-id). */
+    std::unordered_map<UiTextureCacheKey, SnAPI::Graphics::IGPUImage*, UiTextureCacheKeyHasher> m_uiExternalResolvedTextureImages{}; /**< @brief Last resolved external image pointer per external UI texture key. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */
     std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiGradientCacheKeyHasher> m_uiGradientTextures{}; /**< @brief Cached generated gradient textures keyed by gradient definition. */
     std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiGradientCacheKeyHasher> m_uiGradientMaterialInstances{}; /**< @brief Cached material instances for generated gradient textures. */

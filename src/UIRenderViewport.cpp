@@ -5,6 +5,7 @@
 #include "GameRuntime.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -14,7 +15,7 @@
 #include <ICamera.hpp>
 #include <UIContext.h>
 #include <UIEvents.h>
-#include <UIPacketWriter.h>
+#include <UIImage.h>
 #include <UISizing.h>
 
 namespace SnAPI::GameFramework
@@ -26,6 +27,18 @@ constexpr float kDefaultHeight = 360.0f;
 constexpr float kMinRenderScale = 0.05f;
 constexpr float kMaxRenderScale = 8.0f;
 constexpr float kSmallNumber = 0.0001f;
+constexpr std::uint32_t kExternalViewportTextureBase = 0x80000000u;
+
+SnAPI::UI::TextureId AllocateExternalViewportTextureId()
+{
+    static std::atomic<std::uint32_t> NextId{kExternalViewportTextureBase};
+    std::uint32_t Value = NextId.fetch_add(1u, std::memory_order_relaxed);
+    if (Value == 0u)
+    {
+        Value = NextId.fetch_add(1u, std::memory_order_relaxed);
+    }
+    return SnAPI::UI::TextureId{Value};
+}
 } // namespace
 
 UIRenderViewport::UIRenderViewport()
@@ -33,7 +46,7 @@ UIRenderViewport::UIRenderViewport()
     m_Properties.SetDefaultProperty(ViewportNameKey, std::string{"RenderViewport"});
     m_Properties.SetDefaultProperty(EnabledKey, true);
     m_Properties.SetDefaultProperty(RenderScaleKey, 1.0f);
-    m_Properties.SetDefaultProperty(ViewportIndexKey, static_cast<std::int32_t>(-1));
+    m_Properties.SetDefaultProperty(ViewportIndexKey, static_cast<std::int32_t>(0));
     m_Properties.SetDefaultProperty(PassGraphPresetKey, ERenderViewportPassGraphPreset::DefaultWorld);
     m_Properties.SetDefaultProperty(AutoRegisterPassGraphKey, true);
 
@@ -46,6 +59,63 @@ UIRenderViewport::UIRenderViewport()
 void UIRenderViewport::Initialize(SnAPI::UI::UIContext* Context, const SnAPI::UI::ElementId Id)
 {
     InitializeBase(Context, Id);
+    EnsureImagePresenter();
+}
+
+void UIRenderViewport::EnsureImagePresenter()
+{
+    if (!m_Context)
+    {
+        return;
+    }
+
+    if (m_presentedTextureId.Value == 0)
+    {
+        m_presentedTextureId = AllocateExternalViewportTextureId();
+    }
+
+    auto ConfigureImage = [this](SnAPI::UI::UIImage& Image) {
+        Image.Width().Set(SnAPI::UI::Sizing::Fill());
+        Image.Height().Set(SnAPI::UI::Sizing::Fill());
+        Image.HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        Image.VAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        Image.Mode().Set(SnAPI::UI::EImageMode::Stretch);
+        Image.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+        Image.Tint().Set(SnAPI::UI::Color{255, 255, 255, 255});
+        if (Image.Texture().Get().Value != m_presentedTextureId.Value)
+        {
+            Image.Texture().Set(m_presentedTextureId);
+        }
+    };
+
+    if (m_presenterImageId.Value != 0)
+    {
+        auto* ExistingImage = dynamic_cast<SnAPI::UI::UIImage*>(&m_Context->GetElement(m_presenterImageId));
+        if (ExistingImage)
+        {
+            if (m_Context->GetParent(m_presenterImageId) != m_Id)
+            {
+                m_Context->AddChild(m_Id, m_presenterImageId);
+            }
+            ConfigureImage(*ExistingImage);
+            return;
+        }
+        m_presenterImageId = {};
+    }
+
+    const auto PresenterImage = m_Context->CreateElement<SnAPI::UI::UIImage>();
+    if (PresenterImage.Id.Value == 0)
+    {
+        return;
+    }
+
+    m_presenterImageId = PresenterImage.Id;
+    m_Context->AddChild(m_Id, m_presenterImageId);
+
+    if (auto* NewImage = dynamic_cast<SnAPI::UI::UIImage*>(&m_Context->GetElement(m_presenterImageId)))
+    {
+        ConfigureImage(*NewImage);
+    }
 }
 
 void UIRenderViewport::SetGameRuntime(GameRuntime* Runtime)
@@ -139,21 +209,7 @@ void UIRenderViewport::Paint(SnAPI::UI::UIPaintContext& Context) const
         return;
     }
 
-    const float Dpi = GetDpiScale();
-    const float BorderThickness = std::max(0.0f, GetStyledProperty(BorderThicknessKey, 1.0f));
-    const float CornerRadius = std::max(0.0f, GetStyledProperty(CornerRadiusKey, 4.0f) * Dpi);
-    const auto BackgroundColor = GetStyledProperty(BackgroundColorKey, SnAPI::UI::Color{9, 14, 24, 0});
-    const auto BorderColor = GetStyledProperty(BorderColorKey, SnAPI::UI::Color{72, 96, 128, 220});
-
-    // Context.Packets.DrawRect(
-    //     m_Rect,
-    //     BackgroundColor,
-    //     CornerRadius,
-    //     BorderColor,
-    //     BorderThickness,
-    //     SnAPI::UI::MaterialHandle{});
-
-    //PaintContent(Context);
+    PaintContent(Context);
 }
 
 void UIRenderViewport::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
@@ -229,10 +285,12 @@ void UIRenderViewport::OnFocusChanged(const bool Focused)
 
 void UIRenderViewport::ReleaseOwnedResources()
 {
-    if (!m_runtime)
-    {
+    auto ResetState = [this]() {
         m_ownedViewportId = 0;
+        m_ownedSwapChainId = 0;
         m_ownedContextId = 0;
+        m_presenterImageId = {};
+        m_presentedTextureId = {};
         m_bindingEstablished = false;
         m_appliedRenderWidth = 0;
         m_appliedRenderHeight = 0;
@@ -240,22 +298,40 @@ void UIRenderViewport::ReleaseOwnedResources()
         m_pendingRenderHeight = 0;
         m_hasPendingRenderExtentResize = false;
         m_registeredPassGraphPreset.reset();
+    };
+
+    if (!m_runtime)
+    {
+        if (m_presenterImageId.Value != 0 && m_Context)
+        {
+            m_Context->DestroyElement(m_presenterImageId);
+        }
+        ResetState();
         return;
     }
 
     auto* World = m_runtime->WorldPtr();
     if (!World)
     {
-        m_ownedViewportId = 0;
-        m_ownedContextId = 0;
-        m_bindingEstablished = false;
-        m_appliedRenderWidth = 0;
-        m_appliedRenderHeight = 0;
-        m_pendingRenderWidth = 0;
-        m_pendingRenderHeight = 0;
-        m_hasPendingRenderExtentResize = false;
-        m_registeredPassGraphPreset.reset();
+        if (m_presenterImageId.Value != 0 && m_Context)
+        {
+            m_Context->DestroyElement(m_presenterImageId);
+        }
+        ResetState();
         return;
+    }
+
+    auto& Renderer = World->Renderer();
+    auto& UI = World->UI();
+
+    if (UI.IsInitialized() && m_presentedTextureId.Value != 0 && m_Context)
+    {
+        (void)Renderer.UnregisterExternalViewportUiTexture(*m_Context, m_presentedTextureId.Value);
+    }
+
+    if (UI.IsInitialized() && m_presenterImageId.Value != 0 && m_Context)
+    {
+        m_Context->DestroyElement(m_presenterImageId);
     }
 
     if (m_bindingEstablished && m_ownedViewportId != 0)
@@ -264,29 +340,29 @@ void UIRenderViewport::ReleaseOwnedResources()
         m_bindingEstablished = false;
     }
 
-    if (m_ownedContextId != 0 && World->UI().IsInitialized())
+    if (m_ownedContextId != 0 && UI.IsInitialized())
     {
-        (void)World->UI().DestroyContext(m_ownedContextId);
+        (void)UI.DestroyContext(m_ownedContextId);
     }
 
-    if (m_ownedViewportId != 0 && World->Renderer().IsInitialized())
+    if (m_ownedViewportId != 0 && Renderer.IsInitialized())
     {
-        (void)World->Renderer().DestroyRenderViewport(m_ownedViewportId);
+        (void)Renderer.DestroyRenderViewport(m_ownedViewportId);
     }
 
-    m_ownedViewportId = 0;
-    m_ownedContextId = 0;
+    if (m_ownedSwapChainId != 0 && Renderer.IsInitialized())
+    {
+        (void)Renderer.DestroySwapChain(m_ownedSwapChainId);
+    }
+
     m_bindingEstablished = false;
-    m_appliedRenderWidth = 0;
-    m_appliedRenderHeight = 0;
-    m_pendingRenderWidth = 0;
-    m_pendingRenderHeight = 0;
-    m_hasPendingRenderExtentResize = false;
-    m_registeredPassGraphPreset.reset();
+    ResetState();
 }
 
 void UIRenderViewport::SyncViewport()
 {
+    EnsureImagePresenter();
+
     if (!m_runtime)
     {
         return;
@@ -314,6 +390,15 @@ void UIRenderViewport::SyncViewport()
 
     if (m_ownedViewportId != 0 && !Renderer.HasRenderViewport(m_ownedViewportId))
     {
+        if (m_presentedTextureId.Value != 0 && m_Context)
+        {
+            (void)Renderer.UnregisterExternalViewportUiTexture(*m_Context, m_presentedTextureId.Value);
+        }
+        if (m_ownedSwapChainId != 0)
+        {
+            (void)Renderer.DestroySwapChain(m_ownedSwapChainId);
+            m_ownedSwapChainId = 0;
+        }
         m_ownedViewportId = 0;
         m_bindingEstablished = false;
         m_appliedRenderWidth = 0;
@@ -430,9 +515,44 @@ void UIRenderViewport::SyncViewport()
         m_registeredPassGraphPreset.reset();
     }
 
-    if (m_ownedViewportId != 0)
+    if (m_ownedSwapChainId == 0)
     {
-        const std::int32_t StyledViewportIndex = GetStyledProperty(ViewportIndexKey, static_cast<std::int32_t>(-1));
+        std::uint64_t NewSwapChainId = 0;
+        if (!Renderer.CreateRenderTargetSwapChain(RenderWidth, RenderHeight, NewSwapChainId, 1))
+        {
+            if (m_ownedViewportId != 0)
+            {
+                (void)Renderer.DestroyRenderViewport(m_ownedViewportId);
+                m_ownedViewportId = 0;
+            }
+            m_bindingEstablished = false;
+            m_registeredPassGraphPreset.reset();
+            return;
+        }
+        m_ownedSwapChainId = NewSwapChainId;
+    }
+
+    if (m_ownedViewportId != 0 && m_ownedSwapChainId != 0)
+    {
+        if (!Renderer.AssignSwapChainToRenderViewport(m_ownedViewportId, m_ownedSwapChainId))
+        {
+            (void)Renderer.DestroySwapChain(m_ownedSwapChainId);
+            m_ownedSwapChainId = 0;
+
+            std::uint64_t NewSwapChainId = 0;
+            if (!Renderer.CreateRenderTargetSwapChain(RenderWidth, RenderHeight, NewSwapChainId, 1))
+            {
+                return;
+            }
+
+            m_ownedSwapChainId = NewSwapChainId;
+            if (!Renderer.AssignSwapChainToRenderViewport(m_ownedViewportId, m_ownedSwapChainId))
+            {
+                return;
+            }
+        }
+
+        const std::int32_t StyledViewportIndex = GetStyledProperty(ViewportIndexKey, static_cast<std::int32_t>(0));
         if (StyledViewportIndex >= 0)
         {
             (void)Renderer.SetRenderViewportIndex(m_ownedViewportId, static_cast<std::size_t>(StyledViewportIndex));
@@ -482,11 +602,21 @@ void UIRenderViewport::SyncViewport()
         m_ownedViewportId, Name, m_Rect.X, m_Rect.Y, m_Rect.W, m_Rect.H, RenderWidth, RenderHeight, m_camera, EnabledValue);
     if (Updated && (ApplyRenderExtent || m_appliedRenderWidth == 0 || m_appliedRenderHeight == 0))
     {
+        if (m_ownedSwapChainId != 0)
+        {
+            (void)Renderer.ResizeSwapChain(m_ownedSwapChainId, RenderWidth, RenderHeight);
+        }
+
         m_appliedRenderWidth = RenderWidth;
         m_appliedRenderHeight = RenderHeight;
         m_pendingRenderWidth = RenderWidth;
         m_pendingRenderHeight = RenderHeight;
         m_hasPendingRenderExtentResize = false;
+    }
+
+    if (m_presentedTextureId.Value != 0 && m_Context && m_ownedViewportId != 0)
+    {
+        (void)Renderer.RegisterExternalViewportUiTexture(*m_Context, m_presentedTextureId.Value, m_ownedViewportId, false);
     }
 }
 

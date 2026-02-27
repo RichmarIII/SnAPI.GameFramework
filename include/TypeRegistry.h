@@ -166,12 +166,34 @@ struct TypeInfo
     size_t Size = 0; /**< @brief sizeof(T). */
     size_t Align = 0; /**< @brief alignof(T). */
     std::vector<TypeId> BaseTypes; /**< @brief Base class TypeIds. */
-    std::vector<FieldInfo> Fields; /**< @brief Field metadata. */
-    std::vector<MethodInfo> Methods; /**< @brief Method metadata. */
+    std::vector<FieldInfo> Fields; /**< @brief Field metadata declared directly on this type. */
+    std::vector<MethodInfo> Methods; /**< @brief Method metadata declared directly on this type. */
     std::vector<ConstructorInfo> Constructors; /**< @brief Constructor metadata. */
     bool IsEnum = false; /**< @brief True when this type represents an enum. */
     bool EnumIsSigned = false; /**< @brief True when enum underlying type is signed. */
     std::vector<EnumValueInfo> EnumValues; /**< @brief Enum entries for tooling/editor usage. */
+};
+
+/**
+ * @brief View entry for a reflected field.
+ * @remarks
+ * `OwnerType` identifies where the field is declared in the inheritance chain.
+ */
+struct ReflectedFieldRef
+{
+    TypeId OwnerType{};
+    const FieldInfo* Field = nullptr;
+};
+
+/**
+ * @brief View entry for a reflected method.
+ * @remarks
+ * `OwnerType` identifies where the method is declared in the inheritance chain.
+ */
+struct ReflectedMethodRef
+{
+    TypeId OwnerType{};
+    const MethodInfo* Method = nullptr;
 };
 
 /**
@@ -231,6 +253,23 @@ public:
      * @remarks Includes transitive derivatives in current registry snapshot.
      */
     std::vector<const TypeInfo*> Derived(const TypeId& Base) const;
+    /**
+     * @brief Collect reflected fields for a type.
+     * @param Type Type to inspect.
+     * @param IncludeBaseTypes True to include inherited fields (base-to-derived order).
+     * @return Field view entries with declaring owner type.
+     */
+    std::vector<ReflectedFieldRef> CollectFields(const TypeId& Type, bool IncludeBaseTypes = true) const;
+    /**
+     * @brief Collect reflected methods for a type.
+     * @param Type Type to inspect.
+     * @param IncludeBaseTypes True to include inherited methods (base-to-derived order).
+     * @return Method view entries with declaring owner type.
+     * @remarks
+     * When collecting inherited methods, derived declarations hide base declarations with
+     * the same method name (matching C++ name-hiding behavior).
+     */
+    std::vector<ReflectedMethodRef> CollectMethods(const TypeId& Type, bool IncludeBaseTypes = true) const;
     /**
      * @brief Enable or disable lock-free reads.
      * @param Enable True to freeze the registry (no further registration).

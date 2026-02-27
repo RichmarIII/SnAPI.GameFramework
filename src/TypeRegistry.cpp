@@ -1,6 +1,9 @@
 #include "TypeRegistry.h"
 #include "GameThreading.h"
 
+#include <algorithm>
+#include <unordered_set>
+
 #include "TypeAutoRegistry.h"
 
 namespace SnAPI::GameFramework
@@ -126,6 +129,122 @@ bool IsAUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types, co
     }
     return false;
 }
+
+void BuildLineageUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
+                          const TypeId& Type,
+                          std::unordered_set<TypeId, UuidHash>& Visited,
+                          std::vector<const TypeInfo*>& OutLineage)
+{
+    const auto It = Types.find(Type);
+    if (It == Types.end())
+    {
+        return;
+    }
+    if (!Visited.insert(Type).second)
+    {
+        return;
+    }
+
+    for (const TypeId& BaseType : It->second.BaseTypes)
+    {
+        BuildLineageUnlocked(Types, BaseType, Visited, OutLineage);
+    }
+
+    OutLineage.push_back(&It->second);
+}
+
+std::vector<ReflectedFieldRef> CollectFieldsUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
+                                                     const TypeId& Type,
+                                                     const bool IncludeBaseTypes)
+{
+    std::vector<ReflectedFieldRef> Result{};
+    const auto It = Types.find(Type);
+    if (It == Types.end())
+    {
+        return Result;
+    }
+
+    std::vector<const TypeInfo*> Lineage{};
+    if (IncludeBaseTypes)
+    {
+        std::unordered_set<TypeId, UuidHash> Visited{};
+        BuildLineageUnlocked(Types, Type, Visited, Lineage);
+    }
+    else
+    {
+        Lineage.push_back(&It->second);
+    }
+
+    for (const TypeInfo* Owner : Lineage)
+    {
+        for (const FieldInfo& Field : Owner->Fields)
+        {
+            Result.push_back(ReflectedFieldRef{
+                .OwnerType = Owner->Id,
+                .Field = &Field,
+            });
+        }
+    }
+
+    return Result;
+}
+
+std::vector<ReflectedMethodRef> CollectMethodsUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
+                                                       const TypeId& Type,
+                                                       const bool IncludeBaseTypes)
+{
+    std::vector<ReflectedMethodRef> Result{};
+    const auto It = Types.find(Type);
+    if (It == Types.end())
+    {
+        return Result;
+    }
+
+    std::vector<const TypeInfo*> Lineage{};
+    if (IncludeBaseTypes)
+    {
+        std::unordered_set<TypeId, UuidHash> Visited{};
+        BuildLineageUnlocked(Types, Type, Visited, Lineage);
+    }
+    else
+    {
+        Lineage.push_back(&It->second);
+    }
+
+    for (const TypeInfo* Owner : Lineage)
+    {
+        if (Owner->Methods.empty())
+        {
+            continue;
+        }
+
+        if (IncludeBaseTypes)
+        {
+            std::unordered_set<std::string_view> DeclaredNames{};
+            DeclaredNames.reserve(Owner->Methods.size());
+            for (const MethodInfo& Method : Owner->Methods)
+            {
+                DeclaredNames.insert(Method.Name);
+            }
+
+            std::erase_if(Result, [&Types, &DeclaredNames, &Owner](const ReflectedMethodRef& Entry) {
+                return Entry.Method &&
+                       DeclaredNames.contains(Entry.Method->Name) &&
+                       IsAUnlocked(Types, Owner->Id, Entry.OwnerType);
+            });
+        }
+
+        for (const MethodInfo& Method : Owner->Methods)
+        {
+            Result.push_back(ReflectedMethodRef{
+                .OwnerType = Owner->Id,
+                .Method = &Method,
+            });
+        }
+    }
+
+    return Result;
+}
 } // namespace
 
 bool TypeRegistry::IsA(const TypeId& Type, const TypeId& Base) const
@@ -169,6 +288,38 @@ std::vector<const TypeInfo*> TypeRegistry::Derived(const TypeId& Base) const
         }
     }
     return Result;
+}
+
+std::vector<ReflectedFieldRef> TypeRegistry::CollectFields(const TypeId& Type, const bool IncludeBaseTypes) const
+{
+    if (!Find(Type))
+    {
+        return {};
+    }
+
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        GameLockGuard Lock(m_mutex);
+        return CollectFieldsUnlocked(m_types, Type, IncludeBaseTypes);
+    }
+
+    return CollectFieldsUnlocked(m_types, Type, IncludeBaseTypes);
+}
+
+std::vector<ReflectedMethodRef> TypeRegistry::CollectMethods(const TypeId& Type, const bool IncludeBaseTypes) const
+{
+    if (!Find(Type))
+    {
+        return {};
+    }
+
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        GameLockGuard Lock(m_mutex);
+        return CollectMethodsUnlocked(m_types, Type, IncludeBaseTypes);
+    }
+
+    return CollectMethodsUnlocked(m_types, Type, IncludeBaseTypes);
 }
 
 void TypeRegistry::Freeze(bool Enable)

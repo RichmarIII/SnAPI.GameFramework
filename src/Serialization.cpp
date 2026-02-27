@@ -453,12 +453,33 @@ TExpected<void> DeserializeFieldsRecursive(
             }
             FieldPtr = ViewResult->BorrowedMutable();
         }
+        if (!FieldPtr && Field->Setter && Entry.Codec)
+        {
+            auto DecodeResult = Entry.Codec->Decode
+                ? Entry.Codec->Decode(Archive, Context)
+                : ValueCodecRegistry::Instance().Decode(Field->FieldType, Archive, Context);
+            if (!DecodeResult)
+            {
+                return std::unexpected(DecodeResult.error());
+            }
+            auto SetResult = Field->Setter(Instance, *DecodeResult);
+            if (!SetResult)
+            {
+                return std::unexpected(SetResult.error());
+            }
+            continue;
+        }
         if (!FieldPtr && Field->Getter)
         {
             auto FieldResult = Field->Getter(Instance);
             if (!FieldResult)
             {
                 return std::unexpected(FieldResult.error());
+            }
+            if (!FieldResult->IsRef())
+            {
+                return std::unexpected(
+                    MakeError(EErrorCode::InvalidArgument, "Getter does not expose mutable storage"));
             }
             if (FieldResult->IsConst())
             {

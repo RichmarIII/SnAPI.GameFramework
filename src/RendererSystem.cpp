@@ -203,6 +203,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
+    m_uiExternalTextureBindings = std::move(Other.m_uiExternalTextureBindings);
+    m_uiExternalResolvedTextureImages = std::move(Other.m_uiExternalResolvedTextureImages);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
     m_uiGradientMaterialInstances = std::move(Other.m_uiGradientMaterialInstances);
@@ -242,6 +244,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
     Other.m_uiTextureHasTransparency.clear();
+    Other.m_uiExternalTextureBindings.clear();
+    Other.m_uiExternalResolvedTextureImages.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
     Other.m_uiGradientMaterialInstances.clear();
@@ -300,6 +304,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_uiFontMaterialInstances = std::move(Other.m_uiFontMaterialInstances);
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
+    m_uiExternalTextureBindings = std::move(Other.m_uiExternalTextureBindings);
+    m_uiExternalResolvedTextureImages = std::move(Other.m_uiExternalResolvedTextureImages);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
     m_uiGradientMaterialInstances = std::move(Other.m_uiGradientMaterialInstances);
@@ -339,6 +345,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_uiFontMaterialInstances.clear();
     Other.m_uiTextures.clear();
     Other.m_uiTextureHasTransparency.clear();
+    Other.m_uiExternalTextureBindings.clear();
+    Other.m_uiExternalResolvedTextureImages.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
     Other.m_uiGradientMaterialInstances.clear();
@@ -415,6 +423,8 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_uiFontMaterialInstances.clear();
         m_uiTextures.clear();
         m_uiTextureHasTransparency.clear();
+        m_uiExternalTextureBindings.clear();
+        m_uiExternalResolvedTextureImages.clear();
         m_uiTextureMaterialInstances.clear();
         m_uiGradientTextures.clear();
         m_uiGradientMaterialInstances.clear();
@@ -500,6 +510,8 @@ bool RendererSystem::InitializeUnlocked()
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
     m_uiTextureHasTransparency.clear();
+    m_uiExternalTextureBindings.clear();
+    m_uiExternalResolvedTextureImages.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
     m_uiGradientMaterialInstances.clear();
@@ -904,6 +916,96 @@ std::optional<std::size_t> RendererSystem::RenderViewportIndex(const std::uint64
     }
 
     return m_graphics->GetRenderViewportIndex(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID));
+}
+
+bool RendererSystem::CreateRenderTargetSwapChain(const std::uint32_t Width,
+                                                 const std::uint32_t Height,
+                                                 std::uint64_t& OutSwapChainID,
+                                                 const std::uint32_t ImageCount)
+{
+    GameLockGuard Lock(m_mutex);
+    OutSwapChainID = 0;
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    const SnAPI::Graphics::RenderTargetSwapChainCreateInfo CreateInfo{
+        .Extent = SnAPI::Math::Size2DU{
+            std::max<std::uint32_t>(1u, Width),
+            std::max<std::uint32_t>(1u, Height),
+        },
+        .ImageCount = std::max<std::uint32_t>(1u, ImageCount),
+    };
+
+    const auto Result = m_graphics->CreateRenderTargetSwapChain(CreateInfo);
+    if (!Result.has_value())
+    {
+        return false;
+    }
+
+    OutSwapChainID = static_cast<std::uint64_t>(Result.value());
+    return OutSwapChainID != 0;
+}
+
+bool RendererSystem::ResizeSwapChain(const std::uint64_t SwapChainID, const std::uint32_t Width, const std::uint32_t Height)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || SwapChainID == 0)
+    {
+        return false;
+    }
+
+    const auto SwapChain = m_graphics->GetSwapChain(static_cast<SnAPI::Graphics::SwapChainID>(SwapChainID));
+    if (!SwapChain.has_value() || !SwapChain.value())
+    {
+        return false;
+    }
+
+    return static_cast<bool>(SwapChain.value()->Resize(SnAPI::Math::Size2DU{
+        std::max<std::uint32_t>(1u, Width),
+        std::max<std::uint32_t>(1u, Height),
+    }));
+}
+
+bool RendererSystem::DestroySwapChain(const std::uint64_t SwapChainID)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || SwapChainID == 0)
+    {
+        return false;
+    }
+
+    return static_cast<bool>(m_graphics->DestroySwapChain(static_cast<SnAPI::Graphics::SwapChainID>(SwapChainID)));
+}
+
+bool RendererSystem::AssignSwapChainToRenderViewport(const std::uint64_t ViewportID, const std::uint64_t SwapChainID)
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0 || SwapChainID == 0)
+    {
+        return false;
+    }
+
+    return static_cast<bool>(m_graphics->AssignSwapChainToViewport(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID),
+                                                                    static_cast<SnAPI::Graphics::SwapChainID>(SwapChainID)));
+}
+
+std::optional<std::uint64_t> RendererSystem::RenderViewportSwapChain(const std::uint64_t ViewportID) const
+{
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0)
+    {
+        return std::nullopt;
+    }
+
+    const auto Result = m_graphics->RenderViewportSwapChain(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID));
+    if (!Result.has_value() || Result.value() == SnAPI::Graphics::InvalidSwapChainID)
+    {
+        return std::nullopt;
+    }
+
+    return static_cast<std::uint64_t>(Result.value());
 }
 
 bool RendererSystem::RegisterRenderViewportPassGraph(const std::uint64_t ViewportID, const ERenderViewportPassGraphPreset Preset)
@@ -1324,6 +1426,13 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
         }
 
         const UiTextureCacheKey TextureCacheKey{&Context, TextureIdValue};
+        if (const auto ExternalIt = m_uiExternalTextureBindings.find(TextureCacheKey);
+            ExternalIt != m_uiExternalTextureBindings.end())
+        {
+            m_uiTextureHasTransparency[TextureCacheKey] = ExternalIt->second.HasTransparency;
+            return;
+        }
+
         const bool HasOpacityMetadata = m_uiTextureHasTransparency.contains(TextureCacheKey);
         if (m_uiTextures.contains(TextureCacheKey) && HasOpacityMetadata)
         {
@@ -1623,6 +1732,62 @@ bool RendererSystem::QueueUiRenderPackets(SnAPI::UI::UIContext& Context, const S
 
     return QueueUiRenderPackets(ViewportID, Context, Packets);
 }
+
+bool RendererSystem::RegisterExternalViewportUiTexture(const SnAPI::UI::UIContext& Context,
+                                                       const std::uint32_t TextureId,
+                                                       const std::uint64_t SourceViewportID,
+                                                       const bool HasTransparency)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || TextureId == 0 || SourceViewportID == 0)
+    {
+        return false;
+    }
+
+    const auto ViewportConfig = m_graphics->GetRenderViewportConfig(static_cast<SnAPI::Graphics::RenderViewportID>(SourceViewportID));
+    if (!ViewportConfig.has_value())
+    {
+        return false;
+    }
+
+    const UiTextureCacheKey Key{&Context, TextureId};
+    const auto ExistingIt = m_uiExternalTextureBindings.find(Key);
+    const bool BindingChanged =
+        ExistingIt == m_uiExternalTextureBindings.end()
+        || ExistingIt->second.SourceViewportID != SourceViewportID;
+
+    m_uiExternalTextureBindings[Key] = UiExternalTextureBinding{
+        .SourceViewportID = SourceViewportID,
+        .HasTransparency = HasTransparency,
+    };
+    m_uiTextureHasTransparency[Key] = HasTransparency;
+    if (BindingChanged)
+    {
+        m_uiPendingTextureUploads.erase(Key);
+        m_uiTextures.erase(Key);
+        m_uiTextureMaterialInstances.erase(Key);
+        m_uiExternalResolvedTextureImages.erase(Key);
+    }
+    return true;
+}
+
+bool RendererSystem::UnregisterExternalViewportUiTexture(const SnAPI::UI::UIContext& Context, const std::uint32_t TextureId)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (TextureId == 0)
+    {
+        return false;
+    }
+
+    const UiTextureCacheKey Key{&Context, TextureId};
+    const bool Removed = m_uiExternalTextureBindings.erase(Key) > 0;
+    m_uiExternalResolvedTextureImages.erase(Key);
+    m_uiTextureMaterialInstances.erase(Key);
+    m_uiTextureHasTransparency.erase(Key);
+    return Removed;
+}
 #endif
 
 void RendererSystem::EndFrame()
@@ -1724,6 +1889,8 @@ void RendererSystem::ShutdownUnlocked()
     m_uiFontMaterialInstances.clear();
     m_uiTextures.clear();
     m_uiTextureHasTransparency.clear();
+    m_uiExternalTextureBindings.clear();
+    m_uiExternalResolvedTextureImages.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
     m_uiGradientMaterialInstances.clear();
@@ -2222,6 +2389,50 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     }
 
     const UiTextureCacheKey TextureCacheKey{&Context, TextureId};
+
+    if (const auto ExternalBindingIt = m_uiExternalTextureBindings.find(TextureCacheKey);
+        ExternalBindingIt != m_uiExternalTextureBindings.end())
+    {
+        const auto SourceViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ExternalBindingIt->second.SourceViewportID);
+        if (m_graphics->IsRenderViewportFrameGraphDirty(SourceViewportID))
+        {
+            // Avoid binding stale descriptors while the viewport graph is rebuilding (e.g. resize).
+            m_uiTextureMaterialInstances.erase(TextureCacheKey);
+            m_uiExternalResolvedTextureImages.erase(TextureCacheKey);
+            return m_uiFallbackMaterialInstance;
+        }
+
+        const auto SourceImage = m_graphics->ResolveRenderViewportFinalColorImage(SourceViewportID);
+        if (!SourceImage.has_value() || !SourceImage.value())
+        {
+            m_uiTextureMaterialInstances.erase(TextureCacheKey);
+            m_uiExternalResolvedTextureImages.erase(TextureCacheKey);
+            return m_uiFallbackMaterialInstance;
+        }
+
+        auto* ResolvedImage = SourceImage.value();
+        if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
+            MaterialIt != m_uiTextureMaterialInstances.end())
+        {
+            // Always route through MaterialInstance::Texture so it can detect resource revision changes
+            // even when the IGPUImage pointer is stable across internal recreation.
+            MaterialIt->second->Texture("Material_Texture", ResolvedImage);
+            m_uiExternalResolvedTextureImages[TextureCacheKey] = ResolvedImage;
+            return MaterialIt->second;
+        }
+
+        auto MaterialInstance = m_uiMaterial->CreateMaterialInstance();
+        if (!MaterialInstance)
+        {
+            return m_uiFallbackMaterialInstance;
+        }
+
+        MaterialInstance->Texture("Material_Texture", ResolvedImage);
+        m_uiTextureMaterialInstances[TextureCacheKey] = MaterialInstance;
+        m_uiExternalResolvedTextureImages[TextureCacheKey] = ResolvedImage;
+        m_uiTextureHasTransparency[TextureCacheKey] = ExternalBindingIt->second.HasTransparency;
+        return MaterialInstance;
+    }
 
     if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
         MaterialIt != m_uiTextureMaterialInstances.end())

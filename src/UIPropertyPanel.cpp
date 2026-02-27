@@ -766,17 +766,23 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     return;
   }
 
-  if (typeInfo->Fields.empty())
+  const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+  if (reflectedFields.empty())
   {
     AddUnsupportedRow(Parent, PrettyTypeName(Type), "No reflected fields");
     return;
   }
 
-  for (const FieldInfo& field : typeInfo->Fields)
+  for (const ReflectedFieldRef& fieldRef : reflectedFields)
   {
+    if (!fieldRef.Field)
+    {
+      continue;
+    }
+
     auto path = PathPrefix;
-    path.push_back(FieldPathEntry{Type, field.Name, field.IsConst});
-    AddFieldEditor(Parent, field, RootInstance, std::move(path), Depth);
+    path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+    AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
   }
 }
 
@@ -1423,8 +1429,8 @@ bool UIPropertyPanel::IsNestedStructType(const TypeId& Type) const
     return false;
   }
 
-  const TypeInfo* typeInfo = TypeRegistry::Instance().Find(Type);
-  return typeInfo && !typeInfo->Fields.empty();
+  const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+  return !reflectedFields.empty();
 }
 
 std::string UIPropertyPanel::PrettyTypeName(const TypeId& Type) const

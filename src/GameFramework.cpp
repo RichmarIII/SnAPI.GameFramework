@@ -77,6 +77,7 @@ static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshCompon
 #endif
 
 SNAPI_REFLECT_TYPE(BaseNode, (TTypeBuilder<BaseNode>(BaseNode::kTypeName)
+    .Field("Name", &BaseNode::Name, &BaseNode::Name)
     .Method("OnPossess", &BaseNode::OnPossess)
     .Method("OnUnpossess", &BaseNode::OnUnpossess)
     .Constructor<>()

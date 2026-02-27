@@ -52,6 +52,7 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_type_is_registered(SnGfUuid id);
  * @brief Get the number of fields on a type.
  * @param id TypeId to query.
  * @return Field count.
+ * @remarks Includes inherited fields.
  */
 SNAPI_GAMEFRAMEWORK_API size_t sn_gf_type_field_count(SnGfUuid id);
 /**
@@ -59,6 +60,7 @@ SNAPI_GAMEFRAMEWORK_API size_t sn_gf_type_field_count(SnGfUuid id);
  * @param id TypeId to query.
  * @param name Field name.
  * @return Field handle or 0 if not found.
+ * @remarks Searches inherited fields as well.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfFieldHandle sn_gf_type_field_by_name(SnGfUuid id, const char* name);
 /**
@@ -81,6 +83,9 @@ SNAPI_GAMEFRAMEWORK_API const char* sn_gf_field_name(SnGfUuid id, SnGfFieldHandl
  * @param id TypeId to query.
  * @param name Method name.
  * @return Method handle or 0 if not found.
+ * @remarks
+ * Searches inherited methods and applies C++-style name hiding
+ * (derived declarations hide base declarations with the same name).
  */
 SNAPI_GAMEFRAMEWORK_API SnGfMethodHandle sn_gf_type_method_by_name(SnGfUuid id, const char* name);
 /**

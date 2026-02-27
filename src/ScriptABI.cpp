@@ -41,6 +41,16 @@ uint64_t InvalidHandle()
     return std::numeric_limits<uint64_t>::max();
 }
 
+std::vector<ReflectedFieldRef> CollectReflectedFields(const TypeId& Type)
+{
+    return TypeRegistry::Instance().CollectFields(Type);
+}
+
+std::vector<ReflectedMethodRef> CollectReflectedMethods(const TypeId& Type)
+{
+    return TypeRegistry::Instance().CollectMethods(Type);
+}
+
 /**
  * @brief Convert a variant handle to a Variant pointer.
  * @param Handle Variant handle.
@@ -85,12 +95,8 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_type_is_registered(SnGfUuid id)
 SNAPI_GAMEFRAMEWORK_API size_t sn_gf_type_field_count(SnGfUuid id)
 {
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info)
-    {
-        return 0;
-    }
-    return Info->Fields.size();
+    const auto Fields = SnAPI::GameFramework::CollectReflectedFields(Type);
+    return Fields.size();
 }
 
 SNAPI_GAMEFRAMEWORK_API SnGfFieldHandle sn_gf_type_field_by_name(SnGfUuid id, const char* name)
@@ -100,14 +106,10 @@ SNAPI_GAMEFRAMEWORK_API SnGfFieldHandle sn_gf_type_field_by_name(SnGfUuid id, co
         return SnAPI::GameFramework::InvalidHandle();
     }
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info)
+    const auto Fields = SnAPI::GameFramework::CollectReflectedFields(Type);
+    for (size_t Index = 0; Index < Fields.size(); ++Index)
     {
-        return SnAPI::GameFramework::InvalidHandle();
-    }
-    for (size_t Index = 0; Index < Info->Fields.size(); ++Index)
-    {
-        if (Info->Fields[Index].Name == name)
+        if (Fields[Index].Field && Fields[Index].Field->Name == name)
         {
             return static_cast<SnGfFieldHandle>(Index);
         }
@@ -118,23 +120,23 @@ SNAPI_GAMEFRAMEWORK_API SnGfFieldHandle sn_gf_type_field_by_name(SnGfUuid id, co
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_field_type(SnGfUuid id, SnGfFieldHandle field)
 {
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || field >= Info->Fields.size())
+    const auto Fields = SnAPI::GameFramework::CollectReflectedFields(Type);
+    if (field >= Fields.size() || !Fields[field].Field)
     {
         return {0, 0};
     }
-    return SnAPI::GameFramework::ToC(Info->Fields[field].FieldType);
+    return SnAPI::GameFramework::ToC(Fields[field].Field->FieldType);
 }
 
 SNAPI_GAMEFRAMEWORK_API const char* sn_gf_field_name(SnGfUuid id, SnGfFieldHandle field)
 {
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || field >= Info->Fields.size())
+    const auto Fields = SnAPI::GameFramework::CollectReflectedFields(Type);
+    if (field >= Fields.size() || !Fields[field].Field)
     {
         return nullptr;
     }
-    return Info->Fields[field].Name.c_str();
+    return Fields[field].Field->Name.c_str();
 }
 
 SNAPI_GAMEFRAMEWORK_API SnGfMethodHandle sn_gf_type_method_by_name(SnGfUuid id, const char* name)
@@ -144,14 +146,10 @@ SNAPI_GAMEFRAMEWORK_API SnGfMethodHandle sn_gf_type_method_by_name(SnGfUuid id, 
         return SnAPI::GameFramework::InvalidHandle();
     }
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info)
+    const auto Methods = SnAPI::GameFramework::CollectReflectedMethods(Type);
+    for (size_t Index = 0; Index < Methods.size(); ++Index)
     {
-        return SnAPI::GameFramework::InvalidHandle();
-    }
-    for (size_t Index = 0; Index < Info->Methods.size(); ++Index)
-    {
-        if (Info->Methods[Index].Name == name)
+        if (Methods[Index].Method && Methods[Index].Method->Name == name)
         {
             return static_cast<SnGfMethodHandle>(Index);
         }
@@ -162,34 +160,36 @@ SNAPI_GAMEFRAMEWORK_API SnGfMethodHandle sn_gf_type_method_by_name(SnGfUuid id, 
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_method_return_type(SnGfUuid id, SnGfMethodHandle method)
 {
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || method >= Info->Methods.size())
+    const auto Methods = SnAPI::GameFramework::CollectReflectedMethods(Type);
+    if (method >= Methods.size() || !Methods[method].Method)
     {
         return {0, 0};
     }
-    return SnAPI::GameFramework::ToC(Info->Methods[method].ReturnType);
+    return SnAPI::GameFramework::ToC(Methods[method].Method->ReturnType);
 }
 
 SNAPI_GAMEFRAMEWORK_API size_t sn_gf_method_param_count(SnGfUuid id, SnGfMethodHandle method)
 {
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || method >= Info->Methods.size())
+    const auto Methods = SnAPI::GameFramework::CollectReflectedMethods(Type);
+    if (method >= Methods.size() || !Methods[method].Method)
     {
         return 0;
     }
-    return Info->Methods[method].ParamTypes.size();
+    return Methods[method].Method->ParamTypes.size();
 }
 
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_method_param_type(SnGfUuid id, SnGfMethodHandle method, size_t index)
 {
     auto Type = SnAPI::GameFramework::FromC(id);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || method >= Info->Methods.size() || index >= Info->Methods[method].ParamTypes.size())
+    const auto Methods = SnAPI::GameFramework::CollectReflectedMethods(Type);
+    if (method >= Methods.size() ||
+        !Methods[method].Method ||
+        index >= Methods[method].Method->ParamTypes.size())
     {
         return {0, 0};
     }
-    return SnAPI::GameFramework::ToC(Info->Methods[method].ParamTypes[index]);
+    return SnAPI::GameFramework::ToC(Methods[method].Method->ParamTypes[index]);
 }
 
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_int(int value)
@@ -228,12 +228,12 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_get_field(void* instance, SnGfUuid type
         return 0;
     }
     auto Type = SnAPI::GameFramework::FromC(type);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || field >= Info->Fields.size())
+    const auto Fields = SnAPI::GameFramework::CollectReflectedFields(Type);
+    if (field >= Fields.size() || !Fields[field].Field || !Fields[field].Field->Getter)
     {
         return 0;
     }
-    auto Result = Info->Fields[field].Getter(instance);
+    auto Result = Fields[field].Field->Getter(instance);
     if (!Result)
     {
         return 0;
@@ -254,12 +254,12 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_set_field(void* instance, SnGfUuid type
         return 0;
     }
     auto Type = SnAPI::GameFramework::FromC(type);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || field >= Info->Fields.size())
+    const auto Fields = SnAPI::GameFramework::CollectReflectedFields(Type);
+    if (field >= Fields.size() || !Fields[field].Field || !Fields[field].Field->Setter)
     {
         return 0;
     }
-    auto Result = Info->Fields[field].Setter(instance, *Var);
+    auto Result = Fields[field].Field->Setter(instance, *Var);
     return Result.has_value();
 }
 
@@ -270,8 +270,8 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_invoke(void* instance, SnGfUuid type, S
         return 0;
     }
     auto Type = SnAPI::GameFramework::FromC(type);
-    auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Type);
-    if (!Info || method >= Info->Methods.size())
+    const auto Methods = SnAPI::GameFramework::CollectReflectedMethods(Type);
+    if (method >= Methods.size() || !Methods[method].Method)
     {
         return 0;
     }
@@ -286,7 +286,7 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_invoke(void* instance, SnGfUuid type, S
         }
         ArgValues.push_back(*Var);
     }
-    auto Result = Info->Methods[method].Invoke(instance, ArgValues);
+    auto Result = Methods[method].Method->Invoke(instance, ArgValues);
     if (!Result)
     {
         return 0;

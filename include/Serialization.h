@@ -870,7 +870,7 @@ class NodeSerializer
 {
 public:
     /** @brief Current schema version for Node payloads. */
-    static constexpr uint32_t kSchemaVersion = 1;
+    static constexpr uint32_t kSchemaVersion = 2;
 
     /**
      * @brief Serialize a node subtree to payload.
@@ -912,7 +912,7 @@ class LevelSerializer
 {
 public:
     /** @brief Current schema version for Level payloads. */
-    static constexpr uint32_t kSchemaVersion = 5;
+    static constexpr uint32_t kSchemaVersion = 6;
 
     /**
      * @brief Serialize a level to a payload.
@@ -940,7 +940,7 @@ class WorldSerializer
 {
 public:
     /** @brief Current schema version for World payloads. */
-    static constexpr uint32_t kSchemaVersion = 5;
+    static constexpr uint32_t kSchemaVersion = 6;
 
     /**
      * @brief Serialize a world to a payload.

@@ -31,6 +31,160 @@ class TTypeBuilder
 {
 public:
     static_assert(std::is_class_v<T> || std::is_union_v<T>, "TTypeBuilder requires class/struct types");
+
+private:
+    template<typename Method>
+    struct TGetterMethodTraits
+    {
+        static constexpr bool Valid = false;
+    };
+
+    template<typename R>
+    struct TGetterMethodTraits<R (T::*)()>
+    {
+        static constexpr bool Valid = true;
+        static constexpr bool IsConstMethod = false;
+        using ReturnType = R;
+    };
+
+    template<typename R>
+    struct TGetterMethodTraits<R (T::*)() noexcept>
+    {
+        static constexpr bool Valid = true;
+        static constexpr bool IsConstMethod = false;
+        using ReturnType = R;
+    };
+
+    template<typename R>
+    struct TGetterMethodTraits<R (T::*)() const>
+    {
+        static constexpr bool Valid = true;
+        static constexpr bool IsConstMethod = true;
+        using ReturnType = R;
+    };
+
+    template<typename R>
+    struct TGetterMethodTraits<R (T::*)() const noexcept>
+    {
+        static constexpr bool Valid = true;
+        static constexpr bool IsConstMethod = true;
+        using ReturnType = R;
+    };
+
+    template<typename Method>
+    struct TSetterMethodTraits
+    {
+        static constexpr bool Valid = false;
+    };
+
+    template<typename R, typename Arg>
+    struct TSetterMethodTraits<R (T::*)(Arg)>
+    {
+        static constexpr bool Valid = true;
+        using ReturnType = R;
+        using ArgType = Arg;
+    };
+
+    template<typename R, typename Arg>
+    struct TSetterMethodTraits<R (T::*)(Arg) noexcept>
+    {
+        static constexpr bool Valid = true;
+        using ReturnType = R;
+        using ArgType = Arg;
+    };
+
+    template<typename R, typename Arg>
+    struct TSetterMethodTraits<R (T::*)(Arg) const>
+    {
+        static constexpr bool Valid = true;
+        using ReturnType = R;
+        using ArgType = Arg;
+    };
+
+    template<typename R, typename Arg>
+    struct TSetterMethodTraits<R (T::*)(Arg) const noexcept>
+    {
+        static constexpr bool Valid = true;
+        using ReturnType = R;
+        using ArgType = Arg;
+    };
+
+    template<typename GetterMethod>
+    using TGetterTraits = TGetterMethodTraits<std::remove_cvref_t<GetterMethod>>;
+
+    template<typename SetterMethod>
+    using TSetterTraits = TSetterMethodTraits<std::remove_cvref_t<SetterMethod>>;
+
+    template<typename GetterMethod>
+    static constexpr bool IsGetterMethodV = TGetterTraits<GetterMethod>::Valid;
+
+    template<typename SetterMethod>
+    static constexpr bool IsSetterMethodV = TSetterTraits<SetterMethod>::Valid;
+
+    template<typename SetterReturn>
+    static constexpr bool IsSupportedSetterReturnV = std::is_same_v<std::remove_cvref_t<SetterReturn>, void> ||
+                                                     std::is_same_v<std::remove_cvref_t<SetterReturn>, bool> ||
+                                                     std::is_same_v<std::remove_cvref_t<SetterReturn>, Result>;
+
+    template<typename GetterMethod>
+    static TExpected<Variant> BuildGetterVariant(T* Typed, GetterMethod Getter)
+    {
+        using GetterReturn = typename TGetterTraits<GetterMethod>::ReturnType;
+        if constexpr (std::is_reference_v<GetterReturn>)
+        {
+            if constexpr (std::is_const_v<std::remove_reference_t<GetterReturn>>)
+            {
+                return Variant::FromConstRef((Typed->*Getter)());
+            }
+            else
+            {
+                return Variant::FromRef((Typed->*Getter)());
+            }
+        }
+        else
+        {
+            return Variant::FromValue((Typed->*Getter)());
+        }
+    }
+
+    template<typename SetterMethod, typename Raw>
+    static Result ApplySetter(T* Typed, SetterMethod Setter, const Variant& Value)
+    {
+        using SetterArg = typename TSetterTraits<SetterMethod>::ArgType;
+        using SetterReturn = typename TSetterTraits<SetterMethod>::ReturnType;
+        using SetterRaw = std::remove_cvref_t<SetterArg>;
+        using SetterRet = std::remove_cvref_t<SetterReturn>;
+
+        static_assert(std::is_same_v<SetterRaw, Raw>, "Setter parameter type must match reflected field type");
+        static_assert(IsSupportedSetterReturnV<SetterReturn>, "Setter must return void, bool, or Result");
+
+        auto Ref = Value.AsConstRef<Raw>();
+        if (!Ref)
+        {
+            return std::unexpected(Ref.error());
+        }
+
+        SetterRaw SetterValue = Ref->get();
+        if constexpr (std::is_same_v<SetterRet, void>)
+        {
+            (Typed->*Setter)(static_cast<SetterArg>(SetterValue));
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<SetterRet, bool>)
+        {
+            if (!(Typed->*Setter)(static_cast<SetterArg>(SetterValue)))
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Setter rejected value"));
+            }
+            return Ok();
+        }
+        else
+        {
+            return (Typed->*Setter)(static_cast<SetterArg>(SetterValue));
+        }
+    }
+
+public:
     /**
      * @brief Construct a builder for a type name.
      * @param Name Fully qualified type name.
@@ -159,17 +313,242 @@ public:
     }
 
     /**
-     * @brief Register a field via accessors that return references.
-     * @tparam FieldT Field type.
+     * @brief Register a read-only field from a getter method.
+     * @tparam GetterMethod Getter member-function pointer type.
      * @param Name Field name.
-     * @param Getter Mutable accessor returning FieldT&.
-     * @param GetterConst Const accessor returning const FieldT&.
+     * @param Getter Getter method (`T::GetX()` or `T::GetX() const`).
      * @return Reference to the builder for chaining.
      * @remarks
-     * Preferred for encapsulated/private storage where direct member reflection is not desired.
-     * Accessor references are treated as stable field storage references.
+     * Getter return can be by value, reference, or const reference.
+     */
+    template<typename GetterMethod>
+    requires (IsGetterMethodV<GetterMethod>)
+    TTypeBuilder& Field(const char* Name, GetterMethod Getter, FieldFlags Flags = {})
+    {
+        using GetterTraits = TGetterTraits<GetterMethod>;
+        using GetterReturn = typename GetterTraits::ReturnType;
+        using Raw = std::remove_cvref_t<GetterReturn>;
+
+        static_assert(!std::is_void_v<Raw>, "Getter cannot return void");
+
+        FieldInfo Info;
+        Info.Name = Name;
+        const TypeId FieldType = StaticTypeId<Raw>();
+        Info.FieldType = FieldType;
+        Info.Flags = Flags;
+        Info.Getter = [Getter](void* Instance) -> TExpected<Variant> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return BuildGetterVariant(Typed, Getter);
+        };
+        if constexpr (std::is_reference_v<GetterReturn>)
+        {
+            Info.ViewGetter = [Getter, FieldType](void* Instance) -> TExpected<VariantView> {
+                if (!Instance)
+                {
+                    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+                }
+                auto* Typed = static_cast<T*>(Instance);
+                const auto* Ptr = &((Typed->*Getter)());
+                constexpr bool IsConstRef = std::is_const_v<std::remove_reference_t<GetterReturn>>;
+                return VariantView(FieldType, Ptr, IsConstRef);
+            };
+        }
+        Info.ConstPointer = [Getter](const void* Instance) -> const void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            if constexpr (std::is_reference_v<GetterReturn> && GetterTraits::IsConstMethod)
+            {
+                auto* Typed = static_cast<const T*>(Instance);
+                return &((Typed->*Getter)());
+            }
+            return nullptr;
+        };
+        Info.IsConst = true;
+        m_info.Fields.push_back(std::move(Info));
+        return *this;
+    }
+
+    /**
+     * @brief Register a write-only field from a setter method.
+     * @tparam SetterMethod Setter member-function pointer type.
+     * @param Name Field name.
+     * @param Setter Setter method (`T::SetX(value)`).
+     * @return Reference to the builder for chaining.
+     * @remarks
+     * Setter parameter can be value/reference/const-reference.
+     * Setter return can be void, bool, or Result.
+     */
+    template<typename SetterMethod>
+    requires (IsSetterMethodV<SetterMethod>)
+    TTypeBuilder& Field(const char* Name, SetterMethod Setter, FieldFlags Flags = {})
+    {
+        using SetterTraits = TSetterTraits<SetterMethod>;
+        using SetterArg = typename SetterTraits::ArgType;
+        using SetterReturn = typename SetterTraits::ReturnType;
+        using Raw = std::remove_cvref_t<SetterArg>;
+
+        static_assert(!std::is_void_v<Raw>, "Setter argument cannot be void");
+        static_assert(IsSupportedSetterReturnV<SetterReturn>, "Setter must return void, bool, or Result");
+
+        FieldInfo Info;
+        Info.Name = Name;
+        Info.FieldType = StaticTypeId<Raw>();
+        Info.Flags = Flags;
+        Info.Getter = [](void*) -> TExpected<Variant> {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Field has no getter"));
+        };
+        Info.Setter = [Setter](void* Instance, const Variant& Value) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return ApplySetter<SetterMethod, Raw>(Typed, Setter, Value);
+        };
+        Info.IsConst = false;
+        m_info.Fields.push_back(std::move(Info));
+        return *this;
+    }
+
+    /**
+     * @brief Register a readable/writable field using getter + setter methods.
+     * @tparam GetterMethod Getter member-function pointer type.
+     * @tparam SetterMethod Setter member-function pointer type.
+     * @param Name Field name.
+     * @param Getter Getter method (`T::GetX()` or `T::GetX() const`).
+     * @param Setter Setter method (`T::SetX(value)`).
+     * @return Reference to the builder for chaining.
+     * @remarks
+     * Getter return can be value/reference/const-reference.
+     * Setter parameter can be value/reference/const-reference.
+     */
+    template<typename GetterMethod, typename SetterMethod>
+    requires (IsGetterMethodV<GetterMethod> && IsSetterMethodV<SetterMethod>)
+    TTypeBuilder& Field(const char* Name, GetterMethod Getter, SetterMethod Setter, FieldFlags Flags = {})
+    {
+        using GetterTraits = TGetterTraits<GetterMethod>;
+        using GetterReturn = typename GetterTraits::ReturnType;
+        using SetterTraits = TSetterTraits<SetterMethod>;
+        using SetterArg = typename SetterTraits::ArgType;
+        using SetterReturn = typename SetterTraits::ReturnType;
+        using Raw = std::remove_cvref_t<GetterReturn>;
+        using SetterRaw = std::remove_cvref_t<SetterArg>;
+
+        static_assert(!std::is_void_v<Raw>, "Getter cannot return void");
+        static_assert(std::is_same_v<SetterRaw, Raw>, "Setter parameter type must match getter field type");
+        static_assert(IsSupportedSetterReturnV<SetterReturn>, "Setter must return void, bool, or Result");
+
+        FieldInfo Info;
+        Info.Name = Name;
+        const TypeId FieldType = StaticTypeId<Raw>();
+        Info.FieldType = FieldType;
+        Info.Flags = Flags;
+        Info.Getter = [Getter](void* Instance) -> TExpected<Variant> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return BuildGetterVariant(Typed, Getter);
+        };
+        Info.Setter = [Setter](void* Instance, const Variant& Value) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return ApplySetter<SetterMethod, Raw>(Typed, Setter, Value);
+        };
+        if constexpr (std::is_reference_v<GetterReturn>)
+        {
+            Info.ViewGetter = [Getter, FieldType](void* Instance) -> TExpected<VariantView> {
+                if (!Instance)
+                {
+                    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+                }
+                auto* Typed = static_cast<T*>(Instance);
+                const auto* Ptr = &((Typed->*Getter)());
+                constexpr bool IsConstRef = std::is_const_v<std::remove_reference_t<GetterReturn>>;
+                return VariantView(FieldType, Ptr, IsConstRef);
+            };
+        }
+        Info.ConstPointer = [Getter](const void* Instance) -> const void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            if constexpr (std::is_reference_v<GetterReturn> && GetterTraits::IsConstMethod)
+            {
+                auto* Typed = static_cast<const T*>(Instance);
+                return &((Typed->*Getter)());
+            }
+            return nullptr;
+        };
+        Info.MutablePointer = [Getter](void* Instance) -> void* {
+            if (!Instance)
+            {
+                return nullptr;
+            }
+            if constexpr (std::is_reference_v<GetterReturn>)
+            {
+                auto* Typed = static_cast<T*>(Instance);
+                using RefBase = std::remove_reference_t<GetterReturn>;
+                if constexpr (std::is_const_v<RefBase>)
+                {
+                    const auto* Ptr = &((Typed->*Getter)());
+                    return const_cast<std::remove_const_t<RefBase>*>(Ptr);
+                }
+                else
+                {
+                    return &((Typed->*Getter)());
+                }
+            }
+            return nullptr;
+        };
+        Info.IsConst = false;
+        m_info.Fields.push_back(std::move(Info));
+        return *this;
+    }
+
+    /**
+     * @brief Typed bridge for overloaded method names in getter+setter registration.
+     * @remarks
+     * Enables calls such as:
+     * `Field("Name", &Type::Name, &Type::Name)` when one overload is a const getter
+     * and another overload is a single-parameter setter.
+     */
+    template<typename GetterReturn, typename SetterArg, typename SetterReturn>
+    TTypeBuilder& Field(
+        const char* Name,
+        GetterReturn (T::*Getter)(),
+        SetterReturn (T::*Setter)(SetterArg),
+        FieldFlags Flags = {})
+    {
+        return Field<decltype(Getter), decltype(Setter)>(Name, Getter, Setter, Flags);
+    }
+
+    template<typename GetterReturn, typename SetterArg, typename SetterReturn>
+    TTypeBuilder& Field(
+        const char* Name,
+        GetterReturn (T::*Getter)() const,
+        SetterReturn (T::*Setter)(SetterArg),
+        FieldFlags Flags = {})
+    {
+        return Field<decltype(Getter), decltype(Setter)>(Name, Getter, Setter, Flags);
+    }
+
+    /**
+     * @brief Legacy accessor registration overload.
+     * @deprecated Use Field(Name, Getter), Field(Name, Setter), or Field(Name, Getter, Setter).
      */
     template<typename FieldT>
+    [[deprecated("Use Field(Name, Getter), Field(Name, Setter), or Field(Name, Getter, Setter).")]]
     TTypeBuilder& Field(
         const char* Name,
         FieldT& (T::*Getter)(),

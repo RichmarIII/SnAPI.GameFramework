@@ -19,6 +19,7 @@ class ICamera;
 namespace SnAPI::UI
 {
 struct PointerEvent;
+class UIImage;
 } // namespace SnAPI::UI
 
 namespace SnAPI::GameFramework
@@ -28,12 +29,13 @@ class GameRuntime;
 enum class ERenderViewportPassGraphPreset : uint8_t;
 
 /**
- * @brief External UI element that owns a renderer viewport and a child UI context.
+ * @brief External UI element that owns a renderer viewport, a child UI context, and an image presenter.
  *
  * @remarks
  * - The element creates one child `UISystem` context under its parent context.
  * - The element creates one renderer viewport.
  * - Binding is established through `GameRuntime::BindViewportWithUI(...)`.
+ * - The viewport final output is exposed as a texture and drawn by an internal child `UIImage`.
  */
 class SNAPI_GAMEFRAMEWORK_API UIRenderViewport final : public SnAPI::UI::UIElementBase
 {
@@ -78,6 +80,7 @@ public:
     void OnFocusChanged(bool Focused) override;
 
 private:
+    void EnsureImagePresenter();
     void SyncViewport();
     void ReleaseOwnedResources();
     static std::uint32_t ComputeRenderExtent(float LogicalSize, float RenderScale);
@@ -85,7 +88,10 @@ private:
     GameRuntime* m_runtime = nullptr;
     SnAPI::Graphics::ICamera* m_camera = nullptr;
     std::uint64_t m_ownedViewportId = 0;
+    std::uint64_t m_ownedSwapChainId = 0;
     std::uint64_t m_ownedContextId = 0;
+    SnAPI::UI::ElementId m_presenterImageId{};
+    SnAPI::UI::TextureId m_presentedTextureId{};
     bool m_bindingEstablished = false;
     std::uint32_t m_appliedRenderWidth = 0;
     std::uint32_t m_appliedRenderHeight = 0;

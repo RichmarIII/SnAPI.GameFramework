@@ -1,5 +1,7 @@
 #include "AssetPipelineFactories.h"
 
+#include <exception>
+#include <sstream>
 #include <string>
 
 #include "AssetPipelineIds.h"
@@ -14,6 +16,120 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+std::expected<void, std::string> PrefixNodeNameInPayload(NodePayload& Payload)
+{
+    try
+    {
+        std::ostringstream NameStream(std::ios::binary);
+        cereal::BinaryOutputArchive NameArchive(NameStream);
+        NameArchive(Payload.Name);
+        const std::string EncodedName = NameStream.str();
+
+        std::vector<uint8_t> MigratedNodeBytes{};
+        MigratedNodeBytes.reserve(EncodedName.size() + Payload.NodeBytes.size());
+        MigratedNodeBytes.insert(MigratedNodeBytes.end(), EncodedName.begin(), EncodedName.end());
+        MigratedNodeBytes.insert(MigratedNodeBytes.end(), Payload.NodeBytes.begin(), Payload.NodeBytes.end());
+        Payload.NodeBytes = std::move(MigratedNodeBytes);
+        Payload.HasNodeData = true;
+
+        for (NodePayload& Child : Payload.Children)
+        {
+            auto ChildResult = PrefixNodeNameInPayload(Child);
+            if (!ChildResult)
+            {
+                return ChildResult;
+            }
+        }
+
+        return {};
+    }
+    catch (const std::exception& Ex)
+    {
+        return std::unexpected(std::string("Failed to migrate node payload bytes: ") + Ex.what());
+    }
+}
+
+std::expected<void, std::string> MigrateNodePayloadBaseNodeName(std::vector<uint8_t>& InOutBytes)
+{
+    auto PayloadResult = DeserializeNodePayload(InOutBytes.data(), InOutBytes.size());
+    if (!PayloadResult)
+    {
+        return std::unexpected(PayloadResult.error().Message);
+    }
+
+    auto PrefixResult = PrefixNodeNameInPayload(*PayloadResult);
+    if (!PrefixResult)
+    {
+        return PrefixResult;
+    }
+
+    std::vector<uint8_t> MigratedBytes{};
+    auto SerializeResult = SerializeNodePayload(*PayloadResult, MigratedBytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error().Message);
+    }
+
+    InOutBytes = std::move(MigratedBytes);
+    return {};
+}
+
+std::expected<void, std::string> MigrateLevelPayloadBaseNodeName(std::vector<uint8_t>& InOutBytes)
+{
+    auto PayloadResult = DeserializeLevelPayload(InOutBytes.data(), InOutBytes.size());
+    if (!PayloadResult)
+    {
+        return std::unexpected(PayloadResult.error().Message);
+    }
+
+    for (NodePayload& Root : PayloadResult->Nodes)
+    {
+        auto PrefixResult = PrefixNodeNameInPayload(Root);
+        if (!PrefixResult)
+        {
+            return PrefixResult;
+        }
+    }
+
+    std::vector<uint8_t> MigratedBytes{};
+    auto SerializeResult = SerializeLevelPayload(*PayloadResult, MigratedBytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error().Message);
+    }
+
+    InOutBytes = std::move(MigratedBytes);
+    return {};
+}
+
+std::expected<void, std::string> MigrateWorldPayloadBaseNodeName(std::vector<uint8_t>& InOutBytes)
+{
+    auto PayloadResult = DeserializeWorldPayload(InOutBytes.data(), InOutBytes.size());
+    if (!PayloadResult)
+    {
+        return std::unexpected(PayloadResult.error().Message);
+    }
+
+    for (NodePayload& Root : PayloadResult->Nodes)
+    {
+        auto PrefixResult = PrefixNodeNameInPayload(Root);
+        if (!PrefixResult)
+        {
+            return PrefixResult;
+        }
+    }
+
+    std::vector<uint8_t> MigratedBytes{};
+    auto SerializeResult = SerializeWorldPayload(*PayloadResult, MigratedBytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error().Message);
+    }
+
+    InOutBytes = std::move(MigratedBytes);
+    return {};
+}
+
 /**
  * @brief AssetFactory for Node runtime objects.
  */
@@ -195,6 +311,10 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
  */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager)
 {
+    Manager.RegisterPayloadMigration(PayloadNode(), 1u, NodeSerializer::kSchemaVersion, MigrateNodePayloadBaseNodeName);
+    Manager.RegisterPayloadMigration(PayloadLevel(), 5u, LevelSerializer::kSchemaVersion, MigrateLevelPayloadBaseNodeName);
+    Manager.RegisterPayloadMigration(PayloadWorld(), 5u, WorldSerializer::kSchemaVersion, MigrateWorldPayloadBaseNodeName);
+
     Manager.RegisterFactory<BaseNode>(std::make_unique<TNodeFactory>());
     Manager.RegisterFactory<Level>(std::make_unique<TLevelFactory>());
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
