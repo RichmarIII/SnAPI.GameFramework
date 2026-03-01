@@ -110,10 +110,16 @@ constexpr std::string_view kRescanIconPath = "editor://Assets/folder.svg";
 constexpr std::string_view kFolderCardIconPath = "editor://Assets/folder.svg";
 constexpr std::string_view kPlaceIconPath = "editor://Assets/sphere.svg";
 constexpr std::string_view kSaveIconPath = "editor://Assets/cylinder.svg";
+constexpr std::string_view kProjectWelcomeOpenIconPath = "editor://Assets/folder-open.svg";
+constexpr std::string_view kProjectWelcomeCreateIconPath = "editor://Assets/level.svg";
+constexpr std::string_view kProjectWelcomeRecentIconPath = "editor://Assets/folder.svg";
+constexpr std::string_view kProjectWelcomeFooterIconPath = "editor://Assets/world.svg";
+constexpr std::string_view kDefaultProjectConfigFileName = "project.snproj.json";
 constexpr int kDefaultSvgRasterSize = 256;
 constexpr float kEditorIconScale = 2.0f;
 constexpr SnAPI::UI::Color kIconWhite = SnAPI::UI::Color::RGB(255, 255, 255);
 constexpr SnAPI::UI::Color kIconPlayGreen = SnAPI::UI::Color::RGB(73, 199, 112);
+constexpr std::size_t kMaxRecentProjects = 8;
 
 struct ToolbarActionSpec
 {
@@ -151,6 +157,8 @@ constexpr std::array<std::string_view, 3> kViewportModes{
 constexpr float kMainAreaSplitRatio = 0.68f;
 constexpr float kWorkspaceLeftSplitRatio = 0.23f;
 constexpr float kWorkspaceCenterSplitRatio = 0.74f;
+constexpr float kDefaultModalScreenRatio = 0.50f;
+constexpr float kModalRequestedSizePixels = 10000.0f;
 constexpr float kToolbarActionIconDisplaySize = 24.0f;
 constexpr float kToolbarActionButtonSize = 80.0f;
 
@@ -323,22 +331,68 @@ void ConfigureHostPanel(SnAPI::UI::UIPanel& Panel)
     Panel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 }
 
+void ConfigureLayoutSpacerPanel(SnAPI::UI::UIPanel& Panel)
+{
+    Panel.Height().Set(SnAPI::UI::Sizing::Auto());
+    Panel.Padding().Set(0.0f);
+    Panel.Gap().Set(0.0f);
+    Panel.UseGradient().Set(false);
+    Panel.Background().Set(SnAPI::UI::Color::Transparent());
+    Panel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    Panel.BorderThickness().Set(0.0f);
+    Panel.CornerRadius().Set(0.0f);
+    Panel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
+    Panel.DropShadowBlur().Set(0.0f);
+    Panel.DropShadowSpread().Set(0.0f);
+    Panel.DropShadowOffsetX().Set(0.0f);
+    Panel.DropShadowOffsetY().Set(0.0f);
+    Panel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey,
+                                   SnAPI::UI::EVisibility::HitTestInvisible);
+}
+
+void ConfigureTransparentLayoutPanel(SnAPI::UI::UIPanel& Panel)
+{
+    Panel.UseGradient().Set(false);
+    Panel.Background().Set(SnAPI::UI::Color::Transparent());
+    Panel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    Panel.BorderThickness().Set(0.0f);
+    Panel.CornerRadius().Set(0.0f);
+    Panel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
+    Panel.DropShadowBlur().Set(0.0f);
+    Panel.DropShadowSpread().Set(0.0f);
+    Panel.DropShadowOffsetX().Set(0.0f);
+    Panel.DropShadowOffsetY().Set(0.0f);
+}
+
+void ConfigureModalScreenRatio(SnAPI::UI::UIModal& Modal, const float Ratio)
+{
+    const float ClampedRatio = std::clamp(Ratio, 0.1f, 1.0f);
+    Modal.MinDialogWidth().Set(1.0f);
+    Modal.MinDialogHeight().Set(1.0f);
+    Modal.DialogWidth().Set(kModalRequestedSizePixels);
+    Modal.DialogHeight().Set(kModalRequestedSizePixels);
+    Modal.DialogMaxWidthRatio().Set(ClampedRatio);
+    Modal.DialogMaxHeightRatio().Set(ClampedRatio);
+}
+
 void ConfigureSvgIcon(SnAPI::UI::UIImage& Image,
                       const float SizePx,
                       const SnAPI::UI::Color Tint,
                       const SnAPI::UI::Margin Margin = {})
 {
     const float ScaledSizePx = SizePx * kEditorIconScale;
-    Image.SetSvgRasterSize(kDefaultSvgRasterSize, kDefaultSvgRasterSize, true)
-         .ClearSvgColorReplacements()
-         .ClearSvgGlobalFill()
-         .ClearSvgGlobalStroke()
-         .ClearSvgGlobalStrokeWidth()
-         .ReplaceSvgColor(SnAPI::UI::Color::RGB(0, 0, 0), Tint, 40);
-    Image.Width().Set(SnAPI::UI::Sizing::Fixed(ScaledSizePx));
-    Image.Height().Set(SnAPI::UI::Sizing::Fixed(ScaledSizePx));
+    const int IconRasterSizePx = std::max(1, static_cast<int>(std::round(ScaledSizePx)));
+    SnAPI::UI::SVGImageOptions SvgOptions{};
+    SvgOptions.SetRasterSize(IconRasterSizePx, IconRasterSizePx, true)
+        .ReplaceColor(SnAPI::UI::Color::RGB(0, 0, 0), Tint, 40);
+    if (!(Image.SvgOptions().Get() == SvgOptions))
+    {
+        Image.SvgOptions().Set(SvgOptions);
+    }
+    Image.Width().Set(SnAPI::UI::Sizing::Auto());
+    Image.Height().Set(SnAPI::UI::Sizing::Auto());
     Image.Mode().Set(SnAPI::UI::EImageMode::Aspect);
-    Image.LazyLoad().Set(true);
+    Image.LazyLoad().Set(false);
     Image.HAlign().Set(SnAPI::UI::EAlignment::Center);
     Image.VAlign().Set(SnAPI::UI::EAlignment::Center);
     Image.ElementMargin().Set(Margin);
@@ -422,6 +476,37 @@ void ConfigureFolderCardIcon(SnAPI::UI::UIImage& Image)
         Path.replace(Path.find("//"), 2u, "/");
     }
     return Path;
+}
+
+[[nodiscard]] std::string ProjectNameFromFilePath(const std::string_view ProjectFilePath, const std::string_view FallbackName = {})
+{
+    std::string DerivedName = TrimCopy(std::string(FallbackName));
+    if (!DerivedName.empty())
+    {
+        return DerivedName;
+    }
+
+    std::filesystem::path FilePath(ProjectFilePath);
+    if (FilePath.empty())
+    {
+        return std::string("Project");
+    }
+
+    DerivedName = FilePath.stem().string();
+    if (DerivedName.ends_with(".snproj"))
+    {
+        DerivedName.erase(DerivedName.size() - std::string(".snproj").size());
+    }
+    if (DerivedName.empty())
+    {
+        DerivedName = FilePath.parent_path().filename().string();
+    }
+    if (DerivedName.empty())
+    {
+        DerivedName = "Project";
+    }
+
+    return DerivedName;
 }
 
 [[nodiscard]] std::vector<std::string> SplitBrowserPath(const std::string& Path)
@@ -830,10 +915,12 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentCreateTypeSource.reset();
     m_projectModalOpen = false;
     m_projectModalRequired = false;
+    m_projectModalShowWelcome = false;
     m_projectModalAction = EProjectAction::CreateNew;
     m_projectNameText.clear();
     m_projectDirectoryText.clear();
     m_projectFilePathText.clear();
+    m_recentProjects.clear();
     m_contentAssetInspectorState = {};
     m_contentInspectorVisibleNodes.clear();
     m_contentInspectorHierarchySource.reset();
@@ -1181,9 +1268,8 @@ void EditorLayout::BuildMenuBar(PanelBuilder& Root)
 
     auto Spacer = MenuBar.Add(SnAPI::UI::UIPanel("Editor.MenuSpacer"));
     auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
     SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    SpacerPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
 
     auto InvalidationTogglePanel = MenuBar.Add(SnAPI::UI::UIPanel("Editor.InvalidationDebugToggle"));
     auto& InvalidationTogglePanelElement = InvalidationTogglePanel.Element();
@@ -1257,9 +1343,8 @@ void EditorLayout::BuildToolbar(PanelBuilder& Root)
 
     auto Spacer = Toolbar.Add(SnAPI::UI::UIPanel("Editor.ToolbarSpacer"));
     auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
     SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    SpacerPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
 
     auto ModeBreadcrumbs = Toolbar.Add(SnAPI::UI::UIBreadcrumbs{});
     auto& ModeBreadcrumbsElement = ModeBreadcrumbs.Element();
@@ -1627,8 +1712,7 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
     OverlayPanel.ContentBorderThickness().Set(1.0f);
     OverlayPanel.ContentCornerRadius().Set(8.0f);
     OverlayPanel.ContentPadding().Set(10.0f);
-    OverlayPanel.DialogMaxWidthRatio().Set(0.76f);
-    OverlayPanel.DialogMaxHeightRatio().Set(0.84f);
+    ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
     m_contentCreateModalOverlay = Overlay.Handle();
 
     auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ContentCreateModal"));
@@ -1736,9 +1820,8 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
 
     auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ContentCreate.ButtonSpacer"));
     auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
     SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    SpacerPanel.Background().Set(SnAPI::UI::Color::Transparent());
 
     auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
     auto& CancelButtonElement = CancelButton.Element();
@@ -1789,16 +1872,13 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     OverlayPanel.Resizable().Set(true);
     OverlayPanel.DragRegionHeight().Set(30.0f);
     OverlayPanel.ResizeBorderThickness().Set(12.0f);
-    OverlayPanel.DialogWidth().Set(1060.0f);
-    OverlayPanel.DialogHeight().Set(700.0f);
     OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(7, 10, 15, 214));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 23, 32, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(84, 97, 117, 242));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
     OverlayPanel.ContentCornerRadius().Set(8.0f);
     OverlayPanel.ContentPadding().Set(10.0f);
-    OverlayPanel.DialogMaxWidthRatio().Set(0.92f);
-    OverlayPanel.DialogMaxHeightRatio().Set(0.92f);
+    ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
     m_contentInspectorModalOverlay = Overlay.Handle();
 
     auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ContentInspectorModal"));
@@ -1916,9 +1996,8 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
 
     auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.ButtonSpacer"));
     auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
     SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    SpacerPanel.Background().Set(SnAPI::UI::Color::Transparent());
 
     auto CloseButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
     auto& CloseButtonElement = CloseButton.Element();
@@ -2704,12 +2783,13 @@ void EditorLayout::SetProjectSelectionRequired(const bool Required)
     {
         if (!m_projectModalOpen)
         {
-            OpenProjectCreateModal();
+            OpenProjectWelcomeModal();
             return;
         }
 
         if (Changed)
         {
+            m_projectModalShowWelcome = true;
             DestroyProjectModalOverlay();
             RefreshProjectModalVisibility();
             RefreshProjectModalOkButtonState();
@@ -4020,7 +4100,7 @@ void EditorLayout::EnsureContentAssetCardCapacity()
         CardButtonElement.ElementStyle().Apply("editor.asset_tile_button");
         CardButtonElement.Width().Set(SnAPI::UI::Sizing::Fill());
         CardButtonElement.Height().Set(SnAPI::UI::Sizing::Fill());
-        CardButtonElement.ElementPadding().Set(SnAPI::UI::Padding{0.0f, 0.0f, 0.0f, 0.0f});
+        CardButtonElement.ElementPadding().Set(SnAPI::UI::Padding{1.0f, 1.0f, 1.0f, 1.0f});
         CardButtonElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
         CardButtonElement.OnClick([this, CardIndex]() { HandleContentAssetCardClicked(CardIndex); });
         CardButtonElement.OnContextMenuRequested(
@@ -4031,38 +4111,22 @@ void EditorLayout::EnsureContentAssetCardCapacity()
 
         auto Card = CardButton.Add(SnAPI::UI::UIPanel("Editor.AssetCard"));
         auto& CardPanel = Card.Element();
+        CardPanel.ElementStyle().Apply("editor.asset_card");
         CardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
         CardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
         CardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
         CardPanel.Padding().Set(6.0f);
         CardPanel.Gap().Set(4.0f);
-        CardPanel.UseGradient().Set(false);
-        CardPanel.Background().Set(SnAPI::UI::Color::Transparent());
-        CardPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
-        CardPanel.BorderThickness().Set(0.0f);
-        CardPanel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
-        CardPanel.DropShadowBlur().Set(0.0f);
-        CardPanel.DropShadowSpread().Set(0.0f);
-        CardPanel.DropShadowOffsetX().Set(0.0f);
-        CardPanel.DropShadowOffsetY().Set(0.0f);
         CardPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
 
         auto Preview = Card.Add(SnAPI::UI::UIPanel("Editor.AssetPreview"));
         auto& PreviewPanel = Preview.Element();
+        PreviewPanel.ElementStyle().Apply("editor.asset_preview");
         PreviewPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
         PreviewPanel.Width().Set(SnAPI::UI::Sizing::Fill());
         PreviewPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
         PreviewPanel.Padding().Set(4.0f);
         PreviewPanel.Gap().Set(4.0f);
-        PreviewPanel.UseGradient().Set(false);
-        PreviewPanel.Background().Set(SnAPI::UI::Color::Transparent());
-        PreviewPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
-        PreviewPanel.BorderThickness().Set(0.0f);
-        PreviewPanel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
-        PreviewPanel.DropShadowBlur().Set(0.0f);
-        PreviewPanel.DropShadowSpread().Set(0.0f);
-        PreviewPanel.DropShadowOffsetX().Set(0.0f);
-        PreviewPanel.DropShadowOffsetY().Set(0.0f);
         PreviewPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, SnAPI::UI::EVisibility::HitTestInvisible);
 
         auto FolderIcon = Preview.Add(SnAPI::UI::UIImage{});
@@ -4101,6 +4165,7 @@ void EditorLayout::EnsureContentAssetCardCapacity()
 
         ContentAssetCardWidgets Widgets{};
         Widgets.Button = CardButton.Handle();
+        Widgets.Card = Card.Handle();
         Widgets.Icon = FolderIcon.Handle();
         Widgets.Type = TypeLabel.Handle();
         Widgets.Name = NameLabel.Handle();
@@ -4142,6 +4207,19 @@ void EditorLayout::UpdateContentAssetCardWidgets()
             Text->Visibility().Set(Visibility);
         }
     };
+    const auto ApplyCardPanelClass = [this](const SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel>& Handle,
+                                            const char* ClassName) {
+        if (Handle.Id.Value == 0 || !m_context)
+        {
+            return;
+        }
+
+        if (auto* Panel = dynamic_cast<SnAPI::UI::UIPanel*>(&m_context->GetElement(Handle.Id)))
+        {
+            Panel->ElementStyle().InitFrom<SnAPI::UI::UIPanel>();
+            Panel->ElementStyle().Apply(ClassName);
+        }
+    };
 
     for (std::size_t CardIndex = 0; CardIndex < m_contentAssetCards.size(); ++CardIndex)
     {
@@ -4177,6 +4255,7 @@ void EditorLayout::UpdateContentAssetCardWidgets()
         if (Entry.IsFolder)
         {
             m_contentAssetCardIndices[CardIndex] = std::numeric_limits<std::size_t>::max();
+            ApplyCardPanelClass(Widgets.Card, "editor.asset_card_folder");
             SetText(Widgets.Type, Entry.DisplayName.empty() ? std::string("Folder") : Entry.DisplayName);
             SetTextVisibility(Widgets.Type, SnAPI::UI::EVisibility::Visible);
             SetTextVisibility(Widgets.Name, SnAPI::UI::EVisibility::Collapsed);
@@ -4201,6 +4280,7 @@ void EditorLayout::UpdateContentAssetCardWidgets()
 
         const ContentAssetEntry& Asset = m_contentAssets[Entry.AssetIndex];
         m_contentAssetCardIndices[CardIndex] = Entry.AssetIndex;
+        ApplyCardPanelClass(Widgets.Card, "editor.asset_card");
 
         std::string VariantText = Asset.Variant.empty() ? std::string("default") : Asset.Variant;
         if (Asset.IsRuntime)
@@ -4406,6 +4486,406 @@ void EditorLayout::EnsureProjectModalOverlay()
     OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
     OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    if (m_projectModalShowWelcome)
+    {
+        OverlayPanel.Movable().Set(false);
+        OverlayPanel.Resizable().Set(false);
+        OverlayPanel.DragRegionHeight().Set(0.0f);
+        OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
+        OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+        OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+        OverlayPanel.ContentBorderThickness().Set(1.0f);
+        OverlayPanel.ContentCornerRadius().Set(10.0f);
+        OverlayPanel.ContentPadding().Set(18.0f);
+        ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
+        m_projectModalOverlay = Overlay.Handle();
+        m_projectNameInput = {};
+        m_projectDirectoryInput = {};
+        m_projectFilePathInput = {};
+        m_projectModalOkButton = {};
+
+        auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcomeModal"));
+        auto& ModalPanel = Modal.Element();
+        ModalPanel.ElementStyle().Apply("editor.project_welcome_root");
+        ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+        ModalPanel.Padding().Set(10.0f);
+        ModalPanel.Gap().Set(8.0f);
+
+        auto HeaderRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.HeaderRow"));
+        auto& HeaderRowPanel = HeaderRow.Element();
+        ConfigureTransparentLayoutPanel(HeaderRowPanel);
+        HeaderRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        HeaderRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        HeaderRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        HeaderRowPanel.Padding().Set(0.0f);
+        HeaderRowPanel.Gap().Set(10.0f);
+        HeaderRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+        HeaderRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        HeaderRowPanel.BorderThickness().Set(0.0f);
+
+        auto HeaderLeftSpacer = HeaderRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.HeaderLeftSpacer"));
+        auto& HeaderLeftSpacerPanel = HeaderLeftSpacer.Element();
+        ConfigureLayoutSpacerPanel(HeaderLeftSpacerPanel);
+        HeaderLeftSpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+        auto HeaderBrand = HeaderRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.HeaderBrand"));
+        auto& HeaderBrandPanel = HeaderBrand.Element();
+        ConfigureTransparentLayoutPanel(HeaderBrandPanel);
+        HeaderBrandPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        HeaderBrandPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+        HeaderBrandPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        HeaderBrandPanel.Padding().Set(0.0f);
+        HeaderBrandPanel.Gap().Set(10.0f);
+        HeaderBrandPanel.Background().Set(SnAPI::UI::Color::Transparent());
+        HeaderBrandPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        HeaderBrandPanel.BorderThickness().Set(0.0f);
+        HeaderBrandPanel.Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey,
+                                                  SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto HeaderIcon = HeaderBrand.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kBrandIconPath)));
+        auto& HeaderIconImage = HeaderIcon.Element();
+        ConfigureSvgIcon(
+            HeaderIconImage,
+            22.0f,
+            SnAPI::UI::Color::RGB(230, 206, 162),
+            SnAPI::UI::Margin{2.0f, 0.0f, 2.0f, 0.0f});
+        HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto HeaderTitle = HeaderBrand.Add(SnAPI::UI::UIText("Welcome to SnAPI GameFramework Editor"));
+        auto& HeaderTitleText = HeaderTitle.Element();
+        HeaderTitleText.ElementStyle().Apply("editor.project_welcome_title");
+        HeaderTitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        HeaderTitleText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        HeaderTitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto HeaderRightSpacer = HeaderRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.HeaderRightSpacer"));
+        auto& HeaderRightSpacerPanel = HeaderRightSpacer.Element();
+        ConfigureLayoutSpacerPanel(HeaderRightSpacerPanel);
+        HeaderRightSpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+        auto Subtitle = Modal.Add(SnAPI::UI::UIText("Create and manage your game projects"));
+        auto& SubtitleText = Subtitle.Element();
+        SubtitleText.ElementStyle().Apply("editor.project_welcome_subtitle");
+        SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        SubtitleText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+
+        auto CardsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.CardsRow"));
+        auto& CardsRowPanel = CardsRow.Element();
+        ConfigureTransparentLayoutPanel(CardsRowPanel);
+        CardsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        CardsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        CardsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        CardsRowPanel.Padding().Set(0.0f);
+        CardsRowPanel.Gap().Set(10.0f);
+        CardsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+        CardsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        CardsRowPanel.BorderThickness().Set(0.0f);
+
+        auto CardsLeftSpacer = CardsRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.CardsLeftSpacer"));
+        auto& CardsLeftSpacerPanel = CardsLeftSpacer.Element();
+        ConfigureLayoutSpacerPanel(CardsLeftSpacerPanel);
+        CardsLeftSpacerPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+
+        auto OpenCard = CardsRow.Add(SnAPI::UI::UIButton{});
+        auto& OpenCardElement = OpenCard.Element();
+        OpenCardElement.ElementStyle().Apply("editor.project_welcome_option_card");
+        OpenCardElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        OpenCardElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        OpenCardElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 10.0f, 10.0f, 10.0f});
+        OpenCardElement.OnClick([this]() {
+            OpenProjectOpenModal();
+        });
+
+        auto OpenCardPanel = OpenCard.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.OpenCard"));
+        auto& OpenCardPanelElement = OpenCardPanel.Element();
+        ConfigureTransparentLayoutPanel(OpenCardPanelElement);
+        OpenCardPanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        OpenCardPanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        OpenCardPanelElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        OpenCardPanelElement.Padding().Set(0.0f);
+        OpenCardPanelElement.Gap().Set(6.0f);
+        OpenCardPanelElement.Background().Set(SnAPI::UI::Color::Transparent());
+        OpenCardPanelElement.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        OpenCardPanelElement.BorderThickness().Set(0.0f);
+        OpenCardPanelElement.Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto OpenIcon = OpenCardPanel.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kProjectWelcomeOpenIconPath)));
+        auto& OpenIconImage = OpenIcon.Element();
+        ConfigureSvgIcon(OpenIconImage, 46.0f, SnAPI::UI::Color::RGB(229, 233, 240));
+        OpenIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto OpenTitle = OpenCardPanel.Add(SnAPI::UI::UIText("Open Project"));
+        auto& OpenTitleText = OpenTitle.Element();
+        OpenTitleText.ElementStyle().Apply("editor.project_welcome_option_title");
+        OpenTitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        OpenTitleText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        OpenTitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto OpenDescription = OpenCardPanel.Add(SnAPI::UI::UIText("Open an existing project to start editing"));
+        auto& OpenDescriptionText = OpenDescription.Element();
+        OpenDescriptionText.ElementStyle().Apply("editor.project_welcome_option_subtitle");
+        OpenDescriptionText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        OpenDescriptionText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        OpenDescriptionText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto OpenActionShell = OpenCardPanel.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.OpenCardAction"));
+        auto& OpenActionShellPanel = OpenActionShell.Element();
+        OpenActionShellPanel.ElementStyle().Apply("editor.project_welcome_option_action");
+        OpenActionShellPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        OpenActionShellPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        OpenActionShellPanel.Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto OpenActionText = OpenActionShell.Add(SnAPI::UI::UIText("Open Project"));
+        auto& OpenActionLabel = OpenActionText.Element();
+        OpenActionLabel.ElementStyle().Apply("editor.project_welcome_option_action_text");
+        OpenActionLabel.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        OpenActionLabel.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CreateCard = CardsRow.Add(SnAPI::UI::UIButton{});
+        auto& CreateCardElement = CreateCard.Element();
+        CreateCardElement.ElementStyle().Apply("editor.project_welcome_option_card");
+        CreateCardElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        CreateCardElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        CreateCardElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 10.0f, 10.0f, 10.0f});
+        CreateCardElement.OnClick([this]() {
+            OpenProjectCreateModal();
+        });
+
+        auto CreateCardPanel = CreateCard.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.CreateCard"));
+        auto& CreateCardPanelElement = CreateCardPanel.Element();
+        ConfigureTransparentLayoutPanel(CreateCardPanelElement);
+        CreateCardPanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        CreateCardPanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        CreateCardPanelElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        CreateCardPanelElement.Padding().Set(0.0f);
+        CreateCardPanelElement.Gap().Set(6.0f);
+        CreateCardPanelElement.Background().Set(SnAPI::UI::Color::Transparent());
+        CreateCardPanelElement.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        CreateCardPanelElement.BorderThickness().Set(0.0f);
+        CreateCardPanelElement.Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CreateIcon = CreateCardPanel.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kProjectWelcomeCreateIconPath)));
+        auto& CreateIconImage = CreateIcon.Element();
+        ConfigureSvgIcon(CreateIconImage, 46.0f, SnAPI::UI::Color::RGB(229, 233, 240));
+        CreateIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CreateTitle = CreateCardPanel.Add(SnAPI::UI::UIText("Create New Project"));
+        auto& CreateTitleText = CreateTitle.Element();
+        CreateTitleText.ElementStyle().Apply("editor.project_welcome_option_title");
+        CreateTitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        CreateTitleText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        CreateTitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CreateDescription = CreateCardPanel.Add(SnAPI::UI::UIText("Start a new project from scratch"));
+        auto& CreateDescriptionText = CreateDescription.Element();
+        CreateDescriptionText.ElementStyle().Apply("editor.project_welcome_option_subtitle");
+        CreateDescriptionText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        CreateDescriptionText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        CreateDescriptionText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CreateActionShell = CreateCardPanel.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.CreateCardAction"));
+        auto& CreateActionShellPanel = CreateActionShell.Element();
+        CreateActionShellPanel.ElementStyle().Apply("editor.project_welcome_option_action_primary");
+        CreateActionShellPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        CreateActionShellPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        CreateActionShellPanel.Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CreateActionText = CreateActionShell.Add(SnAPI::UI::UIText("New Project"));
+        auto& CreateActionLabel = CreateActionText.Element();
+        CreateActionLabel.ElementStyle().Apply("editor.project_welcome_option_action_text");
+        CreateActionLabel.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        CreateActionLabel.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto CardsRightSpacer = CardsRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.CardsRightSpacer"));
+        auto& CardsRightSpacerPanel = CardsRightSpacer.Element();
+        ConfigureLayoutSpacerPanel(CardsRightSpacerPanel);
+        CardsRightSpacerPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+
+        auto RecentSection = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.RecentSection"));
+        auto& RecentSectionPanel = RecentSection.Element();
+        RecentSectionPanel.ElementStyle().Apply("editor.project_welcome_recent_panel");
+        RecentSectionPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        RecentSectionPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        RecentSectionPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        RecentSectionPanel.Padding().Set(6.0f);
+        RecentSectionPanel.Gap().Set(2.0f);
+
+        auto RecentTitle = RecentSection.Add(SnAPI::UI::UIText("Recent Projects"));
+        auto& RecentTitleText = RecentTitle.Element();
+        RecentTitleText.ElementStyle().Apply("editor.project_welcome_recent_title");
+        RecentTitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+
+        auto RecentList = RecentSection.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.RecentList"));
+        auto& RecentListPanel = RecentList.Element();
+        ConfigureTransparentLayoutPanel(RecentListPanel);
+        RecentListPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        RecentListPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        RecentListPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        RecentListPanel.Padding().Set(0.0f);
+        RecentListPanel.Gap().Set(0.0f);
+        RecentListPanel.Background().Set(SnAPI::UI::Color::Transparent());
+        RecentListPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        RecentListPanel.BorderThickness().Set(0.0f);
+
+        if (m_recentProjects.empty())
+        {
+            auto EmptyHint = RecentList.Add(SnAPI::UI::UIText("No recent projects yet."));
+            auto& EmptyHintText = EmptyHint.Element();
+            EmptyHintText.ElementStyle().Apply("editor.project_welcome_recent_empty");
+            EmptyHintText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        }
+        else
+        {
+            const std::size_t VisibleRecentCount = std::min<std::size_t>(m_recentProjects.size(), 2u);
+            for (std::size_t Index = 0; Index < VisibleRecentCount; ++Index)
+            {
+                const RecentProjectEntry Entry = m_recentProjects[Index];
+
+                auto RecentButton = RecentList.Add(SnAPI::UI::UIButton{});
+                auto& RecentButtonElement = RecentButton.Element();
+                RecentButtonElement.ElementStyle().Apply("editor.project_welcome_recent_button");
+                RecentButtonElement.Width().Set(SnAPI::UI::Sizing::Fill());
+                RecentButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+                RecentButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 6.0f, 8.0f, 6.0f});
+                RecentButtonElement.OnClick([this, Entry]() {
+                    m_projectModalAction = EProjectAction::OpenExisting;
+                    m_projectFilePathText = Entry.ProjectFilePath;
+                    ConfirmProjectModal();
+                });
+
+                auto RecentRow = RecentButton.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.RecentRow"));
+                auto& RecentRowPanel = RecentRow.Element();
+                ConfigureTransparentLayoutPanel(RecentRowPanel);
+                RecentRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+                RecentRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+                RecentRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+                RecentRowPanel.Padding().Set(0.0f);
+                RecentRowPanel.Gap().Set(8.0f);
+                RecentRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+                RecentRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+                RecentRowPanel.BorderThickness().Set(0.0f);
+                RecentRowPanel.Properties().SetProperty(
+                    SnAPI::UI::UIElementBase::VisibilityKey,
+                    SnAPI::UI::EVisibility::HitTestInvisible);
+
+                auto RecentIcon = RecentRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kProjectWelcomeRecentIconPath)));
+                auto& RecentIconImage = RecentIcon.Element();
+                ConfigureSvgIcon(RecentIconImage, 13.0f, SnAPI::UI::Color::RGB(214, 198, 164));
+                RecentIconImage.ElementMargin().Set(SnAPI::UI::Margin{1.0f, 0.0f, 2.0f, 0.0f});
+                RecentIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+                auto RecentText = RecentRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.RecentText"));
+                auto& RecentTextPanel = RecentText.Element();
+                ConfigureTransparentLayoutPanel(RecentTextPanel);
+                RecentTextPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+                RecentTextPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+                RecentTextPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+                RecentTextPanel.Padding().Set(0.0f);
+                RecentTextPanel.Gap().Set(1.0f);
+                RecentTextPanel.Background().Set(SnAPI::UI::Color::Transparent());
+                RecentTextPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+                RecentTextPanel.BorderThickness().Set(0.0f);
+                RecentTextPanel.Properties().SetProperty(
+                    SnAPI::UI::UIElementBase::VisibilityKey,
+                    SnAPI::UI::EVisibility::HitTestInvisible);
+
+                auto RecentName = RecentText.Add(SnAPI::UI::UIText(Entry.Name));
+                auto& RecentNameText = RecentName.Element();
+                RecentNameText.ElementStyle().Apply("editor.project_welcome_recent_name");
+                RecentNameText.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+                RecentNameText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+                auto RecentPath = RecentText.Add(SnAPI::UI::UIText(Entry.ProjectFilePath));
+                auto& RecentPathText = RecentPath.Element();
+                RecentPathText.ElementStyle().Apply("editor.project_welcome_recent_path");
+                RecentPathText.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+                RecentPathText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+            }
+        }
+
+        auto FooterRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.FooterRow"));
+        auto& FooterRowPanel = FooterRow.Element();
+        ConfigureTransparentLayoutPanel(FooterRowPanel);
+        FooterRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        FooterRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        FooterRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        FooterRowPanel.Padding().Set(0.0f);
+        FooterRowPanel.Gap().Set(8.0f);
+        FooterRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+        FooterRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        FooterRowPanel.BorderThickness().Set(0.0f);
+
+        auto DocsButton = FooterRow.Add(SnAPI::UI::UIButton{});
+        auto& DocsButtonElement = DocsButton.Element();
+        DocsButtonElement.ElementStyle().Apply("editor.project_welcome_footer_button");
+        DocsButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+        DocsButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        DocsButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 3.0f, 8.0f, 3.0f});
+        DocsButtonElement.OnClick([this]() {
+            OpenProjectOpenModal();
+        });
+
+        auto DocsContent = DocsButton.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.DocsButtonContent"));
+        auto& DocsContentPanel = DocsContent.Element();
+        ConfigureTransparentLayoutPanel(DocsContentPanel);
+        DocsContentPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        DocsContentPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+        DocsContentPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        DocsContentPanel.Padding().Set(0.0f);
+        DocsContentPanel.Gap().Set(4.0f);
+        DocsContentPanel.Background().Set(SnAPI::UI::Color::Transparent());
+        DocsContentPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+        DocsContentPanel.BorderThickness().Set(0.0f);
+        DocsContentPanel.Properties().SetProperty(
+            SnAPI::UI::UIElementBase::VisibilityKey,
+            SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto DocsIcon = DocsContent.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kProjectWelcomeFooterIconPath)));
+        auto& DocsIconImage = DocsIcon.Element();
+        ConfigureSvgIcon(DocsIconImage, 12.0f, SnAPI::UI::Color::RGB(170, 178, 194));
+        DocsIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto DocsText = DocsContent.Add(SnAPI::UI::UIText("Documentation"));
+        auto& DocsTextElement = DocsText.Element();
+        DocsTextElement.ElementStyle().Apply("editor.project_welcome_footer_button_text");
+        DocsTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        DocsTextElement.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        auto FooterSpacer = FooterRow.Add(SnAPI::UI::UIPanel("Editor.ProjectWelcome.FooterSpacer"));
+        auto& FooterSpacerPanel = FooterSpacer.Element();
+        ConfigureLayoutSpacerPanel(FooterSpacerPanel);
+        FooterSpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+        auto ExitButton = FooterRow.Add(SnAPI::UI::UIButton{});
+        auto& ExitButtonElement = ExitButton.Element();
+        ExitButtonElement.ElementStyle().Apply("editor.project_welcome_footer_button");
+        ExitButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+        ExitButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        ExitButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 3.0f, 8.0f, 3.0f});
+        ExitButtonElement.SetDisabled(m_projectModalRequired);
+        ExitButtonElement.OnClick([this]() {
+            CloseProjectModal(true);
+        });
+
+        auto ExitText = ExitButton.Add(SnAPI::UI::UIText("Exit"));
+        auto& ExitTextElement = ExitText.Element();
+        ExitTextElement.ElementStyle().Apply("editor.project_welcome_footer_button_text");
+        ExitTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        ExitTextElement.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+        return;
+    }
+
     OverlayPanel.Movable().Set(!m_projectModalRequired);
     OverlayPanel.Resizable().Set(false);
     OverlayPanel.DragRegionHeight().Set(30.0f);
@@ -4413,64 +4893,115 @@ void EditorLayout::EnsureProjectModalOverlay()
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
-    OverlayPanel.ContentCornerRadius().Set(8.0f);
-    OverlayPanel.ContentPadding().Set(10.0f);
-    OverlayPanel.DialogMaxWidthRatio().Set(0.70f);
-    OverlayPanel.DialogMaxHeightRatio().Set(0.70f);
+    OverlayPanel.ContentCornerRadius().Set(10.0f);
+    OverlayPanel.ContentPadding().Set(12.0f);
+    ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
     m_projectModalOverlay = Overlay.Handle();
 
     auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ProjectModal"));
     auto& ModalPanel = Modal.Element();
+    ModalPanel.ElementStyle().Apply("editor.project_modal_root");
     ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
     ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
-    ModalPanel.Padding().Set(0.0f);
+    ModalPanel.Padding().Set(10.0f);
     ModalPanel.Gap().Set(10.0f);
-    ModalPanel.Background().Set(SnAPI::UI::Color::Transparent());
-    ModalPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
-    ModalPanel.BorderThickness().Set(0.0f);
-    ModalPanel.CornerRadius().Set(0.0f);
 
     const bool IsCreate = m_projectModalAction == EProjectAction::CreateNew;
 
-    auto Title = Modal.Add(SnAPI::UI::UIText(IsCreate ? "Create Project" : "Open Project"));
+    auto HeaderRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.Header"));
+    auto& HeaderRowPanel = HeaderRow.Element();
+    ConfigureTransparentLayoutPanel(HeaderRowPanel);
+    HeaderRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HeaderRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HeaderRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    HeaderRowPanel.Gap().Set(8.0f);
+    HeaderRowPanel.Padding().Set(0.0f);
+
+    auto HeaderIcon = HeaderRow.Add(SnAPI::UI::UIImage(
+        ResolveUIImageSource(IsCreate ? kProjectWelcomeCreateIconPath : kProjectWelcomeOpenIconPath)));
+    auto& HeaderIconImage = HeaderIcon.Element();
+    ConfigureSvgIcon(HeaderIconImage, 18.0f, SnAPI::UI::Color::RGB(230, 206, 162));
+    HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto Title = HeaderRow.Add(SnAPI::UI::UIText(IsCreate ? "Create New Project" : "Open Existing Project"));
     auto& TitleText = Title.Element();
-    TitleText.ElementStyle().Apply("editor.panel_title");
-    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+    TitleText.ElementStyle().Apply("editor.project_welcome_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    TitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 
     const std::string SubtitleTextValue = m_projectModalRequired
                                               ? std::string("Create or open a project before continuing.")
                                               : std::string(IsCreate
                                                                 ? "Create a project file, configure its asset root, and initialize starter content."
-                                                                : "Load a project JSON file and switch the editor asset root to that project.");
+                                                                : "Load a project file and switch the editor asset root to that project.");
     auto Subtitle = Modal.Add(SnAPI::UI::UIText(SubtitleTextValue));
     auto& SubtitleText = Subtitle.Element();
-    SubtitleText.ElementStyle().Apply("editor.panel_subtitle");
+    SubtitleText.ElementStyle().Apply("editor.project_welcome_subtitle");
     SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
 
-    auto ToggleModeButton = Modal.Add(SnAPI::UI::UIButton{});
-    auto& ToggleModeButtonElement = ToggleModeButton.Element();
-    ToggleModeButtonElement.ElementStyle().Apply("editor.toolbar_button");
-    ToggleModeButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
-    ToggleModeButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    ToggleModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
-    ToggleModeButtonElement.OnClick([this, IsCreate]() {
+    auto ModeRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.ModeRow"));
+    auto& ModeRowPanel = ModeRow.Element();
+    ConfigureTransparentLayoutPanel(ModeRowPanel);
+    ModeRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ModeRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModeRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ModeRowPanel.Gap().Set(8.0f);
+    ModeRowPanel.Padding().Set(0.0f);
+
+    auto CreateModeButton = ModeRow.Add(SnAPI::UI::UIButton{});
+    auto& CreateModeButtonElement = CreateModeButton.Element();
+    CreateModeButtonElement.ElementStyle().Apply(IsCreate ? "editor.project_modal_mode_button_active"
+                                                          : "editor.project_modal_mode_button");
+    CreateModeButtonElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    CreateModeButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CreateModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 6.0f, 8.0f, 6.0f});
+    CreateModeButtonElement.OnClick([this, IsCreate]() {
+        if (!IsCreate)
+        {
+            OpenProjectCreateModal();
+        }
+    });
+    auto CreateModeLabel = CreateModeButton.Add(SnAPI::UI::UIText("Create New"));
+    auto& CreateModeLabelText = CreateModeLabel.Element();
+    CreateModeLabelText.ElementStyle().Apply("editor.project_modal_mode_button_text");
+    CreateModeLabelText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+    CreateModeLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto OpenModeButton = ModeRow.Add(SnAPI::UI::UIButton{});
+    auto& OpenModeButtonElement = OpenModeButton.Element();
+    OpenModeButtonElement.ElementStyle().Apply(IsCreate ? "editor.project_modal_mode_button"
+                                                        : "editor.project_modal_mode_button_active");
+    OpenModeButtonElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    OpenModeButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    OpenModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 6.0f, 8.0f, 6.0f});
+    OpenModeButtonElement.OnClick([this, IsCreate]() {
         if (IsCreate)
         {
             OpenProjectOpenModal();
-            return;
         }
-        OpenProjectCreateModal();
     });
-    auto ToggleModeLabel = ToggleModeButton.Add(SnAPI::UI::UIText(IsCreate ? "Open Existing..." : "Create New..."));
-    ToggleModeLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    auto OpenModeLabel = OpenModeButton.Add(SnAPI::UI::UIText("Open Existing"));
+    auto& OpenModeLabelText = OpenModeLabel.Element();
+    OpenModeLabelText.ElementStyle().Apply("editor.project_modal_mode_button_text");
+    OpenModeLabelText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+    OpenModeLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto FormPanel = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.FormPanel"));
+    auto& FormPanelElement = FormPanel.Element();
+    FormPanelElement.ElementStyle().Apply("editor.project_modal_form_panel");
+    FormPanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    FormPanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    FormPanelElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    FormPanelElement.Padding().Set(10.0f);
+    FormPanelElement.Gap().Set(8.0f);
 
     if (IsCreate)
     {
-        auto NameLabel = Modal.Add(SnAPI::UI::UIText("Project Name"));
+        auto NameLabel = FormPanel.Add(SnAPI::UI::UIText("Project Name"));
         NameLabel.Element().ElementStyle().Apply("editor.menu_item");
 
-        auto NameInput = Modal.Add(SnAPI::UI::UITextInput{});
+        auto NameInput = FormPanel.Add(SnAPI::UI::UITextInput{});
         auto& NameInputElement = NameInput.Element();
         NameInputElement.ElementStyle().Apply("editor.text_input");
         NameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
@@ -4484,12 +5015,14 @@ void EditorLayout::EnsureProjectModalOverlay()
             RefreshProjectModalOkButtonState();
         }));
         m_projectNameInput = NameInput.Handle();
+        m_projectFilePathInput = {};
 
-        auto DirectoryLabel = Modal.Add(SnAPI::UI::UIText("Project Directory"));
+        auto DirectoryLabel = FormPanel.Add(SnAPI::UI::UIText("Project Directory"));
         DirectoryLabel.Element().ElementStyle().Apply("editor.menu_item");
 
-        auto DirectoryInput = Modal.Add(SnAPI::UI::UIFilesystemPicker{});
+        auto DirectoryInput = FormPanel.Add(SnAPI::UI::UIFilesystemPicker{});
         auto& DirectoryInputElement = DirectoryInput.Element();
+        DirectoryInputElement.ElementStyle().Apply("editor.filesystem_picker");
         DirectoryInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
         DirectoryInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
         DirectoryInputElement.ReadOnly().Set(false);
@@ -4514,11 +5047,12 @@ void EditorLayout::EnsureProjectModalOverlay()
     }
     else
     {
-        auto FileLabel = Modal.Add(SnAPI::UI::UIText("Project File (.json)"));
+        auto FileLabel = FormPanel.Add(SnAPI::UI::UIText("Project File (.json)"));
         FileLabel.Element().ElementStyle().Apply("editor.menu_item");
 
-        auto FileInput = Modal.Add(SnAPI::UI::UIFilesystemPicker{});
+        auto FileInput = FormPanel.Add(SnAPI::UI::UIFilesystemPicker{});
         auto& FileInputElement = FileInput.Element();
+        FileInputElement.ElementStyle().Apply("editor.filesystem_picker");
         FileInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
         FileInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
         FileInputElement.ReadOnly().Set(false);
@@ -4541,49 +5075,51 @@ void EditorLayout::EnsureProjectModalOverlay()
                     }
                 }));
         m_projectFilePathInput = FileInput.Handle();
+        m_projectNameInput = {};
+        m_projectDirectoryInput = {};
     }
 
     auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.Buttons"));
     auto& ButtonsRowPanel = ButtonsRow.Element();
+    ConfigureTransparentLayoutPanel(ButtonsRowPanel);
     ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
     ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     ButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     ButtonsRowPanel.Gap().Set(8.0f);
-    ButtonsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
-    ButtonsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
-    ButtonsRowPanel.BorderThickness().Set(0.0f);
-    ButtonsRowPanel.CornerRadius().Set(0.0f);
 
     auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.ButtonSpacer"));
     auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
     SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    SpacerPanel.Background().Set(SnAPI::UI::Color::Transparent());
 
     auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
     auto& CancelButtonElement = CancelButton.Element();
-    CancelButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    CancelButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
     CancelButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
     CancelButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
     CancelButtonElement.SetDisabled(m_projectModalRequired);
     CancelButtonElement.OnClick([this]() {
         CloseProjectModal();
     });
     auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
-    CancelLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    auto& CancelLabelText = CancelLabel.Element();
+    CancelLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    CancelLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 
     auto OkButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
     auto& OkButtonElement = OkButton.Element();
-    OkButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    OkButtonElement.ElementStyle().Apply("editor.project_modal_action_button_primary");
     OkButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
     OkButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    OkButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    OkButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
     OkButtonElement.OnClick([this]() {
         ConfirmProjectModal();
     });
-    auto OkLabel = OkButton.Add(SnAPI::UI::UIText(IsCreate ? "Create" : "Open"));
-    OkLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    auto OkLabel = OkButton.Add(SnAPI::UI::UIText(IsCreate ? "Create Project" : "Open Project"));
+    auto& OkLabelText = OkLabel.Element();
+    OkLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    OkLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
     m_projectModalOkButton = OkButton.Handle();
 
     RefreshProjectModalOkButtonState();
@@ -4796,6 +5332,45 @@ void EditorLayout::RefreshContentAssetCreateOkButtonState()
     }
 }
 
+void EditorLayout::OpenProjectWelcomeModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_projectModalOpen = true;
+    m_projectModalShowWelcome = true;
+    m_projectModalAction = EProjectAction::CreateNew;
+    if (m_projectNameText.empty())
+    {
+        m_projectNameText = "NewProject";
+    }
+    if (m_projectDirectoryText.empty())
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error && !CurrentPath.empty())
+        {
+            m_projectDirectoryText = CurrentPath.string();
+        }
+    }
+    if (m_projectFilePathText.empty())
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error && !CurrentPath.empty())
+        {
+            m_projectFilePathText = (CurrentPath / std::string(kDefaultProjectConfigFileName)).string();
+        }
+    }
+    DestroyProjectModalOverlay();
+    RefreshProjectModalVisibility();
+    RefreshProjectModalOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
 void EditorLayout::OpenProjectCreateModal()
 {
     if (!m_context)
@@ -4806,6 +5381,7 @@ void EditorLayout::OpenProjectCreateModal()
     CloseContextMenu();
     m_projectModalAction = EProjectAction::CreateNew;
     m_projectModalOpen = true;
+    m_projectModalShowWelcome = false;
     m_projectNameText = "NewProject";
     if (m_projectDirectoryText.empty())
     {
@@ -4833,6 +5409,7 @@ void EditorLayout::OpenProjectOpenModal()
     CloseContextMenu();
     m_projectModalAction = EProjectAction::OpenExisting;
     m_projectModalOpen = true;
+    m_projectModalShowWelcome = false;
     m_projectNameText.clear();
     if (m_projectFilePathText.empty())
     {
@@ -4863,6 +5440,7 @@ void EditorLayout::CloseProjectModal(const bool ForceClose)
     }
 
     m_projectModalOpen = false;
+    m_projectModalShowWelcome = false;
     RefreshProjectModalVisibility();
     if (m_context)
     {
@@ -4952,11 +5530,90 @@ void EditorLayout::ConfirmProjectModal()
         return;
     }
 
+    RememberRecentProject(Request);
+
     if (m_onProjectActionRequested)
     {
         m_onProjectActionRequested(Request);
     }
     CloseProjectModal(true);
+}
+
+void EditorLayout::RememberRecentProject(const ProjectActionRequest& Request)
+{
+    if (Request.Action == EProjectAction::CreateNew)
+    {
+        const std::string ProjectName = TrimCopy(Request.ProjectName);
+        const std::string ProjectDirectory = TrimCopy(Request.ProjectDirectory);
+        if (ProjectName.empty() || ProjectDirectory.empty())
+        {
+            return;
+        }
+
+        const std::filesystem::path ProjectFilePath =
+            std::filesystem::path(ProjectDirectory) / ProjectName / std::string(kDefaultProjectConfigFileName);
+        RememberRecentProjectFile(ProjectFilePath.string(), ProjectName);
+        return;
+    }
+
+    RememberRecentProjectFile(Request.ProjectFilePath, Request.ProjectName);
+}
+
+void EditorLayout::RememberRecentProjectFile(std::string ProjectFilePath, std::string ProjectName)
+{
+    ProjectFilePath = TrimCopy(std::move(ProjectFilePath));
+    if (ProjectFilePath.empty())
+    {
+        return;
+    }
+
+    std::filesystem::path FilePath(ProjectFilePath);
+    std::error_code Error{};
+    if (!FilePath.is_absolute())
+    {
+        const std::filesystem::path AbsolutePath = std::filesystem::absolute(FilePath, Error);
+        if (!Error && !AbsolutePath.empty())
+        {
+            FilePath = AbsolutePath;
+        }
+    }
+
+    const std::string NormalizedPath = FilePath.lexically_normal().string();
+    if (NormalizedPath.empty())
+    {
+        return;
+    }
+
+    ProjectName = ProjectNameFromFilePath(NormalizedPath, ProjectName);
+
+    const std::string NormalizedPathLower = ToLower(NormalizedPath);
+    const auto ExistingIt = std::find_if(m_recentProjects.begin(),
+                                         m_recentProjects.end(),
+                                         [&NormalizedPathLower](const RecentProjectEntry& Entry) {
+                                             return ToLower(Entry.ProjectFilePath) == NormalizedPathLower;
+                                         });
+    if (ExistingIt != m_recentProjects.end())
+    {
+        ExistingIt->Name = std::move(ProjectName);
+        ExistingIt->ProjectFilePath = NormalizedPath;
+        RecentProjectEntry Existing = std::move(*ExistingIt);
+        m_recentProjects.erase(ExistingIt);
+        m_recentProjects.insert(m_recentProjects.begin(), std::move(Existing));
+    }
+    else
+    {
+        m_recentProjects.insert(
+            m_recentProjects.begin(),
+            RecentProjectEntry{
+                .Name = std::move(ProjectName),
+                .ProjectFilePath = NormalizedPath,
+            });
+    }
+
+    if (m_recentProjects.size() > kMaxRecentProjects)
+    {
+        m_recentProjects.resize(kMaxRecentProjects);
+    }
 }
 
 void EditorLayout::RefreshProjectModalVisibility()

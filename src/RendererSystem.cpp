@@ -2972,6 +2972,7 @@ bool RendererSystem::CreateWindowResources()
 
     auto Window = std::unique_ptr<SnAPI::Graphics::WindowBase, WindowDeleter>(new SnAPI::Graphics::SDLWindow());
     Window->Create(BuildWindowCreateInfo(m_settings));
+    Window->Maximize();
     m_graphics->InitializeResourcesForWindow(Window.get());
     const auto WindowSize = Window->Size();
     m_lastWindowWidth = WindowSize.x();

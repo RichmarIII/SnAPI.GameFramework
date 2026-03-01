@@ -268,12 +268,15 @@ private:
     void RefreshContentAssetCreateModalVisibility();
     void RebuildContentAssetCreateTypeTree();
     void RefreshContentAssetCreateOkButtonState();
+    void OpenProjectWelcomeModal();
     void OpenProjectCreateModal();
     void OpenProjectOpenModal();
     void CloseProjectModal(bool ForceClose = false);
     void ConfirmProjectModal();
     void RefreshProjectModalVisibility();
     void RefreshProjectModalOkButtonState();
+    void RememberRecentProject(const ProjectActionRequest& Request);
+    void RememberRecentProjectFile(std::string ProjectFilePath, std::string ProjectName = {});
     void CloseContentAssetInspectorModal(bool NotifyHandler);
     void RefreshContentAssetInspectorModalVisibility();
     void RefreshContentAssetInspectorModalState();
@@ -345,6 +348,7 @@ private:
     struct ContentAssetCardWidgets
     {
         SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> Button{};
+        SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> Card{};
         SnAPI::UI::ElementHandle<SnAPI::UI::UIImage> Icon{};
         SnAPI::UI::ElementHandle<SnAPI::UI::UIText> Type{};
         SnAPI::UI::ElementHandle<SnAPI::UI::UIText> Name{};
@@ -356,6 +360,11 @@ private:
         std::size_t AssetIndex = 0;
         std::string FolderPath{};
         std::string DisplayName{};
+    };
+    struct RecentProjectEntry
+    {
+        std::string Name{};
+        std::string ProjectFilePath{};
     };
 
     std::vector<ContentAssetCardWidgets> m_contentAssetCards{};
@@ -379,10 +388,12 @@ private:
     ContentAssetInspectorState m_contentAssetInspectorState{};
     bool m_projectModalOpen = false;
     bool m_projectModalRequired = false;
+    bool m_projectModalShowWelcome = false;
     EProjectAction m_projectModalAction = EProjectAction::CreateNew;
     std::string m_projectNameText{};
     std::string m_projectDirectoryText{};
     std::string m_projectFilePathText{};
+    std::vector<RecentProjectEntry> m_recentProjects{};
     std::vector<NodeHandle> m_contentInspectorVisibleNodes{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentInspectorHierarchySource{};
     bool m_contentInspectorTargetBound = false;

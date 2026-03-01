@@ -13,6 +13,7 @@
 #include <UIComboBox.h>
 #include <UIDatePicker.h>
 #include <UIDockZone.h>
+#include <UIFilesystemPicker.h>
 #include <UIListView.h>
 #include <UIMenuBar.h>
 #include <UINumberField.h>
@@ -628,8 +629,8 @@ void EditorTheme::Initialize()
             .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{31, 34, 40, 255});
 
     DefineClass("editor.asset_tile_button")
-        .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{102, 89, 66, 84})
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{62, 53, 40, 22})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{120, 104, 79, 150})
         .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
         .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
         .Set(SnAPI::UI::UIButton::DropShadowBlurKey, 0.0f)
@@ -638,20 +639,20 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIButton::DropShadowOffsetYKey, 0.0f)
         .Set(SnAPI::UI::UIButton::CornerRadiusKey, 5.0f)
         .Hovered()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{156, 136, 102, 196})
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{94, 78, 55, 78})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{182, 159, 121, 240})
         .Focused()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{168, 146, 112, 255})
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{96, 81, 58, 92})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{196, 171, 132, 255})
         .Pressed()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{185, 163, 126, 228})
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{76, 64, 46, 110})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{205, 182, 144, 250})
         .Disabled()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent());
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{42, 38, 32, 28});
 
     DefineClass("editor.asset_tile_button_selected")
-        .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{168, 146, 112, 255})
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{104, 86, 58, 112})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{210, 184, 142, 255})
         .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
         .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
         .Set(SnAPI::UI::UIButton::DropShadowBlurKey, 0.0f)
@@ -660,16 +661,16 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIButton::DropShadowOffsetYKey, 0.0f)
         .Set(SnAPI::UI::UIButton::CornerRadiusKey, 5.0f)
         .Hovered()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{205, 182, 144, 255})
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{126, 104, 70, 136})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{230, 206, 162, 255})
         .Focused()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{205, 182, 144, 255})
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{126, 104, 70, 148})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{230, 206, 162, 255})
         .Pressed()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent())
-            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{223, 202, 166, 255})
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{94, 79, 55, 162})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{239, 220, 184, 255})
         .Disabled()
-            .Set(SnAPI::UI::UIButton::BackgroundKey, Color::Transparent());
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{56, 47, 33, 46});
 
     DefineClass("editor.checkbox")
         .Set(SnAPI::UI::UICheckbox::BoxColorKey, Color{20, 24, 31, 252})
@@ -688,13 +689,13 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIPanel::PaddingKey, 6.0f)
         .Set(SnAPI::UI::UIPanel::GapKey, 3.0f)
         .Set(SnAPI::UI::UIPanel::UseGradientKey, true)
-        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color{47, 52, 60, 255})
-        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color{30, 33, 39, 255})
+        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color{47, 52, 60, 236})
+        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color{30, 33, 39, 236})
         .Set(SnAPI::UI::UIPanel::GradientStartXKey, 0.0f)
         .Set(SnAPI::UI::UIPanel::GradientStartYKey, 0.0f)
         .Set(SnAPI::UI::UIPanel::GradientEndXKey, 0.0f)
         .Set(SnAPI::UI::UIPanel::GradientEndYKey, 1.0f)
-        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{36, 40, 46, 255})
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{36, 40, 46, 232})
         .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{86, 94, 106, 255})
         .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
         .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 5.0f)
@@ -709,6 +710,26 @@ void EditorTheme::Initialize()
             .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{123, 133, 148, 255})
         .Focused()
             .Set(SnAPI::UI::UIPanel::BorderColorKey, kBorderStrong);
+
+    DefineClass("editor.asset_card_folder")
+        .Set(SnAPI::UI::UIPanel::PaddingKey, 6.0f)
+        .Set(SnAPI::UI::UIPanel::GapKey, 4.0f)
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, false)
+        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color::Transparent())
+        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color::Transparent())
+        .Set(SnAPI::UI::UIPanel::GradientStartXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientStartYKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndYKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color::Transparent())
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color::Transparent())
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 5.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowColorKey, Color::Transparent())
+        .Set(SnAPI::UI::UIPanel::DropShadowBlurKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowSpreadKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowOffsetXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowOffsetYKey, 0.0f);
 
     DefineClass("editor.asset_preview")
         .Set(SnAPI::UI::UIPanel::PaddingKey, 0.0f)
@@ -841,6 +862,23 @@ void EditorTheme::Initialize()
         .Focused()
             .Set(SnAPI::UI::UITextInput::BorderColorKey, kBorderStrong);
 
+    DefineClass("editor.filesystem_picker")
+        .Set(SnAPI::UI::UIFilesystemPicker::BackgroundColorKey, Color{22, 24, 29, 255})
+        .Set(SnAPI::UI::UIFilesystemPicker::HoverColorKey, Color{37, 40, 47, 255})
+        .Set(SnAPI::UI::UIFilesystemPicker::PressedColorKey, Color{30, 33, 39, 255})
+        .Set(SnAPI::UI::UIFilesystemPicker::BorderColorKey, kBorder)
+        .Set(SnAPI::UI::UIFilesystemPicker::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIFilesystemPicker::CornerRadiusKey, 5.0f)
+        .Set(SnAPI::UI::UIFilesystemPicker::PaddingKey, 8.0f)
+        .Set(SnAPI::UI::UIFilesystemPicker::TextColorKey, kTextPrimary)
+        .Set(SnAPI::UI::UIFilesystemPicker::PlaceholderColorKey, kTextMuted)
+        .Set(SnAPI::UI::UIFilesystemPicker::DisabledTextColorKey, kTextMuted)
+        .Set(SnAPI::UI::UIFilesystemPicker::DropdownBackgroundColorKey, Color{27, 29, 34, 255})
+        .Set(SnAPI::UI::UIFilesystemPicker::ItemHoverColorKey, Color{43, 47, 55, 255})
+        .Set(SnAPI::UI::UIFilesystemPicker::ItemSelectedColorKey, Color{58, 63, 73, 255})
+        .Set(SnAPI::UI::UIFilesystemPicker::ItemSecondaryTextColorKey, kTextMuted)
+        .Set(SnAPI::UI::UIFilesystemPicker::ArrowColorKey, kTextSecondary);
+
     DefineClass("editor.hierarchy_item")
         .Set(SnAPI::UI::UIRadio::OuterColorKey, Color{42, 46, 53, 255})
         .Set(SnAPI::UI::UIRadio::InnerColorKey, kAccent)
@@ -851,6 +889,223 @@ void EditorTheme::Initialize()
         .Focused()
             .Set(SnAPI::UI::UIRadio::OuterColorKey, Color{62, 68, 78, 255})
             .Set(SnAPI::UI::UIRadio::LabelColorKey, kAccentStrong);
+
+    DefineClass("editor.project_welcome_root")
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, true)
+        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color{35, 37, 41, 255})
+        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color{20, 21, 24, 255})
+        .Set(SnAPI::UI::UIPanel::GradientStartXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientStartYKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndYKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{24, 26, 30, 255})
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{70, 74, 82, 255})
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 8.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowColorKey, kShadowStrong)
+        .Set(SnAPI::UI::UIPanel::DropShadowBlurKey, 8.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowSpreadKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowOffsetXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowOffsetYKey, 3.0f);
+
+    DefineClass("editor.project_welcome_title")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextPrimary);
+
+    DefineClass("editor.project_welcome_subtitle")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextMuted);
+
+    DefineClass("editor.project_welcome_option_card")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{31, 34, 40, 232})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{76, 80, 88, 236})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 6.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, kShadowStrong)
+        .Set(SnAPI::UI::UIButton::DropShadowBlurKey, 7.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowSpreadKey, 0.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowOffsetXKey, 0.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowOffsetYKey, 3.0f)
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{43, 47, 55, 240})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{108, 115, 126, 240})
+        .Focused()
+            .Set(SnAPI::UI::UIButton::BorderColorKey, kBorderStrong)
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{27, 30, 36, 240})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{88, 93, 102, 240});
+
+    DefineClass("editor.project_welcome_option_title")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextPrimary);
+
+    DefineClass("editor.project_welcome_option_subtitle")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextSecondary);
+
+    DefineClass("editor.project_welcome_option_action")
+        .Set(SnAPI::UI::UIPanel::DirectionKey, SnAPI::UI::ELayoutDirection::Vertical)
+        .Set(SnAPI::UI::UIPanel::PaddingKey, 6.0f)
+        .Set(SnAPI::UI::UIPanel::GapKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, true)
+        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color{45, 49, 56, 255})
+        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color{34, 37, 43, 255})
+        .Set(SnAPI::UI::UIPanel::GradientStartXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientStartYKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndYKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{40, 44, 51, 255})
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{85, 92, 104, 255})
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 4.0f);
+
+    DefineClass("editor.project_welcome_option_action_primary")
+        .Set(SnAPI::UI::UIPanel::DirectionKey, SnAPI::UI::ELayoutDirection::Vertical)
+        .Set(SnAPI::UI::UIPanel::PaddingKey, 6.0f)
+        .Set(SnAPI::UI::UIPanel::GapKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, true)
+        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color{92, 78, 57, 255})
+        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color{67, 57, 42, 255})
+        .Set(SnAPI::UI::UIPanel::GradientStartXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientStartYKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndYKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{74, 63, 46, 255})
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{122, 102, 73, 255})
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 4.0f);
+
+    DefineClass("editor.project_welcome_option_action_text")
+        .Set(SnAPI::UI::UIText::TextColorKey, Color{236, 228, 212, 255});
+
+    DefineClass("editor.project_welcome_recent_panel")
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, false)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{17, 19, 23, 212})
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{72, 76, 84, 255})
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 4.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowColorKey, Color::Transparent());
+
+    DefineClass("editor.project_welcome_recent_title")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextSecondary);
+
+    DefineClass("editor.project_welcome_recent_button")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{0, 0, 0, 0})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{72, 76, 84, 220})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 3.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{42, 45, 52, 190})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{108, 115, 126, 240})
+        .Focused()
+            .Set(SnAPI::UI::UIButton::BorderColorKey, kBorderStrong)
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{34, 37, 43, 210});
+
+    DefineClass("editor.project_welcome_recent_name")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextPrimary);
+
+    DefineClass("editor.project_welcome_recent_path")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextMuted);
+
+    DefineClass("editor.project_welcome_recent_empty")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextMuted);
+
+    DefineClass("editor.project_welcome_footer_button")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{0, 0, 0, 0})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{0, 0, 0, 0})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 0.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 3.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{42, 45, 52, 192})
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{34, 37, 43, 210});
+
+    DefineClass("editor.project_welcome_footer_button_text")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextSecondary);
+
+    DefineClass("editor.project_modal_root")
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, true)
+        .Set(SnAPI::UI::UIPanel::GradientStartColorKey, Color{35, 37, 41, 255})
+        .Set(SnAPI::UI::UIPanel::GradientEndColorKey, Color{20, 21, 24, 255})
+        .Set(SnAPI::UI::UIPanel::GradientStartXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientStartYKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::GradientEndYKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{24, 26, 30, 255})
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{70, 74, 82, 255})
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 8.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowColorKey, kShadowStrong)
+        .Set(SnAPI::UI::UIPanel::DropShadowBlurKey, 8.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowSpreadKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowOffsetXKey, 0.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowOffsetYKey, 3.0f);
+
+    DefineClass("editor.project_modal_mode_button")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{31, 34, 40, 232})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{76, 80, 88, 236})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 5.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{43, 47, 55, 240})
+            .Set(SnAPI::UI::UIButton::BorderColorKey, Color{108, 115, 126, 240})
+        .Focused()
+            .Set(SnAPI::UI::UIButton::BorderColorKey, kBorderStrong)
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{27, 30, 36, 240});
+
+    DefineClass("editor.project_modal_mode_button_active")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{74, 63, 46, 255})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{122, 102, 73, 255})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 5.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{86, 72, 52, 255})
+        .Focused()
+            .Set(SnAPI::UI::UIButton::BorderColorKey, kAccentStrong)
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{67, 57, 42, 255});
+
+    DefineClass("editor.project_modal_mode_button_text")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextPrimary);
+
+    DefineClass("editor.project_modal_form_panel")
+        .Set(SnAPI::UI::UIPanel::UseGradientKey, false)
+        .Set(SnAPI::UI::UIPanel::BackgroundKey, Color{17, 19, 23, 212})
+        .Set(SnAPI::UI::UIPanel::BorderColorKey, Color{72, 76, 84, 255})
+        .Set(SnAPI::UI::UIPanel::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIPanel::CornerRadiusKey, 4.0f)
+        .Set(SnAPI::UI::UIPanel::DropShadowColorKey, Color::Transparent());
+
+    DefineClass("editor.project_modal_action_button")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{40, 44, 51, 255})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{85, 92, 104, 255})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 4.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{49, 53, 61, 255})
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{34, 37, 43, 255})
+        .Focused()
+            .Set(SnAPI::UI::UIButton::BorderColorKey, kBorderStrong);
+
+    DefineClass("editor.project_modal_action_button_primary")
+        .Set(SnAPI::UI::UIButton::BackgroundKey, Color{74, 63, 46, 255})
+        .Set(SnAPI::UI::UIButton::BorderColorKey, Color{122, 102, 73, 255})
+        .Set(SnAPI::UI::UIButton::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIButton::CornerRadiusKey, 4.0f)
+        .Set(SnAPI::UI::UIButton::DropShadowColorKey, Color::Transparent())
+        .Hovered()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{86, 72, 52, 255})
+        .Pressed()
+            .Set(SnAPI::UI::UIButton::BackgroundKey, Color{67, 57, 42, 255})
+        .Focused()
+            .Set(SnAPI::UI::UIButton::BorderColorKey, kAccentStrong);
+
+    DefineClass("editor.project_modal_action_button_text")
+        .Set(SnAPI::UI::UIText::TextColorKey, kTextPrimary);
 }
 
 } // namespace SnAPI::GameFramework::Editor
