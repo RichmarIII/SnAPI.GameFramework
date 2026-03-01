@@ -17,10 +17,9 @@ PlayerStart::PlayerStart(std::string Name)
     TypeKey(StaticTypeId<PlayerStart>());
 }
 
-void PlayerStart::OnCreateImpl(IWorld& WorldRef)
+void PlayerStart::OnCreate()
 {
     EnsureDefaultComponents();
-    (void)WorldRef;
 }
 
 TAssetRef<PawnBase>& PlayerStart::EditSpawnPawnAsset()

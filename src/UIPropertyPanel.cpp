@@ -6,6 +6,7 @@
 #include "BaseNode.h"
 #include "BuiltinTypes.h"
 #include "IWorld.h"
+#include "PathResolver.h"
 #include "PawnBase.h"
 #include "SubClassOf.h"
 
@@ -15,6 +16,7 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
+#include <filesystem>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -28,6 +30,7 @@
 #include <UIComboBox.h>
 #include <UIElementBase.h>
 #include <UIEvents.h>
+#include <UIFilesystemPicker.h>
 #include <UINumberField.h>
 #include <UIPanel.h>
 #include <UISizing.h>
@@ -958,6 +961,8 @@ void UIPropertyPanel::AddFieldEditor(
 
   const EEditorKind editorKind = ResolveEditorKind(Field.FieldType);
   const bool readOnly = pathConst || Field.IsConst || !Field.Setter;
+  const bool isPathField = editorKind == EEditorKind::String && IsPathLikeField(Field);
+  const bool pathSelectsDirectories = isPathField && IsDirectoryLikeField(Field);
 
   if (editorKind == EEditorKind::Unsupported)
   {
@@ -1260,37 +1265,84 @@ void UIPropertyPanel::AddFieldEditor(
   }
   else
   {
-    const auto editorHandle = m_Context->CreateElement<SnAPI::UI::UITextInput>();
-    if (editorHandle.Id.Value == 0)
+    if (isPathField)
     {
-      return;
-    }
-    m_Context->AddChild(valueHostHandle.Id, editorHandle.Id);
-    binding.EditorId = editorHandle.Id;
+      const auto pickerHandle = m_Context->CreateElement<SnAPI::UI::UIFilesystemPicker>();
+      if (pickerHandle.Id.Value == 0)
+      {
+        return;
+      }
+      m_Context->AddChild(valueHostHandle.Id, pickerHandle.Id);
+      binding.EditorId = pickerHandle.Id;
+      binding.UsesFilesystemPicker = true;
+      binding.PathSelectsDirectories = pathSelectsDirectories;
 
-    if (auto* editor = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(editorHandle.Id)))
+      if (auto* picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_Context->GetElement(pickerHandle.Id)))
+      {
+        picker->ReadOnly().Set(readOnly);
+        picker->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        picker->Height().Set(SnAPI::UI::Sizing::Auto());
+        picker->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        picker->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        picker->AllowMultiSelect().Set(false);
+        picker->PickDirectories().Set(pathSelectsDirectories);
+        picker->ShowDirectories().Set(true);
+        picker->ShowFiles().Set(!pathSelectsDirectories);
+        picker->ShowHidden().Set(false);
+        picker->RestrictToRoot().Set(true);
+        picker->OutputScheme().Set(std::string("asset"));
+        picker->Placeholder().Set(pathSelectsDirectories ? "asset://Folder" : "asset://file.ext");
+        picker->BackgroundColor().Set(kValueBg);
+        picker->BorderColor().Set(kValueBorder);
+        picker->TextColor().Set(Color{224, 229, 237, 255});
+        picker->PlaceholderColor().Set(Color{138, 147, 163, 255});
+        picker->DropdownBackgroundColor().Set(Color{12, 15, 21, 252});
+        picker->ItemHoverColor().Set(Color{26, 30, 39, 252});
+        picker->ItemSelectedColor().Set(Color{52, 84, 130, 225});
+        picker->ArrowColor().Set(Color{185, 193, 205, 255});
+
+        const std::filesystem::path AssetRoot = ResolveAssetRootPath();
+        if (!AssetRoot.empty())
+        {
+          picker->RootPath().Set(AssetRoot.string());
+          picker->CurrentPath().Set(AssetRoot.string());
+        }
+      }
+    }
+    else
     {
-      editor->Multiline().Set(false);
-      editor->WordWrap().Set(false);
-      editor->AcceptTab().Set(false);
-      editor->Resizable().Set(false);
-      editor->EnableSpellCheck().Set(false);
-      editor->EnableSyntaxHighlight().Set(false);
-      editor->ReadOnly().Set(readOnly);
-      editor->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-      editor->Height().Set(SnAPI::UI::Sizing::Auto());
-      editor->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
-      editor->VAlign().Set(SnAPI::UI::EAlignment::Center);
-      editor->Padding().Set(6.0f);
-      editor->BorderThickness().Set(1.0f);
-      editor->CornerRadius().Set(3.0f);
-      editor->BackgroundColor().Set(kValueBg);
-      editor->BorderColor().Set(kValueBorder);
-      editor->TextColor().Set(Color{224, 229, 237, 255});
-      editor->PlaceholderColor().Set(Color{138, 147, 163, 255});
-      editor->SelectionColor().Set(Color{74, 90, 122, 194});
-      editor->CaretColor().Set(kValueBorderFocused);
-      editor->Placeholder().Set(PrettyTypeName(Field.FieldType));
+      const auto editorHandle = m_Context->CreateElement<SnAPI::UI::UITextInput>();
+      if (editorHandle.Id.Value == 0)
+      {
+        return;
+      }
+      m_Context->AddChild(valueHostHandle.Id, editorHandle.Id);
+      binding.EditorId = editorHandle.Id;
+
+      if (auto* editor = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(editorHandle.Id)))
+      {
+        editor->Multiline().Set(false);
+        editor->WordWrap().Set(false);
+        editor->AcceptTab().Set(false);
+        editor->Resizable().Set(false);
+        editor->EnableSpellCheck().Set(false);
+        editor->EnableSyntaxHighlight().Set(false);
+        editor->ReadOnly().Set(readOnly);
+        editor->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        editor->Height().Set(SnAPI::UI::Sizing::Auto());
+        editor->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        editor->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        editor->Padding().Set(6.0f);
+        editor->BorderThickness().Set(1.0f);
+        editor->CornerRadius().Set(3.0f);
+        editor->BackgroundColor().Set(kValueBg);
+        editor->BorderColor().Set(kValueBorder);
+        editor->TextColor().Set(Color{224, 229, 237, 255});
+        editor->PlaceholderColor().Set(Color{138, 147, 163, 255});
+        editor->SelectionColor().Set(Color{74, 90, 122, 194});
+        editor->CaretColor().Set(kValueBorderFocused);
+        editor->Placeholder().Set(PrettyTypeName(Field.FieldType));
+      }
     }
   }
 
@@ -1467,6 +1519,106 @@ std::string UIPropertyPanel::PrettyFieldName(std::string_view Name) const
     out.push_back(c);
   }
   return out;
+}
+
+bool UIPropertyPanel::IsPathLikeField(const FieldInfo& Field) const
+{
+  const std::string NameLower = ToLowerCopy(Field.Name);
+  return NameLower.find("path") != std::string::npos ||
+         NameLower.find("file") != std::string::npos ||
+         NameLower.find("folder") != std::string::npos ||
+         NameLower.find("directory") != std::string::npos ||
+         NameLower.find("module") != std::string::npos;
+}
+
+bool UIPropertyPanel::IsDirectoryLikeField(const FieldInfo& Field) const
+{
+  const std::string NameLower = ToLowerCopy(Field.Name);
+  return NameLower.find("directory") != std::string::npos ||
+         NameLower.find("folder") != std::string::npos ||
+         NameLower.ends_with("dir");
+}
+
+std::filesystem::path UIPropertyPanel::ResolveAssetRootPath() const
+{
+  std::filesystem::path AssetRoot = SPathResolver::Instance().AssetRoot();
+  if (!AssetRoot.empty())
+  {
+    return AssetRoot;
+  }
+
+  std::error_code Error{};
+  const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+  if (Error || CurrentPath.empty())
+  {
+    return {};
+  }
+
+  return CurrentPath / "Assets";
+}
+
+std::string UIPropertyPanel::NormalizeToAssetUri(const std::string_view Candidate) const
+{
+  const std::string Trimmed = TrimCopy(Candidate);
+  if (Trimmed.empty())
+  {
+    return {};
+  }
+
+  if (Trimmed.rfind("asset://", 0) == 0)
+  {
+    return Trimmed;
+  }
+
+  auto ResolvedPath = SPathResolver::Instance().Resolve(Trimmed);
+  if (!ResolvedPath)
+  {
+    return Trimmed;
+  }
+
+  std::filesystem::path AssetRoot = ResolveAssetRootPath();
+  if (AssetRoot.empty())
+  {
+    return Trimmed;
+  }
+
+  std::error_code Error{};
+  AssetRoot = std::filesystem::weakly_canonical(AssetRoot, Error);
+  if (Error || AssetRoot.empty())
+  {
+    Error.clear();
+    AssetRoot = std::filesystem::absolute(AssetRoot, Error);
+    if (Error)
+    {
+      return Trimmed;
+    }
+  }
+
+  std::filesystem::path Resolved = std::filesystem::weakly_canonical(*ResolvedPath, Error);
+  if (Error || Resolved.empty())
+  {
+    Error.clear();
+    Resolved = std::filesystem::absolute(*ResolvedPath, Error);
+    if (Error)
+    {
+      return Trimmed;
+    }
+  }
+
+  std::filesystem::path Relative = std::filesystem::relative(Resolved, AssetRoot, Error);
+  if (Error || Relative.empty() || Relative.is_absolute())
+  {
+    return Trimmed;
+  }
+
+  Relative = Relative.lexically_normal();
+  const std::string RelativeText = Relative.generic_string();
+  if (RelativeText.empty() || RelativeText.rfind("..", 0) == 0)
+  {
+    return Trimmed;
+  }
+
+  return "asset://" + RelativeText;
 }
 
 bool UIPropertyPanel::ResolveLeafPath(
@@ -1830,10 +1982,32 @@ bool UIPropertyPanel::WriteFieldValue(
     return false;
   }
 
+  const auto finalizeWrite = [&](const bool Success) {
+    if (!Success)
+    {
+      return false;
+    }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    // Nested settings fields mutate sub-objects directly; forward a root-level editor change callback.
+    if (Binding.Path.size() > 1)
+    {
+      const FieldPathEntry& rootEntry = Binding.Path.front();
+      if (const TypeInfo* rootType = TypeRegistry::Instance().Find(rootEntry.OwnerType);
+          rootType && rootType->EditorPropertyChanged)
+      {
+        rootType->EditorPropertyChanged(Binding.RootInstance, Binding.Path.back().FieldName);
+      }
+    }
+#endif
+
+    return true;
+  };
+
   switch (Binding.EditorKind)
   {
   case EEditorKind::Bool:
-    return static_cast<bool>(field->Setter(owner, Variant::FromValue(BoolValue)));
+    return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(BoolValue))));
   case EEditorKind::Signed:
     {
       std::int64_t parsed = 0;
@@ -1843,7 +2017,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(static_cast<int>(parsed))));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(static_cast<int>(parsed)))));
     }
   case EEditorKind::Unsigned:
     {
@@ -1859,13 +2033,13 @@ bool UIPropertyPanel::WriteFieldValue(
         {
           return false;
         }
-        return static_cast<bool>(
-          field->Setter(owner, Variant::FromValue(static_cast<unsigned int>(parsed))));
+        return finalizeWrite(static_cast<bool>(
+          field->Setter(owner, Variant::FromValue(static_cast<unsigned int>(parsed)))));
       }
 
       if (Binding.FieldType == StaticTypeId<std::uint64_t>())
       {
-        return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+        return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
       }
       return false;
     }
@@ -1879,7 +2053,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(static_cast<float>(parsed))));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(static_cast<float>(parsed)))));
     }
   case EEditorKind::Double:
     {
@@ -1888,10 +2062,17 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::String:
-    return static_cast<bool>(field->Setter(owner, Variant::FromValue(std::string(TextValue))));
+    {
+      std::string nextValue = std::string(TextValue);
+      if (Binding.UsesFilesystemPicker)
+      {
+        nextValue = NormalizeToAssetUri(nextValue);
+      }
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(nextValue))));
+    }
   case EEditorKind::Vec2:
     {
       Vec2 parsed{};
@@ -1899,7 +2080,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::Vec3:
     {
@@ -1908,7 +2089,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::Vec4:
     {
@@ -1917,7 +2098,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::Quat:
     {
@@ -1926,7 +2107,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::Color:
     {
@@ -1935,7 +2116,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::Uuid:
     {
@@ -1944,7 +2125,7 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return false;
       }
-      return static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed)));
+      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
   case EEditorKind::Enum:
     {
@@ -2006,7 +2187,7 @@ bool UIPropertyPanel::WriteFieldValue(
       }
 
       void* destination = field->MutablePointer(owner);
-      return WriteUnsignedBits(destination, enumInfo->Size, enumBits);
+      return finalizeWrite(WriteUnsignedBits(destination, enumInfo->Size, enumBits));
     }
   case EEditorKind::SubClass:
     {
@@ -2025,10 +2206,10 @@ bool UIPropertyPanel::WriteFieldValue(
       if (selected.empty())
       {
         value->Clear();
-        return true;
+        return finalizeWrite(true);
       }
 
-      return value->SetTypeByName(selected);
+      return finalizeWrite(value->SetTypeByName(selected));
     }
   case EEditorKind::AssetRef:
     {
@@ -2047,7 +2228,7 @@ bool UIPropertyPanel::WriteFieldValue(
       if (selected.empty() || selected == kAssetRefNoneOption)
       {
         value->Clear();
-        return true;
+        return finalizeWrite(true);
       }
 
       const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
@@ -2058,11 +2239,11 @@ bool UIPropertyPanel::WriteFieldValue(
       if (it == entries.end())
       {
         value->SetAsset(selected, {});
-        return true;
+        return finalizeWrite(true);
       }
 
       value->SetAsset(it->Name, it->AssetId);
-      return true;
+      return finalizeWrite(true);
     }
   case EEditorKind::Unsupported:
   default:
@@ -2337,7 +2518,13 @@ bool UIPropertyPanel::IsEditorFocused(const FieldBinding& Binding) const
   }
 
   auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(Binding.EditorId));
-  return textInput && textInput->IsFocused();
+  if (textInput)
+  {
+    return textInput->IsFocused();
+  }
+
+  auto* filesystemPicker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_Context->GetElement(Binding.EditorId));
+  return filesystemPicker && filesystemPicker->IsFocused();
 }
 
 void UIPropertyPanel::AttachEditorHooks(const std::size_t BindingIndex)
@@ -2433,6 +2620,21 @@ void UIPropertyPanel::AttachEditorHooks(const std::size_t BindingIndex)
     return;
   }
 
+  if (binding.UsesFilesystemPicker)
+  {
+    auto* filesystemPicker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_Context->GetElement(binding.EditorId));
+    if (!filesystemPicker)
+    {
+      return;
+    }
+
+    binding.EditorHookHandle =
+      filesystemPicker->Value().AddSetHook([this, BindingIndex, generation](const std::string& Value) {
+        CommitBindingFromEditor(BindingIndex, generation, Value, false);
+      });
+    return;
+  }
+
   auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(binding.EditorId));
   if (!textInput)
   {
@@ -2469,6 +2671,13 @@ void UIPropertyPanel::ClearBindingHooks()
         if (auto* comboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(binding.EditorId)))
         {
           (void)comboBox->SelectedIndex().RemoveSetHook(binding.EditorHookHandle);
+        }
+      }
+      else if (binding.UsesFilesystemPicker)
+      {
+        if (auto* filesystemPicker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_Context->GetElement(binding.EditorId)))
+        {
+          (void)filesystemPicker->Value().RemoveSetHook(binding.EditorHookHandle);
         }
       }
       else if (auto* textInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_Context->GetElement(binding.EditorId)))
@@ -2710,6 +2919,38 @@ void UIPropertyPanel::SyncBindingToEditor(FieldBinding& Binding)
       {
         (void)numberField->SetValue(nextComponents[index], false);
       }
+    }
+    return;
+  }
+
+  if (Binding.UsesFilesystemPicker)
+  {
+    auto* filesystemPicker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&element);
+    if (!filesystemPicker || filesystemPicker->IsFocused())
+    {
+      return;
+    }
+
+    const std::filesystem::path AssetRoot = ResolveAssetRootPath();
+    if (!AssetRoot.empty())
+    {
+      const std::string RootText = AssetRoot.string();
+      if (filesystemPicker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::RootPathKey, std::string{}) != RootText)
+      {
+        filesystemPicker->RootPath().Set(RootText);
+      }
+    }
+
+    const std::string currentPickerValue =
+      filesystemPicker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{});
+    if (currentPickerValue != textValue)
+    {
+      filesystemPicker->Value().Set(textValue);
+    }
+
+    if (auto ResolvedPath = SPathResolver::Instance().Resolve(textValue); ResolvedPath)
+    {
+      filesystemPicker->SetSelectedFilesystemPaths({*ResolvedPath}, false);
     }
     return;
   }

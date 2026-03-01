@@ -232,14 +232,15 @@ private:
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
+    (void)WorldRef;
     if (auto* Start = NodeCast<PlayerStart>(&Node))
     {
-        Start->OnCreateImpl(WorldRef);
+        Start->OnCreate();
     }
 
     if (auto* Pawn = NodeCast<PawnBase>(&Node))
     {
-        Pawn->OnCreateImpl(WorldRef);
+        Pawn->OnCreate();
     }
 }
 
@@ -261,7 +262,7 @@ void SetEditorCameraEnabledForPie(World& WorldRef, const bool Enabled)
             return;
         }
 
-        Camera->EditSettings().Active = Enabled;
+        Camera->SetActive(Enabled);
     });
 #else
     (void)WorldRef;
@@ -589,6 +590,16 @@ void EditorSceneService::Shutdown(EditorServiceContext& Context)
     m_scene.Shutdown(&Context.Runtime());
 }
 
+Result EditorSceneService::EnsureEditorCamera(EditorServiceContext& Context)
+{
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+    return m_scene.EnsureEditorCamera(*WorldPtr);
+}
+
 CameraComponent* EditorSceneService::ActiveCameraComponent() const
 {
     return m_scene.ActiveCameraComponent();
@@ -881,7 +892,6 @@ WorldExecutionProfile EditorPieService::PausedExecutionProfile()
 {
     auto Profile = WorldExecutionProfile::PIE();
     Profile.RunGameplay = false;
-    Profile.TickEcsRuntime = false;
     Profile.TickPhysicsSimulation = false;
     Profile.TickAudio = false;
     Profile.PumpNetworking = false;
@@ -922,6 +932,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
     m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
+    m_hasPendingProjectActionRequest = false;
+    m_pendingProjectActionRequest = {};
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -968,6 +980,14 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
             m_pendingToolbarAction = Action;
             m_hasPendingToolbarAction = true;
         }));
+    m_layout.SetProjectActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ProjectActionRequest&)>::Bind(
+            [this](const EditorLayout::ProjectActionRequest& Request) {
+                m_pendingProjectActionRequest = Request;
+                m_hasPendingProjectActionRequest = true;
+                // Prevent same-frame required-project logic from reopening the chooser while a request is queued.
+                m_layout.SetProjectSelectionRequired(false);
+            }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
             m_pendingAssetSelectionKey = AssetKey;
@@ -1020,6 +1040,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
                 m_hasPendingAssetInspectorHierarchyActionRequest = true;
             }));
 
+    m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
     ApplyAssetBrowserState(Context);
     return Ok();
 }
@@ -1036,6 +1057,11 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         return;
     }
 
+    if (m_layoutRebuildRequested)
+    {
+        RebuildLayout(Context);
+    }
+
     if (m_hasPendingAssetRefreshRequest)
     {
         m_hasPendingAssetRefreshRequest = false;
@@ -1044,6 +1070,46 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         {
             // Keep rendering and expose error through status text.
         }
+    }
+
+    if (m_hasPendingProjectActionRequest)
+    {
+        m_hasPendingProjectActionRequest = false;
+        const EditorLayout::ProjectActionRequest Request = m_pendingProjectActionRequest;
+        m_pendingProjectActionRequest = {};
+
+        Result ProjectResult = Ok();
+        if (Request.Action == EditorLayout::EProjectAction::CreateNew)
+        {
+            ProjectResult = AssetService->CreateProject(Context, Request.ProjectName, Request.ProjectDirectory);
+        }
+        else if (Request.Action == EditorLayout::EProjectAction::OpenExisting)
+        {
+            ProjectResult = AssetService->LoadProject(Context, Request.ProjectFilePath);
+        }
+
+        if (ProjectResult)
+        {
+            (void)SceneService->EnsureEditorCamera(Context);
+            SelectionService->Model().Clear();
+            if (CommandService)
+            {
+                CommandService->ClearHistory();
+            }
+            QueueLayoutRebuild();
+        }
+    }
+
+    const bool HasProjectLoaded = AssetService->CurrentProject().IsLoaded;
+    const bool RequireProjectSelection = !HasProjectLoaded && !m_hasPendingProjectActionRequest;
+    m_layout.SetProjectSelectionRequired(RequireProjectSelection);
+    if (!HasProjectLoaded)
+    {
+        SceneService->Tick(Context, 0.0f);
+        CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
+        ApplyAssetBrowserState(Context);
+        m_layout.Sync(Context.Runtime(), ActiveCamera, &SelectionService->Model(), DeltaSeconds);
+        return;
     }
 
     if (m_hasPendingAssetSelection)
@@ -1396,6 +1462,8 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
     m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
+    m_hasPendingProjectActionRequest = false;
+    m_pendingProjectActionRequest = {};
     m_hasPendingAssetCreateRequest = false;
     m_pendingAssetCreateRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
@@ -1432,6 +1500,14 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
             m_pendingToolbarAction = Action;
             m_hasPendingToolbarAction = true;
         }));
+    m_layout.SetProjectActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ProjectActionRequest&)>::Bind(
+            [this](const EditorLayout::ProjectActionRequest& Request) {
+                m_pendingProjectActionRequest = Request;
+                m_hasPendingProjectActionRequest = true;
+                // Prevent same-frame required-project logic from reopening the chooser while a request is queued.
+                m_layout.SetProjectSelectionRequired(false);
+            }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
             m_pendingAssetSelectionKey = AssetKey;
@@ -1484,6 +1560,10 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
                 m_hasPendingAssetInspectorHierarchyActionRequest = true;
             }));
 
+    if (auto* AssetService = Context.GetService<EditorAssetService>())
+    {
+        m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
+    }
     ApplyAssetBrowserState(Context);
     m_layoutRebuildRequested = false;
 }
@@ -1504,12 +1584,15 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetHierarchySelectionHandler({});
     m_layout.SetHierarchyActionHandler({});
     m_layout.SetToolbarActionHandler({});
+    m_layout.SetProjectActionHandler({});
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
     m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
+    m_hasPendingProjectActionRequest = false;
+    m_pendingProjectActionRequest = {};
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();

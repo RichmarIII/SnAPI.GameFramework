@@ -54,7 +54,9 @@ public:
     }
 
     void Tick(float DeltaSeconds);
-    void TickImpl(IWorld&, float DeltaSeconds) { Tick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(float DeltaSeconds);
+#endif
 
 private:
     void SynchronizeOrientationFromRotation(const Quat& Rotation);

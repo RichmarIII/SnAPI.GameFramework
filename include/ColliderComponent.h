@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
 #include <Physics.h>
+#include <string_view>
 
 #include "CollisionFilters.h"
 #include "BaseComponent.h"
@@ -56,6 +57,10 @@ public:
     {
         return m_settings;
     }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
 protected:
     Settings m_settings{}; /**< @brief Collider settings consumed by RigidBodyComponent build path. */

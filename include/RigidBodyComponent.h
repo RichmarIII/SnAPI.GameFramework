@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 
 #include <cstdint>
+#include <string_view>
 
 #include <Physics.h>
 
@@ -75,14 +76,9 @@ public:
     void Tick(float DeltaSeconds);
     /** @brief Fixed-step sync phase; pushes static/kinematic owner transform into physics before fixed-step simulation. */
     void FixedTick(float DeltaSeconds);
-    /** @brief Non-virtual variable-step sync entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    /** @brief Non-virtual fixed-step sync entry used by ECS runtime bridge. */
-    void RuntimeFixedTick(float DeltaSeconds);
-    void OnCreateImpl(IWorld&) { OnCreate(); }
-    void OnDestroyImpl(IWorld&) { OnDestroy(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
-    void FixedTickImpl(IWorld&, float DeltaSeconds) { RuntimeFixedTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
     /** @brief Ensure the physics body exists for this component. */
     bool CreateBody();

@@ -49,6 +49,7 @@ class PhysicsSystem;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 class RendererSystem;
 #endif
+class ScriptRuntimeService;
 
 /**
  * @brief Root runtime container contract for gameplay sessions.
@@ -76,7 +77,7 @@ public:
     /**
      * @brief Whether high-level gameplay orchestration should run for this world.
      * @remarks
-     * GameRuntime uses this to gate `GameplayHost::Tick`.
+     * GameRuntime uses this to gate `GameplayHost::Tick` and world ECS runtime phases.
      */
     virtual bool ShouldRunGameplay() const = 0;
     /**
@@ -91,10 +92,6 @@ public:
      * @brief Whether networking queues/session pumps should run.
      */
     virtual bool ShouldPumpNetworking() const = 0;
-    /**
-     * @brief Whether ECS runtime storage phases should run.
-     */
-    virtual bool ShouldTickEcsRuntime() const = 0;
     /**
      * @brief Whether physics simulation stepping should run.
      * @remarks
@@ -497,6 +494,17 @@ public:
      */
     virtual const RendererSystem& Renderer() const = 0;
 #endif
+
+    /**
+     * @brief Access the scripting runtime service for this world.
+     * @return Mutable scripting runtime service.
+     */
+    virtual ScriptRuntimeService& Scripts() = 0;
+    /**
+     * @brief Access the scripting runtime service for this world (const).
+     * @return Const scripting runtime service.
+     */
+    virtual const ScriptRuntimeService& Scripts() const = 0;
 };
 
 } // namespace SnAPI::GameFramework

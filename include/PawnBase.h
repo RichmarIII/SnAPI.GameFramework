@@ -22,7 +22,7 @@ public:
     /**
      * @brief Lifecycle hook used by gameplay spawn flow to ensure default pawn components exist.
      */
-    void OnCreateImpl(IWorld& WorldRef);
+    void OnCreate();
 
     void OnPossess(const NodeHandle& PlayerHandle);
     void OnUnpossess(const NodeHandle& PlayerHandle);

@@ -53,9 +53,6 @@ public:
     }
 
     void FixedTick(float DeltaSeconds);
-    /** @brief Non-virtual fixed-step entry used by ECS runtime bridge. */
-    void RuntimeFixedTick(float DeltaSeconds);
-    void FixedTickImpl(IWorld&, float DeltaSeconds) { RuntimeFixedTick(DeltaSeconds); }
 
     /** @brief Replace current movement input vector. */
     void SetMoveInput(const Vec3& Input);

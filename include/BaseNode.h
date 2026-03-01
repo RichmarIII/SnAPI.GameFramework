@@ -39,7 +39,7 @@ class Variant;
  *
  * Tick model:
  * - World-owned ECS runtime storages drive all phase dispatch.
- * - Node/component runtime types expose optional `*Impl` hooks checked at compile time.
+ * - Node/component runtime types expose optional lifecycle hooks checked at compile time.
  * - Absent phases are skipped entirely for that storage.
  */
 class BaseNode : public NodeCRTP<BaseNode>
@@ -67,9 +67,17 @@ public:
 
     ~BaseNode() = default;
 
+    void OnCreate() {}
+    void OnDestroy() {}
+    void PreTick(float DeltaSeconds) { (void)DeltaSeconds; }
     void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
     void FixedTick(float DeltaSeconds) { (void)DeltaSeconds; }
     void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    void PostTick(float DeltaSeconds) { (void)DeltaSeconds; }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    void EditorOnPropertyChanged(std::string_view Name) { (void)Name; }
+#endif
     void EndFrame() {}
 
     /**

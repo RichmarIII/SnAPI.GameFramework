@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <sstream>
 
 #include <catch2/catch_approx.hpp>
@@ -97,6 +98,20 @@ struct CrossRefComponent : public BaseComponent, public ComponentCRTP<CrossRefCo
     NodeHandle Target{};
 };
 
+struct ReflectionNotifyNode : public BaseNode
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::ReflectionNotifyNode";
+    int Value = 0;
+    int PropertyChangeCount = 0;
+    std::string LastChangedProperty{};
+
+    void EditorOnPropertyChanged(const std::string_view Name)
+    {
+        ++PropertyChangeCount;
+        LastChangedProperty = std::string(Name);
+    }
+};
+
 NodeHandle FindNodeByName(const World& WorldRef, const std::string& Name)
 {
     NodeHandle Found{};
@@ -136,6 +151,12 @@ SNAPI_REFLECT_TYPE(DerivedStatsNode, (TTypeBuilder<DerivedStatsNode>(DerivedStat
 
 SNAPI_REFLECT_TYPE(CrossRefComponent, (TTypeBuilder<CrossRefComponent>(CrossRefComponent::kTypeName)
     .Field("Target", &CrossRefComponent::Target)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(ReflectionNotifyNode, (TTypeBuilder<ReflectionNotifyNode>(ReflectionNotifyNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("Value", &ReflectionNotifyNode::Value)
     .Constructor<>()
     .Register()));
 
@@ -194,6 +215,119 @@ TEST_CASE("Node serialization round-trips subtree with components and handles")
     REQUIRE(LinkedNode != nullptr);
     REQUIRE(LinkedNode->Name() == "B");
 }
+
+TEST_CASE("Node serialization preserves logical scheme paths")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("Source");
+    auto NodeResult = SourceWorld.CreateNode("SchemeNode");
+    REQUIRE(NodeResult);
+
+    auto* Node = NodeResult.value().Borrowed();
+    REQUIRE(Node != nullptr);
+
+    auto ScriptResult = Node->Add<ScriptComponent>();
+    REQUIRE(ScriptResult);
+    ScriptResult->ScriptModule = "asset://scripts/example.lua";
+    ScriptResult->ScriptType = "ExampleMain";
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    auto AudioResult = Node->Add<AudioSourceComponent>();
+    REQUIRE(AudioResult);
+    auto& AudioSettings = AudioResult->EditSettings();
+    AudioSettings.SoundPath = "asset://audio/example.wav";
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto StaticMeshResult = Node->Add<StaticMeshComponent>();
+    REQUIRE(StaticMeshResult);
+    auto& StaticMeshSettings = StaticMeshResult->EditSettings();
+    StaticMeshSettings.MeshPath = "asset://meshes/example.mesh";
+
+    auto SkeletalMeshResult = Node->Add<SkeletalMeshComponent>();
+    REQUIRE(SkeletalMeshResult);
+    auto& SkeletalMeshSettings = SkeletalMeshResult->EditSettings();
+    SkeletalMeshSettings.MeshPath = "asset://meshes/example_skeletal.mesh";
+#endif
+
+    auto PayloadResult = NodeSerializer::Serialize(*Node);
+    REQUIRE(PayloadResult);
+
+    std::vector<uint8_t> Bytes{};
+    REQUIRE(SerializeNodePayload(PayloadResult.value(), Bytes));
+    REQUIRE_FALSE(Bytes.empty());
+
+    auto PayloadRoundTrip = DeserializeNodePayload(Bytes.data(), Bytes.size());
+    REQUIRE(PayloadRoundTrip);
+
+    World LoadedWorld("Loaded");
+    auto DeserializeResult = NodeSerializer::Deserialize(PayloadRoundTrip.value(), LoadedWorld);
+    REQUIRE(DeserializeResult);
+
+    NodeHandle LoadedNodeHandle = FindNodeByName(LoadedWorld, "SchemeNode");
+    REQUIRE(LoadedNodeHandle.IsValid());
+    auto* LoadedNode = LoadedNodeHandle.Borrowed();
+    REQUIRE(LoadedNode != nullptr);
+
+    auto LoadedScript = LoadedNode->Component<ScriptComponent>();
+    REQUIRE(LoadedScript);
+    REQUIRE(LoadedScript->ScriptModule == "asset://scripts/example.lua");
+    REQUIRE(LoadedScript->ScriptType == "ExampleMain");
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    auto LoadedAudio = LoadedNode->Component<AudioSourceComponent>();
+    REQUIRE(LoadedAudio);
+    REQUIRE(LoadedAudio->GetSettings().SoundPath == "asset://audio/example.wav");
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto LoadedStaticMesh = LoadedNode->Component<StaticMeshComponent>();
+    REQUIRE(LoadedStaticMesh);
+    REQUIRE(LoadedStaticMesh->GetSettings().MeshPath == "asset://meshes/example.mesh");
+
+    auto LoadedSkeletalMesh = LoadedNode->Component<SkeletalMeshComponent>();
+    REQUIRE(LoadedSkeletalMesh);
+    REQUIRE(LoadedSkeletalMesh->GetSettings().MeshPath == "asset://meshes/example_skeletal.mesh");
+#endif
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+TEST_CASE("Reflection field setter invokes editor property callback only when value changes")
+{
+    RegisterBuiltinTypes();
+
+    World WorldInstance{"ReflectionNotifyWorld"};
+    auto NodeResult = WorldInstance.CreateNode<ReflectionNotifyNode>("Notify");
+    REQUIRE(NodeResult);
+
+    auto* Node = NodeCast<ReflectionNotifyNode>(NodeResult->Borrowed());
+    REQUIRE(Node != nullptr);
+
+    const TypeInfo* Type = TypeRegistry::Instance().Find(StaticTypeId<ReflectionNotifyNode>());
+    REQUIRE(Type != nullptr);
+
+    const auto FieldIt = std::find_if(Type->Fields.begin(), Type->Fields.end(), [](const FieldInfo& Field) {
+        return Field.Name == "Value";
+    });
+    REQUIRE(FieldIt != Type->Fields.end());
+    REQUIRE(FieldIt->Setter);
+
+    REQUIRE(FieldIt->Setter(Node, Variant::FromValue(5)));
+    REQUIRE(Node->Value == 5);
+    REQUIRE(Node->PropertyChangeCount == 1);
+    REQUIRE(Node->LastChangedProperty == "Value");
+
+    REQUIRE(FieldIt->Setter(Node, Variant::FromValue(5)));
+    REQUIRE(Node->Value == 5);
+    REQUIRE(Node->PropertyChangeCount == 1);
+
+    REQUIRE(FieldIt->Setter(Node, Variant::FromValue(8)));
+    REQUIRE(Node->Value == 8);
+    REQUIRE(Node->PropertyChangeCount == 2);
+    REQUIRE(Node->LastChangedProperty == "Value");
+}
+#endif
 
 TEST_CASE("Node serialization round-trips node fields across inheritance")
 {

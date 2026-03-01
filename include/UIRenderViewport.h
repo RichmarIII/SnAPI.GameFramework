@@ -78,6 +78,7 @@ public:
     void Paint(SnAPI::UI::UIPaintContext& Context) const override;
     void OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context) override;
     void OnFocusChanged(bool Focused) override;
+    void OnDestroyed() override;
 
 private:
     void EnsureImagePresenter();

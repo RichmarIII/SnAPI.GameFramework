@@ -92,18 +92,12 @@ public:
 
     /** @brief Ensure required sibling intent component exists. */
     void OnCreate();
-    /** @brief Non-virtual create entry used by ECS runtime bridge. */
-    void RuntimeOnCreate();
     /**
      * @brief Per-frame input sampling and intent publishing.
      * @param DeltaSeconds Time since last variable tick.
      * @remarks `DeltaSeconds` is currently unused; this method is edge/state driven.
      */
     void Tick(float DeltaSeconds);
-    /** @brief Non-virtual per-frame entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    void OnCreateImpl(IWorld&) { RuntimeOnCreate(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
 
 private:
     /**

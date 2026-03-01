@@ -189,11 +189,6 @@ void ResolveMoveBasis(BaseNode& Owner, Vec3& OutRight, Vec3& OutForward)
 
 void InputComponent::OnCreate()
 {
-    RuntimeOnCreate();
-}
-
-void InputComponent::RuntimeOnCreate()
-{
     auto* Owner = OwnerNode();
     if (!Owner || Owner->Has<InputIntentComponent>())
     {
@@ -204,11 +199,6 @@ void InputComponent::RuntimeOnCreate()
 }
 
 void InputComponent::Tick(float DeltaSeconds)
-{
-    RuntimeTick(DeltaSeconds);
-}
-
-void InputComponent::RuntimeTick(float DeltaSeconds)
 {
     const float ClampedDeltaSeconds = std::max(0.0f, DeltaSeconds);
 

@@ -137,11 +137,6 @@ float GroundProbeHalfHeight(BaseNode* Owner)
 
 void CharacterMovementController::FixedTick(float DeltaSeconds)
 {
-    RuntimeFixedTick(DeltaSeconds);
-}
-
-void CharacterMovementController::RuntimeFixedTick(float DeltaSeconds)
-{
     if (DeltaSeconds <= 0.0f)
     {
         return;

@@ -24,7 +24,7 @@ public:
     /**
      * @brief Lifecycle hook used to ensure required PlayerStart components exist.
      */
-    void OnCreateImpl(IWorld& WorldRef);
+    void OnCreate();
 
     TAssetRef<PawnBase>& EditSpawnPawnAsset();
     const TAssetRef<PawnBase>& GetSpawnPawnAsset() const;

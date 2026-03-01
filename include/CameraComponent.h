@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
 #include <memory>
+#include <string_view>
 
 #include "BaseComponent.h"
 #include "Math.h"
@@ -84,15 +85,10 @@ public:
     void OnDestroy();
     void Tick(float DeltaSeconds);
     void LateTick(float DeltaSeconds);
-
-    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    /** @brief Non-virtual late-tick entry used by ECS runtime bridge. */
-    void RuntimeLateTick(float DeltaSeconds);
-    void OnCreateImpl(IWorld&) { OnCreate(); }
-    void OnDestroyImpl(IWorld&) { OnDestroy(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
-    void LateTickImpl(IWorld&, float DeltaSeconds) { RuntimeLateTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(float DeltaSeconds);
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
 private:
     struct CameraDeleter

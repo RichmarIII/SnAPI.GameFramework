@@ -29,6 +29,7 @@ class EditorSceneBootstrap final
 public:
     Result Initialize(GameRuntime& Runtime);
     void Shutdown(GameRuntime* Runtime);
+    Result EnsureEditorCamera(World& WorldRef);
 
     void SyncActiveCamera(World& WorldRef);
 

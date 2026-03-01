@@ -58,6 +58,12 @@ public:
      * @param DeltaSeconds Time since last tick.
      * @remarks Called from owning node traversal when node/component are active.
      */
+    void PreTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /**
+     * @brief Per-frame update hook.
+     * @param DeltaSeconds Time since last tick.
+     * @remarks Called from owning node traversal when node/component are active.
+     */
     void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Fixed-step update hook.
@@ -71,6 +77,16 @@ public:
      * @remarks Invoked after regular per-frame tick traversal.
      */
     void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /**
+     * @brief Post update hook.
+     * @param DeltaSeconds Time since last tick.
+     * @remarks Invoked after regular variable-step and late phases.
+     */
+    void PostTick(float DeltaSeconds) { (void)DeltaSeconds; }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    void EditorOnPropertyChanged(std::string_view Name) { (void)Name; }
+#endif
 
     /**
      * @brief Set the owning node handle.

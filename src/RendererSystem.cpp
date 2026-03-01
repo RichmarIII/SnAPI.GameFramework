@@ -1,5 +1,6 @@
 #include "RendererSystem.h"
 #include "GameThreading.h"
+#include "PathResolver.h"
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
@@ -136,6 +137,25 @@ bool IsFontRenderable(SnAPI::Graphics::FontFace* Face)
     // Retry atlas generation in case the font was loaded before UI resources were fully ready.
     Face->GenerateAtlas();
     return Face->Atlas().GraphicsImage() != nullptr;
+}
+
+[[nodiscard]] bool ResolveFilesystemLookupPath(const std::string_view RawPath, std::string& OutResolvedPath)
+{
+    if (RawPath.empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    auto ResolvedPath = SPathResolver::Instance().ResolveToString(RawPath);
+    if (!ResolvedPath || ResolvedPath->empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    OutResolvedPath = *ResolvedPath;
+    return true;
 }
 
 SnAPI::Graphics::WindowCreateInfo BuildWindowCreateInfo(const RendererBootstrapSettings& Settings)
@@ -2078,13 +2098,19 @@ bool RendererSystem::EnsureDefaultFont()
                 continue;
             }
 
-            std::error_code Ec;
-            if (!fs::exists(Candidate, Ec) || Ec)
+            std::string ResolvedCandidate{};
+            if (!ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
             {
                 continue;
             }
 
-            auto* FallbackFace = Library->FontFace(Candidate, m_settings.DefaultFontSize);
+            std::error_code Ec;
+            if (!fs::exists(ResolvedCandidate, Ec) || Ec)
+            {
+                continue;
+            }
+
+            auto* FallbackFace = Library->FontFace(ResolvedCandidate, m_settings.DefaultFontSize);
             if (IsFontRenderable(FallbackFace))
             {
                 PrimaryFace->AddFallbackFace(FallbackFace);
@@ -2113,13 +2139,19 @@ bool RendererSystem::EnsureDefaultFont()
             continue;
         }
 
-        std::error_code Ec;
-        if (!fs::exists(Candidate, Ec) || Ec)
+        std::string ResolvedCandidate{};
+        if (!ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
         {
             continue;
         }
 
-        auto* Face = Library->FontFace(Candidate, m_settings.DefaultFontSize);
+        std::error_code Ec;
+        if (!fs::exists(ResolvedCandidate, Ec) || Ec)
+        {
+            continue;
+        }
+
+        auto* Face = Library->FontFace(ResolvedCandidate, m_settings.DefaultFontSize);
         if (IsFontRenderable(Face))
         {
             m_defaultFont = Face;

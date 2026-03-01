@@ -23,6 +23,7 @@
 
 #include "BaseNode.h"
 #include "IWorld.h"
+#include "PathResolver.h"
 #include "RendererSystem.h"
 #include "TransformComponent.h"
 
@@ -37,6 +38,40 @@ std::string ToLowerASCII(const std::string_view Value)
         return static_cast<char>(std::tolower(Ch));
     });
     return Out;
+}
+
+[[nodiscard]] bool IsPrimitiveMeshToken(const std::string_view MeshPath)
+{
+    const std::string Token = ToLowerASCII(MeshPath);
+    return Token == "primitive://box"
+        || Token == "__primitive_box__"
+        || Token == "primitive://sphere"
+        || Token == "__primitive_sphere__"
+        || Token == "primitive://capsule"
+        || Token == "__primitive_capsule__"
+        || Token == "primitive://cone"
+        || Token == "__primitive_cone__"
+        || Token == "primitive://pyramid"
+        || Token == "__primitive_pyramid__";
+}
+
+[[nodiscard]] bool ResolveFilesystemMeshPath(const std::string_view MeshPath, std::string& OutResolvedPath)
+{
+    if (MeshPath.empty() || IsPrimitiveMeshToken(MeshPath))
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    auto ResolvedPath = SPathResolver::Instance().ResolveToString(MeshPath);
+    if (!ResolvedPath || ResolvedPath->empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    OutResolvedPath = *ResolvedPath;
+    return true;
 }
 
 SnAPI::Vector3DF ToVector3DF(const Vec3& Value)
@@ -135,6 +170,18 @@ SnAPI::Graphics::SharedVertexStreamSourcePtr BuildPrimitiveSourceFromMeshPath(co
 
     return {};
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsStaticMeshSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "MeshPath"
+        || Name == "Visible"
+        || Name == "CastShadows"
+        || Name == "SyncFromTransform"
+        || Name == "RegisterWithRenderer";
+}
+#endif
 } // namespace
 
 bool StaticMeshComponent::ReloadMesh()
@@ -193,11 +240,6 @@ void StaticMeshComponent::OnDestroy()
 
 void StaticMeshComponent::Tick(float DeltaSeconds)
 {
-    RuntimeTick(DeltaSeconds);
-}
-
-void StaticMeshComponent::RuntimeTick(float DeltaSeconds)
-{
     (void)DeltaSeconds;
 
     if (m_settings.MeshPath.empty() && !m_streamSource)
@@ -206,7 +248,13 @@ void StaticMeshComponent::RuntimeTick(float DeltaSeconds)
         return;
     }
 
-    if (!m_streamSource && m_loadedPath != m_settings.MeshPath)
+    std::string ResolvedMeshPath{};
+    const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
+    const bool IsPrimitiveMesh = IsPrimitiveMeshToken(m_settings.MeshPath);
+    if (!m_streamSource
+        && ((HasResolvedMeshPath && m_loadedPath != ResolvedMeshPath)
+            || (IsPrimitiveMesh && m_loadedPath != ToLowerASCII(m_settings.MeshPath))
+            || (!HasResolvedMeshPath && !IsPrimitiveMesh)))
     {
         ClearMesh();
     }
@@ -232,6 +280,53 @@ void StaticMeshComponent::RuntimeTick(float DeltaSeconds)
     }
     ApplyRenderObjectState(*m_renderObject);
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void StaticMeshComponent::EditorTick(float DeltaSeconds)
+{
+    Tick(DeltaSeconds);
+}
+
+void StaticMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsStaticMeshSettingsField(Name))
+    {
+        return;
+    }
+
+    if (m_settings.MeshPath.empty() && !m_streamSource)
+    {
+        ClearMesh();
+        return;
+    }
+
+    std::string ResolvedMeshPath{};
+    const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
+    const bool IsPrimitiveMesh = IsPrimitiveMeshToken(m_settings.MeshPath);
+    if (!m_streamSource
+        && ((HasResolvedMeshPath && m_loadedPath != ResolvedMeshPath)
+            || (IsPrimitiveMesh && m_loadedPath != ToLowerASCII(m_settings.MeshPath))
+            || (!HasResolvedMeshPath && !IsPrimitiveMesh)))
+    {
+        ClearMesh();
+    }
+    if (m_streamSource && m_loadedStreamSource.lock() != m_streamSource)
+    {
+        ClearMesh();
+    }
+
+    if (!EnsureMeshLoaded() || !m_renderObject)
+    {
+        return;
+    }
+
+    if (m_settings.SyncFromTransform)
+    {
+        SyncRenderObjectTransform(*m_renderObject);
+    }
+    ApplyRenderObjectState(*m_renderObject);
+}
+#endif
 
 RendererSystem* StaticMeshComponent::ResolveRendererSystem() const
 {
@@ -301,7 +396,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
 
         RenderObject->SetVertexStreamSource(PrimitiveSource);
         m_renderObject = std::move(RenderObject);
-        m_loadedPath = m_settings.MeshPath;
+        m_loadedPath = ToLowerASCII(m_settings.MeshPath);
         m_loadedStreamSource.reset();
         m_registered = false;
 
@@ -318,7 +413,13 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         return false;
     }
 
-    const auto LoadedMesh = Meshes->Load(m_settings.MeshPath);
+    std::string ResolvedMeshPath{};
+    if (!ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath))
+    {
+        return false;
+    }
+
+    const auto LoadedMesh = Meshes->Load(ResolvedMeshPath);
     const auto SourceMesh = LoadedMesh.lock();
     if (!SourceMesh)
     {
@@ -332,7 +433,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
     }
 
     m_renderObject = std::move(RenderObject);
-    m_loadedPath = m_settings.MeshPath;
+    m_loadedPath = std::move(ResolvedMeshPath);
     m_loadedStreamSource.reset();
     m_registered = false;
 

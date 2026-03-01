@@ -9,6 +9,7 @@
 #include "GameRuntime.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PathResolver.h"
 #include "PawnBase.h"
 #include "PlayerStart.h"
 #include "Serialization.h"
@@ -31,6 +32,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <optional>
 #include <ranges>
 #include <sstream>
 #include <unordered_set>
@@ -48,6 +51,53 @@ namespace
     return Output;
 }
 
+constexpr std::string_view kDefaultProjectFileName = "project.snproj.json";
+constexpr std::string_view kDefaultProjectAssetRoot = "Assets";
+constexpr std::string_view kDefaultProjectStartupLevelPack = "Levels/StarterLevel.snpak";
+constexpr std::string_view kEditorStarterLevelTemplatePackFileName = "StarterLevelTemplate.snpak";
+constexpr std::string_view kEditorStarterScriptFileName = "platform_bob.lua";
+constexpr uint32_t kProjectConfigVersion = 1u;
+
+[[nodiscard]] std::string TrimCopy(std::string Value)
+{
+    while (!Value.empty() && std::isspace(static_cast<unsigned char>(Value.front())) != 0)
+    {
+        Value.erase(Value.begin());
+    }
+    while (!Value.empty() && std::isspace(static_cast<unsigned char>(Value.back())) != 0)
+    {
+        Value.pop_back();
+    }
+    return Value;
+}
+
+[[nodiscard]] bool HasUriScheme(const std::string_view Value)
+{
+    const std::size_t Delimiter = Value.find("://");
+    if (Delimiter == std::string_view::npos || Delimiter == 0)
+    {
+        return false;
+    }
+
+    const unsigned char First = static_cast<unsigned char>(Value.front());
+    if (std::isalpha(First) == 0)
+    {
+        return false;
+    }
+
+    for (std::size_t Index = 1; Index < Delimiter; ++Index)
+    {
+        const unsigned char Character = static_cast<unsigned char>(Value[Index]);
+        if (std::isalnum(Character) != 0 || Character == '+' || Character == '-' || Character == '.')
+        {
+            continue;
+        }
+        return false;
+    }
+
+    return true;
+}
+
 [[nodiscard]] std::filesystem::path ResolveAppDataRootPath()
 {
 #if defined(_WIN32)
@@ -59,13 +109,11 @@ namespace
     {
         return std::filesystem::path(RoamingAppData);
     }
-    return {};
 #elif defined(__APPLE__)
     if (const char* Home = std::getenv("HOME"))
     {
         return std::filesystem::path(Home) / "Library" / "Application Support";
     }
-    return {};
 #else
     if (const char* XdgDataHome = std::getenv("XDG_DATA_HOME"))
     {
@@ -75,11 +123,11 @@ namespace
     {
         return std::filesystem::path(Home) / ".local" / "share";
     }
-    return {};
 #endif
+    return {};
 }
 
-[[nodiscard]] std::filesystem::path EditorDefaultShapeAssetDirectory()
+[[nodiscard]] std::filesystem::path EditorTemplateAssetDirectory()
 {
     const std::filesystem::path AppDataRoot = ResolveAppDataRootPath();
     if (AppDataRoot.empty())
@@ -87,6 +135,236 @@ namespace
         return {};
     }
     return AppDataRoot / "SnAPI" / "GameFramework" / "Editor" / "Assets";
+}
+
+[[nodiscard]] std::filesystem::path ResolveEditorAssetSourceDirectory()
+{
+    namespace fs = std::filesystem;
+    const std::array<fs::path, 3> Candidates{
+        fs::path(__FILE__).parent_path() / "Assets",
+        fs::current_path() / "src" / "Editor" / "Assets",
+        fs::current_path() / "Editor" / "Assets",
+    };
+
+    std::error_code Error{};
+    for (const fs::path& Candidate : Candidates)
+    {
+        Error.clear();
+        if (!fs::exists(Candidate, Error) || Error)
+        {
+            continue;
+        }
+
+        Error.clear();
+        if (fs::is_directory(Candidate, Error) && !Error)
+        {
+            return Candidate;
+        }
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::filesystem::path ResolveEditorScriptTemplateSource()
+{
+    namespace fs = std::filesystem;
+    const fs::path SourceDirectory = ResolveEditorAssetSourceDirectory();
+    if (SourceDirectory.empty())
+    {
+        return {};
+    }
+
+    const fs::path Candidate = SourceDirectory / std::string(kEditorStarterScriptFileName);
+    std::error_code Error{};
+    if (fs::exists(Candidate, Error) && !Error)
+    {
+        return Candidate;
+    }
+    return {};
+}
+
+[[nodiscard]] std::filesystem::path EditorDefaultShapeAssetDirectory()
+{
+    const std::filesystem::path TemplateDirectory = EditorTemplateAssetDirectory();
+    if (!TemplateDirectory.empty())
+    {
+        return TemplateDirectory;
+    }
+    std::error_code Error{};
+    const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+    if (!Error && !CurrentPath.empty())
+    {
+        return CurrentPath / "Editor" / "Assets";
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::string JsonEscape(std::string_view Value)
+{
+    std::string Escaped{};
+    Escaped.reserve(Value.size() + 8u);
+    for (const char Character : Value)
+    {
+        switch (Character)
+        {
+        case '\\':
+            Escaped += "\\\\";
+            break;
+        case '"':
+            Escaped += "\\\"";
+            break;
+        case '\n':
+            Escaped += "\\n";
+            break;
+        case '\r':
+            Escaped += "\\r";
+            break;
+        case '\t':
+            Escaped += "\\t";
+            break;
+        default:
+            Escaped.push_back(Character);
+            break;
+        }
+    }
+    return Escaped;
+}
+
+[[nodiscard]] std::expected<std::string, std::string> JsonParseString(const std::string& Text, std::size_t& Position)
+{
+    if (Position >= Text.size() || Text[Position] != '"')
+    {
+        return std::unexpected("Expected JSON string");
+    }
+    ++Position;
+
+    std::string Output{};
+    while (Position < Text.size())
+    {
+        const char Character = Text[Position++];
+        if (Character == '"')
+        {
+            return Output;
+        }
+        if (Character != '\\')
+        {
+            Output.push_back(Character);
+            continue;
+        }
+        if (Position >= Text.size())
+        {
+            return std::unexpected("Invalid JSON escape sequence");
+        }
+        const char Escape = Text[Position++];
+        switch (Escape)
+        {
+        case '"':
+            Output.push_back('"');
+            break;
+        case '\\':
+            Output.push_back('\\');
+            break;
+        case '/':
+            Output.push_back('/');
+            break;
+        case 'b':
+            Output.push_back('\b');
+            break;
+        case 'f':
+            Output.push_back('\f');
+            break;
+        case 'n':
+            Output.push_back('\n');
+            break;
+        case 'r':
+            Output.push_back('\r');
+            break;
+        case 't':
+            Output.push_back('\t');
+            break;
+        default:
+            return std::unexpected("Unsupported JSON escape sequence");
+        }
+    }
+    return std::unexpected("Unterminated JSON string");
+}
+
+[[nodiscard]] bool JsonTryReadStringField(const std::string& Text, std::string_view Key, std::string& OutValue)
+{
+    const std::string KeyToken = "\"" + std::string(Key) + "\"";
+    std::size_t SearchOffset = 0;
+    while (true)
+    {
+        const std::size_t KeyPos = Text.find(KeyToken, SearchOffset);
+        if (KeyPos == std::string::npos)
+        {
+            return false;
+        }
+        std::size_t ValuePos = KeyPos + KeyToken.size();
+        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
+        {
+            ++ValuePos;
+        }
+        if (ValuePos >= Text.size() || Text[ValuePos] != ':')
+        {
+            SearchOffset = KeyPos + KeyToken.size();
+            continue;
+        }
+        ++ValuePos;
+        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
+        {
+            ++ValuePos;
+        }
+        auto Parsed = JsonParseString(Text, ValuePos);
+        if (!Parsed)
+        {
+            SearchOffset = KeyPos + KeyToken.size();
+            continue;
+        }
+        OutValue = std::move(*Parsed);
+        return true;
+    }
+}
+
+[[nodiscard]] bool JsonTryReadUnsignedField(const std::string& Text, std::string_view Key, uint32_t& OutValue)
+{
+    const std::string KeyToken = "\"" + std::string(Key) + "\"";
+    const std::size_t KeyPos = Text.find(KeyToken);
+    if (KeyPos == std::string::npos)
+    {
+        return false;
+    }
+
+    std::size_t ValuePos = Text.find(':', KeyPos + KeyToken.size());
+    if (ValuePos == std::string::npos)
+    {
+        return false;
+    }
+    ++ValuePos;
+    while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
+    {
+        ++ValuePos;
+    }
+    std::size_t EndPos = ValuePos;
+    while (EndPos < Text.size() && std::isdigit(static_cast<unsigned char>(Text[EndPos])) != 0)
+    {
+        ++EndPos;
+    }
+    if (EndPos <= ValuePos)
+    {
+        return false;
+    }
+
+    try
+    {
+        OutValue = static_cast<uint32_t>(std::stoul(Text.substr(ValuePos, EndPos - ValuePos)));
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
 }
 
 struct DefaultShapePackSpec
@@ -183,6 +461,7 @@ struct DefaultShapePackSpec
     MeshSettings.CastShadows = true;
     MeshSettings.SyncFromTransform = true;
     MeshSettings.RegisterWithRenderer = true;
+    (void)MeshResult->ReloadMesh();
 #endif
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
@@ -249,7 +528,7 @@ struct DefaultShapePackSpec
 {
     if (PackDirectory.empty())
     {
-        return std::unexpected("Unable to resolve appdata path for editor default assets");
+        return std::unexpected("Unable to resolve default path for editor default assets");
     }
 
     std::error_code Error{};
@@ -312,6 +591,11 @@ void AppendUniquePath(std::vector<std::string>& Paths,
 {
     std::error_code Error{};
     std::filesystem::path PathToUse = InputPath;
+    if (auto ResolvedPath = SPathResolver::Instance().Resolve(InputPath.string()); ResolvedPath)
+    {
+        PathToUse = *ResolvedPath;
+    }
+
     if (PathToUse.empty())
     {
         return;
@@ -417,14 +701,15 @@ void AppendUniquePath(std::vector<std::string>& Paths,
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
+    (void)WorldRef;
     if (auto* Start = NodeCast<PlayerStart>(&Node))
     {
-        Start->OnCreateImpl(WorldRef);
+        Start->OnCreate();
     }
 
     if (auto* Pawn = NodeCast<PawnBase>(&Node))
     {
-        Pawn->OnCreateImpl(WorldRef);
+        Pawn->OnCreate();
     }
 }
 
@@ -462,7 +747,6 @@ std::string_view EditorAssetService::Name() const
 
 Result EditorAssetService::Initialize(EditorServiceContext& Context)
 {
-    (void)Context;
     m_assets.clear();
     m_assetIndexByKey.clear();
     m_assetRenameOverrides.clear();
@@ -471,47 +755,68 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     m_placementAssetKey.clear();
     m_previewSummary.clear();
     m_statusMessage.clear();
+    m_editorTemplateAssetDirectory.clear();
+    m_editorStarterLevelTemplatePackPath.clear();
+    m_editorStarterScriptTemplatePath.clear();
+    m_currentProject = {};
     ClearAssetEditorState();
 
-    std::size_t BootstrappedPackCount = 0;
-    std::string BootstrapError{};
-    const std::filesystem::path DefaultPackDirectory = EditorDefaultShapeAssetDirectory();
-    if (!DefaultPackDirectory.empty())
+    if (const std::filesystem::path ExistingAssetRoot = SPathResolver::Instance().AssetRoot();
+        !ExistingAssetRoot.empty())
     {
-        auto BootstrapResult = EnsureDefaultShapePacks(DefaultPackDirectory);
-        if (BootstrapResult)
+        m_currentProject.AssetRootDirectory = ExistingAssetRoot.string();
+    }
+
+    std::string TemplateError{};
+    if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
+    {
+        TemplateError = TemplateResult.error().Message;
+    }
+    else
+    {
+        const std::filesystem::path EditorRootDirectory = m_editorTemplateAssetDirectory.parent_path();
+        if (!EditorRootDirectory.empty())
         {
-            BootstrappedPackCount = *BootstrapResult;
+            if (Result SetEditorRootResult = SPathResolver::Instance().SetEditorRoot(EditorRootDirectory); !SetEditorRootResult)
+            {
+                if (!TemplateError.empty())
+                {
+                    TemplateError += " ";
+                }
+                TemplateError += "Failed to set editor:// root: " + SetEditorRootResult.error().Message;
+            }
         }
-        else
+
+        if (!m_currentProject.IsLoaded && !m_editorTemplateAssetDirectory.empty())
         {
-            BootstrapError = BootstrapResult.error();
+            // In editor mode without an open project, default asset:// to editor templates under appdata.
+            if (Result SetRootResult = SPathResolver::Instance().SetAssetRoot(m_editorTemplateAssetDirectory); !SetRootResult)
+            {
+                if (!TemplateError.empty())
+                {
+                    TemplateError += " ";
+                }
+                TemplateError += "Failed to set editor template asset root: " + SetRootResult.error().Message;
+            }
+            else
+            {
+                m_currentProject.AssetRootDirectory = m_editorTemplateAssetDirectory.string();
+            }
         }
     }
 
-    ::SnAPI::AssetPipeline::AssetManagerConfig Config{};
-    Config.PackSearchPaths = BuildPackSearchPaths();
-    m_assetManager = std::make_unique<::SnAPI::AssetPipeline::AssetManager>(Config);
-    SetDefaultAssetManagerResolver([this]() -> ::SnAPI::AssetPipeline::AssetManager* {
-        return m_assetManager.get();
-    });
-
-    RegisterAssetPipelinePayloads(m_assetManager->GetRegistry());
-    RegisterAssetPipelineFactories(*m_assetManager);
-
-    Result DiscoveryResult = RefreshDiscovery();
-    if (!DiscoveryResult)
+    if (Result RebuildResult = RebuildAssetManager(); !RebuildResult)
     {
-        return DiscoveryResult;
+        return RebuildResult;
     }
 
-    if (!BootstrapError.empty())
+    if (!TemplateError.empty())
     {
-        m_statusMessage += " Default shape bootstrap failed: " + BootstrapError;
-    }
-    else if (BootstrappedPackCount > 0)
-    {
-        m_statusMessage += " Created " + std::to_string(BootstrappedPackCount) + " default shape pack(s).";
+        if (!m_statusMessage.empty())
+        {
+            m_statusMessage += ' ';
+        }
+        m_statusMessage += "Editor template bootstrap failed: " + TemplateError;
     }
 
     return Ok();
@@ -530,6 +835,10 @@ void EditorAssetService::Shutdown(EditorServiceContext& Context)
     m_placementAssetKey.clear();
     m_previewSummary.clear();
     m_statusMessage.clear();
+    m_editorTemplateAssetDirectory.clear();
+    m_editorStarterLevelTemplatePackPath.clear();
+    m_editorStarterScriptTemplatePath.clear();
+    m_currentProject = {};
     ClearAssetEditorState();
 }
 
@@ -1955,6 +2264,659 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context, 
     return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported asset kind for instantiation"));
 }
 
+Result EditorAssetService::RebuildAssetManager()
+{
+    m_assetRenameOverrides.clear();
+    m_assetPayloadOverrides.clear();
+    m_selectedAssetKey.clear();
+    m_placementAssetKey.clear();
+    m_previewSummary.clear();
+    ClearAssetEditorState();
+
+    ClearDefaultAssetManagerResolver();
+    m_assetManager.reset();
+
+    ::SnAPI::AssetPipeline::AssetManagerConfig Config{};
+    Config.PackSearchPaths = BuildPackSearchPaths();
+    m_assetManager = std::make_unique<::SnAPI::AssetPipeline::AssetManager>(Config);
+    SetDefaultAssetManagerResolver([this]() -> ::SnAPI::AssetPipeline::AssetManager* {
+        return m_assetManager.get();
+    });
+
+    RegisterAssetPipelinePayloads(m_assetManager->GetRegistry());
+    RegisterAssetPipelineFactories(*m_assetManager);
+    return RefreshDiscovery();
+}
+
+Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Context)
+{
+    m_editorTemplateAssetDirectory = EditorDefaultShapeAssetDirectory();
+    if (m_editorTemplateAssetDirectory.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Unable to resolve editor template asset directory"));
+    }
+
+    std::error_code Error{};
+    std::filesystem::create_directories(m_editorTemplateAssetDirectory, Error);
+    if (Error)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to create editor template asset directory: " + Error.message()));
+    }
+
+    const std::filesystem::path SourceEditorAssetDirectory = ResolveEditorAssetSourceDirectory();
+    if (!SourceEditorAssetDirectory.empty())
+    {
+        for (std::filesystem::directory_iterator It(SourceEditorAssetDirectory, Error), End; !Error && It != End; It.increment(Error))
+        {
+            const std::filesystem::directory_entry& Entry = *It;
+            Error.clear();
+            if (!Entry.is_regular_file(Error) || Error)
+            {
+                Error.clear();
+                continue;
+            }
+
+            const std::filesystem::path SourcePath = Entry.path();
+            const std::filesystem::path DestinationPath = m_editorTemplateAssetDirectory / SourcePath.filename();
+            if (SourcePath.lexically_normal() == DestinationPath.lexically_normal())
+            {
+                continue;
+            }
+
+            Error.clear();
+            std::filesystem::copy_file(SourcePath,
+                                       DestinationPath,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       Error);
+            if (Error)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError,
+                                                 "Failed to copy editor asset '" + SourcePath.string() + "': " + Error.message()));
+            }
+        }
+        if (Error)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to enumerate editor asset source directory: " + Error.message()));
+        }
+    }
+
+    auto DefaultShapeResult = EnsureDefaultShapePacks(m_editorTemplateAssetDirectory);
+    if (!DefaultShapeResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, DefaultShapeResult.error()));
+    }
+
+    m_editorStarterLevelTemplatePackPath = m_editorTemplateAssetDirectory / std::string(kEditorStarterLevelTemplatePackFileName);
+    Error.clear();
+    if (!std::filesystem::exists(m_editorStarterLevelTemplatePackPath, Error) || Error)
+    {
+        Level* SourceLevel = nullptr;
+        if (auto* RuntimeWorld = Context.Runtime().WorldPtr(); RuntimeWorld)
+        {
+            const std::vector<NodeHandle> Levels = RuntimeWorld->Levels();
+            if (!Levels.empty())
+            {
+                SourceLevel = NodeCast<Level>(Levels.front().Borrowed());
+                if (!SourceLevel)
+                {
+                    SourceLevel = NodeCast<Level>(Levels.front().BorrowedSlowByUuid());
+                }
+            }
+        }
+
+        std::vector<uint8_t> StarterLevelBytes{};
+        if (SourceLevel)
+        {
+            auto PayloadResult = LevelSerializer::Serialize(*SourceLevel);
+            if (!PayloadResult)
+            {
+                return std::unexpected(PayloadResult.error());
+            }
+            auto SerializeResult = SerializeLevelPayload(*PayloadResult, StarterLevelBytes);
+            if (!SerializeResult)
+            {
+                return std::unexpected(SerializeResult.error());
+            }
+        }
+        else
+        {
+            World ScratchWorld("Editor.StarterLevelTemplateScratch");
+            auto LevelResult = ScratchWorld.CreateLevel("Level");
+            if (!LevelResult)
+            {
+                return std::unexpected(LevelResult.error());
+            }
+            auto* ScratchLevel = NodeCast<Level>(LevelResult->Borrowed());
+            if (!ScratchLevel)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create scratch level template"));
+            }
+            auto PayloadResult = LevelSerializer::Serialize(*ScratchLevel);
+            if (!PayloadResult)
+            {
+                return std::unexpected(PayloadResult.error());
+            }
+            auto SerializeResult = SerializeLevelPayload(*PayloadResult, StarterLevelBytes);
+            if (!SerializeResult)
+            {
+                return std::unexpected(SerializeResult.error());
+            }
+        }
+
+        ::SnAPI::AssetPipeline::AssetPackEntry StarterEntry{};
+        StarterEntry.Id = AssetPipelineAssetIdFromName("SnAPI.Editor.Template.StarterLevel");
+        StarterEntry.AssetKind = AssetKindLevel();
+        StarterEntry.Name = "Levels/StarterLevel";
+        StarterEntry.VariantKey = "default";
+        StarterEntry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+            PayloadLevel(),
+            LevelSerializer::kSchemaVersion,
+            std::move(StarterLevelBytes));
+
+        ::SnAPI::AssetPipeline::AssetPackWriter Writer{};
+        Writer.AddAsset(std::move(StarterEntry));
+        auto WriteResult = Writer.Write(m_editorStarterLevelTemplatePackPath.string());
+        if (!WriteResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to write starter level template pack: " + WriteResult.error()));
+        }
+    }
+
+    m_editorStarterScriptTemplatePath = m_editorTemplateAssetDirectory / std::string(kEditorStarterScriptFileName);
+    Error.clear();
+    if (!std::filesystem::exists(m_editorStarterScriptTemplatePath, Error) || Error)
+    {
+        const std::filesystem::path SourceScript = ResolveEditorScriptTemplateSource();
+        if (!SourceScript.empty())
+        {
+            std::filesystem::copy_file(SourceScript,
+                                       m_editorStarterScriptTemplatePath,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       Error);
+            if (Error)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError,
+                                                 "Failed to copy editor starter script template: " + Error.message()));
+            }
+        }
+    }
+
+    return Ok();
+}
+
+Result EditorAssetService::EnsureProjectStarterLevelPack(const std::filesystem::path& ProjectAssetRoot,
+                                                         const std::filesystem::path& StartupPackPath)
+{
+    if (ProjectAssetRoot.empty() || StartupPackPath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project starter pack path is invalid"));
+    }
+
+    std::error_code Error{};
+    std::filesystem::create_directories(StartupPackPath.parent_path(), Error);
+    if (Error)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to create project starter pack directory: " + Error.message()));
+    }
+
+    Error.clear();
+    if (std::filesystem::exists(StartupPackPath, Error) && !Error)
+    {
+        return Ok();
+    }
+
+    if (m_editorStarterLevelTemplatePackPath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Starter level template pack is not initialized"));
+    }
+
+    ::SnAPI::AssetPipeline::AssetPackReader Reader{};
+    auto OpenResult = Reader.Open(m_editorStarterLevelTemplatePackPath.string());
+    if (!OpenResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to open starter level template pack: " + OpenResult.error()));
+    }
+
+    std::optional<::SnAPI::AssetPipeline::AssetInfo> SourceInfo{};
+    const uint32_t AssetCount = Reader.GetAssetCount();
+    for (uint32_t Index = 0; Index < AssetCount; ++Index)
+    {
+        auto InfoResult = Reader.GetAssetInfo(Index);
+        if (!InfoResult)
+        {
+            continue;
+        }
+        if (InfoResult->AssetKind == AssetKindLevel())
+        {
+            SourceInfo = *InfoResult;
+            break;
+        }
+    }
+    if (!SourceInfo.has_value())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Starter level template pack does not contain a Level asset"));
+    }
+
+    auto CookedResult = Reader.LoadCookedPayload(SourceInfo->Id);
+    if (!CookedResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, CookedResult.error()));
+    }
+
+    std::error_code RelativeError{};
+    std::filesystem::path RelativePath = std::filesystem::relative(StartupPackPath, ProjectAssetRoot, RelativeError);
+    if (RelativeError || RelativePath.empty())
+    {
+        RelativePath = std::filesystem::path(kDefaultProjectStartupLevelPack);
+    }
+    RelativePath.replace_extension();
+    const std::string LogicalName = NormalizeAssetLogicalName(RelativePath.generic_string());
+
+    ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
+    Entry.Id = ::SnAPI::AssetPipeline::AssetId::Generate();
+    Entry.AssetKind = AssetKindLevel();
+    Entry.Name = LogicalName.empty() ? std::string("Levels/StarterLevel") : LogicalName;
+    Entry.VariantKey = SourceInfo->VariantKey.empty() ? std::string("default") : SourceInfo->VariantKey;
+    Entry.Cooked = std::move(*CookedResult);
+
+    Entry.Bulk.reserve(SourceInfo->BulkChunkCount);
+    for (uint32_t BulkIndex = 0; BulkIndex < SourceInfo->BulkChunkCount; ++BulkIndex)
+    {
+        auto BulkResult = Reader.LoadBulkChunk(SourceInfo->Id, BulkIndex);
+        if (!BulkResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, BulkResult.error()));
+        }
+        auto BulkInfoResult = Reader.GetBulkChunkInfo(SourceInfo->Id, BulkIndex);
+        if (!BulkInfoResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, BulkInfoResult.error()));
+        }
+
+        ::SnAPI::AssetPipeline::BulkChunk Chunk(BulkInfoResult->Semantic, BulkInfoResult->SubIndex, true);
+        Chunk.Bytes = std::move(*BulkResult);
+        Entry.Bulk.emplace_back(std::move(Chunk));
+    }
+
+    ::SnAPI::AssetPipeline::AssetPackWriter Writer{};
+    Writer.AddAsset(std::move(Entry));
+    auto WriteResult = Writer.Write(StartupPackPath.string());
+    if (!WriteResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to write project starter level pack: " + WriteResult.error()));
+    }
+
+    return Ok();
+}
+
+Result EditorAssetService::LoadProjectStartupLevel(EditorServiceContext& Context, const std::filesystem::path& StartupPackPath)
+{
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+
+    WorldPtr->Clear();
+
+    std::error_code Error{};
+    if (!std::filesystem::exists(StartupPackPath, Error) || Error)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Project startup level pack was not found"));
+    }
+
+    const std::string StartupPackPathText = StartupPackPath.string();
+    bool AlreadyMounted = false;
+    for (const std::string& MountedPath : m_assetManager->GetMountedPacks())
+    {
+        std::error_code CompareError{};
+        const auto Left = std::filesystem::weakly_canonical(std::filesystem::path(MountedPath), CompareError);
+        CompareError.clear();
+        const auto Right = std::filesystem::weakly_canonical(StartupPackPath, CompareError);
+        if (!CompareError && Left == Right)
+        {
+            AlreadyMounted = true;
+            break;
+        }
+        if (MountedPath == StartupPackPathText)
+        {
+            AlreadyMounted = true;
+            break;
+        }
+    }
+    if (!AlreadyMounted)
+    {
+        auto MountResult = m_assetManager->MountPack(StartupPackPathText);
+        if (!MountResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to mount project startup level pack: " + MountResult.error()));
+        }
+    }
+
+    ::SnAPI::AssetPipeline::AssetPackReader Reader{};
+    auto OpenResult = Reader.Open(StartupPackPathText);
+    if (!OpenResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to open project startup level pack: " + OpenResult.error()));
+    }
+
+    std::optional<::SnAPI::AssetPipeline::AssetId> StarterLevelAssetId{};
+    const uint32_t AssetCount = Reader.GetAssetCount();
+    for (uint32_t Index = 0; Index < AssetCount; ++Index)
+    {
+        auto InfoResult = Reader.GetAssetInfo(Index);
+        if (!InfoResult)
+        {
+            continue;
+        }
+        if (InfoResult->AssetKind == AssetKindLevel())
+        {
+            StarterLevelAssetId = InfoResult->Id;
+            break;
+        }
+    }
+    if (!StarterLevelAssetId.has_value())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Project startup pack does not contain a Level asset"));
+    }
+
+    LevelAssetLoadParams LoadParams{};
+    LoadParams.TargetWorld = WorldPtr;
+    LoadParams.NameOverride = std::string("Level");
+    auto LoadResult = m_assetManager->Load<Level>(*StarterLevelAssetId, LoadParams);
+    if (!LoadResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+    }
+
+    return Ok();
+}
+
+Result EditorAssetService::CreateProject(EditorServiceContext& Context,
+                                         const std::string_view ProjectName,
+                                         const std::string_view ParentDirectory)
+{
+    const std::string Name = TrimCopy(std::string(ProjectName));
+    const std::string ParentDirectoryText = TrimCopy(std::string(ParentDirectory));
+    if (Name.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project name cannot be empty"));
+    }
+    if (ParentDirectoryText.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project directory cannot be empty"));
+    }
+
+    std::error_code Error{};
+    std::filesystem::path ParentPath(ParentDirectoryText);
+    if (!ParentPath.is_absolute())
+    {
+        ParentPath = std::filesystem::absolute(ParentPath, Error);
+        if (Error)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to resolve project directory: " + Error.message()));
+        }
+    }
+
+    const std::filesystem::path ProjectRoot = ParentPath / Name;
+    const std::filesystem::path AssetRoot = ProjectRoot / std::string(kDefaultProjectAssetRoot);
+    const std::filesystem::path ProjectFilePath = ProjectRoot / std::string(kDefaultProjectFileName);
+    const std::filesystem::path StartupPackPath = AssetRoot / std::filesystem::path(kDefaultProjectStartupLevelPack);
+
+    std::filesystem::create_directories(AssetRoot, Error);
+    if (Error)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to create project directory: " + Error.message()));
+    }
+
+    if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
+    {
+        return TemplateResult;
+    }
+
+    if (Result StarterResult = EnsureProjectStarterLevelPack(AssetRoot, StartupPackPath); !StarterResult)
+    {
+        return StarterResult;
+    }
+
+    if (!m_editorStarterScriptTemplatePath.empty())
+    {
+        const std::filesystem::path ProjectScriptPath = AssetRoot / std::string(kEditorStarterScriptFileName);
+        Error.clear();
+        if (!std::filesystem::exists(ProjectScriptPath, Error) || Error)
+        {
+            Error.clear();
+            std::filesystem::copy_file(m_editorStarterScriptTemplatePath,
+                                       ProjectScriptPath,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       Error);
+            if (Error)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError,
+                                                 "Failed to copy starter script into project assets: " + Error.message()));
+            }
+        }
+    }
+
+    std::ofstream ProjectFile(ProjectFilePath, std::ios::binary | std::ios::trunc);
+    if (!ProjectFile.is_open())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create project file"));
+    }
+    ProjectFile << "{\n";
+    ProjectFile << "  \"version\": " << kProjectConfigVersion << ",\n";
+    ProjectFile << "  \"name\": \"" << JsonEscape(Name) << "\",\n";
+    ProjectFile << "  \"assetRoot\": \"" << JsonEscape(std::string(kDefaultProjectAssetRoot)) << "\",\n";
+    ProjectFile << "  \"startupLevelPack\": \"" << JsonEscape(std::string(kDefaultProjectStartupLevelPack)) << "\"\n";
+    ProjectFile << "}\n";
+    if (!ProjectFile.good())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to write project file"));
+    }
+    ProjectFile.flush();
+    if (!ProjectFile.good())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to flush project file"));
+    }
+    ProjectFile.close();
+    if (!ProjectFile.good())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to close project file"));
+    }
+
+    auto LoadResult = LoadProject(Context, ProjectFilePath.string());
+    if (!LoadResult)
+    {
+        return LoadResult;
+    }
+
+    m_statusMessage = "Created and loaded project: " + Name;
+    return Ok();
+}
+
+Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std::string_view ProjectFilePath)
+{
+    std::string ProjectFileText = TrimCopy(std::string(ProjectFilePath));
+    if (ProjectFileText.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file path cannot be empty"));
+    }
+
+    std::filesystem::path ProjectFile = std::filesystem::path(ProjectFileText);
+    if (auto Resolved = SPathResolver::Instance().Resolve(ProjectFileText); Resolved)
+    {
+        ProjectFile = *Resolved;
+    }
+    else if (!ProjectFile.is_absolute())
+    {
+        std::error_code Error{};
+        ProjectFile = std::filesystem::absolute(ProjectFile, Error);
+        if (Error)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to resolve project file path: " + Error.message()));
+        }
+    }
+
+    std::error_code Error{};
+    if (!std::filesystem::exists(ProjectFile, Error) || Error)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Project file was not found: " + ProjectFile.string()));
+    }
+
+    std::ifstream Input(ProjectFile, std::ios::binary);
+    if (!Input.is_open())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to open project file"));
+    }
+    std::ostringstream Buffer{};
+    Buffer << Input.rdbuf();
+    const std::string JsonText = Buffer.str();
+    if (JsonText.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file is empty"));
+    }
+
+    uint32_t Version = kProjectConfigVersion;
+    (void)JsonTryReadUnsignedField(JsonText, "version", Version);
+    if (Version != kProjectConfigVersion)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported project file version"));
+    }
+
+    std::string Name = ProjectFile.stem().string();
+    (void)JsonTryReadStringField(JsonText, "name", Name);
+    Name = TrimCopy(Name);
+    if (Name.empty())
+    {
+        Name = "Project";
+    }
+
+    std::string AssetRootField = std::string(kDefaultProjectAssetRoot);
+    (void)JsonTryReadStringField(JsonText, "assetRoot", AssetRootField);
+    AssetRootField = TrimCopy(AssetRootField);
+    if (AssetRootField.empty())
+    {
+        AssetRootField = std::string(kDefaultProjectAssetRoot);
+    }
+
+    std::string StartupLevelPackField = std::string(kDefaultProjectStartupLevelPack);
+    (void)JsonTryReadStringField(JsonText, "startupLevelPack", StartupLevelPackField);
+    StartupLevelPackField = TrimCopy(StartupLevelPackField);
+    if (StartupLevelPackField.empty())
+    {
+        StartupLevelPackField = std::string(kDefaultProjectStartupLevelPack);
+    }
+
+    const std::filesystem::path ProjectRoot = ProjectFile.parent_path();
+    std::filesystem::path ResolvedAssetRoot = std::filesystem::path(AssetRootField);
+    if (HasUriScheme(AssetRootField))
+    {
+        auto Resolved = SPathResolver::Instance().Resolve(AssetRootField);
+        if (!Resolved)
+        {
+            return std::unexpected(Resolved.error());
+        }
+        ResolvedAssetRoot = *Resolved;
+    }
+    else if (!ResolvedAssetRoot.is_absolute())
+    {
+        ResolvedAssetRoot = ProjectRoot / ResolvedAssetRoot;
+    }
+    ResolvedAssetRoot = ResolvedAssetRoot.lexically_normal();
+
+    std::filesystem::create_directories(ResolvedAssetRoot, Error);
+    if (Error)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to create project asset root directory: " + Error.message()));
+    }
+
+    if (Result SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedAssetRoot); !SetRootResult)
+    {
+        return SetRootResult;
+    }
+
+    m_currentProject = {};
+    m_currentProject.IsLoaded = true;
+    m_currentProject.Name = Name;
+    m_currentProject.ProjectFilePath = ProjectFile.string();
+    m_currentProject.ProjectRootDirectory = ProjectRoot.string();
+    m_currentProject.AssetRootDirectory = ResolvedAssetRoot.string();
+    m_currentProject.StartupLevelPack = StartupLevelPackField;
+
+    std::filesystem::path StartupPackPath = std::filesystem::path(StartupLevelPackField);
+    if (HasUriScheme(StartupLevelPackField))
+    {
+        auto Resolved = SPathResolver::Instance().Resolve(StartupLevelPackField);
+        if (!Resolved)
+        {
+            return std::unexpected(Resolved.error());
+        }
+        StartupPackPath = *Resolved;
+    }
+    else if (!StartupPackPath.is_absolute())
+    {
+        StartupPackPath = ResolvedAssetRoot / StartupPackPath;
+    }
+    StartupPackPath = StartupPackPath.lexically_normal();
+
+    if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
+    {
+        return TemplateResult;
+    }
+    if (Result StarterResult = EnsureProjectStarterLevelPack(ResolvedAssetRoot, StartupPackPath); !StarterResult)
+    {
+        return StarterResult;
+    }
+
+    if (!m_editorStarterScriptTemplatePath.empty())
+    {
+        const std::filesystem::path ProjectScriptPath = ResolvedAssetRoot / std::string(kEditorStarterScriptFileName);
+        Error.clear();
+        if (!std::filesystem::exists(ProjectScriptPath, Error) || Error)
+        {
+            Error.clear();
+            std::filesystem::copy_file(m_editorStarterScriptTemplatePath,
+                                       ProjectScriptPath,
+                                       std::filesystem::copy_options::overwrite_existing,
+                                       Error);
+            if (Error)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError,
+                                                 "Failed to copy starter script into project assets: " + Error.message()));
+            }
+        }
+    }
+
+    if (Result RebuildResult = RebuildAssetManager(); !RebuildResult)
+    {
+        return RebuildResult;
+    }
+    if (Result LoadStartupResult = LoadProjectStartupLevel(Context, StartupPackPath); !LoadStartupResult)
+    {
+        return LoadStartupResult;
+    }
+
+    m_statusMessage = "Loaded project: " + m_currentProject.Name;
+    return Ok();
+}
+
 BaseNode* EditorAssetService::ResolveAssetEditorNode(const NodeHandle& Node) const
 {
     if (Node.IsNull())
@@ -2227,15 +3189,34 @@ void EditorAssetService::ClearAssetEditorState()
     }
 }
 
-std::vector<std::string> EditorAssetService::BuildPackSearchPaths()
+std::vector<std::string> EditorAssetService::BuildPackSearchPaths() const
 {
     std::vector<std::string> Paths{};
     std::unordered_set<std::string> SeenPaths{};
 
-    const std::filesystem::path DefaultPackDirectory = EditorDefaultShapeAssetDirectory();
-    if (!DefaultPackDirectory.empty())
+    if (m_currentProject.IsLoaded && !m_currentProject.AssetRootDirectory.empty())
     {
-        AppendUniquePath(Paths, SeenPaths, DefaultPackDirectory);
+        AppendUniquePath(Paths, SeenPaths, std::filesystem::path(m_currentProject.AssetRootDirectory));
+        return Paths;
+    }
+
+    if (!m_editorTemplateAssetDirectory.empty())
+    {
+        AppendUniquePath(Paths, SeenPaths, m_editorTemplateAssetDirectory);
+    }
+    else
+    {
+        const std::filesystem::path DefaultPackDirectory = EditorDefaultShapeAssetDirectory();
+        if (!DefaultPackDirectory.empty())
+        {
+            AppendUniquePath(Paths, SeenPaths, DefaultPackDirectory);
+        }
+    }
+
+    if (const std::filesystem::path ResolverAssetRoot = SPathResolver::Instance().AssetRoot();
+        !ResolverAssetRoot.empty())
+    {
+        AppendUniquePath(Paths, SeenPaths, ResolverAssetRoot);
     }
 
     std::error_code Error{};
@@ -2331,6 +3312,11 @@ std::expected<std::string, std::string> EditorAssetService::ResolveOwningPackPat
 
     if (!Asset.OwningPackPath.empty())
     {
+        if (auto ResolvedPath = SPathResolver::Instance().ResolveToString(Asset.OwningPackPath);
+            ResolvedPath && !ResolvedPath->empty())
+        {
+            return *ResolvedPath;
+        }
         return Asset.OwningPackPath;
     }
 
@@ -2340,8 +3326,15 @@ std::expected<std::string, std::string> EditorAssetService::ResolveOwningPackPat
     }
 
     const auto MountedPacks = m_assetManager->GetMountedPacks();
-    for (const std::string& PackPath : MountedPacks)
+    for (const std::string& RawPackPath : MountedPacks)
     {
+        std::string PackPath = RawPackPath;
+        if (auto ResolvedPackPath = SPathResolver::Instance().ResolveToString(RawPackPath);
+            ResolvedPackPath && !ResolvedPackPath->empty())
+        {
+            PackPath = *ResolvedPackPath;
+        }
+
         ::SnAPI::AssetPipeline::AssetPackReader Reader{};
         auto OpenResult = Reader.Open(PackPath);
         if (!OpenResult)
@@ -2366,14 +3359,19 @@ std::expected<std::string, std::string> EditorAssetService::ResolveRuntimeSavePa
         return std::unexpected("Selected asset is not a runtime memory asset");
     }
 
-    std::error_code Error{};
-    const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
-    if (Error)
+    std::filesystem::path AssetsRoot = SPathResolver::Instance().AssetRoot();
+    if (AssetsRoot.empty())
     {
-        return std::unexpected("Failed to resolve current directory: " + Error.message());
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (Error)
+        {
+            return std::unexpected("Failed to resolve current directory: " + Error.message());
+        }
+        AssetsRoot = CurrentPath / "Assets";
     }
 
-    std::filesystem::path AssetsRoot = CurrentPath / "Assets";
+    std::error_code Error{};
     std::filesystem::create_directories(AssetsRoot, Error);
     if (Error)
     {
@@ -2391,6 +3389,12 @@ std::expected<std::string, std::string> EditorAssetService::ResolveRuntimeSavePa
     if (ExtensionLower != ".snpak")
     {
         OutputPath += ".snpak";
+    }
+
+    if (auto ResolvedPath = SPathResolver::Instance().ResolveToString(OutputPath.string());
+        ResolvedPath && !ResolvedPath->empty())
+    {
+        return *ResolvedPath;
     }
 
     return OutputPath.lexically_normal().string();

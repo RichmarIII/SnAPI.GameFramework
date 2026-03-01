@@ -25,7 +25,7 @@ struct THighPriorityRuntimeType final : TRuntimeTickCRTP<THighPriorityRuntimeTyp
     {
     }
 
-    void TickImpl(IWorld&, float)
+    void Tick(IWorld&, float)
     {
         if (Log)
         {
@@ -46,7 +46,7 @@ struct TLowPriorityRuntimeType final : TRuntimeTickCRTP<TLowPriorityRuntimeType>
     {
     }
 
-    void TickImpl(IWorld&, float)
+    void Tick(IWorld&, float)
     {
         if (Log)
         {
@@ -93,7 +93,7 @@ struct TPhaseRuntimeType final : TRuntimeTickCRTP<TPhaseRuntimeType>
     {
     }
 
-    void PreTickImpl(IWorld&, float)
+    void PreTick(IWorld&, float)
     {
         if (Counts)
         {
@@ -101,7 +101,7 @@ struct TPhaseRuntimeType final : TRuntimeTickCRTP<TPhaseRuntimeType>
         }
     }
 
-    void TickImpl(IWorld&, float)
+    void Tick(IWorld&, float)
     {
         if (Counts)
         {
@@ -109,7 +109,7 @@ struct TPhaseRuntimeType final : TRuntimeTickCRTP<TPhaseRuntimeType>
         }
     }
 
-    void FixedTickImpl(IWorld&, float)
+    void FixedTick(IWorld&, float)
     {
         if (Counts)
         {
@@ -117,7 +117,7 @@ struct TPhaseRuntimeType final : TRuntimeTickCRTP<TPhaseRuntimeType>
         }
     }
 
-    void LateTickImpl(IWorld&, float)
+    void LateTick(IWorld&, float)
     {
         if (Counts)
         {
@@ -125,7 +125,7 @@ struct TPhaseRuntimeType final : TRuntimeTickCRTP<TPhaseRuntimeType>
         }
     }
 
-    void PostTickImpl(IWorld&, float)
+    void PostTick(IWorld&, float)
     {
         if (Counts)
         {
@@ -152,13 +152,11 @@ struct TDualTickEntryRuntimeType final : TRuntimeTickCRTP<TDualTickEntryRuntimeT
 {
     static constexpr const char* kTypeName = "Tests::TDualTickEntryRuntimeType";
 
-    explicit TDualTickEntryRuntimeType(int* InTickCalls = nullptr, int* InTickImplCalls = nullptr)
+    explicit TDualTickEntryRuntimeType(int* InTickCalls = nullptr)
         : TickCalls(InTickCalls)
-        , TickImplCalls(InTickImplCalls)
     {
     }
 
-    // Intentionally provided to ensure ECS dispatch does not call this path.
     void Tick(IWorld&, float)
     {
         if (TickCalls)
@@ -167,16 +165,7 @@ struct TDualTickEntryRuntimeType final : TRuntimeTickCRTP<TDualTickEntryRuntimeT
         }
     }
 
-    void TickImpl(IWorld&, float)
-    {
-        if (TickImplCalls)
-        {
-            ++(*TickImplCalls);
-        }
-    }
-
     int* TickCalls = nullptr;
-    int* TickImplCalls = nullptr;
 };
 
 struct TDefaultRuntimeComponent final : TRuntimeTickCRTP<TDefaultRuntimeComponent>
@@ -411,27 +400,25 @@ TEST_CASE("World frame phases drive ECS runtime storage phases")
     REQUIRE(Counts.Post == 1);
 }
 
-TEST_CASE("World ECS runtime tick dispatch executes only TickImpl once per object")
+TEST_CASE("World ECS runtime tick dispatch executes only Tick once per object")
 {
     World WorldInstance{"RuntimeSingleTickEntryWorld"};
     auto& Storage = WorldInstance.EcsRuntime().Storage<TDualTickEntryRuntimeType>();
 
     int TickCalls = 0;
-    int TickImplCalls = 0;
-    auto HandleResult = Storage.Create(WorldInstance, &TickCalls, &TickImplCalls);
+    auto HandleResult = Storage.Create(WorldInstance, &TickCalls);
     REQUIRE(HandleResult.has_value());
 
     WorldInstance.Tick(1.0f / 60.0f);
 
-    REQUIRE(TickCalls == 0);
-    REQUIRE(TickImplCalls == 1);
+    REQUIRE(TickCalls == 1);
 }
 
-TEST_CASE("World can tick ECS runtime when runtime phases are enabled")
+TEST_CASE("World RunGameplay execution flag gates ECS runtime phases")
 {
     World WorldInstance{"RuntimeWorldEcsOnly"};
     WorldExecutionProfile Profile = WorldInstance.ExecutionProfile();
-    Profile.TickEcsRuntime = true;
+    Profile.RunGameplay = false;
     WorldInstance.SetExecutionProfile(Profile);
 
     auto& Storage = WorldInstance.EcsRuntime().Storage<TPhaseRuntimeType>();
@@ -444,11 +431,46 @@ TEST_CASE("World can tick ECS runtime when runtime phases are enabled")
     WorldInstance.FixedTick(1.0f / 60.0f);
     WorldInstance.LateTick(1.0f / 60.0f);
 
+    REQUIRE(Counts.Pre == 0);
+    REQUIRE(Counts.Tick == 0);
+    REQUIRE(Counts.Fixed == 0);
+    REQUIRE(Counts.Late == 0);
+    REQUIRE(Counts.Post == 0);
+
+    Profile.RunGameplay = true;
+    WorldInstance.SetExecutionProfile(Profile);
+
+    WorldInstance.Tick(1.0f / 60.0f);
+    WorldInstance.FixedTick(1.0f / 60.0f);
+    WorldInstance.LateTick(1.0f / 60.0f);
+
     REQUIRE(Counts.Pre == 1);
     REQUIRE(Counts.Tick == 1);
     REQUIRE(Counts.Fixed == 1);
     REQUIRE(Counts.Late == 1);
     REQUIRE(Counts.Post == 1);
+}
+
+TEST_CASE("Editor execution profile disables gameplay runtime phases")
+{
+    World WorldInstance{"EditorWorldNoGameplayTicks"};
+    WorldInstance.SetExecutionProfile(WorldExecutionProfile::Editor());
+
+    auto& Storage = WorldInstance.EcsRuntime().Storage<TPhaseRuntimeType>();
+
+    TPhaseRuntimeType::Counters Counts{};
+    auto HandleResult = Storage.Create(WorldInstance, &Counts);
+    REQUIRE(HandleResult.has_value());
+
+    WorldInstance.Tick(1.0f / 60.0f);
+    WorldInstance.FixedTick(1.0f / 60.0f);
+    WorldInstance.LateTick(1.0f / 60.0f);
+
+    REQUIRE(Counts.Pre == 0);
+    REQUIRE(Counts.Tick == 0);
+    REQUIRE(Counts.Fixed == 0);
+    REQUIRE(Counts.Late == 0);
+    REQUIRE(Counts.Post == 0);
 }
 
 TEST_CASE("World runtime node hierarchy tracks parents, children, and roots")

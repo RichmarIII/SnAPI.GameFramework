@@ -50,17 +50,39 @@ Quat NlerpShortestPath(const Quat& A, const Quat& B, const float Alpha)
     return NormalizeQuatOrIdentity(Out);
 }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsFollowTargetSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "Target"
+        || Name == "PositionOffset"
+        || Name == "SyncPosition"
+        || Name == "SyncRotation"
+        || Name == "RotationOffset"
+        || Name == "PositionSmoothingHz"
+        || Name == "RotationSmoothingHz"
+        || Name == "ResolveTargetByUuidFallback";
+}
+#endif
+
 } // namespace
 
 void FollowTargetComponent::Tick(const float DeltaSeconds)
 {
-    RuntimeTick(DeltaSeconds);
-}
-
-void FollowTargetComponent::RuntimeTick(const float DeltaSeconds)
-{
     (void)ApplyFollow(DeltaSeconds);
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void FollowTargetComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsFollowTargetSettingsField(Name))
+    {
+        return;
+    }
+
+    (void)ApplyFollow(0.0f);
+}
+#endif
 
 bool FollowTargetComponent::ApplyFollow(const float DeltaSeconds)
 {

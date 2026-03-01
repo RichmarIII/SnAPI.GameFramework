@@ -26,7 +26,7 @@ struct TEcsTickComponent final : TRuntimeTickCRTP<TEcsTickComponent>
     {
     }
 
-    void TickImpl(IWorld&, float)
+    void Tick(IWorld&, float)
     {
         if (Counter)
         {

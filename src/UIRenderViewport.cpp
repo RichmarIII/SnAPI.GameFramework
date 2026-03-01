@@ -283,6 +283,14 @@ void UIRenderViewport::OnFocusChanged(const bool Focused)
     SetFocused(Focused);
 }
 
+void UIRenderViewport::OnDestroyed()
+{
+    ReleaseOwnedResources();
+    m_runtime = nullptr;
+    m_camera = nullptr;
+    m_pointerEventHandler = {};
+}
+
 void UIRenderViewport::ReleaseOwnedResources()
 {
     auto ResetState = [this]() {

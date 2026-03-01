@@ -12,6 +12,7 @@
 
 #include "BaseNode.h"
 #include "IWorld.h"
+#include "PathResolver.h"
 #include "RendererSystem.h"
 #include "TransformComponent.h"
 
@@ -60,6 +61,40 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
     WorldTransform.scale(Scale);
     return WorldTransform.matrix();
 }
+
+[[nodiscard]] bool ResolveFilesystemMeshPath(const std::string_view MeshPath, std::string& OutResolvedPath)
+{
+    if (MeshPath.empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    auto ResolvedPath = SPathResolver::Instance().ResolveToString(MeshPath);
+    if (!ResolvedPath || ResolvedPath->empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    OutResolvedPath = *ResolvedPath;
+    return true;
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsSkeletalMeshSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "MeshPath"
+        || Name == "Visible"
+        || Name == "CastShadows"
+        || Name == "SyncFromTransform"
+        || Name == "RegisterWithRenderer"
+        || Name == "AutoPlayAnimations"
+        || Name == "LoopAnimations"
+        || Name == "AnimationName";
+}
+#endif
 } // namespace
 
 bool SkeletalMeshComponent::ReloadMesh()
@@ -144,11 +179,6 @@ void SkeletalMeshComponent::OnDestroy()
 
 void SkeletalMeshComponent::Tick(const float DeltaSeconds)
 {
-    RuntimeTick(DeltaSeconds);
-}
-
-void SkeletalMeshComponent::RuntimeTick(const float DeltaSeconds)
-{
     
     if (m_settings.MeshPath.empty())
     {
@@ -156,7 +186,9 @@ void SkeletalMeshComponent::RuntimeTick(const float DeltaSeconds)
         return;
     }
 
-    if (m_loadedPath != m_settings.MeshPath)
+    std::string ResolvedMeshPath{};
+    const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
+    if (!HasResolvedMeshPath || m_loadedPath != ResolvedMeshPath)
     {
         ClearMesh();
     }
@@ -180,6 +212,46 @@ void SkeletalMeshComponent::RuntimeTick(const float DeltaSeconds)
     ApplyAutoPlay(*m_renderObject);
     m_renderObject->Update(DeltaSeconds);
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void SkeletalMeshComponent::EditorTick(float DeltaSeconds)
+{
+    Tick(DeltaSeconds);
+}
+
+void SkeletalMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsSkeletalMeshSettingsField(Name))
+    {
+        return;
+    }
+
+    if (m_settings.MeshPath.empty())
+    {
+        ClearMesh();
+        return;
+    }
+
+    std::string ResolvedMeshPath{};
+    const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
+    if (!HasResolvedMeshPath || m_loadedPath != ResolvedMeshPath)
+    {
+        ClearMesh();
+    }
+
+    if (!EnsureMeshLoaded() || !m_renderObject)
+    {
+        return;
+    }
+
+    if (m_settings.SyncFromTransform)
+    {
+        SyncRenderObjectTransform(*m_renderObject);
+    }
+    ApplyRenderObjectState(*m_renderObject);
+    ApplyAutoPlay(*m_renderObject);
+}
+#endif
 
 RendererSystem* SkeletalMeshComponent::ResolveRendererSystem() const
 {
@@ -224,7 +296,13 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
         return false;
     }
 
-    const auto LoadedMesh = Meshes->Load(m_settings.MeshPath);
+    std::string ResolvedMeshPath{};
+    if (!ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath))
+    {
+        return false;
+    }
+
+    const auto LoadedMesh = Meshes->Load(ResolvedMeshPath);
     const auto SourceMesh = LoadedMesh.lock();
     if (!SourceMesh)
     {
@@ -238,7 +316,7 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
     }
 
     m_renderObject = std::move(RenderObject);
-    m_loadedPath = m_settings.MeshPath;
+    m_loadedPath = std::move(ResolvedMeshPath);
     m_lastAutoPlayAnimation.clear();
     m_lastAutoPlayLoop = m_settings.LoopAnimations;
     m_autoPlayApplied = false;

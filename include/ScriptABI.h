@@ -30,6 +30,14 @@ typedef struct SnGfVariantHandle
     void* Ptr; /**< @brief Opaque pointer to internal Variant storage. */
 } SnGfVariantHandle;
 
+/** @brief C ABI representation of a 3D vector. */
+typedef struct SnGfVec3
+{
+    float X;
+    float Y;
+    float Z;
+} SnGfVec3;
+
 /** @brief Opaque handle to a reflected field. */
 typedef uint64_t SnGfFieldHandle;
 /** @brief Opaque handle to a reflected method. */
@@ -137,10 +145,23 @@ SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_bool(int value);
  */
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_string(const char* value);
 /**
+ * @brief Create a Variant from a vec3.
+ * @param value Vec3 value to store.
+ * @return Variant handle.
+ */
+SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_vec3(SnGfVec3 value);
+/**
  * @brief Destroy a Variant handle.
  * @param handle Variant handle to destroy.
  */
 SNAPI_GAMEFRAMEWORK_API void sn_gf_variant_destroy(SnGfVariantHandle handle);
+/**
+ * @brief Extract vec3 payload from a Variant handle.
+ * @param handle Variant handle to inspect.
+ * @param outValue Output vec3.
+ * @return Non-zero on success.
+ */
+SNAPI_GAMEFRAMEWORK_API int sn_gf_variant_to_vec3(SnGfVariantHandle handle, SnGfVec3* outValue);
 
 /**
  * @brief Read a field value from an object.
@@ -174,6 +195,13 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_set_field(void* instance, SnGfUuid type
  * @remarks On success, `outResult` owns a variant handle that must be destroyed by caller.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_invoke(void* instance, SnGfUuid type, SnGfMethodHandle method, const SnGfVariantHandle* args, size_t argCount, SnGfVariantHandle* outResult);
+/**
+ * @brief Resolve component instance from a node and component type.
+ * @param nodeInstance Pointer to node instance.
+ * @param componentType Type id of component to resolve.
+ * @return Component instance pointer, or nullptr if missing.
+ */
+SNAPI_GAMEFRAMEWORK_API void* sn_gf_node_get_component(void* nodeInstance, SnGfUuid componentType);
 
 #ifdef __cplusplus
 }

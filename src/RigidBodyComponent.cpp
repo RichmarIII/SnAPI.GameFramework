@@ -201,6 +201,25 @@ Physics::ColliderDesc BuildColliderDesc(BaseNode* Owner)
     return Collider;
 }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsRigidBodySettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "BodyType"
+        || Name == "Mass"
+        || Name == "LinearDamping"
+        || Name == "AngularDamping"
+        || Name == "EnableCcd"
+        || Name == "StartActive"
+        || Name == "InitialLinearVelocity"
+        || Name == "InitialAngularVelocity"
+        || Name == "SyncFromPhysics"
+        || Name == "SyncToPhysics"
+        || Name == "EnableRenderInterpolation"
+        || Name == "AutoDeactivateWhenSleeping";
+}
+#endif
+
 } // namespace
 
 PhysicsSystem* RigidBodyComponent::ResolvePhysicsSystem() const
@@ -231,11 +250,6 @@ void RigidBodyComponent::OnDestroy()
 }
 
 void RigidBodyComponent::Tick(float DeltaSeconds)
-{
-    RuntimeTick(DeltaSeconds);
-}
-
-void RigidBodyComponent::RuntimeTick(float DeltaSeconds)
 {
     (void)DeltaSeconds;
 
@@ -271,11 +285,6 @@ void RigidBodyComponent::RuntimeTick(float DeltaSeconds)
 
 void RigidBodyComponent::FixedTick(float DeltaSeconds)
 {
-    RuntimeFixedTick(DeltaSeconds);
-}
-
-void RigidBodyComponent::RuntimeFixedTick(float DeltaSeconds)
-{
     (void)DeltaSeconds;
 
     if (m_bodyHandle.IsValid() && m_settingsDirty)
@@ -299,6 +308,26 @@ void RigidBodyComponent::RuntimeFixedTick(float DeltaSeconds)
         (void)SyncToPhysics();
     }
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void RigidBodyComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsRigidBodySettingsField(Name))
+    {
+        return;
+    }
+
+    m_settingsDirty = true;
+    if (m_bodyHandle.IsValid())
+    {
+        (void)RecreateBody();
+    }
+    else
+    {
+        (void)CreateBody();
+    }
+}
+#endif
 
 bool RigidBodyComponent::CreateBody()
 {

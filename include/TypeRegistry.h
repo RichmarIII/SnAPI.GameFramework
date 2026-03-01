@@ -161,6 +161,10 @@ struct EnumValueInfo
  */
 struct TypeInfo
 {
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    using EditorPropertyChangedInvoker = void(*)(void* Instance, std::string_view Name);
+#endif
+
     TypeId Id; /**< @brief Type id (UUID). */
     std::string Name; /**< @brief Fully qualified type name. */
     size_t Size = 0; /**< @brief sizeof(T). */
@@ -172,6 +176,9 @@ struct TypeInfo
     bool IsEnum = false; /**< @brief True when this type represents an enum. */
     bool EnumIsSigned = false; /**< @brief True when enum underlying type is signed. */
     std::vector<EnumValueInfo> EnumValues; /**< @brief Enum entries for tooling/editor usage. */
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    EditorPropertyChangedInvoker EditorPropertyChanged = nullptr; /**< @brief Optional editor-only property changed callback. */
+#endif
 };
 
 /**

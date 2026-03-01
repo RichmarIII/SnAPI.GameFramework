@@ -33,6 +33,7 @@ concept NodeContractConcept =
              Uuid IdValue,
              TypeId TypeValue,
              bool BoolValue,
+             float DeltaSeconds,
              uint32_t MaskVersionValue,
              IWorld* WorldValue,
              std::string_view MethodName,
@@ -68,6 +69,16 @@ concept NodeContractConcept =
 
     { Node.OnPossess(HandleValue) } -> std::same_as<void>;
     { Node.OnUnpossess(HandleValue) } -> std::same_as<void>;
+    { Node.OnCreate() } -> std::same_as<void>;
+    { Node.OnDestroy() } -> std::same_as<void>;
+    { Node.PreTick(DeltaSeconds) } -> std::same_as<void>;
+    { Node.Tick(DeltaSeconds) } -> std::same_as<void>;
+    { Node.FixedTick(DeltaSeconds) } -> std::same_as<void>;
+    { Node.LateTick(DeltaSeconds) } -> std::same_as<void>;
+    { Node.PostTick(DeltaSeconds) } -> std::same_as<void>;
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    { Node.EditorTick(DeltaSeconds) } -> std::same_as<void>;
+#endif
 
     { Node.CallRPC(MethodName, SpanArgs) } -> std::same_as<bool>;
     { Node.CallRPC(MethodName, InitArgs) } -> std::same_as<bool>;
@@ -97,6 +108,7 @@ concept ComponentContractConcept =
              Uuid IdValue,
              TypeId TypeValue,
              bool BoolValue,
+             float DeltaSeconds,
              std::string_view MethodName,
              std::span<const Variant> SpanArgs,
              std::initializer_list<Variant> InitArgs)
@@ -123,6 +135,17 @@ concept ComponentContractConcept =
 
     { Component.CallRPC(MethodName, SpanArgs) } -> std::same_as<bool>;
     { Component.CallRPC(MethodName, InitArgs) } -> std::same_as<bool>;
+
+    { Component.OnCreate() } -> std::same_as<void>;
+    { Component.OnDestroy() } -> std::same_as<void>;
+    { Component.PreTick(DeltaSeconds) } -> std::same_as<void>;
+    { Component.Tick(DeltaSeconds) } -> std::same_as<void>;
+    { Component.FixedTick(DeltaSeconds) } -> std::same_as<void>;
+    { Component.LateTick(DeltaSeconds) } -> std::same_as<void>;
+    { Component.PostTick(DeltaSeconds) } -> std::same_as<void>;
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    { Component.EditorTick(DeltaSeconds) } -> std::same_as<void>;
+#endif
 };
 
 template<typename TObject>
@@ -155,12 +178,24 @@ concept HasPostTickPhase =
         { Object.PostTick(DeltaSeconds) } -> std::same_as<void>;
     };
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+template<typename TObject>
+concept HasEditorTickPhase =
+    requires(TObject& Object, float DeltaSeconds) {
+        { Object.EditorTick(DeltaSeconds) } -> std::same_as<void>;
+    };
+#endif
+
 template<typename TObject>
 concept OptionalTickContractConcept =
     HasPreTickPhase<TObject> ||
     HasTickPhase<TObject> ||
     HasFixedTickPhase<TObject> ||
     HasLateTickPhase<TObject> ||
-    HasPostTickPhase<TObject>;
+    HasPostTickPhase<TObject>
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    || HasEditorTickPhase<TObject>
+#endif
+    ;
 
 } // namespace SnAPI::GameFramework

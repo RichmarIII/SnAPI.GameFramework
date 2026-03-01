@@ -122,6 +122,7 @@ public:
     Result Initialize(EditorServiceContext& Context) override;
     void Tick(EditorServiceContext& Context, float DeltaSeconds) override;
     void Shutdown(EditorServiceContext& Context) override;
+    Result EnsureEditorCamera(EditorServiceContext& Context);
 
     [[nodiscard]] CameraComponent* ActiveCameraComponent() const;
     [[nodiscard]] SnAPI::Graphics::ICamera* ActiveRenderCamera() const;
@@ -230,6 +231,8 @@ private:
     EditorLayout::HierarchyActionRequest m_pendingHierarchyActionRequest{};
     bool m_hasPendingToolbarAction = false;
     EditorLayout::EToolbarAction m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
+    bool m_hasPendingProjectActionRequest = false;
+    EditorLayout::ProjectActionRequest m_pendingProjectActionRequest{};
     bool m_hasPendingAssetSelection = false;
     bool m_pendingAssetSelectionDoubleClick = false;
     std::string m_pendingAssetSelectionKey{};

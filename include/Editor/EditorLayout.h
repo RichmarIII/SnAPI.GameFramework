@@ -27,6 +27,7 @@ class UIModal;
 class UITabs;
 class UIText;
 class UITextInput;
+class UIFilesystemPicker;
 class UIImage;
 class UIBadge;
 class UIBreadcrumbs;
@@ -35,6 +36,7 @@ class UISwitch;
 class UITreeView;
 class ITreeItemSource;
 class UIContextMenu;
+class UIButton;
 template<typename TElement>
 class TElementBuilder;
 } // namespace SnAPI::UI
@@ -137,6 +139,20 @@ public:
         JoinLocalPlayer2,
     };
 
+    enum class EProjectAction : std::uint8_t
+    {
+        CreateNew,
+        OpenExisting,
+    };
+
+    struct ProjectActionRequest
+    {
+        EProjectAction Action = EProjectAction::CreateNew;
+        std::string ProjectName{};
+        std::string ProjectDirectory{};
+        std::string ProjectFilePath{};
+    };
+
     Result Build(GameRuntime& Runtime,
                  SnAPI::UI::Theme& Theme,
                  CameraComponent* ActiveCamera,
@@ -150,6 +166,8 @@ public:
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
+    void SetProjectActionHandler(SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> Handler);
+    void SetProjectSelectionRequired(bool Required);
     void SetContentAssets(std::vector<ContentAssetEntry> Assets);
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
     void SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
@@ -204,6 +222,8 @@ private:
     void DestroyContentAssetCreateModalOverlay();
     void EnsureContentAssetInspectorModalOverlay();
     void DestroyContentAssetInspectorModalOverlay();
+    void EnsureProjectModalOverlay();
+    void DestroyProjectModalOverlay();
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
@@ -231,6 +251,7 @@ private:
     void OpenHierarchyContextMenu(std::size_t ItemIndex, const SnAPI::UI::PointerEvent& Event);
     void OpenHierarchyAddTypeMenu(bool AddComponents);
     void OpenContentAssetContextMenu(std::size_t AssetIndex, const SnAPI::UI::PointerEvent& Event);
+    void OpenFileMenu();
     void OpenInspectorComponentContextMenu(const NodeHandle& OwnerNode,
                                            const TypeId& ComponentType,
                                            const SnAPI::UI::PointerEvent& Event);
@@ -247,6 +268,12 @@ private:
     void RefreshContentAssetCreateModalVisibility();
     void RebuildContentAssetCreateTypeTree();
     void RefreshContentAssetCreateOkButtonState();
+    void OpenProjectCreateModal();
+    void OpenProjectOpenModal();
+    void CloseProjectModal(bool ForceClose = false);
+    void ConfirmProjectModal();
+    void RefreshProjectModalVisibility();
+    void RefreshProjectModalOkButtonState();
     void CloseContentAssetInspectorModal(bool NotifyHandler);
     void RefreshContentAssetInspectorModalVisibility();
     void RefreshContentAssetInspectorModalState();
@@ -277,6 +304,7 @@ private:
 
     SnAPI::UI::UIContext* m_context = nullptr;
     GameRuntime* m_runtime = nullptr;
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_shellRoot{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITabs> m_gameViewTabs{};
     SnAPI::UI::ElementHandle<UIRenderViewport> m_gameViewport{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_inspectorPropertyPanel{};
@@ -307,6 +335,12 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_contentInspectorHierarchyTree{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_contentInspectorPropertyPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentInspectorSaveButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_menuFileButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectDirectoryInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectFilePathInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectModalOkButton{};
 
     struct ContentAssetCardWidgets
     {
@@ -343,6 +377,12 @@ private:
     std::vector<TypeId> m_contentCreateVisibleTypes{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentCreateTypeSource{};
     ContentAssetInspectorState m_contentAssetInspectorState{};
+    bool m_projectModalOpen = false;
+    bool m_projectModalRequired = false;
+    EProjectAction m_projectModalAction = EProjectAction::CreateNew;
+    std::string m_projectNameText{};
+    std::string m_projectDirectoryText{};
+    std::string m_projectFilePathText{};
     std::vector<NodeHandle> m_contentInspectorVisibleNodes{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentInspectorHierarchySource{};
     bool m_contentInspectorTargetBound = false;
@@ -363,6 +403,7 @@ private:
     enum class EContextMenuScope : std::uint8_t
     {
         None,
+        MenuBar,
         HierarchyItem,
         InspectorComponent,
         ContentAssetItem,
@@ -398,6 +439,7 @@ private:
     SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onHierarchyNodeChosen{};
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onHierarchyActionRequested{};
     SnAPI::UI::TDelegate<void(EToolbarAction)> m_onToolbarActionRequested{};
+    SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> m_onProjectActionRequested{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
     std::size_t m_boundInspectorComponentSignature = 0;

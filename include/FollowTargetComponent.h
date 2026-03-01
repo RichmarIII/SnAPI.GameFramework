@@ -2,6 +2,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include <string_view>
 
 namespace SnAPI::GameFramework
 {
@@ -57,13 +58,9 @@ public:
 
     /** @brief Variable-step follow update. */
     void Tick(float DeltaSeconds);
-
-    /**
-     * @brief Non-virtual follow update entry used by ECS runtime bridge.
-     * @param DeltaSeconds Variable-step delta used for smoothing filters.
-     */
-    void RuntimeTick(float DeltaSeconds);
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
 private:
     /**

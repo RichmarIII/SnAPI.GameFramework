@@ -60,6 +60,26 @@ SnAPI::ColorF ToRendererColor(const Vec3& Value)
         ClampNonNegative(static_cast<float>(Safe.z())),
         1.0f);
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsDirectionalLightSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "Enabled"
+        || Name == "Direction"
+        || Name == "Color"
+        || Name == "Intensity"
+        || Name == "CastShadows"
+        || Name == "CascadeCount"
+        || Name == "ShadowMapSize"
+        || Name == "ShadowBias"
+        || Name == "ShadowFarDistance"
+        || Name == "SoftnessFactor"
+        || Name == "SoftShadows"
+        || Name == "ContactHardening"
+        || Name == "CascadeBlending";
+}
+#endif
 } // namespace
 
 SnAPI::Graphics::DirectionalLight* DirectionalLightComponent::Light()
@@ -85,13 +105,25 @@ void DirectionalLightComponent::OnDestroy()
 
 void DirectionalLightComponent::Tick(float DeltaSeconds)
 {
-    RuntimeTick(DeltaSeconds);
+    UpdateLight(DeltaSeconds);
 }
 
-void DirectionalLightComponent::RuntimeTick(const float DeltaSeconds)
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void DirectionalLightComponent::EditorTick(const float DeltaSeconds)
 {
     UpdateLight(DeltaSeconds);
 }
+
+void DirectionalLightComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsDirectionalLightSettingsField(Name))
+    {
+        return;
+    }
+
+    UpdateLight(0.0f);
+}
+#endif
 
 void DirectionalLightComponent::UpdateLight(const float DeltaSeconds)
 {

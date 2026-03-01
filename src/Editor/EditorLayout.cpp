@@ -7,6 +7,7 @@
 #include "BaseComponent.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PathResolver.h"
 #include "PawnBase.h"
 #include "PlayerStart.h"
 #include "RendererSystem.h"
@@ -24,6 +25,7 @@
 #include <UIDatePicker.h>
 #include <UIDockZone.h>
 #include <UIElementBase.h>
+#include <UIFilesystemPicker.h>
 #include <UIImage.h>
 #include <UIListView.h>
 #include <UIMenuBar.h>
@@ -51,6 +53,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -94,19 +97,19 @@ private:
     std::vector<SnAPI::UI::UITreeItem> m_items{};
 };
 
-constexpr std::string_view kBrandIconPath = "Editor/Assets/component.svg";
-constexpr std::string_view kHierarchyIconPath = "Editor/Assets/hierarchy-circle.svg";
-constexpr std::string_view kHierarchyWorldIconPath = "Editor/Assets/world.svg";
-constexpr std::string_view kHierarchyLevelIconPath = "Editor/Assets/level.svg";
-constexpr std::string_view kHierarchyNodeIconPath = "Editor/Assets/component.svg";
-constexpr std::string_view kSearchIconPath = "Editor/Assets/options-vertical.svg";
-constexpr std::string_view kGameViewIconPath = "Editor/Assets/box.svg";
-constexpr std::string_view kInspectorIconPath = "Editor/Assets/settings.svg";
-constexpr std::string_view kContentBrowserIconPath = "Editor/Assets/folder-open.svg";
-constexpr std::string_view kRescanIconPath = "Editor/Assets/folder.svg";
-constexpr std::string_view kFolderCardIconPath = "Editor/Assets/folder.svg";
-constexpr std::string_view kPlaceIconPath = "Editor/Assets/sphere.svg";
-constexpr std::string_view kSaveIconPath = "Editor/Assets/cylinder.svg";
+constexpr std::string_view kBrandIconPath = "editor://Assets/component.svg";
+constexpr std::string_view kHierarchyIconPath = "editor://Assets/hierarchy-circle.svg";
+constexpr std::string_view kHierarchyWorldIconPath = "editor://Assets/world.svg";
+constexpr std::string_view kHierarchyLevelIconPath = "editor://Assets/level.svg";
+constexpr std::string_view kHierarchyNodeIconPath = "editor://Assets/component.svg";
+constexpr std::string_view kSearchIconPath = "editor://Assets/options-vertical.svg";
+constexpr std::string_view kGameViewIconPath = "editor://Assets/box.svg";
+constexpr std::string_view kInspectorIconPath = "editor://Assets/settings.svg";
+constexpr std::string_view kContentBrowserIconPath = "editor://Assets/folder-open.svg";
+constexpr std::string_view kRescanIconPath = "editor://Assets/folder.svg";
+constexpr std::string_view kFolderCardIconPath = "editor://Assets/folder.svg";
+constexpr std::string_view kPlaceIconPath = "editor://Assets/sphere.svg";
+constexpr std::string_view kSaveIconPath = "editor://Assets/cylinder.svg";
 constexpr int kDefaultSvgRasterSize = 256;
 constexpr float kEditorIconScale = 2.0f;
 constexpr SnAPI::UI::Color kIconWhite = SnAPI::UI::Color::RGB(255, 255, 255);
@@ -122,13 +125,28 @@ struct ToolbarActionSpec
 constexpr std::array<std::string_view, 6> kMenuItems{
     "File", "Edit", "Assets", "Tools", "Window", "Help"};
 constexpr std::array<ToolbarActionSpec, 4> kToolbarActions{{
-    {EditorLayout::EToolbarAction::Play, "Editor/Assets/play.svg", kIconPlayGreen},
-    {EditorLayout::EToolbarAction::Pause, "Editor/Assets/pause.svg", kIconWhite},
-    {EditorLayout::EToolbarAction::Stop, "Editor/Assets/stop.svg", kIconWhite},
-    {EditorLayout::EToolbarAction::JoinLocalPlayer2, "Editor/Assets/world.svg", SnAPI::UI::Color::RGB(112, 169, 255)},
+    {EditorLayout::EToolbarAction::Play, "editor://Assets/play.svg", kIconPlayGreen},
+    {EditorLayout::EToolbarAction::Pause, "editor://Assets/pause.svg", kIconWhite},
+    {EditorLayout::EToolbarAction::Stop, "editor://Assets/stop.svg", kIconWhite},
+    {EditorLayout::EToolbarAction::JoinLocalPlayer2, "editor://Assets/world.svg", SnAPI::UI::Color::RGB(112, 169, 255)},
 }};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
+
+[[nodiscard]] std::string ResolveUIImageSource(std::string_view Source)
+{
+    if (Source.empty())
+    {
+        return {};
+    }
+
+    if (auto Resolved = SPathResolver::Instance().Resolve(Source); Resolved)
+    {
+        return Resolved->generic_string();
+    }
+
+    return std::string(Source);
+}
 
 constexpr float kMainAreaSplitRatio = 0.68f;
 constexpr float kWorkspaceLeftSplitRatio = 0.23f;
@@ -198,14 +216,17 @@ constexpr std::string_view kContextMenuItemContentInspectorDeleteNodeId = "asset
 constexpr std::string_view kContextMenuItemContentInspectorDeleteComponentId = "asset_inspector.delete_component";
 constexpr std::string_view kContextMenuItemContentInspectorAddNodeTypePrefix = "asset_inspector.add_node.type.";
 constexpr std::string_view kContextMenuItemContentInspectorAddComponentTypePrefix = "asset_inspector.add_component.type.";
+constexpr std::string_view kContextMenuItemFileNewProjectId = "menu.file.new_project";
+constexpr std::string_view kContextMenuItemFileOpenProjectId = "menu.file.open_project";
 
 void ApplyHierarchyRowIcon(SnAPI::UI::UIImage& Icon,
                            const std::string& Source,
                            const SnAPI::UI::Color Tint)
 {
-    if (Icon.Source().Get() != Source)
+    const std::string ResolvedSource = ResolveUIImageSource(Source);
+    if (Icon.Source().Get() != ResolvedSource)
     {
-        Icon.Source().Set(Source);
+        Icon.Source().Set(ResolvedSource);
     }
 
     SnAPI::UI::SVGImageOptions SvgOptions{};
@@ -257,6 +278,19 @@ void ApplyHierarchyRowIcon(SnAPI::UI::UIImage& Icon,
     }
 
     return Index;
+}
+
+[[nodiscard]] std::string TrimCopy(std::string Value)
+{
+    while (!Value.empty() && std::isspace(static_cast<unsigned char>(Value.front())) != 0)
+    {
+        Value.erase(Value.begin());
+    }
+    while (!Value.empty() && std::isspace(static_cast<unsigned char>(Value.back())) != 0)
+    {
+        Value.pop_back();
+    }
+    return Value;
 }
 
 void ConfigureSplitZone(SnAPI::UI::UIDockZone& Zone,
@@ -317,9 +351,10 @@ void ConfigureFolderCardIcon(SnAPI::UI::UIImage& Image)
         .ReplaceColor(SnAPI::UI::Color::RGB(0, 0, 0), kIconWhite, 40)
         .TreatBlackAsTransparent(6);
 
-    if (Image.Source().Get() != kFolderCardIconPath)
+    const std::string FolderCardSource = ResolveUIImageSource(kFolderCardIconPath);
+    if (Image.Source().Get() != FolderCardSource)
     {
-        Image.Source().Set(std::string(kFolderCardIconPath));
+        Image.Source().Set(FolderCardSource);
     }
     if (!(Image.SvgOptions().Get() == SvgOptions))
     {
@@ -737,9 +772,15 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     (void)Runtime;
     CloseContextMenu();
     DestroyContentAssetCreateModalOverlay();
+    DestroyProjectModalOverlay();
     DestroyContentAssetInspectorModalOverlay();
+    if (m_context && m_shellRoot.Id.Value != 0)
+    {
+        m_context->DestroyElement(m_shellRoot.Id);
+    }
     m_context = nullptr;
     m_runtime = nullptr;
+    m_shellRoot = {};
     m_gameViewTabs = {};
     m_gameViewport = {};
     m_inspectorPropertyPanel = {};
@@ -787,6 +828,12 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentCreateSelectedType = {};
     m_contentCreateVisibleTypes.clear();
     m_contentCreateTypeSource.reset();
+    m_projectModalOpen = false;
+    m_projectModalRequired = false;
+    m_projectModalAction = EProjectAction::CreateNew;
+    m_projectNameText.clear();
+    m_projectDirectoryText.clear();
+    m_projectFilePathText.clear();
     m_contentAssetInspectorState = {};
     m_contentInspectorVisibleNodes.clear();
     m_contentInspectorHierarchySource.reset();
@@ -827,10 +874,17 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onHierarchyNodeChosen.Reset();
     m_onHierarchyActionRequested = {};
     m_onToolbarActionRequested = {};
+    m_onProjectActionRequested = {};
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
     m_boundInspectorComponentSignature = 0;
     m_invalidationDebugOverlayEnabled = false;
+    m_menuFileButton = {};
+    m_projectModalOverlay = {};
+    m_projectNameInput = {};
+    m_projectDirectoryInput = {};
+    m_projectFilePathInput = {};
+    m_projectModalOkButton = {};
     m_viewModel = SnAPI::UI::PropertyMap{};
     m_built = false;
 }
@@ -921,10 +975,24 @@ void EditorLayout::BuildShell(SnAPI::UI::UIContext& Context,
     ConfigureRoot(Context);
     m_selection = SelectionModel;
 
-    BuildMenuBar(Root);
-    BuildToolbar(Root);
+    auto ShellRoot = Root.Add(SnAPI::UI::UIPanel("Editor.ShellRoot"));
+    auto& ShellRootPanel = ShellRoot.Element();
+    ShellRootPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ShellRootPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ShellRootPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ShellRootPanel.Padding().Set(0.0f);
+    ShellRootPanel.Gap().Set(0.0f);
+    ShellRootPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ShellRootPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ShellRootPanel.BorderThickness().Set(0.0f);
+    ShellRootPanel.CornerRadius().Set(0.0f);
+    ShellRootPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    m_shellRoot = ShellRoot.Handle();
 
-    auto MainAreaSplit = Root.Add(SnAPI::UI::UIDockZone{});
+    BuildMenuBar(ShellRoot);
+    BuildToolbar(ShellRoot);
+
+    auto MainAreaSplit = ShellRoot.Add(SnAPI::UI::UIDockZone{});
     auto& MainAreaSplitElement = MainAreaSplit.Element();
     ConfigureSplitZone(MainAreaSplitElement, SnAPI::UI::EDockSplit::Vertical, kMainAreaSplitRatio, 220.0f, 140.0f);
 
@@ -1067,7 +1135,7 @@ void EditorLayout::BuildMenuBar(PanelBuilder& Root)
     MenuBarElement.Height().Set(SnAPI::UI::Sizing::Auto());
     MenuBarElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto BrandIcon = MenuBar.Add(SnAPI::UI::UIImage(kBrandIconPath));
+    auto BrandIcon = MenuBar.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kBrandIconPath)));
     auto& BrandIconImage = BrandIcon.Element();
     ConfigureSvgIcon(BrandIconImage, 16.0f, kIconWhite, SnAPI::UI::Margin{0.0f, 0.0f, 6.0f, 0.0f});
 
@@ -1081,6 +1149,28 @@ void EditorLayout::BuildMenuBar(PanelBuilder& Root)
 
     for (std::size_t Index = 0; Index < kMenuItems.size(); ++Index)
     {
+        if (kMenuItems[Index] == std::string_view("File"))
+        {
+            auto MenuButton = MenuBar.Add(SnAPI::UI::UIButton{});
+            auto& MenuButtonElement = MenuButton.Element();
+            MenuButtonElement.ElementStyle().Apply("editor.menu_button");
+            MenuButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+            MenuButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+            MenuButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+            MenuButtonElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 10.0f, 0.0f});
+            MenuButtonElement.OnClick([this]() {
+                OpenFileMenu();
+            });
+
+            auto Label = MenuButton.Add(SnAPI::UI::UIText(std::string(kMenuItems[Index])));
+            auto& LabelText = Label.Element();
+            LabelText.ElementStyle().Apply("editor.menu_button_text");
+            LabelText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+
+            m_menuFileButton = MenuButton.Handle();
+            continue;
+        }
+
         auto Item = MenuBar.Add(SnAPI::UI::UIText(kMenuItems[Index]));
         auto& ItemText = Item.Element();
         ItemText.ElementStyle().Apply("editor.menu_item");
@@ -1152,7 +1242,7 @@ void EditorLayout::BuildToolbar(PanelBuilder& Root)
         ButtonElement.ElementPadding().Set(SnAPI::UI::Padding{12.0f, 12.0f, 12.0f, 12.0f});
         ButtonElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 6.0f, 0.0f});
 
-        auto Icon = Button.Add(SnAPI::UI::UIImage(kToolbarActions[Index].IconPath));
+        auto Icon = Button.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kToolbarActions[Index].IconPath)));
         auto& IconImage = Icon.Element();
         ConfigureSvgIcon(IconImage, kToolbarActionIconDisplaySize, kToolbarActions[Index].Tint);
         ButtonElement.OnClick([this, Index]() {
@@ -1246,7 +1336,7 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     HeaderPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     HeaderPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto BrowserIcon = HeaderRow.Add(SnAPI::UI::UIImage(kContentBrowserIconPath));
+    auto BrowserIcon = HeaderRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kContentBrowserIconPath)));
     auto& BrowserIconImage = BrowserIcon.Element();
     ConfigureSvgIcon(
         BrowserIconImage,
@@ -1322,7 +1412,7 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     RefreshContentPanel.CornerRadius().Set(0.0f);
     RefreshContentPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto RefreshIcon = RefreshContent.Add(SnAPI::UI::UIImage(kRescanIconPath));
+    auto RefreshIcon = RefreshContent.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kRescanIconPath)));
     auto& RefreshIconImage = RefreshIcon.Element();
     ConfigureSvgIcon(RefreshIconImage, 12.0f, kIconWhite);
 
@@ -1523,7 +1613,6 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
     auto Root = m_context->Root();
     auto Overlay = Root.Add(SnAPI::UI::UIModal{});
     auto& OverlayPanel = Overlay.Element();
-    OverlayPanel.IsOpen().Set(m_contentCreateModalOpen);
     OverlayPanel.CloseOnBackdropClick().Set(false);
     OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
     OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
@@ -1692,7 +1781,6 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     auto Root = m_context->Root();
     auto Overlay = Root.Add(SnAPI::UI::UIModal{});
     auto& OverlayPanel = Overlay.Element();
-    OverlayPanel.IsOpen().Set(m_contentAssetInspectorState.Open);
     OverlayPanel.CloseOnBackdropClick().Set(false);
     OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
     OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
@@ -1952,7 +2040,7 @@ void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
     PlaceContentPanel.CornerRadius().Set(0.0f);
     PlaceContentPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto PlaceIcon = PlaceContent.Add(SnAPI::UI::UIImage(kPlaceIconPath));
+    auto PlaceIcon = PlaceContent.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kPlaceIconPath)));
     auto& PlaceIconImage = PlaceIcon.Element();
     ConfigureSvgIcon(PlaceIconImage, 12.0f, kIconWhite);
 
@@ -1986,7 +2074,7 @@ void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
     SaveContentPanel.CornerRadius().Set(0.0f);
     SaveContentPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto SaveIcon = SaveContent.Add(SnAPI::UI::UIImage(kSaveIconPath));
+    auto SaveIcon = SaveContent.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kSaveIconPath)));
     auto& SaveIconImage = SaveIcon.Element();
     ConfigureSvgIcon(SaveIconImage, 12.0f, kIconWhite);
 
@@ -2022,7 +2110,7 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
     TitleRowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
     TitleRowPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto TitleIcon = TitleRow.Add(SnAPI::UI::UIImage(kHierarchyIconPath));
+    auto TitleIcon = TitleRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kHierarchyIconPath)));
     auto& TitleIconImage = TitleIcon.Element();
     ConfigureSvgIcon(TitleIconImage, 14.0f, kIconWhite);
 
@@ -2050,7 +2138,7 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
     SearchRowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
     SearchRowPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto SearchIcon = SearchRow.Add(SnAPI::UI::UIImage(kSearchIconPath));
+    auto SearchIcon = SearchRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kSearchIconPath)));
     auto& SearchIconImage = SearchIcon.Element();
     ConfigureSvgIcon(
         SearchIconImage,
@@ -2495,14 +2583,14 @@ void EditorLayout::RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entri
         switch (Entry.Kind)
         {
         case EHierarchyEntryKind::World:
-            IconSource = std::string(kHierarchyWorldIconPath);
+            IconSource = ResolveUIImageSource(kHierarchyWorldIconPath);
             break;
         case EHierarchyEntryKind::Level:
-            IconSource = std::string(kHierarchyLevelIconPath);
+            IconSource = ResolveUIImageSource(kHierarchyLevelIconPath);
             break;
         case EHierarchyEntryKind::Node:
         default:
-            IconSource = std::string(kHierarchyNodeIconPath);
+            IconSource = ResolveUIImageSource(kHierarchyNodeIconPath);
             break;
         }
 
@@ -2596,6 +2684,51 @@ void EditorLayout::SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const Hie
 void EditorLayout::SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler)
 {
     m_onToolbarActionRequested = std::move(Handler);
+}
+
+void EditorLayout::SetProjectActionHandler(SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> Handler)
+{
+    m_onProjectActionRequested = std::move(Handler);
+}
+
+void EditorLayout::SetProjectSelectionRequired(const bool Required)
+{
+    const bool Changed = (m_projectModalRequired != Required);
+    m_projectModalRequired = Required;
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_projectModalRequired)
+    {
+        if (!m_projectModalOpen)
+        {
+            OpenProjectCreateModal();
+            return;
+        }
+
+        if (Changed)
+        {
+            DestroyProjectModalOverlay();
+            RefreshProjectModalVisibility();
+            RefreshProjectModalOkButtonState();
+            m_context->MarkLayoutDirty();
+        }
+        return;
+    }
+
+    if (Changed)
+    {
+        if (m_projectModalOpen)
+        {
+            CloseProjectModal();
+            return;
+        }
+
+        RefreshProjectModalOkButtonState();
+        m_context->MarkLayoutDirty();
+    }
 }
 
 void EditorLayout::SetContentAssets(std::vector<ContentAssetEntry> Assets)
@@ -2978,6 +3111,8 @@ void EditorLayout::OpenHierarchyAddTypeMenu(const bool AddComponents)
     std::vector<const TypeInfo*> CandidateTypes{};
     if (AddComponents)
     {
+        (void)TypeAutoRegistry::Instance().EnsureAll();
+
         const auto RegisteredComponentTypes = ComponentSerializationRegistry::Instance().Types();
         CandidateTypes.reserve(RegisteredComponentTypes.size());
         for (const TypeId& ComponentType : RegisteredComponentTypes)
@@ -3199,6 +3334,57 @@ void EditorLayout::OpenContentAssetContextMenu(const std::size_t CardIndex, cons
     });
 
     OpenContextMenu(Event.Position, std::move(Items));
+}
+
+void EditorLayout::OpenFileMenu()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_contextMenuScope = EContextMenuScope::MenuBar;
+    m_contextMenuHierarchyIndex.reset();
+    m_contextMenuAssetIndex.reset();
+    m_contextMenuContentInspectorNode = {};
+    m_contextMenuComponentOwner.reset();
+    m_contextMenuComponentType = {};
+    m_pendingHierarchyMenu = EPendingHierarchyMenu::None;
+    m_pendingHierarchyMenuIndex.reset();
+    m_pendingHierarchyMenuOpenPosition = {};
+
+    SnAPI::UI::UIPoint OpenPosition{12.0f, 28.0f};
+    if (m_menuFileButton.Id.Value != 0)
+    {
+        if (auto* MenuButton = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_menuFileButton.Id)))
+        {
+            const SnAPI::UI::UIRect Rect = MenuButton->LayoutRect();
+            OpenPosition.X = Rect.X;
+            OpenPosition.Y = Rect.Y + Rect.H + 2.0f;
+        }
+    }
+    m_contextMenuOpenPosition = OpenPosition;
+
+    std::vector<SnAPI::UI::UIContextMenuItem> Items{};
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemFileNewProjectId),
+        .Label = "New Project...",
+        .Shortcut = std::nullopt,
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemFileOpenProjectId),
+        .Label = "Open Project...",
+        .Shortcut = std::nullopt,
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+
+    OpenContextMenu(OpenPosition, std::move(Items));
 }
 
 void EditorLayout::OpenInspectorComponentContextMenu(const NodeHandle& OwnerNode,
@@ -3485,14 +3671,6 @@ void EditorLayout::CloseContextMenu()
     const SnAPI::UI::ElementId MenuId = m_contextMenu.Id;
     if (m_context && MenuId.Value != 0)
     {
-        if (auto* Menu = dynamic_cast<SnAPI::UI::UIContextMenu*>(&m_context->GetElement(MenuId)))
-        {
-            if (Menu->IsOpen().Get())
-            {
-                Menu->Close(false);
-            }
-        }
-
         if (m_context->GetCapture() == MenuId)
         {
             m_context->ReleaseCapture();
@@ -3520,6 +3698,19 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
         if (m_onContentAssetRefreshRequested)
         {
             m_onContentAssetRefreshRequested();
+        }
+        return;
+    }
+
+    if (m_contextMenuScope == EContextMenuScope::MenuBar)
+    {
+        if (Item.Id == kContextMenuItemFileNewProjectId)
+        {
+            OpenProjectCreateModal();
+        }
+        else if (Item.Id == kContextMenuItemFileOpenProjectId)
+        {
+            OpenProjectOpenModal();
         }
         return;
     }
@@ -4201,6 +4392,223 @@ void EditorLayout::DestroyContentAssetCreateModalOverlay()
     m_contentCreateSelectedType = {};
 }
 
+void EditorLayout::EnsureProjectModalOverlay()
+{
+    if (!m_context || m_projectModalOverlay.Id.Value != 0)
+    {
+        return;
+    }
+
+    auto Root = m_context->Root();
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.CloseOnBackdropClick().Set(false);
+    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    OverlayPanel.Movable().Set(!m_projectModalRequired);
+    OverlayPanel.Resizable().Set(false);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(8.0f);
+    OverlayPanel.ContentPadding().Set(10.0f);
+    OverlayPanel.DialogMaxWidthRatio().Set(0.70f);
+    OverlayPanel.DialogMaxHeightRatio().Set(0.70f);
+    m_projectModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ProjectModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(0.0f);
+    ModalPanel.Gap().Set(10.0f);
+    ModalPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderThickness().Set(0.0f);
+    ModalPanel.CornerRadius().Set(0.0f);
+
+    const bool IsCreate = m_projectModalAction == EProjectAction::CreateNew;
+
+    auto Title = Modal.Add(SnAPI::UI::UIText(IsCreate ? "Create Project" : "Open Project"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.panel_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+
+    const std::string SubtitleTextValue = m_projectModalRequired
+                                              ? std::string("Create or open a project before continuing.")
+                                              : std::string(IsCreate
+                                                                ? "Create a project file, configure its asset root, and initialize starter content."
+                                                                : "Load a project JSON file and switch the editor asset root to that project.");
+    auto Subtitle = Modal.Add(SnAPI::UI::UIText(SubtitleTextValue));
+    auto& SubtitleText = Subtitle.Element();
+    SubtitleText.ElementStyle().Apply("editor.panel_subtitle");
+    SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto ToggleModeButton = Modal.Add(SnAPI::UI::UIButton{});
+    auto& ToggleModeButtonElement = ToggleModeButton.Element();
+    ToggleModeButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    ToggleModeButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    ToggleModeButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    ToggleModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    ToggleModeButtonElement.OnClick([this, IsCreate]() {
+        if (IsCreate)
+        {
+            OpenProjectOpenModal();
+            return;
+        }
+        OpenProjectCreateModal();
+    });
+    auto ToggleModeLabel = ToggleModeButton.Add(SnAPI::UI::UIText(IsCreate ? "Open Existing..." : "Create New..."));
+    ToggleModeLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+
+    if (IsCreate)
+    {
+        auto NameLabel = Modal.Add(SnAPI::UI::UIText("Project Name"));
+        NameLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+        auto NameInput = Modal.Add(SnAPI::UI::UITextInput{});
+        auto& NameInputElement = NameInput.Element();
+        NameInputElement.ElementStyle().Apply("editor.text_input");
+        NameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        NameInputElement.Resizable().Set(false);
+        NameInputElement.Multiline().Set(false);
+        NameInputElement.AcceptTab().Set(false);
+        NameInputElement.Placeholder().Set("NewProject");
+        NameInputElement.Text().Set(m_projectNameText);
+        NameInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectNameText = Value;
+            RefreshProjectModalOkButtonState();
+        }));
+        m_projectNameInput = NameInput.Handle();
+
+        auto DirectoryLabel = Modal.Add(SnAPI::UI::UIText("Project Directory"));
+        DirectoryLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+        auto DirectoryInput = Modal.Add(SnAPI::UI::UIFilesystemPicker{});
+        auto& DirectoryInputElement = DirectoryInput.Element();
+        DirectoryInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        DirectoryInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        DirectoryInputElement.ReadOnly().Set(false);
+        DirectoryInputElement.AllowMultiSelect().Set(false);
+        DirectoryInputElement.PickDirectories().Set(true);
+        DirectoryInputElement.ShowDirectories().Set(true);
+        DirectoryInputElement.ShowFiles().Set(false);
+        DirectoryInputElement.RestrictToRoot().Set(false);
+        DirectoryInputElement.Placeholder().Set(std::string("Path to parent folder"));
+        DirectoryInputElement.Value().Set(m_projectDirectoryText);
+        DirectoryInputElement.CurrentPath().Set(m_projectDirectoryText);
+        DirectoryInputElement.OnSelectionChanged(
+            SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind(
+                [this](const std::vector<std::string>& Values) {
+                    if (!Values.empty())
+                    {
+                        m_projectDirectoryText = Values.front();
+                        RefreshProjectModalOkButtonState();
+                    }
+                }));
+        m_projectDirectoryInput = DirectoryInput.Handle();
+    }
+    else
+    {
+        auto FileLabel = Modal.Add(SnAPI::UI::UIText("Project File (.json)"));
+        FileLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+        auto FileInput = Modal.Add(SnAPI::UI::UIFilesystemPicker{});
+        auto& FileInputElement = FileInput.Element();
+        FileInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        FileInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
+        FileInputElement.ReadOnly().Set(false);
+        FileInputElement.AllowMultiSelect().Set(false);
+        FileInputElement.PickDirectories().Set(false);
+        FileInputElement.ShowDirectories().Set(true);
+        FileInputElement.ShowFiles().Set(true);
+        FileInputElement.RestrictToRoot().Set(false);
+        FileInputElement.Placeholder().Set(std::string("Path to project.json"));
+        FileInputElement.Value().Set(m_projectFilePathText);
+        FileInputElement.CurrentPath().Set(std::filesystem::path(m_projectFilePathText).parent_path().string());
+        FileInputElement.SetAllowedExtensions({".json"});
+        FileInputElement.OnSelectionChanged(
+            SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind(
+                [this](const std::vector<std::string>& Values) {
+                    if (!Values.empty())
+                    {
+                        m_projectFilePathText = Values.front();
+                        RefreshProjectModalOkButtonState();
+                    }
+                }));
+        m_projectFilePathInput = FileInput.Handle();
+    }
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ButtonsRowPanel.Gap().Set(8.0f);
+    ButtonsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderThickness().Set(0.0f);
+    ButtonsRowPanel.CornerRadius().Set(0.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.ButtonSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    SpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpacerPanel.Background().Set(SnAPI::UI::Color::Transparent());
+
+    auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& CancelButtonElement = CancelButton.Element();
+    CancelButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    CancelButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    CancelButtonElement.SetDisabled(m_projectModalRequired);
+    CancelButtonElement.OnClick([this]() {
+        CloseProjectModal();
+    });
+    auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
+    CancelLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+
+    auto OkButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& OkButtonElement = OkButton.Element();
+    OkButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    OkButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    OkButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    OkButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    OkButtonElement.OnClick([this]() {
+        ConfirmProjectModal();
+    });
+    auto OkLabel = OkButton.Add(SnAPI::UI::UIText(IsCreate ? "Create" : "Open"));
+    OkLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    m_projectModalOkButton = OkButton.Handle();
+
+    RefreshProjectModalOkButtonState();
+}
+
+void EditorLayout::DestroyProjectModalOverlay()
+{
+    if (m_context && m_projectModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_projectModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_projectModalOverlay = {};
+    m_projectNameInput = {};
+    m_projectDirectoryInput = {};
+    m_projectFilePathInput = {};
+    m_projectModalOkButton = {};
+}
+
 void EditorLayout::OpenContentAssetCreateModal()
 {
     if (!m_context)
@@ -4278,13 +4686,6 @@ void EditorLayout::RefreshContentAssetCreateModalVisibility()
     if (m_contentCreateModalOpen)
     {
         EnsureContentAssetCreateModalOverlay();
-        if (m_contentCreateModalOverlay.Id.Value != 0)
-        {
-            if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentCreateModalOverlay.Id)))
-            {
-                Overlay->IsOpen().Set(true);
-            }
-        }
         return;
     }
 
@@ -4332,7 +4733,7 @@ void EditorLayout::RebuildContentAssetCreateTypeTree()
 
         TreeItems.push_back(SnAPI::UI::UITreeItem{
             .Label = std::move(Label),
-            .IconSource = std::string(kHierarchyNodeIconPath),
+            .IconSource = ResolveUIImageSource(kHierarchyNodeIconPath),
             .IconTint = kIconWhite,
             .Depth = static_cast<uint32_t>(std::max(0, Entry.Depth)),
             .HasChildren = Entry.HasChildren,
@@ -4392,6 +4793,263 @@ void EditorLayout::RefreshContentAssetCreateOkButtonState()
     if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentCreateOkButton.Id)))
     {
         Button->SetDisabled(!CanCreate);
+    }
+}
+
+void EditorLayout::OpenProjectCreateModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_projectModalAction = EProjectAction::CreateNew;
+    m_projectModalOpen = true;
+    m_projectNameText = "NewProject";
+    if (m_projectDirectoryText.empty())
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error && !CurrentPath.empty())
+        {
+            m_projectDirectoryText = CurrentPath.string();
+        }
+    }
+    m_projectFilePathText.clear();
+    DestroyProjectModalOverlay();
+    RefreshProjectModalVisibility();
+    RefreshProjectModalOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::OpenProjectOpenModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_projectModalAction = EProjectAction::OpenExisting;
+    m_projectModalOpen = true;
+    m_projectNameText.clear();
+    if (m_projectFilePathText.empty())
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error && !CurrentPath.empty())
+        {
+            m_projectFilePathText = (CurrentPath / "project.snproj.json").string();
+        }
+    }
+    DestroyProjectModalOverlay();
+    RefreshProjectModalVisibility();
+    RefreshProjectModalOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::CloseProjectModal(const bool ForceClose)
+{
+    if (!m_projectModalOpen && m_projectModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    if (m_projectModalRequired && !ForceClose)
+    {
+        RefreshProjectModalVisibility();
+        return;
+    }
+
+    m_projectModalOpen = false;
+    RefreshProjectModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::ConfirmProjectModal()
+{
+    if (!m_projectModalOpen)
+    {
+        return;
+    }
+
+    if (m_context)
+    {
+        if (m_projectModalAction == EProjectAction::CreateNew && m_projectDirectoryInput.Id.Value != 0)
+        {
+            if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectDirectoryInput.Id)))
+            {
+                m_projectDirectoryText = TrimCopy(
+                    Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
+                if (m_projectDirectoryText.empty())
+                {
+                    const auto Selected = Picker->SelectedFilesystemPaths();
+                    if (!Selected.empty())
+                    {
+                        m_projectDirectoryText = Selected.front().string();
+                    }
+                }
+                if (m_projectDirectoryText.empty())
+                {
+                    m_projectDirectoryText = TrimCopy(
+                        Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::CurrentPathKey, std::string{}));
+                }
+            }
+        }
+        else if (m_projectModalAction == EProjectAction::OpenExisting && m_projectFilePathInput.Id.Value != 0)
+        {
+            if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectFilePathInput.Id)))
+            {
+                m_projectFilePathText = TrimCopy(
+                    Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
+                if (m_projectFilePathText.empty())
+                {
+                    const auto Selected = Picker->SelectedFilesystemPaths();
+                    if (!Selected.empty())
+                    {
+                        m_projectFilePathText = Selected.front().string();
+                    }
+                }
+                if (m_projectFilePathText.empty())
+                {
+                    const std::string CurrentPathText = TrimCopy(
+                        Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::CurrentPathKey, std::string{}));
+                    if (!CurrentPathText.empty())
+                    {
+                        const std::filesystem::path Candidate = std::filesystem::path(CurrentPathText) / "project.snproj.json";
+                        std::error_code Error{};
+                        if (std::filesystem::exists(Candidate, Error) && !Error)
+                        {
+                            m_projectFilePathText = Candidate.string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    ProjectActionRequest Request{};
+    Request.Action = m_projectModalAction;
+    Request.ProjectName = TrimCopy(m_projectNameText);
+    Request.ProjectDirectory = TrimCopy(m_projectDirectoryText);
+    Request.ProjectFilePath = TrimCopy(m_projectFilePathText);
+
+    if (Request.Action == EProjectAction::CreateNew)
+    {
+        if (Request.ProjectName.empty() || Request.ProjectDirectory.empty())
+        {
+            RefreshProjectModalOkButtonState();
+            return;
+        }
+    }
+    else if (Request.ProjectFilePath.empty())
+    {
+        RefreshProjectModalOkButtonState();
+        return;
+    }
+
+    if (m_onProjectActionRequested)
+    {
+        m_onProjectActionRequested(Request);
+    }
+    CloseProjectModal(true);
+}
+
+void EditorLayout::RefreshProjectModalVisibility()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_projectModalOpen)
+    {
+        EnsureProjectModalOverlay();
+        return;
+    }
+
+    DestroyProjectModalOverlay();
+}
+
+void EditorLayout::RefreshProjectModalOkButtonState()
+{
+    if (!m_context || m_projectModalOkButton.Id.Value == 0)
+    {
+        return;
+    }
+
+    bool CanConfirm = false;
+    if (m_projectModalAction == EProjectAction::CreateNew)
+    {
+        std::string DirectoryText = TrimCopy(m_projectDirectoryText);
+        if (DirectoryText.empty() && m_projectDirectoryInput.Id.Value != 0)
+        {
+            if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectDirectoryInput.Id)))
+            {
+                DirectoryText = TrimCopy(
+                    Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
+                if (DirectoryText.empty())
+                {
+                    const auto Selected = Picker->SelectedFilesystemPaths();
+                    if (!Selected.empty())
+                    {
+                        DirectoryText = Selected.front().string();
+                    }
+                }
+                if (DirectoryText.empty())
+                {
+                    DirectoryText = TrimCopy(
+                        Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::CurrentPathKey, std::string{}));
+                }
+            }
+        }
+
+        CanConfirm = !TrimCopy(m_projectNameText).empty() && !DirectoryText.empty();
+    }
+    else
+    {
+        std::string FilePathText = TrimCopy(m_projectFilePathText);
+        if (FilePathText.empty() && m_projectFilePathInput.Id.Value != 0)
+        {
+            if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectFilePathInput.Id)))
+            {
+                FilePathText = TrimCopy(
+                    Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
+                if (FilePathText.empty())
+                {
+                    const auto Selected = Picker->SelectedFilesystemPaths();
+                    if (!Selected.empty())
+                    {
+                        FilePathText = Selected.front().string();
+                    }
+                }
+                if (FilePathText.empty())
+                {
+                    const std::string CurrentPathText = TrimCopy(
+                        Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::CurrentPathKey, std::string{}));
+                    if (!CurrentPathText.empty())
+                    {
+                        const std::filesystem::path Candidate = std::filesystem::path(CurrentPathText) / "project.snproj.json";
+                        std::error_code Error{};
+                        if (std::filesystem::exists(Candidate, Error) && !Error)
+                        {
+                            FilePathText = Candidate.string();
+                        }
+                    }
+                }
+            }
+        }
+
+        CanConfirm = !FilePathText.empty();
+    }
+
+    if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_projectModalOkButton.Id)))
+    {
+        Button->SetDisabled(!CanConfirm);
     }
 }
 
@@ -4464,13 +5122,6 @@ void EditorLayout::RefreshContentAssetInspectorModalVisibility()
     if (m_contentAssetInspectorState.Open)
     {
         EnsureContentAssetInspectorModalOverlay();
-        if (m_contentInspectorModalOverlay.Id.Value != 0)
-        {
-            if (auto* Overlay = dynamic_cast<SnAPI::UI::UIModal*>(&m_context->GetElement(m_contentInspectorModalOverlay.Id)))
-            {
-                Overlay->IsOpen().Set(true);
-            }
-        }
         return;
     }
 
@@ -4514,7 +5165,7 @@ void EditorLayout::RebuildContentAssetInspectorHierarchyTree()
             std::string Label = Entry.Label.empty() ? std::string("<unnamed>") : Entry.Label;
             TreeItems.push_back(SnAPI::UI::UITreeItem{
                 .Label = std::move(Label),
-                .IconSource = std::string(kHierarchyNodeIconPath),
+                .IconSource = ResolveUIImageSource(kHierarchyNodeIconPath),
                 .IconTint = kIconWhite,
                 .Depth = static_cast<uint32_t>(std::max(0, Entry.Depth)),
                 .HasChildren = false,
@@ -4936,7 +5587,7 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     HeaderPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     HeaderPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto HeaderIcon = Header.Add(SnAPI::UI::UIImage(kGameViewIconPath));
+    auto HeaderIcon = Header.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kGameViewIconPath)));
     auto& HeaderIconImage = HeaderIcon.Element();
     ConfigureSvgIcon(
         HeaderIconImage,
@@ -5004,7 +5655,7 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     TitleRowPanel.Background().Set(SnAPI::UI::Color{0, 0, 0, 0});
     TitleRowPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 
-    auto TitleIcon = TitleRow.Add(SnAPI::UI::UIImage(kInspectorIconPath));
+    auto TitleIcon = TitleRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kInspectorIconPath)));
     auto& TitleIconImage = TitleIcon.Element();
     ConfigureSvgIcon(TitleIconImage, 14.0f, kIconWhite);
 

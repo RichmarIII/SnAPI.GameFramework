@@ -1082,12 +1082,12 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
     {
         if (auto* Pawn = NodeCast<PawnBase>(Node))
         {
-            Pawn->OnCreateImpl(WorldRef);
+            Pawn->OnCreate();
         }
 
         if (auto* Start = NodeCast<PlayerStart>(Node))
         {
-            Start->OnCreateImpl(WorldRef);
+            Start->OnCreate();
         }
     }
 

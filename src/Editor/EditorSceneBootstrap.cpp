@@ -16,13 +16,18 @@
 #include "GameRuntime.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "PathResolver.h"
+#include "ScriptComponent.h"
 #include "StaticMeshComponent.h"
 #include "TransformComponent.h"
 #include "World.h"
 
+#include <array>
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -148,6 +153,7 @@ bool ConfigureVisual(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
     Settings.CastShadows = true;
     Settings.SyncFromTransform = true;
     Settings.RegisterWithRenderer = true;
+    (void)Mesh.ReloadMesh();
     return true;
 }
 
@@ -232,11 +238,125 @@ bool SpawnPrimitive(Level& GraphRef, const PrimitiveSpawnSpec& Spec, std::vector
     return true;
 }
 
+std::string ResolveEditorLuaScriptPath(const std::string_view ScriptName)
+{
+    namespace fs = std::filesystem;
+    const fs::path FileName(ScriptName);
+    const fs::path AssetRoot = SPathResolver::Instance().AssetRoot();
+
+    const auto ToAssetUriIfUnderRoot = [&AssetRoot](const fs::path& CandidatePath) -> std::string {
+        if (AssetRoot.empty())
+        {
+            return {};
+        }
+
+        std::error_code Ec{};
+        const fs::path Relative = fs::relative(CandidatePath, AssetRoot, Ec);
+        if (Ec || Relative.empty() || Relative.is_absolute())
+        {
+            return {};
+        }
+
+        const std::string RelativeText = Relative.lexically_normal().generic_string();
+        if (RelativeText.empty() || RelativeText.rfind("..", 0) == 0)
+        {
+            return {};
+        }
+
+        return "asset://" + RelativeText;
+    };
+
+    const std::array<fs::path, 3> Candidates{
+        fs::path(__FILE__).parent_path() / "Assets" / FileName,
+        fs::current_path() / "Editor" / "Assets" / FileName,
+        fs::current_path() / "src" / "Editor" / "Assets" / FileName,
+    };
+
+    for (const fs::path& Candidate : Candidates)
+    {
+        auto ResolvedPath = SPathResolver::Instance().Resolve(Candidate.string());
+        if (!ResolvedPath)
+        {
+            continue;
+        }
+
+        std::error_code Ec;
+        if (fs::exists(*ResolvedPath, Ec) && !Ec)
+        {
+            if (const std::string AssetUri = ToAssetUriIfUnderRoot(*ResolvedPath); !AssetUri.empty())
+            {
+                return AssetUri;
+            }
+            return std::string("asset://") + FileName.generic_string();
+        }
+    }
+
+    return std::string("asset://") + FileName.generic_string();
+}
+
+void AttachPlatformBobScript(std::vector<NodeHandle>& Nodes)
+{
+#if defined(SNAPI_GF_ENABLE_LUA)
+    constexpr std::string_view kTargetNodeName = "Platform.StepB";
+    for (const NodeHandle& Handle : Nodes)
+    {
+        BaseNode* Node = Handle.Borrowed();
+        if (!Node || Node->Name() != kTargetNodeName)
+        {
+            continue;
+        }
+
+        auto ScriptResult = Node->Add<ScriptComponent>();
+        if (!ScriptResult)
+        {
+            return;
+        }
+
+        auto& Script = *ScriptResult;
+        Script.ScriptModule = ResolveEditorLuaScriptPath("platform_bob.lua");
+        Script.ScriptType.clear();
+        return;
+    }
+#else
+    (void)Nodes;
+#endif
+}
+
 Quat PitchDegrees(const float Degrees)
 {
     return Quat(SnAPI::Math::AngleAxis3D(SnAPI::Math::SLinearAlgebra::DegreesToRadians(static_cast<SnAPI::Math::Scalar>(Degrees)),
                                          SnAPI::Math::Vector3::UnitX()));
 }
+
+void ApplyEditorCameraDefaults(CameraComponent& Camera, const bool InitializeProjection)
+{
+    auto& Settings = Camera.EditSettings();
+    Settings.Active = true;
+    Settings.SyncFromTransform = true;
+    if (InitializeProjection)
+    {
+        Settings.FovDegrees = 60.0f;
+        Settings.NearClip = 0.05f;
+        Settings.FarClip = 5000.0f;
+        Settings.Aspect = 16.0f / 9.0f;
+    }
+    Camera.SetActive(true);
+}
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+void ApplyEditorCameraFlyDefaults(EditorCameraComponent& EditorCamera)
+{
+    auto& FlySettings = EditorCamera.EditSettings();
+    FlySettings.Enabled = true;
+    FlySettings.RequireInputFocus = true;
+    FlySettings.RequireRightMouseButton = true;
+    FlySettings.RequirePointerInsideViewport = true;
+    FlySettings.MoveSpeed = 14.0f;
+    FlySettings.FastMoveMultiplier = 2.0f;
+    FlySettings.LookSensitivity = 0.12f;
+    FlySettings.InvertY = false;
+}
+#endif
 
 void BuildPlatformingScene(Level& GraphRef, std::vector<NodeHandle>& OutNodes)
 {
@@ -455,6 +575,8 @@ void BuildPlatformingScene(Level& GraphRef, std::vector<NodeHandle>& OutNodes)
     {
         (void)SpawnPrimitive(GraphRef, Spec, OutNodes);
     }
+
+    AttachPlatformBobScript(OutNodes);
 }
 } // namespace
 
@@ -555,14 +677,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
     }
 
     auto* Camera = &*CameraResult;
-    auto& Settings = Camera->EditSettings();
-    Settings.Active = true;
-    Settings.SyncFromTransform = true;
-    Settings.FovDegrees = 60.0f;
-    Settings.NearClip = 0.05f;
-    Settings.FarClip = 5000.0f;
-    Settings.Aspect = 16.0f / 9.0f;
-    Camera->SetActive(true);
+    ApplyEditorCameraDefaults(*Camera, true);
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
     auto EditorCameraResult = CameraNode->Add<EditorCameraComponent>();
@@ -571,15 +686,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(EditorCameraResult.error());
     }
 
-    auto& FlySettings = EditorCameraResult->EditSettings();
-    FlySettings.Enabled = true;
-    FlySettings.RequireInputFocus = true;
-    FlySettings.RequireRightMouseButton = true;
-    FlySettings.RequirePointerInsideViewport = true;
-    FlySettings.MoveSpeed = 14.0f;
-    FlySettings.FastMoveMultiplier = 2.0f;
-    FlySettings.LookSensitivity = 0.12f;
-    FlySettings.InvertY = false;
+    ApplyEditorCameraFlyDefaults(*EditorCameraResult);
 #endif
 
     m_cameraNode = CameraNodeResult.value();
@@ -657,6 +764,120 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
     m_cameraComponent = nullptr;
 }
 
+Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
+{
+    if (WorldRef.Kind() != EWorldKind::Editor)
+    {
+        SyncActiveCamera(WorldRef);
+        return Ok();
+    }
+
+    if (!m_cameraNode.IsNull() && m_cameraNode.Borrowed() == nullptr)
+    {
+        m_cameraNode = {};
+        m_cameraComponent = nullptr;
+    }
+
+    BaseNode* CameraNode = nullptr;
+    CameraComponent* Camera = nullptr;
+    bool CreatedNode = false;
+    bool CreatedCamera = false;
+
+    if (!m_cameraNode.IsNull())
+    {
+        CameraNode = m_cameraNode.Borrowed();
+        if (CameraNode)
+        {
+            if (auto CameraResult = CameraNode->Component<CameraComponent>())
+            {
+                Camera = &*CameraResult;
+            }
+        }
+    }
+
+    if (!CameraNode || !Camera)
+    {
+        WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+            if (Camera != nullptr)
+            {
+                return;
+            }
+            if (Node.Name() != "EditorCamera")
+            {
+                return;
+            }
+
+            auto CameraResult = Node.Component<CameraComponent>();
+            if (!CameraResult)
+            {
+                return;
+            }
+
+            CameraNode = &Node;
+            Camera = &*CameraResult;
+            m_cameraNode = Handle;
+        });
+    }
+
+    if (!CameraNode)
+    {
+        auto CameraNodeResult = WorldRef.CreateNode("EditorCamera");
+        if (!CameraNodeResult)
+        {
+            return std::unexpected(CameraNodeResult.error());
+        }
+        CameraNode = CameraNodeResult->Borrowed();
+        if (!CameraNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow created editor camera node"));
+        }
+        m_cameraNode = CameraNodeResult.value();
+        CreatedNode = true;
+    }
+
+    if (CreatedNode)
+    {
+        if (auto Transform = CameraNode->Add<TransformComponent>())
+        {
+            Transform->Position = Vec3(0.0f, 6.0f, 24.0f);
+            Transform->Rotation =
+                SnAPI::Math::AngleAxis3D(SnAPI::Math::SLinearAlgebra::DegreesToRadians(-18.0f), SnAPI::Math::Vector3::UnitX());
+        }
+    }
+
+    if (!Camera)
+    {
+        auto CameraResult = CameraNode->Add<CameraComponent>();
+        if (!CameraResult)
+        {
+            return std::unexpected(CameraResult.error());
+        }
+        Camera = &*CameraResult;
+        CreatedCamera = true;
+    }
+
+    ApplyEditorCameraDefaults(*Camera, CreatedCamera || CreatedNode);
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    if (auto ExistingEditorCamera = CameraNode->Component<EditorCameraComponent>())
+    {
+        ApplyEditorCameraFlyDefaults(*ExistingEditorCamera);
+    }
+    else
+    {
+        auto EditorCameraResult = CameraNode->Add<EditorCameraComponent>();
+        if (!EditorCameraResult)
+        {
+            return std::unexpected(EditorCameraResult.error());
+        }
+        ApplyEditorCameraFlyDefaults(*EditorCameraResult);
+    }
+#endif
+
+    m_cameraComponent = Camera;
+    return Ok();
+}
+
 void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
 {
     m_cameraComponent = nullptr;
@@ -668,6 +889,12 @@ void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
     }
 
     if (WorldRef.Kind() != EWorldKind::Editor)
+    {
+        return;
+    }
+
+    (void)EnsureEditorCamera(WorldRef);
+    if (m_cameraComponent)
     {
         return;
     }
@@ -753,6 +980,12 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
     m_cameraNode = {};
     m_sceneNodes.clear();
     m_cameraComponent = nullptr;
+}
+
+Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
+{
+    (void)WorldRef;
+    return Ok();
 }
 
 void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)

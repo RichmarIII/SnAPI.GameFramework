@@ -2,6 +2,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include <string_view>
 
 namespace SnAPI::GameFramework
 {
@@ -58,10 +59,9 @@ public:
      * @remarks If active, synchronizes listener transform into audio engine.
      */
     void Tick(float DeltaSeconds);
-    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    void OnCreateImpl(IWorld&) { OnCreate(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
     /**
      * @brief Gameplay-facing setter.

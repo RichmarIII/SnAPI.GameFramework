@@ -315,6 +315,13 @@ void EditorCameraComponent::Tick(const float DeltaSeconds)
     Transform.Position += MoveDirection * static_cast<Vec3::Scalar>(Speed * ClampedDeltaSeconds);
 }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void EditorCameraComponent::EditorTick(const float DeltaSeconds)
+{
+    Tick(DeltaSeconds);
+}
+#endif
+
 void EditorCameraComponent::SynchronizeOrientationFromRotation(const Quat& Rotation)
 {
     const Quat Normalized = NormalizeQuatOrIdentity(Rotation);

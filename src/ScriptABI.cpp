@@ -3,6 +3,9 @@
 #include <limits>
 #include <vector>
 
+#include "BaseNode.h"
+#include "IWorld.h"
+#include "Math.h"
 #include "TypeRegistry.h"
 #include "Uuid.h"
 #include "Variant.h"
@@ -216,9 +219,43 @@ SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_string(const char* 
     return SnAPI::GameFramework::ToHandle(Var);
 }
 
+SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_vec3(const SnGfVec3 value)
+{
+    auto* Var = new SnAPI::GameFramework::Variant(SnAPI::GameFramework::Variant::FromValue(SnAPI::GameFramework::Vec3{
+        static_cast<SnAPI::GameFramework::Vec3::Scalar>(value.X),
+        static_cast<SnAPI::GameFramework::Vec3::Scalar>(value.Y),
+        static_cast<SnAPI::GameFramework::Vec3::Scalar>(value.Z)}));
+    return SnAPI::GameFramework::ToHandle(Var);
+}
+
 SNAPI_GAMEFRAMEWORK_API void sn_gf_variant_destroy(SnGfVariantHandle handle)
 {
     delete SnAPI::GameFramework::FromHandle(handle);
+}
+
+SNAPI_GAMEFRAMEWORK_API int sn_gf_variant_to_vec3(SnGfVariantHandle handle, SnGfVec3* outValue)
+{
+    if (!outValue)
+    {
+        return 0;
+    }
+
+    auto* Var = SnAPI::GameFramework::FromHandle(handle);
+    if (!Var)
+    {
+        return 0;
+    }
+
+    auto Value = Var->AsConstRef<SnAPI::GameFramework::Vec3>();
+    if (!Value)
+    {
+        return 0;
+    }
+
+    outValue->X = static_cast<float>(Value->get().x());
+    outValue->Y = static_cast<float>(Value->get().y());
+    outValue->Z = static_cast<float>(Value->get().z());
+    return 1;
 }
 
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_get_field(void* instance, SnGfUuid type, SnGfFieldHandle field, SnGfVariantHandle* outValue)
@@ -296,6 +333,23 @@ SNAPI_GAMEFRAMEWORK_API int sn_gf_object_invoke(void* instance, SnGfUuid type, S
         *outResult = SnAPI::GameFramework::ToHandle(new SnAPI::GameFramework::Variant(std::move(Result.value())));
     }
     return 1;
+}
+
+SNAPI_GAMEFRAMEWORK_API void* sn_gf_node_get_component(void* nodeInstance, SnGfUuid componentType)
+{
+    if (!nodeInstance)
+    {
+        return nullptr;
+    }
+
+    auto* Node = static_cast<SnAPI::GameFramework::BaseNode*>(nodeInstance);
+    SnAPI::GameFramework::IWorld* World = Node->World();
+    if (!World)
+    {
+        return nullptr;
+    }
+
+    return World->BorrowedComponent(Node->Handle(), SnAPI::GameFramework::FromC(componentType));
 }
 
 } // extern "C"

@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <string>
+#include <string_view>
 #include <cstdint>
 
 #include "BaseComponent.h"
@@ -71,12 +72,10 @@ public:
     void OnCreate();
     void OnDestroy();
     void Tick(float DeltaSeconds);
-
-    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    void OnCreateImpl(IWorld&) { OnCreate(); }
-    void OnDestroyImpl(IWorld&) { OnDestroy(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(float DeltaSeconds);
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
 private:
     RendererSystem* ResolveRendererSystem() const;

@@ -6,6 +6,7 @@
 
 #include "AudioSystem.h"
 #include "BaseNode.h"
+#include "PathResolver.h"
 #include "TransformComponent.h"
 #include "World.h"
 
@@ -20,6 +21,41 @@ Audio::Vector3F ToAudioVector(const Vec3& Value)
 {
     return Math::Vector3(Value.x(), Value.y(), Value.z());
 }
+
+[[nodiscard]] bool ResolveAudioFilesystemPath(const std::string_view RawPath, std::string& OutResolvedPath)
+{
+    if (RawPath.empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    auto ResolvedPath = SPathResolver::Instance().ResolveToString(RawPath);
+    if (!ResolvedPath || ResolvedPath->empty())
+    {
+        OutResolvedPath.clear();
+        return false;
+    }
+
+    OutResolvedPath = *ResolvedPath;
+    return true;
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsAudioSourceSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "SoundPath"
+        || Name == "Streaming"
+        || Name == "AutoPlay"
+        || Name == "Looping"
+        || Name == "Volume"
+        || Name == "SpatialGain"
+        || Name == "MinDistance"
+        || Name == "MaxDistance"
+        || Name == "Rolloff";
+}
+#endif
 } // namespace
 
 AudioSystem* AudioSourceComponent::ResolveAudioSystem() const
@@ -66,16 +102,38 @@ void AudioSourceComponent::OnDestroy()
 
 void AudioSourceComponent::Tick(float DeltaSeconds)
 {
-    RuntimeTick(DeltaSeconds);
-}
-
-void AudioSourceComponent::RuntimeTick(float DeltaSeconds)
-{
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     EnsureEmitter();
     RefreshPlaybackState();
     UpdateEmitterTransform(DeltaSeconds);
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void AudioSourceComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsAudioSourceSettingsField(Name))
+    {
+        return;
+    }
+
+    if (Name == "AutoPlay" && !m_settings.AutoPlay)
+    {
+        m_playRequested = false;
+    }
+    if ((Name == "AutoPlay" || Name == "SoundPath" || Name == "Streaming" || Name == "Settings") && m_settings.AutoPlay)
+    {
+        m_playRequested = true;
+    }
+
+    EnsureEmitter();
+    RefreshPlaybackState();
+
+    if (Name == "SpatialGain" || Name == "MinDistance" || Name == "MaxDistance" || Name == "Rolloff" || Name == "Settings")
+    {
+        UpdateEmitterTransform(0.0f);
+    }
+}
+#endif
 
 void AudioSourceComponent::Play()
 {
@@ -112,7 +170,13 @@ void AudioSourceComponent::PlayClient()
     }
 
     EnsureEmitter();
-    if (!IsLoaded() || m_loadedPath != m_settings.SoundPath || m_loadedStreaming != m_settings.Streaming)
+    std::string ResolvedConfiguredPath{};
+    if (!ResolveAudioFilesystemPath(m_settings.SoundPath, ResolvedConfiguredPath))
+    {
+        return;
+    }
+
+    if (!IsLoaded() || m_loadedPath != ResolvedConfiguredPath || m_loadedStreaming != m_settings.Streaming)
     {
         if (!LoadSound(m_settings.SoundPath, m_settings.Streaming))
         {
@@ -200,6 +264,12 @@ bool AudioSourceComponent::LoadSound(const std::string& Path, bool StreamingMode
         return false;
     }
 
+    std::string ResolvedPath{};
+    if (!ResolveAudioFilesystemPath(Path, ResolvedPath))
+    {
+        return false;
+    }
+
     EnsureEmitter();
     auto* Audio = ResolveAudioSystem();
     auto* Engine = Audio ? Audio->Engine() : nullptr;
@@ -213,8 +283,8 @@ bool AudioSourceComponent::LoadSound(const std::string& Path, bool StreamingMode
     try
     {
         m_sound = StreamingMode
-            ? Engine->LoadSoundStreaming(Path)
-            : Engine->LoadSoundResident(Path);
+            ? Engine->LoadSoundStreaming(ResolvedPath)
+            : Engine->LoadSoundResident(ResolvedPath);
     }
     catch (const std::exception&)
     {
@@ -227,7 +297,7 @@ bool AudioSourceComponent::LoadSound(const std::string& Path, bool StreamingMode
         return false;
     }
 
-    m_loadedPath = Path;
+    m_loadedPath = std::move(ResolvedPath);
     m_loadedStreaming = StreamingMode;
 
     if (!m_sound.IsValid())
@@ -304,16 +374,19 @@ void AudioSourceComponent::RefreshPlaybackState()
         return;
     }
 
-    if (m_loadedPath != m_settings.SoundPath || m_loadedStreaming != m_settings.Streaming)
+    std::string ResolvedConfiguredPath{};
+    const bool HasResolvedPath = ResolveAudioFilesystemPath(m_settings.SoundPath, ResolvedConfiguredPath);
+
+    if (!HasResolvedPath)
     {
-        if (!m_settings.SoundPath.empty())
-        {
-            LoadSound(m_settings.SoundPath, m_settings.Streaming);
-        }
-        else
+        if (m_sound.IsValid())
         {
             UnloadSound();
         }
+    }
+    else if (m_loadedPath != ResolvedConfiguredPath || m_loadedStreaming != m_settings.Streaming)
+    {
+        (void)LoadSound(m_settings.SoundPath, m_settings.Streaming);
     }
 
     if (m_lastLooping != m_settings.Looping)

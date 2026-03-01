@@ -40,83 +40,15 @@ concept NonPolymorphicRuntimeType =
     };
 
 /**
- * @brief CRTP helper that forwards phase hooks to optional `*Impl` methods.
+ * @brief CRTP marker for runtime ECS tickable types.
  * @tparam TDerived Concrete runtime object type.
  * @remarks
- * This provides the required runtime interface without virtual methods.
+ * Kept marker-only so lifecycle hooks stay fully optional and are detected
+ * directly from the concrete type.
  */
 template<typename TDerived>
 struct TRuntimeTickCRTP
 {
-    void OnCreate(IWorld& WorldRef)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue) {
-                          { Obj.OnCreateImpl(WorldValue) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).OnCreateImpl(WorldRef);
-        }
-    }
-
-    void OnDestroy(IWorld& WorldRef)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue) {
-                          { Obj.OnDestroyImpl(WorldValue) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).OnDestroyImpl(WorldRef);
-        }
-    }
-
-    void PreTick(IWorld& WorldRef, float DeltaSeconds)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue, float Dt) {
-                          { Obj.PreTickImpl(WorldValue, Dt) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).PreTickImpl(WorldRef, DeltaSeconds);
-        }
-    }
-
-    void Tick(IWorld& WorldRef, float DeltaSeconds)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue, float Dt) {
-                          { Obj.TickImpl(WorldValue, Dt) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).TickImpl(WorldRef, DeltaSeconds);
-        }
-    }
-
-    void FixedTick(IWorld& WorldRef, float DeltaSeconds)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue, float Dt) {
-                          { Obj.FixedTickImpl(WorldValue, Dt) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).FixedTickImpl(WorldRef, DeltaSeconds);
-        }
-    }
-
-    void LateTick(IWorld& WorldRef, float DeltaSeconds)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue, float Dt) {
-                          { Obj.LateTickImpl(WorldValue, Dt) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).LateTickImpl(WorldRef, DeltaSeconds);
-        }
-    }
-
-    void PostTick(IWorld& WorldRef, float DeltaSeconds)
-    {
-        if constexpr (requires(TDerived& Obj, IWorld& WorldValue, float Dt) {
-                          { Obj.PostTickImpl(WorldValue, Dt) } -> std::same_as<void>;
-                      })
-        {
-            static_cast<TDerived&>(*this).PostTickImpl(WorldRef, DeltaSeconds);
-        }
-    }
 };
 
 template<typename T>
@@ -141,8 +73,9 @@ inline constexpr bool kUsesComponentCRTP = std::is_base_of_v<ComponentCRTP<T>, T
 /**
  * @brief Full runtime phase contract for non-polymorphic ECS objects.
  * @remarks
- * Runtime types must use `TRuntimeTickCRTP` and provide optional `*Impl`
- * hooks (`TickImpl`, `FixedTickImpl`, ...).
+ * Runtime types must use one of the runtime marker CRTP bases and provide
+ * optional lifecycle hooks (`OnCreate`, `Tick`, `FixedTick`, ...).
+ * Hooks are invoked only when explicitly declared on the concrete type.
  */
 template<typename T>
 concept RuntimeTickType =
@@ -150,46 +83,126 @@ concept RuntimeTickType =
     (kUsesRuntimeTickCRTP<T> || kUsesNodeCRTP<T> || kUsesComponentCRTP<T>);
 
 template<typename T>
-concept HasOnCreateImpl =
-    requires(T& Obj, IWorld& WorldRef) {
-        { Obj.OnCreateImpl(WorldRef) } -> std::same_as<void>;
+concept DeclaresOnCreateWithWorld =
+    requires {
+        { &T::OnCreate } -> std::same_as<void (T::*)(IWorld&)>;
     };
 
 template<typename T>
-concept HasOnDestroyImpl =
-    requires(T& Obj, IWorld& WorldRef) {
-        { Obj.OnDestroyImpl(WorldRef) } -> std::same_as<void>;
+concept DeclaresOnCreateNoWorld =
+    requires {
+        { &T::OnCreate } -> std::same_as<void (T::*)()>;
     };
 
 template<typename T>
-concept HasPreTickImpl =
-    requires(T& Obj, IWorld& WorldRef, float DeltaSeconds) {
-        { Obj.PreTickImpl(WorldRef, DeltaSeconds) } -> std::same_as<void>;
+concept HasRuntimeOnCreatePhase = DeclaresOnCreateWithWorld<T> || DeclaresOnCreateNoWorld<T>;
+
+template<typename T>
+concept DeclaresOnDestroyWithWorld =
+    requires {
+        { &T::OnDestroy } -> std::same_as<void (T::*)(IWorld&)>;
     };
 
 template<typename T>
-concept HasTickImpl =
-    requires(T& Obj, IWorld& WorldRef, float DeltaSeconds) {
-        { Obj.TickImpl(WorldRef, DeltaSeconds) } -> std::same_as<void>;
+concept DeclaresOnDestroyNoWorld =
+    requires {
+        { &T::OnDestroy } -> std::same_as<void (T::*)()>;
     };
 
 template<typename T>
-concept HasFixedTickImpl =
-    requires(T& Obj, IWorld& WorldRef, float DeltaSeconds) {
-        { Obj.FixedTickImpl(WorldRef, DeltaSeconds) } -> std::same_as<void>;
+concept HasRuntimeOnDestroyPhase = DeclaresOnDestroyWithWorld<T> || DeclaresOnDestroyNoWorld<T>;
+
+template<typename T>
+concept DeclaresPreTickWithWorld =
+    requires {
+        { &T::PreTick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
 template<typename T>
-concept HasLateTickImpl =
-    requires(T& Obj, IWorld& WorldRef, float DeltaSeconds) {
-        { Obj.LateTickImpl(WorldRef, DeltaSeconds) } -> std::same_as<void>;
+concept DeclaresPreTickNoWorld =
+    requires {
+        { &T::PreTick } -> std::same_as<void (T::*)(float)>;
     };
 
 template<typename T>
-concept HasPostTickImpl =
-    requires(T& Obj, IWorld& WorldRef, float DeltaSeconds) {
-        { Obj.PostTickImpl(WorldRef, DeltaSeconds) } -> std::same_as<void>;
+concept HasRuntimePreTickPhase = DeclaresPreTickWithWorld<T> || DeclaresPreTickNoWorld<T>;
+
+template<typename T>
+concept DeclaresTickWithWorld =
+    requires {
+        { &T::Tick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
+
+template<typename T>
+concept DeclaresTickNoWorld =
+    requires {
+        { &T::Tick } -> std::same_as<void (T::*)(float)>;
+    };
+
+template<typename T>
+concept HasRuntimeTickPhase = DeclaresTickWithWorld<T> || DeclaresTickNoWorld<T>;
+
+template<typename T>
+concept DeclaresFixedTickWithWorld =
+    requires {
+        { &T::FixedTick } -> std::same_as<void (T::*)(IWorld&, float)>;
+    };
+
+template<typename T>
+concept DeclaresFixedTickNoWorld =
+    requires {
+        { &T::FixedTick } -> std::same_as<void (T::*)(float)>;
+    };
+
+template<typename T>
+concept HasRuntimeFixedTickPhase = DeclaresFixedTickWithWorld<T> || DeclaresFixedTickNoWorld<T>;
+
+template<typename T>
+concept DeclaresLateTickWithWorld =
+    requires {
+        { &T::LateTick } -> std::same_as<void (T::*)(IWorld&, float)>;
+    };
+
+template<typename T>
+concept DeclaresLateTickNoWorld =
+    requires {
+        { &T::LateTick } -> std::same_as<void (T::*)(float)>;
+    };
+
+template<typename T>
+concept HasRuntimeLateTickPhase = DeclaresLateTickWithWorld<T> || DeclaresLateTickNoWorld<T>;
+
+template<typename T>
+concept DeclaresPostTickWithWorld =
+    requires {
+        { &T::PostTick } -> std::same_as<void (T::*)(IWorld&, float)>;
+    };
+
+template<typename T>
+concept DeclaresPostTickNoWorld =
+    requires {
+        { &T::PostTick } -> std::same_as<void (T::*)(float)>;
+    };
+
+template<typename T>
+concept HasRuntimePostTickPhase = DeclaresPostTickWithWorld<T> || DeclaresPostTickNoWorld<T>;
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+template<typename T>
+concept DeclaresEditorTickWithWorld =
+    requires {
+        { &T::EditorTick } -> std::same_as<void (T::*)(IWorld&, float)>;
+    };
+
+template<typename T>
+concept DeclaresEditorTickNoWorld =
+    requires {
+        { &T::EditorTick } -> std::same_as<void (T::*)(float)>;
+    };
+
+template<typename T>
+concept HasRuntimeEditorTickPhase = DeclaresEditorTickWithWorld<T> || DeclaresEditorTickNoWorld<T>;
+#endif
 
 /**
  * @brief Compile-time tick priority helper.
@@ -255,13 +268,16 @@ public:
     static_assert(!std::is_polymorphic_v<TObject>,
                   "Node/component runtime types must be non-polymorphic");
 
-    static constexpr bool kHasOnCreatePhase = HasOnCreateImpl<TObject>;
-    static constexpr bool kHasOnDestroyPhase = HasOnDestroyImpl<TObject>;
-    static constexpr bool kHasPreTickPhase = HasPreTickImpl<TObject>;
-    static constexpr bool kHasTickPhase = HasTickImpl<TObject>;
-    static constexpr bool kHasFixedTickPhase = HasFixedTickImpl<TObject>;
-    static constexpr bool kHasLateTickPhase = HasLateTickImpl<TObject>;
-    static constexpr bool kHasPostTickPhase = HasPostTickImpl<TObject>;
+    static constexpr bool kHasOnCreatePhase = HasRuntimeOnCreatePhase<TObject>;
+    static constexpr bool kHasOnDestroyPhase = HasRuntimeOnDestroyPhase<TObject>;
+    static constexpr bool kHasPreTickPhase = HasRuntimePreTickPhase<TObject>;
+    static constexpr bool kHasTickPhase = HasRuntimeTickPhase<TObject>;
+    static constexpr bool kHasFixedTickPhase = HasRuntimeFixedTickPhase<TObject>;
+    static constexpr bool kHasLateTickPhase = HasRuntimeLateTickPhase<TObject>;
+    static constexpr bool kHasPostTickPhase = HasRuntimePostTickPhase<TObject>;
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    static constexpr bool kHasEditorTickPhase = HasRuntimeEditorTickPhase<TObject>;
+#endif
 
     using Handle = TDenseRuntimeHandle<TObject>;
 
@@ -536,6 +552,24 @@ public:
         }
     }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(IWorld& WorldRef, const float DeltaSeconds)
+    {
+        if constexpr (kHasEditorTickPhase)
+        {
+            for (TObject& Object : m_denseObjects)
+            {
+                InvokeEditorTick(Object, WorldRef, DeltaSeconds);
+            }
+        }
+        else
+        {
+            (void)WorldRef;
+            (void)DeltaSeconds;
+        }
+    }
+#endif
+
     void Clear(IWorld& WorldRef)
     {
         if constexpr (kHasOnDestroyPhase)
@@ -574,9 +608,13 @@ public:
 private:
     static void InvokeOnCreate(TObject& Object, IWorld& WorldRef)
     {
-        if constexpr (HasOnCreateImpl<TObject>)
+        if constexpr (DeclaresOnCreateWithWorld<TObject>)
         {
-            Object.OnCreateImpl(WorldRef);
+            Object.OnCreate(WorldRef);
+        }
+        else if constexpr (DeclaresOnCreateNoWorld<TObject>)
+        {
+            Object.OnCreate();
         }
         else
         {
@@ -587,9 +625,13 @@ private:
 
     static void InvokeOnDestroy(TObject& Object, IWorld& WorldRef)
     {
-        if constexpr (HasOnDestroyImpl<TObject>)
+        if constexpr (DeclaresOnDestroyWithWorld<TObject>)
         {
-            Object.OnDestroyImpl(WorldRef);
+            Object.OnDestroy(WorldRef);
+        }
+        else if constexpr (DeclaresOnDestroyNoWorld<TObject>)
+        {
+            Object.OnDestroy();
         }
         else
         {
@@ -600,9 +642,13 @@ private:
 
     static void InvokePreTick(TObject& Object, IWorld& WorldRef, const float DeltaSeconds)
     {
-        if constexpr (HasPreTickImpl<TObject>)
+        if constexpr (DeclaresPreTickWithWorld<TObject>)
         {
-            Object.PreTickImpl(WorldRef, DeltaSeconds);
+            Object.PreTick(WorldRef, DeltaSeconds);
+        }
+        else if constexpr (DeclaresPreTickNoWorld<TObject>)
+        {
+            Object.PreTick(DeltaSeconds);
         }
         else
         {
@@ -614,9 +660,13 @@ private:
 
     static void InvokeTick(TObject& Object, IWorld& WorldRef, const float DeltaSeconds)
     {
-        if constexpr (HasTickImpl<TObject>)
+        if constexpr (DeclaresTickWithWorld<TObject>)
         {
-            Object.TickImpl(WorldRef, DeltaSeconds);
+            Object.Tick(WorldRef, DeltaSeconds);
+        }
+        else if constexpr (DeclaresTickNoWorld<TObject>)
+        {
+            Object.Tick(DeltaSeconds);
         }
         else
         {
@@ -628,9 +678,13 @@ private:
 
     static void InvokeFixedTick(TObject& Object, IWorld& WorldRef, const float DeltaSeconds)
     {
-        if constexpr (HasFixedTickImpl<TObject>)
+        if constexpr (DeclaresFixedTickWithWorld<TObject>)
         {
-            Object.FixedTickImpl(WorldRef, DeltaSeconds);
+            Object.FixedTick(WorldRef, DeltaSeconds);
+        }
+        else if constexpr (DeclaresFixedTickNoWorld<TObject>)
+        {
+            Object.FixedTick(DeltaSeconds);
         }
         else
         {
@@ -642,9 +696,13 @@ private:
 
     static void InvokeLateTick(TObject& Object, IWorld& WorldRef, const float DeltaSeconds)
     {
-        if constexpr (HasLateTickImpl<TObject>)
+        if constexpr (DeclaresLateTickWithWorld<TObject>)
         {
-            Object.LateTickImpl(WorldRef, DeltaSeconds);
+            Object.LateTick(WorldRef, DeltaSeconds);
+        }
+        else if constexpr (DeclaresLateTickNoWorld<TObject>)
+        {
+            Object.LateTick(DeltaSeconds);
         }
         else
         {
@@ -656,9 +714,13 @@ private:
 
     static void InvokePostTick(TObject& Object, IWorld& WorldRef, const float DeltaSeconds)
     {
-        if constexpr (HasPostTickImpl<TObject>)
+        if constexpr (DeclaresPostTickWithWorld<TObject>)
         {
-            Object.PostTickImpl(WorldRef, DeltaSeconds);
+            Object.PostTick(WorldRef, DeltaSeconds);
+        }
+        else if constexpr (DeclaresPostTickNoWorld<TObject>)
+        {
+            Object.PostTick(DeltaSeconds);
         }
         else
         {
@@ -667,6 +729,26 @@ private:
             (void)DeltaSeconds;
         }
     }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    static void InvokeEditorTick(TObject& Object, IWorld& WorldRef, const float DeltaSeconds)
+    {
+        if constexpr (DeclaresEditorTickWithWorld<TObject>)
+        {
+            Object.EditorTick(WorldRef, DeltaSeconds);
+        }
+        else if constexpr (DeclaresEditorTickNoWorld<TObject>)
+        {
+            Object.EditorTick(DeltaSeconds);
+        }
+        else
+        {
+            (void)Object;
+            (void)WorldRef;
+            (void)DeltaSeconds;
+        }
+    }
+#endif
 
     struct SlotMeta
     {
@@ -1978,6 +2060,19 @@ public:
         }
     }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorTick(IWorld& WorldRef, const float DeltaSeconds)
+    {
+        for (const TickEntry& Entry : m_tickEntries)
+        {
+            if (Entry.EditorTick)
+            {
+                Entry.EditorTick(Entry.Storage, WorldRef, DeltaSeconds);
+            }
+        }
+    }
+#endif
+
     void FixedTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         for (const TickEntry& Entry : m_tickEntries)
@@ -2168,6 +2263,9 @@ private:
         void (*FixedTick)(void*, IWorld&, float) = nullptr;
         void (*LateTick)(void*, IWorld&, float) = nullptr;
         void (*PostTick)(void*, IWorld&, float) = nullptr;
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        void (*EditorTick)(void*, IWorld&, float) = nullptr;
+#endif
     };
 
     class IStorageModel : public IErasedStorage
@@ -2341,6 +2439,15 @@ private:
         Storage->PostTick(WorldRef, DeltaSeconds);
     }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    template<RuntimeTickType TObject>
+    static void DispatchEditorTick(void* StoragePtr, IWorld& WorldRef, const float DeltaSeconds)
+    {
+        auto* Storage = static_cast<TDenseRuntimeStorage<TObject>*>(StoragePtr);
+        Storage->EditorTick(WorldRef, DeltaSeconds);
+    }
+#endif
+
     template<RuntimeTickType TObject>
     void RegisterTickEntry(TDenseRuntimeStorage<TObject>* Storage)
     {
@@ -2349,7 +2456,11 @@ private:
             TDenseRuntimeStorage<TObject>::kHasTickPhase ||
             TDenseRuntimeStorage<TObject>::kHasFixedTickPhase ||
             TDenseRuntimeStorage<TObject>::kHasLateTickPhase ||
-            TDenseRuntimeStorage<TObject>::kHasPostTickPhase;
+            TDenseRuntimeStorage<TObject>::kHasPostTickPhase
+#if defined(WITH_EDITOR) && WITH_EDITOR
+            || TDenseRuntimeStorage<TObject>::kHasEditorTickPhase
+#endif
+            ;
         if constexpr (!kHasAnyTickPhase)
         {
             return;
@@ -2382,6 +2493,12 @@ private:
         {
             Entry.PostTick = &DispatchPostTick<TObject>;
         }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        if constexpr (TDenseRuntimeStorage<TObject>::kHasEditorTickPhase)
+        {
+            Entry.EditorTick = &DispatchEditorTick<TObject>;
+        }
+#endif
 
         const auto It = std::lower_bound(m_tickEntries.begin(),
                                          m_tickEntries.end(),

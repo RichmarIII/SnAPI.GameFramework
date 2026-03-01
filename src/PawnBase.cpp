@@ -36,9 +36,8 @@ PawnBase::PawnBase(std::string Name)
     Replicated(true);
 }
 
-void PawnBase::OnCreateImpl(IWorld& WorldRef)
+void PawnBase::OnCreate()
 {
-    (void)WorldRef;
     EnsureDefaultComponents();
 }
 
@@ -123,6 +122,7 @@ void PawnBase::EnsureDefaultComponents()
             Settings.CastShadows = true;
             Settings.SyncFromTransform = true;
             Settings.RegisterWithRenderer = true;
+            (void)Mesh->ReloadMesh();
         }
     }
 #endif

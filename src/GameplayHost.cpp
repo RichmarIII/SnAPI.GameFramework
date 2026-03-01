@@ -1931,14 +1931,14 @@ NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& 
 
     if (auto* Pawn = NodeCast<PawnBase>(PawnNode))
     {
-        Pawn->OnCreateImpl(World());
+        Pawn->OnCreate();
     }
 
     if (PlayerStartNode)
     {
         if (auto* PlayerStartTyped = NodeCast<PlayerStart>(PlayerStartNode))
         {
-            PlayerStartTyped->OnCreateImpl(World());
+            PlayerStartTyped->OnCreate();
         }
 
         auto StartTransform = PlayerStartNode->Component<TransformComponent>();

@@ -71,6 +71,21 @@ void AudioListenerComponent::OnCreate()
     }
 }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void AudioListenerComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (Name != "Active")
+    {
+        return;
+    }
+
+    if (m_active)
+    {
+        Tick(0.0f);
+    }
+}
+#endif
+
 void AudioListenerComponent::SetActive(bool ActiveValue)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
@@ -99,11 +114,6 @@ void AudioListenerComponent::SetActiveClient(bool ActiveValue)
 }
 
 void AudioListenerComponent::Tick(float DeltaSeconds)
-{
-    RuntimeTick(DeltaSeconds);
-}
-
-void AudioListenerComponent::RuntimeTick(float DeltaSeconds)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     if (!m_active)

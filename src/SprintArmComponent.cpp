@@ -98,35 +98,35 @@ constexpr float kSmallNumber = 1.0e-6f;
     const double Dot = std::abs(static_cast<double>(NormalizedA.dot(NormalizedB)));
     return Dot >= 0.9999995;
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+[[nodiscard]] bool IsSprintArmSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "Enabled"
+        || Name == "DriveOwnerYaw"
+        || Name == "ArmLength"
+        || Name == "SocketOffset"
+        || Name == "YawDegrees"
+        || Name == "PitchDegrees"
+        || Name == "MinPitchDegrees"
+        || Name == "MaxPitchDegrees";
+}
+#endif
 } // namespace
 
 void SprintArmComponent::OnCreate()
-{
-    RuntimeOnCreate();
-}
-
-void SprintArmComponent::Tick(const float DeltaSeconds)
-{
-    RuntimeTick(DeltaSeconds);
-}
-
-void SprintArmComponent::LateTick(const float DeltaSeconds)
-{
-    RuntimeLateTick(DeltaSeconds);
-}
-
-void SprintArmComponent::RuntimeOnCreate()
 {
     InitializeFromOwner();
     ApplyArmToOwnerAndCamera();
 }
 
-void SprintArmComponent::RuntimeTick(const float DeltaSeconds)
+void SprintArmComponent::Tick(const float DeltaSeconds)
 {
     (void)DeltaSeconds;
 }
 
-void SprintArmComponent::RuntimeLateTick(const float DeltaSeconds)
+void SprintArmComponent::LateTick(const float DeltaSeconds)
 {
     (void)DeltaSeconds;
 
@@ -151,6 +151,26 @@ void SprintArmComponent::RuntimeLateTick(const float DeltaSeconds)
     ApplyPendingLookInput();
     ApplyArmToOwnerAndCamera();
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void SprintArmComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsSprintArmSettingsField(Name))
+    {
+        return;
+    }
+
+    SetViewAngles(m_settings.YawDegrees, m_settings.PitchDegrees);
+    if (!m_settings.Enabled)
+    {
+        m_pendingYawDeltaDegrees = 0.0f;
+        m_pendingPitchDeltaDegrees = 0.0f;
+        return;
+    }
+
+    ApplyArmToOwnerAndCamera();
+}
+#endif
 
 void SprintArmComponent::AddLookInput(const float YawDeltaDegrees, const float PitchDeltaDegrees)
 {

@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
+#include <iostream>
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include <LinearAlgebra.hpp>
 #include <ICamera.hpp>
@@ -250,6 +251,7 @@ World::World()
 {
     m_worldKind = EWorldKind::Runtime;
     m_executionProfile = WorldExecutionProfile::Runtime();
+    RegisterBuiltinScriptBackends(m_scriptRuntime);
 }
 
 World::World(std::string Name)
@@ -261,11 +263,13 @@ World::World(std::string Name)
 {
     m_worldKind = EWorldKind::Runtime;
     m_executionProfile = WorldExecutionProfile::Runtime();
+    RegisterBuiltinScriptBackends(m_scriptRuntime);
 }
 
 World::~World()
 {
     Clear();
+    m_scriptRuntime.Shutdown();
 }
 
 const std::string& World::Name() const
@@ -317,11 +321,6 @@ bool World::ShouldTickUI() const
 bool World::ShouldPumpNetworking() const
 {
     return m_executionProfile.PumpNetworking;
-}
-
-bool World::ShouldTickEcsRuntime() const
-{
-    return m_executionProfile.TickEcsRuntime;
 }
 
 bool World::ShouldSimulatePhysics() const
@@ -826,6 +825,10 @@ void World::Tick(const float DeltaSeconds)
 {
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
+    if (auto HotReloadResult = m_scriptRuntime.TickHotReload(); !HotReloadResult)
+    {
+        std::cerr << "Warning: Script hot reload tick failed: " << HotReloadResult.error().Message << '\n';
+    }
 #if defined(SNAPI_GF_ENABLE_INPUT)
     if (ShouldTickInput() && m_inputSystem.IsInitialized())
     {
@@ -849,10 +852,16 @@ void World::Tick(const float DeltaSeconds)
         }
     }
 #endif
-    if (ShouldTickEcsRuntime())
+    if (ShouldRunGameplay())
     {
         m_ecsRuntime.Tick(*this, DeltaSeconds);
     }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    else if (Kind() == EWorldKind::Editor)
+    {
+        m_ecsRuntime.EditorTick(*this, DeltaSeconds);
+    }
+#endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
     if (ShouldSimulatePhysics() && m_physicsSystem.IsInitialized() && m_physicsSystem.TickInVariableTick())
     {
@@ -874,7 +883,7 @@ void World::FixedTick(float DeltaSeconds)
 
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
-    if (ShouldTickEcsRuntime())
+    if (ShouldRunGameplay())
     {
         m_ecsRuntime.FixedTick(*this, DeltaSeconds);
     }
@@ -913,7 +922,7 @@ void World::LateTick(const float DeltaSeconds)
 
     TaskDispatcherScope DispatcherScope(*this);
     ExecuteQueuedTasks();
-    if (ShouldTickEcsRuntime())
+    if (ShouldRunGameplay())
     {
         m_ecsRuntime.LateTick(*this, DeltaSeconds);
     }
@@ -1298,5 +1307,15 @@ const RendererSystem& World::Renderer() const
     return m_rendererSystem;
 }
 #endif
+
+ScriptRuntimeService& World::Scripts()
+{
+    return m_scriptRuntime;
+}
+
+const ScriptRuntimeService& World::Scripts() const
+{
+    return m_scriptRuntime;
+}
 
 } // namespace SnAPI::GameFramework

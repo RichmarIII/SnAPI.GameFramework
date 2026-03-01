@@ -9,6 +9,7 @@
 #include "IWorld.h"
 #include "JobSystem.h"
 #include "Level.h"
+#include "ScriptRuntime.h"
 #include "WorldEcsRuntime.h"
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include "InputSystem.h"
@@ -42,11 +43,10 @@ class GameplayHost;
  */
 struct WorldExecutionProfile
 {
-    bool RunGameplay = true; /**< @brief Run high-level gameplay host tick. */
+    bool RunGameplay = true; /**< @brief Run gameplay host and ECS runtime tick phases. */
     bool TickInput = true; /**< @brief Pump world input in variable tick. */
     bool TickUI = true; /**< @brief Tick world UI contexts in variable tick. */
     bool PumpNetworking = true; /**< @brief Pump networking queues/sessions each frame. */
-    bool TickEcsRuntime = true; /**< @brief Run world ECS runtime storage phases. */
     bool TickPhysicsSimulation = true; /**< @brief Advance physics simulation in variable/fixed phases. */
     bool AllowPhysicsQueries = true; /**< @brief Allow query-only physics access even when simulation is disabled. */
     bool TickAudio = true; /**< @brief Update world audio subsystem. */
@@ -147,7 +147,6 @@ public:
     bool ShouldTickInput() const override;
     bool ShouldTickUI() const override;
     bool ShouldPumpNetworking() const override;
-    bool ShouldTickEcsRuntime() const override;
     bool ShouldSimulatePhysics() const override;
     bool ShouldAllowPhysicsQueries() const override;
     bool ShouldTickAudio() const override;
@@ -404,6 +403,17 @@ public:
     const RendererSystem& Renderer() const override;
 #endif
 
+    /**
+     * @brief Access world scripting runtime service.
+     * @return Mutable scripting runtime service.
+     */
+    ScriptRuntimeService& Scripts() override;
+    /**
+     * @brief Access world scripting runtime service (const).
+     * @return Const scripting runtime service.
+     */
+    const ScriptRuntimeService& Scripts() const override;
+
 private:
     std::string m_name{"World"}; /**< @brief World display/debug name. */
     std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief World-owned node storage. */
@@ -413,6 +423,7 @@ private:
     TSystemTaskQueue<World> m_taskQueue{}; /**< @brief Cross-thread task handoff queue for world-thread callbacks. */
     JobSystem m_jobSystem{}; /**< @brief World-scoped job dispatch facade for framework/runtime tasks. */
     WorldEcsRuntime m_ecsRuntime{}; /**< @brief Centralized typed ECS storage owner for node/component runtime refactor. */
+    ScriptRuntimeService m_scriptRuntime{}; /**< @brief World-owned scripting runtime service. */
     GameplayHost* m_gameplayHost = nullptr; /**< @brief Non-owning gameplay host pointer for runtime bridge access. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     InputSystem m_inputSystem{}; /**< @brief World-scoped input subsystem instance. */

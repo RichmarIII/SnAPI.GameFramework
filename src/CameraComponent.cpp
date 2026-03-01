@@ -76,6 +76,22 @@ Quat EulerToQuat(const Vec3& Euler)
     }
     return Out;
 }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsCameraSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "NearClip"
+        || Name == "FarClip"
+        || Name == "FovDegrees"
+        || Name == "Aspect"
+        || Name == "Active"
+        || Name == "SyncFromTransform"
+        || Name == "LocalPositionOffset"
+        || Name == "LocalRotationOffsetEuler"
+        || Name == "AutoActivateForPlayer";
+}
+#endif
 } // namespace
 
 void CameraComponent::CameraDeleter::operator()(SnAPI::Graphics::CameraBase* Camera) const
@@ -137,23 +153,30 @@ void CameraComponent::OnDestroy()
 
 void CameraComponent::Tick(float DeltaSeconds)
 {
-    RuntimeTick(DeltaSeconds);
-}
-
-void CameraComponent::RuntimeTick(const float DeltaSeconds)
-{
     UpdateCamera(DeltaSeconds);
 }
 
 void CameraComponent::LateTick(float DeltaSeconds)
 {
-    RuntimeLateTick(DeltaSeconds);
+    UpdateCamera(DeltaSeconds);
 }
 
-void CameraComponent::RuntimeLateTick(const float DeltaSeconds)
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void CameraComponent::EditorTick(const float DeltaSeconds)
 {
     UpdateCamera(DeltaSeconds);
 }
+
+void CameraComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (!IsCameraSettingsField(Name))
+    {
+        return;
+    }
+
+    UpdateCamera(0.0f);
+}
+#endif
 
 void CameraComponent::UpdateCamera(const float DeltaSeconds)
 {

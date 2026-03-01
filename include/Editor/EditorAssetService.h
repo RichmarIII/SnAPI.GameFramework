@@ -7,6 +7,7 @@
 #include "TypeRegistration.h"
 #include "AssetManager.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -65,6 +66,16 @@ public:
         bool CanSave = false;
     };
 
+    struct ProjectInfo
+    {
+        bool IsLoaded = false;
+        std::string Name{};
+        std::string ProjectFilePath{};
+        std::string ProjectRootDirectory{};
+        std::string AssetRootDirectory{};
+        std::string StartupLevelPack{};
+    };
+
     [[nodiscard]] std::string_view Name() const override;
     Result Initialize(EditorServiceContext& Context) override;
     void Shutdown(EditorServiceContext& Context) override;
@@ -105,12 +116,15 @@ public:
 
     Result InstantiateArmedAsset(EditorServiceContext& Context);
     Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
+    Result CreateProject(EditorServiceContext& Context, std::string_view ProjectName, std::string_view ParentDirectory);
+    Result LoadProject(EditorServiceContext& Context, std::string_view ProjectFilePath);
+    [[nodiscard]] const ProjectInfo& CurrentProject() const { return m_currentProject; }
 
     [[nodiscard]] const std::string& PreviewSummary() const { return m_previewSummary; }
     [[nodiscard]] const std::string& StatusMessage() const { return m_statusMessage; }
 
 private:
-    [[nodiscard]] static std::vector<std::string> BuildPackSearchPaths();
+    [[nodiscard]] std::vector<std::string> BuildPackSearchPaths() const;
     [[nodiscard]] static std::vector<std::string> ParsePackSearchPathEnv(std::string_view Raw);
     [[nodiscard]] static std::string AssetKindToLabel(const ::SnAPI::AssetPipeline::TypeId& AssetKind);
     [[nodiscard]] const DiscoveredAsset* FindAssetByKey(std::string_view Key) const;
@@ -123,6 +137,11 @@ private:
     Result InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
+    Result RebuildAssetManager();
+    Result EnsureEditorTemplateAssets(EditorServiceContext& Context);
+    Result EnsureProjectStarterLevelPack(const std::filesystem::path& ProjectAssetRoot,
+                                         const std::filesystem::path& StartupPackPath);
+    Result LoadProjectStartupLevel(EditorServiceContext& Context, const std::filesystem::path& StartupPackPath);
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> SerializeAssetEditorPayload() const;
     [[nodiscard]] BaseNode* ResolveAssetEditorNode(const NodeHandle& Node) const;
     void RefreshAssetEditorHierarchy();
@@ -137,6 +156,10 @@ private:
     std::string m_placementAssetKey{};
     std::string m_previewSummary{};
     std::string m_statusMessage{};
+    std::filesystem::path m_editorTemplateAssetDirectory{};
+    std::filesystem::path m_editorStarterLevelTemplatePackPath{};
+    std::filesystem::path m_editorStarterScriptTemplatePath{};
+    ProjectInfo m_currentProject{};
 
     std::unique_ptr<::SnAPI::GameFramework::World> m_assetEditorWorld{};
     NodeHandle m_assetEditorRootHandle{};

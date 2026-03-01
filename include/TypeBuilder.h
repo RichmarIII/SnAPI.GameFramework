@@ -1,11 +1,15 @@
 #pragma once
 
+#include <concepts>
 #include <optional>
+#include <string>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
 #include "BaseComponent.h"
+#include "BaseNode.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
@@ -126,6 +130,106 @@ private:
                                                      std::is_same_v<std::remove_cvref_t<SetterReturn>, bool> ||
                                                      std::is_same_v<std::remove_cvref_t<SetterReturn>, Result>;
 
+    template<typename TValue>
+    static constexpr bool IsEqualityComparableV = requires(const TValue& Left, const TValue& Right) {
+        { Left == Right } -> std::convertible_to<bool>;
+    };
+
+    template<typename TValue>
+    static bool ValuesEqual(const TValue& Left, const TValue& Right)
+    {
+        if constexpr (IsEqualityComparableV<TValue>)
+        {
+            return static_cast<bool>(Left == Right);
+        }
+        else
+        {
+            (void)Left;
+            (void)Right;
+            return false;
+        }
+    }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    template<typename TObject>
+    static constexpr bool DeclaresEditorOnPropertyChangedStringViewV =
+        requires {
+            { &TObject::EditorOnPropertyChanged } -> std::same_as<void (TObject::*)(std::string_view)>;
+        };
+
+    template<typename TObject>
+    static constexpr bool DeclaresEditorOnPropertyChangedStringRefV =
+        requires {
+            { &TObject::EditorOnPropertyChanged } -> std::same_as<void (TObject::*)(const std::string&)>;
+        };
+
+    static constexpr bool HasDeclaredEditorOnPropertyChangedV =
+        DeclaresEditorOnPropertyChangedStringViewV<T> ||
+        DeclaresEditorOnPropertyChangedStringRefV<T>;
+
+    static void InvokeDeclaredEditorOnPropertyChanged(T& Typed, const std::string_view FieldName)
+    {
+        if constexpr (DeclaresEditorOnPropertyChangedStringViewV<T>)
+        {
+            Typed.EditorOnPropertyChanged(FieldName);
+        }
+        else if constexpr (DeclaresEditorOnPropertyChangedStringRefV<T>)
+        {
+            Typed.EditorOnPropertyChanged(std::string(FieldName));
+        }
+    }
+
+    static void InvokeEditorOnPropertyChangedCallback(void* const Instance, const std::string_view FieldName)
+    {
+        if (!Instance)
+        {
+            return;
+        }
+        auto* Typed = static_cast<T*>(Instance);
+        InvokeDeclaredEditorOnPropertyChanged(*Typed, FieldName);
+    }
+
+    static TypeInfo::EditorPropertyChangedInvoker EditorOnPropertyChangedInvokerForType()
+    {
+        if constexpr (HasDeclaredEditorOnPropertyChangedV)
+        {
+            return &InvokeEditorOnPropertyChangedCallback;
+        }
+        return nullptr;
+    }
+
+    static void NotifyEditorPropertyChangedIfNeeded(T& Typed, const std::string_view FieldName, const bool Changed)
+    {
+        if (!Changed)
+        {
+            return;
+        }
+
+        if constexpr (std::is_base_of_v<BaseNode, T> || std::is_base_of_v<BaseComponent, T>)
+        {
+            const TypeId DynamicType = Typed.TypeKey();
+            if (const TypeInfo* DynamicInfo = TypeRegistry::Instance().Find(DynamicType))
+            {
+                if (DynamicInfo->EditorPropertyChanged)
+                {
+                    DynamicInfo->EditorPropertyChanged(&Typed, FieldName);
+                    return;
+                }
+            }
+            return;
+        }
+
+        InvokeDeclaredEditorOnPropertyChanged(Typed, FieldName);
+    }
+#else
+    static void NotifyEditorPropertyChangedIfNeeded(T& Typed, const std::string_view FieldName, const bool Changed)
+    {
+        (void)Typed;
+        (void)FieldName;
+        (void)Changed;
+    }
+#endif
+
     template<typename GetterMethod>
     static TExpected<Variant> BuildGetterVariant(T* Typed, GetterMethod Getter)
     {
@@ -196,6 +300,9 @@ public:
         m_info.Id = TypeIdFromName(Name);
         m_info.Size = sizeof(T);
         m_info.Align = alignof(T);
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        m_info.EditorPropertyChanged = EditorOnPropertyChangedInvokerForType();
+#endif
     }
 
     /**
@@ -254,7 +361,7 @@ public:
                 return Variant::FromRef(Typed->*Member);
             }
         };
-        Info.Setter = [Member](void* Instance, const Variant& Value) -> Result {
+        Info.Setter = [Member, Name](void* Instance, const Variant& Value) -> Result {
             if (!Instance)
             {
                 return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
@@ -271,7 +378,13 @@ public:
             }
             else
             {
-                Typed->*Member = Ref->get();
+                const Raw& NewValue = Ref->get();
+                const bool Changed = !ValuesEqual<Raw>(Typed->*Member, NewValue);
+                if (Changed)
+                {
+                    Typed->*Member = NewValue;
+                }
+                NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
                 return Ok();
             }
         };
@@ -457,13 +570,36 @@ public:
             auto* Typed = static_cast<T*>(Instance);
             return BuildGetterVariant(Typed, Getter);
         };
-        Info.Setter = [Setter](void* Instance, const Variant& Value) -> Result {
+        Info.Setter = [Getter, Setter, Name](void* Instance, const Variant& Value) -> Result {
             if (!Instance)
             {
                 return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
             }
             auto* Typed = static_cast<T*>(Instance);
-            return ApplySetter<SetterMethod, Raw>(Typed, Setter, Value);
+            std::optional<Raw> BeforeValue{};
+            if constexpr (std::copy_constructible<Raw>)
+            {
+                BeforeValue.emplace(static_cast<Raw>((Typed->*Getter)()));
+            }
+
+            auto SetResult = ApplySetter<SetterMethod, Raw>(Typed, Setter, Value);
+            if (!SetResult)
+            {
+                return std::unexpected(SetResult.error());
+            }
+
+            bool Changed = true;
+            if constexpr (std::copy_constructible<Raw>)
+            {
+                if constexpr (IsEqualityComparableV<Raw>)
+                {
+                    const Raw AfterValue = static_cast<Raw>((Typed->*Getter)());
+                    Changed = !BeforeValue.has_value() || !ValuesEqual(*BeforeValue, AfterValue);
+                }
+            }
+
+            NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
+            return Ok();
         };
         if constexpr (std::is_reference_v<GetterReturn>)
         {
@@ -569,7 +705,7 @@ public:
             auto* Typed = static_cast<T*>(Instance);
             return Variant::FromRef((Typed->*Getter)());
         };
-        Info.Setter = [Getter](void* Instance, const Variant& Value) -> Result {
+        Info.Setter = [Getter, Name](void* Instance, const Variant& Value) -> Result {
             if (!Instance)
             {
                 return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
@@ -580,7 +716,14 @@ public:
             {
                 return std::unexpected(Ref.error());
             }
-            (Typed->*Getter)() = Ref->get();
+            Raw& FieldRef = (Typed->*Getter)();
+            const Raw& NewValue = Ref->get();
+            const bool Changed = !ValuesEqual<Raw>(FieldRef, NewValue);
+            if (Changed)
+            {
+                FieldRef = NewValue;
+            }
+            NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
             return Ok();
         };
         Info.ViewGetter = [Getter, FieldType](void* Instance) -> TExpected<VariantView> {

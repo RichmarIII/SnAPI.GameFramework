@@ -5,6 +5,7 @@
 #include "BaseComponent.h"
 #include "Export.h"
 #include "Math.h"
+#include <string_view>
 
 namespace SnAPI::GameFramework
 {
@@ -60,17 +61,9 @@ public:
     void Tick(float DeltaSeconds);
     /** @brief Variable-step view/camera application pass. */
     void LateTick(float DeltaSeconds);
-
-    /** @brief Non-virtual create entry used by ECS runtime bridge. */
-    void RuntimeOnCreate();
-    /** @brief Non-virtual variable-step entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    /** @brief Non-virtual late-step entry used by ECS runtime bridge. */
-    void RuntimeLateTick(float DeltaSeconds);
-
-    void OnCreateImpl(IWorld&) { RuntimeOnCreate(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
-    void LateTickImpl(IWorld&, float DeltaSeconds) { RuntimeLateTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
     /**
      * @brief Queue additive view input in degrees.

@@ -377,7 +377,7 @@ bool WriteResultsFile(const BenchmarkOptions& Options,
 void ConfigureWorldForMode(World& WorldInstance)
 {
     WorldExecutionProfile Profile = WorldExecutionProfile::Runtime();
-    Profile.RunGameplay = false;
+    Profile.RunGameplay = true;
     Profile.TickInput = false;
     Profile.TickUI = false;
     Profile.PumpNetworking = false;
@@ -386,7 +386,6 @@ void ConfigureWorldForMode(World& WorldInstance)
     Profile.TickAudio = false;
     Profile.BuildUiRenderPackets = false;
     Profile.RenderFrame = false;
-    Profile.TickEcsRuntime = true;
     Profile.RunNodeEndFrame = true;
     WorldInstance.SetExecutionProfile(Profile);
 }

@@ -652,17 +652,63 @@ void UISystem::PushInput(const SnAPI::UI::WheelEvent& EventValue)
         m_activeInputContext = m_rootContextId;
     }
 
+    std::vector<ContextId> DispatchContexts{};
+    DispatchContexts.reserve(4);
+    const auto AppendUnique = [&DispatchContexts](const ContextId Context) {
+        if (Context == 0)
+        {
+            return;
+        }
+        if (std::find(DispatchContexts.begin(), DispatchContexts.end(), Context) == DispatchContexts.end())
+        {
+            DispatchContexts.push_back(Context);
+        }
+    };
+    const auto AppendContextAndAncestors = [this, &AppendUnique](const ContextId LeafContext) {
+        if (LeafContext == 0)
+        {
+            return;
+        }
+
+        std::vector<ContextId> Chain{};
+        Chain.reserve(8);
+        ContextId Current = LeafContext;
+        while (Current != 0)
+        {
+            Chain.push_back(Current);
+            const auto It = m_contextNodes.find(Current);
+            if (It == m_contextNodes.end())
+            {
+                break;
+            }
+            Current = It->second.Parent;
+        }
+
+        for (auto It = Chain.rbegin(); It != Chain.rend(); ++It)
+        {
+            AppendUnique(*It);
+        }
+    };
+
+    // Always route wheel through root context first so global overlays/modals can
+    // scroll even when pointer is inside a bound child context rectangle.
+    AppendUnique(m_rootContextId);
+
     ContextId TargetContext = 0;
     if (m_pointerCaptureContext != 0)
     {
         TargetContext = m_pointerCaptureContext;
+        AppendUnique(TargetContext);
     }
     else
     {
+        const ContextId PreviousActiveContext = m_activeInputContext;
         TargetContext = FindDeepestPointerTargetLocked(m_rootContextId, EventValue.Position);
         if (TargetContext == 0)
         {
-            TargetContext = m_activeInputContext;
+            // Keep sending to the previous context so scroll interactions stay consistent
+            // when pointer leaves all registered context rects for one frame.
+            TargetContext = PreviousActiveContext;
         }
         if (TargetContext == 0)
         {
@@ -670,13 +716,22 @@ void UISystem::PushInput(const SnAPI::UI::WheelEvent& EventValue)
         }
         if (TargetContext != 0)
         {
+            AppendContextAndAncestors(TargetContext);
             m_activeInputContext = TargetContext;
+        }
+
+        if (PreviousActiveContext != 0 && PreviousActiveContext != TargetContext)
+        {
+            AppendUnique(PreviousActiveContext);
         }
     }
 
-    if (auto* ContextValue = FindContextLocked(TargetContext))
+    for (const auto ContextIdValue : DispatchContexts)
     {
-        ContextValue->PushInput(EventValue);
+        if (auto* ContextValue = FindContextLocked(ContextIdValue))
+        {
+            ContextValue->PushInput(EventValue);
+        }
     }
 }
 

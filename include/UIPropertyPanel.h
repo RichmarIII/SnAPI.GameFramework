@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include <filesystem>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -95,6 +96,8 @@ private:
     std::uint8_t ComponentCount = 0;
     std::size_t EditorHookHandle = 0;
     std::array<std::size_t, 4> ComponentHookHandles{};
+    bool UsesFilesystemPicker = false;
+    bool PathSelectsDirectories = false;
   };
 
   struct BoundSection
@@ -128,6 +131,10 @@ private:
   [[nodiscard]] bool IsNestedStructType(const TypeId& Type) const;
   [[nodiscard]] std::string PrettyTypeName(const TypeId& Type) const;
   [[nodiscard]] std::string PrettyFieldName(std::string_view Name) const;
+  [[nodiscard]] bool IsPathLikeField(const FieldInfo& Field) const;
+  [[nodiscard]] bool IsDirectoryLikeField(const FieldInfo& Field) const;
+  [[nodiscard]] std::filesystem::path ResolveAssetRootPath() const;
+  [[nodiscard]] std::string NormalizeToAssetUri(std::string_view Candidate) const;
 
   [[nodiscard]] bool ResolveLeafPath(
     void* Root,

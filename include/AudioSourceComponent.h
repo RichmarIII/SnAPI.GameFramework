@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 
 #include "BaseComponent.h"
 #include "Math.h"
@@ -92,11 +93,9 @@ public:
      * @remarks Keeps emitter parameters and transform synchronized with current settings/owner state.
      */
     void Tick(float DeltaSeconds);
-    /** @brief Non-virtual tick entry used by ECS runtime bridge. */
-    void RuntimeTick(float DeltaSeconds);
-    void OnCreateImpl(IWorld&) { OnCreate(); }
-    void OnDestroyImpl(IWorld&) { OnDestroy(); }
-    void TickImpl(IWorld&, float DeltaSeconds) { RuntimeTick(DeltaSeconds); }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    void EditorOnPropertyChanged(std::string_view Name);
+#endif
 
     /**
      * @brief Start playback.

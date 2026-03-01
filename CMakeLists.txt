@@ -10,8 +10,12 @@ option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
 option(SNAPI_GF_BUILD_EDITOR "Build editor target" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
-option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" OFF)
+option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
+
+if (SNAPI_GF_ENABLE_LUA AND NOT SNAPI_GF_ENABLE_SWIG)
+    message(FATAL_ERROR "Lua scripting now requires SWIG bindings. Enable SNAPI_GF_ENABLE_SWIG.")
+endif()
 
 include(FetchContent)
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
@@ -126,9 +130,12 @@ set(SNAPI_GF_SOURCES
     src/SkeletalMeshComponent.cpp
     src/SprintArmComponent.cpp
     src/StaticMeshComponent.cpp
+    src/PathResolver.cpp
     src/TransformComponent.cpp
     src/Serialization.cpp
     src/ScriptABI.cpp
+    src/ScriptComponent.cpp
+    src/ScriptRuntime.cpp
     src/TypeAutoRegistry.cpp
     src/TypeRegistry.cpp
     src/World.cpp
@@ -143,6 +150,12 @@ target_include_directories(SnAPI.GameFramework PUBLIC
 
 target_link_libraries(SnAPI.GameFramework PUBLIC stduuid SnAPI.Math)
 
+set(SNAPI_GF_DEFAULT_ASSET_ROOT "${CMAKE_BINARY_DIR}/Assets")
+file(TO_CMAKE_PATH "${SNAPI_GF_DEFAULT_ASSET_ROOT}" SNAPI_GF_DEFAULT_ASSET_ROOT)
+target_compile_definitions(SnAPI.GameFramework PUBLIC
+    SNAPI_GF_DEFAULT_ASSET_ROOT="${SNAPI_GF_DEFAULT_ASSET_ROOT}"
+)
+
 if (SNAPI_GF_ENABLE_PROFILER)
     target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Profiler)
     target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PROFILER=1)
@@ -150,7 +163,19 @@ else()
     target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PROFILER=0)
 endif()
 
+if (SNAPI_GF_ENABLE_SWIG)
+    target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_SWIG=1)
+else()
+    target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_SWIG=0)
+endif()
+
 target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GAMEFRAMEWORK_BUILD_DLL)
+
+if (SNAPI_GF_BUILD_EDITOR)
+    target_compile_definitions(SnAPI.GameFramework PUBLIC WITH_EDITOR=1)
+else()
+    target_compile_definitions(SnAPI.GameFramework PUBLIC WITH_EDITOR=0)
+endif()
 
 if (SNAPI_GF_BUILD_EDITOR)
     set(SNAPI_GF_EDITOR_SOURCES
@@ -183,17 +208,45 @@ if (SNAPI_GF_BUILD_EDITOR)
 
     add_executable(SnAPI.GameFramework.Editor ${SNAPI_GF_EDITOR_SOURCES})
     target_link_libraries(SnAPI.GameFramework.Editor PRIVATE SnAPI.GameFramework)
+    target_compile_definitions(SnAPI.GameFramework.Editor PRIVATE WITH_EDITOR=1)
 
     set(SNAPI_GF_EDITOR_ASSET_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/Editor/Assets")
+    set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT "")
+    if (WIN32)
+        if (DEFINED ENV{LOCALAPPDATA} AND NOT "$ENV{LOCALAPPDATA}" STREQUAL "")
+            set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT "$ENV{LOCALAPPDATA}/SnAPI/GameFramework/Editor/Assets")
+        elseif (DEFINED ENV{APPDATA} AND NOT "$ENV{APPDATA}" STREQUAL "")
+            set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT "$ENV{APPDATA}/SnAPI/GameFramework/Editor/Assets")
+        endif()
+    elseif (APPLE)
+        if (DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+            set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT "$ENV{HOME}/Library/Application Support/SnAPI/GameFramework/Editor/Assets")
+        endif()
+    else()
+        if (DEFINED ENV{XDG_DATA_HOME} AND NOT "$ENV{XDG_DATA_HOME}" STREQUAL "")
+            set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT "$ENV{XDG_DATA_HOME}/SnAPI/GameFramework/Editor/Assets")
+        elseif (DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
+            set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT "$ENV{HOME}/.local/share/SnAPI/GameFramework/Editor/Assets")
+        endif()
+    endif()
+
+    set(SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR
+        "${SNAPI_GF_EDITOR_ASSET_OUTPUT_DEFAULT}"
+        CACHE PATH "Destination directory for editor template assets")
+
     if (EXISTS "${SNAPI_GF_EDITOR_ASSET_SOURCE_DIR}")
-        add_custom_command(TARGET SnAPI.GameFramework.Editor POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:SnAPI.GameFramework.Editor>/Editor/Assets"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory
-                "${SNAPI_GF_EDITOR_ASSET_SOURCE_DIR}"
-                "$<TARGET_FILE_DIR:SnAPI.GameFramework.Editor>/Editor/Assets"
-            COMMENT "Copying editor SVG assets to output directory"
-            VERBATIM
-        )
+        if (SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR)
+            add_custom_command(TARGET SnAPI.GameFramework.Editor POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${SNAPI_GF_EDITOR_ASSET_SOURCE_DIR}"
+                    "${SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR}"
+                COMMENT "Copying editor assets to ${SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR}"
+                VERBATIM
+            )
+        else()
+            message(STATUS "SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR is empty; skipping editor asset copy step.")
+        endif()
     endif()
 endif()
 
@@ -249,7 +302,7 @@ if (SNAPI_GF_ENABLE_LUA)
     if (UNIX)
         target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
     endif()
-    target_link_libraries(SnAPI.GameFramework PUBLIC lua)
+    target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_LUA=1)
 endif()
 
 # AssetPipeline integration (required)
@@ -471,10 +524,44 @@ else()
     message(WARNING "SnAPI.Renderer source not found; set SNAPI_GF_RENDERER_SOURCE_DIR to enable renderer integration.")
 endif()
 
-# SWIG bindings (optional)
+# SWIG bindings (required for Lua scripting)
 if (SNAPI_GF_ENABLE_SWIG)
     find_package(SWIG REQUIRED)
     include(UseSWIG)
+
+    if (SNAPI_GF_ENABLE_LUA)
+        set(SNAPI_GF_SWIG_INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/swig/SnAPIGameFramework.i")
+        if (EXISTS "${SNAPI_GF_SWIG_INTERFACE}")
+            set_source_files_properties("${SNAPI_GF_SWIG_INTERFACE}" PROPERTIES
+                CPLUSPLUS ON
+                SWIG_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            )
+            set(CMAKE_SWIG_OUTDIR "${CMAKE_CURRENT_BINARY_DIR}/swig/lua")
+
+            swig_add_library(snapi_gf_lua
+                TYPE STATIC
+                LANGUAGE lua
+                SOURCES "${SNAPI_GF_SWIG_INTERFACE}"
+            )
+
+            target_include_directories(${SWIG_MODULE_snapi_gf_lua_REAL_NAME}
+                PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/include
+            )
+
+            target_link_libraries(${SWIG_MODULE_snapi_gf_lua_REAL_NAME}
+                PRIVATE
+                    lua
+                    SnAPI.GameFramework
+            )
+
+            target_link_libraries(SnAPI.GameFramework PRIVATE ${SWIG_MODULE_snapi_gf_lua_REAL_NAME})
+        else()
+            message(FATAL_ERROR "SNAPI_GF_ENABLE_SWIG is ON but ${SNAPI_GF_SWIG_INTERFACE} was not found.")
+        endif()
+    else()
+        message(STATUS "SNAPI_GF_ENABLE_SWIG is ON but SNAPI_GF_ENABLE_LUA is OFF; scripting wrappers are skipped.")
+    endif()
 endif()
 
 # Tests
