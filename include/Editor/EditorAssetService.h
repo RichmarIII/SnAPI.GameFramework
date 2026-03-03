@@ -6,9 +6,11 @@
 #include "Handles.h"
 #include "TypeRegistration.h"
 #include "AssetManager.h"
+#include "RenderAssetPayloads.h"
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -102,6 +104,12 @@ public:
                                         const TypeId& NodeType,
                                         std::string_view AssetName,
                                         std::string_view FolderPath);
+    Result CreateRuntimeMaterialAsset(EditorServiceContext& Context,
+                                      std::string_view AssetName,
+                                      std::string_view FolderPath);
+    Result CreateRuntimeMaterialInstanceAsset(EditorServiceContext& Context,
+                                              std::string_view AssetName,
+                                              std::string_view FolderPath);
     Result ImportSourceAsset(EditorServiceContext& Context,
                              std::string_view SourcePath,
                              std::string_view DestinationFolderPath,
@@ -176,6 +184,8 @@ private:
     bool m_assetEditorDirty = false;
     bool m_assetEditorCanSave = false;
     bool m_assetEditorCanEditHierarchy = false;
+    std::optional<MaterialPayload> m_assetEditorMaterialPayload{};
+    std::optional<MaterialInstancePayload> m_assetEditorMaterialInstancePayload{};
     std::vector<uint8_t> m_assetEditorBaselineCookedBytes{};
     std::string m_assetEditorTitle{};
     NodeHandle m_assetEditorSelectedNode{};

@@ -13,8 +13,12 @@ namespace SnAPI::GameFramework
 
 struct AssetRefPayload
 {
+    static constexpr const char* kTypeName = "SnAPI.GameFramework.AssetRefPayload";
+
     std::string AssetName{};
     std::string AssetId{};
+
+    bool operator==(const AssetRefPayload&) const = default;
 };
 
 enum class EMeshStreamSemantic : uint32_t
@@ -103,20 +107,28 @@ struct SkeletalMeshPayload
 
 struct MaterialPayload
 {
+    static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialPayload";
+
     std::string ShaderModule{};
     std::string ShadingModel{};
+
+    bool operator==(const MaterialPayload&) const = default;
 };
 
 struct MaterialScalarParamPayload
 {
     std::string Name{};
     float Value = 0.0f;
+
+    bool operator==(const MaterialScalarParamPayload&) const = default;
 };
 
 struct MaterialVectorParamPayload
 {
     std::string Name{};
     std::array<float, 4> Value{0.0f, 0.0f, 0.0f, 0.0f};
+
+    bool operator==(const MaterialVectorParamPayload&) const = default;
 };
 
 struct MaterialTextureParamPayload
@@ -124,14 +136,20 @@ struct MaterialTextureParamPayload
     std::string SlotName{};
     AssetRefPayload Texture{};
     bool SRGB = true;
+
+    bool operator==(const MaterialTextureParamPayload&) const = default;
 };
 
 struct MaterialInstancePayload
 {
+    static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialInstancePayload";
+
     AssetRefPayload ParentMaterial{};
     std::vector<MaterialScalarParamPayload> Scalars{};
     std::vector<MaterialVectorParamPayload> Vectors{};
     std::vector<MaterialTextureParamPayload> Textures{};
+
+    bool operator==(const MaterialInstancePayload&) const = default;
 };
 
 TExpected<void> SerializeStaticMeshPayload(const StaticMeshPayload& Payload, std::vector<uint8_t>& OutBytes);

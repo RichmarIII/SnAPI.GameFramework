@@ -16,6 +16,8 @@
 #include "PawnBase.h"
 #include "PayloadRegistry.h"
 #include "PlayerStart.h"
+#include "RenderAssetPayloads.h"
+#include "RenderAssetRuntime.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TransformComponent.h"
@@ -89,6 +91,10 @@ constexpr std::string_view kDefaultProjectStartupLevelPack = "Levels/StarterLeve
 constexpr std::string_view kEditorStarterLevelTemplatePackFileName = "StarterLevelTemplate.snpak";
 constexpr std::string_view kEditorStarterScriptFileName = "platform_bob.lua";
 constexpr uint32_t kProjectConfigVersion = 1u;
+constexpr uint32_t kMaterialPayloadSchemaVersion = 1u;
+constexpr uint32_t kMaterialInstancePayloadSchemaVersion = 1u;
+constexpr std::string_view kDefaultMaterialShaderModule = "SnAPI.Renderer.Materials.DefaultLit";
+constexpr std::string_view kDefaultMaterialShadingModel = "Lit";
 static constexpr ::SnAPI::AssetPipeline::Uuid kAssetIdNamespace =
     SNAPI_UUID(0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8);
 
@@ -1340,6 +1346,13 @@ Result EditorAssetService::ArmPlacementByKey(const std::string_view Key)
         return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found for placement"));
     }
 
+    if (Asset->AssetKind != AssetKindNode() &&
+        Asset->AssetKind != AssetKindLevel() &&
+        Asset->AssetKind != AssetKindWorld())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Selected asset kind cannot be placed in scene"));
+    }
+
     m_selectedAssetKey = Asset->Key;
     m_placementAssetKey = Asset->Key;
     m_statusMessage = "Placement armed: " + Asset->Name + ". Click inside the viewport to instantiate.";
@@ -2107,9 +2120,22 @@ Result EditorAssetService::CreateRuntimeNodeAssetByType(EditorServiceContext& Co
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
     }
+
+    const TypeId MaterialCreateType = TypeIdFromName(kAssetKindMaterialName);
+    const TypeId MaterialInstanceCreateType = TypeIdFromName(kAssetKindMaterialInstanceName);
+
+    if (NodeType == MaterialCreateType)
+    {
+        return CreateRuntimeMaterialAsset(Context, AssetName, FolderPath);
+    }
+    if (NodeType == MaterialInstanceCreateType)
+    {
+        return CreateRuntimeMaterialInstanceAsset(Context, AssetName, FolderPath);
+    }
+
     if (NodeType == TypeId{})
     {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Create asset requires a valid node type"));
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Create asset requires a valid type"));
     }
 
     const TypeInfo* Type = TypeRegistry::Instance().Find(NodeType);
@@ -2221,6 +2247,120 @@ Result EditorAssetService::CreateRuntimeNodeAssetByType(EditorServiceContext& Co
     const std::string AssetKey = UpsertResult->ToString();
     (void)SelectAssetByKey(AssetKey);
     m_statusMessage = "Created runtime " + KindLabel + " asset: " + LogicalName;
+    (void)Context;
+    return Ok();
+}
+
+Result EditorAssetService::CreateRuntimeMaterialAsset(EditorServiceContext& Context,
+                                                      const std::string_view AssetName,
+                                                      const std::string_view FolderPath)
+{
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    std::string BaseName = LeafLogicalName(std::string(AssetName));
+    if (BaseName.empty())
+    {
+        BaseName = "Material";
+    }
+    const std::string TargetFolder = NormalizeAssetLogicalName(FolderPath);
+    const std::string LogicalName = MakeUniqueLogicalName(*m_assetManager, TargetFolder, BaseName);
+
+    MaterialPayload Payload{};
+    Payload.ShaderModule = std::string(kDefaultMaterialShaderModule);
+    Payload.ShadingModel = std::string(kDefaultMaterialShadingModel);
+
+    std::vector<uint8_t> Bytes{};
+    auto SerializeResult = SerializeMaterialPayload(Payload, Bytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error());
+    }
+
+    ::SnAPI::AssetPipeline::RuntimeAssetUpsert RuntimeAsset{};
+    RuntimeAsset.Id = ::SnAPI::AssetPipeline::AssetId::Generate();
+    RuntimeAsset.Name = LogicalName;
+    RuntimeAsset.AssetKind = AssetKindMaterial();
+    RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+        PayloadMaterial(),
+        kMaterialPayloadSchemaVersion,
+        std::move(Bytes));
+    RuntimeAsset.Bulk.clear();
+    RuntimeAsset.Dirty = true;
+
+    auto UpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(RuntimeAsset));
+    if (!UpsertResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, UpsertResult.error()));
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    const std::string AssetKey = UpsertResult->ToString();
+    (void)SelectAssetByKey(AssetKey);
+    m_statusMessage = "Created runtime material asset: " + LogicalName;
+    (void)Context;
+    return Ok();
+}
+
+Result EditorAssetService::CreateRuntimeMaterialInstanceAsset(EditorServiceContext& Context,
+                                                              const std::string_view AssetName,
+                                                              const std::string_view FolderPath)
+{
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    std::string BaseName = LeafLogicalName(std::string(AssetName));
+    if (BaseName.empty())
+    {
+        BaseName = "MaterialInstance";
+    }
+    const std::string TargetFolder = NormalizeAssetLogicalName(FolderPath);
+    const std::string LogicalName = MakeUniqueLogicalName(*m_assetManager, TargetFolder, BaseName);
+
+    MaterialInstancePayload Payload{};
+
+    std::vector<uint8_t> Bytes{};
+    auto SerializeResult = SerializeMaterialInstancePayload(Payload, Bytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error());
+    }
+
+    ::SnAPI::AssetPipeline::RuntimeAssetUpsert RuntimeAsset{};
+    RuntimeAsset.Id = ::SnAPI::AssetPipeline::AssetId::Generate();
+    RuntimeAsset.Name = LogicalName;
+    RuntimeAsset.AssetKind = AssetKindMaterialInstance();
+    RuntimeAsset.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+        PayloadMaterialInstance(),
+        kMaterialInstancePayloadSchemaVersion,
+        std::move(Bytes));
+    RuntimeAsset.Bulk.clear();
+    RuntimeAsset.Dirty = true;
+
+    auto UpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(RuntimeAsset));
+    if (!UpsertResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, UpsertResult.error()));
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    const std::string AssetKey = UpsertResult->ToString();
+    (void)SelectAssetByKey(AssetKey);
+    m_statusMessage = "Created runtime material instance asset: " + LogicalName;
     (void)Context;
     return Ok();
 }
@@ -2582,6 +2722,127 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         m_assetEditorTargetObject = m_assetEditorWorld.get();
         m_assetEditorTargetType = StaticTypeId<World>();
     }
+    else if (Asset->AssetKind == AssetKindMaterial())
+    {
+        if (!Asset->IsRuntime)
+        {
+            auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+            if (!CookedPayloadResult)
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+            }
+
+            if (CookedPayloadResult->PayloadType != PayloadMaterial())
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Material asset has unexpected payload type"));
+            }
+
+            auto PayloadResult = DeserializeMaterialPayload(
+                CookedPayloadResult->Bytes.data(),
+                CookedPayloadResult->Bytes.size());
+            if (!PayloadResult)
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
+            }
+
+            m_assetEditorMaterialPayload = std::move(PayloadResult.value());
+        }
+        else
+        {
+            auto LoadResult = m_assetManager->Load<MaterialAssetRuntime>(Asset->AssetId);
+            if (!LoadResult)
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+            }
+
+            const MaterialAssetRuntime& Loaded = *LoadResult.value();
+            MaterialPayload Payload{};
+            Payload.ShaderModule = Loaded.ShaderModule;
+            Payload.ShadingModel = Loaded.ShadingModel;
+            m_assetEditorMaterialPayload = std::move(Payload);
+        }
+        m_assetEditorTargetObject = &(*m_assetEditorMaterialPayload);
+        m_assetEditorTargetType = StaticTypeId<MaterialPayload>();
+    }
+    else if (Asset->AssetKind == AssetKindMaterialInstance())
+    {
+        if (!Asset->IsRuntime)
+        {
+            auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+            if (!CookedPayloadResult)
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+            }
+
+            if (CookedPayloadResult->PayloadType != PayloadMaterialInstance())
+            {
+                ClearAssetEditorState();
+                return std::unexpected(
+                    MakeError(EErrorCode::InvalidArgument, "Material instance asset has unexpected payload type"));
+            }
+
+            auto PayloadResult = DeserializeMaterialInstancePayload(
+                CookedPayloadResult->Bytes.data(),
+                CookedPayloadResult->Bytes.size());
+            if (!PayloadResult)
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
+            }
+
+            m_assetEditorMaterialInstancePayload = std::move(PayloadResult.value());
+        }
+        else
+        {
+            auto LoadResult = m_assetManager->Load<MaterialInstanceAssetRuntime>(Asset->AssetId);
+            if (!LoadResult)
+            {
+                ClearAssetEditorState();
+                return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
+            }
+
+            const MaterialInstanceAssetRuntime& Loaded = *LoadResult.value();
+            MaterialInstancePayload Payload{};
+            Payload.ParentMaterial.AssetName = Loaded.ParentMaterial.GetAssetName();
+            Payload.ParentMaterial.AssetId = Loaded.ParentMaterial.GetAssetId();
+            Payload.Scalars = Loaded.Scalars;
+            Payload.Vectors = Loaded.Vectors;
+
+            const std::size_t TextureSlotCount = Loaded.TextureSlots.size();
+            const std::size_t TextureRefCount = Loaded.Textures.size();
+            const std::size_t TextureCount = std::max(TextureSlotCount, TextureRefCount);
+            Payload.Textures.reserve(TextureCount);
+            for (std::size_t Index = 0; Index < TextureCount; ++Index)
+            {
+                MaterialTextureParamPayload Texture{};
+                if (Index < TextureSlotCount)
+                {
+                    Texture.SlotName = Loaded.TextureSlots[Index];
+                }
+                else
+                {
+                    Texture.SlotName = "Texture" + std::to_string(Index);
+                }
+
+                if (Index < TextureRefCount)
+                {
+                    Texture.Texture.AssetName = Loaded.Textures[Index].GetAssetName();
+                    Texture.Texture.AssetId = Loaded.Textures[Index].GetAssetId();
+                }
+
+                Payload.Textures.push_back(std::move(Texture));
+            }
+
+            m_assetEditorMaterialInstancePayload = std::move(Payload);
+        }
+        m_assetEditorTargetObject = &(*m_assetEditorMaterialInstancePayload);
+        m_assetEditorTargetType = StaticTypeId<MaterialInstancePayload>();
+    }
     else
     {
         ClearAssetEditorState();
@@ -2828,7 +3089,7 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
         ++m_assetEditorSessionRevision;
     }
 
-    if (Asset->AssetKind != AssetKindWorld())
+    if (Asset->AssetKind == AssetKindNode() || Asset->AssetKind == AssetKindLevel())
     {
         BaseNode* RootNode = m_assetEditorRootHandle.Borrowed();
         if (!RootNode)
@@ -3908,6 +4169,45 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
         return ::SnAPI::AssetPipeline::TypedPayload(PayloadWorld(), WorldSerializer::kSchemaVersion, std::move(Bytes));
     }
 
+    if (m_assetEditorAssetKind == AssetKindMaterial())
+    {
+        auto* Material = static_cast<MaterialPayload*>(m_assetEditorTargetObject);
+        if (!Material)
+        {
+            return std::unexpected("Asset editor material target is null");
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeMaterialPayload(*Material, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error().Message);
+        }
+
+        return ::SnAPI::AssetPipeline::TypedPayload(PayloadMaterial(), kMaterialPayloadSchemaVersion, std::move(Bytes));
+    }
+
+    if (m_assetEditorAssetKind == AssetKindMaterialInstance())
+    {
+        auto* MaterialInstance = static_cast<MaterialInstancePayload*>(m_assetEditorTargetObject);
+        if (!MaterialInstance)
+        {
+            return std::unexpected("Asset editor material instance target is null");
+        }
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeMaterialInstancePayload(*MaterialInstance, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error().Message);
+        }
+
+        return ::SnAPI::AssetPipeline::TypedPayload(
+            PayloadMaterialInstance(),
+            kMaterialInstancePayloadSchemaVersion,
+            std::move(Bytes));
+    }
+
     return std::unexpected("Unsupported asset kind for serialization");
 }
 
@@ -3929,6 +4229,8 @@ void EditorAssetService::ClearAssetEditorState()
     m_assetEditorDirty = false;
     m_assetEditorCanSave = false;
     m_assetEditorCanEditHierarchy = false;
+    m_assetEditorMaterialPayload.reset();
+    m_assetEditorMaterialInstancePayload.reset();
     m_assetEditorBaselineCookedBytes.clear();
     m_assetEditorTitle.clear();
     m_assetEditorSelectedNode = {};
@@ -4035,6 +4337,14 @@ std::string EditorAssetService::AssetKindToLabel(const ::SnAPI::AssetPipeline::T
     if (AssetKind == AssetKindLevel())
     {
         return "Level";
+    }
+    if (AssetKind == AssetKindMaterial())
+    {
+        return "Material";
+    }
+    if (AssetKind == AssetKindMaterialInstance())
+    {
+        return "Material Instance";
     }
     return "Asset";
 }

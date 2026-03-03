@@ -168,6 +168,23 @@ SNAPI_REFLECT_TYPE(TAssetRef<SkeletalMeshAssetRuntime>, (TTypeBuilder<TAssetRef<
            &TAssetRef<SkeletalMeshAssetRuntime>::GetAssetId)
     .Constructor<>()
     .Register()));
+
+SNAPI_REFLECT_TYPE(AssetRefPayload, (TTypeBuilder<AssetRefPayload>(TTypeNameV<AssetRefPayload>)
+    .Field("AssetName", &AssetRefPayload::AssetName)
+    .Field("AssetId", &AssetRefPayload::AssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(MaterialPayload, (TTypeBuilder<MaterialPayload>(TTypeNameV<MaterialPayload>)
+    .Field("ShaderModule", &MaterialPayload::ShaderModule)
+    .Field("ShadingModel", &MaterialPayload::ShadingModel)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(MaterialInstancePayload, (TTypeBuilder<MaterialInstancePayload>(TTypeNameV<MaterialInstancePayload>)
+    .Field("ParentMaterial", &MaterialInstancePayload::ParentMaterial)
+    .Constructor<>()
+    .Register()));
 #endif
 
 SNAPI_REFLECT_TYPE(PawnBase, (TTypeBuilder<PawnBase>(PawnBase::kTypeName)

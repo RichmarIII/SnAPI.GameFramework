@@ -1,6 +1,7 @@
 #include "Editor/EditorCoreServices.h"
 
 #include "BaseNode.h"
+#include "AssetPipelineIds.h"
 #include "CameraComponent.h"
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
 #include "Editor/EditorCameraComponent.h"
@@ -203,6 +204,13 @@ private:
     }
 
     return std::string(QualifiedName.substr(Delimiter + 2));
+}
+
+[[nodiscard]] bool CanPlaceAssetKind(const ::SnAPI::AssetPipeline::TypeId& AssetKind)
+{
+    return AssetKind == AssetKindNode() ||
+           AssetKind == AssetKindLevel() ||
+           AssetKind == AssetKindWorld();
 }
 
 [[nodiscard]] BaseNode* ResolveNodeFromHandle(const NodeHandle Handle, World& WorldRef)
@@ -1394,7 +1402,7 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         Details.AssetId = SelectedAsset->Key;
         Details.IsRuntime = SelectedAsset->IsRuntime;
         Details.IsDirty = SelectedAsset->IsDirty;
-        Details.CanPlace = true;
+        Details.CanPlace = CanPlaceAssetKind(SelectedAsset->AssetKind);
         Details.CanSave = SelectedAsset->CanSave && (!SelectedAsset->IsRuntime || SelectedAsset->IsDirty);
     }
     else

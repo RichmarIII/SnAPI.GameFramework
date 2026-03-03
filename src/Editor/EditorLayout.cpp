@@ -1,5 +1,6 @@
 #include "Editor/EditorLayout.h"
 
+#include "AssetPipelineIds.h"
 #include "BaseNode.h"
 #include "CameraComponent.h"
 #include "Editor/EditorSelectionModel.h"
@@ -634,11 +635,37 @@ struct CreateNodeTypeEntry
 {
     (void)TypeAutoRegistry::Instance().EnsureAll();
 
+    std::vector<CreateNodeTypeEntry> Entries{};
+    const auto AppendBuiltInAssetType =
+        [&Entries, &FilterLower](const TypeId& Type, const std::string_view Label, const std::string_view QualifiedName) {
+            if (Type == TypeId{})
+            {
+                return;
+            }
+
+            if (!FilterLower.empty() &&
+                !LabelMatchesFilter(Label, FilterLower) &&
+                !LabelMatchesFilter(QualifiedName, FilterLower))
+            {
+                return;
+            }
+
+            Entries.push_back(CreateNodeTypeEntry{
+                .Type = Type,
+                .Label = std::string(Label),
+                .QualifiedName = std::string(QualifiedName),
+                .Depth = 0,
+                .HasChildren = false,
+            });
+        };
+
     const TypeId BaseNodeType = StaticTypeId<BaseNode>();
     const TypeInfo* BaseNodeInfo = TypeRegistry::Instance().Find(BaseNodeType);
     if (!BaseNodeInfo)
     {
-        return {};
+        AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialName), "Material", "Material");
+        AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialInstanceName), "Material Instance", "MaterialInstance");
+        return Entries;
     }
 
     std::vector<const TypeInfo*> CandidateTypes = TypeRegistry::Instance().Derived(BaseNodeType);
@@ -733,7 +760,6 @@ struct CreateNodeTypeEntry
         return Visible;
     };
 
-    std::vector<CreateNodeTypeEntry> Entries{};
     const std::function<void(const TypeInfo*, int)> Append = [&](const TypeInfo* Type, const int Depth) {
         if (!Type || !IsVisible(Type))
         {
@@ -767,6 +793,8 @@ struct CreateNodeTypeEntry
     };
 
     Append(BaseNodeInfo, 0);
+    AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialName), "Material", "Material");
+    AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialInstanceName), "Material Instance", "MaterialInstance");
     return Entries;
 }
 
@@ -1786,7 +1814,7 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
     TitleText.ElementStyle().Apply("editor.panel_title");
     TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
 
-    auto Subtitle = Modal.Add(SnAPI::UI::UIText("Select a BaseNode-derived class, set the asset name, then click Create."));
+    auto Subtitle = Modal.Add(SnAPI::UI::UIText("Select a node class or built-in asset type, set the asset name, then click Create."));
     auto& SubtitleText = Subtitle.Element();
     SubtitleText.ElementStyle().Apply("editor.panel_subtitle");
     SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
@@ -1796,7 +1824,7 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
     SearchInput.ElementStyle().Apply("editor.search");
     SearchInput.Width().Set(SnAPI::UI::Sizing::Fill());
     SearchInput.Resizable().Set(false);
-    SearchInput.Placeholder().Set(std::string("Filter classes..."));
+    SearchInput.Placeholder().Set(std::string("Filter asset types..."));
     auto vmContentCreateTypeFilter = ViewModelProperty<std::string>(kVmContentCreateTypeFilterKey);
     SearchInput.Text().BindTo(vmContentCreateTypeFilter, SnAPI::UI::EBindMode::TwoWay);
     m_contentCreateSearchInput = Search.Handle();
