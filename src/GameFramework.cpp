@@ -178,6 +178,15 @@ SNAPI_REFLECT_TYPE(AssetRefPayload, (TTypeBuilder<AssetRefPayload>(TTypeNameV<As
 SNAPI_REFLECT_TYPE(MaterialPayload, (TTypeBuilder<MaterialPayload>(TTypeNameV<MaterialPayload>)
     .Field("ShaderModule", &MaterialPayload::ShaderModule)
     .Field("ShadingModel", &MaterialPayload::ShadingModel)
+    .Field("FeatureAlbedoMap", &MaterialPayload::FeatureAlbedoMap)
+    .Field("FeatureNormalMap", &MaterialPayload::FeatureNormalMap)
+    .Field("FeatureRoughnessMap", &MaterialPayload::FeatureRoughnessMap)
+    .Field("FeatureMetalnessMap", &MaterialPayload::FeatureMetalnessMap)
+    .Field("FeatureOcclusionMap", &MaterialPayload::FeatureOcclusionMap)
+    .Field("FeatureAlphaTest", &MaterialPayload::FeatureAlphaTest)
+    .Field("FeatureAlphaBlend", &MaterialPayload::FeatureAlphaBlend)
+    .Field("FeatureDoubleSided", &MaterialPayload::FeatureDoubleSided)
+    .Field("FeatureInstancing", &MaterialPayload::FeatureInstancing)
     .Constructor<>()
     .Register()));
 
@@ -523,6 +532,7 @@ SNAPI_REFLECT_TYPE(StaticMeshComponent::Settings, (TTypeBuilder<StaticMeshCompon
     .Field("SyncFromTransform", &StaticMeshComponent::Settings::SyncFromTransform)
     .Field("RegisterWithRenderer", &StaticMeshComponent::Settings::RegisterWithRenderer)
     .Field("MeshAsset", &StaticMeshComponent::Settings::MeshAsset, EFieldFlagBits::Replication)
+    .Field("MaterialInstanceOverrides", &StaticMeshComponent::Settings::MaterialInstanceOverrides, EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
 

@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <cstdint>
+#include <vector>
 
 #include "AssetRef.h"
 #include "BaseComponent.h"
@@ -45,6 +46,7 @@ public:
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
         bool RegisterWithRenderer = true; /**< @brief Register loaded mesh in renderer draw list. */
         TAssetRef<StaticMeshAssetRuntime> MeshAsset{}; /**< @brief Preferred runtime asset reference for cooked static meshes (appended for payload compatibility). */
+        std::vector<TAssetRef<MaterialInstanceAssetRuntime>> MaterialInstanceOverrides{}; /**< @brief Optional per-material-slot overrides applied on top of mesh-default material instances. */
     };
 
     /** @brief Access settings (const). */
@@ -97,6 +99,7 @@ private:
     RendererSystem* ResolveRendererSystem() const;
     bool EnsureMeshLoaded();
     void SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const;
+    void ApplyConfiguredMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject);
     void ApplySharedMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject) const;
     void ApplyRenderObjectState(SnAPI::Graphics::IRenderObject& RenderObject);
 
@@ -104,6 +107,7 @@ private:
     std::shared_ptr<SnAPI::Graphics::IRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
+    std::vector<TAssetRef<MaterialInstanceAssetRuntime>> m_loadedMeshMaterialInstances{}; /**< @brief Material instance refs baked into currently loaded mesh asset. */
     bool m_registered = false; /**< @brief True when current mesh has been registered with renderer. */
     bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */

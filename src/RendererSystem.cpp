@@ -54,130 +54,134 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
-constexpr float kMinWindowExtent = 1.0f;
-constexpr float kWindowSizeEpsilon = 0.5f;
-constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
-constexpr float kViewportConfigFloatEpsilon = 0.001f;
-constexpr std::size_t kMaxQueuedTextRequests = 256;
-std::mutex GDefaultMaterialInstanceCacheMutex{};
-SnAPI::Graphics::WeakMaterialInstancePtr GDefaultGBufferMaterialInstance{};
-SnAPI::Graphics::WeakMaterialInstancePtr GDefaultShadowMaterialInstance{};
+class RendererSystemOps final
+{
+public:
+    static constexpr float kMinWindowExtent = 1.0f;
+    static constexpr float kWindowSizeEpsilon = 0.5f;
+    static constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
+    static constexpr float kViewportConfigFloatEpsilon = 0.001f;
+    static constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
-constexpr float kUiGlobalZBase = 1.0f;
-// Keep UI depth values in a compact range to preserve separation after the UI shader's
-// reverse-Z remap (which is non-linear in GlobalZ). Large GlobalZ growth collapses depth.
-constexpr float kUiGlobalZStep = 0.01f;
-constexpr std::uint32_t kUiGradientTextureSize = 128u;
+    static constexpr float kUiGlobalZBase = 1.0f;
+    // Keep UI depth values in a compact range to preserve separation after the UI shader's
+    // reverse-Z remap (which is non-linear in GlobalZ). Large GlobalZ growth collapses depth.
+    static constexpr float kUiGlobalZStep = 0.01f;
+    static constexpr std::uint32_t kUiGradientTextureSize = 128u;
 
-[[nodiscard]] constexpr std::uint32_t PackUiColorRgba8(const SnAPI::UI::Color& Value)
-{
-    return (static_cast<std::uint32_t>(Value.R) << 24u) |
-           (static_cast<std::uint32_t>(Value.G) << 16u) |
-           (static_cast<std::uint32_t>(Value.B) << 8u) |
-           static_cast<std::uint32_t>(Value.A);
-}
-
-[[nodiscard]] constexpr float ClampUnit(const float Value)
-{
-    return std::clamp(Value, 0.0f, 1.0f);
-}
-#endif
-
-float ClampWindowExtent(const float Value)
-{
-    return std::max(kMinWindowExtent, Value);
-}
-
-bool NearlyEqual(const float Left, const float Right)
-{
-    return std::fabs(Left - Right) <= kViewportConfigFloatEpsilon;
-}
-
-[[nodiscard]] bool IsPrimaryMouseButtonDown()
-{
-    float MouseX = 0.0f;
-    float MouseY = 0.0f;
-    const auto Buttons = SDL_GetGlobalMouseState(&MouseX, &MouseY);
-    (void)MouseX;
-    (void)MouseY;
-    return (Buttons & SDL_BUTTON_LMASK) != 0u;
-}
-
-bool AreViewportRectsEquivalent(const SnAPI::Graphics::ViewportFit& Left, const SnAPI::Graphics::ViewportFit& Right)
-{
-    return NearlyEqual(Left.X, Right.X) &&
-           NearlyEqual(Left.Y, Right.Y) &&
-           NearlyEqual(Left.Width, Right.Width) &&
-           NearlyEqual(Left.Height, Right.Height);
-}
-
-bool AreRenderViewportConfigsEquivalent(const SnAPI::Graphics::RenderViewportConfig& Left,
-                                        const SnAPI::Graphics::RenderViewportConfig& Right)
-{
-    return Left.Name == Right.Name &&
-           Left.RenderExtent.x() == Right.RenderExtent.x() &&
-           Left.RenderExtent.y() == Right.RenderExtent.y() &&
-           AreViewportRectsEquivalent(Left.OutputRect, Right.OutputRect) &&
-           Left.Enabled == Right.Enabled &&
-           Left.TargetSwapChainID == Right.TargetSwapChainID &&
-           Left.FinalColorResourceName == Right.FinalColorResourceName &&
-           Left.FinalDepthResourceName == Right.FinalDepthResourceName &&
-           Left.pCamera == Right.pCamera;
-}
-
-bool IsFontRenderable(SnAPI::Graphics::FontFace* Face)
-{
-    if (!Face || !Face->Valid())
+    [[nodiscard]] static constexpr std::uint32_t PackUiColorRgba8(const SnAPI::UI::Color& Value)
     {
-        return false;
+        return (static_cast<std::uint32_t>(Value.R) << 24u) |
+               (static_cast<std::uint32_t>(Value.G) << 16u) |
+               (static_cast<std::uint32_t>(Value.B) << 8u) |
+               static_cast<std::uint32_t>(Value.A);
     }
 
-    if (Face->Atlas().GraphicsImage())
+    [[nodiscard]] static constexpr float ClampUnit(const float Value)
     {
+        return std::clamp(Value, 0.0f, 1.0f);
+    }
+#endif
+
+    [[nodiscard]] static float ClampWindowExtent(const float Value)
+    {
+        return std::max(kMinWindowExtent, Value);
+    }
+
+    [[nodiscard]] static bool NearlyEqual(const float Left, const float Right)
+    {
+        return std::fabs(Left - Right) <= kViewportConfigFloatEpsilon;
+    }
+
+    [[nodiscard]] static bool IsPrimaryMouseButtonDown()
+    {
+        float MouseX = 0.0f;
+        float MouseY = 0.0f;
+        const auto Buttons = SDL_GetGlobalMouseState(&MouseX, &MouseY);
+        (void)MouseX;
+        (void)MouseY;
+        return (Buttons & SDL_BUTTON_LMASK) != 0u;
+    }
+
+    [[nodiscard]] static bool AreViewportRectsEquivalent(
+        const SnAPI::Graphics::ViewportFit& Left,
+        const SnAPI::Graphics::ViewportFit& Right)
+    {
+        return NearlyEqual(Left.X, Right.X) &&
+               NearlyEqual(Left.Y, Right.Y) &&
+               NearlyEqual(Left.Width, Right.Width) &&
+               NearlyEqual(Left.Height, Right.Height);
+    }
+
+    [[nodiscard]] static bool AreRenderViewportConfigsEquivalent(
+        const SnAPI::Graphics::RenderViewportConfig& Left,
+        const SnAPI::Graphics::RenderViewportConfig& Right)
+    {
+        return Left.Name == Right.Name &&
+               Left.RenderExtent.x() == Right.RenderExtent.x() &&
+               Left.RenderExtent.y() == Right.RenderExtent.y() &&
+               AreViewportRectsEquivalent(Left.OutputRect, Right.OutputRect) &&
+               Left.Enabled == Right.Enabled &&
+               Left.TargetSwapChainID == Right.TargetSwapChainID &&
+               Left.FinalColorResourceName == Right.FinalColorResourceName &&
+               Left.FinalDepthResourceName == Right.FinalDepthResourceName &&
+               Left.pCamera == Right.pCamera;
+    }
+
+    [[nodiscard]] static bool IsFontRenderable(SnAPI::Graphics::FontFace* Face)
+    {
+        if (!Face || !Face->Valid())
+        {
+            return false;
+        }
+
+        if (Face->Atlas().GraphicsImage())
+        {
+            return true;
+        }
+
+        // Retry atlas generation in case the font was loaded before UI resources were fully ready.
+        Face->GenerateAtlas();
+        return Face->Atlas().GraphicsImage() != nullptr;
+    }
+
+    [[nodiscard]] static bool ResolveFilesystemLookupPath(const std::string_view RawPath, std::string& OutResolvedPath)
+    {
+        if (RawPath.empty())
+        {
+            OutResolvedPath.clear();
+            return false;
+        }
+
+        auto ResolvedPath = SPathResolver::Instance().ResolveToString(RawPath);
+        if (!ResolvedPath || ResolvedPath->empty())
+        {
+            OutResolvedPath.clear();
+            return false;
+        }
+
+        OutResolvedPath = *ResolvedPath;
         return true;
     }
 
-    // Retry atlas generation in case the font was loaded before UI resources were fully ready.
-    Face->GenerateAtlas();
-    return Face->Atlas().GraphicsImage() != nullptr;
-}
-
-[[nodiscard]] bool ResolveFilesystemLookupPath(const std::string_view RawPath, std::string& OutResolvedPath)
-{
-    if (RawPath.empty())
+    [[nodiscard]] static SnAPI::Graphics::WindowCreateInfo BuildWindowCreateInfo(const RendererBootstrapSettings& Settings)
     {
-        OutResolvedPath.clear();
-        return false;
+        SnAPI::Graphics::WindowCreateInfo CreateInfo{};
+        CreateInfo.Title = Settings.WindowTitle.empty() ? "SnAPI.GameFramework" : Settings.WindowTitle;
+        CreateInfo.Size = {ClampWindowExtent(Settings.WindowWidth), ClampWindowExtent(Settings.WindowHeight)};
+        CreateInfo.bFullScreen = Settings.FullScreen;
+        CreateInfo.bResizable = Settings.Resizable;
+        CreateInfo.bBorderless = Settings.Borderless;
+        CreateInfo.bVisible = Settings.Visible;
+        CreateInfo.bMaximized = Settings.Maximized;
+        CreateInfo.bMinimized = Settings.Minimized;
+        CreateInfo.bCloseable = Settings.Closeable;
+        CreateInfo.bUseVulkan = true;
+        CreateInfo.bUseOpenGL = false;
+        CreateInfo.bAllowTransparency = Settings.AllowTransparency;
+        return CreateInfo;
     }
-
-    auto ResolvedPath = SPathResolver::Instance().ResolveToString(RawPath);
-    if (!ResolvedPath || ResolvedPath->empty())
-    {
-        OutResolvedPath.clear();
-        return false;
-    }
-
-    OutResolvedPath = *ResolvedPath;
-    return true;
-}
-
-SnAPI::Graphics::WindowCreateInfo BuildWindowCreateInfo(const RendererBootstrapSettings& Settings)
-{
-    SnAPI::Graphics::WindowCreateInfo CreateInfo{};
-    CreateInfo.Title = Settings.WindowTitle.empty() ? "SnAPI.GameFramework" : Settings.WindowTitle;
-    CreateInfo.Size = {ClampWindowExtent(Settings.WindowWidth), ClampWindowExtent(Settings.WindowHeight)};
-    CreateInfo.bFullScreen = Settings.FullScreen;
-    CreateInfo.bResizable = Settings.Resizable;
-    CreateInfo.bBorderless = Settings.Borderless;
-    CreateInfo.bVisible = Settings.Visible;
-    CreateInfo.bMaximized = Settings.Maximized;
-    CreateInfo.bMinimized = Settings.Minimized;
-    CreateInfo.bCloseable = Settings.Closeable;
-    CreateInfo.bUseVulkan = true;
-    CreateInfo.bUseOpenGL = false;
-    CreateInfo.bAllowTransparency = Settings.AllowTransparency;
-    return CreateInfo;
-}
+};
 } // namespace
 
 void RendererSystem::WindowDeleter::operator()(SnAPI::Graphics::WindowBase* Window) const
@@ -209,6 +213,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_passGraphRegistered = Other.m_passGraphRegistered;
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
+    m_defaultGBufferMaterialInstance = std::move(Other.m_defaultGBufferMaterialInstance);
+    m_defaultShadowMaterialInstance = std::move(Other.m_defaultShadowMaterialInstance);
     m_defaultFont = Other.m_defaultFont;
     m_defaultFontFallbacksConfigured = Other.m_defaultFontFallbacksConfigured;
     m_textQueue = std::move(Other.m_textQueue);
@@ -227,6 +233,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
     m_uiExternalTextureBindings = std::move(Other.m_uiExternalTextureBindings);
+    m_uiExternalImageBindings = std::move(Other.m_uiExternalImageBindings);
     m_uiExternalResolvedTextureImages = std::move(Other.m_uiExternalResolvedTextureImages);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
@@ -250,6 +257,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_graphics = nullptr;
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
+    Other.m_defaultGBufferMaterialInstance.reset();
+    Other.m_defaultShadowMaterialInstance.reset();
     Other.m_defaultFont = nullptr;
     Other.m_defaultFontFallbacksConfigured = false;
     Other.m_textQueue.clear();
@@ -268,6 +277,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_uiTextures.clear();
     Other.m_uiTextureHasTransparency.clear();
     Other.m_uiExternalTextureBindings.clear();
+    Other.m_uiExternalImageBindings.clear();
     Other.m_uiExternalResolvedTextureImages.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
@@ -310,6 +320,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_passGraphRegistered = Other.m_passGraphRegistered;
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
+    m_defaultGBufferMaterialInstance = std::move(Other.m_defaultGBufferMaterialInstance);
+    m_defaultShadowMaterialInstance = std::move(Other.m_defaultShadowMaterialInstance);
     m_defaultFont = Other.m_defaultFont;
     m_defaultFontFallbacksConfigured = Other.m_defaultFontFallbacksConfigured;
     m_textQueue = std::move(Other.m_textQueue);
@@ -328,6 +340,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
     m_uiExternalTextureBindings = std::move(Other.m_uiExternalTextureBindings);
+    m_uiExternalImageBindings = std::move(Other.m_uiExternalImageBindings);
     m_uiExternalResolvedTextureImages = std::move(Other.m_uiExternalResolvedTextureImages);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
@@ -351,6 +364,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_graphics = nullptr;
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
+    Other.m_defaultGBufferMaterialInstance.reset();
+    Other.m_defaultShadowMaterialInstance.reset();
     Other.m_defaultFont = nullptr;
     Other.m_defaultFontFallbacksConfigured = false;
     Other.m_textQueue.clear();
@@ -369,6 +384,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_uiTextures.clear();
     Other.m_uiTextureHasTransparency.clear();
     Other.m_uiExternalTextureBindings.clear();
+    Other.m_uiExternalImageBindings.clear();
     Other.m_uiExternalResolvedTextureImages.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
@@ -429,6 +445,8 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
     auto ResetState = [this]() {
         m_defaultGBufferMaterial.reset();
         m_defaultShadowMaterial.reset();
+        m_defaultGBufferMaterialInstance.reset();
+        m_defaultShadowMaterialInstance.reset();
         m_defaultFont = nullptr;
         m_defaultFontFallbacksConfigured = false;
         m_textQueue.clear();
@@ -447,6 +465,7 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_uiTextures.clear();
         m_uiTextureHasTransparency.clear();
         m_uiExternalTextureBindings.clear();
+        m_uiExternalImageBindings.clear();
         m_uiExternalResolvedTextureImages.clear();
         m_uiTextureMaterialInstances.clear();
         m_uiGradientTextures.clear();
@@ -516,6 +535,8 @@ bool RendererSystem::InitializeUnlocked()
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
+    m_defaultGBufferMaterialInstance.reset();
+    m_defaultShadowMaterialInstance.reset();
     m_defaultFont = nullptr;
     m_defaultFontFallbacksConfigured = false;
     m_textQueue.clear();
@@ -534,6 +555,7 @@ bool RendererSystem::InitializeUnlocked()
     m_uiTextures.clear();
     m_uiTextureHasTransparency.clear();
     m_uiExternalTextureBindings.clear();
+    m_uiExternalImageBindings.clear();
     m_uiExternalResolvedTextureImages.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
@@ -630,8 +652,8 @@ bool RendererSystem::InitializeUnlocked()
 void RendererSystem::ApplyOutOfMemoryFallbackSettings()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    const float FallbackWidth = ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowWidth);
-    const float FallbackHeight = ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowHeight);
+    const float FallbackWidth = RendererSystemOps::ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowWidth);
+    const float FallbackHeight = RendererSystemOps::ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowHeight);
 
     m_settings.WindowWidth = std::min(m_settings.WindowWidth, FallbackWidth);
     m_settings.WindowHeight = std::min(m_settings.WindowHeight, FallbackHeight);
@@ -833,8 +855,8 @@ bool RendererSystem::CreateRenderViewport(std::string Name,
         return false;
     }
 
-    const float ClampedW = std::max(kMinWindowExtent, Width);
-    const float ClampedH = std::max(kMinWindowExtent, Height);
+    const float ClampedW = std::max(RendererSystemOps::kMinWindowExtent, Width);
+    const float ClampedH = std::max(RendererSystemOps::kMinWindowExtent, Height);
     const std::uint32_t FinalRenderWidth = RenderWidth > 0 ? RenderWidth : static_cast<std::uint32_t>(std::round(ClampedW));
     const std::uint32_t FinalRenderHeight = RenderHeight > 0 ? RenderHeight : static_cast<std::uint32_t>(std::round(ClampedH));
 
@@ -879,8 +901,8 @@ bool RendererSystem::UpdateRenderViewport(const std::uint64_t ViewportID,
         return false;
     }
 
-    const float ClampedW = std::max(kMinWindowExtent, Width);
-    const float ClampedH = std::max(kMinWindowExtent, Height);
+    const float ClampedW = std::max(RendererSystemOps::kMinWindowExtent, Width);
+    const float ClampedH = std::max(RendererSystemOps::kMinWindowExtent, Height);
     const std::uint32_t FinalRenderWidth = RenderWidth > 0 ? RenderWidth : static_cast<std::uint32_t>(std::round(ClampedW));
     const std::uint32_t FinalRenderHeight = RenderHeight > 0 ? RenderHeight : static_cast<std::uint32_t>(std::round(ClampedH));
 
@@ -907,7 +929,7 @@ bool RendererSystem::UpdateRenderViewport(const std::uint64_t ViewportID,
         Config.FinalDepthResourceName = Existing->FinalDepthResourceName;
     }
 
-    if (Existing.has_value() && AreRenderViewportConfigsEquivalent(*Existing, Config))
+    if (Existing.has_value() && RendererSystemOps::AreRenderViewportConfigsEquivalent(*Existing, Config))
     {
         return true;
     }
@@ -1187,21 +1209,18 @@ bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& Rende
 
     SnAPI::Graphics::SharedMaterialInstancePtr SharedGBufferInstance{};
     SnAPI::Graphics::SharedMaterialInstancePtr SharedShadowInstance{};
+    SharedGBufferInstance = m_defaultGBufferMaterialInstance.lock();
+    if (!SharedGBufferInstance && m_defaultGBufferMaterial)
     {
-        std::scoped_lock CacheLock(GDefaultMaterialInstanceCacheMutex);
-        SharedGBufferInstance = GDefaultGBufferMaterialInstance.lock();
-        if (!SharedGBufferInstance && m_defaultGBufferMaterial)
-        {
-            SharedGBufferInstance = m_defaultGBufferMaterial->CreateMaterialInstance();
-            GDefaultGBufferMaterialInstance = SharedGBufferInstance;
-        }
+        SharedGBufferInstance = m_defaultGBufferMaterial->CreateMaterialInstance();
+        m_defaultGBufferMaterialInstance = SharedGBufferInstance;
+    }
 
-        SharedShadowInstance = GDefaultShadowMaterialInstance.lock();
-        if (!SharedShadowInstance && m_defaultShadowMaterial)
-        {
-            SharedShadowInstance = m_defaultShadowMaterial->CreateMaterialInstance();
-            GDefaultShadowMaterialInstance = SharedShadowInstance;
-        }
+    SharedShadowInstance = m_defaultShadowMaterialInstance.lock();
+    if (!SharedShadowInstance && m_defaultShadowMaterial)
+    {
+        SharedShadowInstance = m_defaultShadowMaterial->CreateMaterialInstance();
+        m_defaultShadowMaterialInstance = SharedShadowInstance;
     }
 
     for (uint32_t SubMeshIndex = 0; SubMeshIndex < Source->SubMeshCount(); ++SubMeshIndex)
@@ -1323,7 +1342,7 @@ bool RendererSystem::LoadDefaultFont(const std::string& FontPath, const std::uin
     }
 
     auto* Face = Library->FontFace(FontPath, FontSize);
-    if (!IsFontRenderable(Face))
+    if (!RendererSystemOps::IsFontRenderable(Face))
     {
         return false;
     }
@@ -1344,7 +1363,7 @@ bool RendererSystem::QueueText(std::string Text, const float X, const float Y)
     }
 
     m_textQueue.push_back(TextRequest{std::move(Text), X, Y});
-    if (m_textQueue.size() > kMaxQueuedTextRequests)
+    if (m_textQueue.size() > RendererSystemOps::kMaxQueuedTextRequests)
     {
         m_textQueue.erase(m_textQueue.begin());
     }
@@ -1354,14 +1373,14 @@ bool RendererSystem::QueueText(std::string Text, const float X, const float Y)
 bool RendererSystem::HasDefaultFont() const
 {
     GameLockGuard Lock(m_mutex);
-    return IsFontRenderable(m_defaultFont);
+    return RendererSystemOps::IsFontRenderable(m_defaultFont);
 }
 
 SnAPI::Graphics::FontFace* RendererSystem::EnsureDefaultFontFace()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
-    if ((!m_defaultFont || !IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
+    if ((!m_defaultFont || !RendererSystemOps::IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
     {
         return nullptr;
     }
@@ -1405,7 +1424,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
         m_uiQueuedRects.reserve(m_uiQueuedRects.size() + TotalInstances);
     }
 
-    float GlobalZ = kUiGlobalZBase + static_cast<float>(m_uiQueuedRects.size()) * kUiGlobalZStep;
+    float GlobalZ = RendererSystemOps::kUiGlobalZBase + static_cast<float>(m_uiQueuedRects.size()) * RendererSystemOps::kUiGlobalZStep;
 
     const auto ApplyUiColor = [](QueuedUiRect& OutRect, const SnAPI::UI::Color& ColorValue) {
         constexpr float kInv = 1.0f / 255.0f;
@@ -1459,7 +1478,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             if (Index < OutRect.GradientStopCount)
             {
                 OutRect.GradientStops[Index] = Gradient.Stops[Index].Position;
-                OutRect.GradientColors[Index] = PackUiColorRgba8(Gradient.Stops[Index].StopColor);
+                OutRect.GradientColors[Index] = RendererSystemOps::PackUiColorRgba8(Gradient.Stops[Index].StopColor);
             }
             else
             {
@@ -1524,6 +1543,14 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             m_uiTextureHasTransparency[TextureCacheKey] = ExternalIt->second.HasTransparency;
             return;
         }
+        if (const auto ExternalImageIt = m_uiExternalImageBindings.find(TextureCacheKey);
+            ExternalImageIt != m_uiExternalImageBindings.end())
+        {
+            m_uiTextureHasTransparency[TextureCacheKey] = ExternalImageIt->second.HasTransparency;
+            m_uiPendingTextureUploads.erase(TextureCacheKey);
+            m_uiTextures.erase(TextureCacheKey);
+            return;
+        }
 
         const bool HasOpacityMetadata = m_uiTextureHasTransparency.contains(TextureCacheKey);
         if (m_uiTextures.contains(TextureCacheKey) && HasOpacityMetadata)
@@ -1577,7 +1604,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1628,7 +1655,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1662,7 +1689,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1691,7 +1718,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
                 QueueImageTextureUploadIfNeeded(Rect.TextureId);
             }
             continue;
@@ -1719,7 +1746,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1749,7 +1776,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1779,7 +1806,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
         }
     }
@@ -1845,16 +1872,18 @@ bool RendererSystem::RegisterExternalViewportUiTexture(const SnAPI::UI::UIContex
 
     const UiTextureCacheKey Key{&Context, TextureId};
     const auto ExistingIt = m_uiExternalTextureBindings.find(Key);
+    const bool HadExternalImageBinding = m_uiExternalImageBindings.contains(Key);
     const bool BindingChanged =
         ExistingIt == m_uiExternalTextureBindings.end()
         || ExistingIt->second.SourceViewportID != SourceViewportID;
 
+    m_uiExternalImageBindings.erase(Key);
     m_uiExternalTextureBindings[Key] = UiExternalTextureBinding{
         .SourceViewportID = SourceViewportID,
         .HasTransparency = HasTransparency,
     };
     m_uiTextureHasTransparency[Key] = HasTransparency;
-    if (BindingChanged)
+    if (BindingChanged || HadExternalImageBinding)
     {
         m_uiPendingTextureUploads.erase(Key);
         m_uiTextures.erase(Key);
@@ -1875,6 +1904,58 @@ bool RendererSystem::UnregisterExternalViewportUiTexture(const SnAPI::UI::UICont
 
     const UiTextureCacheKey Key{&Context, TextureId};
     const bool Removed = m_uiExternalTextureBindings.erase(Key) > 0;
+    m_uiExternalResolvedTextureImages.erase(Key);
+    m_uiTextureMaterialInstances.erase(Key);
+    m_uiTextureHasTransparency.erase(Key);
+    return Removed;
+}
+
+bool RendererSystem::RegisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context,
+                                                    const std::uint32_t TextureId,
+                                                    SnAPI::Graphics::IGPUImage* Image,
+                                                    const bool HasTransparency)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || TextureId == 0 || Image == nullptr)
+    {
+        return false;
+    }
+
+    const UiTextureCacheKey Key{&Context, TextureId};
+    const auto ExistingIt = m_uiExternalImageBindings.find(Key);
+    const bool HadExternalViewportBinding = m_uiExternalTextureBindings.contains(Key);
+    const bool BindingChanged =
+        ExistingIt == m_uiExternalImageBindings.end()
+        || ExistingIt->second.Image != Image;
+
+    m_uiExternalTextureBindings.erase(Key);
+    m_uiExternalImageBindings[Key] = UiExternalImageBinding{
+        .Image = Image,
+        .HasTransparency = HasTransparency,
+    };
+    m_uiTextureHasTransparency[Key] = HasTransparency;
+    if (BindingChanged || HadExternalViewportBinding)
+    {
+        m_uiPendingTextureUploads.erase(Key);
+        m_uiTextures.erase(Key);
+        m_uiTextureMaterialInstances.erase(Key);
+        m_uiExternalResolvedTextureImages.erase(Key);
+    }
+    return true;
+}
+
+bool RendererSystem::UnregisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context, const std::uint32_t TextureId)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (TextureId == 0)
+    {
+        return false;
+    }
+
+    const UiTextureCacheKey Key{&Context, TextureId};
+    const bool Removed = m_uiExternalImageBindings.erase(Key) > 0;
     m_uiExternalResolvedTextureImages.erase(Key);
     m_uiTextureMaterialInstances.erase(Key);
     m_uiTextureHasTransparency.erase(Key);
@@ -1964,6 +2045,8 @@ void RendererSystem::ShutdownUnlocked()
     m_passGraphRegistered = false;
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
+    m_defaultGBufferMaterialInstance.reset();
+    m_defaultShadowMaterialInstance.reset();
     m_defaultFont = nullptr;
     m_defaultFontFallbacksConfigured = false;
     m_textQueue.clear();
@@ -1982,6 +2065,7 @@ void RendererSystem::ShutdownUnlocked()
     m_uiTextures.clear();
     m_uiTextureHasTransparency.clear();
     m_uiExternalTextureBindings.clear();
+    m_uiExternalImageBindings.clear();
     m_uiExternalResolvedTextureImages.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
@@ -2037,6 +2121,8 @@ bool RendererSystem::EnsureDefaultMaterials()
 
     m_defaultGBufferMaterial = std::move(GBufferMaterial);
     m_defaultShadowMaterial = std::move(ShadowMaterial);
+    m_defaultGBufferMaterialInstance.reset();
+    m_defaultShadowMaterialInstance.reset();
     return true;
 }
 
@@ -2171,7 +2257,7 @@ bool RendererSystem::EnsureDefaultFont()
             }
 
             std::string ResolvedCandidate{};
-            if (!ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
+            if (!RendererSystemOps::ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
             {
                 continue;
             }
@@ -2183,7 +2269,7 @@ bool RendererSystem::EnsureDefaultFont()
             }
 
             auto* FallbackFace = Library->FontFace(ResolvedCandidate, m_settings.DefaultFontSize);
-            if (IsFontRenderable(FallbackFace))
+            if (RendererSystemOps::IsFontRenderable(FallbackFace))
             {
                 PrimaryFace->AddFallbackFace(FallbackFace);
             }
@@ -2192,7 +2278,7 @@ bool RendererSystem::EnsureDefaultFont()
         m_defaultFontFallbacksConfigured = true;
     };
 
-    if (IsFontRenderable(m_defaultFont))
+    if (RendererSystemOps::IsFontRenderable(m_defaultFont))
     {
         ConfigureFallbackFaces(m_defaultFont);
         return true;
@@ -2212,7 +2298,7 @@ bool RendererSystem::EnsureDefaultFont()
         }
 
         std::string ResolvedCandidate{};
-        if (!ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
+        if (!RendererSystemOps::ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
         {
             continue;
         }
@@ -2224,7 +2310,7 @@ bool RendererSystem::EnsureDefaultFont()
         }
 
         auto* Face = Library->FontFace(ResolvedCandidate, m_settings.DefaultFontSize);
-        if (IsFontRenderable(Face))
+        if (RendererSystemOps::IsFontRenderable(Face))
         {
             m_defaultFont = Face;
             m_defaultFontFallbacksConfigured = false;
@@ -2268,8 +2354,8 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
     }
 
     const bool MatchesCurrentSwapChain =
-        std::fabs(Width - m_lastWindowWidth) <= kWindowSizeEpsilon
-        && std::fabs(Height - m_lastWindowHeight) <= kWindowSizeEpsilon;
+        std::fabs(Width - m_lastWindowWidth) <= RendererSystemOps::kWindowSizeEpsilon
+        && std::fabs(Height - m_lastWindowHeight) <= RendererSystemOps::kWindowSizeEpsilon;
     if (MatchesCurrentSwapChain && !RecreateRequestedByGraphics)
     {
         m_pendingSwapChainWidth = Width;
@@ -2281,8 +2367,8 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
 
     const bool PendingTargetChanged =
         !m_hasPendingSwapChainResize
-        || std::fabs(Width - m_pendingSwapChainWidth) > kWindowSizeEpsilon
-        || std::fabs(Height - m_pendingSwapChainHeight) > kWindowSizeEpsilon;
+        || std::fabs(Width - m_pendingSwapChainWidth) > RendererSystemOps::kWindowSizeEpsilon
+        || std::fabs(Height - m_pendingSwapChainHeight) > RendererSystemOps::kWindowSizeEpsilon;
 
     const bool NeedPendingResizeTracking = !MatchesCurrentSwapChain
                                            || (RecreateRequestedByGraphics && !m_hasPendingSwapChainResize);
@@ -2308,12 +2394,12 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
     {
         ++m_pendingSwapChainStableFrames;
     }
-    if (m_pendingSwapChainStableFrames < kPendingSwapChainStableFrameThreshold)
+    if (m_pendingSwapChainStableFrames < RendererSystemOps::kPendingSwapChainStableFrameThreshold)
     {
         return false;
     }
 
-    if (IsPrimaryMouseButtonDown())
+    if (RendererSystemOps::IsPrimaryMouseButtonDown())
     {
         return false;
     }
@@ -2331,7 +2417,7 @@ void RendererSystem::FlushQueuedText()
 
     {
         SNAPI_GF_PROFILE_SCOPE("Renderer.FlushQueuedText.ResolveDefaultFont", "Rendering");
-        if ((!m_defaultFont || !IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
+        if ((!m_defaultFont || !RendererSystemOps::IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
         {
             SNAPI_GF_PROFILE_SCOPE("Renderer.FlushQueuedText.FontUnavailableTrimQueue", "Rendering");
             // Keep only the latest request while font resources are unavailable.
@@ -2538,6 +2624,38 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         return MaterialInstance;
     }
 
+    if (const auto ExternalImageBindingIt = m_uiExternalImageBindings.find(TextureCacheKey);
+        ExternalImageBindingIt != m_uiExternalImageBindings.end())
+    {
+        auto* ResolvedImage = ExternalImageBindingIt->second.Image;
+        if (!ResolvedImage)
+        {
+            m_uiTextureMaterialInstances.erase(TextureCacheKey);
+            m_uiExternalResolvedTextureImages.erase(TextureCacheKey);
+            return m_uiFallbackMaterialInstance;
+        }
+
+        if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
+            MaterialIt != m_uiTextureMaterialInstances.end())
+        {
+            MaterialIt->second->Texture("Material_Texture", ResolvedImage);
+            m_uiExternalResolvedTextureImages[TextureCacheKey] = ResolvedImage;
+            return MaterialIt->second;
+        }
+
+        auto MaterialInstance = m_uiMaterial->CreateMaterialInstance();
+        if (!MaterialInstance)
+        {
+            return m_uiFallbackMaterialInstance;
+        }
+
+        MaterialInstance->Texture("Material_Texture", ResolvedImage);
+        m_uiTextureMaterialInstances[TextureCacheKey] = MaterialInstance;
+        m_uiExternalResolvedTextureImages[TextureCacheKey] = ResolvedImage;
+        m_uiTextureHasTransparency[TextureCacheKey] = ExternalImageBindingIt->second.HasTransparency;
+        return MaterialInstance;
+    }
+
     if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
         MaterialIt != m_uiTextureMaterialInstances.end())
     {
@@ -2612,7 +2730,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     std::array<std::uint32_t, QueuedUiRect::MaxGradientStops> StopColors{};
     for (std::size_t Index = 0; Index < StopCount; ++Index)
     {
-        StopPositions[Index] = ClampUnit(Entry.GradientStops[Index]);
+        StopPositions[Index] = RendererSystemOps::ClampUnit(Entry.GradientStops[Index]);
         StopColors[Index] = Entry.GradientColors[Index];
     }
 
@@ -2651,7 +2769,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     };
 
     const auto SampleGradient = [&](const float T) {
-        const float ClampedT = ClampUnit(T);
+        const float ClampedT = RendererSystemOps::ClampUnit(T);
 
         if (StopCount == 1 || ClampedT <= StopPositions[0])
         {
@@ -2678,7 +2796,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         const std::uint32_t RightColor = StopColors[SegmentIndex + 1];
 
         const float Denom = std::max(1e-6f, RightPos - LeftPos);
-        const float Alpha = ClampUnit((ClampedT - LeftPos) / Denom);
+        const float Alpha = RendererSystemOps::ClampUnit((ClampedT - LeftPos) / Denom);
         const float InvAlpha = 1.0f - Alpha;
 
         const auto BlendChannel = [&](const int Shift) -> std::uint8_t {
@@ -2695,8 +2813,8 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     };
 
     std::vector<std::uint8_t> PixelData{};
-    PixelData.resize(static_cast<std::size_t>(kUiGradientTextureSize) *
-                     static_cast<std::size_t>(kUiGradientTextureSize) * 4u);
+    PixelData.resize(static_cast<std::size_t>(RendererSystemOps::kUiGradientTextureSize) *
+                     static_cast<std::size_t>(RendererSystemOps::kUiGradientTextureSize) * 4u);
 
     const float StartX = Entry.GradientStartX;
     const float StartY = Entry.GradientStartY;
@@ -2706,12 +2824,12 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     const float DeltaY = EndY - StartY;
     const float GradientLengthSq = DeltaX * DeltaX + DeltaY * DeltaY;
 
-    for (std::uint32_t Y = 0; Y < kUiGradientTextureSize; ++Y)
+    for (std::uint32_t Y = 0; Y < RendererSystemOps::kUiGradientTextureSize; ++Y)
     {
-        for (std::uint32_t X = 0; X < kUiGradientTextureSize; ++X)
+        for (std::uint32_t X = 0; X < RendererSystemOps::kUiGradientTextureSize; ++X)
         {
-            const float U = (static_cast<float>(X) + 0.5f) / static_cast<float>(kUiGradientTextureSize);
-            const float V = (static_cast<float>(Y) + 0.5f) / static_cast<float>(kUiGradientTextureSize);
+            const float U = (static_cast<float>(X) + 0.5f) / static_cast<float>(RendererSystemOps::kUiGradientTextureSize);
+            const float V = (static_cast<float>(Y) + 0.5f) / static_cast<float>(RendererSystemOps::kUiGradientTextureSize);
             float T = 0.0f;
             if (GradientLengthSq > 1e-6f)
             {
@@ -2720,7 +2838,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
 
             const std::uint32_t Packed = SampleGradient(T);
             const std::size_t PixelIndex =
-                (static_cast<std::size_t>(Y) * static_cast<std::size_t>(kUiGradientTextureSize) + static_cast<std::size_t>(X)) * 4u;
+                (static_cast<std::size_t>(Y) * static_cast<std::size_t>(RendererSystemOps::kUiGradientTextureSize) + static_cast<std::size_t>(X)) * 4u;
             PixelData[PixelIndex + 0] = static_cast<std::uint8_t>((Packed >> 24u) & 0xffu);
             PixelData[PixelIndex + 1] = static_cast<std::uint8_t>((Packed >> 16u) & 0xffu);
             PixelData[PixelIndex + 2] = static_cast<std::uint8_t>((Packed >> 8u) & 0xffu);
@@ -2729,7 +2847,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     }
 
     SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::VisualDefault(
-        SnAPI::Size2DU{kUiGradientTextureSize, kUiGradientTextureSize},
+        SnAPI::Size2DU{RendererSystemOps::kUiGradientTextureSize, RendererSystemOps::kUiGradientTextureSize},
         SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm,
         1);
     if (ImageCI.SamplerCreateInfo)
@@ -3000,8 +3118,8 @@ bool RendererSystem::RecreateSwapChainForCurrentWindowUnlocked()
             return false;
         }
 
-        const float FallbackWidth = ClampWindowExtent(std::min(m_window->Size().x(), m_settings.OutOfMemoryFallbackWindowWidth));
-        const float FallbackHeight = ClampWindowExtent(std::min(m_window->Size().y(), m_settings.OutOfMemoryFallbackWindowHeight));
+        const float FallbackWidth = RendererSystemOps::ClampWindowExtent(std::min(m_window->Size().x(), m_settings.OutOfMemoryFallbackWindowWidth));
+        const float FallbackHeight = RendererSystemOps::ClampWindowExtent(std::min(m_window->Size().y(), m_settings.OutOfMemoryFallbackWindowHeight));
 
         if (m_settings.ForceWindowedOnOutOfMemory)
         {
@@ -3043,7 +3161,7 @@ bool RendererSystem::CreateWindowResources()
     }
 
     auto Window = std::unique_ptr<SnAPI::Graphics::WindowBase, WindowDeleter>(new SnAPI::Graphics::SDLWindow());
-    Window->Create(BuildWindowCreateInfo(m_settings));
+    Window->Create(RendererSystemOps::BuildWindowCreateInfo(m_settings));
     Window->Maximize();
     m_graphics->InitializeResourcesForWindow(Window.get());
     const auto WindowSize = Window->Size();

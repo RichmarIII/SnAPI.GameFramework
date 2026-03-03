@@ -533,12 +533,33 @@ public:
                                            bool HasTransparency);
 
     /**
+     * @brief Register an external image-backed UI texture binding for one context texture id.
+     * @param Context UI context that owns the texture id.
+     * @param TextureId Context-local texture id.
+     * @param Image External GPU image pointer to sample.
+     * @param HasTransparency True when sampled output should be alpha blended.
+     * @return True when binding was accepted.
+     */
+    bool RegisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context,
+                                        std::uint32_t TextureId,
+                                        SnAPI::Graphics::IGPUImage* Image,
+                                        bool HasTransparency);
+
+    /**
      * @brief Remove one external viewport-backed UI texture binding.
      * @param Context UI context that owns the texture id.
      * @param TextureId Context-local texture id.
      * @return True when a binding existed and was removed.
      */
     bool UnregisterExternalViewportUiTexture(const SnAPI::UI::UIContext& Context, std::uint32_t TextureId);
+
+    /**
+     * @brief Remove one external image-backed UI texture binding.
+     * @param Context UI context that owns the texture id.
+     * @param TextureId Context-local texture id.
+     * @return True when a binding existed and was removed.
+     */
+    bool UnregisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context, std::uint32_t TextureId);
 #endif
 
     /**
@@ -737,6 +758,12 @@ private:
         std::uint64_t SourceViewportID = 0;
         bool HasTransparency = true;
     };
+
+    struct UiExternalImageBinding
+    {
+        SnAPI::Graphics::IGPUImage* Image = nullptr;
+        bool HasTransparency = true;
+    };
 #endif
 
     mutable GameMutex m_mutex{}; /**< @brief Renderer-system thread affinity guard. */
@@ -752,6 +779,8 @@ private:
     bool m_passGraphRegistered = false; /**< @brief True once default pass DAG has been registered. */
     std::shared_ptr<SnAPI::Graphics::Material> m_defaultGBufferMaterial{}; /**< @brief Default material assigned by mesh components. */
     std::shared_ptr<SnAPI::Graphics::Material> m_defaultShadowMaterial{}; /**< @brief Default shadow material assigned by mesh components. */
+    std::weak_ptr<SnAPI::Graphics::MaterialInstance> m_defaultGBufferMaterialInstance{}; /**< @brief Cached default GBuffer material instance used when assigning fallback materials. */
+    std::weak_ptr<SnAPI::Graphics::MaterialInstance> m_defaultShadowMaterialInstance{}; /**< @brief Cached default shadow material instance used when assigning fallback materials. */
     SnAPI::Graphics::FontFace* m_defaultFont = nullptr; /**< @brief Non-owning default font pointer managed by FontLibrary cache. */
     bool m_defaultFontFallbacksConfigured = false; /**< @brief True once fallback face chain is attached to the default font. */
     std::vector<TextRequest> m_textQueue{}; /**< @brief Pending text draw requests flushed in EndFrame. */
@@ -770,6 +799,7 @@ private:
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
     std::unordered_map<UiTextureCacheKey, bool, UiTextureCacheKeyHasher> m_uiTextureHasTransparency{}; /**< @brief UI texture transparency hint keyed by (UIContext, texture-id); UI defaults this to true to avoid CPU alpha scans. */
     std::unordered_map<UiTextureCacheKey, UiExternalTextureBinding, UiTextureCacheKeyHasher> m_uiExternalTextureBindings{}; /**< @brief External viewport-backed texture bindings keyed by (UIContext, texture-id). */
+    std::unordered_map<UiTextureCacheKey, UiExternalImageBinding, UiTextureCacheKeyHasher> m_uiExternalImageBindings{}; /**< @brief External image-backed texture bindings keyed by (UIContext, texture-id). */
     std::unordered_map<UiTextureCacheKey, SnAPI::Graphics::IGPUImage*, UiTextureCacheKeyHasher> m_uiExternalResolvedTextureImages{}; /**< @brief Last resolved external image pointer per external UI texture key. */
     std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */
     std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiGradientCacheKeyHasher> m_uiGradientTextures{}; /**< @brief Cached generated gradient textures keyed by gradient definition. */

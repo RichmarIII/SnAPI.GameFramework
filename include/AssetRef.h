@@ -116,6 +116,16 @@ public:
         return m_assetName.empty() && m_assetId.empty() && DefaultAssetName().empty();
     }
 
+    [[nodiscard]] bool operator==(const TAssetRef& Other) const
+    {
+        return m_assetName == Other.m_assetName && m_assetId == Other.m_assetId;
+    }
+
+    [[nodiscard]] bool operator!=(const TAssetRef& Other) const
+    {
+        return !(*this == Other);
+    }
+
     [[nodiscard]] std::string ResolvedAssetName() const
     {
         if (!m_assetName.empty())

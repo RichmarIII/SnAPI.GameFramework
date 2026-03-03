@@ -256,6 +256,7 @@ void GameEditor::EnsureDefaultServicesRegistered()
     (void)RegisterService<EditorSelectionService>();
     (void)RegisterService<EditorPieService>();
     (void)RegisterService<EditorAssetService>();
+    (void)RegisterService<EditorAssetIconService>();
     (void)RegisterService<EditorLayoutService>();
     (void)RegisterService<EditorGameViewportOverlayService>();
     (void)RegisterService<EditorSelectionInteractionService>();

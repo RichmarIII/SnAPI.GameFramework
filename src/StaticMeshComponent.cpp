@@ -195,6 +195,32 @@ SnAPI::Graphics::SharedVertexStreamSourcePtr BuildPrimitiveSourceFromMeshPath(co
     return {};
 }
 
+[[nodiscard]] std::vector<TAssetRef<MaterialInstanceAssetRuntime>> BuildEffectiveMaterialRefs(
+    const std::vector<TAssetRef<MaterialInstanceAssetRuntime>>& BaseRefs,
+    const std::vector<TAssetRef<MaterialInstanceAssetRuntime>>& OverrideRefs)
+{
+    if (OverrideRefs.empty())
+    {
+        return BaseRefs;
+    }
+
+    std::vector<TAssetRef<MaterialInstanceAssetRuntime>> EffectiveRefs = BaseRefs;
+    if (EffectiveRefs.size() < OverrideRefs.size())
+    {
+        EffectiveRefs.resize(OverrideRefs.size());
+    }
+
+    for (std::size_t Index = 0; Index < OverrideRefs.size(); ++Index)
+    {
+        if (!OverrideRefs[Index].IsNull())
+        {
+            EffectiveRefs[Index] = OverrideRefs[Index];
+        }
+    }
+
+    return EffectiveRefs;
+}
+
 #if defined(WITH_EDITOR) && WITH_EDITOR
 bool IsStaticMeshSettingsField(const std::string_view Name)
 {
@@ -206,7 +232,8 @@ bool IsStaticMeshSettingsField(const std::string_view Name)
         || Name == "Visible"
         || Name == "CastShadows"
         || Name == "SyncFromTransform"
-        || Name == "RegisterWithRenderer";
+        || Name == "RegisterWithRenderer"
+        || Name == "MaterialInstanceOverrides";
 }
 #endif
 } // namespace
@@ -250,6 +277,7 @@ void StaticMeshComponent::ClearMesh()
     m_renderObject.reset();
     m_loadedPath.clear();
     m_loadedFromAsset = false;
+    m_loadedMeshMaterialInstances.clear();
     m_loadedStreamSource.reset();
     m_registered = false;
     m_passStateInitialized = false;
@@ -334,6 +362,12 @@ void StaticMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
         return;
     }
 
+    if (Name == "MaterialInstanceOverrides")
+    {
+        ApplyConfiguredMaterialInstances(*m_renderObject);
+        ApplySharedMaterialInstances(*m_renderObject);
+    }
+
     if (m_settings.SyncFromTransform)
     {
         SyncRenderObjectTransform(*m_renderObject);
@@ -387,10 +421,11 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         m_renderObject = std::move(RenderObject);
         m_loadedPath.clear();
         m_loadedFromAsset = false;
+        m_loadedMeshMaterialInstances.clear();
         m_loadedStreamSource = m_streamSource;
         m_registered = false;
 
-        ApplyDefaultMaterialInstances(*m_renderObject, *Renderer);
+        ApplyConfiguredMaterialInstances(*m_renderObject);
         ApplySharedMaterialInstances(*m_renderObject);
         ApplyRenderObjectState(*m_renderObject);
 
@@ -423,15 +458,12 @@ bool StaticMeshComponent::EnsureMeshLoaded()
                         m_renderObject = std::move(RenderObject);
                         m_loadedPath = AssetToken;
                         m_loadedFromAsset = true;
+                        m_loadedMeshMaterialInstances = SharedRuntimeMesh->Get()->MaterialInstances;
                         m_loadedStreamSource.reset();
                         m_registered = false;
                         m_settings.MeshPath.clear();
 
-                        ApplyRuntimeOrDefaultMaterialInstances(
-                            *m_renderObject,
-                            *Renderer,
-                            SharedRuntimeMesh->Get()->MaterialInstances,
-                            AssetManager);
+                        ApplyConfiguredMaterialInstances(*m_renderObject);
                         ApplySharedMaterialInstances(*m_renderObject);
                         ApplyRenderObjectState(*m_renderObject);
 
@@ -455,11 +487,12 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         m_renderObject = std::move(RenderObject);
         m_loadedPath = ToLowerASCII(m_settings.MeshPath);
         m_loadedFromAsset = false;
+        m_loadedMeshMaterialInstances.clear();
         m_loadedStreamSource.reset();
         m_registered = false;
         m_settings.MeshAsset.Clear();
 
-        ApplyDefaultMaterialInstances(*m_renderObject, *Renderer);
+        ApplyConfiguredMaterialInstances(*m_renderObject);
         ApplySharedMaterialInstances(*m_renderObject);
         ApplyRenderObjectState(*m_renderObject);
         m_lastFailedPathLoadKey.clear();
@@ -467,6 +500,20 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         return true;
     }
     return false;
+}
+
+void StaticMeshComponent::ApplyConfiguredMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject)
+{
+    
+    auto* Renderer = ResolveRendererSystem();
+    if (!Renderer || !Renderer->IsInitialized())
+    {
+        return;
+    }
+
+    const std::vector<TAssetRef<MaterialInstanceAssetRuntime>> EffectiveRefs =
+        BuildEffectiveMaterialRefs(m_loadedMeshMaterialInstances, m_settings.MaterialInstanceOverrides);
+    ApplyRuntimeOrDefaultMaterialInstances(RenderObject, *Renderer, EffectiveRefs, ResolveDefaultAssetManager());
 }
 
 void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const

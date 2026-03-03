@@ -29,6 +29,10 @@ struct MeshImportSettingsPayload
     bool OptimizeMeshes = true;
     bool ForceSkeletal = false;
     bool ForceStatic = false;
+    bool ImportMaterials = true;
+    bool ImportTextures = true;
+    bool ImportAnimations = true;
+    bool ImportSkeleton = true;
     uint32_t MaxBonesPerVertex = 4;
 };
 

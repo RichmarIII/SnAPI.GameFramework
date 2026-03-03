@@ -1,6 +1,9 @@
 #include "AssetPipelineFactories.h"
 
+#include <algorithm>
+#include <cstring>
 #include <exception>
+#include <optional>
 #include <sstream>
 #include <string>
 
@@ -14,8 +17,16 @@
 #include "RenderAssetPayloads.h"
 #include "RenderAssetRuntime.h"
 #include "Serialization.h"
+#include "TextureCompressorIds.h"
+#include "TextureCompressorPayloads.h"
 #include "TextureCompressorPayloadSerializers.h"
 #include "World.h"
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <GraphicsAPITypes.hpp>
+#include <IGraphicsAPI.hpp>
+#include <Image.hpp>
+#endif
 
 namespace TextureCompressorPlugin
 {
@@ -335,6 +346,16 @@ protected:
         MaterialAssetRuntime Loaded{};
         Loaded.ShaderModule = PayloadResult->ShaderModule;
         Loaded.ShadingModel = PayloadResult->ShadingModel;
+        Loaded.FeatureAlbedoMap = PayloadResult->FeatureAlbedoMap;
+        Loaded.FeatureNormalMap = PayloadResult->FeatureNormalMap;
+        Loaded.FeatureRoughnessMap = PayloadResult->FeatureRoughnessMap;
+        Loaded.FeatureMetalnessMap = PayloadResult->FeatureMetalnessMap;
+        Loaded.FeatureOcclusionMap = PayloadResult->FeatureOcclusionMap;
+        Loaded.FeatureAlphaTest = PayloadResult->FeatureAlphaTest;
+        Loaded.FeatureAlphaBlend = PayloadResult->FeatureAlphaBlend;
+        Loaded.FeatureDoubleSided = PayloadResult->FeatureDoubleSided;
+        Loaded.FeatureInstancing = PayloadResult->FeatureInstancing;
+        Loaded.bLegacyInferFeaturesFromTextures = Context.Cooked.SchemaVersion < 2u;
         return Loaded;
     }
 };
@@ -375,6 +396,151 @@ protected:
         return Loaded;
     }
 };
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+[[nodiscard]] std::optional<::SnAPI::Graphics::ETextureFormat> ToRendererTextureFormat(
+    const TextureCompressorPlugin::ECompressedFormat Format)
+{
+    using TextureCompressorPlugin::ECompressedFormat;
+    using ::SnAPI::Graphics::ETextureFormat;
+
+    switch (Format)
+    {
+    case ECompressedFormat::BC1:
+        return ETextureFormat::BC1_Unorm;
+    case ECompressedFormat::BC3:
+        return ETextureFormat::BC3_Unorm;
+    case ECompressedFormat::BC4:
+        return ETextureFormat::BC4_Unorm;
+    case ECompressedFormat::BC5:
+        return ETextureFormat::BC5_Unorm;
+    case ECompressedFormat::BC6H:
+        return ETextureFormat::BC6H_UFloat;
+    case ECompressedFormat::BC7:
+        return ETextureFormat::BC7_Unorm;
+    case ECompressedFormat::ASTC_4x4:
+        return ETextureFormat::ASTC_4x4_Unorm;
+    case ECompressedFormat::ASTC_5x5:
+        return ETextureFormat::ASTC_5x5_Unorm;
+    case ECompressedFormat::ASTC_6x6:
+        return ETextureFormat::ASTC_6x6_Unorm;
+    case ECompressedFormat::ASTC_8x8:
+        return ETextureFormat::ASTC_8x8_Unorm;
+    case ECompressedFormat::ASTC_10x10:
+        return ETextureFormat::ASTC_10x10_Unorm;
+    case ECompressedFormat::ASTC_12x12:
+        return ETextureFormat::ASTC_12x12_Unorm;
+    case ECompressedFormat::ASTC_4x4_HDR:
+        return ETextureFormat::ASTC_4x4_SFloat;
+    case ECompressedFormat::ASTC_6x6_HDR:
+        return ETextureFormat::ASTC_6x6_SFloat;
+    case ECompressedFormat::ASTC_8x8_HDR:
+        return ETextureFormat::ASTC_8x8_SFloat;
+    case ECompressedFormat::Unknown:
+    default:
+        return std::nullopt;
+    }
+}
+
+/**
+ * @brief AssetFactory for compressed texture GPU images.
+ */
+class TCompressedTextureImageFactory final : public ::SnAPI::AssetPipeline::IAssetFactory
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return TextureCompressorPlugin::Payload_CompressorCookedInfo;
+    }
+
+    std::expected<::SnAPI::AssetPipeline::UniqueVoidPtr, std::string> Load(
+        const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto CookedInfo = Context.DeserializeCooked<TextureCompressorPlugin::TextureCompressorCookedInfo>();
+        if (!CookedInfo)
+        {
+            return std::unexpected(CookedInfo.error());
+        }
+
+        const auto RendererFormat = ToRendererTextureFormat(CookedInfo->Format);
+        if (!RendererFormat.has_value())
+        {
+            return std::unexpected("Unsupported compressed texture format for renderer image upload");
+        }
+
+        auto* GraphicsAPI = ::SnAPI::Graphics::IGraphicsAPI::Instance();
+        if (!GraphicsAPI)
+        {
+            return std::unexpected("GraphicsAPI is not initialized");
+        }
+
+        uint32_t MipsToLoad = CookedInfo->MipCount;
+        if (const auto* LoadParams = std::any_cast<TextureCompressorPlugin::TextureCompressorLoadParams>(&Context.Params))
+        {
+            if (LoadParams->MaxMipLevel >= 0)
+            {
+                MipsToLoad = std::min<uint32_t>(MipsToLoad, static_cast<uint32_t>(LoadParams->MaxMipLevel));
+            }
+        }
+
+        MipsToLoad = std::min<uint32_t>(MipsToLoad, static_cast<uint32_t>(CookedInfo->MipLevels.size()));
+        if (MipsToLoad == 0)
+        {
+            return std::unexpected("Compressed texture has no mips to load");
+        }
+
+        std::vector<uint8_t> TextureBytes{};
+        std::vector<uint32_t> MipByteSizes{};
+        size_t EstimatedTextureBytes = 0;
+        for (uint32_t MipIndex = 0; MipIndex < MipsToLoad; ++MipIndex)
+        {
+            EstimatedTextureBytes += CookedInfo->MipLevels[MipIndex].CompressedSize;
+        }
+        TextureBytes.reserve(EstimatedTextureBytes);
+        MipByteSizes.reserve(MipsToLoad);
+
+        for (uint32_t MipIndex = 0; MipIndex < MipsToLoad; ++MipIndex)
+        {
+            auto BulkResult = Context.LoadBulk(MipIndex);
+            if (!BulkResult)
+            {
+                return std::unexpected("Failed to load compressed texture mip bulk chunk " + std::to_string(MipIndex) + ": " + BulkResult.error());
+            }
+
+            const uint32_t ByteSize = static_cast<uint32_t>(BulkResult->size());
+            if (ByteSize == 0)
+            {
+                return std::unexpected("Compressed texture mip bulk chunk is empty at index " + std::to_string(MipIndex));
+            }
+
+            MipByteSizes.push_back(ByteSize);
+            const size_t ExistingSize = TextureBytes.size();
+            TextureBytes.resize(ExistingSize + BulkResult->size());
+            std::memcpy(TextureBytes.data() + ExistingSize, BulkResult->data(), BulkResult->size());
+        }
+
+        ::SnAPI::Graphics::ImageCreateInfo ImageCI = ::SnAPI::Graphics::ImageCreateInfo::VisualDefault(
+            {CookedInfo->BaseWidth, CookedInfo->BaseHeight},
+            *RendererFormat,
+            MipsToLoad);
+        ImageCI.Data = std::move(TextureBytes);
+        ImageCI.MipByteSizes = std::move(MipByteSizes);
+        ImageCI.EnableAnisotropy = true;
+
+        auto Image = GraphicsAPI->CreateImage2D(ImageCI);
+        if (!Image)
+        {
+            return std::unexpected("GraphicsAPI failed to create texture image");
+        }
+
+        return ::SnAPI::AssetPipeline::UniqueVoidPtr(
+            Image.release(),
+            [](void* Ptr) {
+                delete static_cast<::SnAPI::Graphics::IGPUImage*>(Ptr);
+            });
+    }
+};
+#endif
 
 /**
  * @brief AssetFactory for Skeleton runtime objects.
@@ -548,6 +714,9 @@ void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manage
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
     Manager.RegisterFactory<MaterialAssetRuntime>(std::make_unique<TMaterialFactory>());
     Manager.RegisterFactory<MaterialInstanceAssetRuntime>(std::make_unique<TMaterialInstanceFactory>());
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    Manager.RegisterFactory<::SnAPI::Graphics::IGPUImage>(std::make_unique<TCompressedTextureImageFactory>());
+#endif
     Manager.RegisterFactory<SkeletonAssetRuntime>(std::make_unique<TSkeletonFactory>());
     Manager.RegisterFactory<AnimationAssetRuntime>(std::make_unique<TAnimationFactory>());
     Manager.RegisterFactory<StaticMeshAssetRuntime>(std::make_unique<TStaticMeshFactory>());

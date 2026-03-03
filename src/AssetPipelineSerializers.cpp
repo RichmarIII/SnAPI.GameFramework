@@ -242,7 +242,7 @@ public:
 
     uint32_t GetSchemaVersion() const override
     {
-        return 1u;
+        return 2u;
     }
 
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
@@ -297,7 +297,7 @@ public:
 
     uint32_t GetSchemaVersion() const override
     {
-        return 1u;
+        return 2u;
     }
 
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
@@ -352,7 +352,7 @@ public:
 
     uint32_t GetSchemaVersion() const override
     {
-        return 1u;
+        return 2u;
     }
 
     void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
@@ -386,6 +386,35 @@ public:
 
         *Payload = std::move(Result.value());
         return true;
+    }
+
+    bool MigrateBytes(const uint32_t FromVersion, const uint32_t ToVersion, std::vector<uint8_t>& InOutBytes) const override
+    {
+        if (FromVersion == ToVersion)
+        {
+            return true;
+        }
+
+        if (FromVersion == 1u && ToVersion == 2u)
+        {
+            auto DeserializeResult = DeserializeMaterialPayload(InOutBytes.data(), InOutBytes.size());
+            if (!DeserializeResult)
+            {
+                return false;
+            }
+
+            std::vector<uint8_t> MigratedBytes{};
+            auto SerializeResult = SerializeMaterialPayload(DeserializeResult.value(), MigratedBytes);
+            if (!SerializeResult)
+            {
+                return false;
+            }
+
+            InOutBytes = std::move(MigratedBytes);
+            return true;
+        }
+
+        return false;
     }
 };
 

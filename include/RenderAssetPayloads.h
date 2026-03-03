@@ -111,6 +111,15 @@ struct MaterialPayload
 
     std::string ShaderModule{};
     std::string ShadingModel{};
+    bool FeatureAlbedoMap = false;
+    bool FeatureNormalMap = false;
+    bool FeatureRoughnessMap = false;
+    bool FeatureMetalnessMap = false;
+    bool FeatureOcclusionMap = false;
+    bool FeatureAlphaTest = false;
+    bool FeatureAlphaBlend = false;
+    bool FeatureDoubleSided = false;
+    bool FeatureInstancing = false;
 
     bool operator==(const MaterialPayload&) const = default;
 };

@@ -3,6 +3,7 @@
 #include "Expected.h"
 #include "Editor/EditorImportSettings.h"
 #include "Handles.h"
+#include "IAssetImportSettings.h"
 #include "TypeRegistration.h"
 
 #include <UIHandles.h>
@@ -69,6 +70,10 @@ public:
         std::string Name{};
         std::string Type{};
         std::string Variant{};
+        std::string IconSource{};
+        std::uint32_t IconTextureId = 0;
+        std::uint32_t IconWidth = 0;
+        std::uint32_t IconHeight = 0;
         bool IsRuntime = false;
         bool IsDirty = false;
     };
@@ -98,6 +103,7 @@ public:
         std::string SourcePath{};
         std::string FolderPath{};
         std::unordered_map<std::string, std::string> BuildOptions{};
+        ::SnAPI::AssetPipeline::AssetImportSettingsPtr ImportSettings{};
     };
 
     struct ContentAssetInspectorState
@@ -115,11 +121,23 @@ public:
         std::string Status{};
         TypeId TargetType{};
         void* TargetObject = nullptr;
+        TypeId ImportSettingsType{};
+        void* ImportSettingsObject = nullptr;
         std::vector<NodeEntry> Nodes{};
         NodeHandle SelectedNode{};
         bool CanEditHierarchy = false;
+        bool HasImportSettings = false;
+        bool RuntimeDirty = false;
+        bool ImportSettingsDirty = false;
         bool IsDirty = false;
         bool CanSave = false;
+        bool CanReimport = false;
+        std::string PreviewIconSource{};
+        std::uint32_t PreviewTextureId = 0;
+        std::uint32_t PreviewWidth = 0;
+        std::uint32_t PreviewHeight = 0;
+        std::string PreviewStatsPrimary{};
+        std::string PreviewStatsSecondary{};
         std::uint64_t SessionRevision = 0;
     };
 
@@ -172,6 +190,7 @@ public:
     [[nodiscard]] bool IsBuilt() const { return m_built; }
     [[nodiscard]] UIRenderViewport* GameViewport() const;
     [[nodiscard]] int32_t GameViewportTabIndex() const;
+    [[nodiscard]] SnAPI::UI::UIContext* Context() const { return m_context; }
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
@@ -187,6 +206,7 @@ public:
     void SetContentAssetCreateHandler(SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> Handler);
     void SetContentAssetImportHandler(SnAPI::UI::TDelegate<void(const ContentAssetImportRequest&)> Handler);
     void SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()> Handler);
+    void SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate<void()> Handler);
     void SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler);
     void SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     void SetContentAssetInspectorHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
@@ -367,9 +387,15 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_contentInspectorModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorTitleText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorStatusText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorHierarchyTitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorPreviewStatsText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIImage> m_contentInspectorPreviewImage{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_contentInspectorHierarchyTree{};
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_contentInspectorPropertyPanel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorImportSettingsTitleText{};
+    SnAPI::UI::ElementHandle<UIPropertyPanel> m_contentInspectorImportSettingsPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentInspectorSaveButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentInspectorReimportButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_menuFileButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectNameInput{};
@@ -436,6 +462,9 @@ private:
     bool m_contentInspectorTargetBound = false;
     void* m_contentInspectorBoundObject = nullptr;
     TypeId m_contentInspectorBoundType{};
+    bool m_contentInspectorImportTargetBound = false;
+    void* m_contentInspectorImportBoundObject = nullptr;
+    TypeId m_contentInspectorImportBoundType{};
     SnAPI::UI::TDelegate<void(const std::string&, bool)> m_onContentAssetSelected{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetPlaceRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetSaveRequested{};
@@ -445,6 +474,7 @@ private:
     SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> m_onContentAssetCreateRequested{};
     SnAPI::UI::TDelegate<void(const ContentAssetImportRequest&)> m_onContentAssetImportRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorSaveRequested{};
+    SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorReimportRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorCloseRequested{};
     SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onContentAssetInspectorNodeSelected{};
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onContentAssetInspectorHierarchyActionRequested{};

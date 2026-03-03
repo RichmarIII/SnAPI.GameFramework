@@ -1,5 +1,6 @@
 #include "Editor/EditorCoreServices.h"
 
+#include "AssetRef.h"
 #include "BaseNode.h"
 #include "AssetPipelineIds.h"
 #include "CameraComponent.h"
@@ -10,6 +11,7 @@
 #include "Level.h"
 #include "NodeCast.h"
 #include "PawnBase.h"
+#include "RenderAssetRuntime.h"
 #include "PlayerStart.h"
 #include "Serialization.h"
 #include "TransformComponent.h"
@@ -24,6 +26,7 @@
 #include <UIRealtimeGraph.h>
 #include <UISizing.h>
 #include <UIText.h>
+#include <TextureCompressorIds.h>
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include <Input.h>
@@ -42,14 +45,18 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <iomanip>
 #include <numbers>
 #include <optional>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -193,6 +200,29 @@ private:
     HashCombine(static_cast<std::size_t>(Details.CanPlace ? 1u : 0u));
     HashCombine(static_cast<std::size_t>(Details.CanSave ? 1u : 0u));
     return Seed;
+}
+
+[[nodiscard]] std::string FormatBinaryByteSize(const std::uint64_t Bytes)
+{
+    constexpr std::array<std::string_view, 5> Units{"B", "KB", "MB", "GB", "TB"};
+    double Value = static_cast<double>(Bytes);
+    std::size_t UnitIndex = 0;
+    while (Value >= 1024.0 && UnitIndex + 1u < Units.size())
+    {
+        Value /= 1024.0;
+        ++UnitIndex;
+    }
+
+    std::ostringstream Stream{};
+    if (UnitIndex == 0)
+    {
+        Stream << static_cast<std::uint64_t>(Value) << ' ' << Units[UnitIndex];
+    }
+    else
+    {
+        Stream << std::fixed << std::setprecision(Value >= 100.0 ? 1 : 2) << Value << ' ' << Units[UnitIndex];
+    }
+    return Stream.str();
 }
 
 [[nodiscard]] std::string ShortTypeLabel(std::string_view QualifiedName)
@@ -906,6 +936,288 @@ WorldExecutionProfile EditorPieService::PausedExecutionProfile()
     return Profile;
 }
 
+struct EditorAssetIconService::TextureBinding
+{
+    ::SnAPI::AssetPipeline::AssetId AssetId{};
+    const SnAPI::UI::UIContext* Context = nullptr;
+    std::uint32_t TextureId = 0;
+    std::uint32_t TextureWidth = 0;
+    std::uint32_t TextureHeight = 0;
+    ::SnAPI::AssetPipeline::AssetHandle<RuntimeTextureAsset> RuntimeTexture{};
+};
+
+EditorAssetIconService::~EditorAssetIconService() = default;
+
+std::string_view EditorAssetIconService::Name() const
+{
+    return "EditorAssetIconService";
+}
+
+std::vector<std::type_index> EditorAssetIconService::Dependencies() const
+{
+    return {std::type_index(typeid(EditorAssetService))};
+}
+
+Result EditorAssetIconService::Initialize(EditorServiceContext& Context)
+{
+    (void)Context;
+    m_boundContext = nullptr;
+    m_textureBindingsByAssetKey.clear();
+    m_nextTextureId = 0x70000000u;
+    ++m_revision;
+    return Ok();
+}
+
+void EditorAssetIconService::Shutdown(EditorServiceContext& Context)
+{
+    ResetAllBindings(Context);
+    m_boundContext = nullptr;
+}
+
+void EditorAssetIconService::Synchronize(EditorServiceContext& Context,
+                                         const std::vector<EditorAssetService::DiscoveredAsset>& Assets,
+                                         const SnAPI::UI::UIContext* UiContext)
+{
+    if (UiContext != m_boundContext)
+    {
+        ResetAllBindings(Context);
+        m_boundContext = UiContext;
+    }
+
+    if (m_textureBindingsByAssetKey.empty())
+    {
+        return;
+    }
+
+    std::unordered_map<std::string, const EditorAssetService::DiscoveredAsset*> TextureAssetsByKey{};
+    TextureAssetsByKey.reserve(Assets.size());
+    for (const auto& Asset : Assets)
+    {
+        if (Asset.AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture)
+        {
+            TextureAssetsByKey.emplace(Asset.Key, &Asset);
+        }
+    }
+
+    std::vector<std::string> KeysToRemove{};
+    KeysToRemove.reserve(m_textureBindingsByAssetKey.size());
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+#endif
+
+    for (auto& [AssetKey, Binding] : m_textureBindingsByAssetKey)
+    {
+        const auto AssetIt = TextureAssetsByKey.find(AssetKey);
+        if (AssetIt == TextureAssetsByKey.end() || !Binding || Binding->TextureId == 0)
+        {
+            KeysToRemove.push_back(AssetKey);
+            continue;
+        }
+        if (UiContext == nullptr || Binding->Context != UiContext)
+        {
+            KeysToRemove.push_back(AssetKey);
+            continue;
+        }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        const auto& Asset = *AssetIt->second;
+
+        TAssetRef<RuntimeTextureAsset> TextureRef{};
+        TextureRef.EditAssetName() = Asset.Name;
+        TextureRef.EditAssetId() = Asset.AssetId.ToString();
+        if (auto TextureResult = TextureRef.GetShared<RuntimeTextureAsset>(); TextureResult && TextureResult->Get())
+        {
+            Binding->AssetId = Asset.AssetId;
+            Binding->RuntimeTexture = *TextureResult;
+        }
+
+        auto* Image = Binding->RuntimeTexture.Get();
+        if (!WorldPtr || !Image ||
+            !WorldPtr->Renderer().RegisterExternalImageUiTexture(*UiContext, Binding->TextureId, Image, true))
+        {
+            KeysToRemove.push_back(AssetKey);
+        }
+#else
+        (void)AssetIt;
+#endif
+    }
+
+    for (const auto& AssetKey : KeysToRemove)
+    {
+        RemoveBinding(Context, AssetKey);
+    }
+}
+
+void EditorAssetIconService::InvalidateAsset(EditorServiceContext& Context, std::string_view AssetKey)
+{
+    if (AssetKey.empty())
+    {
+        return;
+    }
+    RemoveBinding(Context, AssetKey);
+}
+
+EditorAssetIconService::AssetIconMetadata EditorAssetIconService::ResolveAssetIcon(
+    EditorServiceContext& Context,
+    const EditorAssetService::DiscoveredAsset& Asset,
+    const SnAPI::UI::UIContext* UiContext)
+{
+    AssetIconMetadata Metadata = BuildFallbackIcon(Asset);
+    if (!UiContext || Asset.AssetKind != TextureCompressorPlugin::AssetKind_CompressedTexture)
+    {
+        return Metadata;
+    }
+
+    if (UiContext != m_boundContext)
+    {
+        ResetAllBindings(Context);
+        m_boundContext = UiContext;
+    }
+
+    if (const auto ExistingIt = m_textureBindingsByAssetKey.find(Asset.Key);
+        ExistingIt != m_textureBindingsByAssetKey.end())
+    {
+        const TextureBinding& Existing = *ExistingIt->second;
+        if (Existing.AssetId == Asset.AssetId && Existing.Context == UiContext && Existing.TextureId != 0)
+        {
+            Metadata.TextureId = Existing.TextureId;
+            Metadata.TextureWidth = Existing.TextureWidth;
+            Metadata.TextureHeight = Existing.TextureHeight;
+            return Metadata;
+        }
+        RemoveBinding(Context, Asset.Key);
+    }
+
+    TAssetRef<RuntimeTextureAsset> TextureRef{};
+    TextureRef.EditAssetName() = Asset.Name;
+    TextureRef.EditAssetId() = Asset.AssetId.ToString();
+    auto TextureResult = TextureRef.GetShared<RuntimeTextureAsset>();
+    if (!TextureResult || !TextureResult->Get())
+    {
+        return Metadata;
+    }
+
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return Metadata;
+    }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    const std::uint32_t TextureId = AllocateTextureId();
+    if (TextureId == 0)
+    {
+        return Metadata;
+    }
+
+    if (!WorldPtr->Renderer().RegisterExternalImageUiTexture(*UiContext, TextureId, TextureResult->Get(), true))
+    {
+        return Metadata;
+    }
+
+    auto Binding = std::make_shared<TextureBinding>();
+    const auto Extent = TextureResult->Get()->Extent();
+    Binding->AssetId = Asset.AssetId;
+    Binding->Context = UiContext;
+    Binding->TextureId = TextureId;
+    Binding->TextureWidth = Extent.x();
+    Binding->TextureHeight = Extent.y();
+    Binding->RuntimeTexture = *TextureResult;
+    m_textureBindingsByAssetKey[Asset.Key] = std::move(Binding);
+    Metadata.TextureId = TextureId;
+    Metadata.TextureWidth = Extent.x();
+    Metadata.TextureHeight = Extent.y();
+    ++m_revision;
+#endif
+    return Metadata;
+}
+
+EditorAssetIconService::AssetIconMetadata EditorAssetIconService::BuildFallbackIcon(
+    const EditorAssetService::DiscoveredAsset& Asset) const
+{
+    AssetIconMetadata Metadata{};
+    if (Asset.AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture)
+    {
+        Metadata.IconSource = "editor://Assets/sphere.svg";
+    }
+    else if (Asset.AssetKind == AssetKindMaterial())
+    {
+        Metadata.IconSource = "editor://Assets/component.svg";
+    }
+    else if (Asset.AssetKind == AssetKindMaterialInstance())
+    {
+        Metadata.IconSource = "editor://Assets/box.svg";
+    }
+    else if (Asset.AssetKind == AssetKindStaticMesh() ||
+             Asset.AssetKind == AssetKindSkeletalMesh())
+    {
+        Metadata.IconSource = "editor://Assets/box.svg";
+    }
+    else if (Asset.AssetKind == AssetKindLevel())
+    {
+        Metadata.IconSource = "editor://Assets/level.svg";
+    }
+    else if (Asset.AssetKind == AssetKindWorld())
+    {
+        Metadata.IconSource = "editor://Assets/world.svg";
+    }
+    else
+    {
+        Metadata.IconSource = "editor://Assets/component.svg";
+    }
+    return Metadata;
+}
+
+std::uint32_t EditorAssetIconService::AllocateTextureId()
+{
+    // Reserve a high-id range for editor-owned external-image bindings.
+    if (m_nextTextureId == 0u)
+    {
+        m_nextTextureId = 0x70000000u;
+    }
+    return m_nextTextureId++;
+}
+
+void EditorAssetIconService::RemoveBinding(EditorServiceContext& Context, std::string_view AssetKey)
+{
+    const auto It = m_textureBindingsByAssetKey.find(std::string(AssetKey));
+    if (It == m_textureBindingsByAssetKey.end())
+    {
+        return;
+    }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (WorldPtr && It->second && It->second->Context && It->second->TextureId != 0)
+    {
+        (void)WorldPtr->Renderer().UnregisterExternalImageUiTexture(*It->second->Context, It->second->TextureId);
+    }
+#endif
+
+    m_textureBindingsByAssetKey.erase(It);
+    ++m_revision;
+}
+
+void EditorAssetIconService::ResetAllBindings(EditorServiceContext& Context)
+{
+    if (m_textureBindingsByAssetKey.empty())
+    {
+        return;
+    }
+
+    std::vector<std::string> Keys{};
+    Keys.reserve(m_textureBindingsByAssetKey.size());
+    for (const auto& [AssetKey, _] : m_textureBindingsByAssetKey)
+    {
+        Keys.push_back(AssetKey);
+    }
+    for (const auto& AssetKey : Keys)
+    {
+        RemoveBinding(Context, AssetKey);
+    }
+}
+
 std::string_view EditorLayoutService::Name() const
 {
     return "EditorLayoutService";
@@ -919,7 +1231,8 @@ std::vector<std::type_index> EditorLayoutService::Dependencies() const
             std::type_index(typeid(EditorPieService)),
             std::type_index(typeid(EditorRootViewportService)),
             std::type_index(typeid(EditorCommandService)),
-            std::type_index(typeid(EditorAssetService))};
+            std::type_index(typeid(EditorAssetService)),
+            std::type_index(typeid(EditorAssetIconService))};
 }
 
 Result EditorLayoutService::Initialize(EditorServiceContext& Context)
@@ -929,7 +1242,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     auto* SelectionService = Context.GetService<EditorSelectionService>();
     auto* PieService = Context.GetService<EditorPieService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
-    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService)
+    auto* IconService = Context.GetService<EditorAssetIconService>();
+    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService || !IconService)
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Missing required editor services for layout"));
     }
@@ -960,11 +1274,13 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_hasPendingAssetImportRequest = false;
     m_pendingAssetImportRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
+    m_hasPendingAssetInspectorReimportRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
+    m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
@@ -1040,6 +1356,9 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
             }));
     m_layout.SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorSaveRequest = true;
+    }));
+    m_layout.SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetInspectorReimportRequest = true;
     }));
     m_layout.SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorCloseRequest = true;
@@ -1218,7 +1537,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
             (void)AssetService->ImportSourceAsset(Context,
                                                   m_pendingAssetImportRequest.SourcePath,
                                                   m_pendingAssetImportRequest.FolderPath,
-                                                  m_pendingAssetImportRequest.BuildOptions);
+                                                  m_pendingAssetImportRequest.BuildOptions,
+                                                  m_pendingAssetImportRequest.ImportSettings);
         }
         m_pendingAssetImportRequest = {};
     }
@@ -1227,6 +1547,15 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     {
         m_hasPendingAssetInspectorSaveRequest = false;
         (void)AssetService->SaveActiveAssetEditor();
+    }
+
+    if (m_hasPendingAssetInspectorReimportRequest)
+    {
+        m_hasPendingAssetInspectorReimportRequest = false;
+        if (!PieService->IsSessionActive())
+        {
+            (void)AssetService->ReimportActiveAsset(Context);
+        }
     }
 
     if (m_hasPendingAssetInspectorCloseRequest)
@@ -1366,13 +1695,19 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
 {
     auto* AssetService = Context.GetService<EditorAssetService>();
-    if (!AssetService)
+    auto* IconService = Context.GetService<EditorAssetIconService>();
+    if (!AssetService || !IconService)
     {
         return;
     }
 
     const auto& Assets = AssetService->Assets();
-    const std::size_t AssetSignature = ComputeAssetListSignature(Assets);
+    const SnAPI::UI::UIContext* LayoutContext = m_layout.Context();
+    IconService->Synchronize(Context, Assets, LayoutContext);
+
+    std::size_t AssetSignature = ComputeAssetListSignature(Assets);
+    const std::uint64_t IconRevision = IconService->Revision();
+    AssetSignature ^= std::hash<std::uint64_t>{}(IconRevision) + 0x9e3779b9 + (AssetSignature << 6) + (AssetSignature >> 2);
     if (AssetSignature != m_assetListSignature)
     {
         std::vector<EditorLayout::ContentAssetEntry> Entries{};
@@ -1386,6 +1721,11 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
             Entry.Variant = Asset.Variant;
             Entry.IsRuntime = Asset.IsRuntime;
             Entry.IsDirty = Asset.IsDirty;
+            const auto IconMetadata = IconService->ResolveAssetIcon(Context, Asset, LayoutContext);
+            Entry.IconSource = std::move(IconMetadata.IconSource);
+            Entry.IconTextureId = IconMetadata.TextureId;
+            Entry.IconWidth = IconMetadata.TextureWidth;
+            Entry.IconHeight = IconMetadata.TextureHeight;
             Entries.emplace_back(std::move(Entry));
         }
 
@@ -1438,17 +1778,27 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     }
 
     const std::uint64_t InspectorRevision = AssetService->AssetEditorSessionRevision();
-    if (InspectorRevision != m_assetInspectorSessionRevision)
+    if (InspectorRevision != m_assetInspectorSessionRevision ||
+        IconRevision != m_assetInspectorIconRevision)
     {
         const EditorAssetService::AssetEditorSessionView SessionView = AssetService->AssetEditorSession();
+        if (InspectorRevision != m_assetInspectorSessionRevision && SessionView.IsOpen && !SessionView.AssetKey.empty())
+        {
+            IconService->InvalidateAsset(Context, SessionView.AssetKey);
+        }
         EditorLayout::ContentAssetInspectorState InspectorState{};
         InspectorState.Open = SessionView.IsOpen;
         InspectorState.AssetKey = SessionView.AssetKey;
         InspectorState.Title = SessionView.Title;
         InspectorState.TargetType = SessionView.TargetType;
         InspectorState.TargetObject = SessionView.TargetObject;
+        InspectorState.ImportSettingsType = SessionView.ImportSettingsType;
+        InspectorState.ImportSettingsObject = SessionView.ImportSettingsObject;
         InspectorState.SelectedNode = SessionView.SelectedNode;
         InspectorState.CanEditHierarchy = SessionView.CanEditHierarchy;
+        InspectorState.HasImportSettings = SessionView.HasImportSettings;
+        InspectorState.RuntimeDirty = SessionView.RuntimeDirty;
+        InspectorState.ImportSettingsDirty = SessionView.ImportSettingsDirty;
         InspectorState.Nodes.reserve(SessionView.Nodes.size());
         for (const auto& Entry : SessionView.Nodes)
         {
@@ -1460,15 +1810,58 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         }
         InspectorState.IsDirty = SessionView.IsDirty;
         InspectorState.CanSave = SessionView.CanSave;
+        InspectorState.CanReimport = SessionView.CanReimport;
         InspectorState.SessionRevision = InspectorRevision;
         if (SessionView.IsOpen)
         {
-            InspectorState.Status = SessionView.IsDirty
-                                        ? "Unsaved changes. Click Save to persist."
-                                        : "No pending edits.";
+            const auto AssetIt = std::find_if(Assets.begin(), Assets.end(), [&SessionView](const EditorAssetService::DiscoveredAsset& Asset) {
+                return Asset.Key == SessionView.AssetKey;
+            });
+            if (AssetIt != Assets.end())
+            {
+                const auto IconMetadata = IconService->ResolveAssetIcon(Context, *AssetIt, LayoutContext);
+                InspectorState.PreviewIconSource = std::move(IconMetadata.IconSource);
+                InspectorState.PreviewTextureId = IconMetadata.TextureId;
+                InspectorState.PreviewWidth = IconMetadata.TextureWidth;
+                InspectorState.PreviewHeight = IconMetadata.TextureHeight;
+            }
+        }
+        if (SessionView.IsOpen && SessionView.HasTexturePreviewStats)
+        {
+            InspectorState.PreviewWidth = SessionView.TexturePreviewWidth;
+            InspectorState.PreviewHeight = SessionView.TexturePreviewHeight;
+            InspectorState.PreviewStatsPrimary =
+                std::to_string(SessionView.TexturePreviewWidth) + " x " +
+                std::to_string(SessionView.TexturePreviewHeight) + " | Target: " +
+                (SessionView.TexturePreviewTarget.empty() ? std::string("Unknown") : SessionView.TexturePreviewTarget) +
+                " | Format: " +
+                (SessionView.TexturePreviewFormat.empty() ? std::string("Unknown") : SessionView.TexturePreviewFormat) +
+                " | Mips: " + std::to_string(SessionView.TexturePreviewMipCount);
+            InspectorState.PreviewStatsSecondary =
+                "GPU Size: " + FormatBinaryByteSize(SessionView.TexturePreviewGpuSizeBytes);
+        }
+        if (SessionView.IsOpen)
+        {
+            if (SessionView.RuntimeDirty && SessionView.ImportSettingsDirty)
+            {
+                InspectorState.Status = "Runtime and import settings changed. Save to persist settings, then Reimport to apply import changes.";
+            }
+            else if (SessionView.RuntimeDirty)
+            {
+                InspectorState.Status = "Runtime settings changed. Click Save to persist.";
+            }
+            else if (SessionView.ImportSettingsDirty)
+            {
+                InspectorState.Status = "Import settings changed. Save to persist and Reimport to apply.";
+            }
+            else
+            {
+                InspectorState.Status = "No pending edits.";
+            }
         }
         m_layout.SetContentAssetInspectorState(std::move(InspectorState));
         m_assetInspectorSessionRevision = InspectorRevision;
+        m_assetInspectorIconRevision = IconRevision;
     }
 }
 
@@ -1487,6 +1880,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
+    m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
@@ -1498,6 +1892,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_hasPendingAssetImportRequest = false;
     m_pendingAssetImportRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
+    m_hasPendingAssetInspectorReimportRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
     m_hasPendingAssetInspectorNodeSelectionRequest = false;
     m_pendingAssetInspectorNodeSelection = {};
@@ -1582,6 +1977,9 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_layout.SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorSaveRequest = true;
     }));
+    m_layout.SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingAssetInspectorReimportRequest = true;
+    }));
     m_layout.SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorCloseRequest = true;
     }));
@@ -1616,6 +2014,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetContentAssetCreateHandler({});
     m_layout.SetContentAssetImportHandler({});
     m_layout.SetContentAssetInspectorSaveHandler({});
+    m_layout.SetContentAssetInspectorReimportHandler({});
     m_layout.SetContentAssetInspectorCloseHandler({});
     m_layout.SetContentAssetInspectorNodeSelectionHandler({});
     m_layout.SetContentAssetInspectorHierarchyActionHandler({});
@@ -1649,6 +2048,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_hasPendingAssetImportRequest = false;
     m_pendingAssetImportRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
+    m_hasPendingAssetInspectorReimportRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
     m_hasPendingAssetInspectorNodeSelectionRequest = false;
     m_pendingAssetInspectorNodeSelection = {};
@@ -1658,6 +2058,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
+    m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_layout.Shutdown(&Context.Runtime());
 }
 
