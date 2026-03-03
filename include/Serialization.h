@@ -48,6 +48,7 @@ struct TSerializationContext
     const Level* Graph = nullptr; /**< @brief Optional level context for level-scoped handle resolution. */
     const std::unordered_map<Uuid, Uuid, UuidHash>* NodeIdRemap = nullptr; /**< @brief Optional source-node-id -> runtime-node-id remap used during deserialize fixup. */
     const std::unordered_map<Uuid, Uuid, UuidHash>* ComponentIdRemap = nullptr; /**< @brief Optional source-component-id -> runtime-component-id remap used during deserialize fixup. */
+    bool UseLegacyFloatVectorDecode = false; /**< @brief Decode Vec3/Quat from float32 wire values for legacy payload compatibility. */
 };
 
 /**
@@ -169,6 +170,20 @@ struct TValueCodec
         else if constexpr (std::is_same_v<T, Vec3>)
         {
             using Scalar = typename Vec3::Scalar;
+            if constexpr (sizeof(Scalar) > sizeof(float))
+            {
+                if (Context.UseLegacyFloatVectorDecode)
+                {
+                    float LegacyX = 0.0f;
+                    float LegacyY = 0.0f;
+                    float LegacyZ = 0.0f;
+                    Archive(LegacyX, LegacyY, LegacyZ);
+                    return Vec3(
+                        static_cast<Scalar>(LegacyX),
+                        static_cast<Scalar>(LegacyY),
+                        static_cast<Scalar>(LegacyZ));
+                }
+            }
             Scalar X = Scalar(0);
             Scalar Y = Scalar(0);
             Scalar Z = Scalar(0);
@@ -178,6 +193,23 @@ struct TValueCodec
         else if constexpr (std::is_same_v<T, Quat>)
         {
             using Scalar = typename Quat::Scalar;
+            if constexpr (sizeof(Scalar) > sizeof(float))
+            {
+                if (Context.UseLegacyFloatVectorDecode)
+                {
+                    float LegacyX = 0.0f;
+                    float LegacyY = 0.0f;
+                    float LegacyZ = 0.0f;
+                    float LegacyW = 1.0f;
+                    Archive(LegacyX, LegacyY, LegacyZ, LegacyW);
+                    Quat Rotation = Quat::Identity();
+                    Rotation.x() = static_cast<Scalar>(LegacyX);
+                    Rotation.y() = static_cast<Scalar>(LegacyY);
+                    Rotation.z() = static_cast<Scalar>(LegacyZ);
+                    Rotation.w() = static_cast<Scalar>(LegacyW);
+                    return Rotation;
+                }
+            }
             Scalar X = Scalar(0);
             Scalar Y = Scalar(0);
             Scalar Z = Scalar(0);
@@ -282,6 +314,21 @@ struct TValueCodec
         else if constexpr (std::is_same_v<T, Vec3>)
         {
             using Scalar = typename Vec3::Scalar;
+            if constexpr (sizeof(Scalar) > sizeof(float))
+            {
+                if (Context.UseLegacyFloatVectorDecode)
+                {
+                    float LegacyX = static_cast<float>(Value.x());
+                    float LegacyY = static_cast<float>(Value.y());
+                    float LegacyZ = static_cast<float>(Value.z());
+                    Archive(LegacyX, LegacyY, LegacyZ);
+                    Value = Vec3(
+                        static_cast<Scalar>(LegacyX),
+                        static_cast<Scalar>(LegacyY),
+                        static_cast<Scalar>(LegacyZ));
+                    return Ok();
+                }
+            }
             Scalar X = Value.x();
             Scalar Y = Value.y();
             Scalar Z = Value.z();
@@ -292,6 +339,22 @@ struct TValueCodec
         else if constexpr (std::is_same_v<T, Quat>)
         {
             using Scalar = typename Quat::Scalar;
+            if constexpr (sizeof(Scalar) > sizeof(float))
+            {
+                if (Context.UseLegacyFloatVectorDecode)
+                {
+                    float LegacyX = static_cast<float>(Value.x());
+                    float LegacyY = static_cast<float>(Value.y());
+                    float LegacyZ = static_cast<float>(Value.z());
+                    float LegacyW = static_cast<float>(Value.w());
+                    Archive(LegacyX, LegacyY, LegacyZ, LegacyW);
+                    Value.x() = static_cast<Scalar>(LegacyX);
+                    Value.y() = static_cast<Scalar>(LegacyY);
+                    Value.z() = static_cast<Scalar>(LegacyZ);
+                    Value.w() = static_cast<Scalar>(LegacyW);
+                    return Ok();
+                }
+            }
             Scalar X = Value.x();
             Scalar Y = Value.y();
             Scalar Z = Value.z();
@@ -559,6 +622,12 @@ public:
      * @return Success or error.
      */
     using DeserializeFn = std::function<TExpected<void>(void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)>;
+    /**
+     * @brief Callback to invoke component post-create lifecycle.
+     * @param Instance Pointer to component instance.
+     * @return Success or error.
+     */
+    using OnCreateFn = std::function<TExpected<void>(void* Instance)>;
 
     /**
      * @brief Access the singleton registry.
@@ -636,6 +705,31 @@ public:
         EntryValue.Deserialize = [Type](void* Instance, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context) -> TExpected<void> {
             return DeserializeByReflection(Type, Instance, Archive, Context);
         };
+        EntryValue.OnCreate = [](void* Instance) -> TExpected<void> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null component instance"));
+            }
+            auto& TypedInstance = *static_cast<T*>(Instance);
+            if constexpr (requires(T& Value) { Value.OnCreate(); })
+            {
+                TypedInstance.OnCreate();
+            }
+            else if constexpr (requires(T& Value, IWorld & WorldRef) { Value.OnCreate(WorldRef); })
+            {
+                IWorld* WorldPtr = TypedInstance.World();
+                if (!WorldPtr)
+                {
+                    return std::unexpected(MakeError(EErrorCode::NotReady, "Component world is unavailable during OnCreate"));
+                }
+                TypedInstance.OnCreate(*WorldPtr);
+            }
+            else
+            {
+                return std::unexpected(MakeError(EErrorCode::NotFound, "Component type does not expose OnCreate lifecycle"));
+            }
+            return Ok();
+        };
         GameLockGuard Lock(m_mutex);
         m_entries[Type] = std::move(EntryValue);
     }
@@ -702,6 +796,31 @@ public:
         };
         EntryValue.Serialize = std::move(Serialize);
         EntryValue.Deserialize = std::move(Deserialize);
+        EntryValue.OnCreate = [](void* Instance) -> TExpected<void> {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null component instance"));
+            }
+            auto& TypedInstance = *static_cast<T*>(Instance);
+            if constexpr (requires(T& Value) { Value.OnCreate(); })
+            {
+                TypedInstance.OnCreate();
+            }
+            else if constexpr (requires(T& Value, IWorld & WorldRef) { Value.OnCreate(WorldRef); })
+            {
+                IWorld* WorldPtr = TypedInstance.World();
+                if (!WorldPtr)
+                {
+                    return std::unexpected(MakeError(EErrorCode::NotReady, "Component world is unavailable during OnCreate"));
+                }
+                TypedInstance.OnCreate(*WorldPtr);
+            }
+            else
+            {
+                return std::unexpected(MakeError(EErrorCode::NotFound, "Component type does not expose OnCreate lifecycle"));
+            }
+            return Ok();
+        };
         GameLockGuard Lock(m_mutex);
         m_entries[Type] = std::move(EntryValue);
     }
@@ -771,6 +890,13 @@ public:
      * @remarks Caller is responsible for having instantiated the destination component first.
      */
     TExpected<void> Deserialize(const TypeId& Type, void* Instance, const uint8_t* Bytes, size_t Size, const TSerializationContext& Context) const;
+    /**
+     * @brief Invoke component lifecycle after deserialization has populated fields.
+     * @param Type Component TypeId.
+     * @param Instance Pointer to instance.
+     * @return Success or error.
+     */
+    TExpected<void> InvokeOnCreate(const TypeId& Type, void* Instance) const;
 
 private:
     friend class NodeSerializer;
@@ -784,6 +910,7 @@ private:
         CreateWithIdFn CreateWithId{}; /**< @brief Creation-with-id callback. */
         SerializeFn Serialize{}; /**< @brief Serialization callback. */
         DeserializeFn Deserialize{}; /**< @brief Deserialization callback. */
+        OnCreateFn OnCreate{}; /**< @brief Deferred lifecycle callback invoked after deserialize populate. */
     };
 
     /**

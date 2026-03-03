@@ -219,6 +219,7 @@ constexpr std::string_view kContextMenuItemAssetDeleteId = "asset.delete";
 constexpr std::string_view kContextMenuItemAssetRenameId = "asset.rename";
 constexpr std::string_view kContextMenuItemAssetRescanId = "asset.rescan";
 constexpr std::string_view kContextMenuItemAssetCreateId = "asset.create";
+constexpr std::string_view kContextMenuItemAssetImportId = "asset.import";
 constexpr std::string_view kContextMenuItemContentInspectorSelectId = "asset_inspector.select";
 constexpr std::string_view kContextMenuItemContentInspectorDeleteNodeId = "asset_inspector.delete_node";
 constexpr std::string_view kContextMenuItemContentInspectorDeleteComponentId = "asset_inspector.delete_component";
@@ -226,6 +227,13 @@ constexpr std::string_view kContextMenuItemContentInspectorAddNodeTypePrefix = "
 constexpr std::string_view kContextMenuItemContentInspectorAddComponentTypePrefix = "asset_inspector.add_component.type.";
 constexpr std::string_view kContextMenuItemFileNewProjectId = "menu.file.new_project";
 constexpr std::string_view kContextMenuItemFileOpenProjectId = "menu.file.open_project";
+
+constexpr std::array<std::string_view, 14> kImportModelExtensions{
+    ".fbx", ".gltf", ".glb", ".obj", ".dae", ".blend", ".3ds", ".ply",
+    ".stl", ".x", ".x3d", ".usd", ".usdz", ".abc"};
+constexpr std::array<std::string_view, 15> kImportTextureExtensions{
+    ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".gif", ".tiff", ".tif",
+    ".exr", ".hdr", ".psd", ".dds", ".pbm", ".pgm", ".ppm"};
 
 void ApplyHierarchyRowIcon(SnAPI::UI::UIImage& Icon,
                            const std::string& Source,
@@ -299,6 +307,35 @@ void ApplyHierarchyRowIcon(SnAPI::UI::UIImage& Icon,
         Value.pop_back();
     }
     return Value;
+}
+
+[[nodiscard]] std::string ToLowerCopy(std::string_view Value)
+{
+    std::string Lower(Value);
+    std::transform(Lower.begin(), Lower.end(), Lower.begin(), [](const unsigned char Character) {
+        return static_cast<char>(std::tolower(Character));
+    });
+    return Lower;
+}
+
+template<std::size_t ExtCount>
+[[nodiscard]] bool HasPathExtension(const std::string_view Path, const std::array<std::string_view, ExtCount>& Extensions)
+{
+    if (Path.empty())
+    {
+        return false;
+    }
+
+    std::filesystem::path FsPath{std::string(Path)};
+    const std::string ExtensionLower = ToLowerCopy(FsPath.extension().string());
+    if (ExtensionLower.empty())
+    {
+        return false;
+    }
+
+    return std::ranges::any_of(Extensions, [&ExtensionLower](const std::string_view Candidate) {
+        return ExtensionLower == Candidate;
+    });
 }
 
 void ConfigureSplitZone(SnAPI::UI::UIDockZone& Zone,
@@ -857,6 +894,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     (void)Runtime;
     CloseContextMenu();
     DestroyContentAssetCreateModalOverlay();
+    DestroyContentAssetImportModalOverlay();
     DestroyProjectModalOverlay();
     DestroyContentAssetInspectorModalOverlay();
     if (m_context && m_shellRoot.Id.Value != 0)
@@ -890,6 +928,11 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentCreateSearchInput = {};
     m_contentCreateNameInput = {};
     m_contentCreateOkButton = {};
+    m_contentImportModalOverlay = {};
+    m_contentImportSourcePicker = {};
+    m_contentImportSummaryText = {};
+    m_contentImportSettingsPanel = {};
+    m_contentImportOkButton = {};
     m_contentInspectorModalOverlay = {};
     m_contentInspectorTitleText = {};
     m_contentInspectorStatusText = {};
@@ -913,6 +956,11 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentCreateSelectedType = {};
     m_contentCreateVisibleTypes.clear();
     m_contentCreateTypeSource.reset();
+    m_contentImportModalOpen = false;
+    m_contentImportSourcePath.clear();
+    m_contentImportProfile = EImportProfile::Unknown;
+    m_contentImportAssimpSettings = {};
+    m_contentImportTextureSettings = {};
     m_projectModalOpen = false;
     m_projectModalRequired = false;
     m_projectModalShowWelcome = false;
@@ -935,6 +983,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onContentAssetRenameRequested = {};
     m_onContentAssetRefreshRequested = {};
     m_onContentAssetCreateRequested = {};
+    m_onContentAssetImportRequested = {};
     m_onContentAssetInspectorSaveRequested = {};
     m_onContentAssetInspectorCloseRequested = {};
     m_onContentAssetInspectorNodeSelected = {};
@@ -1847,6 +1896,203 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
     auto CreateLabel = CreateButton.Add(SnAPI::UI::UIText("Create"));
     CreateLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
     m_contentCreateOkButton = CreateButton.Handle();
+}
+
+void EditorLayout::EnsureContentAssetImportModalOverlay()
+{
+    if (!m_context || m_contentImportModalOverlay.Id.Value != 0)
+    {
+        return;
+    }
+
+    auto Root = m_context->Root();
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.CloseOnBackdropClick().Set(false);
+    OverlayPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    OverlayPanel.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(true);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.ResizeBorderThickness().Set(12.0f);
+    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(8, 10, 14, 216));
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(20, 25, 35, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(90, 102, 124, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(8.0f);
+    OverlayPanel.ContentPadding().Set(10.0f);
+    ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
+    m_contentImportModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ContentImportModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(0.0f);
+    ModalPanel.Gap().Set(8.0f);
+    ModalPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.BorderThickness().Set(0.0f);
+    ModalPanel.CornerRadius().Set(0.0f);
+    ModalPanel.DropShadowColor().Set(SnAPI::UI::Color::Transparent());
+    ModalPanel.DropShadowBlur().Set(0.0f);
+    ModalPanel.DropShadowSpread().Set(0.0f);
+    ModalPanel.DropShadowOffsetX().Set(0.0f);
+    ModalPanel.DropShadowOffsetY().Set(0.0f);
+
+    auto Title = Modal.Add(SnAPI::UI::UIText("Import Source Asset"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.panel_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+
+    auto Summary = Modal.Add(SnAPI::UI::UIText("Select a source file to import into the current content folder."));
+    auto& SummaryText = Summary.Element();
+    SummaryText.ElementStyle().Apply("editor.panel_subtitle");
+    SummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_contentImportSummaryText = Summary.Handle();
+
+    auto SourceLabel = Modal.Add(SnAPI::UI::UIText("Source File"));
+    SourceLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+    auto SourcePicker = Modal.Add(SnAPI::UI::UIFilesystemPicker{});
+    auto& SourcePickerElement = SourcePicker.Element();
+    SourcePickerElement.ElementStyle().Apply("editor.filesystem_picker");
+    SourcePickerElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    SourcePickerElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SourcePickerElement.ReadOnly().Set(false);
+    SourcePickerElement.AllowMultiSelect().Set(false);
+    SourcePickerElement.PickDirectories().Set(false);
+    SourcePickerElement.ShowDirectories().Set(true);
+    SourcePickerElement.ShowFiles().Set(true);
+    SourcePickerElement.RestrictToRoot().Set(false);
+    SourcePickerElement.Placeholder().Set("Path to source asset (fbx, glb, png, tiff, ...)");
+    SourcePickerElement.Value().Set(m_contentImportSourcePath);
+    if (!m_contentImportSourcePath.empty())
+    {
+        SourcePickerElement.CurrentPath().Set(std::filesystem::path(m_contentImportSourcePath).parent_path().string());
+    }
+    else
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error)
+        {
+            SourcePickerElement.CurrentPath().Set(CurrentPath.string());
+        }
+    }
+
+    std::vector<std::string> AllowedExtensions{};
+    AllowedExtensions.reserve(kImportModelExtensions.size() + kImportTextureExtensions.size());
+    for (const std::string_view Ext : kImportModelExtensions)
+    {
+        AllowedExtensions.emplace_back(Ext);
+    }
+    for (const std::string_view Ext : kImportTextureExtensions)
+    {
+        AllowedExtensions.emplace_back(Ext);
+    }
+    SourcePickerElement.SetAllowedExtensions(std::move(AllowedExtensions));
+    SourcePickerElement.OnSelectionChanged(
+        SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind(
+            [this](const std::vector<std::string>& Values) {
+                if (!Values.empty())
+                {
+                    m_contentImportSourcePath = Values.front();
+                }
+                RefreshContentAssetImportProfile();
+                RefreshContentAssetImportSettingsPanel();
+                RefreshContentAssetImportSummary();
+                RefreshContentAssetImportOkButtonState();
+            }));
+    m_contentImportSourcePicker = SourcePicker.Handle();
+
+    auto SettingsTitle = Modal.Add(SnAPI::UI::UIText("Import Settings"));
+    SettingsTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto SettingsHost = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentImport.SettingsHost"));
+    auto& SettingsHostPanel = SettingsHost.Element();
+    ConfigureHostPanel(SettingsHostPanel);
+    SettingsHostPanel.ElementStyle().Apply("editor.section_card");
+    SettingsHostPanel.Padding().Set(6.0f);
+    SettingsHostPanel.Gap().Set(6.0f);
+    SettingsHostPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    SettingsHostPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto PropertyPanelBuilder = SettingsHost.Add(UIPropertyPanel{});
+    auto& PropertyPanel = PropertyPanelBuilder.Element();
+    PropertyPanel.ElementStyle().Apply("editor.inspector_properties");
+    PropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    m_contentImportSettingsPanel = PropertyPanelBuilder.Handle();
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentImport.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ButtonsRowPanel.Gap().Set(8.0f);
+    ButtonsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ButtonsRowPanel.BorderThickness().Set(0.0f);
+    ButtonsRowPanel.CornerRadius().Set(0.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ContentImport.ButtonSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& CancelButtonElement = CancelButton.Element();
+    CancelButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    CancelButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    CancelButtonElement.OnClick([this]() {
+        CloseContentAssetImportModal();
+    });
+    auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
+    CancelLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+
+    auto ImportButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& ImportButtonElement = ImportButton.Element();
+    ImportButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    ImportButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    ImportButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    ImportButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    ImportButtonElement.OnClick([this]() {
+        ConfirmContentAssetImport();
+    });
+    auto ImportLabel = ImportButton.Add(SnAPI::UI::UIText("Import"));
+    ImportLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    m_contentImportOkButton = ImportButton.Handle();
+
+    RefreshContentAssetImportProfile();
+    RefreshContentAssetImportSettingsPanel();
+    RefreshContentAssetImportSummary();
+    RefreshContentAssetImportOkButtonState();
+}
+
+void EditorLayout::DestroyContentAssetImportModalOverlay()
+{
+    if (m_context && m_contentImportModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_contentImportModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_contentImportModalOverlay = {};
+    m_contentImportSourcePicker = {};
+    m_contentImportSummaryText = {};
+    m_contentImportSettingsPanel = {};
+    m_contentImportOkButton = {};
 }
 
 void EditorLayout::EnsureContentAssetInspectorModalOverlay()
@@ -2872,6 +3118,11 @@ void EditorLayout::SetContentAssetCreateHandler(SnAPI::UI::TDelegate<void(const 
     m_onContentAssetCreateRequested = std::move(Handler);
 }
 
+void EditorLayout::SetContentAssetImportHandler(SnAPI::UI::TDelegate<void(const ContentAssetImportRequest&)> Handler)
+{
+    m_onContentAssetImportRequested = std::move(Handler);
+}
+
 void EditorLayout::SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()> Handler)
 {
     m_onContentAssetInspectorSaveRequested = std::move(Handler);
@@ -3686,6 +3937,14 @@ void EditorLayout::OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& 
         .Checked = false,
     });
     Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemAssetImportId),
+        .Label = "Import...",
+        .Shortcut = std::string("I"),
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
         .Id = "asset.sep.browser",
         .Label = {},
         .Shortcut = std::nullopt,
@@ -4077,6 +4336,12 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
         if (Item.Id == kContextMenuItemAssetCreateId)
         {
             OpenContentAssetCreateModal();
+            return;
+        }
+
+        if (Item.Id == kContextMenuItemAssetImportId)
+        {
+            OpenContentAssetImportModal();
         }
     }
 }
@@ -5329,6 +5594,250 @@ void EditorLayout::RefreshContentAssetCreateOkButtonState()
     if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentCreateOkButton.Id)))
     {
         Button->SetDisabled(!CanCreate);
+    }
+}
+
+void EditorLayout::OpenContentAssetImportModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_contentImportModalOpen = true;
+    m_contentImportAssimpSettings = {};
+    m_contentImportTextureSettings = {};
+    RefreshContentAssetImportProfile();
+    RefreshContentAssetImportModalVisibility();
+    RefreshContentAssetImportSettingsPanel();
+    RefreshContentAssetImportSummary();
+    RefreshContentAssetImportOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::CloseContentAssetImportModal()
+{
+    if (!m_contentImportModalOpen && m_contentImportModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    m_contentImportModalOpen = false;
+    RefreshContentAssetImportModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::ConfirmContentAssetImport()
+{
+    if (!m_contentImportModalOpen)
+    {
+        return;
+    }
+
+    if (m_context && m_contentImportSourcePicker.Id.Value != 0)
+    {
+        if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_contentImportSourcePicker.Id)))
+        {
+            m_contentImportSourcePath = TrimCopy(
+                Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
+            if (m_contentImportSourcePath.empty())
+            {
+                const auto Selected = Picker->SelectedFilesystemPaths();
+                if (!Selected.empty())
+                {
+                    m_contentImportSourcePath = Selected.front().string();
+                }
+            }
+        }
+    }
+
+    m_contentImportSourcePath = TrimCopy(m_contentImportSourcePath);
+    RefreshContentAssetImportProfile();
+    if (m_contentImportSourcePath.empty() || m_contentImportProfile == EImportProfile::Unknown)
+    {
+        RefreshContentAssetImportSummary();
+        RefreshContentAssetImportOkButtonState();
+        return;
+    }
+
+    if (m_onContentAssetImportRequested)
+    {
+        ContentAssetImportRequest Request{};
+        Request.SourcePath = m_contentImportSourcePath;
+        Request.FolderPath = NormalizeBrowserPath(m_contentCurrentFolder);
+
+        const auto BoolToText = [](const bool Value) {
+            return Value ? std::string("true") : std::string("false");
+        };
+
+        if (m_contentImportProfile == EImportProfile::AssimpModel)
+        {
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.GenerateNormals", BoolToText(m_contentImportAssimpSettings.GenerateNormals));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.GenerateTangents", BoolToText(m_contentImportAssimpSettings.GenerateTangents));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.FlipUVs", BoolToText(m_contentImportAssimpSettings.FlipUVs));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.OptimizeMeshes", BoolToText(m_contentImportAssimpSettings.OptimizeMeshes));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ForceSkeletal", BoolToText(m_contentImportAssimpSettings.ForceSkeletal));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ForceStatic", BoolToText(m_contentImportAssimpSettings.ForceStatic));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.MaxBonesPerVertex",
+                std::to_string(std::max(1u, m_contentImportAssimpSettings.MaxBonesPerVertex)));
+        }
+        else if (m_contentImportProfile == EImportProfile::Texture)
+        {
+            const std::string Target = TrimCopy(m_contentImportTextureSettings.Target);
+            Request.BuildOptions.emplace("texture.target", Target.empty() ? std::string("bcn") : ToLower(Target));
+
+            const std::string Format = TrimCopy(m_contentImportTextureSettings.Format);
+            if (!Format.empty())
+            {
+                Request.BuildOptions.emplace("texture.format", ToLower(Format));
+            }
+
+            const float ClampedQuality = std::clamp(m_contentImportTextureSettings.Quality, 0.0f, 1.0f);
+            Request.BuildOptions.emplace("texture.quality", std::to_string(ClampedQuality));
+
+            if (m_contentImportTextureSettings.ForceLinear)
+            {
+                Request.BuildOptions.emplace("texture.srgb", "false");
+            }
+            else if (m_contentImportTextureSettings.ForceSrgb)
+            {
+                Request.BuildOptions.emplace("texture.srgb", "true");
+            }
+
+            if (m_contentImportTextureSettings.ForceNormalMap)
+            {
+                Request.BuildOptions.emplace("texture.normal_map", "true");
+            }
+
+            if (m_contentImportTextureSettings.MaxMips > 0u)
+            {
+                Request.BuildOptions.emplace("texture.max_mips", std::to_string(m_contentImportTextureSettings.MaxMips));
+            }
+        }
+
+        m_onContentAssetImportRequested(Request);
+    }
+
+    CloseContentAssetImportModal();
+}
+
+void EditorLayout::RefreshContentAssetImportModalVisibility()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_contentImportModalOpen)
+    {
+        EnsureContentAssetImportModalOverlay();
+        return;
+    }
+
+    DestroyContentAssetImportModalOverlay();
+}
+
+void EditorLayout::RefreshContentAssetImportProfile()
+{
+    const std::string SourcePath = TrimCopy(m_contentImportSourcePath);
+    if (HasPathExtension(SourcePath, kImportModelExtensions))
+    {
+        m_contentImportProfile = EImportProfile::AssimpModel;
+        return;
+    }
+
+    if (HasPathExtension(SourcePath, kImportTextureExtensions))
+    {
+        m_contentImportProfile = EImportProfile::Texture;
+        return;
+    }
+
+    m_contentImportProfile = EImportProfile::Unknown;
+}
+
+void EditorLayout::RefreshContentAssetImportSettingsPanel()
+{
+    if (!m_context || m_contentImportSettingsPanel.Id.Value == 0)
+    {
+        return;
+    }
+
+    auto* Panel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentImportSettingsPanel.Id));
+    if (!Panel)
+    {
+        return;
+    }
+
+    switch (m_contentImportProfile)
+    {
+    case EImportProfile::AssimpModel:
+        (void)Panel->BindObject<AssimpImportSettings>(&m_contentImportAssimpSettings);
+        break;
+    case EImportProfile::Texture:
+        (void)Panel->BindObject<TextureImportSettings>(&m_contentImportTextureSettings);
+        break;
+    default:
+        Panel->ClearObject();
+        break;
+    }
+}
+
+void EditorLayout::RefreshContentAssetImportSummary()
+{
+    if (!m_context || m_contentImportSummaryText.Id.Value == 0)
+    {
+        return;
+    }
+
+    auto* SummaryText = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentImportSummaryText.Id));
+    if (!SummaryText)
+    {
+        return;
+    }
+
+    const std::string FolderPath = NormalizeBrowserPath(m_contentCurrentFolder);
+    const std::string Destination =
+        FolderPath.empty() ? std::string("Content/Assets") : (std::string("Content/Assets/") + FolderPath);
+    const std::string SourcePath = TrimCopy(m_contentImportSourcePath);
+
+    std::string Message = "Destination: " + Destination + ". ";
+    if (SourcePath.empty())
+    {
+        Message += "Select a source file to detect the importer.";
+    }
+    else if (m_contentImportProfile == EImportProfile::AssimpModel)
+    {
+        Message += "Importer: Assimp (models, skeletons, animations, materials, and embedded textures).";
+    }
+    else if (m_contentImportProfile == EImportProfile::Texture)
+    {
+        Message += "Importer: TextureCompressor (raw texture source formats).";
+    }
+    else
+    {
+        Message += "No importer matched this file extension.";
+    }
+
+    SummaryText->Text().Set(std::move(Message));
+}
+
+void EditorLayout::RefreshContentAssetImportOkButtonState()
+{
+    if (!m_context || m_contentImportOkButton.Id.Value == 0)
+    {
+        return;
+    }
+
+    const bool HasSource = !TrimCopy(m_contentImportSourcePath).empty();
+    const bool CanImport = HasSource && m_contentImportProfile != EImportProfile::Unknown;
+    if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentImportOkButton.Id)))
+    {
+        Button->SetDisabled(!CanImport);
     }
 }
 

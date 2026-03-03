@@ -4,15 +4,20 @@
 
 #include "Profiling.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cmath>
+#include <string_view>
 
 #include <LinearAlgebra.hpp>
-#include <MeshManager.hpp>
 #include <MeshRenderObject.hpp>
 
 #include "BaseNode.h"
 #include "IWorld.h"
 #include "PathResolver.h"
+#include "RenderAssetRuntime.h"
+#include "RenderAssetSharedResources.h"
 #include "RendererSystem.h"
 #include "TransformComponent.h"
 
@@ -73,19 +78,49 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
     auto ResolvedPath = SPathResolver::Instance().ResolveToString(MeshPath);
     if (!ResolvedPath || ResolvedPath->empty())
     {
-        OutResolvedPath.clear();
-        return false;
+        // Compatibility: allow bare relative content paths by treating them as asset:// URIs.
+        if (MeshPath.find("://") == std::string_view::npos)
+        {
+            std::string AssetUri = "asset://";
+            AssetUri.append(MeshPath.begin(), MeshPath.end());
+            ResolvedPath = SPathResolver::Instance().ResolveToString(AssetUri);
+        }
+        if (!ResolvedPath || ResolvedPath->empty())
+        {
+            OutResolvedPath.clear();
+            return false;
+        }
     }
 
     OutResolvedPath = *ResolvedPath;
     return true;
 }
 
+[[nodiscard]] std::string BuildMeshAssetToken(const TAssetRef<SkeletalMeshAssetRuntime>& MeshAssetRef)
+{
+    const std::string AssetId = MeshAssetRef.GetAssetId();
+    if (!AssetId.empty())
+    {
+        return "asset-id://" + AssetId;
+    }
+
+    const std::string AssetName = MeshAssetRef.ResolvedAssetName();
+    if (!AssetName.empty())
+    {
+        return "asset://" + AssetName;
+    }
+
+    return {};
+}
+
 #if defined(WITH_EDITOR) && WITH_EDITOR
 bool IsSkeletalMeshSettingsField(const std::string_view Name)
 {
     return Name == "Settings"
+        || Name == "MeshAsset"
         || Name == "MeshPath"
+        || Name == "AssetName"
+        || Name == "AssetId"
         || Name == "Visible"
         || Name == "CastShadows"
         || Name == "SyncFromTransform"
@@ -100,6 +135,7 @@ bool IsSkeletalMeshSettingsField(const std::string_view Name)
 bool SkeletalMeshComponent::ReloadMesh()
 {
     
+    m_lastFailedPathLoadKey.clear();
     ClearMesh();
     return EnsureMeshLoaded();
 }
@@ -109,6 +145,7 @@ void SkeletalMeshComponent::ClearMesh()
     
     m_renderObject.reset();
     m_loadedPath.clear();
+    m_loadedFromAsset = false;
     m_lastAutoPlayAnimation.clear();
     m_lastAutoPlayLoop = true;
     m_autoPlayApplied = false;
@@ -180,17 +217,28 @@ void SkeletalMeshComponent::OnDestroy()
 void SkeletalMeshComponent::Tick(const float DeltaSeconds)
 {
     
-    if (m_settings.MeshPath.empty())
+    if (m_settings.MeshPath.empty() && m_settings.MeshAsset.IsNull())
     {
         ClearMesh();
         return;
     }
 
-    std::string ResolvedMeshPath{};
-    const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
-    if (!HasResolvedMeshPath || m_loadedPath != ResolvedMeshPath)
+    if (m_loadedFromAsset)
     {
-        ClearMesh();
+        const std::string AssetToken = BuildMeshAssetToken(m_settings.MeshAsset);
+        if (!AssetToken.empty() && m_loadedPath != AssetToken)
+        {
+            ClearMesh();
+        }
+    }
+    else
+    {
+        std::string ResolvedMeshPath{};
+        const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
+        if (!HasResolvedMeshPath || m_loadedPath != ResolvedMeshPath)
+        {
+            ClearMesh();
+        }
     }
 
     if (!EnsureMeshLoaded())
@@ -226,17 +274,33 @@ void SkeletalMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
         return;
     }
 
-    if (m_settings.MeshPath.empty())
+    if (Name == "MeshPath" || Name == "MeshAsset" || Name == "AssetName" || Name == "AssetId")
+    {
+        m_lastFailedPathLoadKey.clear();
+    }
+
+    if (m_settings.MeshPath.empty() && m_settings.MeshAsset.IsNull())
     {
         ClearMesh();
         return;
     }
 
-    std::string ResolvedMeshPath{};
-    const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
-    if (!HasResolvedMeshPath || m_loadedPath != ResolvedMeshPath)
+    if (m_loadedFromAsset)
     {
-        ClearMesh();
+        const std::string AssetToken = BuildMeshAssetToken(m_settings.MeshAsset);
+        if (AssetToken.empty() || m_loadedPath != AssetToken)
+        {
+            ClearMesh();
+        }
+    }
+    else
+    {
+        std::string ResolvedMeshPath{};
+        const bool HasResolvedMeshPath = ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath);
+        if (!HasResolvedMeshPath || m_loadedPath != ResolvedMeshPath)
+        {
+            ClearMesh();
+        }
     }
 
     if (!EnsureMeshLoaded() || !m_renderObject)
@@ -274,7 +338,7 @@ RendererSystem* SkeletalMeshComponent::ResolveRendererSystem() const
 bool SkeletalMeshComponent::EnsureMeshLoaded()
 {
     
-    if (m_settings.MeshPath.empty())
+    if (m_settings.MeshPath.empty() && m_settings.MeshAsset.IsNull())
     {
         return false;
     }
@@ -290,42 +354,54 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
         return true;
     }
 
-    auto* Meshes = SnAPI::Graphics::MeshManager::Instance();
-    if (!Meshes)
+    if (!m_settings.MeshAsset.IsNull())
     {
-        return false;
+        if (auto* AssetManager = ResolveDefaultAssetManager())
+        {
+            auto SharedRuntimeMesh = m_settings.MeshAsset.GetShared(*AssetManager);
+            if (SharedRuntimeMesh && SharedRuntimeMesh->Get())
+            {
+                std::string AssetToken = BuildMeshAssetToken(m_settings.MeshAsset);
+                if (AssetToken.empty() && !SharedRuntimeMesh->GetAssetId().IsNull())
+                {
+                    AssetToken = "asset-id://" + SharedRuntimeMesh->GetAssetId().ToString();
+                }
+                if (AssetToken.empty())
+                {
+                    AssetToken = "asset-runtime://" +
+                        std::to_string(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(SharedRuntimeMesh->Get())));
+                }
+
+                auto StreamSource = AcquireSharedRuntimeMeshStreamSource(*SharedRuntimeMesh->Get(), AssetToken);
+                if (StreamSource)
+                {
+                    auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>();
+                    if (RenderObject)
+                    {
+                        RenderObject->SetVertexStreamSource(std::move(StreamSource));
+                        m_renderObject = std::move(RenderObject);
+                        m_loadedPath = AssetToken;
+                        m_loadedFromAsset = true;
+                        m_lastAutoPlayAnimation.clear();
+                        m_lastAutoPlayLoop = m_settings.LoopAnimations;
+                        m_autoPlayApplied = false;
+                        m_registered = false;
+
+                        ApplyRuntimeOrDefaultMaterialInstances(
+                            *m_renderObject,
+                            *Renderer,
+                            SharedRuntimeMesh->Get()->MaterialInstances,
+                            AssetManager);
+                        ApplyRenderObjectState(*m_renderObject);
+
+                        return true;
+                    }
+                }
+            }
+        }
     }
 
-    std::string ResolvedMeshPath{};
-    if (!ResolveFilesystemMeshPath(m_settings.MeshPath, ResolvedMeshPath))
-    {
-        return false;
-    }
-
-    const auto LoadedMesh = Meshes->Load(ResolvedMeshPath);
-    const auto SourceMesh = LoadedMesh.lock();
-    if (!SourceMesh)
-    {
-        return false;
-    }
-
-    auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>(SourceMesh);
-    if (!RenderObject)
-    {
-        return false;
-    }
-
-    m_renderObject = std::move(RenderObject);
-    m_loadedPath = std::move(ResolvedMeshPath);
-    m_lastAutoPlayAnimation.clear();
-    m_lastAutoPlayLoop = m_settings.LoopAnimations;
-    m_autoPlayApplied = false;
-    m_registered = false;
-
-    (void)Renderer->ApplyDefaultMaterials(*m_renderObject);
-    ApplyRenderObjectState(*m_renderObject);
-
-    return true;
+    return false;
 }
 
 void SkeletalMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const

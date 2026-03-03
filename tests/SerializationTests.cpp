@@ -90,6 +90,33 @@ struct DerivedStatsNode : public BaseStatsNode
 };
 
 /**
+ * @brief Component type used to validate legacy float32 Vec3/Quat decode fallback.
+ */
+struct LegacyVectorComponent : public BaseComponent, public ComponentCRTP<LegacyVectorComponent>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::LegacyVectorComponent";
+    Vec3 Position{};
+    Quat Rotation = Quat::Identity();
+};
+
+/**
+ * @brief Component verifying `OnCreate` runs after deserialization populates fields.
+ */
+struct OnCreateOrderComponent : public BaseComponent, public ComponentCRTP<OnCreateOrderComponent>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::OnCreateOrderComponent";
+    int LoadedValue = 0;
+    int OnCreateObservedValue = -1;
+    int OnCreateCount = 0;
+
+    void OnCreate()
+    {
+        ++OnCreateCount;
+        OnCreateObservedValue = LoadedValue;
+    }
+};
+
+/**
  * @brief Cross-world handle component used for reference remap tests.
  */
 struct CrossRefComponent : public BaseComponent, public ComponentCRTP<CrossRefComponent>
@@ -123,6 +150,23 @@ NodeHandle FindNodeByName(const World& WorldRef, const std::string& Name)
     });
     return Found;
 }
+
+std::vector<uint8_t> BuildLegacyFloatVecQuatBytes(const Vec3& Position, const Quat& Rotation)
+{
+    std::stringstream Stream(std::ios::in | std::ios::out | std::ios::binary);
+    cereal::BinaryOutputArchive Archive(Stream);
+    const float Px = static_cast<float>(Position.x());
+    const float Py = static_cast<float>(Position.y());
+    const float Pz = static_cast<float>(Position.z());
+    const float Qx = static_cast<float>(Rotation.x());
+    const float Qy = static_cast<float>(Rotation.y());
+    const float Qz = static_cast<float>(Rotation.z());
+    const float Qw = static_cast<float>(Rotation.w());
+    Archive(Px, Py, Pz, Qx, Qy, Qz, Qw);
+
+    const std::string Packed = Stream.str();
+    return std::vector<uint8_t>(Packed.begin(), Packed.end());
+}
 } // namespace
 
 SNAPI_REFLECT_TYPE(LinkComponent, (TTypeBuilder<LinkComponent>(LinkComponent::kTypeName)
@@ -146,6 +190,17 @@ SNAPI_REFLECT_TYPE(DerivedStatsNode, (TTypeBuilder<DerivedStatsNode>(DerivedStat
     .Field("Health", &DerivedStatsNode::m_health)
     .Field("Spawn", &DerivedStatsNode::m_spawn)
     .Field("Target", &DerivedStatsNode::m_target)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(LegacyVectorComponent, (TTypeBuilder<LegacyVectorComponent>(LegacyVectorComponent::kTypeName)
+    .Field("Position", &LegacyVectorComponent::Position)
+    .Field("Rotation", &LegacyVectorComponent::Rotation)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(OnCreateOrderComponent, (TTypeBuilder<OnCreateOrderComponent>(OnCreateOrderComponent::kTypeName)
+    .Field("LoadedValue", &OnCreateOrderComponent::LoadedValue)
     .Constructor<>()
     .Register()));
 
@@ -214,6 +269,46 @@ TEST_CASE("Node serialization round-trips subtree with components and handles")
     auto* LinkedNode = LoadedLink->Target.Borrowed();
     REQUIRE(LinkedNode != nullptr);
     REQUIRE(LinkedNode->Name() == "B");
+}
+
+TEST_CASE("Component OnCreate runs once after deserialize has populated fields")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("Source");
+    auto NodeResult = SourceWorld.CreateNode("OnCreateOrderNode");
+    REQUIRE(NodeResult);
+
+    auto* SourceNode = NodeResult->Borrowed();
+    REQUIRE(SourceNode != nullptr);
+    auto SourceComponentResult = SourceNode->Add<OnCreateOrderComponent>();
+    REQUIRE(SourceComponentResult);
+    SourceComponentResult->LoadedValue = 1234;
+
+    auto PayloadResult = NodeSerializer::Serialize(*SourceNode);
+    REQUIRE(PayloadResult);
+
+    std::vector<uint8_t> Bytes{};
+    REQUIRE(SerializeNodePayload(*PayloadResult, Bytes));
+    REQUIRE_FALSE(Bytes.empty());
+
+    auto PayloadRoundTrip = DeserializeNodePayload(Bytes.data(), Bytes.size());
+    REQUIRE(PayloadRoundTrip);
+
+    World LoadedWorld("Loaded");
+    auto DeserializeResult = NodeSerializer::Deserialize(*PayloadRoundTrip, LoadedWorld);
+    REQUIRE(DeserializeResult);
+
+    NodeHandle LoadedNodeHandle = FindNodeByName(LoadedWorld, "OnCreateOrderNode");
+    REQUIRE(LoadedNodeHandle.IsValid());
+    auto* LoadedNode = LoadedNodeHandle.Borrowed();
+    REQUIRE(LoadedNode != nullptr);
+
+    auto LoadedComponentResult = LoadedNode->Component<OnCreateOrderComponent>();
+    REQUIRE(LoadedComponentResult);
+    REQUIRE(LoadedComponentResult->LoadedValue == 1234);
+    REQUIRE(LoadedComponentResult->OnCreateCount == 1);
+    REQUIRE(LoadedComponentResult->OnCreateObservedValue == 1234);
 }
 
 TEST_CASE("Node serialization preserves logical scheme paths")
@@ -375,6 +470,72 @@ TEST_CASE("Node serialization round-trips node fields across inheritance")
     auto* LoadedTarget = LoadedActor->m_target.Borrowed();
     REQUIRE(LoadedTarget != nullptr);
     REQUIRE(LoadedTarget->Name() == "Target");
+}
+
+TEST_CASE("Node deserialization accepts legacy float32 Vec3/Quat component payload bytes")
+{
+    RegisterBuiltinTypes();
+
+    constexpr float kPosX = -6.5f;
+    constexpr float kPosY = 1.75f;
+    constexpr float kPosZ = 2.25f;
+    constexpr float kRotX = -0.15f;
+    constexpr float kRotY = 0.45f;
+    constexpr float kRotZ = 0.05f;
+    constexpr float kRotW = 0.87f;
+
+    World SourceWorld("Source");
+    auto NodeResult = SourceWorld.CreateNode("LegacyComponentNode");
+    REQUIRE(NodeResult);
+
+    auto* SourceNode = NodeResult.value().Borrowed();
+    REQUIRE(SourceNode != nullptr);
+    auto LegacyComponentResult = SourceNode->Add<LegacyVectorComponent>();
+    REQUIRE(LegacyComponentResult);
+    LegacyComponentResult->Position = Vec3(kPosX, kPosY, kPosZ);
+    LegacyComponentResult->Rotation.x() = kRotX;
+    LegacyComponentResult->Rotation.y() = kRotY;
+    LegacyComponentResult->Rotation.z() = kRotZ;
+    LegacyComponentResult->Rotation.w() = kRotW;
+
+    auto PayloadResult = NodeSerializer::Serialize(*SourceNode);
+    REQUIRE(PayloadResult);
+
+    auto LegacyPayload = PayloadResult.value();
+    const auto LegacyComponentIt = std::find_if(
+        LegacyPayload.Components.begin(),
+        LegacyPayload.Components.end(),
+        [](const NodeComponentPayload& Entry) {
+            return Entry.ComponentType == StaticTypeId<LegacyVectorComponent>();
+        });
+    REQUIRE(LegacyComponentIt != LegacyPayload.Components.end());
+
+    LegacyComponentIt->Bytes = BuildLegacyFloatVecQuatBytes(
+        LegacyComponentResult->Position,
+        LegacyComponentResult->Rotation);
+    REQUIRE_FALSE(LegacyComponentIt->Bytes.empty());
+
+    World LoadedWorld("Loaded");
+    auto DeserializeResult = NodeSerializer::Deserialize(LegacyPayload, LoadedWorld);
+    if (!DeserializeResult)
+    {
+        INFO("Component legacy deserialize error: " << DeserializeResult.error().Message);
+    }
+    REQUIRE(DeserializeResult);
+
+    NodeHandle LoadedNodeHandle = FindNodeByName(LoadedWorld, "LegacyComponentNode");
+    REQUIRE(LoadedNodeHandle.IsValid());
+    auto* LoadedNode = LoadedNodeHandle.Borrowed();
+    REQUIRE(LoadedNode != nullptr);
+    auto LoadedComponent = LoadedNode->Component<LegacyVectorComponent>();
+    REQUIRE(LoadedComponent);
+    REQUIRE(LoadedComponent->Position.x() == Catch::Approx(kPosX));
+    REQUIRE(LoadedComponent->Position.y() == Catch::Approx(kPosY));
+    REQUIRE(LoadedComponent->Position.z() == Catch::Approx(kPosZ));
+    REQUIRE(LoadedComponent->Rotation.x() == Catch::Approx(kRotX));
+    REQUIRE(LoadedComponent->Rotation.y() == Catch::Approx(kRotY));
+    REQUIRE(LoadedComponent->Rotation.z() == Catch::Approx(kRotZ));
+    REQUIRE(LoadedComponent->Rotation.w() == Catch::Approx(kRotW));
 }
 
 TEST_CASE("Cross-world node handles use explicit UUID slow resolve after deserialization")

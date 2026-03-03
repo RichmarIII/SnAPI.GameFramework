@@ -766,7 +766,8 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
 
 Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
 {
-    if (WorldRef.Kind() != EWorldKind::Editor)
+    const EWorldKind WorldKind = WorldRef.Kind();
+    if (WorldKind != EWorldKind::Editor && WorldKind != EWorldKind::PIE)
     {
         SyncActiveCamera(WorldRef);
         return Ok();
@@ -888,7 +889,8 @@ void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
         return;
     }
 
-    if (WorldRef.Kind() != EWorldKind::Editor)
+    const EWorldKind WorldKind = WorldRef.Kind();
+    if (WorldKind != EWorldKind::Editor && WorldKind != EWorldKind::PIE)
     {
         return;
     }

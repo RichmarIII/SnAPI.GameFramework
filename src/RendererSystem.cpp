@@ -28,13 +28,13 @@
 #include <IGraphicsAPI.hpp>
 #include <IRenderObject.hpp>
 #include <LightManager.hpp>
-#include <MeshManager.hpp>
 #include <FontLibrary.hpp>
 #include <PassVariants.hpp>
 #include <SDL3/SDL.h>
 #include <SDLWindow.hpp>
 #include <SSAOPass.hpp>
 #include <SSRPass.hpp>
+#include <ShaderCompilationManager.hpp>
 #include <ShadowPass.hpp>
 #include <TLightFor.hpp>
 #include <TMaterialFor.hpp>
@@ -59,6 +59,9 @@ constexpr float kWindowSizeEpsilon = 0.5f;
 constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
 constexpr float kViewportConfigFloatEpsilon = 0.001f;
 constexpr std::size_t kMaxQueuedTextRequests = 256;
+std::mutex GDefaultMaterialInstanceCacheMutex{};
+SnAPI::Graphics::WeakMaterialInstancePtr GDefaultGBufferMaterialInstance{};
+SnAPI::Graphics::WeakMaterialInstancePtr GDefaultShadowMaterialInstance{};
 #if defined(SNAPI_GF_ENABLE_UI)
 constexpr float kUiGlobalZBase = 1.0f;
 // Keep UI depth values in a compact range to preserve separation after the UI shader's
@@ -568,6 +571,15 @@ bool RendererSystem::InitializeUnlocked()
         return false;
     }
 
+    if (auto* ShaderManager = SnAPI::Graphics::ShaderCompilationManager::Instance())
+    {
+        ShaderManager->ClearCustomShaderSearchPaths();
+        if (const std::filesystem::path AssetRoot = SPathResolver::Instance().AssetRoot(); !AssetRoot.empty())
+        {
+            ShaderManager->AddShaderSearchPath(AssetRoot / "Shaders", true);
+        }
+    }
+
     // GameFramework owns swapchain resize coalescing when auto-resize is enabled.
     m_graphics->SetAutoSwapChainRecreateOnInvalidation(!m_settings.AutoHandleSwapChainResize);
 
@@ -707,6 +719,27 @@ SnAPI::Graphics::ICamera* RendererSystem::ActiveCamera() const
 {
     GameLockGuard Lock(m_mutex);
     return m_graphics ? m_graphics->ActiveCamera() : nullptr;
+}
+
+bool RendererSystem::SetProjectShaderSearchRoot(const std::filesystem::path& AssetRoot)
+{
+    GameLockGuard Lock(m_mutex);
+
+    auto* ShaderManager = SnAPI::Graphics::ShaderCompilationManager::Instance();
+    if (!ShaderManager)
+    {
+        return false;
+    }
+
+    ShaderManager->ClearCustomShaderSearchPaths();
+    if (AssetRoot.empty())
+    {
+        return true;
+    }
+
+    const std::filesystem::path ShaderRoot = AssetRoot / "Shaders";
+    ShaderManager->AddShaderSearchPath(ShaderRoot, true);
+    return true;
 }
 
 bool RendererSystem::SetViewPort(const SnAPI::Graphics::ViewportFit& ViewPort)
@@ -1146,14 +1179,42 @@ bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& Rende
         return false;
     }
 
-    auto* Meshes = SnAPI::Graphics::MeshManager::Instance();
-    if (!Meshes)
+    const auto& Source = RenderObject.VertexStreamSource();
+    if (!Source)
     {
         return false;
     }
 
-    Meshes->PopulateMaterialInstances(RenderObject, m_defaultGBufferMaterial);
-    Meshes->PopulateShadowMaterialInstances(RenderObject, m_defaultShadowMaterial);
+    SnAPI::Graphics::SharedMaterialInstancePtr SharedGBufferInstance{};
+    SnAPI::Graphics::SharedMaterialInstancePtr SharedShadowInstance{};
+    {
+        std::scoped_lock CacheLock(GDefaultMaterialInstanceCacheMutex);
+        SharedGBufferInstance = GDefaultGBufferMaterialInstance.lock();
+        if (!SharedGBufferInstance && m_defaultGBufferMaterial)
+        {
+            SharedGBufferInstance = m_defaultGBufferMaterial->CreateMaterialInstance();
+            GDefaultGBufferMaterialInstance = SharedGBufferInstance;
+        }
+
+        SharedShadowInstance = GDefaultShadowMaterialInstance.lock();
+        if (!SharedShadowInstance && m_defaultShadowMaterial)
+        {
+            SharedShadowInstance = m_defaultShadowMaterial->CreateMaterialInstance();
+            GDefaultShadowMaterialInstance = SharedShadowInstance;
+        }
+    }
+
+    for (uint32_t SubMeshIndex = 0; SubMeshIndex < Source->SubMeshCount(); ++SubMeshIndex)
+    {
+        if (SharedGBufferInstance)
+        {
+            RenderObject.SetMaterialInstance(SubMeshIndex, SharedGBufferInstance);
+        }
+        if (SharedShadowInstance)
+        {
+            RenderObject.SetShadowMaterialInstance(SubMeshIndex, SharedShadowInstance);
+        }
+    }
     return true;
 }
 
@@ -1188,23 +1249,7 @@ bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject&
 
     bool ConfiguredAnyPass = false;
     const auto ViewportIds = m_graphics->RenderViewportIDs();
-    for (const auto ViewportId : ViewportIds)
-    {
-        const auto PresetIt = m_registeredViewportPassGraphs.find(static_cast<std::uint64_t>(ViewportId));
-        if (PresetIt == m_registeredViewportPassGraphs.end())
-        {
-            // Only configure scene-object visibility for viewports explicitly registered
-            // through RendererSystem pass-graph presets. This avoids accidental routing
-            // into stale/foreign fullscreen viewports.
-            continue;
-        }
-
-        if (PresetIt->second == ERenderViewportPassGraphPreset::UiPresentOnly ||
-            PresetIt->second == ERenderViewportPassGraphPreset::None)
-        {
-            continue;
-        }
-
+    const auto ConfigureViewportPasses = [&](const auto ViewportId) {
         if (auto* GBufferPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
         {
             RenderObject.EnablePass(GBufferPass->ID(), Visible);
@@ -1214,6 +1259,33 @@ bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject&
         {
             RenderObject.EnablePass(ShadowPass->ID(), Visible && CastShadows);
             ConfiguredAnyPass = true;
+        }
+    };
+
+    for (const auto ViewportId : ViewportIds)
+    {
+        const auto PresetIt = m_registeredViewportPassGraphs.find(static_cast<std::uint64_t>(ViewportId));
+        if (PresetIt == m_registeredViewportPassGraphs.end())
+        {
+            continue;
+        }
+
+        if (PresetIt->second == ERenderViewportPassGraphPreset::UiPresentOnly ||
+            PresetIt->second == ERenderViewportPassGraphPreset::None)
+        {
+            continue;
+        }
+
+        ConfigureViewportPasses(ViewportId);
+    }
+
+    if (!ConfiguredAnyPass)
+    {
+        // Fallback: if pass-graph preset tracking is missing/stale, configure any viewport
+        // that actually exposes scene passes so primitives and runtime assets remain visible.
+        for (const auto ViewportId : ViewportIds)
+        {
+            ConfigureViewportPasses(ViewportId);
         }
     }
 

@@ -126,6 +126,11 @@ set(SNAPI_GF_SOURCES
     src/NetReplication.cpp
     src/NetRpc.cpp
     src/RendererSystem.cpp
+    src/RenderAssetPayloads.cpp
+    src/RenderAssetSharedResources.cpp
+    src/RenderAssetAssimpImporter.cpp
+    src/RenderAssetSourcePayloads.cpp
+    src/RenderAssetSourcePipeline.cpp
     src/RigidBodyComponent.cpp
     src/SkeletalMeshComponent.cpp
     src/SprintArmComponent.cpp
@@ -308,7 +313,7 @@ endif()
 # AssetPipeline integration (required)
 set(SNAPI_BUILD_CLI OFF CACHE BOOL "" FORCE)
 set(SNAPI_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SNAPI_BUILD_PLUGINS OFF CACHE BOOL "" FORCE)
+set(SNAPI_BUILD_PLUGINS ON CACHE BOOL "" FORCE)
 set(SNAPI_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_OPENEXR OFF CACHE BOOL "" FORCE)
 
@@ -331,7 +336,18 @@ else()
     )
 endif()
 FetchContent_MakeAvailable(SnAPI.AssetPipeline)
+if (TARGET FreeImage)
+    set_target_properties(FreeImage PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()
+
+if (NOT TARGET TextureCompressorPlugin)
+    message(FATAL_ERROR
+        "TextureCompressorPlugin target is unavailable. "
+        "Ensure SnAPI.AssetPipeline plugins are enabled and TextureCompressor plugin CMake is discoverable.")
+endif()
+
 target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.AssetPipeline)
+target_link_libraries(SnAPI.GameFramework PUBLIC TextureCompressorPlugin)
 target_link_libraries(SnAPI.GameFramework PUBLIC cereal)
 target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_ASSETPipeline)
 
@@ -508,6 +524,8 @@ if (SNAPI_GF_RENDERER_ROOT)
     if (TARGET lz4)
         set(SLANG_USE_SYSTEM_LZ4 ON CACHE BOOL "" FORCE)
     endif()
+    set(SNAPI_GF_RENDERER_SHADER_SOURCE_DIR "${SNAPI_GF_RENDERER_ROOT}/shaders")
+    file(TO_CMAKE_PATH "${SNAPI_GF_RENDERER_SHADER_SOURCE_DIR}" SNAPI_GF_RENDERER_SHADER_SOURCE_DIR)
     FetchContent_Declare(
         SnAPI.Renderer
         SOURCE_DIR ${SNAPI_GF_RENDERER_ROOT}
@@ -517,11 +535,33 @@ if (SNAPI_GF_RENDERER_ROOT)
     if (TARGET SnAPI.Renderer)
         target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Renderer)
         target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_RENDERER)
+        target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GF_RENDERER_SHADER_SOURCE_DIR="${SNAPI_GF_RENDERER_SHADER_SOURCE_DIR}")
+        if (SNAPI_GF_BUILD_EDITOR AND TARGET SnAPI.GameFramework.Editor)
+            if (SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR)
+                add_custom_command(TARGET SnAPI.GameFramework.Editor POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E make_directory "${SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR}/Shaders"
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                        "${SNAPI_GF_RENDERER_SHADER_SOURCE_DIR}"
+                        "${SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR}/Shaders"
+                    COMMENT "Copying renderer shaders to ${SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR}/Shaders"
+                    VERBATIM
+                )
+            else()
+                message(STATUS "SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR is empty; skipping renderer shader copy step.")
+            endif()
+        endif()
     else()
         message(FATAL_ERROR "SnAPI.Renderer source was found, but target SnAPI.Renderer was not created.")
     endif()
 else()
     message(WARNING "SnAPI.Renderer source not found; set SNAPI_GF_RENDERER_SOURCE_DIR to enable renderer integration.")
+endif()
+
+if (TARGET FreeImage)
+    target_link_libraries(SnAPI.GameFramework PRIVATE FreeImage)
+    target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GF_HAS_FREEIMAGE=1 HAS_FREEIMAGE=1)
+else()
+    target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GF_HAS_FREEIMAGE=0 HAS_FREEIMAGE=0)
 endif()
 
 # SWIG bindings (required for Lua scripting)

@@ -47,6 +47,18 @@ constexpr const char* kAssetKindLevelName = "SnAPI.GameFramework.AssetKind.Level
 constexpr const char* kAssetKindNodeName = "SnAPI.GameFramework.AssetKind.Node";
 /** @brief Asset kind name for World assets. */
 constexpr const char* kAssetKindWorldName = "SnAPI.GameFramework.AssetKind.World";
+/** @brief Asset kind name for StaticMesh assets. */
+constexpr const char* kAssetKindStaticMeshName = "SnAPI.GameFramework.AssetKind.StaticMesh";
+/** @brief Asset kind name for SkeletalMesh assets. */
+constexpr const char* kAssetKindSkeletalMeshName = "SnAPI.GameFramework.AssetKind.SkeletalMesh";
+/** @brief Asset kind name for Material assets. */
+constexpr const char* kAssetKindMaterialName = "SnAPI.GameFramework.AssetKind.Material";
+/** @brief Asset kind name for MaterialInstance assets. */
+constexpr const char* kAssetKindMaterialInstanceName = "SnAPI.GameFramework.AssetKind.MaterialInstance";
+/** @brief Asset kind name for Skeleton assets. */
+constexpr const char* kAssetKindSkeletonName = "SnAPI.GameFramework.AssetKind.Skeleton";
+/** @brief Asset kind name for Animation assets. */
+constexpr const char* kAssetKindAnimationName = "SnAPI.GameFramework.AssetKind.Animation";
 
 /** @brief Payload type name for Node cooked data. */
 constexpr const char* kPayloadNodeName = "SnAPI.GameFramework.NodePayload";
@@ -54,6 +66,22 @@ constexpr const char* kPayloadNodeName = "SnAPI.GameFramework.NodePayload";
 constexpr const char* kPayloadLevelName = "SnAPI.GameFramework.LevelPayload";
 /** @brief Payload type name for World cooked data. */
 constexpr const char* kPayloadWorldName = "SnAPI.GameFramework.WorldPayload";
+/** @brief Payload type name for StaticMesh cooked data. */
+constexpr const char* kPayloadStaticMeshName = "SnAPI.GameFramework.StaticMeshPayload";
+/** @brief Payload type name for SkeletalMesh cooked data. */
+constexpr const char* kPayloadSkeletalMeshName = "SnAPI.GameFramework.SkeletalMeshPayload";
+/** @brief Payload type name for Material cooked data. */
+constexpr const char* kPayloadMaterialName = "SnAPI.GameFramework.MaterialPayload";
+/** @brief Payload type name for MaterialInstance cooked data. */
+constexpr const char* kPayloadMaterialInstanceName = "SnAPI.GameFramework.MaterialInstancePayload";
+/** @brief Payload type name for Skeleton cooked data. */
+constexpr const char* kPayloadSkeletonName = "SnAPI.GameFramework.SkeletonPayload";
+/** @brief Payload type name for Animation cooked data. */
+constexpr const char* kPayloadAnimationName = "SnAPI.GameFramework.AnimationPayload";
+/** @brief Payload type name for StaticMesh source-intermediate data. */
+constexpr const char* kPayloadStaticMeshSourceName = "SnAPI.GameFramework.StaticMeshSourcePayload";
+/** @brief Payload type name for SkeletalMesh source-intermediate data. */
+constexpr const char* kPayloadSkeletalMeshSourceName = "SnAPI.GameFramework.SkeletalMeshSourcePayload";
 
 /**
  * @brief Get the AssetPipeline TypeId for Level assets.
@@ -83,6 +111,60 @@ inline ::SnAPI::AssetPipeline::TypeId AssetKindWorld()
 }
 
 /**
+ * @brief Get the AssetPipeline TypeId for StaticMesh assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindStaticMesh()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindStaticMeshName);
+}
+
+/**
+ * @brief Get the AssetPipeline TypeId for SkeletalMesh assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindSkeletalMesh()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindSkeletalMeshName);
+}
+
+/**
+ * @brief Get the AssetPipeline TypeId for Material assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindMaterial()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindMaterialName);
+}
+
+/**
+ * @brief Get the AssetPipeline TypeId for MaterialInstance assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindMaterialInstance()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindMaterialInstanceName);
+}
+
+/**
+ * @brief Get the AssetPipeline TypeId for Skeleton assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindSkeleton()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindSkeletonName);
+}
+
+/**
+ * @brief Get the AssetPipeline TypeId for Animation assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindAnimation()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindAnimationName);
+}
+
+/**
  * @brief Get the payload TypeId for Node payloads.
  * @return TypeId value.
  */
@@ -107,6 +189,78 @@ inline ::SnAPI::AssetPipeline::TypeId PayloadLevel()
 inline ::SnAPI::AssetPipeline::TypeId PayloadWorld()
 {
     return AssetPipelineTypeIdFromName(kPayloadWorldName);
+}
+
+/**
+ * @brief Get the payload TypeId for StaticMesh payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadStaticMesh()
+{
+    return AssetPipelineTypeIdFromName(kPayloadStaticMeshName);
+}
+
+/**
+ * @brief Get the payload TypeId for SkeletalMesh payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadSkeletalMesh()
+{
+    return AssetPipelineTypeIdFromName(kPayloadSkeletalMeshName);
+}
+
+/**
+ * @brief Get the payload TypeId for Material payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadMaterial()
+{
+    return AssetPipelineTypeIdFromName(kPayloadMaterialName);
+}
+
+/**
+ * @brief Get the payload TypeId for MaterialInstance payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadMaterialInstance()
+{
+    return AssetPipelineTypeIdFromName(kPayloadMaterialInstanceName);
+}
+
+/**
+ * @brief Get the payload TypeId for Skeleton payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadSkeleton()
+{
+    return AssetPipelineTypeIdFromName(kPayloadSkeletonName);
+}
+
+/**
+ * @brief Get the payload TypeId for Animation payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadAnimation()
+{
+    return AssetPipelineTypeIdFromName(kPayloadAnimationName);
+}
+
+/**
+ * @brief Get the payload TypeId for StaticMesh source-intermediate payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadStaticMeshSource()
+{
+    return AssetPipelineTypeIdFromName(kPayloadStaticMeshSourceName);
+}
+
+/**
+ * @brief Get the payload TypeId for SkeletalMesh source-intermediate payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadSkeletalMeshSource()
+{
+    return AssetPipelineTypeIdFromName(kPayloadSkeletalMeshSourceName);
 }
 
 } // namespace SnAPI::GameFramework

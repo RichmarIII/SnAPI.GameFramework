@@ -65,5 +65,10 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
  * @remarks Enables runtime object materialization for `BaseNode`, `Level`, and `World` assets.
  */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager);
+/**
+ * @brief Register source import/cook stages used by editor/runtime source ingestion.
+ * @param Manager Asset manager to register importers/cookers/serializers with.
+ */
+void RegisterAssetPipelineSourceStages(::SnAPI::AssetPipeline::AssetManager& Manager);
 
 } // namespace SnAPI::GameFramework

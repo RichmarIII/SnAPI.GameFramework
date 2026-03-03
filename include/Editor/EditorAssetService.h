@@ -102,6 +102,10 @@ public:
                                         const TypeId& NodeType,
                                         std::string_view AssetName,
                                         std::string_view FolderPath);
+    Result ImportSourceAsset(EditorServiceContext& Context,
+                             std::string_view SourcePath,
+                             std::string_view DestinationFolderPath,
+                             const std::unordered_map<std::string, std::string>& BuildOptions);
     Result OpenAssetEditorByKey(std::string_view Key);
     void CloseAssetEditor();
     Result SelectAssetEditorNode(const NodeHandle& Node);
@@ -139,6 +143,7 @@ private:
     Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
     Result RebuildAssetManager();
     Result EnsureEditorTemplateAssets(EditorServiceContext& Context);
+    Result EnsureProjectShaderDirectory(const std::filesystem::path& ProjectAssetRoot);
     Result EnsureProjectStarterLevelPack(const std::filesystem::path& ProjectAssetRoot,
                                          const std::filesystem::path& StartupPackPath);
     Result LoadProjectStartupLevel(EditorServiceContext& Context, const std::filesystem::path& StartupPackPath);

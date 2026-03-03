@@ -7,7 +7,9 @@
 #include <string_view>
 #include <cstdint>
 
+#include "AssetRef.h"
 #include "BaseComponent.h"
+#include "RenderAssetRuntime.h"
 
 namespace SnAPI::Graphics
 {
@@ -37,11 +39,12 @@ public:
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticMeshComponent::Settings";
 
-        std::string MeshPath{}; /**< @brief Mesh asset path resolved by `MeshManager`. */
+        std::string MeshPath{}; /**< @brief Optional mesh source path token (primitives or source-path fallback). */
         bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
         bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
         bool RegisterWithRenderer = true; /**< @brief Register loaded mesh in renderer draw list. */
+        TAssetRef<StaticMeshAssetRuntime> MeshAsset{}; /**< @brief Preferred runtime asset reference for cooked static meshes (appended for payload compatibility). */
     };
 
     /** @brief Access settings (const). */
@@ -100,6 +103,7 @@ private:
     Settings m_settings{}; /**< @brief Mesh/render settings. */
     std::shared_ptr<SnAPI::Graphics::IRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
+    bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
     bool m_registered = false; /**< @brief True when current mesh has been registered with renderer. */
     bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */
@@ -109,6 +113,7 @@ private:
     std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_sharedShadowInstance{}; /**< @brief Optional shared shadow material instance override. */
     std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> m_streamSource{}; /**< @brief Optional procedural stream source override. */
     std::weak_ptr<SnAPI::Graphics::IVertexStreamSource> m_loadedStreamSource{}; /**< @brief Last procedural source used to build current render object. */
+    std::string m_lastFailedPathLoadKey{}; /**< @brief Last source-path load key that failed; used to avoid per-frame retry loops. */
 };
 
 } // namespace SnAPI::GameFramework

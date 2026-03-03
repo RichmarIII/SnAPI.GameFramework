@@ -1,4 +1,5 @@
 #include "Editor/EditorCameraComponent.h"
+#include "Editor/EditorImportSettings.h"
 
 #include "TypeAutoRegistration.h"
 
@@ -23,6 +24,28 @@ SNAPI_REFLECT_TYPE(EditorCameraComponent, (TTypeBuilder<EditorCameraComponent>(E
     .Field("Settings",
            &EditorCameraComponent::EditSettings,
            &EditorCameraComponent::GetSettings)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Editor::AssimpImportSettings, (TTypeBuilder<Editor::AssimpImportSettings>(Editor::AssimpImportSettings::kTypeName)
+    .Field("GenerateNormals", &Editor::AssimpImportSettings::GenerateNormals)
+    .Field("GenerateTangents", &Editor::AssimpImportSettings::GenerateTangents)
+    .Field("FlipUVs", &Editor::AssimpImportSettings::FlipUVs)
+    .Field("OptimizeMeshes", &Editor::AssimpImportSettings::OptimizeMeshes)
+    .Field("ForceSkeletal", &Editor::AssimpImportSettings::ForceSkeletal)
+    .Field("ForceStatic", &Editor::AssimpImportSettings::ForceStatic)
+    .Field("MaxBonesPerVertex", &Editor::AssimpImportSettings::MaxBonesPerVertex)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Editor::TextureImportSettings, (TTypeBuilder<Editor::TextureImportSettings>(Editor::TextureImportSettings::kTypeName)
+    .Field("Target", &Editor::TextureImportSettings::Target)
+    .Field("FormatOverride", &Editor::TextureImportSettings::Format)
+    .Field("Quality", &Editor::TextureImportSettings::Quality)
+    .Field("ForceSrgb", &Editor::TextureImportSettings::ForceSrgb)
+    .Field("ForceLinear", &Editor::TextureImportSettings::ForceLinear)
+    .Field("ForceNormalMap", &Editor::TextureImportSettings::ForceNormalMap)
+    .Field("MaxMips", &Editor::TextureImportSettings::MaxMips)
     .Constructor<>()
     .Register()));
 

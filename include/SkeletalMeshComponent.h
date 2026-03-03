@@ -7,7 +7,9 @@
 #include <string_view>
 #include <cstdint>
 
+#include "AssetRef.h"
 #include "BaseComponent.h"
+#include "RenderAssetRuntime.h"
 
 namespace SnAPI::Graphics
 {
@@ -35,7 +37,7 @@ public:
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalMeshComponent::Settings";
 
-        std::string MeshPath{}; /**< @brief Mesh asset path resolved by `MeshManager`. */
+        std::string MeshPath{}; /**< @brief Optional mesh source path token (source-path fallback). */
         bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
         bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
@@ -43,6 +45,7 @@ public:
         bool AutoPlayAnimations = true; /**< @brief Auto-play animation after load. */
         bool LoopAnimations = true; /**< @brief Loop animation playback. */
         std::string AnimationName{}; /**< @brief Optional named rigid animation; empty = play all. */
+        TAssetRef<SkeletalMeshAssetRuntime> MeshAsset{}; /**< @brief Preferred runtime asset reference for cooked skeletal meshes (appended for payload compatibility). */
     };
 
     /** @brief Access settings (const). */
@@ -87,6 +90,7 @@ private:
     Settings m_settings{}; /**< @brief Mesh/render/animation settings. */
     std::shared_ptr<SnAPI::Graphics::MeshRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
+    bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
     std::string m_lastAutoPlayAnimation{}; /**< @brief Last animation name used for auto-play state tracking. */
     bool m_lastAutoPlayLoop = true; /**< @brief Last loop setting used for auto-play state tracking. */
     bool m_autoPlayApplied = false; /**< @brief True when auto-play has been applied for current settings. */
@@ -95,6 +99,7 @@ private:
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */
     bool m_lastCastShadows = true; /**< @brief Last applied cast-shadows state. */
     std::uint64_t m_lastPassGraphRevision = 0; /**< @brief Last renderer pass-graph revision applied to this render object. */
+    std::string m_lastFailedPathLoadKey{}; /**< @brief Last source-path load key that failed; used to avoid per-frame retry loops. */
 };
 
 } // namespace SnAPI::GameFramework

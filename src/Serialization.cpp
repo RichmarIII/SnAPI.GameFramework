@@ -18,6 +18,7 @@
 #include <cereal/types/vector.hpp>
 
 #include "Math.h"
+#include "BaseComponent.h"
 #include "Level.h"
 #include "NodeCast.h"
 #include "PawnBase.h"
@@ -129,6 +130,107 @@ public:
         setg(Begin, Begin, Begin + static_cast<std::streamsize>(Size));
     }
 };
+
+[[nodiscard]] bool SupportsLegacyFloatVectorDecode()
+{
+    return sizeof(Vec3::Scalar) > sizeof(float) || sizeof(Quat::Scalar) > sizeof(float);
+}
+
+[[nodiscard]] bool ShouldRetryWithLegacyFloatVectorDecode(const Error& ErrorValue, const TSerializationContext& Context)
+{
+    if (!SupportsLegacyFloatVectorDecode() || Context.UseLegacyFloatVectorDecode)
+    {
+        return false;
+    }
+    if (ErrorValue.Code != EErrorCode::InternalError)
+    {
+        return false;
+    }
+
+    const std::string FailurePrefix = "Failed to read ";
+    const std::string ExpectedBytes = std::to_string(sizeof(Vec3::Scalar));
+    const std::string LegacyBytes = std::to_string(sizeof(float));
+    return ErrorValue.Message.find(FailurePrefix + ExpectedBytes + " bytes from input stream! Read " + LegacyBytes)
+        != std::string::npos;
+}
+
+[[nodiscard]] bool ParseInputReadFailureByteCounts(
+    const Error& ErrorValue,
+    std::uint64_t& OutExpectedBytes,
+    std::uint64_t& OutBytesRead)
+{
+    if (ErrorValue.Code != EErrorCode::InternalError)
+    {
+        return false;
+    }
+
+    static const std::string FailurePrefix = "Failed to read ";
+    static const std::string ReadMarker = " bytes from input stream! Read ";
+    const std::string& Message = ErrorValue.Message;
+    if (Message.rfind(FailurePrefix, 0) != 0)
+    {
+        return false;
+    }
+
+    const size_t MarkerPos = Message.find(ReadMarker);
+    if (MarkerPos == std::string::npos)
+    {
+        return false;
+    }
+
+    const size_t ExpectedStart = FailurePrefix.size();
+    std::uint64_t ExpectedParsed = 0;
+    bool HasExpectedDigit = false;
+    for (size_t Index = ExpectedStart; Index < MarkerPos; ++Index)
+    {
+        const char Ch = Message[Index];
+        if (Ch < '0' || Ch > '9')
+        {
+            break;
+        }
+        HasExpectedDigit = true;
+        ExpectedParsed = ExpectedParsed * 10u + static_cast<std::uint64_t>(Ch - '0');
+    }
+    if (!HasExpectedDigit)
+    {
+        return false;
+    }
+
+    const size_t ReadStart = MarkerPos + ReadMarker.size();
+    if (ReadStart >= Message.size())
+    {
+        return false;
+    }
+
+    std::uint64_t Parsed = 0;
+    bool HasDigit = false;
+    for (size_t Index = ReadStart; Index < Message.size(); ++Index)
+    {
+        const char Ch = Message[Index];
+        if (Ch < '0' || Ch > '9')
+        {
+            break;
+        }
+        HasDigit = true;
+        Parsed = Parsed * 10u + static_cast<std::uint64_t>(Ch - '0');
+    }
+    if (!HasDigit)
+    {
+        return false;
+    }
+
+    OutExpectedBytes = ExpectedParsed;
+    OutBytesRead = Parsed;
+    return true;
+}
+
+[[nodiscard]] bool IsMissingTrailingFieldReadFailure(const Error& ErrorValue)
+{
+    std::uint64_t ExpectedBytes = 0;
+    std::uint64_t BytesRead = 0;
+    return ParseInputReadFailureByteCounts(ErrorValue, ExpectedBytes, BytesRead)
+        && BytesRead < ExpectedBytes;
+}
 } // namespace
 
 /**
@@ -460,6 +562,10 @@ TExpected<void> DeserializeFieldsRecursive(
                 : ValueCodecRegistry::Instance().Decode(Field->FieldType, Archive, Context);
             if (!DecodeResult)
             {
+                if (IsMissingTrailingFieldReadFailure(DecodeResult.error()))
+                {
+                    return Ok();
+                }
                 return std::unexpected(DecodeResult.error());
             }
             auto SetResult = Field->Setter(Instance, *DecodeResult);
@@ -503,6 +609,10 @@ TExpected<void> DeserializeFieldsRecursive(
                 : ValueCodecRegistry::Instance().DecodeInto(Field->FieldType, FieldPtr, Archive, Context);
             if (!DecodeResult)
             {
+                if (IsMissingTrailingFieldReadFailure(DecodeResult.error()))
+                {
+                    return Ok();
+                }
                 return DecodeResult;
             }
         }
@@ -511,6 +621,10 @@ TExpected<void> DeserializeFieldsRecursive(
             auto NestedResult = DeserializeFieldsRecursive(Entry.NestedType, FieldPtr, Archive, Context, Visited);
             if (!NestedResult)
             {
+                if (IsMissingTrailingFieldReadFailure(NestedResult.error()))
+                {
+                    return Ok();
+                }
                 return NestedResult;
             }
         }
@@ -716,12 +830,72 @@ TExpected<void> ComponentSerializationRegistry::Deserialize(const TypeId& Type, 
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null component bytes"));
     }
+
+    const auto DeserializeWithContext = [&](const TSerializationContext& ActiveContext) -> TExpected<void>
+    {
+        try
+        {
+            MemoryReadStreambuf Buffer(Bytes, Size);
+            std::istream Is(&Buffer);
+            cereal::BinaryInputArchive Archive(Is);
+            return DeserializeValue(Instance, Archive, ActiveContext);
+        }
+        catch (const std::exception& Ex)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+        }
+    };
+
+    auto Result = DeserializeWithContext(Context);
+    if (Result || !ShouldRetryWithLegacyFloatVectorDecode(Result.error(), Context))
+    {
+        return Result;
+    }
+
+    TSerializationContext LegacyContext = Context;
+    LegacyContext.UseLegacyFloatVectorDecode = true;
+    auto LegacyResult = DeserializeWithContext(LegacyContext);
+    if (LegacyResult)
+    {
+        return LegacyResult;
+    }
+
+    return Result;
+}
+
+TExpected<void> ComponentSerializationRegistry::InvokeOnCreate(const TypeId& Type, void* Instance) const
+{
+    OnCreateFn InvokeOnCreateValue;
+    {
+        GameLockGuard Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            InvokeOnCreateValue = It->second.OnCreate;
+        }
+    }
+    if (!InvokeOnCreateValue)
+    {
+        (void)TypeAutoRegistry::Instance().Ensure(Type);
+        GameLockGuard Lock(m_mutex);
+        auto It = m_entries.find(Type);
+        if (It != m_entries.end())
+        {
+            InvokeOnCreateValue = It->second.OnCreate;
+        }
+    }
+    if (!InvokeOnCreateValue)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No component OnCreate callback registered"));
+    }
+    if (!Instance)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null component instance"));
+    }
+
     try
     {
-        MemoryReadStreambuf Buffer(Bytes, Size);
-        std::istream Is(&Buffer);
-        cereal::BinaryInputArchive Archive(Is);
-        return DeserializeValue(Instance, Archive, Context);
+        return InvokeOnCreateValue(Instance);
     }
     catch (const std::exception& Ex)
     {
@@ -1027,16 +1201,35 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
         }
-        MemoryReadStreambuf Buffer(NodeData.NodeBytes.data(), NodeData.NodeBytes.size());
-        std::istream Is(&Buffer);
-        cereal::BinaryInputArchive Archive(Is);
-        std::unordered_map<TypeId, bool, UuidHash> Visited{};
-        auto NodeResult = DeserializeFieldsRecursive(
-            PendingData.NodeType == TypeId{} ? Node->TypeKey() : PendingData.NodeType,
-            Node,
-            Archive,
-            Context,
-            Visited);
+
+        const TypeId NodeType = PendingData.NodeType == TypeId{} ? Node->TypeKey() : PendingData.NodeType;
+        const auto DeserializeNodeFieldsWithContext = [&](const TSerializationContext& ActiveContext) -> TExpected<void>
+        {
+            try
+            {
+                MemoryReadStreambuf Buffer(NodeData.NodeBytes.data(), NodeData.NodeBytes.size());
+                std::istream Is(&Buffer);
+                cereal::BinaryInputArchive Archive(Is);
+                std::unordered_map<TypeId, bool, UuidHash> Visited{};
+                return DeserializeFieldsRecursive(NodeType, Node, Archive, ActiveContext, Visited);
+            }
+            catch (const std::exception& Ex)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+            }
+        };
+
+        auto NodeResult = DeserializeNodeFieldsWithContext(Context);
+        if (!NodeResult && ShouldRetryWithLegacyFloatVectorDecode(NodeResult.error(), Context))
+        {
+            TSerializationContext LegacyContext = Context;
+            LegacyContext.UseLegacyFloatVectorDecode = true;
+            auto LegacyResult = DeserializeNodeFieldsWithContext(LegacyContext);
+            if (LegacyResult)
+            {
+                NodeResult = std::move(LegacyResult);
+            }
+        }
         if (!NodeResult)
         {
             return std::unexpected(NodeResult.error());
@@ -1054,18 +1247,22 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
             }
         }
 
-        auto CreateResult = RuntimeComponentId.is_nil()
-            ? ComponentSerializationRegistry::Instance().Create(WorldRef, Owner, ComponentPayload.ComponentType)
-            : ComponentSerializationRegistry::Instance().CreateWithId(
-                WorldRef,
-                Owner,
-                ComponentPayload.ComponentType,
-                RuntimeComponentId);
-        if (!CreateResult)
+        void* ComponentPtr = nullptr;
         {
-            return std::unexpected(CreateResult.error());
+            ScopedComponentOnCreateSuppression ScopedSuppressOnCreate{};
+            auto CreateResult = RuntimeComponentId.is_nil()
+                ? ComponentSerializationRegistry::Instance().Create(WorldRef, Owner, ComponentPayload.ComponentType)
+                : ComponentSerializationRegistry::Instance().CreateWithId(
+                    WorldRef,
+                    Owner,
+                    ComponentPayload.ComponentType,
+                    RuntimeComponentId);
+            if (!CreateResult)
+            {
+                return std::unexpected(CreateResult.error());
+            }
+            ComponentPtr = CreateResult.value();
         }
-        void* ComponentPtr = CreateResult.value();
         auto DeserializeResult = ComponentSerializationRegistry::Instance().Deserialize(
             ComponentPayload.ComponentType,
             ComponentPtr,
@@ -1075,6 +1272,14 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
         if (!DeserializeResult)
         {
             return std::unexpected(DeserializeResult.error());
+        }
+
+        auto OnCreateResult = ComponentSerializationRegistry::Instance().InvokeOnCreate(
+            ComponentPayload.ComponentType,
+            ComponentPtr);
+        if (!OnCreateResult)
+        {
+            return std::unexpected(OnCreateResult.error());
         }
     }
 

@@ -7,10 +7,14 @@
 #include "AssetPipelineFactories.h"
 #include "AssetPipelineIds.h"
 #include "GameRuntime.h"
+#include "IAssetCooker.h"
+#include "IAssetImporter.h"
+#include "IPipelineContext.h"
 #include "Level.h"
 #include "NodeCast.h"
 #include "PathResolver.h"
 #include "PawnBase.h"
+#include "PayloadRegistry.h"
 #include "PlayerStart.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
@@ -30,13 +34,41 @@
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <cstdarg>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <mutex>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <sstream>
 #include <unordered_set>
+
+#define XXH_INLINE_ALL
+#include <xxhash.h>
+
+namespace TextureCompressorPlugin
+{
+std::unique_ptr<SnAPI::AssetPipeline::IPayloadSerializer> CreateCompressorImageIntermediateSerializer();
+std::unique_ptr<SnAPI::AssetPipeline::IPayloadSerializer> CreateCompressorCookedInfoSerializer();
+std::unique_ptr<SnAPI::AssetPipeline::IAssetImporter> CreateTextureCompressorImporter();
+std::unique_ptr<SnAPI::AssetPipeline::IAssetCooker> CreateTextureCompressorCooker();
+} // namespace TextureCompressorPlugin
+
+namespace SnAPI::GameFramework
+{
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetAssimpImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialInstanceCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletonCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderAnimationCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderStaticMeshCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletalMeshCooker();
+} // namespace SnAPI::GameFramework
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -57,6 +89,144 @@ constexpr std::string_view kDefaultProjectStartupLevelPack = "Levels/StarterLeve
 constexpr std::string_view kEditorStarterLevelTemplatePackFileName = "StarterLevelTemplate.snpak";
 constexpr std::string_view kEditorStarterScriptFileName = "platform_bob.lua";
 constexpr uint32_t kProjectConfigVersion = 1u;
+static constexpr ::SnAPI::AssetPipeline::Uuid kAssetIdNamespace =
+    SNAPI_UUID(0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8);
+
+[[nodiscard]] std::string FormatLogMessage(const char* Prefix, const char* Fmt, va_list Args)
+{
+    if (!Fmt)
+    {
+        return Prefix ? std::string(Prefix) : std::string{};
+    }
+
+    va_list CopyArgs{};
+    va_copy(CopyArgs, Args);
+    const int Required = std::vsnprintf(nullptr, 0, Fmt, CopyArgs);
+    va_end(CopyArgs);
+    if (Required <= 0)
+    {
+        return Prefix ? std::string(Prefix) : std::string{};
+    }
+
+    std::string Buffer{};
+    Buffer.resize(static_cast<std::size_t>(Required) + 1u);
+    std::vsnprintf(Buffer.data(), Buffer.size(), Fmt, Args);
+    Buffer.resize(static_cast<std::size_t>(Required));
+    if (Prefix && Prefix[0] != '\0')
+    {
+        return std::string(Prefix) + Buffer;
+    }
+    return Buffer;
+}
+
+class InlineImportPipelineContext final : public ::SnAPI::AssetPipeline::IPipelineContext
+{
+public:
+    InlineImportPipelineContext(const ::SnAPI::AssetPipeline::PayloadRegistry& Registry,
+                                const std::unordered_map<std::string, std::string>& Options,
+                                std::vector<std::string>& Infos,
+                                std::vector<std::string>& Warnings,
+                                std::vector<std::string>& Errors)
+        : m_registry(Registry)
+        , m_options(Options)
+        , m_infos(Infos)
+        , m_warnings(Warnings)
+        , m_errors(Errors)
+    {
+    }
+
+    void LogInfo(const char* Fmt, ...) override
+    {
+        va_list Args{};
+        va_start(Args, Fmt);
+        std::lock_guard Lock(m_logMutex);
+        m_infos.push_back(FormatLogMessage("[INFO] ", Fmt, Args));
+        va_end(Args);
+    }
+
+    void LogWarn(const char* Fmt, ...) override
+    {
+        va_list Args{};
+        va_start(Args, Fmt);
+        std::lock_guard Lock(m_logMutex);
+        m_warnings.push_back(FormatLogMessage("[WARN] ", Fmt, Args));
+        va_end(Args);
+    }
+
+    void LogError(const char* Fmt, ...) override
+    {
+        va_list Args{};
+        va_start(Args, Fmt);
+        std::lock_guard Lock(m_logMutex);
+        m_errors.push_back(FormatLogMessage("[ERROR] ", Fmt, Args));
+        va_end(Args);
+    }
+
+    bool ReadAllBytes(const std::string& Uri, std::vector<uint8_t>& Out) override
+    {
+        std::ifstream File(Uri, std::ios::binary | std::ios::ate);
+        if (!File.is_open())
+        {
+            return false;
+        }
+
+        const std::streamsize Size = File.tellg();
+        if (Size <= 0)
+        {
+            Out.clear();
+            return true;
+        }
+
+        Out.resize(static_cast<std::size_t>(Size));
+        File.seekg(0, std::ios::beg);
+        File.read(reinterpret_cast<char*>(Out.data()), Size);
+        return File.good();
+    }
+
+    uint64_t HashBytes64(const void* Data, const std::size_t Size) override
+    {
+        return XXH3_64bits(Data, Size);
+    }
+
+    void HashBytes128(const void* Data, const std::size_t Size, uint64_t& OutHi, uint64_t& OutLo) override
+    {
+        const XXH128_hash_t Hash = XXH3_128bits(Data, Size);
+        OutHi = Hash.high64;
+        OutLo = Hash.low64;
+    }
+
+    ::SnAPI::AssetPipeline::AssetId MakeDeterministicAssetId(std::string_view LogicalName, std::string_view VariantKey) override
+    {
+        std::string Combined{};
+        Combined.reserve(LogicalName.size() + VariantKey.size() + 1u);
+        Combined.append(LogicalName);
+        Combined.push_back('|');
+        Combined.append(VariantKey);
+        return ::SnAPI::AssetPipeline::Uuid::GenerateV5(kAssetIdNamespace, Combined);
+    }
+
+    const ::SnAPI::AssetPipeline::IPayloadSerializer* FindSerializer(const ::SnAPI::AssetPipeline::TypeId Id) const override
+    {
+        return m_registry.Find(Id);
+    }
+
+    std::string GetOption(std::string_view Key, std::string_view Default = {}) const override
+    {
+        if (const auto It = m_options.find(std::string(Key)); It != m_options.end())
+        {
+            return It->second;
+        }
+        return std::string(Default);
+    }
+
+private:
+    const ::SnAPI::AssetPipeline::PayloadRegistry& m_registry;
+    const std::unordered_map<std::string, std::string>& m_options;
+    std::vector<std::string>& m_infos;
+    std::vector<std::string>& m_warnings;
+    std::vector<std::string>& m_errors;
+    std::mutex m_logMutex{};
+};
 
 [[nodiscard]] std::string TrimCopy(std::string Value)
 {
@@ -182,6 +352,135 @@ constexpr uint32_t kProjectConfigVersion = 1u;
     }
     return {};
 }
+
+[[nodiscard]] std::expected<void, std::string> CopyDirectoryContentsRecursive(const std::filesystem::path& SourceDirectory,
+                                                                               const std::filesystem::path& DestinationDirectory)
+{
+    namespace fs = std::filesystem;
+    std::error_code Error{};
+
+    if (SourceDirectory.empty() || DestinationDirectory.empty())
+    {
+        return {};
+    }
+
+    if (!fs::exists(SourceDirectory, Error) || Error)
+    {
+        return {};
+    }
+
+    Error.clear();
+    if (!fs::is_directory(SourceDirectory, Error) || Error)
+    {
+        return {};
+    }
+
+    Error.clear();
+    fs::create_directories(DestinationDirectory, Error);
+    if (Error)
+    {
+        return std::unexpected("Failed to create destination directory '" + DestinationDirectory.string() + "': " + Error.message());
+    }
+
+    for (fs::recursive_directory_iterator It(SourceDirectory, fs::directory_options::skip_permission_denied, Error), End;
+         !Error && It != End;
+         It.increment(Error))
+    {
+        const fs::directory_entry& Entry = *It;
+
+        std::error_code RelativeError{};
+        const fs::path RelativePath = fs::relative(Entry.path(), SourceDirectory, RelativeError);
+        if (RelativeError)
+        {
+            continue;
+        }
+        if (RelativePath.empty() || RelativePath == ".")
+        {
+            continue;
+        }
+
+        const fs::path DestinationPath = DestinationDirectory / RelativePath;
+        std::error_code EntryError{};
+        if (Entry.is_directory(EntryError) && !EntryError)
+        {
+            fs::create_directories(DestinationPath, Error);
+            if (Error)
+            {
+                return std::unexpected("Failed to create directory '" + DestinationPath.string() + "': " + Error.message());
+            }
+            continue;
+        }
+
+        EntryError.clear();
+        if (!Entry.is_regular_file(EntryError) || EntryError)
+        {
+            continue;
+        }
+
+        Error.clear();
+        fs::create_directories(DestinationPath.parent_path(), Error);
+        if (Error)
+        {
+            return std::unexpected("Failed to create parent directory '" + DestinationPath.parent_path().string() + "': " + Error.message());
+        }
+
+        Error.clear();
+        fs::copy_file(Entry.path(), DestinationPath, fs::copy_options::overwrite_existing, Error);
+        if (Error)
+        {
+            return std::unexpected("Failed to copy '" + Entry.path().string() + "' to '" + DestinationPath.string() + "': " + Error.message());
+        }
+    }
+
+    if (Error)
+    {
+        return std::unexpected("Failed to enumerate source directory '" + SourceDirectory.string() + "': " + Error.message());
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::filesystem::path ResolveRendererShaderSourceDirectory()
+{
+    namespace fs = std::filesystem;
+    std::vector<fs::path> Candidates{};
+#if defined(SNAPI_GF_RENDERER_SHADER_SOURCE_DIR)
+    Candidates.emplace_back(fs::path(SNAPI_GF_RENDERER_SHADER_SOURCE_DIR));
+#endif
+    Candidates.emplace_back(fs::path(__FILE__).parent_path() / ".." / ".." / ".." / "SnAPI.Renderer" / "shaders");
+    Candidates.emplace_back(fs::current_path() / ".." / "SnAPI.Renderer" / "shaders");
+    Candidates.emplace_back(fs::current_path() / "shaders");
+
+    std::error_code Error{};
+    for (const fs::path& Candidate : Candidates)
+    {
+        Error.clear();
+        if (!fs::exists(Candidate, Error) || Error)
+        {
+            continue;
+        }
+
+        Error.clear();
+        if (!fs::is_directory(Candidate, Error) || Error)
+        {
+            continue;
+        }
+
+        return Candidate;
+    }
+
+    return {};
+}
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+void ConfigureRendererShaderSearchRootForAssetRoot(GameRuntime& Runtime, const std::filesystem::path& AssetRoot)
+{
+    if (auto* WorldPtr = Runtime.WorldPtr(); WorldPtr)
+    {
+        (void)WorldPtr->Renderer().SetProjectShaderSearchRoot(AssetRoot);
+    }
+}
+#endif
 
 [[nodiscard]] std::filesystem::path EditorDefaultShapeAssetDirectory()
 {
@@ -701,15 +1000,27 @@ void AppendUniquePath(std::vector<std::string>& Paths,
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
-    (void)WorldRef;
-    if (auto* Start = NodeCast<PlayerStart>(&Node))
-    {
-        Start->OnCreate();
-    }
+    // (void)WorldRef;
+    // if (auto* Start = NodeCast<PlayerStart>(&Node))
+    // {
+    //     Start->OnCreate();
+    // }
+    //
+    // if (auto* Pawn = NodeCast<PawnBase>(&Node))
+    // {
+    //     Pawn->OnCreate();
+    // }
 
-    if (auto* Pawn = NodeCast<PawnBase>(&Node))
+    // Because of no virtual dispatch, we use reflection.
+    if (const auto Type = TypeRegistry::Instance().Find(Node.TypeKey()))
     {
-        Pawn->OnCreate();
+        if (const auto It = std::ranges::find_if(Type->Methods.begin(), Type->Methods.end(), [&](const auto& Method)
+        {
+            return Method.Name == "OnCreate" && Method.ParamTypes.empty();
+        } ); It != Type->Methods.end())
+        {
+            It->Invoke(&Node, {});
+        }
     }
 }
 
@@ -737,6 +1048,151 @@ void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
     }
 
     return Candidate;
+}
+
+[[nodiscard]] std::filesystem::path ResolveImportAssetRootDirectory(const EditorAssetService::ProjectInfo& Project)
+{
+    if (Project.IsLoaded && !Project.AssetRootDirectory.empty())
+    {
+        if (auto Resolved = SPathResolver::Instance().Resolve(Project.AssetRootDirectory); Resolved && !Resolved->empty())
+        {
+            return *Resolved;
+        }
+        return std::filesystem::path(Project.AssetRootDirectory);
+    }
+
+    if (const std::filesystem::path ResolverRoot = SPathResolver::Instance().AssetRoot(); !ResolverRoot.empty())
+    {
+        return ResolverRoot;
+    }
+
+    std::error_code Error{};
+    const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+    if (!Error && !CurrentPath.empty())
+    {
+        return CurrentPath / "Assets";
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::string SanitizePackFileStem(std::string_view Raw)
+{
+    std::string Out{};
+    Out.reserve(Raw.size());
+    for (const char Character : Raw)
+    {
+        const unsigned char Byte = static_cast<unsigned char>(Character);
+        if (std::isalnum(Byte) != 0 || Character == '_' || Character == '-' || Character == '.')
+        {
+            Out.push_back(Character);
+        }
+        else
+        {
+            Out.push_back('_');
+        }
+    }
+
+    while (!Out.empty() && Out.front() == '.')
+    {
+        Out.erase(Out.begin());
+    }
+
+    if (Out.empty())
+    {
+        Out = "ImportedAsset";
+    }
+
+    return Out;
+}
+
+[[nodiscard]] std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter>> CreateEditorImporters()
+{
+    std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter>> Importers{};
+    Importers.reserve(3);
+    if (auto TextureImporter = TextureCompressorPlugin::CreateTextureCompressorImporter())
+    {
+        Importers.emplace_back(std::move(TextureImporter));
+    }
+    if (auto AssimpImporter = CreateRenderAssetAssimpImporter())
+    {
+        Importers.emplace_back(std::move(AssimpImporter));
+    }
+    if (auto JsonImporter = CreateRenderAssetJsonImporter())
+    {
+        Importers.emplace_back(std::move(JsonImporter));
+    }
+    return Importers;
+}
+
+[[nodiscard]] std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker>> CreateEditorCookers()
+{
+    std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker>> Cookers{};
+    Cookers.reserve(7);
+    if (auto TextureCooker = TextureCompressorPlugin::CreateTextureCompressorCooker())
+    {
+        Cookers.emplace_back(std::move(TextureCooker));
+    }
+    if (auto MaterialCooker = CreateRenderMaterialCooker())
+    {
+        Cookers.emplace_back(std::move(MaterialCooker));
+    }
+    if (auto MaterialInstanceCooker = CreateRenderMaterialInstanceCooker())
+    {
+        Cookers.emplace_back(std::move(MaterialInstanceCooker));
+    }
+    if (auto SkeletonCooker = CreateRenderSkeletonCooker())
+    {
+        Cookers.emplace_back(std::move(SkeletonCooker));
+    }
+    if (auto AnimationCooker = CreateRenderAnimationCooker())
+    {
+        Cookers.emplace_back(std::move(AnimationCooker));
+    }
+    if (auto StaticMeshCooker = CreateRenderStaticMeshCooker())
+    {
+        Cookers.emplace_back(std::move(StaticMeshCooker));
+    }
+    if (auto SkeletalMeshCooker = CreateRenderSkeletalMeshCooker())
+    {
+        Cookers.emplace_back(std::move(SkeletalMeshCooker));
+    }
+    return Cookers;
+}
+
+[[nodiscard]] ::SnAPI::AssetPipeline::IAssetImporter* FindMatchingImporter(
+    const ::SnAPI::AssetPipeline::SourceRef& Source,
+    const std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter>>& Importers)
+{
+    for (const auto& Importer : Importers)
+    {
+        if (Importer && Importer->CanImport(Source))
+        {
+            return Importer.get();
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] ::SnAPI::AssetPipeline::IAssetCooker* FindMatchingCooker(
+    const ::SnAPI::AssetPipeline::TypeId& AssetKind,
+    const ::SnAPI::AssetPipeline::TypeId& IntermediateType,
+    const std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker>>& Cookers)
+{
+    for (const auto& Cooker : Cookers)
+    {
+        if (Cooker && Cooker->CanCook(AssetKind, IntermediateType))
+        {
+            return Cooker.get();
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] bool IsTextureImporter(const ::SnAPI::AssetPipeline::IAssetImporter& Importer)
+{
+    const std::string Name = ToLowerCopy(Importer.GetName() ? Importer.GetName() : "");
+    return Name.find("texturecompressor") != std::string::npos;
 }
 } // namespace
 
@@ -818,6 +1274,10 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
         }
         m_statusMessage += "Editor template bootstrap failed: " + TemplateError;
     }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), SPathResolver::Instance().AssetRoot());
+#endif
 
     return Ok();
 }
@@ -1765,6 +2225,275 @@ Result EditorAssetService::CreateRuntimeNodeAssetByType(EditorServiceContext& Co
     return Ok();
 }
 
+Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
+                                             const std::string_view SourcePath,
+                                             const std::string_view DestinationFolderPath,
+                                             const std::unordered_map<std::string, std::string>& BuildOptions)
+{
+    (void)Context;
+
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    std::string SourcePathText = TrimCopy(std::string(SourcePath));
+    if (SourcePathText.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Import source path cannot be empty"));
+    }
+
+    std::filesystem::path SourceFile = std::filesystem::path(SourcePathText);
+    if (auto Resolved = SPathResolver::Instance().Resolve(SourcePathText); Resolved)
+    {
+        SourceFile = *Resolved;
+    }
+    else if (!SourceFile.is_absolute())
+    {
+        std::error_code Error{};
+        const std::filesystem::path AbsolutePath = std::filesystem::absolute(SourceFile, Error);
+        if (!Error)
+        {
+            SourceFile = AbsolutePath;
+        }
+    }
+
+    std::error_code PathError{};
+    const std::filesystem::path CanonicalSource = std::filesystem::weakly_canonical(SourceFile, PathError);
+    if (!PathError)
+    {
+        SourceFile = CanonicalSource;
+    }
+    PathError.clear();
+    if (!std::filesystem::exists(SourceFile, PathError) || PathError)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Import source was not found: " + SourceFile.string()));
+    }
+    PathError.clear();
+    if (!std::filesystem::is_regular_file(SourceFile, PathError) || PathError)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Import source must be a regular file"));
+    }
+
+    std::string FolderPath = NormalizeAssetLogicalName(DestinationFolderPath);
+    const std::string SourceLeaf = SourceFile.filename().string();
+    if (SourceLeaf.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Import source filename could not be resolved"));
+    }
+
+    std::string LogicalSourceName = FolderPath.empty()
+                                        ? SourceLeaf
+                                        : NormalizeAssetLogicalName(FolderPath + "/" + SourceLeaf);
+    LogicalSourceName = NormalizeAssetLogicalName(LogicalSourceName);
+    if (LogicalSourceName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Resolved logical import name is invalid"));
+    }
+
+    std::unordered_map<std::string, std::string> ImportOptions = BuildOptions;
+    ImportOptions["SnAPI.GF.Assimp.LogicalName"] = LogicalSourceName;
+
+    ::SnAPI::AssetPipeline::PayloadRegistry Registry{};
+    RegisterAssetPipelinePayloads(Registry);
+    Registry.Register(TextureCompressorPlugin::CreateCompressorImageIntermediateSerializer());
+    Registry.Register(TextureCompressorPlugin::CreateCompressorCookedInfoSerializer());
+
+    std::vector<std::string> ImportInfos{};
+    std::vector<std::string> ImportWarnings{};
+    std::vector<std::string> ImportErrors{};
+    InlineImportPipelineContext PipelineContext(Registry, ImportOptions, ImportInfos, ImportWarnings, ImportErrors);
+
+    auto Importers = CreateEditorImporters();
+    if (Importers.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "No importers are available"));
+    }
+    auto Cookers = CreateEditorCookers();
+    if (Cookers.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "No cookers are available"));
+    }
+
+    std::vector<uint8_t> SourceBytes{};
+    if (!PipelineContext.ReadAllBytes(SourceFile.string(), SourceBytes))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Failed to read import source bytes: " + SourceFile.string()));
+    }
+
+    ::SnAPI::AssetPipeline::SourceRef SourceRef{};
+    SourceRef.Uri = SourceFile.string();
+    SourceRef.ContentHash = SourceBytes.empty() ? 0ull : PipelineContext.HashBytes64(SourceBytes.data(), SourceBytes.size());
+
+    ::SnAPI::AssetPipeline::IAssetImporter* Importer = FindMatchingImporter(SourceRef, Importers);
+    if (!Importer)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "No importer can handle source: " + SourceFile.extension().string()));
+    }
+
+    std::vector<::SnAPI::AssetPipeline::ImportedItem> ImportedItems{};
+    if (!Importer->Import(SourceRef, ImportedItems, PipelineContext))
+    {
+        std::string ErrorMessage = "Source import failed";
+        if (!ImportErrors.empty())
+        {
+            ErrorMessage += ": " + ImportErrors.back();
+        }
+        return std::unexpected(MakeError(EErrorCode::InternalError, std::move(ErrorMessage)));
+    }
+    if (ImportedItems.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Importer returned no assets"));
+    }
+
+    if (IsTextureImporter(*Importer))
+    {
+        for (auto& Item : ImportedItems)
+        {
+            Item.LogicalName = LogicalSourceName;
+            Item.Id = PipelineContext.MakeDeterministicAssetId(Item.LogicalName, Item.VariantKey);
+        }
+    }
+
+    std::unordered_set<std::string> BatchItemKeys{};
+    for (auto& Item : ImportedItems)
+    {
+        Item.LogicalName = NormalizeAssetLogicalName(Item.LogicalName);
+        if (Item.LogicalName.empty())
+        {
+            Item.LogicalName = LogicalSourceName;
+        }
+
+        const std::string BaseName = Item.LogicalName;
+        std::size_t SuffixIndex = 1;
+        std::string Key = Item.LogicalName + "|" + Item.VariantKey;
+        while (!BatchItemKeys.insert(Key).second)
+        {
+            Item.LogicalName = BaseName + "_" + std::to_string(SuffixIndex++);
+            Key = Item.LogicalName + "|" + Item.VariantKey;
+        }
+
+        Item.Id = PipelineContext.MakeDeterministicAssetId(Item.LogicalName, Item.VariantKey);
+    }
+
+    std::vector<::SnAPI::AssetPipeline::AssetPackEntry> PackEntries{};
+    PackEntries.reserve(ImportedItems.size());
+    for (auto& Item : ImportedItems)
+    {
+        ::SnAPI::AssetPipeline::IAssetCooker* Cooker =
+            FindMatchingCooker(Item.AssetKind, Item.Intermediate.PayloadType, Cookers);
+        if (!Cooker)
+        {
+            return std::unexpected(MakeError(
+                EErrorCode::InvalidArgument,
+                "No cooker found for asset '" + Item.LogicalName + "' (kind=" + Item.AssetKind.ToString() +
+                    ", intermediate=" + Item.Intermediate.PayloadType.ToString() + ")"));
+        }
+
+        ::SnAPI::AssetPipeline::CookRequest Request{};
+        Request.Id = Item.Id;
+        Request.LogicalName = Item.LogicalName;
+        Request.AssetKind = Item.AssetKind;
+        Request.VariantKey = Item.VariantKey;
+        Request.Intermediate = std::move(Item.Intermediate);
+        Request.Dependencies = std::move(Item.Dependencies);
+        Request.BuildOptions = ImportOptions;
+
+        ::SnAPI::AssetPipeline::CookResult Result{};
+        if (!Cooker->Cook(Request, Result, PipelineContext))
+        {
+            std::string ErrorMessage = "Cook failed for asset '" + Request.LogicalName + "'";
+            if (!ImportErrors.empty())
+            {
+                ErrorMessage += ": " + ImportErrors.back();
+            }
+            return std::unexpected(MakeError(EErrorCode::InternalError, std::move(ErrorMessage)));
+        }
+
+        ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
+        Entry.Id = Request.Id;
+        Entry.AssetKind = Request.AssetKind;
+        Entry.Name = Request.LogicalName;
+        Entry.VariantKey = Request.VariantKey;
+        Entry.Cooked = std::move(Result.Cooked);
+        Entry.Bulk = std::move(Result.Bulk);
+        PackEntries.emplace_back(std::move(Entry));
+    }
+
+    std::filesystem::path AssetRoot = ResolveImportAssetRootDirectory(m_currentProject);
+    if (AssetRoot.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Asset root directory is not available for import"));
+    }
+
+    std::filesystem::path DestinationDirectory = AssetRoot;
+    if (!FolderPath.empty())
+    {
+        DestinationDirectory /= std::filesystem::path(FolderPath);
+    }
+
+    PathError.clear();
+    std::filesystem::create_directories(DestinationDirectory, PathError);
+    if (PathError)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to create import destination folder: " + PathError.message()));
+    }
+
+    const std::string PackStem = SanitizePackFileStem(SourceFile.stem().string());
+    std::filesystem::path OutputPackPath = DestinationDirectory / (PackStem + ".snpak");
+    if (auto Resolved = SPathResolver::Instance().Resolve(OutputPackPath.string()); Resolved && !Resolved->empty())
+    {
+        OutputPackPath = *Resolved;
+    }
+    OutputPackPath = OutputPackPath.lexically_normal();
+
+    ::SnAPI::AssetPipeline::AssetPackWriter Writer{};
+    for (auto& Entry : PackEntries)
+    {
+        Writer.AddAsset(std::move(Entry));
+    }
+
+    PathError.clear();
+    const bool PackExists = std::filesystem::exists(OutputPackPath, PathError) && !PathError;
+    auto WriteResult = PackExists ? Writer.AppendUpdate(OutputPackPath.string()) : Writer.Write(OutputPackPath.string());
+    if (!WriteResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to write imported assets to pack: " + WriteResult.error()));
+    }
+
+    m_assetManager->UnmountPack(OutputPackPath.string());
+    auto MountResult = m_assetManager->MountPack(OutputPackPath.string());
+    if (!MountResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, MountResult.error()));
+    }
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    if (!ImportedItems.empty())
+    {
+        (void)SelectAssetByKey(ImportedItems.front().Id.ToString());
+    }
+
+    std::ostringstream Status{};
+    Status << "Imported " << ImportedItems.size() << " asset(s) from " << SourceFile.filename().string()
+           << " into " << OutputPackPath.string();
+    if (!ImportWarnings.empty())
+    {
+        Status << " (" << ImportWarnings.size() << " warning(s))";
+    }
+    m_statusMessage = Status.str();
+    return Ok();
+}
+
 Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
 {
     if (!m_assetManager)
@@ -2285,6 +3014,7 @@ Result EditorAssetService::RebuildAssetManager()
 
     RegisterAssetPipelinePayloads(m_assetManager->GetRegistry());
     RegisterAssetPipelineFactories(*m_assetManager);
+    RegisterAssetPipelineSourceStages(*m_assetManager);
     return RefreshDiscovery();
 }
 
@@ -2307,38 +3037,19 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
     const std::filesystem::path SourceEditorAssetDirectory = ResolveEditorAssetSourceDirectory();
     if (!SourceEditorAssetDirectory.empty())
     {
-        for (std::filesystem::directory_iterator It(SourceEditorAssetDirectory, Error), End; !Error && It != End; It.increment(Error))
+        if (auto CopyResult = CopyDirectoryContentsRecursive(SourceEditorAssetDirectory, m_editorTemplateAssetDirectory); !CopyResult)
         {
-            const std::filesystem::directory_entry& Entry = *It;
-            Error.clear();
-            if (!Entry.is_regular_file(Error) || Error)
-            {
-                Error.clear();
-                continue;
-            }
-
-            const std::filesystem::path SourcePath = Entry.path();
-            const std::filesystem::path DestinationPath = m_editorTemplateAssetDirectory / SourcePath.filename();
-            if (SourcePath.lexically_normal() == DestinationPath.lexically_normal())
-            {
-                continue;
-            }
-
-            Error.clear();
-            std::filesystem::copy_file(SourcePath,
-                                       DestinationPath,
-                                       std::filesystem::copy_options::overwrite_existing,
-                                       Error);
-            if (Error)
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError,
-                                                 "Failed to copy editor asset '" + SourcePath.string() + "': " + Error.message()));
-            }
+            return std::unexpected(MakeError(EErrorCode::InternalError, CopyResult.error()));
         }
-        if (Error)
+    }
+
+    const std::filesystem::path RendererShaderSourceDirectory = ResolveRendererShaderSourceDirectory();
+    if (!RendererShaderSourceDirectory.empty())
+    {
+        const std::filesystem::path TemplateShaderDirectory = m_editorTemplateAssetDirectory / "Shaders";
+        if (auto CopyResult = CopyDirectoryContentsRecursive(RendererShaderSourceDirectory, TemplateShaderDirectory); !CopyResult)
         {
-            return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to enumerate editor asset source directory: " + Error.message()));
+            return std::unexpected(MakeError(EErrorCode::InternalError, CopyResult.error()));
         }
     }
 
@@ -2442,6 +3153,35 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
                                                  "Failed to copy editor starter script template: " + Error.message()));
             }
         }
+    }
+
+    return Ok();
+}
+
+Result EditorAssetService::EnsureProjectShaderDirectory(const std::filesystem::path& ProjectAssetRoot)
+{
+    if (ProjectAssetRoot.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project shader directory root is invalid"));
+    }
+
+    std::filesystem::path ShaderSourceDirectory = m_editorTemplateAssetDirectory / "Shaders";
+    std::error_code Error{};
+    if (!std::filesystem::exists(ShaderSourceDirectory, Error) || Error)
+    {
+        ShaderSourceDirectory = ResolveRendererShaderSourceDirectory();
+    }
+
+    Error.clear();
+    if (!std::filesystem::exists(ShaderSourceDirectory, Error) || Error)
+    {
+        return Ok();
+    }
+
+    const std::filesystem::path ShaderDestinationDirectory = ProjectAssetRoot / "Shaders";
+    if (auto CopyResult = CopyDirectoryContentsRecursive(ShaderSourceDirectory, ShaderDestinationDirectory); !CopyResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, CopyResult.error()));
     }
 
     return Ok();
@@ -2693,6 +3433,10 @@ Result EditorAssetService::CreateProject(EditorServiceContext& Context,
     {
         return StarterResult;
     }
+    if (Result ShaderResult = EnsureProjectShaderDirectory(AssetRoot); !ShaderResult)
+    {
+        return ShaderResult;
+    }
 
     if (!m_editorStarterScriptTemplatePath.empty())
     {
@@ -2884,6 +3628,10 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     {
         return StarterResult;
     }
+    if (Result ShaderResult = EnsureProjectShaderDirectory(ResolvedAssetRoot); !ShaderResult)
+    {
+        return ShaderResult;
+    }
 
     if (!m_editorStarterScriptTemplatePath.empty())
     {
@@ -2903,6 +3651,10 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
             }
         }
     }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), ResolvedAssetRoot);
+#endif
 
     if (Result RebuildResult = RebuildAssetManager(); !RebuildResult)
     {

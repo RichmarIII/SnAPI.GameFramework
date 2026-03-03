@@ -8,6 +8,7 @@
 #include "IWorld.h"
 #include "PathResolver.h"
 #include "PawnBase.h"
+#include "RenderAssetRuntime.h"
 #include "SubClassOf.h"
 
 #include <algorithm>
@@ -63,6 +64,80 @@ constexpr Color kAxisY{118, 208, 142, 255};
 constexpr Color kAxisZ{116, 156, 235, 255};
 constexpr Color kAxisW{220, 196, 138, 255};
 constexpr std::string_view kAssetRefNoneOption = "<None>";
+
+[[nodiscard]] std::string TrimCopy(std::string_view Text);
+
+template<typename TAssetRefType>
+void PopulateAssetRefOptions(std::vector<std::string>& OutOptions)
+{
+  const auto entries = TAssetRefType::EnumerateCompatibleAssets();
+  OutOptions.reserve(OutOptions.size() + entries.size() + 1);
+  OutOptions.emplace_back(kAssetRefNoneOption);
+  for (const auto& entry : entries)
+  {
+    OutOptions.push_back(entry.Label);
+  }
+}
+
+template<typename TAssetRefType>
+bool TryReadAssetRefSelectionLabel(const void* ConstPointer, std::string& OutText)
+{
+  const auto* assetRefValue = static_cast<const TAssetRefType*>(ConstPointer);
+  if (!assetRefValue)
+  {
+    return false;
+  }
+
+  const std::string selectedName = assetRefValue->ResolvedAssetName();
+  const std::string selectedId = TrimCopy(assetRefValue->GetAssetId());
+  if (selectedName.empty() && selectedId.empty())
+  {
+    OutText = std::string(kAssetRefNoneOption);
+    return true;
+  }
+
+  const auto entries = TAssetRefType::EnumerateCompatibleAssets();
+  const auto it = std::ranges::find_if(entries, [&](const typename TAssetRefType::TEntry& entry) {
+    if (!selectedId.empty())
+    {
+      return entry.AssetId == selectedId;
+    }
+    return entry.Name == selectedName;
+  });
+
+  OutText = (it != entries.end()) ? it->Label : assetRefValue->DisplayLabel();
+  return true;
+}
+
+template<typename TAssetRefType>
+bool TryWriteAssetRefSelection(void* MutablePointer, const std::string& Selected)
+{
+  auto* value = static_cast<TAssetRefType*>(MutablePointer);
+  if (!value)
+  {
+    return false;
+  }
+
+  if (Selected.empty() || Selected == kAssetRefNoneOption)
+  {
+    value->Clear();
+    return true;
+  }
+
+  const auto entries = TAssetRefType::EnumerateCompatibleAssets();
+  const auto it = std::ranges::find_if(entries, [&](const typename TAssetRefType::TEntry& entry) {
+    return entry.Label == Selected || entry.Name == Selected || entry.AssetId == Selected;
+  });
+
+  if (it == entries.end())
+  {
+    value->SetAsset(Selected, {});
+    return true;
+  }
+
+  value->SetAsset(it->Name, it->AssetId);
+  return true;
+}
 
 [[nodiscard]] Color AxisTintForIndex(const size_t Index)
 {
@@ -1066,13 +1141,17 @@ void UIPropertyPanel::AddFieldEditor(
       }
       else if (editorKind == EEditorKind::AssetRef && Field.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
       {
-        const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
-        options.reserve(entries.size() + 1);
-        options.emplace_back(kAssetRefNoneOption);
-        for (const auto& entry : entries)
-        {
-          options.push_back(entry.Label);
-        }
+        PopulateAssetRefOptions<TAssetRef<PawnBase>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<StaticMeshAssetRuntime>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<SkeletalMeshAssetRuntime>>(options);
       }
       combo->SetItems(std::move(options));
     }
@@ -1265,7 +1344,12 @@ void UIPropertyPanel::AddFieldEditor(
   }
   else
   {
-    if (isPathField)
+    const std::string fieldNameLower = ToLowerCopy(Field.Name);
+    const bool allowCustomSchemePath =
+      fieldNameLower == "meshpath";
+    const bool useFilesystemPicker = isPathField && !allowCustomSchemePath;
+
+    if (useFilesystemPicker)
     {
       const auto pickerHandle = m_Context->CreateElement<SnAPI::UI::UIFilesystemPicker>();
       if (pickerHandle.Id.Value == 0)
@@ -1341,7 +1425,18 @@ void UIPropertyPanel::AddFieldEditor(
         editor->PlaceholderColor().Set(Color{138, 147, 163, 255});
         editor->SelectionColor().Set(Color{74, 90, 122, 194});
         editor->CaretColor().Set(kValueBorderFocused);
-        editor->Placeholder().Set(PrettyTypeName(Field.FieldType));
+        if (allowCustomSchemePath)
+        {
+          editor->Placeholder().Set("primitive://box or asset://Meshes/mesh.glb");
+        }
+        else if (isPathField)
+        {
+          editor->Placeholder().Set(pathSelectsDirectories ? "asset://Folder" : "asset://file.ext");
+        }
+        else
+        {
+          editor->Placeholder().Set(PrettyTypeName(Field.FieldType));
+        }
       }
     }
   }
@@ -1463,6 +1558,14 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
     return EEditorKind::SubClass;
   }
   if (Type == StaticTypeId<TAssetRef<PawnBase>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
   {
     return EEditorKind::AssetRef;
   }
@@ -1729,46 +1832,46 @@ bool UIPropertyPanel::ReadFieldValue(
 
   if (Binding.EditorKind == EEditorKind::AssetRef)
   {
-    if (Binding.FieldType != StaticTypeId<TAssetRef<PawnBase>>() || !field->ConstPointer)
+    if (!field->ConstPointer)
     {
       return false;
     }
 
-    const auto* assetRefValue = static_cast<const TAssetRef<PawnBase>*>(field->ConstPointer(owner));
-    if (!assetRefValue)
+    const void* constPointer = field->ConstPointer(owner);
+    if (!constPointer)
     {
       return false;
     }
 
-    const std::string selectedName = assetRefValue->ResolvedAssetName();
-    const std::string selectedId = TrimCopy(assetRefValue->GetAssetId());
-    if (selectedName.empty() && selectedId.empty())
+    if (Binding.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
     {
-      OutText = std::string(kAssetRefNoneOption);
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<PawnBase>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<StaticMeshAssetRuntime>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<SkeletalMeshAssetRuntime>>(constPointer, OutText))
+      {
+        return false;
+      }
       OutBool = false;
       return true;
     }
 
-    const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
-    const auto it = std::ranges::find_if(entries, [&](const TAssetRef<PawnBase>::TEntry& entry) {
-      if (!selectedId.empty())
-      {
-        return entry.AssetId == selectedId;
-      }
-      return entry.Name == selectedName;
-    });
-
-    if (it != entries.end())
-    {
-      OutText = it->Label;
-    }
-    else
-    {
-      OutText = assetRefValue->DisplayLabel();
-    }
-
-    OutBool = false;
-    return true;
+    return false;
   }
 
   if (Binding.EditorKind == EEditorKind::Enum)
@@ -2067,7 +2170,7 @@ bool UIPropertyPanel::WriteFieldValue(
   case EEditorKind::String:
     {
       std::string nextValue = std::string(TextValue);
-      if (Binding.UsesFilesystemPicker)
+      if (Binding.UsesFilesystemPicker || IsPathLikeField(*field))
       {
         nextValue = NormalizeToAssetUri(nextValue);
       }
@@ -2213,37 +2316,31 @@ bool UIPropertyPanel::WriteFieldValue(
     }
   case EEditorKind::AssetRef:
     {
-      if (Binding.FieldType != StaticTypeId<TAssetRef<PawnBase>>() || !field->MutablePointer)
+      if (!field->MutablePointer)
       {
         return false;
       }
 
-      auto* value = static_cast<TAssetRef<PawnBase>*>(field->MutablePointer(owner));
-      if (!value)
+      void* mutablePointer = field->MutablePointer(owner);
+      if (!mutablePointer)
       {
         return false;
       }
 
       const std::string selected = TrimCopy(TextValue);
-      if (selected.empty() || selected == kAssetRefNoneOption)
+      if (Binding.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
       {
-        value->Clear();
-        return finalizeWrite(true);
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<PawnBase>>(mutablePointer, selected));
       }
-
-      const auto entries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
-      const auto it = std::ranges::find_if(entries, [&](const TAssetRef<PawnBase>::TEntry& entry) {
-        return entry.Label == selected || entry.Name == selected || entry.AssetId == selected;
-      });
-
-      if (it == entries.end())
+      if (Binding.FieldType == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
       {
-        value->SetAsset(selected, {});
-        return finalizeWrite(true);
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<StaticMeshAssetRuntime>>(mutablePointer, selected));
       }
-
-      value->SetAsset(it->Name, it->AssetId);
-      return finalizeWrite(true);
+      if (Binding.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SkeletalMeshAssetRuntime>>(mutablePointer, selected));
+      }
+      return false;
     }
   case EEditorKind::Unsupported:
   default:

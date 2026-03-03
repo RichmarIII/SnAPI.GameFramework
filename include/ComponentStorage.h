@@ -265,7 +265,10 @@ public:
         m_ownerToDense.emplace(Owner.Id, DenseIndex);
         m_dense.push_back(ComponentEntry{Owner, Owner.Borrowed(), Id, Component});
         SetSparseOwnerIndex(Owner, DenseIndex);
-        Component->OnCreate();
+        if (!IsComponentOnCreateSuppressed())
+        {
+            Component->OnCreate();
+        }
         return *Component;
     }
 

@@ -155,6 +155,51 @@ public:
         return Load(*Manager, Params);
     }
 
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<!std::is_base_of_v<BaseNode, U>, std::expected<::SnAPI::AssetPipeline::AssetHandle<U>, std::string>>
+    GetShared(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    {
+        const std::optional<::SnAPI::AssetPipeline::AssetId> ParsedId = ParsedAssetId();
+        const std::string Name = ResolvedAssetName();
+
+        if (ParsedId.has_value())
+        {
+            auto ById = Manager.GetById<U>(*ParsedId, Params);
+            if (ById)
+            {
+                return ById;
+            }
+            if (Name.empty())
+            {
+                return std::unexpected(ById.error());
+            }
+        }
+
+        if (!Name.empty())
+        {
+            auto ByName = Manager.Get<U>(Name, Params);
+            if (!ByName)
+            {
+                return std::unexpected(ByName.error());
+            }
+            return ByName;
+        }
+
+        return std::unexpected("AssetRef is empty");
+    }
+
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<!std::is_base_of_v<BaseNode, U>, std::expected<::SnAPI::AssetPipeline::AssetHandle<U>, std::string>>
+    GetShared(const std::any& Params = {}) const
+    {
+        auto* Manager = ResolveDefaultAssetManager();
+        if (!Manager)
+        {
+            return std::unexpected("No default AssetManager resolver is configured");
+        }
+        return GetShared<U>(*Manager, Params);
+    }
+
     [[nodiscard]] ::SnAPI::AssetPipeline::AsyncLoadHandle LoadAsync(
         ::SnAPI::AssetPipeline::AssetManager& Manager,
         ::SnAPI::AssetPipeline::ELoadPriority Priority = ::SnAPI::AssetPipeline::ELoadPriority::Normal,

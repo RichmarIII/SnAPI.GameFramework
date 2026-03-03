@@ -248,6 +248,8 @@ private:
     bool m_hasPendingAssetRefreshRequest = false;
     bool m_hasPendingAssetCreateRequest = false;
     EditorLayout::ContentAssetCreateRequest m_pendingAssetCreateRequest{};
+    bool m_hasPendingAssetImportRequest = false;
+    EditorLayout::ContentAssetImportRequest m_pendingAssetImportRequest{};
     bool m_hasPendingAssetInspectorSaveRequest = false;
     bool m_hasPendingAssetInspectorCloseRequest = false;
     bool m_hasPendingAssetInspectorNodeSelectionRequest = false;

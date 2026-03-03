@@ -25,6 +25,38 @@ namespace SnAPI::GameFramework
 
 class IWorld;
 
+inline bool& ComponentOnCreateSuppressionFlag()
+{
+    static thread_local bool SuppressOnCreate = false;
+    return SuppressOnCreate;
+}
+
+inline bool IsComponentOnCreateSuppressed()
+{
+    return ComponentOnCreateSuppressionFlag();
+}
+
+class ScopedComponentOnCreateSuppression
+{
+public:
+    ScopedComponentOnCreateSuppression()
+        : m_previousState(ComponentOnCreateSuppressionFlag())
+    {
+        ComponentOnCreateSuppressionFlag() = true;
+    }
+
+    ~ScopedComponentOnCreateSuppression()
+    {
+        ComponentOnCreateSuppressionFlag() = m_previousState;
+    }
+
+    ScopedComponentOnCreateSuppression(const ScopedComponentOnCreateSuppression&) = delete;
+    ScopedComponentOnCreateSuppression& operator=(const ScopedComponentOnCreateSuppression&) = delete;
+
+private:
+    bool m_previousState = false;
+};
+
 /**
  * @brief Runtime object contract marker for the ECS refactor path.
  * @remarks
@@ -340,7 +372,10 @@ public:
 
         if constexpr (kHasOnCreatePhase)
         {
-            InvokeOnCreate(m_denseObjects.back(), WorldRef);
+            if (!IsComponentOnCreateSuppressed())
+            {
+                InvokeOnCreate(m_denseObjects.back(), WorldRef);
+            }
         }
         else
         {

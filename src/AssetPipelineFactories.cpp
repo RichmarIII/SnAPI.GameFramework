@@ -7,13 +7,33 @@
 #include "AssetPipelineIds.h"
 #include "AssetPipelineSerializers.h"
 #include "BaseNode.h"
+#include "IAssetCooker.h"
+#include "IAssetImporter.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "RenderAssetPayloads.h"
+#include "RenderAssetRuntime.h"
 #include "Serialization.h"
+#include "TextureCompressorPayloadSerializers.h"
 #include "World.h"
+
+namespace TextureCompressorPlugin
+{
+std::unique_ptr<SnAPI::AssetPipeline::IAssetImporter> CreateTextureCompressorImporter();
+std::unique_ptr<SnAPI::AssetPipeline::IAssetCooker> CreateTextureCompressorCooker();
+} // namespace TextureCompressorPlugin
 
 namespace SnAPI::GameFramework
 {
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetAssimpImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialInstanceCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletonCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderAnimationCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderStaticMeshCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletalMeshCooker();
+
 namespace
 {
 std::expected<void, std::string> PrefixNodeNameInPayload(NodePayload& Payload)
@@ -292,6 +312,206 @@ public:
     }
 };
 
+/**
+ * @brief AssetFactory for Material runtime objects.
+ */
+class TMaterialFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<MaterialAssetRuntime>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadMaterial();
+    }
+
+protected:
+    std::expected<MaterialAssetRuntime, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<MaterialPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        MaterialAssetRuntime Loaded{};
+        Loaded.ShaderModule = PayloadResult->ShaderModule;
+        Loaded.ShadingModel = PayloadResult->ShadingModel;
+        return Loaded;
+    }
+};
+
+/**
+ * @brief AssetFactory for MaterialInstance runtime objects.
+ */
+class TMaterialInstanceFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<MaterialInstanceAssetRuntime>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadMaterialInstance();
+    }
+
+protected:
+    std::expected<MaterialInstanceAssetRuntime, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<MaterialInstancePayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        MaterialInstanceAssetRuntime Loaded{};
+        Loaded.ParentMaterial.SetAsset(PayloadResult->ParentMaterial.AssetName, PayloadResult->ParentMaterial.AssetId);
+        Loaded.Scalars = PayloadResult->Scalars;
+        Loaded.Vectors = PayloadResult->Vectors;
+
+        Loaded.TextureSlots.reserve(PayloadResult->Textures.size());
+        Loaded.Textures.reserve(PayloadResult->Textures.size());
+        for (const MaterialTextureParamPayload& TextureParam : PayloadResult->Textures)
+        {
+            Loaded.TextureSlots.push_back(TextureParam.SlotName);
+            Loaded.Textures.emplace_back(TextureParam.Texture.AssetName, TextureParam.Texture.AssetId);
+        }
+
+        return Loaded;
+    }
+};
+
+/**
+ * @brief AssetFactory for Skeleton runtime objects.
+ */
+class TSkeletonFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<SkeletonAssetRuntime>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadSkeleton();
+    }
+
+protected:
+    std::expected<SkeletonAssetRuntime, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<SkeletonPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        SkeletonAssetRuntime Loaded{};
+        Loaded.Name = PayloadResult->Name;
+        Loaded.Bones = PayloadResult->Bones;
+        return Loaded;
+    }
+};
+
+/**
+ * @brief AssetFactory for Animation runtime objects.
+ */
+class TAnimationFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<AnimationAssetRuntime>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadAnimation();
+    }
+
+protected:
+    std::expected<AnimationAssetRuntime, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<AnimationPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        AnimationAssetRuntime Loaded{};
+        Loaded.Name = PayloadResult->Name;
+        Loaded.DurationSeconds = PayloadResult->DurationSeconds;
+        Loaded.TicksPerSecond = PayloadResult->TicksPerSecond;
+        Loaded.Tracks = PayloadResult->Tracks;
+        return Loaded;
+    }
+};
+
+/**
+ * @brief AssetFactory for StaticMesh runtime objects.
+ */
+class TStaticMeshFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<StaticMeshAssetRuntime>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadStaticMesh();
+    }
+
+protected:
+    std::expected<StaticMeshAssetRuntime, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<StaticMeshPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        StaticMeshAssetRuntime Loaded{};
+        Loaded.SourceAssetId = Context.Info.Id;
+        Loaded.Name = PayloadResult->Name;
+        Loaded.SubMeshes = PayloadResult->SubMeshes;
+        Loaded.Streams = PayloadResult->Streams;
+        Loaded.LoadBulk = Context.LoadBulk;
+        Loaded.MaterialInstances.reserve(PayloadResult->MaterialInstances.size());
+        for (const AssetRefPayload& MaterialRef : PayloadResult->MaterialInstances)
+        {
+            Loaded.MaterialInstances.emplace_back(MaterialRef.AssetName, MaterialRef.AssetId);
+        }
+        return Loaded;
+    }
+};
+
+/**
+ * @brief AssetFactory for SkeletalMesh runtime objects.
+ */
+class TSkeletalMeshFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<SkeletalMeshAssetRuntime>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadSkeletalMesh();
+    }
+
+protected:
+    std::expected<SkeletalMeshAssetRuntime, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<SkeletalMeshPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        SkeletalMeshAssetRuntime Loaded{};
+        Loaded.SourceAssetId = Context.Info.Id;
+        Loaded.Name = PayloadResult->BaseMesh.Name;
+        Loaded.SubMeshes = PayloadResult->BaseMesh.SubMeshes;
+        Loaded.Streams = PayloadResult->BaseMesh.Streams;
+        Loaded.LoadBulk = Context.LoadBulk;
+        Loaded.Bones = PayloadResult->Bones;
+        Loaded.Skeleton.SetAsset(PayloadResult->Skeleton.AssetName, PayloadResult->Skeleton.AssetId);
+        Loaded.SkeletonAnimationBulkIndex = PayloadResult->SkeletonAnimationBulkIndex;
+        Loaded.Animations.reserve(PayloadResult->Animations.size());
+        for (const AssetRefPayload& AnimationRef : PayloadResult->Animations)
+        {
+            Loaded.Animations.emplace_back(AnimationRef.AssetName, AnimationRef.AssetId);
+        }
+
+        Loaded.MaterialInstances.reserve(PayloadResult->BaseMesh.MaterialInstances.size());
+        for (const AssetRefPayload& MaterialRef : PayloadResult->BaseMesh.MaterialInstances)
+        {
+            Loaded.MaterialInstances.emplace_back(MaterialRef.AssetName, MaterialRef.AssetId);
+        }
+
+        return Loaded;
+    }
+};
+
 } // namespace
 
 /**
@@ -303,6 +523,14 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
     Registry.Register(CreateNodePayloadSerializer());
     Registry.Register(CreateLevelPayloadSerializer());
     Registry.Register(CreateWorldPayloadSerializer());
+    Registry.Register(CreateStaticMeshPayloadSerializer());
+    Registry.Register(CreateSkeletalMeshPayloadSerializer());
+    Registry.Register(CreateMaterialPayloadSerializer());
+    Registry.Register(CreateMaterialInstancePayloadSerializer());
+    Registry.Register(CreateSkeletonPayloadSerializer());
+    Registry.Register(CreateAnimationPayloadSerializer());
+    Registry.Register(CreateStaticMeshSourcePayloadSerializer());
+    Registry.Register(CreateSkeletalMeshSourcePayloadSerializer());
 }
 
 /**
@@ -318,6 +546,31 @@ void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manage
     Manager.RegisterFactory<BaseNode>(std::make_unique<TNodeFactory>());
     Manager.RegisterFactory<Level>(std::make_unique<TLevelFactory>());
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
+    Manager.RegisterFactory<MaterialAssetRuntime>(std::make_unique<TMaterialFactory>());
+    Manager.RegisterFactory<MaterialInstanceAssetRuntime>(std::make_unique<TMaterialInstanceFactory>());
+    Manager.RegisterFactory<SkeletonAssetRuntime>(std::make_unique<TSkeletonFactory>());
+    Manager.RegisterFactory<AnimationAssetRuntime>(std::make_unique<TAnimationFactory>());
+    Manager.RegisterFactory<StaticMeshAssetRuntime>(std::make_unique<TStaticMeshFactory>());
+    Manager.RegisterFactory<SkeletalMeshAssetRuntime>(std::make_unique<TSkeletalMeshFactory>());
+}
+
+void RegisterAssetPipelineSourceStages(::SnAPI::AssetPipeline::AssetManager& Manager)
+{
+    Manager.RegisterSerializer(TextureCompressorPlugin::CreateCompressorImageIntermediateSerializer());
+    Manager.RegisterSerializer(TextureCompressorPlugin::CreateCompressorCookedInfoSerializer());
+
+    Manager.RegisterImporter(TextureCompressorPlugin::CreateTextureCompressorImporter());
+    Manager.RegisterCooker(TextureCompressorPlugin::CreateTextureCompressorCooker());
+
+    Manager.RegisterImporter(CreateRenderAssetAssimpImporter());
+    Manager.RegisterImporter(CreateRenderAssetJsonImporter());
+
+    Manager.RegisterCooker(CreateRenderMaterialCooker());
+    Manager.RegisterCooker(CreateRenderMaterialInstanceCooker());
+    Manager.RegisterCooker(CreateRenderSkeletonCooker());
+    Manager.RegisterCooker(CreateRenderAnimationCooker());
+    Manager.RegisterCooker(CreateRenderStaticMeshCooker());
+    Manager.RegisterCooker(CreateRenderSkeletalMeshCooker());
 }
 
 } // namespace SnAPI::GameFramework

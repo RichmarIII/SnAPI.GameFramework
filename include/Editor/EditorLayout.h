@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Expected.h"
+#include "Editor/EditorImportSettings.h"
 #include "Handles.h"
 #include "TypeRegistration.h"
 
@@ -16,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace SnAPI::UI
@@ -89,6 +91,13 @@ public:
         TypeId Type{};
         std::string Name{};
         std::string FolderPath{};
+    };
+
+    struct ContentAssetImportRequest
+    {
+        std::string SourcePath{};
+        std::string FolderPath{};
+        std::unordered_map<std::string, std::string> BuildOptions{};
     };
 
     struct ContentAssetInspectorState
@@ -176,6 +185,7 @@ public:
     void SetContentAssetRenameHandler(SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler);
     void SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()> Handler);
     void SetContentAssetCreateHandler(SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> Handler);
+    void SetContentAssetImportHandler(SnAPI::UI::TDelegate<void(const ContentAssetImportRequest&)> Handler);
     void SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()> Handler);
     void SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler);
     void SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
@@ -191,6 +201,13 @@ private:
         World,
         Level,
         Node,
+    };
+
+    enum class EImportProfile : std::uint8_t
+    {
+        Unknown = 0,
+        AssimpModel,
+        Texture,
     };
 
     struct HierarchyEntry
@@ -220,6 +237,8 @@ private:
     void EnsureContextMenuOverlay();
     void EnsureContentAssetCreateModalOverlay();
     void DestroyContentAssetCreateModalOverlay();
+    void EnsureContentAssetImportModalOverlay();
+    void DestroyContentAssetImportModalOverlay();
     void EnsureContentAssetInspectorModalOverlay();
     void DestroyContentAssetInspectorModalOverlay();
     void EnsureProjectModalOverlay();
@@ -268,6 +287,14 @@ private:
     void RefreshContentAssetCreateModalVisibility();
     void RebuildContentAssetCreateTypeTree();
     void RefreshContentAssetCreateOkButtonState();
+    void OpenContentAssetImportModal();
+    void CloseContentAssetImportModal();
+    void ConfirmContentAssetImport();
+    void RefreshContentAssetImportModalVisibility();
+    void RefreshContentAssetImportProfile();
+    void RefreshContentAssetImportSettingsPanel();
+    void RefreshContentAssetImportSummary();
+    void RefreshContentAssetImportOkButtonState();
     void OpenProjectWelcomeModal();
     void OpenProjectCreateModal();
     void OpenProjectOpenModal();
@@ -332,6 +359,11 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_contentCreateSearchInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_contentCreateNameInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentCreateOkButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_contentImportModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_contentImportSourcePicker{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentImportSummaryText{};
+    SnAPI::UI::ElementHandle<UIPropertyPanel> m_contentImportSettingsPanel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentImportOkButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_contentInspectorModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorTitleText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentInspectorStatusText{};
@@ -385,6 +417,11 @@ private:
     TypeId m_contentCreateSelectedType{};
     std::vector<TypeId> m_contentCreateVisibleTypes{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentCreateTypeSource{};
+    bool m_contentImportModalOpen = false;
+    std::string m_contentImportSourcePath{};
+    EImportProfile m_contentImportProfile = EImportProfile::Unknown;
+    AssimpImportSettings m_contentImportAssimpSettings{};
+    TextureImportSettings m_contentImportTextureSettings{};
     ContentAssetInspectorState m_contentAssetInspectorState{};
     bool m_projectModalOpen = false;
     bool m_projectModalRequired = false;
@@ -406,6 +443,7 @@ private:
     SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> m_onContentAssetRenameRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetRefreshRequested{};
     SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> m_onContentAssetCreateRequested{};
+    SnAPI::UI::TDelegate<void(const ContentAssetImportRequest&)> m_onContentAssetImportRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorSaveRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorCloseRequested{};
     SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onContentAssetInspectorNodeSelected{};

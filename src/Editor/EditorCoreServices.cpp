@@ -949,6 +949,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_hasPendingAssetRefreshRequest = false;
     m_hasPendingAssetCreateRequest = false;
     m_pendingAssetCreateRequest = {};
+    m_hasPendingAssetImportRequest = false;
+    m_pendingAssetImportRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
     m_layoutRebuildRequested = false;
@@ -1021,6 +1023,12 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
             [this](const EditorLayout::ContentAssetCreateRequest& Request) {
                 m_pendingAssetCreateRequest = Request;
                 m_hasPendingAssetCreateRequest = true;
+            }));
+    m_layout.SetContentAssetImportHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ContentAssetImportRequest&)>::Bind(
+            [this](const EditorLayout::ContentAssetImportRequest& Request) {
+                m_pendingAssetImportRequest = Request;
+                m_hasPendingAssetImportRequest = true;
             }));
     m_layout.SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorSaveRequest = true;
@@ -1192,6 +1200,19 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
                                                              m_pendingAssetCreateRequest.FolderPath);
         }
         m_pendingAssetCreateRequest = {};
+    }
+
+    if (m_hasPendingAssetImportRequest)
+    {
+        m_hasPendingAssetImportRequest = false;
+        if (!PieService->IsSessionActive() && !m_pendingAssetImportRequest.SourcePath.empty())
+        {
+            (void)AssetService->ImportSourceAsset(Context,
+                                                  m_pendingAssetImportRequest.SourcePath,
+                                                  m_pendingAssetImportRequest.FolderPath,
+                                                  m_pendingAssetImportRequest.BuildOptions);
+        }
+        m_pendingAssetImportRequest = {};
     }
 
     if (m_hasPendingAssetInspectorSaveRequest)
@@ -1466,6 +1487,8 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_pendingProjectActionRequest = {};
     m_hasPendingAssetCreateRequest = false;
     m_pendingAssetCreateRequest = {};
+    m_hasPendingAssetImportRequest = false;
+    m_pendingAssetImportRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
     m_hasPendingAssetInspectorNodeSelectionRequest = false;
@@ -1542,6 +1565,12 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
                 m_pendingAssetCreateRequest = Request;
                 m_hasPendingAssetCreateRequest = true;
             }));
+    m_layout.SetContentAssetImportHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ContentAssetImportRequest&)>::Bind(
+            [this](const EditorLayout::ContentAssetImportRequest& Request) {
+                m_pendingAssetImportRequest = Request;
+                m_hasPendingAssetImportRequest = true;
+            }));
     m_layout.SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorSaveRequest = true;
     }));
@@ -1577,6 +1606,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetContentAssetRenameHandler({});
     m_layout.SetContentAssetRefreshHandler({});
     m_layout.SetContentAssetCreateHandler({});
+    m_layout.SetContentAssetImportHandler({});
     m_layout.SetContentAssetInspectorSaveHandler({});
     m_layout.SetContentAssetInspectorCloseHandler({});
     m_layout.SetContentAssetInspectorNodeSelectionHandler({});
@@ -1608,6 +1638,8 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_hasPendingAssetRefreshRequest = false;
     m_hasPendingAssetCreateRequest = false;
     m_pendingAssetCreateRequest = {};
+    m_hasPendingAssetImportRequest = false;
+    m_pendingAssetImportRequest = {};
     m_hasPendingAssetInspectorSaveRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
     m_hasPendingAssetInspectorNodeSelectionRequest = false;

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <array>
+#include <filesystem>
 #include "GameThreading.h"
 #include <functional>
 #include <memory>
@@ -195,6 +196,15 @@ public:
      * @return Camera pointer or nullptr.
      */
     SnAPI::Graphics::ICamera* ActiveCamera() const;
+
+    /**
+     * @brief Configure project shader search root for runtime Slang compilation.
+     * @param AssetRoot Project asset root directory (for example `<Project>/Assets`).
+     * @return True when shader search paths were updated.
+     * @remarks
+     * This sets/refreshes a custom shader search path at `<AssetRoot>/Shaders` with recursive lookup.
+     */
+    bool SetProjectShaderSearchRoot(const std::filesystem::path& AssetRoot);
 
     /**
      * @brief Set default virtual render viewport for the renderer.

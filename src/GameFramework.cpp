@@ -32,6 +32,7 @@
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "CameraComponent.h"
 #include "DirectionalLightComponent.h"
+#include "RenderAssetRuntime.h"
 #include "SkeletalMeshComponent.h"
 #include "SprintArmComponent.h"
 #include "StaticMeshComponent.h"
@@ -146,6 +147,28 @@ SNAPI_REFLECT_TYPE(TAssetRef<PawnBase>, (TTypeBuilder<TAssetRef<PawnBase>>(TType
            &TAssetRef<PawnBase>::GetAssetId)
     .Constructor<>()
     .Register()));
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+SNAPI_REFLECT_TYPE(TAssetRef<StaticMeshAssetRuntime>, (TTypeBuilder<TAssetRef<StaticMeshAssetRuntime>>(TTypeNameV<TAssetRef<StaticMeshAssetRuntime>>)
+    .Field("AssetName",
+           &TAssetRef<StaticMeshAssetRuntime>::EditAssetName,
+           &TAssetRef<StaticMeshAssetRuntime>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<StaticMeshAssetRuntime>::EditAssetId,
+           &TAssetRef<StaticMeshAssetRuntime>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(TAssetRef<SkeletalMeshAssetRuntime>, (TTypeBuilder<TAssetRef<SkeletalMeshAssetRuntime>>(TTypeNameV<TAssetRef<SkeletalMeshAssetRuntime>>)
+    .Field("AssetName",
+           &TAssetRef<SkeletalMeshAssetRuntime>::EditAssetName,
+           &TAssetRef<SkeletalMeshAssetRuntime>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<SkeletalMeshAssetRuntime>::EditAssetId,
+           &TAssetRef<SkeletalMeshAssetRuntime>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+#endif
 
 SNAPI_REFLECT_TYPE(PawnBase, (TTypeBuilder<PawnBase>(PawnBase::kTypeName)
     .Base<BaseNode>()
@@ -482,6 +505,7 @@ SNAPI_REFLECT_TYPE(StaticMeshComponent::Settings, (TTypeBuilder<StaticMeshCompon
     .Field("CastShadows", &StaticMeshComponent::Settings::CastShadows, EFieldFlagBits::Replication)
     .Field("SyncFromTransform", &StaticMeshComponent::Settings::SyncFromTransform)
     .Field("RegisterWithRenderer", &StaticMeshComponent::Settings::RegisterWithRenderer)
+    .Field("MeshAsset", &StaticMeshComponent::Settings::MeshAsset, EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
 
@@ -503,6 +527,7 @@ SNAPI_REFLECT_TYPE(SkeletalMeshComponent::Settings, (TTypeBuilder<SkeletalMeshCo
     .Field("AutoPlayAnimations", &SkeletalMeshComponent::Settings::AutoPlayAnimations)
     .Field("LoopAnimations", &SkeletalMeshComponent::Settings::LoopAnimations)
     .Field("AnimationName", &SkeletalMeshComponent::Settings::AnimationName)
+    .Field("MeshAsset", &SkeletalMeshComponent::Settings::MeshAsset, EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
 

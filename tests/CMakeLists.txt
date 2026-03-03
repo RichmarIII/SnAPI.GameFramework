@@ -3,11 +3,15 @@ add_executable(GameFrameworkTests
     WorldEcsRuntimeTests.cpp
     SerializationTests.cpp
     LevelWorldSerializationTests.cpp
+    RenderAssetAssimpImporterTests.cpp
 )
 
 target_link_libraries(GameFrameworkTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)
 
 target_include_directories(GameFrameworkTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+if (SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR)
+    target_include_directories(GameFrameworkTests PRIVATE ${SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR})
+endif()
 
 include(CTest)
 include(Catch)
