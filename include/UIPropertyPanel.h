@@ -6,13 +6,16 @@
 #include <cstddef>
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
 
+#include "AssetPipelineIds.h"
 #include "Export.h"
 #include "Handles.h"
 #include "Math.h"
+#include "RenderAssetPayloads.h"
 #include "StaticTypeId.h"
 #include "TypeRegistry.h"
 #include "Uuid.h"
@@ -25,6 +28,9 @@
 namespace SnAPI::GameFramework
 {
 class BaseNode;
+template<typename TBase, typename TNameTag>
+class TAssetRef;
+struct MaterialInstanceAssetRuntime;
 
 class SNAPI_GAMEFRAMEWORK_API UIPropertyPanel final : public SnAPI::UI::UIScrollContainer
 {
@@ -122,6 +128,34 @@ private:
     void* RootInstance,
     std::vector<FieldPathEntry> Path,
     int Depth);
+  void AddMaterialScalarCollectionEditor(
+    SnAPI::UI::ElementId Parent,
+    std::vector<MaterialScalarParamPayload>& Scalars,
+    bool ReadOnly,
+    std::string_view Heading);
+  void AddMaterialVectorCollectionEditor(
+    SnAPI::UI::ElementId Parent,
+    std::vector<MaterialVectorParamPayload>& Vectors,
+    bool ReadOnly,
+    std::string_view Heading);
+  void AddMaterialTextureCollectionEditor(
+    SnAPI::UI::ElementId Parent,
+    std::vector<MaterialTextureParamPayload>& Textures,
+    bool ReadOnly,
+    std::string_view Heading);
+  void AddAssetRefCollectionEditor(
+    SnAPI::UI::ElementId Parent,
+    std::vector<AssetRefPayload>& References,
+    bool ReadOnly,
+    std::string_view Heading,
+    const std::optional<::SnAPI::AssetPipeline::TypeId>& AssetKindFilter,
+    std::string_view RowPrefix);
+  void AddMaterialInstanceAssetRefCollectionEditor(
+    SnAPI::UI::ElementId Parent,
+    std::vector<TAssetRef<MaterialInstanceAssetRuntime, void>>& References,
+    bool ReadOnly,
+    std::string_view Heading,
+    std::string_view RowPrefix);
   void AddUnsupportedRow(
     SnAPI::UI::ElementId Parent,
     std::string_view Label,

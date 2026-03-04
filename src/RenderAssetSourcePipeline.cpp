@@ -775,8 +775,25 @@ template<size_t N>
     }
     if (Out.ShadingModel.empty())
     {
-        Out.ShadingModel = "Lit";
+        Out.ShadingModel = "GBufferShadingModel";
     }
+
+    const auto TryReadFeature = [&Root](const std::string_view FieldName, bool& OutValue) {
+        if (const JsonValue* FeatureValue = TryGetField(Root, FieldName))
+        {
+            (void)TryReadBool(*FeatureValue, OutValue);
+        }
+    };
+
+    TryReadFeature("featureAlbedoMap", Out.FeatureAlbedoMap);
+    TryReadFeature("featureNormalMap", Out.FeatureNormalMap);
+    TryReadFeature("featureRoughnessMap", Out.FeatureRoughnessMap);
+    TryReadFeature("featureMetalnessMap", Out.FeatureMetalnessMap);
+    TryReadFeature("featureOcclusionMap", Out.FeatureOcclusionMap);
+    TryReadFeature("featureAlphaTest", Out.FeatureAlphaTest);
+    TryReadFeature("featureAlphaBlend", Out.FeatureAlphaBlend);
+    TryReadFeature("featureDoubleSided", Out.FeatureDoubleSided);
+    TryReadFeature("featureInstancing", Out.FeatureInstancing);
     return true;
 }
 

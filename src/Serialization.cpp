@@ -24,7 +24,11 @@
 #include "PawnBase.h"
 #include "PlayerStart.h"
 #include "Relevance.h"
+#include "RenderAssetRuntime.h"
 #include "ScriptComponent.h"
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "StaticMeshComponent.h"
+#endif
 #include "TransformComponent.h"
 #include "TypeAutoRegistry.h"
 #include "TypeRegistry.h"
@@ -1731,6 +1735,21 @@ void RegisterSerializationDefaults()
     ValueRegistry.Register<Quat>();
     ValueRegistry.Register<NodeHandle>();
     ValueRegistry.Register<ComponentHandle>();
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    (void)TypeAutoRegistry::Instance().Ensure(StaticTypeId<StaticMeshComponent::Settings>());
+    if (const TypeInfo* MeshSettingsType = TypeRegistry::Instance().Find(StaticTypeId<StaticMeshComponent::Settings>());
+        MeshSettingsType)
+    {
+        for (const FieldInfo& Field : MeshSettingsType->Fields)
+        {
+            if (Field.Name == "MaterialInstanceOverrides")
+            {
+                ValueRegistry.RegisterAs<std::vector<TAssetRef<MaterialInstanceAssetRuntime>>>(Field.FieldType);
+                break;
+            }
+        }
+    }
+#endif
 
     auto& ComponentRegistry = ComponentSerializationRegistry::Instance();
     ComponentRegistry.RegisterCustom<RelevanceComponent>(

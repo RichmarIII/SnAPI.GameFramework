@@ -24,6 +24,7 @@
 #include "Handle.h"
 #include "Math.h"
 #include "Level.h"
+#include "AssetRef.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
@@ -444,6 +445,102 @@ struct TValueCodec
     }
 };
 
+template<typename TBase, typename TNameTag>
+struct TValueCodec<TAssetRef<TBase, TNameTag>>
+{
+    static TExpected<void> Encode(const TAssetRef<TBase, TNameTag>& Value,
+                                  cereal::BinaryOutputArchive& Archive,
+                                  const TSerializationContext&)
+    {
+        const std::string AssetName = Value.GetAssetName();
+        const std::string AssetId = Value.GetAssetId();
+        Archive(AssetName, AssetId);
+        return Ok();
+    }
+
+    static TExpected<TAssetRef<TBase, TNameTag>> Decode(cereal::BinaryInputArchive& Archive,
+                                                         const TSerializationContext&)
+    {
+        std::string AssetName{};
+        std::string AssetId{};
+        Archive(AssetName, AssetId);
+        return TAssetRef<TBase, TNameTag>(std::move(AssetName), std::move(AssetId));
+    }
+
+    static TExpected<void> DecodeInto(TAssetRef<TBase, TNameTag>& Value,
+                                      cereal::BinaryInputArchive& Archive,
+                                      const TSerializationContext&)
+    {
+        std::string AssetName{};
+        std::string AssetId{};
+        Archive(AssetName, AssetId);
+        Value = TAssetRef<TBase, TNameTag>(std::move(AssetName), std::move(AssetId));
+        return Ok();
+    }
+};
+
+template<typename T>
+struct TValueCodec<std::vector<T>>
+{
+    static TExpected<void> Encode(const std::vector<T>& Value,
+                                  cereal::BinaryOutputArchive& Archive,
+                                  const TSerializationContext& Context)
+    {
+        const std::uint64_t Count = static_cast<std::uint64_t>(Value.size());
+        Archive(Count);
+        for (const T& Element : Value)
+        {
+            auto Result = TValueCodec<T>::Encode(Element, Archive, Context);
+            if (!Result)
+            {
+                return Result;
+            }
+        }
+        return Ok();
+    }
+
+    static TExpected<std::vector<T>> Decode(cereal::BinaryInputArchive& Archive,
+                                            const TSerializationContext& Context)
+    {
+        std::uint64_t Count = 0;
+        Archive(Count);
+
+        std::vector<T> Value{};
+        Value.reserve(static_cast<std::size_t>(Count));
+        for (std::uint64_t Index = 0; Index < Count; ++Index)
+        {
+            auto ElementResult = TValueCodec<T>::Decode(Archive, Context);
+            if (!ElementResult)
+            {
+                return std::unexpected(ElementResult.error());
+            }
+            Value.emplace_back(std::move(*ElementResult));
+        }
+        return Value;
+    }
+
+    static TExpected<void> DecodeInto(std::vector<T>& Value,
+                                      cereal::BinaryInputArchive& Archive,
+                                      const TSerializationContext& Context)
+    {
+        std::uint64_t Count = 0;
+        Archive(Count);
+
+        Value.clear();
+        Value.reserve(static_cast<std::size_t>(Count));
+        for (std::uint64_t Index = 0; Index < Count; ++Index)
+        {
+            auto ElementResult = TValueCodec<T>::Decode(Archive, Context);
+            if (!ElementResult)
+            {
+                return std::unexpected(ElementResult.error());
+            }
+            Value.emplace_back(std::move(*ElementResult));
+        }
+        return Ok();
+    }
+};
+
 /**
  * @brief Registry for value codecs used by reflection serialization.
  * @remarks
@@ -505,6 +602,17 @@ public:
     void Register()
     {
         const TypeId Type = StaticTypeId<T>();
+        m_entries[Type] = {&EncodeImpl<T>, &DecodeImpl<T>, &DecodeIntoImpl<T>};
+        ++m_version;
+    }
+
+    template<typename T>
+    void RegisterAs(const TypeId& Type)
+    {
+        if (Type == TypeId{})
+        {
+            return;
+        }
         m_entries[Type] = {&EncodeImpl<T>, &DecodeImpl<T>, &DecodeIntoImpl<T>};
         ++m_version;
     }

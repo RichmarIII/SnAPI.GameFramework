@@ -21,6 +21,7 @@
 #include "IPipelineContext.h"
 #include "IPayloadSerializer.h"
 #include "RenderAssetPayloads.h"
+#include "RenderAssetSourcePayloads.h"
 #include "TextureCompressorIds.h"
 
 namespace SnAPI::GameFramework
@@ -38,6 +39,7 @@ using SnAPI::AssetPipeline::TypeId;
 using SnAPI::AssetPipeline::Uuid;
 using SnAPI::AssetPipeline::UuidHash;
 using SnAPI::GameFramework::AssetKindMaterialInstance;
+using SnAPI::GameFramework::AssetKindMaterial;
 using SnAPI::GameFramework::AssetKindStaticMesh;
 using SnAPI::GameFramework::CreateAnimationPayloadSerializer;
 using SnAPI::GameFramework::CreateMaterialInstancePayloadSerializer;
@@ -45,7 +47,9 @@ using SnAPI::GameFramework::CreateMaterialPayloadSerializer;
 using SnAPI::GameFramework::CreateSkeletalMeshSourcePayloadSerializer;
 using SnAPI::GameFramework::CreateSkeletonPayloadSerializer;
 using SnAPI::GameFramework::CreateStaticMeshSourcePayloadSerializer;
+using SnAPI::GameFramework::DeserializeMaterialPayload;
 using SnAPI::GameFramework::DeserializeMaterialInstancePayload;
+using SnAPI::GameFramework::MaterialPayload;
 using SnAPI::GameFramework::MaterialInstancePayload;
 
 class DummyTextureIntermediateSerializer final : public IPayloadSerializer
@@ -429,6 +433,7 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
     }
 
     std::vector<const ImportedItem*> TextureItems{};
+    std::vector<const ImportedItem*> MaterialItems{};
     std::vector<const ImportedItem*> MaterialInstanceItems{};
     bool HasStaticMesh = false;
 
@@ -437,6 +442,10 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
         if (Item.AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture)
         {
             TextureItems.push_back(&Item);
+        }
+        if (Item.AssetKind == AssetKindMaterial())
+        {
+            MaterialItems.push_back(&Item);
         }
         if (Item.AssetKind == AssetKindMaterialInstance())
         {
@@ -449,6 +458,7 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
     }
 
     REQUIRE_FALSE(TextureItems.empty());
+    REQUIRE_FALSE(MaterialItems.empty());
     REQUIRE_FALSE(MaterialInstanceItems.empty());
     REQUIRE(HasStaticMesh);
 
@@ -460,7 +470,26 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
         ImportedTextureNameToId.emplace(Item->LogicalName, Item->Id.ToString());
     }
 
+    std::unordered_map<std::string, std::string> MaterialNameToId{};
+    std::unordered_map<std::string, MaterialPayload> MaterialByName{};
+    for (const ImportedItem* Item : MaterialItems)
+    {
+        REQUIRE(Item != nullptr);
+        auto MaterialPayloadResult = DeserializeMaterialPayload(
+            Item->Intermediate.Bytes.data(),
+            Item->Intermediate.Bytes.size());
+        REQUIRE(MaterialPayloadResult.has_value());
+        const MaterialPayload& Material = MaterialPayloadResult.value();
+        REQUIRE(Material.ShadingModel == "GBufferShadingModel");
+        REQUIRE(Material.ShaderModule == "DefaultGBufferMaterial");
+        MaterialNameToId.emplace(Item->LogicalName, Item->Id.ToString());
+        MaterialByName.emplace(Item->LogicalName, Material);
+    }
+
     bool FoundEmbeddedTextureRef = false;
+    bool FoundAlbedoSlot = false;
+    bool FoundNonZeroColorDefault = false;
+    bool FoundOcclusionDefault = false;
     for (const ImportedItem* MatItem : MaterialInstanceItems)
     {
         REQUIRE(MatItem != nullptr);
@@ -470,8 +499,74 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
         REQUIRE(MatPayloadResult.has_value());
         const MaterialInstancePayload& MatPayload = MatPayloadResult.value();
 
+        REQUIRE_FALSE(MatPayload.ParentMaterial.AssetName.empty());
+        REQUIRE_FALSE(MatPayload.ParentMaterial.AssetId.empty());
+        const auto ParentIt = MaterialNameToId.find(MatPayload.ParentMaterial.AssetName);
+        REQUIRE(ParentIt != MaterialNameToId.end());
+        REQUIRE(MatPayload.ParentMaterial.AssetId == ParentIt->second);
+
+        bool HasColor = false;
+        bool HasRoughness = false;
+        bool HasMetallic = false;
+        bool HasOcclusion = false;
+        for (const auto& VectorParam : MatPayload.Vectors)
+        {
+            if (VectorParam.Name == "Color")
+            {
+                HasColor = true;
+                if (VectorParam.Value[0] > 0.0f &&
+                    VectorParam.Value[1] > 0.0f &&
+                    VectorParam.Value[2] > 0.0f &&
+                    VectorParam.Value[3] > 0.0f)
+                {
+                    FoundNonZeroColorDefault = true;
+                }
+            }
+        }
+        for (const auto& ScalarParam : MatPayload.Scalars)
+        {
+            if (ScalarParam.Name == "Roughness")
+            {
+                HasRoughness = true;
+                REQUIRE(ScalarParam.Value >= 0.0f);
+            }
+            if (ScalarParam.Name == "Metallic")
+            {
+                HasMetallic = true;
+                REQUIRE(ScalarParam.Value >= 0.0f);
+            }
+            if (ScalarParam.Name == "Occlusion")
+            {
+                HasOcclusion = true;
+                if (ScalarParam.Value > 0.0f)
+                {
+                    FoundOcclusionDefault = true;
+                }
+            }
+        }
+        REQUIRE(HasColor);
+        REQUIRE(HasRoughness);
+        REQUIRE(HasMetallic);
+        REQUIRE(HasOcclusion);
+
         for (const auto& TextureParam : MatPayload.Textures)
         {
+            if (TextureParam.SlotName == "Material_Albedo")
+            {
+                FoundAlbedoSlot = true;
+                REQUIRE(MaterialByName.at(MatPayload.ParentMaterial.AssetName).FeatureAlbedoMap);
+            }
+            if (TextureParam.SlotName == "Material_Normal")
+            {
+                REQUIRE(MaterialByName.at(MatPayload.ParentMaterial.AssetName).FeatureNormalMap);
+            }
+            if (TextureParam.SlotName == "Material_ORM")
+            {
+                const auto& ParentMaterial = MaterialByName.at(MatPayload.ParentMaterial.AssetName);
+                REQUIRE(ParentMaterial.FeatureRoughnessMap);
+                REQUIRE(ParentMaterial.FeatureMetalnessMap);
+                REQUIRE(ParentMaterial.FeatureOcclusionMap);
+            }
             REQUIRE_FALSE(TextureParam.Texture.AssetName.empty());
             REQUIRE(TextureParam.Texture.AssetName[0] != '*');
             const auto It = ImportedTextureNameToId.find(TextureParam.Texture.AssetName);
@@ -483,5 +578,66 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
         }
     }
 
+    REQUIRE(FoundAlbedoSlot);
     REQUIRE(FoundEmbeddedTextureRef);
+    REQUIRE(FoundNonZeroColorDefault);
+    REQUIRE(FoundOcclusionDefault);
+}
+
+TEST_CASE("Assimp importer honors disabled material and texture import options", "[asset][assimp]")
+{
+    TestPipelineContext Context{};
+    Context.RegisterSerializer(CreateMaterialPayloadSerializer());
+    Context.RegisterSerializer(CreateMaterialInstancePayloadSerializer());
+    Context.RegisterSerializer(CreateSkeletonPayloadSerializer());
+    Context.RegisterSerializer(CreateAnimationPayloadSerializer());
+    Context.RegisterSerializer(CreateStaticMeshSourcePayloadSerializer());
+    Context.RegisterSerializer(CreateSkeletalMeshSourcePayloadSerializer());
+    Context.RegisterSerializer(std::make_unique<DummyTextureIntermediateSerializer>());
+
+    Context.SetOption("SnAPI.GF.Assimp.ForceStatic", "true");
+    Context.SetOption("SnAPI.GF.Assimp.ImportMaterials", "false");
+    Context.SetOption("SnAPI.GF.Assimp.ImportTextures", "false");
+
+    TempDir Dir{};
+    const std::filesystem::path SourcePath = WriteEmbeddedTextureGltfFixture(Dir.Path);
+
+    auto Importer = SnAPI::GameFramework::CreateRenderAssetAssimpImporter();
+    REQUIRE(Importer != nullptr);
+    REQUIRE(Importer->CanImport(SourceRef(SourcePath.string())));
+
+    std::vector<ImportedItem> Items{};
+    const bool Imported = Importer->Import(SourceRef(SourcePath.string(), 456u), Items, Context);
+    REQUIRE(Imported);
+    REQUIRE(Context.Errors().empty());
+    REQUIRE_FALSE(Items.empty());
+
+    const auto CountByKind = [&Items](const TypeId Kind) {
+        return std::count_if(Items.begin(), Items.end(), [Kind](const ImportedItem& Item) {
+            return Item.AssetKind == Kind;
+        });
+    };
+
+    REQUIRE(CountByKind(TextureCompressorPlugin::AssetKind_CompressedTexture) == 0);
+    REQUIRE(CountByKind(AssetKindMaterial()) == 0);
+    REQUIRE(CountByKind(AssetKindMaterialInstance()) == 0);
+    REQUIRE(CountByKind(AssetKindStaticMesh()) == 1);
+
+    const auto MeshIt = std::ranges::find_if(Items, [](const ImportedItem& Item) {
+        return Item.AssetKind == AssetKindStaticMesh();
+    });
+    REQUIRE(MeshIt != Items.end());
+    REQUIRE(MeshIt->Intermediate.PayloadType == SnAPI::GameFramework::PayloadStaticMeshSource());
+
+    auto MeshPayloadResult = SnAPI::GameFramework::DeserializeStaticMeshSourcePayload(
+        MeshIt->Intermediate.Bytes.data(),
+        MeshIt->Intermediate.Bytes.size());
+    REQUIRE(MeshPayloadResult.has_value());
+
+    const auto& MaterialRefs = MeshPayloadResult->Mesh.MaterialInstances;
+    for (const auto& MaterialRef : MaterialRefs)
+    {
+        REQUIRE(MaterialRef.AssetName.empty());
+        REQUIRE(MaterialRef.AssetId.empty());
+    }
 }

@@ -29,9 +29,11 @@ class TAssetRef;
 class PawnBase;
 struct StaticMeshAssetRuntime;
 struct SkeletalMeshAssetRuntime;
+struct MaterialInstanceAssetRuntime;
 using PawnBaseAssetRef = TAssetRef<PawnBase, void>;
 using StaticMeshAssetRef = TAssetRef<StaticMeshAssetRuntime, void>;
 using SkeletalMeshAssetRef = TAssetRef<SkeletalMeshAssetRuntime, void>;
+using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAssetRuntime, void>;
 
 /**
  * @brief Built-in type name registrations for reflection.
@@ -55,6 +57,8 @@ SNAPI_DEFINE_TYPE_NAME(TSubClassOf<PawnBase>, "SnAPI::GameFramework::TSubClassOf
 SNAPI_DEFINE_TYPE_NAME(PawnBaseAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::PawnBase>")
 SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::StaticMeshAssetRuntime>")
 SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalMeshAssetRuntime>")
+SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>>")
 SNAPI_DEFINE_TYPE_NAME(NodeHandle, "SnAPI::GameFramework::NodeHandle")
 SNAPI_DEFINE_TYPE_NAME(ComponentHandle, "SnAPI::GameFramework::ComponentHandle")
 #if defined(SNAPI_GF_ENABLE_UI)

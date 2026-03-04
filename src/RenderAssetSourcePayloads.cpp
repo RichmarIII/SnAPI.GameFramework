@@ -55,6 +55,10 @@ void serialize(Archive& Ar, MeshImportSettingsPayload& Value)
        Value.OptimizeMeshes,
        Value.ForceSkeletal,
        Value.ForceStatic,
+       Value.ImportMaterials,
+       Value.ImportTextures,
+       Value.ImportAnimations,
+       Value.ImportSkeleton,
        Value.MaxBonesPerVertex);
 }
 

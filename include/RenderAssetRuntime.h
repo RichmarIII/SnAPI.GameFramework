@@ -8,6 +8,10 @@
 #include "AssetRef.h"
 #include "RenderAssetPayloads.h"
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <Image.hpp>
+#endif
+
 namespace SnAPI::GameFramework
 {
 
@@ -15,10 +19,26 @@ struct TextureAssetRuntime
 {
 };
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+using RuntimeTextureAsset = ::SnAPI::Graphics::IGPUImage;
+#else
+using RuntimeTextureAsset = TextureAssetRuntime;
+#endif
+
 struct MaterialAssetRuntime
 {
     std::string ShaderModule{};
     std::string ShadingModel{};
+    bool FeatureAlbedoMap = false;
+    bool FeatureNormalMap = false;
+    bool FeatureRoughnessMap = false;
+    bool FeatureMetalnessMap = false;
+    bool FeatureOcclusionMap = false;
+    bool FeatureAlphaTest = false;
+    bool FeatureAlphaBlend = false;
+    bool FeatureDoubleSided = false;
+    bool FeatureInstancing = false;
+    bool bLegacyInferFeaturesFromTextures = false;
 };
 
 struct MaterialInstanceAssetRuntime
@@ -27,7 +47,7 @@ struct MaterialInstanceAssetRuntime
     std::vector<MaterialScalarParamPayload> Scalars{};
     std::vector<MaterialVectorParamPayload> Vectors{};
     std::vector<std::string> TextureSlots{};
-    std::vector<TAssetRef<TextureAssetRuntime>> Textures{};
+    std::vector<TAssetRef<RuntimeTextureAsset>> Textures{};
 };
 
 struct StaticMeshAssetRuntime

@@ -1,4 +1,7 @@
 #include "RendererSystem.h"
+#if defined(WITH_EDITOR) && WITH_EDITOR
+#include "Editor/EditorRenderPasses.h"
+#endif
 #include "GameThreading.h"
 #include "PathResolver.h"
 
@@ -54,130 +57,134 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
-constexpr float kMinWindowExtent = 1.0f;
-constexpr float kWindowSizeEpsilon = 0.5f;
-constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
-constexpr float kViewportConfigFloatEpsilon = 0.001f;
-constexpr std::size_t kMaxQueuedTextRequests = 256;
-std::mutex GDefaultMaterialInstanceCacheMutex{};
-SnAPI::Graphics::WeakMaterialInstancePtr GDefaultGBufferMaterialInstance{};
-SnAPI::Graphics::WeakMaterialInstancePtr GDefaultShadowMaterialInstance{};
+class RendererSystemOps final
+{
+public:
+    static constexpr float kMinWindowExtent = 1.0f;
+    static constexpr float kWindowSizeEpsilon = 0.5f;
+    static constexpr std::uint32_t kPendingSwapChainStableFrameThreshold = 2u;
+    static constexpr float kViewportConfigFloatEpsilon = 0.001f;
+    static constexpr std::size_t kMaxQueuedTextRequests = 256;
 #if defined(SNAPI_GF_ENABLE_UI)
-constexpr float kUiGlobalZBase = 1.0f;
-// Keep UI depth values in a compact range to preserve separation after the UI shader's
-// reverse-Z remap (which is non-linear in GlobalZ). Large GlobalZ growth collapses depth.
-constexpr float kUiGlobalZStep = 0.01f;
-constexpr std::uint32_t kUiGradientTextureSize = 128u;
+    static constexpr float kUiGlobalZBase = 1.0f;
+    // Keep UI depth values in a compact range to preserve separation after the UI shader's
+    // reverse-Z remap (which is non-linear in GlobalZ). Large GlobalZ growth collapses depth.
+    static constexpr float kUiGlobalZStep = 0.01f;
+    static constexpr std::uint32_t kUiGradientTextureSize = 128u;
 
-[[nodiscard]] constexpr std::uint32_t PackUiColorRgba8(const SnAPI::UI::Color& Value)
-{
-    return (static_cast<std::uint32_t>(Value.R) << 24u) |
-           (static_cast<std::uint32_t>(Value.G) << 16u) |
-           (static_cast<std::uint32_t>(Value.B) << 8u) |
-           static_cast<std::uint32_t>(Value.A);
-}
-
-[[nodiscard]] constexpr float ClampUnit(const float Value)
-{
-    return std::clamp(Value, 0.0f, 1.0f);
-}
-#endif
-
-float ClampWindowExtent(const float Value)
-{
-    return std::max(kMinWindowExtent, Value);
-}
-
-bool NearlyEqual(const float Left, const float Right)
-{
-    return std::fabs(Left - Right) <= kViewportConfigFloatEpsilon;
-}
-
-[[nodiscard]] bool IsPrimaryMouseButtonDown()
-{
-    float MouseX = 0.0f;
-    float MouseY = 0.0f;
-    const auto Buttons = SDL_GetGlobalMouseState(&MouseX, &MouseY);
-    (void)MouseX;
-    (void)MouseY;
-    return (Buttons & SDL_BUTTON_LMASK) != 0u;
-}
-
-bool AreViewportRectsEquivalent(const SnAPI::Graphics::ViewportFit& Left, const SnAPI::Graphics::ViewportFit& Right)
-{
-    return NearlyEqual(Left.X, Right.X) &&
-           NearlyEqual(Left.Y, Right.Y) &&
-           NearlyEqual(Left.Width, Right.Width) &&
-           NearlyEqual(Left.Height, Right.Height);
-}
-
-bool AreRenderViewportConfigsEquivalent(const SnAPI::Graphics::RenderViewportConfig& Left,
-                                        const SnAPI::Graphics::RenderViewportConfig& Right)
-{
-    return Left.Name == Right.Name &&
-           Left.RenderExtent.x() == Right.RenderExtent.x() &&
-           Left.RenderExtent.y() == Right.RenderExtent.y() &&
-           AreViewportRectsEquivalent(Left.OutputRect, Right.OutputRect) &&
-           Left.Enabled == Right.Enabled &&
-           Left.TargetSwapChainID == Right.TargetSwapChainID &&
-           Left.FinalColorResourceName == Right.FinalColorResourceName &&
-           Left.FinalDepthResourceName == Right.FinalDepthResourceName &&
-           Left.pCamera == Right.pCamera;
-}
-
-bool IsFontRenderable(SnAPI::Graphics::FontFace* Face)
-{
-    if (!Face || !Face->Valid())
+    [[nodiscard]] static constexpr std::uint32_t PackUiColorRgba8(const SnAPI::UI::Color& Value)
     {
-        return false;
+        return (static_cast<std::uint32_t>(Value.R) << 24u) |
+               (static_cast<std::uint32_t>(Value.G) << 16u) |
+               (static_cast<std::uint32_t>(Value.B) << 8u) |
+               static_cast<std::uint32_t>(Value.A);
     }
 
-    if (Face->Atlas().GraphicsImage())
+    [[nodiscard]] static constexpr float ClampUnit(const float Value)
     {
+        return std::clamp(Value, 0.0f, 1.0f);
+    }
+#endif
+
+    [[nodiscard]] static float ClampWindowExtent(const float Value)
+    {
+        return std::max(kMinWindowExtent, Value);
+    }
+
+    [[nodiscard]] static bool NearlyEqual(const float Left, const float Right)
+    {
+        return std::fabs(Left - Right) <= kViewportConfigFloatEpsilon;
+    }
+
+    [[nodiscard]] static bool IsPrimaryMouseButtonDown()
+    {
+        float MouseX = 0.0f;
+        float MouseY = 0.0f;
+        const auto Buttons = SDL_GetGlobalMouseState(&MouseX, &MouseY);
+        (void)MouseX;
+        (void)MouseY;
+        return (Buttons & SDL_BUTTON_LMASK) != 0u;
+    }
+
+    [[nodiscard]] static bool AreViewportRectsEquivalent(
+        const SnAPI::Graphics::ViewportFit& Left,
+        const SnAPI::Graphics::ViewportFit& Right)
+    {
+        return NearlyEqual(Left.X, Right.X) &&
+               NearlyEqual(Left.Y, Right.Y) &&
+               NearlyEqual(Left.Width, Right.Width) &&
+               NearlyEqual(Left.Height, Right.Height);
+    }
+
+    [[nodiscard]] static bool AreRenderViewportConfigsEquivalent(
+        const SnAPI::Graphics::RenderViewportConfig& Left,
+        const SnAPI::Graphics::RenderViewportConfig& Right)
+    {
+        return Left.Name == Right.Name &&
+               Left.RenderExtent.x() == Right.RenderExtent.x() &&
+               Left.RenderExtent.y() == Right.RenderExtent.y() &&
+               AreViewportRectsEquivalent(Left.OutputRect, Right.OutputRect) &&
+               Left.Enabled == Right.Enabled &&
+               Left.TargetSwapChainID == Right.TargetSwapChainID &&
+               Left.FinalColorResourceName == Right.FinalColorResourceName &&
+               Left.FinalDepthResourceName == Right.FinalDepthResourceName &&
+               Left.pCamera == Right.pCamera;
+    }
+
+    [[nodiscard]] static bool IsFontRenderable(SnAPI::Graphics::FontFace* Face)
+    {
+        if (!Face || !Face->Valid())
+        {
+            return false;
+        }
+
+        if (Face->Atlas().GraphicsImage())
+        {
+            return true;
+        }
+
+        // Retry atlas generation in case the font was loaded before UI resources were fully ready.
+        Face->GenerateAtlas();
+        return Face->Atlas().GraphicsImage() != nullptr;
+    }
+
+    [[nodiscard]] static bool ResolveFilesystemLookupPath(const std::string_view RawPath, std::string& OutResolvedPath)
+    {
+        if (RawPath.empty())
+        {
+            OutResolvedPath.clear();
+            return false;
+        }
+
+        auto ResolvedPath = SPathResolver::Instance().ResolveToString(RawPath);
+        if (!ResolvedPath || ResolvedPath->empty())
+        {
+            OutResolvedPath.clear();
+            return false;
+        }
+
+        OutResolvedPath = *ResolvedPath;
         return true;
     }
 
-    // Retry atlas generation in case the font was loaded before UI resources were fully ready.
-    Face->GenerateAtlas();
-    return Face->Atlas().GraphicsImage() != nullptr;
-}
-
-[[nodiscard]] bool ResolveFilesystemLookupPath(const std::string_view RawPath, std::string& OutResolvedPath)
-{
-    if (RawPath.empty())
+    [[nodiscard]] static SnAPI::Graphics::WindowCreateInfo BuildWindowCreateInfo(const RendererBootstrapSettings& Settings)
     {
-        OutResolvedPath.clear();
-        return false;
+        SnAPI::Graphics::WindowCreateInfo CreateInfo{};
+        CreateInfo.Title = Settings.WindowTitle.empty() ? "SnAPI.GameFramework" : Settings.WindowTitle;
+        CreateInfo.Size = {ClampWindowExtent(Settings.WindowWidth), ClampWindowExtent(Settings.WindowHeight)};
+        CreateInfo.bFullScreen = Settings.FullScreen;
+        CreateInfo.bResizable = Settings.Resizable;
+        CreateInfo.bBorderless = Settings.Borderless;
+        CreateInfo.bVisible = Settings.Visible;
+        CreateInfo.bMaximized = Settings.Maximized;
+        CreateInfo.bMinimized = Settings.Minimized;
+        CreateInfo.bCloseable = Settings.Closeable;
+        CreateInfo.bUseVulkan = true;
+        CreateInfo.bUseOpenGL = false;
+        CreateInfo.bAllowTransparency = Settings.AllowTransparency;
+        return CreateInfo;
     }
-
-    auto ResolvedPath = SPathResolver::Instance().ResolveToString(RawPath);
-    if (!ResolvedPath || ResolvedPath->empty())
-    {
-        OutResolvedPath.clear();
-        return false;
-    }
-
-    OutResolvedPath = *ResolvedPath;
-    return true;
-}
-
-SnAPI::Graphics::WindowCreateInfo BuildWindowCreateInfo(const RendererBootstrapSettings& Settings)
-{
-    SnAPI::Graphics::WindowCreateInfo CreateInfo{};
-    CreateInfo.Title = Settings.WindowTitle.empty() ? "SnAPI.GameFramework" : Settings.WindowTitle;
-    CreateInfo.Size = {ClampWindowExtent(Settings.WindowWidth), ClampWindowExtent(Settings.WindowHeight)};
-    CreateInfo.bFullScreen = Settings.FullScreen;
-    CreateInfo.bResizable = Settings.Resizable;
-    CreateInfo.bBorderless = Settings.Borderless;
-    CreateInfo.bVisible = Settings.Visible;
-    CreateInfo.bMaximized = Settings.Maximized;
-    CreateInfo.bMinimized = Settings.Minimized;
-    CreateInfo.bCloseable = Settings.Closeable;
-    CreateInfo.bUseVulkan = true;
-    CreateInfo.bUseOpenGL = false;
-    CreateInfo.bAllowTransparency = Settings.AllowTransparency;
-    return CreateInfo;
-}
+};
 } // namespace
 
 void RendererSystem::WindowDeleter::operator()(SnAPI::Graphics::WindowBase* Window) const
@@ -209,6 +216,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_passGraphRegistered = Other.m_passGraphRegistered;
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
+    m_defaultGBufferMaterialInstance = std::move(Other.m_defaultGBufferMaterialInstance);
+    m_defaultShadowMaterialInstance = std::move(Other.m_defaultShadowMaterialInstance);
     m_defaultFont = Other.m_defaultFont;
     m_defaultFontFallbacksConfigured = Other.m_defaultFontFallbacksConfigured;
     m_textQueue = std::move(Other.m_textQueue);
@@ -227,6 +236,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
     m_uiExternalTextureBindings = std::move(Other.m_uiExternalTextureBindings);
+    m_uiExternalImageBindings = std::move(Other.m_uiExternalImageBindings);
     m_uiExternalResolvedTextureImages = std::move(Other.m_uiExternalResolvedTextureImages);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
@@ -243,6 +253,17 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_hasPendingSwapChainResize = Other.m_hasPendingSwapChainResize;
     m_pendingSwapChainStableFrames = Other.m_pendingSwapChainStableFrames;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    m_editorImmediateRenderObjects = std::move(Other.m_editorImmediateRenderObjects);
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject)
+        {
+            Editor::SetEditorImmediateRenderObjectMetadata(Entry.RenderObject.get(), Entry.PassType, Entry.Metadata.IsGizmo, Entry.Metadata.AxisTag);
+        }
+    }
+#endif
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
     m_initialized = Other.m_initialized;
@@ -250,6 +271,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_graphics = nullptr;
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
+    Other.m_defaultGBufferMaterialInstance.reset();
+    Other.m_defaultShadowMaterialInstance.reset();
     Other.m_defaultFont = nullptr;
     Other.m_defaultFontFallbacksConfigured = false;
     Other.m_textQueue.clear();
@@ -268,6 +291,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_uiTextures.clear();
     Other.m_uiTextureHasTransparency.clear();
     Other.m_uiExternalTextureBindings.clear();
+    Other.m_uiExternalImageBindings.clear();
     Other.m_uiExternalResolvedTextureImages.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
@@ -284,6 +308,10 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_hasPendingSwapChainResize = false;
     Other.m_pendingSwapChainStableFrames = 0;
     Other.m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    Other.m_editorImmediateRenderObjects.clear();
+#endif
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
     Other.m_initialized = false;
@@ -310,6 +338,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_passGraphRegistered = Other.m_passGraphRegistered;
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
+    m_defaultGBufferMaterialInstance = std::move(Other.m_defaultGBufferMaterialInstance);
+    m_defaultShadowMaterialInstance = std::move(Other.m_defaultShadowMaterialInstance);
     m_defaultFont = Other.m_defaultFont;
     m_defaultFontFallbacksConfigured = Other.m_defaultFontFallbacksConfigured;
     m_textQueue = std::move(Other.m_textQueue);
@@ -328,6 +358,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_uiTextures = std::move(Other.m_uiTextures);
     m_uiTextureHasTransparency = std::move(Other.m_uiTextureHasTransparency);
     m_uiExternalTextureBindings = std::move(Other.m_uiExternalTextureBindings);
+    m_uiExternalImageBindings = std::move(Other.m_uiExternalImageBindings);
     m_uiExternalResolvedTextureImages = std::move(Other.m_uiExternalResolvedTextureImages);
     m_uiTextureMaterialInstances = std::move(Other.m_uiTextureMaterialInstances);
     m_uiGradientTextures = std::move(Other.m_uiGradientTextures);
@@ -344,6 +375,17 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_hasPendingSwapChainResize = Other.m_hasPendingSwapChainResize;
     m_pendingSwapChainStableFrames = Other.m_pendingSwapChainStableFrames;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    m_editorImmediateRenderObjects = std::move(Other.m_editorImmediateRenderObjects);
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject)
+        {
+            Editor::SetEditorImmediateRenderObjectMetadata(Entry.RenderObject.get(), Entry.PassType, Entry.Metadata.IsGizmo, Entry.Metadata.AxisTag);
+        }
+    }
+#endif
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
     m_initialized = Other.m_initialized;
@@ -351,6 +393,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_graphics = nullptr;
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
+    Other.m_defaultGBufferMaterialInstance.reset();
+    Other.m_defaultShadowMaterialInstance.reset();
     Other.m_defaultFont = nullptr;
     Other.m_defaultFontFallbacksConfigured = false;
     Other.m_textQueue.clear();
@@ -369,6 +413,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_uiTextures.clear();
     Other.m_uiTextureHasTransparency.clear();
     Other.m_uiExternalTextureBindings.clear();
+    Other.m_uiExternalImageBindings.clear();
     Other.m_uiExternalResolvedTextureImages.clear();
     Other.m_uiTextureMaterialInstances.clear();
     Other.m_uiGradientTextures.clear();
@@ -385,6 +430,9 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_hasPendingSwapChainResize = false;
     Other.m_pendingSwapChainStableFrames = 0;
     Other.m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    Other.m_editorImmediateRenderObjects.clear();
+#endif
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
     Other.m_initialized = false;
@@ -429,6 +477,8 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
     auto ResetState = [this]() {
         m_defaultGBufferMaterial.reset();
         m_defaultShadowMaterial.reset();
+        m_defaultGBufferMaterialInstance.reset();
+        m_defaultShadowMaterialInstance.reset();
         m_defaultFont = nullptr;
         m_defaultFontFallbacksConfigured = false;
         m_textQueue.clear();
@@ -447,6 +497,7 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_uiTextures.clear();
         m_uiTextureHasTransparency.clear();
         m_uiExternalTextureBindings.clear();
+        m_uiExternalImageBindings.clear();
         m_uiExternalResolvedTextureImages.clear();
         m_uiTextureMaterialInstances.clear();
         m_uiGradientTextures.clear();
@@ -467,6 +518,10 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_hasPendingSwapChainResize = false;
         m_pendingSwapChainStableFrames = 0;
         m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        Editor::ClearEditorImmediateRenderObjectMetadata();
+        m_editorImmediateRenderObjects.clear();
+#endif
         m_registeredViewportPassGraphs.clear();
         m_renderViewportPassGraphRevision = 1;
     };
@@ -516,6 +571,8 @@ bool RendererSystem::InitializeUnlocked()
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
+    m_defaultGBufferMaterialInstance.reset();
+    m_defaultShadowMaterialInstance.reset();
     m_defaultFont = nullptr;
     m_defaultFontFallbacksConfigured = false;
     m_textQueue.clear();
@@ -534,6 +591,7 @@ bool RendererSystem::InitializeUnlocked()
     m_uiTextures.clear();
     m_uiTextureHasTransparency.clear();
     m_uiExternalTextureBindings.clear();
+    m_uiExternalImageBindings.clear();
     m_uiExternalResolvedTextureImages.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
@@ -547,6 +605,10 @@ bool RendererSystem::InitializeUnlocked()
     ResetPassPointers();
     m_passGraphRegistered = false;
     m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    m_editorImmediateRenderObjects.clear();
+#endif
     m_registeredViewportPassGraphs.clear();
     m_renderViewportPassGraphRevision = 1;
     m_pendingSwapChainWidth = 0.0f;
@@ -630,8 +692,8 @@ bool RendererSystem::InitializeUnlocked()
 void RendererSystem::ApplyOutOfMemoryFallbackSettings()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
-    const float FallbackWidth = ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowWidth);
-    const float FallbackHeight = ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowHeight);
+    const float FallbackWidth = RendererSystemOps::ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowWidth);
+    const float FallbackHeight = RendererSystemOps::ClampWindowExtent(m_settings.OutOfMemoryFallbackWindowHeight);
 
     m_settings.WindowWidth = std::min(m_settings.WindowWidth, FallbackWidth);
     m_settings.WindowHeight = std::min(m_settings.WindowHeight, FallbackHeight);
@@ -833,8 +895,8 @@ bool RendererSystem::CreateRenderViewport(std::string Name,
         return false;
     }
 
-    const float ClampedW = std::max(kMinWindowExtent, Width);
-    const float ClampedH = std::max(kMinWindowExtent, Height);
+    const float ClampedW = std::max(RendererSystemOps::kMinWindowExtent, Width);
+    const float ClampedH = std::max(RendererSystemOps::kMinWindowExtent, Height);
     const std::uint32_t FinalRenderWidth = RenderWidth > 0 ? RenderWidth : static_cast<std::uint32_t>(std::round(ClampedW));
     const std::uint32_t FinalRenderHeight = RenderHeight > 0 ? RenderHeight : static_cast<std::uint32_t>(std::round(ClampedH));
 
@@ -879,8 +941,8 @@ bool RendererSystem::UpdateRenderViewport(const std::uint64_t ViewportID,
         return false;
     }
 
-    const float ClampedW = std::max(kMinWindowExtent, Width);
-    const float ClampedH = std::max(kMinWindowExtent, Height);
+    const float ClampedW = std::max(RendererSystemOps::kMinWindowExtent, Width);
+    const float ClampedH = std::max(RendererSystemOps::kMinWindowExtent, Height);
     const std::uint32_t FinalRenderWidth = RenderWidth > 0 ? RenderWidth : static_cast<std::uint32_t>(std::round(ClampedW));
     const std::uint32_t FinalRenderHeight = RenderHeight > 0 ? RenderHeight : static_cast<std::uint32_t>(std::round(ClampedH));
 
@@ -907,7 +969,7 @@ bool RendererSystem::UpdateRenderViewport(const std::uint64_t ViewportID,
         Config.FinalDepthResourceName = Existing->FinalDepthResourceName;
     }
 
-    if (Existing.has_value() && AreRenderViewportConfigsEquivalent(*Existing, Config))
+    if (Existing.has_value() && RendererSystemOps::AreRenderViewportConfigsEquivalent(*Existing, Config))
     {
         return true;
     }
@@ -1145,7 +1207,174 @@ bool RendererSystem::ClearRenderViewportNameOverrides(const std::uint64_t Viewpo
     return m_graphics->ClearRenderViewportNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID));
 }
 
-bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
+bool RendererSystem::TrackRegisteredRenderObjectLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
+{
+    if (!RenderObject)
+    {
+        return false;
+    }
+
+    const auto* RenderObjectPtr = RenderObject.get();
+    bool AlreadyTracked = false;
+    for (auto It = m_registeredRenderObjects.begin(); It != m_registeredRenderObjects.end();)
+    {
+        const auto ExistingShared = It->lock();
+        if (!ExistingShared)
+        {
+            It = m_registeredRenderObjects.erase(It);
+            continue;
+        }
+
+        if (ExistingShared.get() == RenderObjectPtr)
+        {
+            AlreadyTracked = true;
+        }
+        ++It;
+    }
+
+    if (!AlreadyTracked)
+    {
+        m_registeredRenderObjects.emplace_back(RenderObject);
+    }
+    return true;
+}
+
+bool RendererSystem::UntrackRegisteredRenderObjectLocked(const SnAPI::Graphics::IRenderObject* RenderObject)
+{
+    if (!RenderObject)
+    {
+        return false;
+    }
+
+    const auto NewEnd = std::ranges::remove_if(m_registeredRenderObjects,
+                                               [RenderObject](const std::weak_ptr<SnAPI::Graphics::IRenderObject>& Existing) {
+                                                   const auto ExistingShared = Existing.lock();
+                                                   return !ExistingShared || ExistingShared.get() == RenderObject;
+                                               }).begin();
+    const bool Removed = (NewEnd != m_registeredRenderObjects.end());
+    m_registeredRenderObjects.erase(NewEnd, m_registeredRenderObjects.end());
+    return Removed;
+}
+
+void RendererSystem::PruneTrackedRenderObjectIfUnreferencedLocked(const SnAPI::Graphics::IRenderObject* RenderObject)
+{
+    if (!m_graphics || !RenderObject)
+    {
+        return;
+    }
+
+    if (m_graphics->RenderObjectID(RenderObject).has_value())
+    {
+        return;
+    }
+
+    static_cast<void>(UntrackRegisteredRenderObjectLocked(RenderObject));
+}
+
+bool RendererSystem::ConfigureRenderObjectPassesLocked(
+    const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+    const bool Visible,
+    const bool CastShadows)
+{
+    if (!m_graphics || !RenderObject)
+    {
+        return false;
+    }
+
+    bool HasAnyTargetPass = false;
+    const auto ViewportIds = m_graphics->RenderViewportIDs();
+    const auto ConfigureViewportPasses = [&](const auto ViewportId) {
+        if (m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+        {
+            HasAnyTargetPass = true;
+            if (Visible)
+            {
+                if (m_graphics->AddRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+                {
+                    static_cast<void>(TrackRegisteredRenderObjectLocked(RenderObject));
+                }
+            }
+            else
+            {
+                if (m_graphics->RemoveRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+                {
+                    PruneTrackedRenderObjectIfUnreferencedLocked(RenderObject.get());
+                }
+            }
+        }
+        if (m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+        {
+            HasAnyTargetPass = true;
+            if (Visible && CastShadows)
+            {
+                if (m_graphics->AddRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+                {
+                    static_cast<void>(TrackRegisteredRenderObjectLocked(RenderObject));
+                }
+            }
+            else
+            {
+                if (m_graphics->RemoveRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+                {
+                    PruneTrackedRenderObjectIfUnreferencedLocked(RenderObject.get());
+                }
+            }
+        }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        if (m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::EditorID))
+        {
+            HasAnyTargetPass = true;
+            if (Visible)
+            {
+                if (m_graphics->AddRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::EditorID))
+                {
+                    static_cast<void>(TrackRegisteredRenderObjectLocked(RenderObject));
+                }
+            }
+            else
+            {
+                if (m_graphics->RemoveRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::EditorID))
+                {
+                    PruneTrackedRenderObjectIfUnreferencedLocked(RenderObject.get());
+                }
+            }
+        }
+#endif
+    };
+
+    for (const auto ViewportId : ViewportIds)
+    {
+        ConfigureViewportPasses(ViewportId);
+    }
+
+    RenderObject->SetCastsShadows(CastShadows);
+    return HasAnyTargetPass;
+}
+
+bool RendererSystem::AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                     const std::uint64_t ViewportID,
+                                     const SnAPI::Graphics::ERenderPassType PassType)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject || ViewportID == 0 || PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+    {
+        return false;
+    }
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    if (!m_graphics->AddRenderObject(SharedRenderObject, RendererViewportID, PassType))
+    {
+        return false;
+    }
+
+    static_cast<void>(TrackRegisteredRenderObjectLocked(SharedRenderObject));
+    return true;
+}
+
+bool RendererSystem::AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                     const SnAPI::UUID& PassID)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
@@ -1155,20 +1384,232 @@ bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::I
         return false;
     }
 
-    m_graphics->RegisterRenderObject(SharedRenderObject);
-
-    const auto* RenderObjectPtr = SharedRenderObject.get();
-    const bool AlreadyTracked = std::ranges::any_of(m_registeredRenderObjects,
-                                                    [RenderObjectPtr](const std::weak_ptr<SnAPI::Graphics::IRenderObject>& Existing) {
-                                                        const auto ExistingShared = Existing.lock();
-                                                        return ExistingShared && ExistingShared.get() == RenderObjectPtr;
-                                                    });
-    if (!AlreadyTracked)
+    if (!m_graphics->AddRenderObject(SharedRenderObject, PassID))
     {
-        m_registeredRenderObjects.emplace_back(SharedRenderObject);
+        return false;
     }
+
+    static_cast<void>(TrackRegisteredRenderObjectLocked(SharedRenderObject));
     return true;
 }
+
+bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                        const std::uint64_t ViewportID,
+                                        const SnAPI::Graphics::ERenderPassType PassType)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject || ViewportID == 0 || PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+    {
+        return false;
+    }
+
+    const bool Removed = m_graphics->RemoveRenderObject(SharedRenderObject,
+                                                        static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID),
+                                                        PassType);
+    if (!Removed)
+    {
+        return false;
+    }
+
+    PruneTrackedRenderObjectIfUnreferencedLocked(SharedRenderObject.get());
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject
+            && Entry.RenderObject.get() == RenderObjectPtr
+            && Entry.ViewportID == ViewportID
+            && Entry.PassType == PassType)
+        {
+            Editor::RemoveEditorImmediateRenderObjectMetadata(RenderObjectPtr, Entry.PassType);
+        }
+    }
+    const auto ImmediateNewEnd = std::ranges::remove_if(m_editorImmediateRenderObjects,
+                                                         [RenderObjectPtr, ViewportID, PassType](const EditorImmediateRenderObjectEntry& Entry) {
+                                                             return Entry.RenderObject
+                                                                 && Entry.RenderObject.get() == RenderObjectPtr
+                                                                 && Entry.ViewportID == ViewportID
+                                                                 && Entry.PassType == PassType;
+                                                         }).begin();
+    if (ImmediateNewEnd != m_editorImmediateRenderObjects.end())
+    {
+        m_editorImmediateRenderObjects.erase(ImmediateNewEnd, m_editorImmediateRenderObjects.end());
+    }
+#endif
+
+    return true;
+}
+
+bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                        const SnAPI::UUID& PassID)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject)
+    {
+        return false;
+    }
+
+    const bool Removed = m_graphics->RemoveRenderObject(SharedRenderObject, PassID);
+    if (!Removed)
+    {
+        return false;
+    }
+
+    PruneTrackedRenderObjectIfUnreferencedLocked(SharedRenderObject.get());
+    return true;
+}
+
+bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!SharedRenderObject)
+    {
+        return false;
+    }
+
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    const bool RemovedAny = m_graphics->RemoveRenderObject(SharedRenderObject);
+    if (!RemovedAny)
+    {
+        return false;
+    }
+
+    static_cast<void>(UntrackRegisteredRenderObjectLocked(SharedRenderObject.get()));
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject && Entry.RenderObject.get() == RenderObjectPtr)
+        {
+            Editor::RemoveEditorImmediateRenderObjectMetadata(RenderObjectPtr, Entry.PassType);
+        }
+    }
+    const auto ImmediateNewEnd = std::ranges::remove_if(m_editorImmediateRenderObjects,
+                                                         [RenderObjectPtr](const EditorImmediateRenderObjectEntry& Entry) {
+                                                             return !Entry.RenderObject || Entry.RenderObject.get() == RenderObjectPtr;
+                                                         }).begin();
+    if (ImmediateNewEnd != m_editorImmediateRenderObjects.end())
+    {
+        m_editorImmediateRenderObjects.erase(ImmediateNewEnd, m_editorImmediateRenderObjects.end());
+    }
+#endif
+
+    return true;
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool RendererSystem::QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                                      const std::uint64_t ViewportID,
+                                                      const SnAPI::Graphics::ERenderPassType PassType)
+{
+    return QueueEditorImmediateRenderObject(RenderObject, ViewportID, PassType, EditorImmediateRenderMetadata{});
+}
+
+bool RendererSystem::QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                                      const std::uint64_t ViewportID,
+                                                      const SnAPI::Graphics::ERenderPassType PassType,
+                                                      const EditorImmediateRenderMetadata& Metadata)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject || ViewportID == 0 || PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+    {
+        return false;
+    }
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    if (!m_graphics->AddRenderObject(SharedRenderObject, RendererViewportID, PassType))
+    {
+        return false;
+    }
+    static_cast<void>(TrackRegisteredRenderObjectLocked(SharedRenderObject));
+    Editor::SetEditorImmediateRenderObjectMetadata(SharedRenderObject.get(), PassType, Metadata.IsGizmo, Metadata.AxisTag);
+
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    auto ExistingEntry = std::ranges::find_if(m_editorImmediateRenderObjects,
+                                              [RenderObjectPtr, ViewportID, PassType](const EditorImmediateRenderObjectEntry& Entry) {
+                                                  return Entry.RenderObject && Entry.RenderObject.get() == RenderObjectPtr
+                                                      && Entry.ViewportID == ViewportID
+                                                      && Entry.PassType == PassType;
+                                              });
+    if (ExistingEntry != m_editorImmediateRenderObjects.end())
+    {
+        ExistingEntry->Metadata = Metadata;
+    }
+    else
+    {
+        m_editorImmediateRenderObjects.push_back(EditorImmediateRenderObjectEntry{
+            .RenderObject = SharedRenderObject,
+            .ViewportID = ViewportID,
+            .PassType = PassType,
+            .Metadata = Metadata,
+        });
+    }
+
+    return true;
+}
+
+std::optional<std::uint32_t> RendererSystem::ReadRenderViewportObjectID(const std::uint64_t ViewportID,
+                                                                         const float NormalizedX,
+                                                                         const float NormalizedY,
+                                                                         const std::string_view ResourceName) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0 || ResourceName.empty())
+    {
+        return std::nullopt;
+    }
+
+    return m_graphics->ReadRenderViewportUintResource(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID),
+                                                      ResourceName,
+                                                      NormalizedX,
+                                                      NormalizedY);
+}
+
+std::shared_ptr<SnAPI::Graphics::IRenderObject> RendererSystem::ResolveRenderObjectByID(const std::uint32_t RenderObjectID) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || RenderObjectID == 0)
+    {
+        return {};
+    }
+    return m_graphics->ResolveRenderObjectByID(RenderObjectID);
+}
+
+std::optional<std::uint32_t> RendererSystem::RenderObjectID(
+    const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return std::nullopt;
+    }
+
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!SharedRenderObject)
+    {
+        return std::nullopt;
+    }
+
+    return m_graphics->RenderObjectID(SharedRenderObject.get());
+}
+#endif
 
 bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& RenderObject)
 {
@@ -1187,21 +1628,18 @@ bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& Rende
 
     SnAPI::Graphics::SharedMaterialInstancePtr SharedGBufferInstance{};
     SnAPI::Graphics::SharedMaterialInstancePtr SharedShadowInstance{};
+    SharedGBufferInstance = m_defaultGBufferMaterialInstance.lock();
+    if (!SharedGBufferInstance && m_defaultGBufferMaterial)
     {
-        std::scoped_lock CacheLock(GDefaultMaterialInstanceCacheMutex);
-        SharedGBufferInstance = GDefaultGBufferMaterialInstance.lock();
-        if (!SharedGBufferInstance && m_defaultGBufferMaterial)
-        {
-            SharedGBufferInstance = m_defaultGBufferMaterial->CreateMaterialInstance();
-            GDefaultGBufferMaterialInstance = SharedGBufferInstance;
-        }
+        SharedGBufferInstance = m_defaultGBufferMaterial->CreateMaterialInstance();
+        m_defaultGBufferMaterialInstance = SharedGBufferInstance;
+    }
 
-        SharedShadowInstance = GDefaultShadowMaterialInstance.lock();
-        if (!SharedShadowInstance && m_defaultShadowMaterial)
-        {
-            SharedShadowInstance = m_defaultShadowMaterial->CreateMaterialInstance();
-            GDefaultShadowMaterialInstance = SharedShadowInstance;
-        }
+    SharedShadowInstance = m_defaultShadowMaterialInstance.lock();
+    if (!SharedShadowInstance && m_defaultShadowMaterial)
+    {
+        SharedShadowInstance = m_defaultShadowMaterial->CreateMaterialInstance();
+        m_defaultShadowMaterialInstance = SharedShadowInstance;
     }
 
     for (uint32_t SubMeshIndex = 0; SubMeshIndex < Source->SubMeshCount(); ++SubMeshIndex)
@@ -1238,59 +1676,13 @@ std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultShadowMaterial
     return m_defaultShadowMaterial;
 }
 
-bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, const bool Visible, const bool CastShadows) const
+bool RendererSystem::ConfigureRenderObjectPasses(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                                 const bool Visible,
+                                                 const bool CastShadows)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
-    if (!m_graphics)
-    {
-        return false;
-    }
-
-    bool ConfiguredAnyPass = false;
-    const auto ViewportIds = m_graphics->RenderViewportIDs();
-    const auto ConfigureViewportPasses = [&](const auto ViewportId) {
-        if (auto* GBufferPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
-        {
-            RenderObject.EnablePass(GBufferPass->ID(), Visible);
-            ConfiguredAnyPass = true;
-        }
-        if (auto* ShadowPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
-        {
-            RenderObject.EnablePass(ShadowPass->ID(), Visible && CastShadows);
-            ConfiguredAnyPass = true;
-        }
-    };
-
-    for (const auto ViewportId : ViewportIds)
-    {
-        const auto PresetIt = m_registeredViewportPassGraphs.find(static_cast<std::uint64_t>(ViewportId));
-        if (PresetIt == m_registeredViewportPassGraphs.end())
-        {
-            continue;
-        }
-
-        if (PresetIt->second == ERenderViewportPassGraphPreset::UiPresentOnly ||
-            PresetIt->second == ERenderViewportPassGraphPreset::None)
-        {
-            continue;
-        }
-
-        ConfigureViewportPasses(ViewportId);
-    }
-
-    if (!ConfiguredAnyPass)
-    {
-        // Fallback: if pass-graph preset tracking is missing/stale, configure any viewport
-        // that actually exposes scene passes so primitives and runtime assets remain visible.
-        for (const auto ViewportId : ViewportIds)
-        {
-            ConfigureViewportPasses(ViewportId);
-        }
-    }
-
-    RenderObject.SetCastsShadows(CastShadows);
-    return ConfiguredAnyPass;
+    return ConfigureRenderObjectPassesLocked(RenderObject, Visible, CastShadows);
 }
 
 std::uint64_t RendererSystem::RenderViewportPassGraphRevision() const
@@ -1323,7 +1715,7 @@ bool RendererSystem::LoadDefaultFont(const std::string& FontPath, const std::uin
     }
 
     auto* Face = Library->FontFace(FontPath, FontSize);
-    if (!IsFontRenderable(Face))
+    if (!RendererSystemOps::IsFontRenderable(Face))
     {
         return false;
     }
@@ -1344,7 +1736,7 @@ bool RendererSystem::QueueText(std::string Text, const float X, const float Y)
     }
 
     m_textQueue.push_back(TextRequest{std::move(Text), X, Y});
-    if (m_textQueue.size() > kMaxQueuedTextRequests)
+    if (m_textQueue.size() > RendererSystemOps::kMaxQueuedTextRequests)
     {
         m_textQueue.erase(m_textQueue.begin());
     }
@@ -1354,14 +1746,14 @@ bool RendererSystem::QueueText(std::string Text, const float X, const float Y)
 bool RendererSystem::HasDefaultFont() const
 {
     GameLockGuard Lock(m_mutex);
-    return IsFontRenderable(m_defaultFont);
+    return RendererSystemOps::IsFontRenderable(m_defaultFont);
 }
 
 SnAPI::Graphics::FontFace* RendererSystem::EnsureDefaultFontFace()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
-    if ((!m_defaultFont || !IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
+    if ((!m_defaultFont || !RendererSystemOps::IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
     {
         return nullptr;
     }
@@ -1405,7 +1797,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
         m_uiQueuedRects.reserve(m_uiQueuedRects.size() + TotalInstances);
     }
 
-    float GlobalZ = kUiGlobalZBase + static_cast<float>(m_uiQueuedRects.size()) * kUiGlobalZStep;
+    float GlobalZ = RendererSystemOps::kUiGlobalZBase + static_cast<float>(m_uiQueuedRects.size()) * RendererSystemOps::kUiGlobalZStep;
 
     const auto ApplyUiColor = [](QueuedUiRect& OutRect, const SnAPI::UI::Color& ColorValue) {
         constexpr float kInv = 1.0f / 255.0f;
@@ -1459,7 +1851,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             if (Index < OutRect.GradientStopCount)
             {
                 OutRect.GradientStops[Index] = Gradient.Stops[Index].Position;
-                OutRect.GradientColors[Index] = PackUiColorRgba8(Gradient.Stops[Index].StopColor);
+                OutRect.GradientColors[Index] = RendererSystemOps::PackUiColorRgba8(Gradient.Stops[Index].StopColor);
             }
             else
             {
@@ -1524,6 +1916,14 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
             m_uiTextureHasTransparency[TextureCacheKey] = ExternalIt->second.HasTransparency;
             return;
         }
+        if (const auto ExternalImageIt = m_uiExternalImageBindings.find(TextureCacheKey);
+            ExternalImageIt != m_uiExternalImageBindings.end())
+        {
+            m_uiTextureHasTransparency[TextureCacheKey] = ExternalImageIt->second.HasTransparency;
+            m_uiPendingTextureUploads.erase(TextureCacheKey);
+            m_uiTextures.erase(TextureCacheKey);
+            return;
+        }
 
         const bool HasOpacityMetadata = m_uiTextureHasTransparency.contains(TextureCacheKey);
         if (m_uiTextures.contains(TextureCacheKey) && HasOpacityMetadata)
@@ -1577,7 +1977,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1628,7 +2028,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1662,7 +2062,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1691,7 +2091,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
                 QueueImageTextureUploadIfNeeded(Rect.TextureId);
             }
             continue;
@@ -1719,7 +2119,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1749,7 +2149,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
             continue;
         }
@@ -1779,7 +2179,7 @@ bool RendererSystem::QueueUiRenderPackets(const std::uint64_t ViewportID,
                 }
 
                 m_uiQueuedRects.emplace_back(Rect);
-                GlobalZ += kUiGlobalZStep;
+                GlobalZ += RendererSystemOps::kUiGlobalZStep;
             }
         }
     }
@@ -1845,16 +2245,18 @@ bool RendererSystem::RegisterExternalViewportUiTexture(const SnAPI::UI::UIContex
 
     const UiTextureCacheKey Key{&Context, TextureId};
     const auto ExistingIt = m_uiExternalTextureBindings.find(Key);
+    const bool HadExternalImageBinding = m_uiExternalImageBindings.contains(Key);
     const bool BindingChanged =
         ExistingIt == m_uiExternalTextureBindings.end()
         || ExistingIt->second.SourceViewportID != SourceViewportID;
 
+    m_uiExternalImageBindings.erase(Key);
     m_uiExternalTextureBindings[Key] = UiExternalTextureBinding{
         .SourceViewportID = SourceViewportID,
         .HasTransparency = HasTransparency,
     };
     m_uiTextureHasTransparency[Key] = HasTransparency;
-    if (BindingChanged)
+    if (BindingChanged || HadExternalImageBinding)
     {
         m_uiPendingTextureUploads.erase(Key);
         m_uiTextures.erase(Key);
@@ -1875,6 +2277,58 @@ bool RendererSystem::UnregisterExternalViewportUiTexture(const SnAPI::UI::UICont
 
     const UiTextureCacheKey Key{&Context, TextureId};
     const bool Removed = m_uiExternalTextureBindings.erase(Key) > 0;
+    m_uiExternalResolvedTextureImages.erase(Key);
+    m_uiTextureMaterialInstances.erase(Key);
+    m_uiTextureHasTransparency.erase(Key);
+    return Removed;
+}
+
+bool RendererSystem::RegisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context,
+                                                    const std::uint32_t TextureId,
+                                                    SnAPI::Graphics::IGPUImage* Image,
+                                                    const bool HasTransparency)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || TextureId == 0 || Image == nullptr)
+    {
+        return false;
+    }
+
+    const UiTextureCacheKey Key{&Context, TextureId};
+    const auto ExistingIt = m_uiExternalImageBindings.find(Key);
+    const bool HadExternalViewportBinding = m_uiExternalTextureBindings.contains(Key);
+    const bool BindingChanged =
+        ExistingIt == m_uiExternalImageBindings.end()
+        || ExistingIt->second.Image != Image;
+
+    m_uiExternalTextureBindings.erase(Key);
+    m_uiExternalImageBindings[Key] = UiExternalImageBinding{
+        .Image = Image,
+        .HasTransparency = HasTransparency,
+    };
+    m_uiTextureHasTransparency[Key] = HasTransparency;
+    if (BindingChanged || HadExternalViewportBinding)
+    {
+        m_uiPendingTextureUploads.erase(Key);
+        m_uiTextures.erase(Key);
+        m_uiTextureMaterialInstances.erase(Key);
+        m_uiExternalResolvedTextureImages.erase(Key);
+    }
+    return true;
+}
+
+bool RendererSystem::UnregisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context, const std::uint32_t TextureId)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (TextureId == 0)
+    {
+        return false;
+    }
+
+    const UiTextureCacheKey Key{&Context, TextureId};
+    const bool Removed = m_uiExternalImageBindings.erase(Key) > 0;
     m_uiExternalResolvedTextureImages.erase(Key);
     m_uiTextureMaterialInstances.erase(Key);
     m_uiTextureHasTransparency.erase(Key);
@@ -1926,6 +2380,28 @@ void RendererSystem::EndFrame()
         }
     }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (!m_editorImmediateRenderObjects.empty())
+    {
+        SNAPI_GF_PROFILE_SCOPE("Renderer.ClearEditorImmediateRenderObjects", "Rendering");
+        for (const auto& Entry : m_editorImmediateRenderObjects)
+        {
+            if (!Entry.RenderObject || Entry.ViewportID == 0 || Entry.PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+            {
+                continue;
+            }
+
+            Editor::RemoveEditorImmediateRenderObjectMetadata(Entry.RenderObject.get(), Entry.PassType);
+            m_graphics->RemoveRenderObject(Entry.RenderObject,
+                                           static_cast<SnAPI::Graphics::RenderViewportID>(Entry.ViewportID),
+                                           Entry.PassType);
+            PruneTrackedRenderObjectIfUnreferencedLocked(Entry.RenderObject.get());
+        }
+        m_editorImmediateRenderObjects.clear();
+        Editor::ClearEditorImmediateRenderObjectMetadata();
+    }
+#endif
+
     if (auto* Camera = m_graphics->ActiveCamera())
     {
         SNAPI_GF_PROFILE_SCOPE("Renderer.SaveCameraFrameState", "Rendering");
@@ -1964,6 +2440,8 @@ void RendererSystem::ShutdownUnlocked()
     m_passGraphRegistered = false;
     m_defaultGBufferMaterial.reset();
     m_defaultShadowMaterial.reset();
+    m_defaultGBufferMaterialInstance.reset();
+    m_defaultShadowMaterialInstance.reset();
     m_defaultFont = nullptr;
     m_defaultFontFallbacksConfigured = false;
     m_textQueue.clear();
@@ -1982,6 +2460,7 @@ void RendererSystem::ShutdownUnlocked()
     m_uiTextures.clear();
     m_uiTextureHasTransparency.clear();
     m_uiExternalTextureBindings.clear();
+    m_uiExternalImageBindings.clear();
     m_uiExternalResolvedTextureImages.clear();
     m_uiTextureMaterialInstances.clear();
     m_uiGradientTextures.clear();
@@ -1998,6 +2477,10 @@ void RendererSystem::ShutdownUnlocked()
     m_hasPendingSwapChainResize = false;
     m_pendingSwapChainStableFrames = 0;
     m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    m_editorImmediateRenderObjects.clear();
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+#endif
 
     if (m_graphics)
     {
@@ -2037,6 +2520,8 @@ bool RendererSystem::EnsureDefaultMaterials()
 
     m_defaultGBufferMaterial = std::move(GBufferMaterial);
     m_defaultShadowMaterial = std::move(ShadowMaterial);
+    m_defaultGBufferMaterialInstance.reset();
+    m_defaultShadowMaterialInstance.reset();
     return true;
 }
 
@@ -2171,7 +2656,7 @@ bool RendererSystem::EnsureDefaultFont()
             }
 
             std::string ResolvedCandidate{};
-            if (!ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
+            if (!RendererSystemOps::ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
             {
                 continue;
             }
@@ -2183,7 +2668,7 @@ bool RendererSystem::EnsureDefaultFont()
             }
 
             auto* FallbackFace = Library->FontFace(ResolvedCandidate, m_settings.DefaultFontSize);
-            if (IsFontRenderable(FallbackFace))
+            if (RendererSystemOps::IsFontRenderable(FallbackFace))
             {
                 PrimaryFace->AddFallbackFace(FallbackFace);
             }
@@ -2192,7 +2677,7 @@ bool RendererSystem::EnsureDefaultFont()
         m_defaultFontFallbacksConfigured = true;
     };
 
-    if (IsFontRenderable(m_defaultFont))
+    if (RendererSystemOps::IsFontRenderable(m_defaultFont))
     {
         ConfigureFallbackFaces(m_defaultFont);
         return true;
@@ -2212,7 +2697,7 @@ bool RendererSystem::EnsureDefaultFont()
         }
 
         std::string ResolvedCandidate{};
-        if (!ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
+        if (!RendererSystemOps::ResolveFilesystemLookupPath(Candidate, ResolvedCandidate))
         {
             continue;
         }
@@ -2224,7 +2709,7 @@ bool RendererSystem::EnsureDefaultFont()
         }
 
         auto* Face = Library->FontFace(ResolvedCandidate, m_settings.DefaultFontSize);
-        if (IsFontRenderable(Face))
+        if (RendererSystemOps::IsFontRenderable(Face))
         {
             m_defaultFont = Face;
             m_defaultFontFallbacksConfigured = false;
@@ -2268,8 +2753,8 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
     }
 
     const bool MatchesCurrentSwapChain =
-        std::fabs(Width - m_lastWindowWidth) <= kWindowSizeEpsilon
-        && std::fabs(Height - m_lastWindowHeight) <= kWindowSizeEpsilon;
+        std::fabs(Width - m_lastWindowWidth) <= RendererSystemOps::kWindowSizeEpsilon
+        && std::fabs(Height - m_lastWindowHeight) <= RendererSystemOps::kWindowSizeEpsilon;
     if (MatchesCurrentSwapChain && !RecreateRequestedByGraphics)
     {
         m_pendingSwapChainWidth = Width;
@@ -2281,8 +2766,8 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
 
     const bool PendingTargetChanged =
         !m_hasPendingSwapChainResize
-        || std::fabs(Width - m_pendingSwapChainWidth) > kWindowSizeEpsilon
-        || std::fabs(Height - m_pendingSwapChainHeight) > kWindowSizeEpsilon;
+        || std::fabs(Width - m_pendingSwapChainWidth) > RendererSystemOps::kWindowSizeEpsilon
+        || std::fabs(Height - m_pendingSwapChainHeight) > RendererSystemOps::kWindowSizeEpsilon;
 
     const bool NeedPendingResizeTracking = !MatchesCurrentSwapChain
                                            || (RecreateRequestedByGraphics && !m_hasPendingSwapChainResize);
@@ -2308,12 +2793,12 @@ bool RendererSystem::HandleWindowResizeIfNeeded()
     {
         ++m_pendingSwapChainStableFrames;
     }
-    if (m_pendingSwapChainStableFrames < kPendingSwapChainStableFrameThreshold)
+    if (m_pendingSwapChainStableFrames < RendererSystemOps::kPendingSwapChainStableFrameThreshold)
     {
         return false;
     }
 
-    if (IsPrimaryMouseButtonDown())
+    if (RendererSystemOps::IsPrimaryMouseButtonDown())
     {
         return false;
     }
@@ -2331,7 +2816,7 @@ void RendererSystem::FlushQueuedText()
 
     {
         SNAPI_GF_PROFILE_SCOPE("Renderer.FlushQueuedText.ResolveDefaultFont", "Rendering");
-        if ((!m_defaultFont || !IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
+        if ((!m_defaultFont || !RendererSystemOps::IsFontRenderable(m_defaultFont)) && !EnsureDefaultFont())
         {
             SNAPI_GF_PROFILE_SCOPE("Renderer.FlushQueuedText.FontUnavailableTrimQueue", "Rendering");
             // Keep only the latest request while font resources are unavailable.
@@ -2538,6 +3023,38 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         return MaterialInstance;
     }
 
+    if (const auto ExternalImageBindingIt = m_uiExternalImageBindings.find(TextureCacheKey);
+        ExternalImageBindingIt != m_uiExternalImageBindings.end())
+    {
+        auto* ResolvedImage = ExternalImageBindingIt->second.Image;
+        if (!ResolvedImage)
+        {
+            m_uiTextureMaterialInstances.erase(TextureCacheKey);
+            m_uiExternalResolvedTextureImages.erase(TextureCacheKey);
+            return m_uiFallbackMaterialInstance;
+        }
+
+        if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
+            MaterialIt != m_uiTextureMaterialInstances.end())
+        {
+            MaterialIt->second->Texture("Material_Texture", ResolvedImage);
+            m_uiExternalResolvedTextureImages[TextureCacheKey] = ResolvedImage;
+            return MaterialIt->second;
+        }
+
+        auto MaterialInstance = m_uiMaterial->CreateMaterialInstance();
+        if (!MaterialInstance)
+        {
+            return m_uiFallbackMaterialInstance;
+        }
+
+        MaterialInstance->Texture("Material_Texture", ResolvedImage);
+        m_uiTextureMaterialInstances[TextureCacheKey] = MaterialInstance;
+        m_uiExternalResolvedTextureImages[TextureCacheKey] = ResolvedImage;
+        m_uiTextureHasTransparency[TextureCacheKey] = ExternalImageBindingIt->second.HasTransparency;
+        return MaterialInstance;
+    }
+
     if (const auto MaterialIt = m_uiTextureMaterialInstances.find(TextureCacheKey);
         MaterialIt != m_uiTextureMaterialInstances.end())
     {
@@ -2612,7 +3129,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     std::array<std::uint32_t, QueuedUiRect::MaxGradientStops> StopColors{};
     for (std::size_t Index = 0; Index < StopCount; ++Index)
     {
-        StopPositions[Index] = ClampUnit(Entry.GradientStops[Index]);
+        StopPositions[Index] = RendererSystemOps::ClampUnit(Entry.GradientStops[Index]);
         StopColors[Index] = Entry.GradientColors[Index];
     }
 
@@ -2651,7 +3168,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     };
 
     const auto SampleGradient = [&](const float T) {
-        const float ClampedT = ClampUnit(T);
+        const float ClampedT = RendererSystemOps::ClampUnit(T);
 
         if (StopCount == 1 || ClampedT <= StopPositions[0])
         {
@@ -2678,7 +3195,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
         const std::uint32_t RightColor = StopColors[SegmentIndex + 1];
 
         const float Denom = std::max(1e-6f, RightPos - LeftPos);
-        const float Alpha = ClampUnit((ClampedT - LeftPos) / Denom);
+        const float Alpha = RendererSystemOps::ClampUnit((ClampedT - LeftPos) / Denom);
         const float InvAlpha = 1.0f - Alpha;
 
         const auto BlendChannel = [&](const int Shift) -> std::uint8_t {
@@ -2695,8 +3212,8 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     };
 
     std::vector<std::uint8_t> PixelData{};
-    PixelData.resize(static_cast<std::size_t>(kUiGradientTextureSize) *
-                     static_cast<std::size_t>(kUiGradientTextureSize) * 4u);
+    PixelData.resize(static_cast<std::size_t>(RendererSystemOps::kUiGradientTextureSize) *
+                     static_cast<std::size_t>(RendererSystemOps::kUiGradientTextureSize) * 4u);
 
     const float StartX = Entry.GradientStartX;
     const float StartY = Entry.GradientStartY;
@@ -2706,12 +3223,12 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     const float DeltaY = EndY - StartY;
     const float GradientLengthSq = DeltaX * DeltaX + DeltaY * DeltaY;
 
-    for (std::uint32_t Y = 0; Y < kUiGradientTextureSize; ++Y)
+    for (std::uint32_t Y = 0; Y < RendererSystemOps::kUiGradientTextureSize; ++Y)
     {
-        for (std::uint32_t X = 0; X < kUiGradientTextureSize; ++X)
+        for (std::uint32_t X = 0; X < RendererSystemOps::kUiGradientTextureSize; ++X)
         {
-            const float U = (static_cast<float>(X) + 0.5f) / static_cast<float>(kUiGradientTextureSize);
-            const float V = (static_cast<float>(Y) + 0.5f) / static_cast<float>(kUiGradientTextureSize);
+            const float U = (static_cast<float>(X) + 0.5f) / static_cast<float>(RendererSystemOps::kUiGradientTextureSize);
+            const float V = (static_cast<float>(Y) + 0.5f) / static_cast<float>(RendererSystemOps::kUiGradientTextureSize);
             float T = 0.0f;
             if (GradientLengthSq > 1e-6f)
             {
@@ -2720,7 +3237,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
 
             const std::uint32_t Packed = SampleGradient(T);
             const std::size_t PixelIndex =
-                (static_cast<std::size_t>(Y) * static_cast<std::size_t>(kUiGradientTextureSize) + static_cast<std::size_t>(X)) * 4u;
+                (static_cast<std::size_t>(Y) * static_cast<std::size_t>(RendererSystemOps::kUiGradientTextureSize) + static_cast<std::size_t>(X)) * 4u;
             PixelData[PixelIndex + 0] = static_cast<std::uint8_t>((Packed >> 24u) & 0xffu);
             PixelData[PixelIndex + 1] = static_cast<std::uint8_t>((Packed >> 16u) & 0xffu);
             PixelData[PixelIndex + 2] = static_cast<std::uint8_t>((Packed >> 8u) & 0xffu);
@@ -2729,7 +3246,7 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> RendererSystem::ResolveUiMate
     }
 
     SnAPI::Graphics::ImageCreateInfo ImageCI = SnAPI::Graphics::ImageCreateInfo::VisualDefault(
-        SnAPI::Size2DU{kUiGradientTextureSize, kUiGradientTextureSize},
+        SnAPI::Size2DU{RendererSystemOps::kUiGradientTextureSize, RendererSystemOps::kUiGradientTextureSize},
         SnAPI::Graphics::ETextureFormat::R8G8B8A8_Unorm,
         1);
     if (ImageCI.SamplerCreateInfo)
@@ -3000,8 +3517,8 @@ bool RendererSystem::RecreateSwapChainForCurrentWindowUnlocked()
             return false;
         }
 
-        const float FallbackWidth = ClampWindowExtent(std::min(m_window->Size().x(), m_settings.OutOfMemoryFallbackWindowWidth));
-        const float FallbackHeight = ClampWindowExtent(std::min(m_window->Size().y(), m_settings.OutOfMemoryFallbackWindowHeight));
+        const float FallbackWidth = RendererSystemOps::ClampWindowExtent(std::min(m_window->Size().x(), m_settings.OutOfMemoryFallbackWindowWidth));
+        const float FallbackHeight = RendererSystemOps::ClampWindowExtent(std::min(m_window->Size().y(), m_settings.OutOfMemoryFallbackWindowHeight));
 
         if (m_settings.ForceWindowedOnOutOfMemory)
         {
@@ -3043,7 +3560,7 @@ bool RendererSystem::CreateWindowResources()
     }
 
     auto Window = std::unique_ptr<SnAPI::Graphics::WindowBase, WindowDeleter>(new SnAPI::Graphics::SDLWindow());
-    Window->Create(BuildWindowCreateInfo(m_settings));
+    Window->Create(RendererSystemOps::BuildWindowCreateInfo(m_settings));
     Window->Maximize();
     m_graphics->InitializeResourcesForWindow(Window.get());
     const auto WindowSize = Window->Size();
@@ -3121,7 +3638,11 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
             {
                 SetViewportFinalColorResource("UI_Opaque");
             }
-            else if (Preset == ERenderViewportPassGraphPreset::DefaultWorld)
+            else if (Preset == ERenderViewportPassGraphPreset::DefaultWorld
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                     || Preset == ERenderViewportPassGraphPreset::EditorWorld
+#endif
+                     )
             {
                 // Match legacy PresentPass behavior: present the fully composited LDR output.
                 SetViewportFinalColorResource("Composite_Out");
@@ -3177,11 +3698,20 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         return true;
     }
 
-    if (Preset != ERenderViewportPassGraphPreset::DefaultWorld)
+    if (Preset != ERenderViewportPassGraphPreset::DefaultWorld
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        && Preset != ERenderViewportPassGraphPreset::EditorWorld
+#endif
+        )
     {
         SNAPI_RENDERER_LOG_WARNING("Unsupported viewport pass graph preset value %u.", static_cast<unsigned>(Preset));
         return false;
     }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    const bool IsEditorWorldPreset = (Preset == ERenderViewportPassGraphPreset::EditorWorld);
+#else
+    const bool IsEditorWorldPreset = false;
+#endif
 
     if (!EnsureLightManagerInternal())
     {
@@ -3204,6 +3734,44 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {GBufferPass::PropertyNames::ShadersReductionProgram.data(), "TriangleReduction"},
         {GBufferPass::PropertyNames::ShadersInstanceCullProgram.data(), "InstanceCulling"},
         {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(), DepthConfig{.WriteDepth = true, .DepthTest = true, .WriteResourceName = "GBuffer_Depth"}}};
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    auto EditorIDPassProperties = PassProperties{
+        {AutoGeneratedPass::PropertyNames::PassName.data(), "Editor ID Pass"},
+        {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(),
+         std::string{SnAPI::GameFramework::Editor::GFEditorIDContract::ShadingModelModuleName}},
+        {SnAPI::GameFramework::Editor::GFEditorIDPass::PropertyNames::MaterialsModule.data(), "GFDefaultEditorIDMaterial"},
+        {GBufferPass::PropertyNames::ShadersCullProgram.data(), "TriangleCulling"},
+        {GBufferPass::PropertyNames::ShadersGenDrawIndirectProgram.data(), "GenDrawIndirect"},
+        {GBufferPass::PropertyNames::ShadersReductionProgram.data(), "TriangleReduction"},
+        {GBufferPass::PropertyNames::ShadersInstanceCullProgram.data(), "InstanceCulling"},
+        {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
+         DepthConfig{.WriteDepth = true, .DepthTest = true, .WriteResourceName = "EditorID_Depth"}},
+    };
+
+    auto EditorOverlayPassProperties = PassProperties{
+        {AutoGeneratedPass::PropertyNames::PassName.data(), "Editor Overlay Pass"},
+        {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(),
+         std::string{SnAPI::GameFramework::Editor::GFEditorOverlayContract::ShadingModelModuleName}},
+        {SnAPI::GameFramework::Editor::GFEditorOverlayPass::PropertyNames::MaterialsModule.data(), "GFDefaultEditorOverlayMaterial"},
+        {GBufferPass::PropertyNames::ShadersCullProgram.data(), "TriangleCulling"},
+        {GBufferPass::PropertyNames::ShadersGenDrawIndirectProgram.data(), "GenDrawIndirect"},
+        {GBufferPass::PropertyNames::ShadersReductionProgram.data(), "TriangleReduction"},
+        {GBufferPass::PropertyNames::ShadersInstanceCullProgram.data(), "InstanceCulling"},
+        {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
+         DepthConfig{
+             .WriteDepth = true,
+             .SampleDepth = true,
+             .DepthTest = true,
+             .ClearDepth = 0.0f,
+             .ReadResourceName = "GBuffer_Depth", // Sample this resource
+             .WriteResourceName = "EditorOverlay_Depth", // Write/Test this resource
+             .ReadLayout = EImageLayout::DepthStencilReadOnlyOptimal}},
+        {AutoGeneratedPass::PropertyNames::PassOutputResourceNameOverrides.data(),
+         ResourceNameMappings{
+             {"Overlay_Out", "EditorOverlay_Color"}}},
+    };
+#endif
 
     auto ShadingPassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Shading Pass"},
@@ -3239,6 +3807,12 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data(),
          ResourceNameMappings{{"UI_Out", "UI_Opaque"}}},
     };
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (IsEditorWorldPreset)
+    {
+        CompositePassProperties[FullScreenPass::PropertyNames::MaterialsModule.data()] = std::string{"GFEditorCompositeMaterial"};
+    }
+#endif
 
     auto AtmosphereCompositePassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Atmosphere Composite Pass"},
@@ -3246,6 +3820,11 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {FullScreenPass::PropertyNames::MaterialsModule.data(), "AtmosCompositeMaterial"},
         {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
          DepthConfig{.WriteDepth = false, .SampleDepth = true, .DepthTest = false, .ReadResourceName = "GBuffer_Depth", .ReadLayout = EImageLayout::DepthStencilReadOnlyOptimal}}};
+    if (!m_settings.EnableSsr)
+    {
+        AtmosphereCompositePassProperties[AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data()] =
+            ResourceNameMappings{{"Shading_SSR", "Shading_Out"}};
+    }
 
     auto AtmospherePassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Atmosphere Pass"},
@@ -3267,6 +3846,14 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
     if (TrackDefaultPassPointers)
     {
         m_gbufferPass = RegisteredGBufferPass;
+    }
+
+    if (IsEditorWorldPreset)
+    {
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<SnAPI::GameFramework::Editor::GFEditorIDPass>(std::move(EditorIDPassProperties)));
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<SnAPI::GameFramework::Editor::GFEditorOverlayPass>(std::move(EditorOverlayPassProperties)));
+#endif
     }
 
     if (m_settings.EnableSsao)
@@ -3330,7 +3917,9 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
 
     if (m_settings.EnableAtmosphere)
     {
-        m_graphics->RegisterPass(RendererViewportID, std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties)));
+        auto Atmosphere = std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties));
+        Atmosphere->SetFeature(AtmospherePass::Feature::World, m_settings.AtmosphereWorldMode);
+        m_graphics->RegisterPass(RendererViewportID, std::move(Atmosphere));
         m_graphics->RegisterPass(RendererViewportID, std::make_unique<CompositePass>(std::move(AtmosphereCompositePassProperties)));
     }
 

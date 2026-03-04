@@ -195,6 +195,32 @@ SnAPI::Graphics::SharedVertexStreamSourcePtr BuildPrimitiveSourceFromMeshPath(co
     return {};
 }
 
+[[nodiscard]] std::vector<TAssetRef<MaterialInstanceAssetRuntime>> BuildEffectiveMaterialRefs(
+    const std::vector<TAssetRef<MaterialInstanceAssetRuntime>>& BaseRefs,
+    const std::vector<TAssetRef<MaterialInstanceAssetRuntime>>& OverrideRefs)
+{
+    if (OverrideRefs.empty())
+    {
+        return BaseRefs;
+    }
+
+    std::vector<TAssetRef<MaterialInstanceAssetRuntime>> EffectiveRefs = BaseRefs;
+    if (EffectiveRefs.size() < OverrideRefs.size())
+    {
+        EffectiveRefs.resize(OverrideRefs.size());
+    }
+
+    for (std::size_t Index = 0; Index < OverrideRefs.size(); ++Index)
+    {
+        if (!OverrideRefs[Index].IsNull())
+        {
+            EffectiveRefs[Index] = OverrideRefs[Index];
+        }
+    }
+
+    return EffectiveRefs;
+}
+
 #if defined(WITH_EDITOR) && WITH_EDITOR
 bool IsStaticMeshSettingsField(const std::string_view Name)
 {
@@ -206,7 +232,8 @@ bool IsStaticMeshSettingsField(const std::string_view Name)
         || Name == "Visible"
         || Name == "CastShadows"
         || Name == "SyncFromTransform"
-        || Name == "RegisterWithRenderer";
+        || Name == "RegisterWithRenderer"
+        || Name == "MaterialInstanceOverrides";
 }
 #endif
 } // namespace
@@ -246,10 +273,18 @@ void StaticMeshComponent::SetVertexStreamSource(std::shared_ptr<SnAPI::Graphics:
 
 void StaticMeshComponent::ClearMesh()
 {
-    
+    if (m_renderObject)
+    {
+        if (auto* Renderer = ResolveRendererSystem(); Renderer && Renderer->IsInitialized())
+        {
+            Renderer->RemoveRenderObject(m_renderObject);
+        }
+    }
+
     m_renderObject.reset();
     m_loadedPath.clear();
     m_loadedFromAsset = false;
+    m_loadedMeshMaterialInstances.clear();
     m_loadedStreamSource.reset();
     m_registered = false;
     m_passStateInitialized = false;
@@ -269,8 +304,11 @@ void StaticMeshComponent::OnDestroy()
 
 void StaticMeshComponent::Tick(const float DeltaSeconds)
 {
+    (void)DeltaSeconds;
     if (!m_renderObject)
+    {
         return;
+    }
 
     if (m_settings.SyncFromTransform)
     {
@@ -334,6 +372,12 @@ void StaticMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
         return;
     }
 
+    if (Name == "MaterialInstanceOverrides")
+    {
+        ApplyConfiguredMaterialInstances(*m_renderObject);
+        ApplySharedMaterialInstances(*m_renderObject);
+    }
+
     if (m_settings.SyncFromTransform)
     {
         SyncRenderObjectTransform(*m_renderObject);
@@ -387,10 +431,11 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         m_renderObject = std::move(RenderObject);
         m_loadedPath.clear();
         m_loadedFromAsset = false;
+        m_loadedMeshMaterialInstances.clear();
         m_loadedStreamSource = m_streamSource;
         m_registered = false;
 
-        ApplyDefaultMaterialInstances(*m_renderObject, *Renderer);
+        ApplyConfiguredMaterialInstances(*m_renderObject);
         ApplySharedMaterialInstances(*m_renderObject);
         ApplyRenderObjectState(*m_renderObject);
 
@@ -423,15 +468,12 @@ bool StaticMeshComponent::EnsureMeshLoaded()
                         m_renderObject = std::move(RenderObject);
                         m_loadedPath = AssetToken;
                         m_loadedFromAsset = true;
+                        m_loadedMeshMaterialInstances = SharedRuntimeMesh->Get()->MaterialInstances;
                         m_loadedStreamSource.reset();
                         m_registered = false;
                         m_settings.MeshPath.clear();
 
-                        ApplyRuntimeOrDefaultMaterialInstances(
-                            *m_renderObject,
-                            *Renderer,
-                            SharedRuntimeMesh->Get()->MaterialInstances,
-                            AssetManager);
+                        ApplyConfiguredMaterialInstances(*m_renderObject);
                         ApplySharedMaterialInstances(*m_renderObject);
                         ApplyRenderObjectState(*m_renderObject);
 
@@ -455,11 +497,12 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         m_renderObject = std::move(RenderObject);
         m_loadedPath = ToLowerASCII(m_settings.MeshPath);
         m_loadedFromAsset = false;
+        m_loadedMeshMaterialInstances.clear();
         m_loadedStreamSource.reset();
         m_registered = false;
         m_settings.MeshAsset.Clear();
 
-        ApplyDefaultMaterialInstances(*m_renderObject, *Renderer);
+        ApplyConfiguredMaterialInstances(*m_renderObject);
         ApplySharedMaterialInstances(*m_renderObject);
         ApplyRenderObjectState(*m_renderObject);
         m_lastFailedPathLoadKey.clear();
@@ -467,6 +510,20 @@ bool StaticMeshComponent::EnsureMeshLoaded()
         return true;
     }
     return false;
+}
+
+void StaticMeshComponent::ApplyConfiguredMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject)
+{
+    
+    auto* Renderer = ResolveRendererSystem();
+    if (!Renderer || !Renderer->IsInitialized())
+    {
+        return;
+    }
+
+    const std::vector<TAssetRef<MaterialInstanceAssetRuntime>> EffectiveRefs =
+        BuildEffectiveMaterialRefs(m_loadedMeshMaterialInstances, m_settings.MaterialInstanceOverrides);
+    ApplyRuntimeOrDefaultMaterialInstances(RenderObject, *Renderer, EffectiveRefs, ResolveDefaultAssetManager());
 }
 
 void StaticMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const
@@ -523,40 +580,30 @@ void StaticMeshComponent::ApplySharedMaterialInstances(SnAPI::Graphics::IRenderO
 
 void StaticMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::IRenderObject& RenderObject)
 {
-    
+    static_cast<void>(RenderObject);
+
     auto* Renderer = ResolveRendererSystem();
     if (!Renderer || !Renderer->IsInitialized())
     {
         return;
     }
 
+    const bool EffectiveVisible = m_settings.RegisterWithRenderer && m_settings.Visible;
     const std::uint64_t PassGraphRevision = Renderer->RenderViewportPassGraphRevision();
     const bool PassStateChanged = !m_passStateInitialized
-                               || m_lastVisible != m_settings.Visible
+                               || m_lastVisible != EffectiveVisible
                                || m_lastCastShadows != m_settings.CastShadows
-                               || m_lastPassGraphRevision != PassGraphRevision;
+                               || m_lastPassGraphRevision != PassGraphRevision
+                               || m_registered != m_settings.RegisterWithRenderer;
     if (PassStateChanged)
     {
-        if (Renderer->ConfigureRenderObjectPasses(RenderObject, m_settings.Visible, m_settings.CastShadows))
+        if (Renderer->ConfigureRenderObjectPasses(m_renderObject, EffectiveVisible, m_settings.CastShadows))
         {
             m_passStateInitialized = true;
-            m_lastVisible = m_settings.Visible;
+            m_lastVisible = EffectiveVisible;
             m_lastCastShadows = m_settings.CastShadows;
             m_lastPassGraphRevision = PassGraphRevision;
-        }
-    }
-
-    if (!m_settings.RegisterWithRenderer)
-    {
-        m_registered = false;
-        return;
-    }
-
-    if (!m_registered)
-    {
-        if (Renderer->RegisterRenderObject(m_renderObject))
-        {
-            m_registered = true;
+            m_registered = m_settings.RegisterWithRenderer;
         }
     }
 }

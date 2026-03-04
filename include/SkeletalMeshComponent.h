@@ -72,6 +72,11 @@ public:
     /** @brief Stop all rigid animations on loaded mesh. */
     void StopAnimations();
 
+    [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::MeshRenderObject>& RenderObject() const
+    {
+        return m_renderObject;
+    }
+
     void OnCreate();
     void OnDestroy();
     void Tick(float DeltaSeconds);

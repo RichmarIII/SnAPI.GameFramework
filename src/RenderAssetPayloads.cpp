@@ -73,7 +73,18 @@ void serialize(Archive& Ar, SkeletalMeshPayload& Value)
 template<class Archive>
 void serialize(Archive& Ar, MaterialPayload& Value)
 {
-    Ar(Value.ShaderModule, Value.ShadingModel);
+    Ar(
+        Value.ShaderModule,
+        Value.ShadingModel,
+        Value.FeatureAlbedoMap,
+        Value.FeatureNormalMap,
+        Value.FeatureRoughnessMap,
+        Value.FeatureMetalnessMap,
+        Value.FeatureOcclusionMap,
+        Value.FeatureAlphaTest,
+        Value.FeatureAlphaBlend,
+        Value.FeatureDoubleSided,
+        Value.FeatureInstancing);
 }
 
 template<class Archive>
@@ -102,6 +113,18 @@ void serialize(Archive& Ar, MaterialInstancePayload& Value)
 
 namespace
 {
+
+struct LegacyMaterialPayloadV1
+{
+    std::string ShaderModule{};
+    std::string ShadingModel{};
+};
+
+template<class Archive>
+void serialize(Archive& Ar, LegacyMaterialPayloadV1& Value)
+{
+    Ar(Value.ShaderModule, Value.ShadingModel);
+}
 
 template<typename TPayload>
 TExpected<void> SerializePayloadBinary(const TPayload& Payload, std::vector<uint8_t>& OutBytes)
@@ -200,7 +223,21 @@ TExpected<void> SerializeMaterialPayload(const MaterialPayload& Payload, std::ve
 
 TExpected<MaterialPayload> DeserializeMaterialPayload(const uint8_t* Bytes, const size_t Size)
 {
-    return DeserializePayloadBinary<MaterialPayload>(Bytes, Size);
+    if (auto Result = DeserializePayloadBinary<MaterialPayload>(Bytes, Size))
+    {
+        return Result;
+    }
+
+    auto Legacy = DeserializePayloadBinary<LegacyMaterialPayloadV1>(Bytes, Size);
+    if (!Legacy)
+    {
+        return std::unexpected(Legacy.error());
+    }
+
+    MaterialPayload Upgraded{};
+    Upgraded.ShaderModule = std::move(Legacy->ShaderModule);
+    Upgraded.ShadingModel = std::move(Legacy->ShadingModel);
+    return Upgraded;
 }
 
 TExpected<void> SerializeMaterialInstancePayload(const MaterialInstancePayload& Payload, std::vector<uint8_t>& OutBytes)

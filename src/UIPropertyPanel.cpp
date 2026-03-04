@@ -3,12 +3,18 @@
 #if defined(SNAPI_GF_ENABLE_UI)
 
 #include "AssetRef.h"
+#include "AssetPipelineIds.h"
 #include "BaseNode.h"
 #include "BuiltinTypes.h"
+#include "Editor/EditorImportSettings.h"
 #include "IWorld.h"
 #include "PathResolver.h"
+#include "RenderAssetPayloads.h"
 #include "PawnBase.h"
 #include "RenderAssetRuntime.h"
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "StaticMeshComponent.h"
+#endif
 #include "SubClassOf.h"
 
 #include <algorithm>
@@ -18,15 +24,20 @@
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include <TextureCompressorIds.h>
+
 #include <UIContext.h>
+#include <UIButton.h>
 #include <UICheckbox.h>
 #include <UIComboBox.h>
 #include <UIElementBase.h>
@@ -66,6 +77,21 @@ constexpr Color kAxisW{220, 196, 138, 255};
 constexpr std::string_view kAssetRefNoneOption = "<None>";
 
 [[nodiscard]] std::string TrimCopy(std::string_view Text);
+
+[[nodiscard]] bool IsElementWithinSubtree(SnAPI::UI::UIContext& Context,
+                                          SnAPI::UI::ElementId Element,
+                                          const SnAPI::UI::ElementId SubtreeRoot)
+{
+  while (Element.Value != 0)
+  {
+    if (Element == SubtreeRoot)
+    {
+      return true;
+    }
+    Element = Context.GetParent(Element);
+  }
+  return false;
+}
 
 template<typename TAssetRefType>
 void PopulateAssetRefOptions(std::vector<std::string>& OutOptions)
@@ -136,6 +162,165 @@ bool TryWriteAssetRefSelection(void* MutablePointer, const std::string& Selected
   }
 
   value->SetAsset(it->Name, it->AssetId);
+  return true;
+}
+
+struct GenericAssetRefEntry
+{
+  std::string Label{};
+  std::string Name{};
+  std::string AssetId{};
+  ::SnAPI::AssetPipeline::TypeId AssetKind{};
+};
+
+[[nodiscard]] std::vector<GenericAssetRefEntry> EnumerateAnyAssetRefEntries(
+  const std::optional<::SnAPI::AssetPipeline::TypeId>& AssetKindFilter = std::nullopt)
+{
+  std::vector<GenericAssetRefEntry> Entries{};
+  auto* manager = ResolveDefaultAssetManager();
+  if (!manager)
+  {
+    return Entries;
+  }
+
+  const auto catalog = manager->ListAssetCatalog();
+  Entries.reserve(catalog.size());
+  for (const auto& catalogEntry : catalog)
+  {
+    if (AssetKindFilter.has_value() && catalogEntry.Info.AssetKind != *AssetKindFilter)
+    {
+      continue;
+    }
+
+    GenericAssetRefEntry entry{};
+    entry.Name = catalogEntry.Info.Name.empty() ? catalogEntry.Info.Id.ToString() : catalogEntry.Info.Name;
+    entry.AssetId = catalogEntry.Info.Id.ToString();
+    entry.AssetKind = catalogEntry.Info.AssetKind;
+    entry.Label = entry.Name + " [" + (entry.AssetId.size() > 8 ? entry.AssetId.substr(0, 8) : entry.AssetId) + "]";
+    Entries.push_back(std::move(entry));
+  }
+
+  std::ranges::sort(Entries, [](const GenericAssetRefEntry& Left, const GenericAssetRefEntry& Right) {
+    if (Left.Name != Right.Name)
+    {
+      return Left.Name < Right.Name;
+    }
+    return Left.AssetId < Right.AssetId;
+  });
+
+  return Entries;
+}
+
+[[nodiscard]] std::optional<::SnAPI::AssetPipeline::TypeId> AssetRefPayloadKindFilterFromField(const FieldInfo& Field)
+{
+  std::string NameLower(Field.Name);
+  std::ranges::transform(NameLower, NameLower.begin(), [](const unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  if (NameLower == "parentmaterial")
+  {
+    return AssetKindMaterial();
+  }
+  if (NameLower == "materialinstances")
+  {
+    return AssetKindMaterialInstance();
+  }
+  return std::nullopt;
+}
+
+void PopulateAssetRefPayloadOptions(
+  std::vector<std::string>& OutOptions,
+  const std::optional<::SnAPI::AssetPipeline::TypeId>& AssetKindFilter = std::nullopt)
+{
+  const auto entries = EnumerateAnyAssetRefEntries(AssetKindFilter);
+  OutOptions.reserve(OutOptions.size() + entries.size() + 1);
+  OutOptions.emplace_back(kAssetRefNoneOption);
+  for (const auto& entry : entries)
+  {
+    OutOptions.push_back(entry.Label);
+  }
+}
+
+bool TryReadAssetRefPayloadSelectionLabel(
+  const void* ConstPointer,
+  std::string& OutText,
+  const std::optional<::SnAPI::AssetPipeline::TypeId>& AssetKindFilter = std::nullopt)
+{
+  const auto* assetRefValue = static_cast<const AssetRefPayload*>(ConstPointer);
+  if (!assetRefValue)
+  {
+    return false;
+  }
+
+  const std::string selectedName = TrimCopy(assetRefValue->AssetName);
+  const std::string selectedId = TrimCopy(assetRefValue->AssetId);
+  if (selectedName.empty() && selectedId.empty())
+  {
+    OutText = std::string(kAssetRefNoneOption);
+    return true;
+  }
+
+  const auto entries = EnumerateAnyAssetRefEntries(AssetKindFilter);
+  const auto it = std::ranges::find_if(entries, [&](const GenericAssetRefEntry& entry) {
+    if (!selectedId.empty())
+    {
+      return entry.AssetId == selectedId;
+    }
+    return entry.Name == selectedName;
+  });
+
+  if (it != entries.end())
+  {
+    OutText = it->Label;
+    return true;
+  }
+
+  if (!selectedName.empty() && !selectedId.empty())
+  {
+    OutText = selectedName + " [" + selectedId + "]";
+  }
+  else if (!selectedName.empty())
+  {
+    OutText = selectedName;
+  }
+  else
+  {
+    OutText = selectedId;
+  }
+  return true;
+}
+
+bool TryWriteAssetRefPayloadSelection(
+  void* MutablePointer,
+  const std::string& Selected,
+  const std::optional<::SnAPI::AssetPipeline::TypeId>& AssetKindFilter = std::nullopt)
+{
+  auto* value = static_cast<AssetRefPayload*>(MutablePointer);
+  if (!value)
+  {
+    return false;
+  }
+
+  if (Selected.empty() || Selected == kAssetRefNoneOption)
+  {
+    value->AssetName.clear();
+    value->AssetId.clear();
+    return true;
+  }
+
+  const auto entries = EnumerateAnyAssetRefEntries(AssetKindFilter);
+  const auto it = std::ranges::find_if(entries, [&](const GenericAssetRefEntry& entry) {
+    return entry.Label == Selected || entry.Name == Selected || entry.AssetId == Selected;
+  });
+  if (it == entries.end())
+  {
+    value->AssetName = Selected;
+    value->AssetId.clear();
+    return true;
+  }
+
+  value->AssetName = it->Name;
+  value->AssetId = it->AssetId;
   return true;
 }
 
@@ -621,6 +806,16 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
 
 void UIPropertyPanel::ClearObject()
 {
+  if (m_Context && m_ContentRoot.Value != 0)
+  {
+    const SnAPI::UI::ElementId CapturedElement = m_Context->GetCapture();
+    if (IsElementWithinSubtree(*m_Context, CapturedElement, m_ContentRoot))
+    {
+      m_Context->ReleaseCapture();
+    }
+    m_Context->DestroyElement(m_ContentRoot);
+  }
+
   ++m_BindingGeneration;
   ClearBindingHooks();
 
@@ -671,8 +866,19 @@ bool UIPropertyPanel::RebuildUi()
     return false;
   }
   m_RebuildInProgress = true;
+  m_Built = false;
 
   // Property panel is single-content by design.
+  if (m_Context && m_ContentRoot.Value != 0)
+  {
+    const SnAPI::UI::ElementId CapturedElement = m_Context->GetCapture();
+    if (IsElementWithinSubtree(*m_Context, CapturedElement, m_ContentRoot))
+    {
+      m_Context->ReleaseCapture();
+    }
+    m_Context->DestroyElement(m_ContentRoot);
+  }
+
   ++m_BindingGeneration;
   ClearBindingHooks();
   m_ContentRoot = {};
@@ -843,6 +1049,145 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     AddUnsupportedRow(Parent, "Type", "Type metadata is not registered");
     return;
   }
+
+  if (Type == StaticTypeId<MaterialInstancePayload>())
+  {
+    auto* payload = static_cast<MaterialInstancePayload*>(RootInstance);
+    if (!payload)
+    {
+      AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null material instance payload");
+      return;
+    }
+
+    const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+    for (const ReflectedFieldRef& fieldRef : reflectedFields)
+    {
+      if (!fieldRef.Field)
+      {
+        continue;
+      }
+
+      if (!EqualsIgnoreCase(fieldRef.Field->Name, "ParentMaterial"))
+      {
+        continue;
+      }
+
+      auto parentPath = PathPrefix;
+      parentPath.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(parentPath), Depth);
+      break;
+    }
+
+    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) { return entry.IsConst; });
+    AddMaterialScalarCollectionEditor(Parent, payload->Scalars, readOnly, "Scalars");
+    AddMaterialVectorCollectionEditor(Parent, payload->Vectors, readOnly, "Vectors");
+    AddMaterialTextureCollectionEditor(Parent, payload->Textures, readOnly, "Textures");
+    return;
+  }
+
+  if (Type == StaticTypeId<Editor::StaticMeshAssetEditorPayload>())
+  {
+    auto* payload = static_cast<Editor::StaticMeshAssetEditorPayload*>(RootInstance);
+    if (!payload)
+    {
+      AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null static mesh payload");
+      return;
+    }
+
+    const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+    for (const ReflectedFieldRef& fieldRef : reflectedFields)
+    {
+      if (!fieldRef.Field)
+      {
+        continue;
+      }
+
+      if (EqualsIgnoreCase(fieldRef.Field->Name, "MaterialInstances"))
+      {
+        continue;
+      }
+
+      auto path = PathPrefix;
+      path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
+    }
+
+    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) { return entry.IsConst; });
+    AddAssetRefCollectionEditor(
+      Parent,
+      payload->MaterialInstances,
+      readOnly,
+      "Material Instances",
+      AssetKindMaterialInstance(),
+      "Slot");
+    return;
+  }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+  if (Type == StaticTypeId<StaticMeshComponent::Settings>())
+  {
+    const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+    std::vector<FieldPathEntry> overridePath{};
+    bool hasOverrideField = false;
+    for (const ReflectedFieldRef& fieldRef : reflectedFields)
+    {
+      if (!fieldRef.Field)
+      {
+        continue;
+      }
+
+      if (EqualsIgnoreCase(fieldRef.Field->Name, "MaterialInstanceOverrides"))
+      {
+        overridePath = PathPrefix;
+        overridePath.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+        hasOverrideField = true;
+        continue;
+      }
+
+      auto path = PathPrefix;
+      path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
+    }
+
+    if (!hasOverrideField)
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Field metadata is missing");
+      return;
+    }
+
+    void* owner = nullptr;
+    const FieldInfo* field = nullptr;
+    if (!ResolveLeafPath(RootInstance, overridePath, owner, field) || !field || !field->MutablePointer)
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Unable to resolve override storage");
+      return;
+    }
+
+    if (field->FieldType != StaticTypeId<std::vector<TAssetRef<MaterialInstanceAssetRuntime>>>())
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Override field type mismatch");
+      return;
+    }
+
+    auto* overrides = static_cast<std::vector<TAssetRef<MaterialInstanceAssetRuntime>>*>(field->MutablePointer(owner));
+    if (!overrides)
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Override storage is unavailable");
+      return;
+    }
+
+    const bool readOnly = std::ranges::any_of(overridePath, [](const FieldPathEntry& entry) { return entry.IsConst; })
+                       || field->IsConst
+                       || !field->Setter;
+    AddMaterialInstanceAssetRefCollectionEditor(
+      Parent,
+      *overrides,
+      readOnly,
+      "Material Instance Overrides",
+      "Slot");
+    return;
+  }
+#endif
 
   const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
   if (reflectedFields.empty())
@@ -1153,6 +1498,16 @@ void UIPropertyPanel::AddFieldEditor(
       {
         PopulateAssetRefOptions<TAssetRef<SkeletalMeshAssetRuntime>>(options);
       }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<MaterialInstanceAssetRuntime>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<AssetRefPayload>())
+      {
+        PopulateAssetRefPayloadOptions(options, AssetRefPayloadKindFilterFromField(Field));
+      }
       combo->SetItems(std::move(options));
     }
   }
@@ -1446,6 +1801,1079 @@ void UIPropertyPanel::AddFieldEditor(
   AttachEditorHooks(bindingIndex);
 }
 
+void UIPropertyPanel::AddMaterialScalarCollectionEditor(
+  const SnAPI::UI::ElementId Parent,
+  std::vector<MaterialScalarParamPayload>& Scalars,
+  const bool ReadOnly,
+  const std::string_view Heading)
+{
+  if (!m_Context)
+  {
+    return;
+  }
+  auto* scalarsPtr = &Scalars;
+
+  const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+  if (accordionHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(Parent, accordionHandle.Id);
+
+  auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+  if (!accordion)
+  {
+    return;
+  }
+  accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+  accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  accordion->AllowMultipleExpanded().Set(true);
+  accordion->DefaultExpanded().Set(true);
+  accordion->Gap().Set(4.0f);
+  accordion->Padding().Set(0.0f);
+  accordion->HeaderHeight().Set(26.0f);
+  accordion->HeaderPadding().Set(8.0f);
+  accordion->ContentPadding().Set(5.0f);
+  accordion->BackgroundColor().Set(kCardBackground);
+  accordion->BorderColor().Set(kCardBorder);
+  accordion->BorderThickness().Set(1.0f);
+  accordion->CornerRadius().Set(4.0f);
+  accordion->HeaderColor().Set(Color{45, 51, 63, 246});
+  accordion->HeaderHoverColor().Set(Color{56, 63, 77, 248});
+  accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+  accordion->HeaderTextColor().Set(Color{205, 212, 223, 255});
+  accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
+  accordion->HeaderBorderColor().Set(kCardBorder);
+  accordion->HeaderBorderThickness().Set(1.0f);
+  accordion->ArrowSize().Set(18.0f);
+  accordion->ArrowGap().Set(6.0f);
+
+  const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.MaterialScalarBody");
+  if (bodyHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+
+  auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id));
+  if (!body)
+  {
+    return;
+  }
+  body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+  body->Padding().Set(2.0f);
+  body->Gap().Set(4.0f);
+  body->Width().Set(SnAPI::UI::Sizing::Fill());
+  body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  body->Background().Set(Color::Transparent());
+  body->BorderColor().Set(Color::Transparent());
+  body->BorderThickness().Set(0.0f);
+
+  std::string heading(Heading);
+  heading += " (" + std::to_string(scalarsPtr->size()) + ")";
+  accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+  accordion->SetSectionExpanded(bodyHandle.Id, true);
+
+  if (scalarsPtr->empty())
+  {
+    const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("No scalar parameters");
+    if (textHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(bodyHandle.Id, textHandle.Id);
+      if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+      {
+        text->TextColor().Set(Color{152, 160, 176, 255});
+      }
+    }
+    return;
+  }
+
+  for (size_t index = 0; index < scalarsPtr->size(); ++index)
+  {
+    const auto rowHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.Row");
+    if (rowHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(bodyHandle.Id, rowHandle.Id);
+
+    if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
+    {
+      row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      row->Padding().Set(kRowPadding);
+      row->Gap().Set(8.0f);
+      row->Width().Set(SnAPI::UI::Sizing::Fill());
+      row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      row->Background().Set(kRowBackground);
+      row->BorderColor().Set(kRowBorder);
+      row->BorderThickness().Set(1.0f);
+      row->CornerRadius().Set(4.0f);
+    }
+
+    const std::string labelText = (*scalarsPtr)[index].Name.empty()
+                                    ? ("Scalar " + std::to_string(index))
+                                    : (*scalarsPtr)[index].Name;
+    const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(labelText);
+    if (labelHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(rowHandle.Id, labelHandle.Id);
+      if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
+      {
+        label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
+        label->TextColor().Set(kLabelColor);
+        label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
+        label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+      }
+    }
+
+    const auto numberHandle = m_Context->CreateElement<SnAPI::UI::UINumberField>();
+    if (numberHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(rowHandle.Id, numberHandle.Id);
+
+    if (auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(numberHandle.Id)))
+    {
+      numberField->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+      numberField->Height().Set(SnAPI::UI::Sizing::Auto());
+      numberField->HAlign().Set(SnAPI::UI::EAlignment::Center);
+      numberField->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      numberField->ShowSpinButtons().Set(!ReadOnly);
+      numberField->AllowTextInput().Set(!ReadOnly);
+      numberField->Padding().Set(3.0f);
+      numberField->BorderThickness().Set(1.0f);
+      numberField->CornerRadius().Set(3.0f);
+      numberField->BackgroundColor().Set(kValueBg);
+      numberField->HoverColor().Set(Color{26, 30, 39, 252});
+      numberField->PressedColor().Set(Color{31, 36, 46, 252});
+      numberField->BorderColor().Set(kValueBorder);
+      numberField->TextColor().Set(Color{224, 229, 237, 255});
+      numberField->CaretColor().Set(kValueBorderFocused);
+      numberField->SpinButtonColor().Set(Color{23, 27, 35, 252});
+      numberField->SpinButtonHoverColor().Set(Color{31, 36, 46, 252});
+      numberField->Precision().Set(4u);
+      numberField->Step().Set(0.01);
+      numberField->MinValue().Set(-std::numeric_limits<double>::max());
+      numberField->MaxValue().Set(std::numeric_limits<double>::max());
+      (void)numberField->SetValue(static_cast<double>((*scalarsPtr)[index].Value), false);
+
+      if (!ReadOnly)
+      {
+        numberField->Value().AddSetHook([scalarsPtr, index](const double value) {
+          if (index < scalarsPtr->size())
+          {
+            (*scalarsPtr)[index].Value = static_cast<float>(value);
+          }
+        });
+      }
+    }
+  }
+}
+
+void UIPropertyPanel::AddMaterialVectorCollectionEditor(
+  const SnAPI::UI::ElementId Parent,
+  std::vector<MaterialVectorParamPayload>& Vectors,
+  const bool ReadOnly,
+  const std::string_view Heading)
+{
+  if (!m_Context)
+  {
+    return;
+  }
+  auto* vectorsPtr = &Vectors;
+
+  const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+  if (accordionHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(Parent, accordionHandle.Id);
+
+  auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+  if (!accordion)
+  {
+    return;
+  }
+  accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+  accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  accordion->AllowMultipleExpanded().Set(true);
+  accordion->DefaultExpanded().Set(true);
+  accordion->Gap().Set(4.0f);
+  accordion->Padding().Set(0.0f);
+  accordion->HeaderHeight().Set(26.0f);
+  accordion->HeaderPadding().Set(8.0f);
+  accordion->ContentPadding().Set(5.0f);
+  accordion->BackgroundColor().Set(kCardBackground);
+  accordion->BorderColor().Set(kCardBorder);
+  accordion->BorderThickness().Set(1.0f);
+  accordion->CornerRadius().Set(4.0f);
+  accordion->HeaderColor().Set(Color{45, 51, 63, 246});
+  accordion->HeaderHoverColor().Set(Color{56, 63, 77, 248});
+  accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+  accordion->HeaderTextColor().Set(Color{205, 212, 223, 255});
+  accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
+  accordion->HeaderBorderColor().Set(kCardBorder);
+  accordion->HeaderBorderThickness().Set(1.0f);
+  accordion->ArrowSize().Set(18.0f);
+  accordion->ArrowGap().Set(6.0f);
+
+  const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.MaterialVectorBody");
+  if (bodyHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+
+  auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id));
+  if (!body)
+  {
+    return;
+  }
+  body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+  body->Padding().Set(2.0f);
+  body->Gap().Set(4.0f);
+  body->Width().Set(SnAPI::UI::Sizing::Fill());
+  body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  body->Background().Set(Color::Transparent());
+  body->BorderColor().Set(Color::Transparent());
+  body->BorderThickness().Set(0.0f);
+
+  std::string heading(Heading);
+  heading += " (" + std::to_string(vectorsPtr->size()) + ")";
+  accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+  accordion->SetSectionExpanded(bodyHandle.Id, true);
+
+  if (vectorsPtr->empty())
+  {
+    const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("No vector parameters");
+    if (textHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(bodyHandle.Id, textHandle.Id);
+      if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+      {
+        text->TextColor().Set(Color{152, 160, 176, 255});
+      }
+    }
+    return;
+  }
+
+  for (size_t index = 0; index < vectorsPtr->size(); ++index)
+  {
+    const auto rowHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.Row");
+    if (rowHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(bodyHandle.Id, rowHandle.Id);
+
+    if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
+    {
+      row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      row->Padding().Set(kRowPadding);
+      row->Gap().Set(8.0f);
+      row->Width().Set(SnAPI::UI::Sizing::Fill());
+      row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      row->Background().Set(kRowBackground);
+      row->BorderColor().Set(kRowBorder);
+      row->BorderThickness().Set(1.0f);
+      row->CornerRadius().Set(4.0f);
+    }
+
+    const std::string labelText = (*vectorsPtr)[index].Name.empty()
+                                    ? ("Vector " + std::to_string(index))
+                                    : (*vectorsPtr)[index].Name;
+    const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(labelText);
+    if (labelHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(rowHandle.Id, labelHandle.Id);
+      if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
+      {
+        label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
+        label->TextColor().Set(kLabelColor);
+        label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
+        label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+      }
+    }
+
+    const auto valueHostHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.ValueHost");
+    if (valueHostHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(rowHandle.Id, valueHostHandle.Id);
+    if (auto* valueHost = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(valueHostHandle.Id)))
+    {
+      valueHost->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      valueHost->Padding().Set(0.0f);
+      valueHost->Gap().Set(kVectorGap);
+      valueHost->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+      valueHost->HAlign().Set(SnAPI::UI::EAlignment::End);
+      valueHost->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      valueHost->Background().Set(Color::Transparent());
+      valueHost->BorderColor().Set(Color::Transparent());
+      valueHost->BorderThickness().Set(0.0f);
+    }
+
+    for (size_t component = 0; component < 4; ++component)
+    {
+      const auto numberHandle = m_Context->CreateElement<SnAPI::UI::UINumberField>();
+      if (numberHandle.Id.Value == 0)
+      {
+        continue;
+      }
+      m_Context->AddChild(valueHostHandle.Id, numberHandle.Id);
+
+      if (auto* numberField = dynamic_cast<SnAPI::UI::UINumberField*>(&m_Context->GetElement(numberHandle.Id)))
+      {
+        numberField->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        numberField->Height().Set(SnAPI::UI::Sizing::Auto());
+        numberField->HAlign().Set(SnAPI::UI::EAlignment::Center);
+        numberField->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        numberField->ShowSpinButtons().Set(!ReadOnly);
+        numberField->AllowTextInput().Set(!ReadOnly);
+        numberField->Padding().Set(3.0f);
+        numberField->BorderThickness().Set(1.0f);
+        numberField->CornerRadius().Set(3.0f);
+        numberField->BackgroundColor().Set(kValueBg);
+        numberField->HoverColor().Set(Color{26, 30, 39, 252});
+        numberField->PressedColor().Set(Color{31, 36, 46, 252});
+        numberField->BorderColor().Set(kValueBorder);
+        numberField->TextColor().Set(Color{224, 229, 237, 255});
+        numberField->CaretColor().Set(kValueBorderFocused);
+        numberField->SpinButtonColor().Set(Color{23, 27, 35, 252});
+        numberField->SpinButtonHoverColor().Set(Color{31, 36, 46, 252});
+        numberField->Precision().Set(4u);
+        numberField->Step().Set(0.01);
+        numberField->MinValue().Set(-std::numeric_limits<double>::max());
+        numberField->MaxValue().Set(std::numeric_limits<double>::max());
+        (void)numberField->SetValue(static_cast<double>((*vectorsPtr)[index].Value[component]), false);
+
+        if (!ReadOnly)
+        {
+          numberField->Value().AddSetHook([vectorsPtr, index, component](const double value) {
+            if (index < vectorsPtr->size() && component < (*vectorsPtr)[index].Value.size())
+            {
+              (*vectorsPtr)[index].Value[component] = static_cast<float>(value);
+            }
+          });
+        }
+      }
+    }
+  }
+}
+
+void UIPropertyPanel::AddMaterialTextureCollectionEditor(
+  const SnAPI::UI::ElementId Parent,
+  std::vector<MaterialTextureParamPayload>& Textures,
+  const bool ReadOnly,
+  const std::string_view Heading)
+{
+  if (!m_Context)
+  {
+    return;
+  }
+  auto* texturesPtr = &Textures;
+
+  const std::optional<::SnAPI::AssetPipeline::TypeId> textureKind = TextureCompressorPlugin::AssetKind_CompressedTexture;
+
+  const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+  if (accordionHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(Parent, accordionHandle.Id);
+
+  auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+  if (!accordion)
+  {
+    return;
+  }
+  accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+  accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  accordion->AllowMultipleExpanded().Set(true);
+  accordion->DefaultExpanded().Set(true);
+  accordion->Gap().Set(4.0f);
+  accordion->Padding().Set(0.0f);
+  accordion->HeaderHeight().Set(26.0f);
+  accordion->HeaderPadding().Set(8.0f);
+  accordion->ContentPadding().Set(5.0f);
+  accordion->BackgroundColor().Set(kCardBackground);
+  accordion->BorderColor().Set(kCardBorder);
+  accordion->BorderThickness().Set(1.0f);
+  accordion->CornerRadius().Set(4.0f);
+  accordion->HeaderColor().Set(Color{45, 51, 63, 246});
+  accordion->HeaderHoverColor().Set(Color{56, 63, 77, 248});
+  accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+  accordion->HeaderTextColor().Set(Color{205, 212, 223, 255});
+  accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
+  accordion->HeaderBorderColor().Set(kCardBorder);
+  accordion->HeaderBorderThickness().Set(1.0f);
+  accordion->ArrowSize().Set(18.0f);
+  accordion->ArrowGap().Set(6.0f);
+
+  const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.MaterialTextureBody");
+  if (bodyHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+
+  auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id));
+  if (!body)
+  {
+    return;
+  }
+  body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+  body->Padding().Set(2.0f);
+  body->Gap().Set(4.0f);
+  body->Width().Set(SnAPI::UI::Sizing::Fill());
+  body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  body->Background().Set(Color::Transparent());
+  body->BorderColor().Set(Color::Transparent());
+  body->BorderThickness().Set(0.0f);
+
+  std::string heading(Heading);
+  heading += " (" + std::to_string(texturesPtr->size()) + ")";
+  accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+  accordion->SetSectionExpanded(bodyHandle.Id, true);
+
+  if (texturesPtr->empty())
+  {
+    const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("No texture parameters");
+    if (textHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(bodyHandle.Id, textHandle.Id);
+      if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+      {
+        text->TextColor().Set(Color{152, 160, 176, 255});
+      }
+    }
+    return;
+  }
+
+  for (size_t index = 0; index < texturesPtr->size(); ++index)
+  {
+    const auto rowHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.Row");
+    if (rowHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(bodyHandle.Id, rowHandle.Id);
+
+    if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
+    {
+      row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      row->Padding().Set(kRowPadding);
+      row->Gap().Set(8.0f);
+      row->Width().Set(SnAPI::UI::Sizing::Fill());
+      row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      row->Background().Set(kRowBackground);
+      row->BorderColor().Set(kRowBorder);
+      row->BorderThickness().Set(1.0f);
+      row->CornerRadius().Set(4.0f);
+    }
+
+    const std::string labelText = (*texturesPtr)[index].SlotName.empty()
+                                    ? ("Texture " + std::to_string(index))
+                                    : (*texturesPtr)[index].SlotName;
+    const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(labelText);
+    if (labelHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(rowHandle.Id, labelHandle.Id);
+      if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
+      {
+        label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
+        label->TextColor().Set(kLabelColor);
+        label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
+        label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+      }
+    }
+
+    const auto valueHostHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.ValueHost");
+    if (valueHostHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(rowHandle.Id, valueHostHandle.Id);
+    if (auto* valueHost = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(valueHostHandle.Id)))
+    {
+      valueHost->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      valueHost->Padding().Set(0.0f);
+      valueHost->Gap().Set(6.0f);
+      valueHost->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+      valueHost->HAlign().Set(SnAPI::UI::EAlignment::End);
+      valueHost->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      valueHost->Background().Set(Color::Transparent());
+      valueHost->BorderColor().Set(Color::Transparent());
+      valueHost->BorderThickness().Set(0.0f);
+    }
+
+    const auto comboHandle = m_Context->CreateElement<SnAPI::UI::UIComboBox>();
+    if (comboHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(valueHostHandle.Id, comboHandle.Id);
+      if (auto* combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboHandle.Id)))
+      {
+        combo->ReadOnly().Set(ReadOnly);
+        combo->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        combo->Height().Set(SnAPI::UI::Sizing::Auto());
+        combo->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        combo->MaxDropdownHeight().Set(220.0f);
+        combo->Placeholder().Set("Texture");
+        combo->BackgroundColor().Set(kValueBg);
+        combo->HoverColor().Set(Color{26, 30, 39, 252});
+        combo->PressedColor().Set(Color{31, 36, 46, 252});
+        combo->BorderColor().Set(kValueBorder);
+        combo->BorderThickness().Set(1.0f);
+        combo->CornerRadius().Set(3.0f);
+        combo->TextColor().Set(Color{224, 229, 237, 255});
+        combo->PlaceholderColor().Set(Color{138, 147, 163, 255});
+        combo->ArrowColor().Set(Color{185, 193, 205, 255});
+        combo->Padding().Set(6.0f);
+        combo->RowHeight().Set(24.0f);
+
+        std::vector<std::string> options{};
+        PopulateAssetRefPayloadOptions(options, textureKind);
+        combo->SetItems(std::move(options));
+
+        std::string selected{};
+        (void)TryReadAssetRefPayloadSelectionLabel(&(*texturesPtr)[index].Texture, selected, textureKind);
+        (void)combo->SelectByText(selected, false);
+
+        if (!ReadOnly)
+        {
+          combo->SelectedIndex().AddSetHook([this, texturesPtr, index, textureKind, comboId = comboHandle.Id](const int32_t) {
+            if (!m_Context || index >= texturesPtr->size())
+            {
+              return;
+            }
+
+            auto* liveCombo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboId));
+            if (!liveCombo)
+            {
+              return;
+            }
+
+            const std::string selectedText = liveCombo->SelectedText();
+            (void)TryWriteAssetRefPayloadSelection(&(*texturesPtr)[index].Texture, selectedText, textureKind);
+          });
+        }
+      }
+    }
+
+    const auto checkboxHandle = m_Context->CreateElement<SnAPI::UI::UICheckbox>("sRGB");
+    if (checkboxHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(valueHostHandle.Id, checkboxHandle.Id);
+      if (auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxHandle.Id)))
+      {
+        checkbox->Width().Set(SnAPI::UI::Sizing::Auto());
+        checkbox->HAlign().Set(SnAPI::UI::EAlignment::End);
+        checkbox->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        checkbox->LabelColor().Set(kLabelColor);
+        checkbox->BoxSize().Set(12.0f);
+        checkbox->CheckInset().Set(2.0f);
+        checkbox->ElementStyle().Apply("editor.checkbox");
+        checkbox->Checked().Set((*texturesPtr)[index].SRGB);
+        checkbox->SetDisabled(ReadOnly);
+
+        if (!ReadOnly)
+        {
+          checkbox->Checked().AddSetHook([texturesPtr, index](const bool value) {
+            if (index < texturesPtr->size())
+            {
+              (*texturesPtr)[index].SRGB = value;
+            }
+          });
+        }
+      }
+    }
+  }
+}
+
+void UIPropertyPanel::AddAssetRefCollectionEditor(
+  const SnAPI::UI::ElementId Parent,
+  std::vector<AssetRefPayload>& References,
+  const bool ReadOnly,
+  const std::string_view Heading,
+  const std::optional<::SnAPI::AssetPipeline::TypeId>& AssetKindFilter,
+  const std::string_view RowPrefix)
+{
+  if (!m_Context)
+  {
+    return;
+  }
+  auto* refsPtr = &References;
+
+  const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+  if (accordionHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(Parent, accordionHandle.Id);
+
+  auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+  if (!accordion)
+  {
+    return;
+  }
+  accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+  accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  accordion->AllowMultipleExpanded().Set(true);
+  accordion->DefaultExpanded().Set(true);
+  accordion->Gap().Set(4.0f);
+  accordion->Padding().Set(0.0f);
+  accordion->HeaderHeight().Set(26.0f);
+  accordion->HeaderPadding().Set(8.0f);
+  accordion->ContentPadding().Set(5.0f);
+  accordion->BackgroundColor().Set(kCardBackground);
+  accordion->BorderColor().Set(kCardBorder);
+  accordion->BorderThickness().Set(1.0f);
+  accordion->CornerRadius().Set(4.0f);
+  accordion->HeaderColor().Set(Color{45, 51, 63, 246});
+  accordion->HeaderHoverColor().Set(Color{56, 63, 77, 248});
+  accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+  accordion->HeaderTextColor().Set(Color{205, 212, 223, 255});
+  accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
+  accordion->HeaderBorderColor().Set(kCardBorder);
+  accordion->HeaderBorderThickness().Set(1.0f);
+  accordion->ArrowSize().Set(18.0f);
+  accordion->ArrowGap().Set(6.0f);
+
+  const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.AssetRefListBody");
+  if (bodyHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+
+  auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id));
+  if (!body)
+  {
+    return;
+  }
+  body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+  body->Padding().Set(2.0f);
+  body->Gap().Set(4.0f);
+  body->Width().Set(SnAPI::UI::Sizing::Fill());
+  body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  body->Background().Set(Color::Transparent());
+  body->BorderColor().Set(Color::Transparent());
+  body->BorderThickness().Set(0.0f);
+
+  std::string heading(Heading);
+  heading += " (" + std::to_string(refsPtr->size()) + ")";
+  accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+  accordion->SetSectionExpanded(bodyHandle.Id, true);
+
+  if (refsPtr->empty())
+  {
+    const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("No entries");
+    if (textHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(bodyHandle.Id, textHandle.Id);
+      if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+      {
+        text->TextColor().Set(Color{152, 160, 176, 255});
+      }
+    }
+    return;
+  }
+
+  for (size_t index = 0; index < refsPtr->size(); ++index)
+  {
+    const auto rowHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.Row");
+    if (rowHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(bodyHandle.Id, rowHandle.Id);
+
+    if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
+    {
+      row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      row->Padding().Set(kRowPadding);
+      row->Gap().Set(8.0f);
+      row->Width().Set(SnAPI::UI::Sizing::Fill());
+      row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      row->Background().Set(kRowBackground);
+      row->BorderColor().Set(kRowBorder);
+      row->BorderThickness().Set(1.0f);
+      row->CornerRadius().Set(4.0f);
+    }
+
+    std::string labelText(RowPrefix);
+    labelText += " ";
+    labelText += std::to_string(index);
+
+    const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(labelText);
+    if (labelHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(rowHandle.Id, labelHandle.Id);
+      if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
+      {
+        label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
+        label->TextColor().Set(kLabelColor);
+        label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
+        label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+      }
+    }
+
+    const auto comboHandle = m_Context->CreateElement<SnAPI::UI::UIComboBox>();
+    if (comboHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(rowHandle.Id, comboHandle.Id);
+
+    if (auto* combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboHandle.Id)))
+    {
+      combo->ReadOnly().Set(ReadOnly);
+      combo->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+      combo->Height().Set(SnAPI::UI::Sizing::Auto());
+      combo->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      combo->MaxDropdownHeight().Set(220.0f);
+      combo->Placeholder().Set("Asset");
+      combo->BackgroundColor().Set(kValueBg);
+      combo->HoverColor().Set(Color{26, 30, 39, 252});
+      combo->PressedColor().Set(Color{31, 36, 46, 252});
+      combo->BorderColor().Set(kValueBorder);
+      combo->BorderThickness().Set(1.0f);
+      combo->CornerRadius().Set(3.0f);
+      combo->TextColor().Set(Color{224, 229, 237, 255});
+      combo->PlaceholderColor().Set(Color{138, 147, 163, 255});
+      combo->ArrowColor().Set(Color{185, 193, 205, 255});
+      combo->Padding().Set(6.0f);
+      combo->RowHeight().Set(24.0f);
+
+      std::vector<std::string> options{};
+      PopulateAssetRefPayloadOptions(options, AssetKindFilter);
+      combo->SetItems(std::move(options));
+
+      std::string selected{};
+      (void)TryReadAssetRefPayloadSelectionLabel(&(*refsPtr)[index], selected, AssetKindFilter);
+      (void)combo->SelectByText(selected, false);
+
+      if (!ReadOnly)
+      {
+        combo->SelectedIndex().AddSetHook([this, refsPtr, index, AssetKindFilter, comboId = comboHandle.Id](const int32_t) {
+          if (!m_Context || index >= refsPtr->size())
+          {
+            return;
+          }
+
+          auto* liveCombo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboId));
+          if (!liveCombo)
+          {
+            return;
+          }
+
+          const std::string selectedText = liveCombo->SelectedText();
+          (void)TryWriteAssetRefPayloadSelection(&(*refsPtr)[index], selectedText, AssetKindFilter);
+        });
+      }
+    }
+  }
+}
+
+void UIPropertyPanel::AddMaterialInstanceAssetRefCollectionEditor(
+  const SnAPI::UI::ElementId Parent,
+  std::vector<TAssetRef<MaterialInstanceAssetRuntime>>& References,
+  const bool ReadOnly,
+  const std::string_view Heading,
+  const std::string_view RowPrefix)
+{
+  if (!m_Context)
+  {
+    return;
+  }
+  auto* refsPtr = &References;
+
+  const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+  if (accordionHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(Parent, accordionHandle.Id);
+
+  auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+  if (!accordion)
+  {
+    return;
+  }
+  accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+  accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  accordion->AllowMultipleExpanded().Set(true);
+  accordion->DefaultExpanded().Set(true);
+  accordion->Gap().Set(4.0f);
+  accordion->Padding().Set(0.0f);
+  accordion->HeaderHeight().Set(26.0f);
+  accordion->HeaderPadding().Set(8.0f);
+  accordion->ContentPadding().Set(5.0f);
+  accordion->BackgroundColor().Set(kCardBackground);
+  accordion->BorderColor().Set(kCardBorder);
+  accordion->BorderThickness().Set(1.0f);
+  accordion->CornerRadius().Set(4.0f);
+  accordion->HeaderColor().Set(Color{45, 51, 63, 246});
+  accordion->HeaderHoverColor().Set(Color{56, 63, 77, 248});
+  accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+  accordion->HeaderTextColor().Set(Color{205, 212, 223, 255});
+  accordion->HeaderTextExpandedColor().Set(Color{225, 229, 236, 255});
+  accordion->HeaderBorderColor().Set(kCardBorder);
+  accordion->HeaderBorderThickness().Set(1.0f);
+  accordion->ArrowSize().Set(18.0f);
+  accordion->ArrowGap().Set(6.0f);
+
+  const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.MaterialOverrideBody");
+  if (bodyHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+
+  auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id));
+  if (!body)
+  {
+    return;
+  }
+  body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+  body->Padding().Set(2.0f);
+  body->Gap().Set(4.0f);
+  body->Width().Set(SnAPI::UI::Sizing::Fill());
+  body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+  body->Background().Set(Color::Transparent());
+  body->BorderColor().Set(Color::Transparent());
+  body->BorderThickness().Set(0.0f);
+
+  std::string heading(Heading);
+  heading += " (" + std::to_string(refsPtr->size()) + ")";
+  accordion->SetSectionHeading(bodyHandle.Id, std::move(heading));
+  accordion->SetSectionExpanded(bodyHandle.Id, true);
+
+  const auto notifyOverridesChanged = [this]() {
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (m_BoundInstance)
+    {
+      if (const TypeInfo* rootType = TypeRegistry::Instance().Find(m_BoundType);
+          rootType && rootType->EditorPropertyChanged)
+      {
+        rootType->EditorPropertyChanged(m_BoundInstance, "MaterialInstanceOverrides");
+      }
+    }
+#endif
+  };
+
+  const auto controlsHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.MaterialOverrideControls");
+  if (controlsHandle.Id.Value != 0)
+  {
+    m_Context->AddChild(bodyHandle.Id, controlsHandle.Id);
+    if (auto* controls = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(controlsHandle.Id)))
+    {
+      controls->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      controls->Padding().Set(0.0f);
+      controls->Gap().Set(6.0f);
+      controls->Width().Set(SnAPI::UI::Sizing::Fill());
+      controls->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      controls->Background().Set(Color::Transparent());
+      controls->BorderColor().Set(Color::Transparent());
+      controls->BorderThickness().Set(0.0f);
+    }
+
+    const auto createActionButton = [this, controlsHandle](
+      const std::string_view label,
+      const bool enabled,
+      std::function<void()> onClick) {
+      if (!m_Context)
+      {
+        return;
+      }
+
+      const auto buttonHandle = m_Context->CreateElement<SnAPI::UI::UIButton>();
+      if (buttonHandle.Id.Value == 0)
+      {
+        return;
+      }
+      m_Context->AddChild(controlsHandle.Id, buttonHandle.Id);
+
+      if (auto* button = dynamic_cast<SnAPI::UI::UIButton*>(&m_Context->GetElement(buttonHandle.Id)))
+      {
+        button->Width().Set(SnAPI::UI::Sizing::Auto());
+        button->Height().Set(SnAPI::UI::Sizing::Auto());
+        button->ElementPadding().Set(SnAPI::UI::Padding{6.0f, 6.0f, 6.0f, 6.0f});
+        button->CornerRadius().Set(3.0f);
+        button->Background().Set(Color{31, 36, 46, 252});
+        button->BorderColor().Set(kValueBorder);
+        button->BorderThickness().Set(1.0f);
+        button->SetDisabled(!enabled);
+
+        if (enabled)
+        {
+          button->OnClick([handler = std::move(onClick)]() {
+            if (handler)
+            {
+              handler();
+            }
+          });
+        }
+      }
+
+      const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>(std::string(label));
+      if (textHandle.Id.Value == 0)
+      {
+        return;
+      }
+      m_Context->AddChild(buttonHandle.Id, textHandle.Id);
+      if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+      {
+        text->TextColor().Set(Color{224, 229, 237, 255});
+        text->TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+        text->Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+        text->Properties().SetProperty(
+          SnAPI::UI::UIElementBase::VisibilityKey,
+          SnAPI::UI::EVisibility::HitTestInvisible);
+      }
+    };
+
+    const bool canEdit = !ReadOnly;
+    createActionButton("+ Add Slot", canEdit, [this, refsPtr, notifyOverridesChanged]() {
+      refsPtr->emplace_back();
+      notifyOverridesChanged();
+      (void)RebuildUi();
+      SyncModelToEditors();
+    });
+    createActionButton("- Remove Last", canEdit && !refsPtr->empty(), [this, refsPtr, notifyOverridesChanged]() {
+      if (!refsPtr->empty())
+      {
+        refsPtr->pop_back();
+        notifyOverridesChanged();
+      }
+      (void)RebuildUi();
+      SyncModelToEditors();
+    });
+  }
+
+  if (refsPtr->empty())
+  {
+    const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("No slots available. Use + Add Slot.");
+    if (textHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(bodyHandle.Id, textHandle.Id);
+      if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+      {
+        text->TextColor().Set(Color{152, 160, 176, 255});
+      }
+    }
+    return;
+  }
+
+  for (size_t index = 0; index < refsPtr->size(); ++index)
+  {
+    const auto rowHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.Row");
+    if (rowHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(bodyHandle.Id, rowHandle.Id);
+
+    if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
+    {
+      row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+      row->Padding().Set(kRowPadding);
+      row->Gap().Set(8.0f);
+      row->Width().Set(SnAPI::UI::Sizing::Fill());
+      row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      row->Background().Set(kRowBackground);
+      row->BorderColor().Set(kRowBorder);
+      row->BorderThickness().Set(1.0f);
+      row->CornerRadius().Set(4.0f);
+    }
+
+    std::string labelText(RowPrefix);
+    labelText += " ";
+    labelText += std::to_string(index);
+
+    const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>(labelText);
+    if (labelHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(rowHandle.Id, labelHandle.Id);
+      if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
+      {
+        label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
+        label->TextColor().Set(kLabelColor);
+        label->TextAlignment().Set(SnAPI::UI::ETextAlignment::Start);
+        label->Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
+      }
+    }
+
+    const auto comboHandle = m_Context->CreateElement<SnAPI::UI::UIComboBox>();
+    if (comboHandle.Id.Value == 0)
+    {
+      continue;
+    }
+    m_Context->AddChild(rowHandle.Id, comboHandle.Id);
+
+    if (auto* combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboHandle.Id)))
+    {
+      combo->ReadOnly().Set(ReadOnly);
+      combo->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+      combo->Height().Set(SnAPI::UI::Sizing::Auto());
+      combo->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      combo->MaxDropdownHeight().Set(220.0f);
+      combo->Placeholder().Set("Material Instance");
+      combo->BackgroundColor().Set(kValueBg);
+      combo->HoverColor().Set(Color{26, 30, 39, 252});
+      combo->PressedColor().Set(Color{31, 36, 46, 252});
+      combo->BorderColor().Set(kValueBorder);
+      combo->BorderThickness().Set(1.0f);
+      combo->CornerRadius().Set(3.0f);
+      combo->TextColor().Set(Color{224, 229, 237, 255});
+      combo->PlaceholderColor().Set(Color{138, 147, 163, 255});
+      combo->ArrowColor().Set(Color{185, 193, 205, 255});
+      combo->Padding().Set(6.0f);
+      combo->RowHeight().Set(24.0f);
+
+      std::vector<std::string> options{};
+      PopulateAssetRefOptions<TAssetRef<MaterialInstanceAssetRuntime>>(options);
+      combo->SetItems(std::move(options));
+
+      std::string selected{};
+      (void)TryReadAssetRefSelectionLabel<TAssetRef<MaterialInstanceAssetRuntime>>(&(*refsPtr)[index], selected);
+      (void)combo->SelectByText(selected, false);
+
+      if (!ReadOnly)
+      {
+        combo->SelectedIndex().AddSetHook([this, refsPtr, index, comboId = comboHandle.Id](const int32_t) {
+          if (!m_Context || index >= refsPtr->size())
+          {
+            return;
+          }
+
+          auto* liveCombo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboId));
+          if (!liveCombo)
+          {
+            return;
+          }
+
+          const std::string selectedText = liveCombo->SelectedText();
+          (void)TryWriteAssetRefSelection<TAssetRef<MaterialInstanceAssetRuntime>>(&(*refsPtr)[index], selectedText);
+
+          if (m_BoundInstance)
+          {
+#if defined(WITH_EDITOR) && WITH_EDITOR
+            if (const TypeInfo* rootType = TypeRegistry::Instance().Find(m_BoundType);
+                rootType && rootType->EditorPropertyChanged)
+            {
+              rootType->EditorPropertyChanged(m_BoundInstance, "MaterialInstanceOverrides");
+            }
+#endif
+          }
+        });
+      }
+    }
+  }
+}
+
 void UIPropertyPanel::AddUnsupportedRow(
   const SnAPI::UI::ElementId Parent,
   std::string_view Label,
@@ -1569,6 +2997,14 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::AssetRef;
   }
+  if (Type == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<AssetRefPayload>())
+  {
+    return EEditorKind::AssetRef;
+  }
   if (const TypeInfo* typeInfo = TypeRegistry::Instance().Find(Type);
       typeInfo && typeInfo->IsEnum)
   {
@@ -1630,8 +3066,7 @@ bool UIPropertyPanel::IsPathLikeField(const FieldInfo& Field) const
   return NameLower.find("path") != std::string::npos ||
          NameLower.find("file") != std::string::npos ||
          NameLower.find("folder") != std::string::npos ||
-         NameLower.find("directory") != std::string::npos ||
-         NameLower.find("module") != std::string::npos;
+         NameLower.find("directory") != std::string::npos;
 }
 
 bool UIPropertyPanel::IsDirectoryLikeField(const FieldInfo& Field) const
@@ -1864,6 +3299,24 @@ bool UIPropertyPanel::ReadFieldValue(
     if (Binding.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
     {
       if (!TryReadAssetRefSelectionLabel<TAssetRef<SkeletalMeshAssetRuntime>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<MaterialInstanceAssetRuntime>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<AssetRefPayload>())
+    {
+      if (!TryReadAssetRefPayloadSelectionLabel(constPointer, OutText))
       {
         return false;
       }
@@ -2339,6 +3792,14 @@ bool UIPropertyPanel::WriteFieldValue(
       if (Binding.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
       {
         return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SkeletalMeshAssetRuntime>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<MaterialInstanceAssetRuntime>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<AssetRefPayload>())
+      {
+        return finalizeWrite(TryWriteAssetRefPayloadSelection(mutablePointer, selected));
       }
       return false;
     }

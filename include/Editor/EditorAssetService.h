@@ -2,13 +2,16 @@
 
 #include "Editor/EditorExport.h"
 #include "Editor/IEditorService.h"
+#include "Editor/EditorImportSettings.h"
 
 #include "Handles.h"
 #include "TypeRegistration.h"
 #include "AssetManager.h"
 #include "RenderAssetPayloads.h"
+#include <TextureCompressorPayloads.h>
 
 #include <filesystem>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -24,6 +27,13 @@ class World;
 
 namespace SnAPI::GameFramework::Editor
 {
+
+enum class EAssetImportProfile : std::uint8_t
+{
+    Unknown = 0,
+    AssimpModel,
+    Texture,
+};
 
 /**
  * @brief Asset-discovery and asset-instantiation backend for the editor.
@@ -61,11 +71,24 @@ public:
         std::string Title{};
         TypeId TargetType{};
         void* TargetObject = nullptr;
+        TypeId ImportSettingsType{};
+        void* ImportSettingsObject = nullptr;
         std::vector<NodeEntry> Nodes{};
         NodeHandle SelectedNode{};
         bool CanEditHierarchy = false;
+        bool HasImportSettings = false;
+        bool RuntimeDirty = false;
+        bool ImportSettingsDirty = false;
         bool IsDirty = false;
         bool CanSave = false;
+        bool CanReimport = false;
+        bool HasTexturePreviewStats = false;
+        std::uint32_t TexturePreviewWidth = 0;
+        std::uint32_t TexturePreviewHeight = 0;
+        std::uint32_t TexturePreviewMipCount = 0;
+        std::string TexturePreviewTarget{};
+        std::string TexturePreviewFormat{};
+        std::uint64_t TexturePreviewGpuSizeBytes = 0;
     };
 
     struct ProjectInfo
@@ -113,7 +136,8 @@ public:
     Result ImportSourceAsset(EditorServiceContext& Context,
                              std::string_view SourcePath,
                              std::string_view DestinationFolderPath,
-                             const std::unordered_map<std::string, std::string>& BuildOptions);
+                             const std::unordered_map<std::string, std::string>& BuildOptions,
+                             ::SnAPI::AssetPipeline::AssetImportSettingsPtr ImportSettings = {});
     Result OpenAssetEditorByKey(std::string_view Key);
     void CloseAssetEditor();
     Result SelectAssetEditorNode(const NodeHandle& Node);
@@ -123,6 +147,7 @@ public:
     Result RemoveAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType);
     void TickAssetEditorSession(float DeltaSeconds = 0.0f);
     Result SaveActiveAssetEditor();
+    Result ReimportActiveAsset(EditorServiceContext& Context);
     [[nodiscard]] AssetEditorSessionView AssetEditorSession() const;
     [[nodiscard]] std::uint64_t AssetEditorSessionRevision() const { return m_assetEditorSessionRevision; }
 
@@ -156,6 +181,26 @@ private:
                                          const std::filesystem::path& StartupPackPath);
     Result LoadProjectStartupLevel(EditorServiceContext& Context, const std::filesystem::path& StartupPackPath);
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> SerializeAssetEditorPayload() const;
+    Result SyncMaterialInstanceEditorPayloadFromDescriptor();
+    struct AssetImportMetadataEntry
+    {
+        EAssetImportProfile Profile = EAssetImportProfile::Unknown;
+        std::string SourcePath{};
+        std::string DestinationFolder{};
+        std::string ImporterName{};
+        std::unordered_map<std::string, std::string> BuildOptions{};
+        Editor::AssimpImportSettings Assimp{};
+        Editor::TextureImportSettings Texture{};
+    };
+    [[nodiscard]] std::filesystem::path ResolveImportMetadataPath() const;
+    [[nodiscard]] std::expected<void, std::string> LoadAssetImportMetadataDatabase();
+    [[nodiscard]] std::expected<void, std::string> SaveAssetImportMetadataDatabase() const;
+    [[nodiscard]] bool RefreshAssetEditorImportSettingsBinding(const DiscoveredAsset& Asset);
+    [[nodiscard]] std::optional<AssetImportMetadataEntry> BuildAssetEditorImportMetadataFromCurrentState() const;
+    [[nodiscard]] bool ImportMetadataRecordsEqual(const AssetImportMetadataEntry& Left, const AssetImportMetadataEntry& Right) const;
+    [[nodiscard]] ::SnAPI::AssetPipeline::AssetImportSettingsPtr BuildTypedImportSettingsForRecord(
+        const AssetImportMetadataEntry& Record) const;
+    void ClearAssetEditorImportSettingsBinding();
     [[nodiscard]] BaseNode* ResolveAssetEditorNode(const NodeHandle& Node) const;
     void RefreshAssetEditorHierarchy();
     void ClearAssetEditorState();
@@ -186,6 +231,18 @@ private:
     bool m_assetEditorCanEditHierarchy = false;
     std::optional<MaterialPayload> m_assetEditorMaterialPayload{};
     std::optional<MaterialInstancePayload> m_assetEditorMaterialInstancePayload{};
+    std::optional<TextureCompressorPlugin::TextureCompressorCookedInfo> m_assetEditorTextureCookedInfo{};
+    std::optional<Editor::TextureAssetEditorPayload> m_assetEditorTexturePayload{};
+    std::optional<StaticMeshPayload> m_assetEditorStaticMeshPayload{};
+    std::optional<Editor::StaticMeshAssetEditorPayload> m_assetEditorStaticMeshEditorPayload{};
+    std::optional<Editor::AssimpImportSettings> m_assetEditorAssimpImportSettings{};
+    std::optional<Editor::TextureImportSettings> m_assetEditorTextureImportSettings{};
+    TypeId m_assetEditorImportSettingsType{};
+    void* m_assetEditorImportSettingsObject = nullptr;
+    bool m_assetEditorImportSettingsDirty = false;
+    bool m_assetEditorCanReimport = false;
+    std::optional<AssetImportMetadataEntry> m_assetEditorImportMetadataBaseline{};
+    std::string m_assetEditorMaterialInstanceDescriptorParentKey{};
     std::vector<uint8_t> m_assetEditorBaselineCookedBytes{};
     std::string m_assetEditorTitle{};
     NodeHandle m_assetEditorSelectedNode{};
@@ -193,6 +250,9 @@ private:
     bool m_assetEditorHierarchyDirty = false;
     float m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     std::uint64_t m_assetEditorSessionRevision = 0;
+    std::unordered_map<::SnAPI::AssetPipeline::AssetId, AssetImportMetadataEntry, ::SnAPI::AssetPipeline::UuidHash> m_assetImportMetadata{};
+    std::filesystem::path m_assetImportMetadataPath{};
+    bool m_assetImportMetadataDirty = false;
 };
 
 } // namespace SnAPI::GameFramework::Editor

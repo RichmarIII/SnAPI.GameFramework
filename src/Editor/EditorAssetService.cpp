@@ -17,13 +17,21 @@
 #include "PayloadRegistry.h"
 #include "PlayerStart.h"
 #include "RenderAssetPayloads.h"
+#include "RenderAssetImportSettings.h"
 #include "RenderAssetRuntime.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TransformComponent.h"
+#include "TypeAutoRegistry.h"
 #include "TypeRegistry.h"
 #include "World.h"
+#include "WorldEcsRuntime.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <Definitions.hpp>
+#include <Material.hpp>
+#include <MaterialInstance.hpp>
+#include <MaterialRuntimeDescriptor.hpp>
+#include <TMaterialFor.hpp>
 #include "StaticMeshComponent.h"
 #endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
@@ -34,6 +42,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cereal/archives/json.hpp>
+#include <cereal/types/map.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/types/vector.hpp>
 #include <cctype>
 #include <cstdint>
 #include <cstdarg>
@@ -47,10 +59,13 @@
 #include <ranges>
 #include <set>
 #include <sstream>
+#include <unordered_map>
 #include <unordered_set>
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
+#include <TextureCompressorIds.h>
+#include <TextureCompressorImportSettings.h>
 
 namespace TextureCompressorPlugin
 {
@@ -72,6 +87,37 @@ std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderStaticMeshCook
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletalMeshCooker();
 } // namespace SnAPI::GameFramework
 
+namespace cereal
+{
+template<class Archive>
+void serialize(Archive& Ar, SnAPI::GameFramework::Editor::AssimpImportSettings& Value)
+{
+    Ar(cereal::make_nvp("GenerateNormals", Value.GenerateNormals),
+       cereal::make_nvp("GenerateTangents", Value.GenerateTangents),
+       cereal::make_nvp("FlipUVs", Value.FlipUVs),
+       cereal::make_nvp("OptimizeMeshes", Value.OptimizeMeshes),
+       cereal::make_nvp("ForceSkeletal", Value.ForceSkeletal),
+       cereal::make_nvp("ForceStatic", Value.ForceStatic),
+       cereal::make_nvp("ImportMaterials", Value.ImportMaterials),
+       cereal::make_nvp("ImportTextures", Value.ImportTextures),
+       cereal::make_nvp("ImportAnimations", Value.ImportAnimations),
+       cereal::make_nvp("ImportSkeleton", Value.ImportSkeleton),
+       cereal::make_nvp("MaxBonesPerVertex", Value.MaxBonesPerVertex));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, SnAPI::GameFramework::Editor::TextureImportSettings& Value)
+{
+    Ar(cereal::make_nvp("Target", Value.Target),
+       cereal::make_nvp("Format", Value.Format),
+       cereal::make_nvp("Quality", Value.Quality),
+       cereal::make_nvp("ForceSrgb", Value.ForceSrgb),
+       cereal::make_nvp("ForceLinear", Value.ForceLinear),
+       cereal::make_nvp("ForceNormalMap", Value.ForceNormalMap),
+       cereal::make_nvp("MaxMips", Value.MaxMips));
+}
+} // namespace cereal
+
 namespace SnAPI::GameFramework::Editor
 {
 namespace
@@ -91,12 +137,55 @@ constexpr std::string_view kDefaultProjectStartupLevelPack = "Levels/StarterLeve
 constexpr std::string_view kEditorStarterLevelTemplatePackFileName = "StarterLevelTemplate.snpak";
 constexpr std::string_view kEditorStarterScriptFileName = "platform_bob.lua";
 constexpr uint32_t kProjectConfigVersion = 1u;
-constexpr uint32_t kMaterialPayloadSchemaVersion = 1u;
+constexpr uint32_t kMaterialPayloadSchemaVersion = 2u;
 constexpr uint32_t kMaterialInstancePayloadSchemaVersion = 1u;
-constexpr std::string_view kDefaultMaterialShaderModule = "SnAPI.Renderer.Materials.DefaultLit";
-constexpr std::string_view kDefaultMaterialShadingModel = "Lit";
+constexpr std::string_view kDefaultMaterialShaderModule = "DefaultGBufferMaterial";
+constexpr std::string_view kDefaultMaterialShadingModel = "GBufferShadingModel";
+constexpr std::string_view kAssetImportMetadataDirectoryName = ".snapi_editor";
+constexpr std::string_view kAssetImportMetadataFileName = "asset_import_metadata.json";
+constexpr uint32_t kAssetImportMetadataVersion = 1u;
 static constexpr ::SnAPI::AssetPipeline::Uuid kAssetIdNamespace =
     SNAPI_UUID(0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8);
+
+using EImportProfile = EAssetImportProfile;
+
+struct AssetImportMetadataEntryDisk
+{
+    std::string AssetId{};
+    std::string SourcePath{};
+    std::string DestinationFolder{};
+    std::string ImporterName{};
+    std::string Profile{};
+    std::unordered_map<std::string, std::string> BuildOptions{};
+    Editor::AssimpImportSettings Assimp{};
+    Editor::TextureImportSettings Texture{};
+
+    template<class Archive>
+    void serialize(Archive& Ar)
+    {
+        Ar(cereal::make_nvp("AssetId", AssetId),
+           cereal::make_nvp("SourcePath", SourcePath),
+           cereal::make_nvp("DestinationFolder", DestinationFolder),
+           cereal::make_nvp("ImporterName", ImporterName),
+           cereal::make_nvp("Profile", Profile),
+           cereal::make_nvp("BuildOptions", BuildOptions),
+           cereal::make_nvp("Assimp", Assimp),
+           cereal::make_nvp("Texture", Texture));
+    }
+};
+
+struct AssetImportMetadataDatabaseDisk
+{
+    uint32_t Version = kAssetImportMetadataVersion;
+    std::vector<AssetImportMetadataEntryDisk> Entries{};
+
+    template<class Archive>
+    void serialize(Archive& Ar)
+    {
+        Ar(cereal::make_nvp("Version", Version),
+           cereal::make_nvp("Entries", Entries));
+    }
+};
 
 [[nodiscard]] std::string FormatLogMessage(const char* Prefix, const char* Fmt, va_list Args)
 {
@@ -124,6 +213,977 @@ static constexpr ::SnAPI::AssetPipeline::Uuid kAssetIdNamespace =
     }
     return Buffer;
 }
+
+[[nodiscard]] Editor::ETextureCompressionTarget ToEditorTextureTarget(
+    const TextureCompressorPlugin::ECompressionTarget Target)
+{
+    return Target == TextureCompressorPlugin::ECompressionTarget::ASTC
+        ? Editor::ETextureCompressionTarget::ASTC
+        : Editor::ETextureCompressionTarget::BCn;
+}
+
+[[nodiscard]] TextureCompressorPlugin::ECompressionTarget ToCookedTextureTarget(
+    const Editor::ETextureCompressionTarget Target)
+{
+    return Target == Editor::ETextureCompressionTarget::ASTC
+        ? TextureCompressorPlugin::ECompressionTarget::ASTC
+        : TextureCompressorPlugin::ECompressionTarget::BCn;
+}
+
+[[nodiscard]] Editor::ETextureCompressionFormat ToEditorTextureFormat(
+    const TextureCompressorPlugin::ECompressedFormat Format)
+{
+    using Editor::ETextureCompressionFormat;
+    using TextureCompressorPlugin::ECompressedFormat;
+    switch (Format)
+    {
+    case ECompressedFormat::BC1: return ETextureCompressionFormat::BC1;
+    case ECompressedFormat::BC3: return ETextureCompressionFormat::BC3;
+    case ECompressedFormat::BC4: return ETextureCompressionFormat::BC4;
+    case ECompressedFormat::BC5: return ETextureCompressionFormat::BC5;
+    case ECompressedFormat::BC6H: return ETextureCompressionFormat::BC6H;
+    case ECompressedFormat::BC7: return ETextureCompressionFormat::BC7;
+    case ECompressedFormat::ASTC_4x4: return ETextureCompressionFormat::ASTC_4x4;
+    case ECompressedFormat::ASTC_5x5: return ETextureCompressionFormat::ASTC_5x5;
+    case ECompressedFormat::ASTC_6x6: return ETextureCompressionFormat::ASTC_6x6;
+    case ECompressedFormat::ASTC_8x8: return ETextureCompressionFormat::ASTC_8x8;
+    case ECompressedFormat::ASTC_10x10: return ETextureCompressionFormat::ASTC_10x10;
+    case ECompressedFormat::ASTC_12x12: return ETextureCompressionFormat::ASTC_12x12;
+    case ECompressedFormat::ASTC_4x4_HDR: return ETextureCompressionFormat::ASTC_4x4_HDR;
+    case ECompressedFormat::ASTC_6x6_HDR: return ETextureCompressionFormat::ASTC_6x6_HDR;
+    case ECompressedFormat::ASTC_8x8_HDR: return ETextureCompressionFormat::ASTC_8x8_HDR;
+    default: return ETextureCompressionFormat::Auto;
+    }
+}
+
+[[nodiscard]] TextureCompressorPlugin::ECompressedFormat ToCookedTextureFormat(
+    const Editor::ETextureCompressionFormat Format)
+{
+    using Editor::ETextureCompressionFormat;
+    using TextureCompressorPlugin::ECompressedFormat;
+    switch (Format)
+    {
+    case ETextureCompressionFormat::BC1: return ECompressedFormat::BC1;
+    case ETextureCompressionFormat::BC3: return ECompressedFormat::BC3;
+    case ETextureCompressionFormat::BC4: return ECompressedFormat::BC4;
+    case ETextureCompressionFormat::BC5: return ECompressedFormat::BC5;
+    case ETextureCompressionFormat::BC6H: return ECompressedFormat::BC6H;
+    case ETextureCompressionFormat::BC7: return ECompressedFormat::BC7;
+    case ETextureCompressionFormat::ASTC_4x4: return ECompressedFormat::ASTC_4x4;
+    case ETextureCompressionFormat::ASTC_5x5: return ECompressedFormat::ASTC_5x5;
+    case ETextureCompressionFormat::ASTC_6x6: return ECompressedFormat::ASTC_6x6;
+    case ETextureCompressionFormat::ASTC_8x8: return ECompressedFormat::ASTC_8x8;
+    case ETextureCompressionFormat::ASTC_10x10: return ECompressedFormat::ASTC_10x10;
+    case ETextureCompressionFormat::ASTC_12x12: return ECompressedFormat::ASTC_12x12;
+    case ETextureCompressionFormat::ASTC_4x4_HDR: return ECompressedFormat::ASTC_4x4_HDR;
+    case ETextureCompressionFormat::ASTC_6x6_HDR: return ECompressedFormat::ASTC_6x6_HDR;
+    case ETextureCompressionFormat::ASTC_8x8_HDR: return ECompressedFormat::ASTC_8x8_HDR;
+    default: return ECompressedFormat::Unknown;
+    }
+}
+
+[[nodiscard]] TextureCompressorPlugin::ECompressionTarget ResolveCookedCompressionTarget(
+    const TextureCompressorPlugin::TextureCompressorCookedInfo& Cooked)
+{
+    if (Cooked.Format != TextureCompressorPlugin::ECompressedFormat::Unknown)
+    {
+        return TextureCompressorPlugin::IsASTCFormat(Cooked.Format)
+            ? TextureCompressorPlugin::ECompressionTarget::ASTC
+            : TextureCompressorPlugin::ECompressionTarget::BCn;
+    }
+    return Cooked.RequestedTarget;
+}
+
+[[nodiscard]] std::string CompressionTargetName(const TextureCompressorPlugin::ECompressionTarget Target)
+{
+    switch (Target)
+    {
+    case TextureCompressorPlugin::ECompressionTarget::ASTC:
+        return "ASTC";
+    case TextureCompressorPlugin::ECompressionTarget::BCn:
+    default:
+        return "BCn";
+    }
+}
+
+[[nodiscard]] std::uint64_t ComputeTextureGpuSizeBytes(
+    const TextureCompressorPlugin::TextureCompressorCookedInfo& Cooked)
+{
+    std::uint64_t TotalBytes = 0;
+    for (const auto& Mip : Cooked.MipLevels)
+    {
+        TotalBytes += static_cast<std::uint64_t>(Mip.CompressedSize);
+    }
+    if (TotalBytes > 0)
+    {
+        return TotalBytes;
+    }
+
+    if (Cooked.BaseWidth == 0 ||
+        Cooked.BaseHeight == 0 ||
+        Cooked.MipCount == 0 ||
+        Cooked.Format == TextureCompressorPlugin::ECompressedFormat::Unknown)
+    {
+        return 0;
+    }
+
+    std::uint32_t BlockWidth = 4;
+    std::uint32_t BlockHeight = 4;
+    TextureCompressorPlugin::GetBlockDimensions(Cooked.Format, BlockWidth, BlockHeight);
+    const std::uint32_t BytesPerBlock = TextureCompressorPlugin::GetBytesPerBlock(Cooked.Format);
+    if (BytesPerBlock == 0 || BlockWidth == 0 || BlockHeight == 0)
+    {
+        return 0;
+    }
+
+    std::uint32_t MipWidth = Cooked.BaseWidth;
+    std::uint32_t MipHeight = Cooked.BaseHeight;
+    const std::uint32_t MipCount = std::max(1u, Cooked.MipCount);
+    for (std::uint32_t MipIndex = 0; MipIndex < MipCount; ++MipIndex)
+    {
+        const std::uint64_t BlocksX =
+            (static_cast<std::uint64_t>(MipWidth) + static_cast<std::uint64_t>(BlockWidth) - 1u) /
+            static_cast<std::uint64_t>(BlockWidth);
+        const std::uint64_t BlocksY =
+            (static_cast<std::uint64_t>(MipHeight) + static_cast<std::uint64_t>(BlockHeight) - 1u) /
+            static_cast<std::uint64_t>(BlockHeight);
+        TotalBytes += BlocksX * BlocksY * static_cast<std::uint64_t>(BytesPerBlock);
+
+        if (MipWidth == 1u && MipHeight == 1u)
+        {
+            break;
+        }
+        MipWidth = std::max(1u, MipWidth / 2u);
+        MipHeight = std::max(1u, MipHeight / 2u);
+    }
+
+    return TotalBytes;
+}
+
+[[nodiscard]] std::string OptionValueOr(
+    const std::unordered_map<std::string, std::string>& Options,
+    const std::string_view Key,
+    std::string_view Default = {})
+{
+    if (const auto It = Options.find(std::string(Key)); It != Options.end())
+    {
+        return It->second;
+    }
+    return std::string(Default);
+}
+
+[[nodiscard]] bool ParseBoolOption(const std::string_view Text, const bool DefaultValue)
+{
+    const std::string Lower = ToLowerCopy(Text);
+    if (Lower == "1" || Lower == "true" || Lower == "yes" || Lower == "on")
+    {
+        return true;
+    }
+    if (Lower == "0" || Lower == "false" || Lower == "no" || Lower == "off")
+    {
+        return false;
+    }
+    return DefaultValue;
+}
+
+[[nodiscard]] std::optional<int32_t> ParseIntOption(const std::string_view Text)
+{
+    std::string Buffer(Text);
+    if (Buffer.empty())
+    {
+        return std::nullopt;
+    }
+    char* End = nullptr;
+    const long Parsed = std::strtol(Buffer.c_str(), &End, 10);
+    if (End == Buffer.c_str())
+    {
+        return std::nullopt;
+    }
+    while (End && *End != '\0')
+    {
+        if (!std::isspace(static_cast<unsigned char>(*End)))
+        {
+            return std::nullopt;
+        }
+        ++End;
+    }
+    if (Parsed < static_cast<long>(std::numeric_limits<int32_t>::min()) ||
+        Parsed > static_cast<long>(std::numeric_limits<int32_t>::max()))
+    {
+        return std::nullopt;
+    }
+    return static_cast<int32_t>(Parsed);
+}
+
+[[nodiscard]] TextureCompressorPlugin::ECompressedFormat ParseTextureFormatOption(std::string_view Value)
+{
+    const std::string Lower = ToLowerCopy(Value);
+    using TextureCompressorPlugin::ECompressedFormat;
+    if (Lower == "bc1") return ECompressedFormat::BC1;
+    if (Lower == "bc3") return ECompressedFormat::BC3;
+    if (Lower == "bc4") return ECompressedFormat::BC4;
+    if (Lower == "bc5") return ECompressedFormat::BC5;
+    if (Lower == "bc6h") return ECompressedFormat::BC6H;
+    if (Lower == "bc7") return ECompressedFormat::BC7;
+    if (Lower == "astc_4x4") return ECompressedFormat::ASTC_4x4;
+    if (Lower == "astc_5x5") return ECompressedFormat::ASTC_5x5;
+    if (Lower == "astc_6x6") return ECompressedFormat::ASTC_6x6;
+    if (Lower == "astc_8x8") return ECompressedFormat::ASTC_8x8;
+    if (Lower == "astc_10x10") return ECompressedFormat::ASTC_10x10;
+    if (Lower == "astc_12x12") return ECompressedFormat::ASTC_12x12;
+    if (Lower == "astc_4x4_hdr") return ECompressedFormat::ASTC_4x4_HDR;
+    if (Lower == "astc_6x6_hdr") return ECompressedFormat::ASTC_6x6_HDR;
+    if (Lower == "astc_8x8_hdr") return ECompressedFormat::ASTC_8x8_HDR;
+    return ECompressedFormat::Unknown;
+}
+
+[[nodiscard]] std::string ImportProfileToString(const EImportProfile Profile)
+{
+    switch (Profile)
+    {
+    case EImportProfile::AssimpModel: return "assimp_model";
+    case EImportProfile::Texture: return "texture";
+    case EImportProfile::Unknown:
+    default: return "unknown";
+    }
+}
+
+[[nodiscard]] EImportProfile ImportProfileFromString(std::string_view ProfileText)
+{
+    const std::string Lower = ToLowerCopy(ProfileText);
+    if (Lower == "assimp_model")
+    {
+        return EImportProfile::AssimpModel;
+    }
+    if (Lower == "texture")
+    {
+        return EImportProfile::Texture;
+    }
+    return EImportProfile::Unknown;
+}
+
+[[nodiscard]] EImportProfile ImportProfileFromImporterName(std::string_view ImporterName)
+{
+    const std::string Lower = ToLowerCopy(ImporterName);
+    if (Lower.find("renderassetassimpimporter") != std::string::npos)
+    {
+        return EImportProfile::AssimpModel;
+    }
+    if (Lower.find("texturecompressor") != std::string::npos)
+    {
+        return EImportProfile::Texture;
+    }
+    return EImportProfile::Unknown;
+}
+
+[[nodiscard]] std::unordered_map<std::string, std::string> BuildOptionsFromAssimpImportSettings(
+    const Editor::AssimpImportSettings& Settings)
+{
+    const auto BoolToText = [](const bool Value) {
+        return Value ? std::string("true") : std::string("false");
+    };
+
+    std::unordered_map<std::string, std::string> BuildOptions{};
+    BuildOptions.emplace("SnAPI.GF.Assimp.GenerateNormals", BoolToText(Settings.GenerateNormals));
+    BuildOptions.emplace("SnAPI.GF.Assimp.GenerateTangents", BoolToText(Settings.GenerateTangents));
+    BuildOptions.emplace("SnAPI.GF.Assimp.FlipUVs", BoolToText(Settings.FlipUVs));
+    BuildOptions.emplace("SnAPI.GF.Assimp.OptimizeMeshes", BoolToText(Settings.OptimizeMeshes));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ForceSkeletal", BoolToText(Settings.ForceSkeletal));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ForceStatic", BoolToText(Settings.ForceStatic));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportMaterials", BoolToText(Settings.ImportMaterials));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportTextures", BoolToText(Settings.ImportTextures));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportAnimations", BoolToText(Settings.ImportAnimations));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportSkeleton", BoolToText(Settings.ImportSkeleton));
+    BuildOptions.emplace("SnAPI.GF.Assimp.MaxBonesPerVertex", std::to_string(std::max(1u, Settings.MaxBonesPerVertex)));
+    return BuildOptions;
+}
+
+[[nodiscard]] std::unordered_map<std::string, std::string> BuildOptionsFromTextureImportSettings(
+    const Editor::TextureImportSettings& Settings)
+{
+    const auto TargetToOption = [](const Editor::ETextureCompressionTarget Target) {
+        return Target == Editor::ETextureCompressionTarget::ASTC ? std::string("astc") : std::string("bcn");
+    };
+    const auto FormatToOption = [](const Editor::ETextureCompressionFormat Format) -> std::string {
+        switch (Format)
+        {
+        case Editor::ETextureCompressionFormat::Auto: return {};
+        case Editor::ETextureCompressionFormat::BC1: return "bc1";
+        case Editor::ETextureCompressionFormat::BC3: return "bc3";
+        case Editor::ETextureCompressionFormat::BC4: return "bc4";
+        case Editor::ETextureCompressionFormat::BC5: return "bc5";
+        case Editor::ETextureCompressionFormat::BC6H: return "bc6h";
+        case Editor::ETextureCompressionFormat::BC7: return "bc7";
+        case Editor::ETextureCompressionFormat::ASTC_4x4: return "astc_4x4";
+        case Editor::ETextureCompressionFormat::ASTC_5x5: return "astc_5x5";
+        case Editor::ETextureCompressionFormat::ASTC_6x6: return "astc_6x6";
+        case Editor::ETextureCompressionFormat::ASTC_8x8: return "astc_8x8";
+        case Editor::ETextureCompressionFormat::ASTC_10x10: return "astc_10x10";
+        case Editor::ETextureCompressionFormat::ASTC_12x12: return "astc_12x12";
+        case Editor::ETextureCompressionFormat::ASTC_4x4_HDR: return "astc_4x4_hdr";
+        case Editor::ETextureCompressionFormat::ASTC_6x6_HDR: return "astc_6x6_hdr";
+        case Editor::ETextureCompressionFormat::ASTC_8x8_HDR: return "astc_8x8_hdr";
+        default: return {};
+        }
+    };
+
+    std::unordered_map<std::string, std::string> BuildOptions{};
+    BuildOptions.emplace("texture.target", TargetToOption(Settings.Target));
+
+    if (const std::string FormatOption = FormatToOption(Settings.Format); !FormatOption.empty())
+    {
+        BuildOptions.emplace("texture.format", FormatOption);
+    }
+
+    const float ClampedQuality = std::clamp(Settings.Quality, 0.0f, 1.0f);
+    BuildOptions.emplace("texture.quality", std::to_string(ClampedQuality));
+
+    if (Settings.ForceLinear)
+    {
+        BuildOptions.emplace("texture.srgb", "false");
+    }
+    else if (Settings.ForceSrgb)
+    {
+        BuildOptions.emplace("texture.srgb", "true");
+    }
+
+    if (Settings.ForceNormalMap)
+    {
+        BuildOptions.emplace("texture.normal_map", "true");
+    }
+
+    if (Settings.MaxMips > 0u)
+    {
+        BuildOptions.emplace("texture.max_mips", std::to_string(Settings.MaxMips));
+    }
+
+    return BuildOptions;
+}
+
+template<std::size_t N>
+void RemoveManagedBuildOptions(std::unordered_map<std::string, std::string>& BuildOptions,
+                               const std::array<std::string_view, N>& Keys)
+{
+    for (const std::string_view Key : Keys)
+    {
+        BuildOptions.erase(std::string(Key));
+    }
+}
+
+constexpr std::array<std::string_view, 11> kAssimpManagedBuildOptionKeys{
+    "SnAPI.GF.Assimp.GenerateNormals",
+    "SnAPI.GF.Assimp.GenerateTangents",
+    "SnAPI.GF.Assimp.FlipUVs",
+    "SnAPI.GF.Assimp.OptimizeMeshes",
+    "SnAPI.GF.Assimp.ForceSkeletal",
+    "SnAPI.GF.Assimp.ForceStatic",
+    "SnAPI.GF.Assimp.ImportMaterials",
+    "SnAPI.GF.Assimp.ImportTextures",
+    "SnAPI.GF.Assimp.ImportAnimations",
+    "SnAPI.GF.Assimp.ImportSkeleton",
+    "SnAPI.GF.Assimp.MaxBonesPerVertex"};
+
+constexpr std::array<std::string_view, 6> kTextureManagedBuildOptionKeys{
+    "texture.target",
+    "texture.format",
+    "texture.quality",
+    "texture.srgb",
+    "texture.normal_map",
+    "texture.max_mips"};
+
+void FillAssimpImportSettingsFromTyped(const AssimpImporterSettings& Typed, Editor::AssimpImportSettings& Out)
+{
+    Out.GenerateNormals = Typed.Mesh.GenerateNormals;
+    Out.GenerateTangents = Typed.Mesh.GenerateTangents;
+    Out.FlipUVs = Typed.Mesh.FlipUVs;
+    Out.OptimizeMeshes = Typed.Mesh.OptimizeMeshes;
+    Out.ForceSkeletal = Typed.Mesh.ForceSkeletal;
+    Out.ForceStatic = Typed.Mesh.ForceStatic;
+    Out.ImportMaterials = Typed.Mesh.ImportMaterials;
+    Out.ImportTextures = Typed.Mesh.ImportTextures;
+    Out.ImportAnimations = Typed.Mesh.ImportAnimations;
+    Out.ImportSkeleton = Typed.Mesh.ImportSkeleton;
+    Out.MaxBonesPerVertex = std::max(1u, Typed.Mesh.MaxBonesPerVertex);
+}
+
+void FillTextureImportSettingsFromTyped(const TextureCompressorPlugin::TextureCompressorImportSettings& Typed,
+                                        Editor::TextureImportSettings& Out)
+{
+    Out.Target = ToEditorTextureTarget(Typed.Target);
+    Out.Format = ToEditorTextureFormat(Typed.Format);
+    Out.Quality = std::clamp(Typed.Quality, 0.0f, 1.0f);
+    Out.ForceNormalMap = Typed.ForceNormalMap;
+    Out.MaxMips = Typed.MaxMipCount > 0 ? static_cast<uint32_t>(Typed.MaxMipCount) : 0u;
+    Out.ForceSrgb = Typed.ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+    Out.ForceLinear = Typed.ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+}
+
+[[nodiscard]] ::SnAPI::AssetPipeline::AssetImportSettingsPtr BuildTypedImportSettingsForImporter(
+    const ::SnAPI::AssetPipeline::IAssetImporter& Importer,
+    const std::unordered_map<std::string, std::string>& BuildOptions)
+{
+    const std::string ImporterName = Importer.GetName() ? Importer.GetName() : "";
+
+    if (ImporterName == "SnAPI.GameFramework.RenderAssetAssimpImporter")
+    {
+        auto Settings = std::make_shared<AssimpImporterSettings>();
+        Settings->Mesh.GenerateNormals = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.GenerateNormals", Settings->Mesh.GenerateNormals ? "true" : "false"),
+            Settings->Mesh.GenerateNormals);
+        Settings->Mesh.GenerateTangents = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.GenerateTangents", Settings->Mesh.GenerateTangents ? "true" : "false"),
+            Settings->Mesh.GenerateTangents);
+        Settings->Mesh.FlipUVs = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.FlipUVs", Settings->Mesh.FlipUVs ? "true" : "false"),
+            Settings->Mesh.FlipUVs);
+        Settings->Mesh.OptimizeMeshes = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.OptimizeMeshes", Settings->Mesh.OptimizeMeshes ? "true" : "false"),
+            Settings->Mesh.OptimizeMeshes);
+        Settings->Mesh.ForceSkeletal = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.ForceSkeletal", Settings->Mesh.ForceSkeletal ? "true" : "false"),
+            Settings->Mesh.ForceSkeletal);
+        Settings->Mesh.ForceStatic = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.ForceStatic", Settings->Mesh.ForceStatic ? "true" : "false"),
+            Settings->Mesh.ForceStatic);
+        Settings->Mesh.ImportMaterials = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.ImportMaterials", Settings->Mesh.ImportMaterials ? "true" : "false"),
+            Settings->Mesh.ImportMaterials);
+        Settings->Mesh.ImportTextures = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.ImportTextures", Settings->Mesh.ImportTextures ? "true" : "false"),
+            Settings->Mesh.ImportTextures);
+        Settings->Mesh.ImportAnimations = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.ImportAnimations", Settings->Mesh.ImportAnimations ? "true" : "false"),
+            Settings->Mesh.ImportAnimations);
+        Settings->Mesh.ImportSkeleton = ParseBoolOption(
+            OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.ImportSkeleton", Settings->Mesh.ImportSkeleton ? "true" : "false"),
+            Settings->Mesh.ImportSkeleton);
+        if (const std::optional<int32_t> MaxBones = ParseIntOption(OptionValueOr(
+                BuildOptions,
+                "SnAPI.GF.Assimp.MaxBonesPerVertex",
+                std::to_string(Settings->Mesh.MaxBonesPerVertex)));
+            MaxBones.has_value())
+        {
+            Settings->Mesh.MaxBonesPerVertex = std::max(1, *MaxBones);
+        }
+        Settings->LogicalNameOverride = OptionValueOr(BuildOptions, "SnAPI.GF.Assimp.LogicalName", "");
+        Settings->DefaultShaderModule = OptionValueOr(
+            BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShaderModule",
+            kDefaultMaterialShaderModule);
+        Settings->DefaultShadingModel = OptionValueOr(
+            BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShadingModel",
+            kDefaultMaterialShadingModel);
+        return Settings;
+    }
+
+    if (ImporterName == "TextureCompressor.Importer")
+    {
+        auto Settings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
+        const std::string Target = ToLowerCopy(OptionValueOr(BuildOptions, "texture.target", "bcn"));
+        Settings->Target = (Target == "astc")
+            ? TextureCompressorPlugin::ECompressionTarget::ASTC
+            : TextureCompressorPlugin::ECompressionTarget::BCn;
+
+        Settings->Format = ParseTextureFormatOption(OptionValueOr(BuildOptions, "texture.format", ""));
+
+        const std::string QualityText = OptionValueOr(BuildOptions, "texture.quality", std::to_string(Settings->Quality));
+        try
+        {
+            Settings->Quality = std::clamp(std::stof(QualityText), 0.0f, 1.0f);
+        }
+        catch (...)
+        {
+        }
+
+        if (const auto SrgbText = OptionValueOr(BuildOptions, "texture.srgb", "");
+            !SrgbText.empty())
+        {
+            const bool ForceSrgb = ParseBoolOption(SrgbText, true);
+            Settings->ColorSpacePolicy = ForceSrgb
+                ? TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb
+                : TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+        }
+
+        Settings->ForceNormalMap = ParseBoolOption(
+            OptionValueOr(BuildOptions, "texture.normal_map", "false"),
+            false);
+
+        if (const std::optional<int32_t> MaxMips = ParseIntOption(OptionValueOr(BuildOptions, "texture.max_mips", ""));
+            MaxMips.has_value())
+        {
+            Settings->MaxMipCount = *MaxMips;
+        }
+        return Settings;
+    }
+
+    return {};
+}
+
+void PopulateTextureEditorPayloadFromCooked(
+    const TextureCompressorPlugin::TextureCompressorCookedInfo& Cooked,
+    Editor::TextureAssetEditorPayload& Out)
+{
+    Out.Target = ToEditorTextureTarget(Cooked.RequestedTarget);
+    Out.Format = ToEditorTextureFormat(
+        Cooked.RequestedFormat == TextureCompressorPlugin::ECompressedFormat::Unknown
+            ? Cooked.Format
+            : Cooked.RequestedFormat);
+    Out.Quality = Cooked.RequestedQuality;
+    Out.Width = Cooked.BaseWidth;
+    Out.Height = Cooked.BaseHeight;
+    Out.MipCount = Cooked.MipCount;
+    Out.SRGB = Cooked.bSRGB;
+}
+
+void ApplyTextureEditorPayloadToCooked(
+    const Editor::TextureAssetEditorPayload& EditorPayload,
+    TextureCompressorPlugin::TextureCompressorCookedInfo& InOutCooked)
+{
+    InOutCooked.RequestedTarget = ToCookedTextureTarget(EditorPayload.Target);
+    InOutCooked.RequestedFormat = ToCookedTextureFormat(EditorPayload.Format);
+    InOutCooked.RequestedQuality = std::clamp(EditorPayload.Quality, 0.0f, 1.0f);
+}
+
+void PopulateStaticMeshEditorPayloadFromCooked(
+    const StaticMeshPayload& Cooked,
+    Editor::StaticMeshAssetEditorPayload& Out)
+{
+    Out.Name = Cooked.Name;
+    Out.MaterialInstances = Cooked.MaterialInstances;
+}
+
+void ApplyStaticMeshEditorPayloadToCooked(
+    const Editor::StaticMeshAssetEditorPayload& EditorPayload,
+    StaticMeshPayload& InOutCooked)
+{
+    InOutCooked.Name = EditorPayload.Name;
+    InOutCooked.MaterialInstances = EditorPayload.MaterialInstances;
+}
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+[[nodiscard]] bool EqualsIgnoreCase(std::string_view Left, std::string_view Right)
+{
+    if (Left.size() != Right.size())
+    {
+        return false;
+    }
+    for (size_t Index = 0; Index < Left.size(); ++Index)
+    {
+        if (static_cast<char>(std::tolower(static_cast<unsigned char>(Left[Index]))) !=
+            static_cast<char>(std::tolower(static_cast<unsigned char>(Right[Index]))))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] SnAPI::Graphics::MaterialDomain DomainFromShadingModelName(std::string_view ShadingModel)
+{
+    if (ShadingModel == "GBufferShadingModel")
+    {
+        return SnAPI::Graphics::MaterialDomain::GBuffer;
+    }
+    if (ShadingModel == "ShadowShadingModel")
+    {
+        return SnAPI::Graphics::MaterialDomain::ShadowCaster;
+    }
+    if (ShadingModel == "UIShadingModel")
+    {
+        return SnAPI::Graphics::MaterialDomain::UI;
+    }
+    if (ShadingModel == "PostProcessShadingModel")
+    {
+        return SnAPI::Graphics::MaterialDomain::PostProcess;
+    }
+    if (ShadingModel == "DeferredShadingShadingModel")
+    {
+        return SnAPI::Graphics::MaterialDomain::DeferredLit;
+    }
+    return SnAPI::Graphics::MaterialDomain::GBuffer;
+}
+
+[[nodiscard]] bool TryParseFloatValue(std::string_view Text, float& OutValue)
+{
+    std::string Buffer(Text);
+    char* End = nullptr;
+    const float Parsed = std::strtof(Buffer.c_str(), &End);
+    if (End == Buffer.c_str())
+    {
+        return false;
+    }
+    while (End && *End != '\0' && std::isspace(static_cast<unsigned char>(*End)))
+    {
+        ++End;
+    }
+    if (End && *End != '\0')
+    {
+        return false;
+    }
+    OutValue = Parsed;
+    return true;
+}
+
+[[nodiscard]] std::string BuildAssetRefIdentity(const AssetRefPayload& Ref)
+{
+    const auto TrimText = [](std::string_view Text) {
+        size_t Begin = 0;
+        while (Begin < Text.size() && std::isspace(static_cast<unsigned char>(Text[Begin])))
+        {
+            ++Begin;
+        }
+
+        size_t End = Text.size();
+        while (End > Begin && std::isspace(static_cast<unsigned char>(Text[End - 1])))
+        {
+            --End;
+        }
+
+        return std::string(Text.substr(Begin, End - Begin));
+    };
+
+    const std::string AssetId = TrimText(Ref.AssetId);
+    if (!AssetId.empty())
+    {
+        return std::string("id://") + AssetId;
+    }
+    const std::string AssetName = TrimText(Ref.AssetName);
+    if (!AssetName.empty())
+    {
+        return std::string("name://") + AssetName;
+    }
+    return {};
+}
+
+[[nodiscard]] const SnAPI::Graphics::ShaderMetaData::UserAttribute* FindDefaultAttribute(
+    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter)
+{
+    for (const auto& Attribute : Parameter.Attributes)
+    {
+        if (EqualsIgnoreCase(Attribute.Name, "EditorDefault") || EqualsIgnoreCase(Attribute.Name, "Default"))
+        {
+            return &Attribute;
+        }
+    }
+    return nullptr;
+}
+
+[[nodiscard]] bool TryReadAttributeNumber(
+    const SnAPI::Graphics::ShaderMetaData::UserAttribute& Attribute,
+    const size_t Index,
+    float& OutValue)
+{
+    if (Index < Attribute.FloatArguments.size())
+    {
+        OutValue = Attribute.FloatArguments[Index];
+        return true;
+    }
+    if (Index < Attribute.IntArguments.size())
+    {
+        OutValue = static_cast<float>(Attribute.IntArguments[Index]);
+        return true;
+    }
+    if (Index < Attribute.Arguments.size())
+    {
+        return TryParseFloatValue(Attribute.Arguments[Index], OutValue);
+    }
+    return false;
+}
+
+[[nodiscard]] bool TryResolveDefaultScalar(
+    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter,
+    float& OutValue)
+{
+    const auto* Attribute = FindDefaultAttribute(Parameter);
+    if (!Attribute)
+    {
+        return false;
+    }
+    return TryReadAttributeNumber(*Attribute, 0, OutValue);
+}
+
+[[nodiscard]] bool TryResolveDefaultVector(
+    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter,
+    const size_t ComponentCount,
+    std::array<float, 4>& OutValue)
+{
+    if (ComponentCount == 0 || ComponentCount > OutValue.size())
+    {
+        return false;
+    }
+    const auto* Attribute = FindDefaultAttribute(Parameter);
+    if (!Attribute)
+    {
+        return false;
+    }
+
+    float FirstValue = 0.0f;
+    if (!TryReadAttributeNumber(*Attribute, 0, FirstValue))
+    {
+        return false;
+    }
+
+    OutValue = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (size_t Component = 0; Component < ComponentCount; ++Component)
+    {
+        float Value = FirstValue;
+        (void)TryReadAttributeNumber(*Attribute, Component, Value);
+        OutValue[Component] = Value;
+    }
+    return true;
+}
+
+void CollectParameterLookupKeys(
+    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter,
+    std::vector<std::string>& OutKeys)
+{
+    OutKeys.clear();
+    OutKeys.reserve(6);
+
+    const auto Append = [&OutKeys](std::string_view Key) {
+        if (Key.empty())
+        {
+            return;
+        }
+        const std::string Lower = ToLowerCopy(Key);
+        if (std::ranges::find(OutKeys, Lower) == OutKeys.end())
+        {
+            OutKeys.push_back(Lower);
+        }
+    };
+
+    Append(Parameter.Path);
+    Append(Parameter.Name);
+    if (const size_t DotIndex = Parameter.Path.rfind('.'); DotIndex != std::string::npos)
+    {
+        Append(std::string_view(Parameter.Path).substr(DotIndex + 1));
+    }
+}
+
+[[nodiscard]] std::expected<SnAPI::Graphics::MaterialRuntimeDescriptor, std::string> BuildDescriptorForMaterialPayload(
+    const MaterialPayload& ParentMaterial)
+{
+    if (ParentMaterial.ShaderModule.empty())
+    {
+        return std::unexpected("Parent material has no shader module");
+    }
+
+    const std::string ShadingModelName = ParentMaterial.ShadingModel.empty()
+        ? std::string(kDefaultMaterialShadingModel)
+        : ParentMaterial.ShadingModel;
+
+    std::shared_ptr<SnAPI::Graphics::Material> Material{};
+    if (EqualsIgnoreCase(ShadingModelName, SnAPI::Graphics::GBufferContract::ShadingModelModuleName))
+    {
+        auto TypedMaterial = std::make_shared<SnAPI::Graphics::GBufferMaterial>(ParentMaterial.ShaderModule);
+        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlbedoMap, ParentMaterial.FeatureAlbedoMap);
+        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::NormalMap, ParentMaterial.FeatureNormalMap);
+        TypedMaterial->SetFeature(
+            SnAPI::Graphics::GBufferContract::Feature::RoughnessMap,
+            ParentMaterial.FeatureRoughnessMap);
+        TypedMaterial->SetFeature(
+            SnAPI::Graphics::GBufferContract::Feature::MetalnessMap,
+            ParentMaterial.FeatureMetalnessMap);
+        TypedMaterial->SetFeature(
+            SnAPI::Graphics::GBufferContract::Feature::OcclusionMap,
+            ParentMaterial.FeatureOcclusionMap);
+        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlphaTest, ParentMaterial.FeatureAlphaTest);
+        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlphaBlend, ParentMaterial.FeatureAlphaBlend);
+        TypedMaterial->SetFeature(
+            SnAPI::Graphics::GBufferContract::Feature::DoubleSided,
+            ParentMaterial.FeatureDoubleSided);
+        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::Instancing, ParentMaterial.FeatureInstancing);
+        TypedMaterial->BakeCompileTimeParams();
+        Material = std::move(TypedMaterial);
+    }
+    else if (EqualsIgnoreCase(ShadingModelName, SnAPI::Graphics::ShadowContract::ShadingModelModuleName))
+    {
+        auto TypedMaterial = std::make_shared<SnAPI::Graphics::ShadowMaterial>(ParentMaterial.ShaderModule);
+        TypedMaterial->SetFeature(SnAPI::Graphics::ShadowContract::Feature::AlphaTest, ParentMaterial.FeatureAlphaTest);
+        TypedMaterial->SetFeature(SnAPI::Graphics::ShadowContract::Feature::Instancing, ParentMaterial.FeatureInstancing);
+        TypedMaterial->BakeCompileTimeParams();
+        Material = std::move(TypedMaterial);
+    }
+    else
+    {
+        auto GenericMaterial = std::make_shared<SnAPI::Graphics::Material>(
+            ParentMaterial.ShaderModule,
+            ShadingModelName,
+            DomainFromShadingModelName(ShadingModelName));
+        GenericMaterial->BakeAndCompile();
+        Material = std::move(GenericMaterial);
+    }
+
+    auto Instance = Material->CreateMaterialInstance();
+    if (!Instance)
+    {
+        return std::unexpected("Failed to instantiate runtime material for descriptor reflection");
+    }
+
+    return SnAPI::Graphics::BuildMaterialRuntimeDescriptor(*Instance);
+}
+
+[[nodiscard]] bool SyncPayloadToRuntimeDescriptor(
+    MaterialInstancePayload& Payload,
+    const SnAPI::Graphics::MaterialRuntimeDescriptor& Descriptor)
+{
+    std::vector<MaterialScalarParamPayload> SyncedScalars{};
+    std::vector<MaterialVectorParamPayload> SyncedVectors{};
+    std::vector<MaterialTextureParamPayload> SyncedTextures{};
+
+    std::vector<bool> UsedScalars(Payload.Scalars.size(), false);
+    std::vector<bool> UsedVectors(Payload.Vectors.size(), false);
+    std::vector<bool> UsedTextures(Payload.Textures.size(), false);
+
+    std::unordered_map<std::string, size_t> ScalarByName{};
+    std::unordered_map<std::string, size_t> VectorByName{};
+    std::unordered_map<std::string, size_t> TextureByName{};
+    ScalarByName.reserve(Payload.Scalars.size());
+    VectorByName.reserve(Payload.Vectors.size());
+    TextureByName.reserve(Payload.Textures.size());
+
+    for (size_t Index = 0; Index < Payload.Scalars.size(); ++Index)
+    {
+        ScalarByName.try_emplace(ToLowerCopy(Payload.Scalars[Index].Name), Index);
+    }
+    for (size_t Index = 0; Index < Payload.Vectors.size(); ++Index)
+    {
+        VectorByName.try_emplace(ToLowerCopy(Payload.Vectors[Index].Name), Index);
+    }
+    for (size_t Index = 0; Index < Payload.Textures.size(); ++Index)
+    {
+        TextureByName.try_emplace(ToLowerCopy(Payload.Textures[Index].SlotName), Index);
+    }
+
+    std::vector<std::string> LookupKeys{};
+    for (const auto& Parameter : Descriptor.Parameters)
+    {
+        if (Parameter.Set != 0)
+        {
+            continue;
+        }
+
+        CollectParameterLookupKeys(Parameter, LookupKeys);
+        const auto FindIndex = [&LookupKeys](const std::unordered_map<std::string, size_t>& ByName) -> std::optional<size_t> {
+            for (const std::string& Key : LookupKeys)
+            {
+                if (const auto It = ByName.find(Key); It != ByName.end())
+                {
+                    return It->second;
+                }
+            }
+            return std::nullopt;
+        };
+
+        switch (Parameter.eValueType)
+        {
+        case SnAPI::Graphics::ShaderMetaData::EValueType::Bool:
+        case SnAPI::Graphics::ShaderMetaData::EValueType::Int:
+        case SnAPI::Graphics::ShaderMetaData::EValueType::UInt:
+        case SnAPI::Graphics::ShaderMetaData::EValueType::Float:
+            {
+                MaterialScalarParamPayload Scalar{};
+                if (const auto Existing = FindIndex(ScalarByName); Existing && *Existing < Payload.Scalars.size())
+                {
+                    Scalar = Payload.Scalars[*Existing];
+                    UsedScalars[*Existing] = true;
+                }
+                else
+                {
+                    (void)TryResolveDefaultScalar(Parameter, Scalar.Value);
+                }
+                Scalar.Name = Parameter.Name;
+                SyncedScalars.push_back(std::move(Scalar));
+            }
+            break;
+        case SnAPI::Graphics::ShaderMetaData::EValueType::Float2:
+        case SnAPI::Graphics::ShaderMetaData::EValueType::Float3:
+        case SnAPI::Graphics::ShaderMetaData::EValueType::Float4:
+            {
+                MaterialVectorParamPayload Vector{};
+                if (const auto Existing = FindIndex(VectorByName); Existing && *Existing < Payload.Vectors.size())
+                {
+                    Vector = Payload.Vectors[*Existing];
+                    UsedVectors[*Existing] = true;
+                }
+                else
+                {
+                    size_t Components = 4;
+                    if (Parameter.eValueType == SnAPI::Graphics::ShaderMetaData::EValueType::Float2)
+                    {
+                        Components = 2;
+                    }
+                    else if (Parameter.eValueType == SnAPI::Graphics::ShaderMetaData::EValueType::Float3)
+                    {
+                        Components = 3;
+                    }
+                    (void)TryResolveDefaultVector(Parameter, Components, Vector.Value);
+                }
+                Vector.Name = Parameter.Name;
+                SyncedVectors.push_back(std::move(Vector));
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    for (const auto& Resource : Descriptor.Resources)
+    {
+        if (Resource.Set != 0 ||
+            Resource.eBindingType != SnAPI::Graphics::ShaderMetaData::EBindingType::SampledImage)
+        {
+            continue;
+        }
+
+        MaterialTextureParamPayload Texture{};
+        if (const auto Existing = TextureByName.find(ToLowerCopy(Resource.Name));
+            Existing != TextureByName.end() && Existing->second < Payload.Textures.size())
+        {
+            Texture = Payload.Textures[Existing->second];
+            UsedTextures[Existing->second] = true;
+        }
+        Texture.SlotName = Resource.Name;
+        SyncedTextures.push_back(std::move(Texture));
+    }
+
+    for (size_t Index = 0; Index < Payload.Scalars.size(); ++Index)
+    {
+        if (!UsedScalars[Index])
+        {
+            SyncedScalars.push_back(Payload.Scalars[Index]);
+        }
+    }
+    for (size_t Index = 0; Index < Payload.Vectors.size(); ++Index)
+    {
+        if (!UsedVectors[Index])
+        {
+            SyncedVectors.push_back(Payload.Vectors[Index]);
+        }
+    }
+    for (size_t Index = 0; Index < Payload.Textures.size(); ++Index)
+    {
+        if (!UsedTextures[Index])
+        {
+            SyncedTextures.push_back(Payload.Textures[Index]);
+        }
+    }
+
+    const bool Changed =
+        Payload.Scalars != SyncedScalars ||
+        Payload.Vectors != SyncedVectors ||
+        Payload.Textures != SyncedTextures;
+
+    if (Changed)
+    {
+        Payload.Scalars = std::move(SyncedScalars);
+        Payload.Vectors = std::move(SyncedVectors);
+        Payload.Textures = std::move(SyncedTextures);
+    }
+    return Changed;
+}
+#endif
 
 class InlineImportPipelineContext final : public ::SnAPI::AssetPipeline::IPipelineContext
 {
@@ -744,6 +1804,8 @@ struct DefaultShapePackSpec
         return std::unexpected("Failed to resolve created node for default shape asset");
     }
 
+    ScopedComponentOnCreateSuppression SuppressOnCreate{};
+
     auto TransformResult = Node->Add<TransformComponent>();
     if (!TransformResult)
     {
@@ -766,42 +1828,37 @@ struct DefaultShapePackSpec
     MeshSettings.CastShadows = true;
     MeshSettings.SyncFromTransform = true;
     MeshSettings.RegisterWithRenderer = true;
-    (void)MeshResult->ReloadMesh();
 #endif
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
+    // Physics metadata is optional for editor template primitives.
+    // Keep pack generation robust even if physics components cannot be created in this bootstrap context.
     auto ColliderResult = Node->Add<ColliderComponent>();
-    if (!ColliderResult)
+    if (ColliderResult)
     {
-        return std::unexpected(ColliderResult.error().Message);
-    }
+        auto& ColliderSettings = ColliderResult->EditSettings();
+        ColliderSettings.Shape = Spec.ColliderShape;
+        ColliderSettings.HalfExtent = Spec.ColliderHalfExtent;
+        ColliderSettings.Radius = Spec.ColliderRadius;
+        ColliderSettings.HalfHeight = Spec.ColliderHalfHeight;
+        ColliderSettings.Friction = Spec.ColliderFriction;
+        ColliderSettings.Restitution = Spec.ColliderRestitution;
+        ColliderSettings.Density = 1.0f;
+        ColliderSettings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+        ColliderSettings.Mask = kCollisionMaskAll;
+        ColliderSettings.IsTrigger = false;
 
-    auto& ColliderSettings = ColliderResult->EditSettings();
-    ColliderSettings.Shape = Spec.ColliderShape;
-    ColliderSettings.HalfExtent = Spec.ColliderHalfExtent;
-    ColliderSettings.Radius = Spec.ColliderRadius;
-    ColliderSettings.HalfHeight = Spec.ColliderHalfHeight;
-    ColliderSettings.Friction = Spec.ColliderFriction;
-    ColliderSettings.Restitution = Spec.ColliderRestitution;
-    ColliderSettings.Density = 1.0f;
-    ColliderSettings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
-    ColliderSettings.Mask = kCollisionMaskAll;
-    ColliderSettings.IsTrigger = false;
+        RigidBodyComponent::Settings BodySettings{};
+        BodySettings.BodyType = SnAPI::Physics::EBodyType::Static;
+        BodySettings.Mass = 1.0f;
+        BodySettings.EnableCcd = false;
+        BodySettings.SyncFromPhysics = false;
+        BodySettings.SyncToPhysics = true;
+        BodySettings.StartActive = true;
+        BodySettings.EnableRenderInterpolation = false;
+        BodySettings.AutoDeactivateWhenSleeping = true;
 
-    RigidBodyComponent::Settings BodySettings{};
-    BodySettings.BodyType = SnAPI::Physics::EBodyType::Static;
-    BodySettings.Mass = 1.0f;
-    BodySettings.EnableCcd = false;
-    BodySettings.SyncFromPhysics = false;
-    BodySettings.SyncToPhysics = true;
-    BodySettings.StartActive = true;
-    BodySettings.EnableRenderInterpolation = false;
-    BodySettings.AutoDeactivateWhenSleeping = true;
-
-    auto RigidBodyResult = Node->Add<RigidBodyComponent>(BodySettings);
-    if (!RigidBodyResult)
-    {
-        return std::unexpected(RigidBodyResult.error().Message);
+        (void)Node->Add<RigidBodyComponent>(BodySettings);
     }
 #endif
 
@@ -829,7 +1886,117 @@ struct DefaultShapePackSpec
     return Entry;
 }
 
-[[nodiscard]] std::expected<std::size_t, std::string> EnsureDefaultShapePacks(const std::filesystem::path& PackDirectory)
+[[nodiscard]] std::expected<::SnAPI::AssetPipeline::AssetPackEntry, std::string> BuildDefaultShapePackEntryFromRuntimeWorld(
+    const DefaultShapePackSpec& Spec,
+    IWorld& RuntimeWorld)
+{
+    auto NodeResult = RuntimeWorld.CreateNode(StaticTypeId<BaseNode>(), std::string(Spec.AssetName));
+    if (!NodeResult)
+    {
+        return std::unexpected(NodeResult.error().Message);
+    }
+
+    const NodeHandle CreatedHandle = *NodeResult;
+    BaseNode* Node = CreatedHandle.Borrowed();
+    if (!Node)
+    {
+        Node = CreatedHandle.BorrowedSlowByUuid();
+    }
+    if (!Node)
+    {
+        (void)RuntimeWorld.DestroyNode(CreatedHandle);
+        return std::unexpected("Failed to resolve created runtime node for default shape asset");
+    }
+
+    auto CleanupNode = [&RuntimeWorld, CreatedHandle]() {
+        (void)RuntimeWorld.DestroyNode(CreatedHandle);
+    };
+
+    ScopedComponentOnCreateSuppression SuppressOnCreate{};
+
+    auto TransformResult = Node->Add<TransformComponent>();
+    if (!TransformResult)
+    {
+        CleanupNode();
+        return std::unexpected(TransformResult.error().Message);
+    }
+    TransformResult->Position = Vec3(0.0f, 0.0f, 0.0f);
+    TransformResult->Rotation = Quat::Identity();
+    TransformResult->Scale = Vec3(1.0f, 1.0f, 1.0f);
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto MeshResult = Node->Add<StaticMeshComponent>();
+    if (!MeshResult)
+    {
+        CleanupNode();
+        return std::unexpected(MeshResult.error().Message);
+    }
+
+    auto& MeshSettings = MeshResult->EditSettings();
+    MeshSettings.MeshPath = Spec.PrimitiveMeshPathToken;
+    MeshSettings.Visible = true;
+    MeshSettings.CastShadows = true;
+    MeshSettings.SyncFromTransform = true;
+    MeshSettings.RegisterWithRenderer = true;
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    auto ColliderResult = Node->Add<ColliderComponent>();
+    if (ColliderResult)
+    {
+        auto& ColliderSettings = ColliderResult->EditSettings();
+        ColliderSettings.Shape = Spec.ColliderShape;
+        ColliderSettings.HalfExtent = Spec.ColliderHalfExtent;
+        ColliderSettings.Radius = Spec.ColliderRadius;
+        ColliderSettings.HalfHeight = Spec.ColliderHalfHeight;
+        ColliderSettings.Friction = Spec.ColliderFriction;
+        ColliderSettings.Restitution = Spec.ColliderRestitution;
+        ColliderSettings.Density = 1.0f;
+        ColliderSettings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+        ColliderSettings.Mask = kCollisionMaskAll;
+        ColliderSettings.IsTrigger = false;
+
+        RigidBodyComponent::Settings BodySettings{};
+        BodySettings.BodyType = SnAPI::Physics::EBodyType::Static;
+        BodySettings.Mass = 1.0f;
+        BodySettings.EnableCcd = false;
+        BodySettings.SyncFromPhysics = false;
+        BodySettings.SyncToPhysics = true;
+        BodySettings.StartActive = true;
+        BodySettings.EnableRenderInterpolation = false;
+        BodySettings.AutoDeactivateWhenSleeping = true;
+
+        (void)Node->Add<RigidBodyComponent>(BodySettings);
+    }
+#endif
+
+    auto NodePayloadResult = NodeSerializer::Serialize(*Node);
+    CleanupNode();
+    if (!NodePayloadResult)
+    {
+        return std::unexpected(NodePayloadResult.error().Message);
+    }
+
+    std::vector<uint8_t> CookedBytes{};
+    auto SerializeResult = SerializeNodePayload(*NodePayloadResult, CookedBytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error().Message);
+    }
+
+    ::SnAPI::AssetPipeline::AssetPackEntry Entry{};
+    Entry.Id = AssetPipelineAssetIdFromName(std::string("SnAPI.Editor.DefaultShape.") + Spec.AssetName);
+    Entry.AssetKind = AssetKindNode();
+    Entry.Name = Spec.AssetName;
+    Entry.VariantKey = "default";
+    Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadNode(),
+                                                         NodeSerializer::kSchemaVersion,
+                                                         std::move(CookedBytes));
+    return Entry;
+}
+
+[[nodiscard]] std::expected<std::size_t, std::string> EnsureDefaultShapePacks(const std::filesystem::path& PackDirectory,
+                                                                               IWorld* RuntimeWorld)
 {
     if (PackDirectory.empty())
     {
@@ -851,10 +2018,32 @@ struct DefaultShapePackSpec
         Error.clear();
         if (std::filesystem::exists(PackPath, Error) && !Error)
         {
-            continue;
+            ::SnAPI::AssetPipeline::AssetPackReader ExistingReader{};
+            if (auto OpenResult = ExistingReader.Open(PackPath.string()); OpenResult)
+            {
+                const uint32_t ExistingAssetCount = ExistingReader.GetAssetCount();
+                bool HasNodeAsset = false;
+                for (uint32_t Index = 0; Index < ExistingAssetCount; ++Index)
+                {
+                    auto InfoResult = ExistingReader.GetAssetInfo(Index);
+                    if (InfoResult && InfoResult->AssetKind == AssetKindNode())
+                    {
+                        HasNodeAsset = true;
+                        break;
+                    }
+                }
+                if (HasNodeAsset)
+                {
+                    continue;
+                }
+            }
         }
 
         auto EntryResult = BuildDefaultShapePackEntry(Spec);
+        if (!EntryResult && RuntimeWorld)
+        {
+            EntryResult = BuildDefaultShapePackEntryFromRuntimeWorld(Spec, *RuntimeWorld);
+        }
         if (!EntryResult)
         {
             return std::unexpected("Failed to build default shape '" + std::string(Spec.AssetName) + "': " + EntryResult.error());
@@ -1213,6 +2402,9 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     m_assetIndexByKey.clear();
     m_assetRenameOverrides.clear();
     m_assetPayloadOverrides.clear();
+    m_assetImportMetadata.clear();
+    m_assetImportMetadataPath.clear();
+    m_assetImportMetadataDirty = false;
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
@@ -1274,6 +2466,7 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
 
     if (!TemplateError.empty())
     {
+        std::fprintf(stderr, "Warning: Editor template bootstrap failed: %s\n", TemplateError.c_str());
         if (!m_statusMessage.empty())
         {
             m_statusMessage += ' ';
@@ -1297,6 +2490,9 @@ void EditorAssetService::Shutdown(EditorServiceContext& Context)
     m_assetIndexByKey.clear();
     m_assetRenameOverrides.clear();
     m_assetPayloadOverrides.clear();
+    m_assetImportMetadata.clear();
+    m_assetImportMetadataPath.clear();
+    m_assetImportMetadataDirty = false;
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
@@ -1383,6 +2579,7 @@ Result EditorAssetService::RefreshDiscovery()
 
     std::size_t RuntimeAssetCount = 0;
     std::size_t DirtyAssetCount = 0;
+    std::string MetadataWarning{};
 
     for (const auto& CatalogEntry : RawAssets)
     {
@@ -1459,6 +2656,31 @@ Result EditorAssetService::RefreshDiscovery()
         }
     }
 
+    bool MetadataPruned = false;
+    for (auto It = m_assetImportMetadata.begin(); It != m_assetImportMetadata.end();)
+    {
+        if (SeenAssetIds.contains(It->first))
+        {
+            ++It;
+            continue;
+        }
+
+        It = m_assetImportMetadata.erase(It);
+        MetadataPruned = true;
+    }
+    if (MetadataPruned)
+    {
+        m_assetImportMetadataDirty = true;
+        if (auto SaveResult = SaveAssetImportMetadataDatabase(); SaveResult)
+        {
+            m_assetImportMetadataDirty = false;
+        }
+        else
+        {
+            MetadataWarning = "Import metadata prune warning: " + SaveResult.error();
+        }
+    }
+
     std::sort(NextAssets.begin(), NextAssets.end(), [](const DiscoveredAsset& Left, const DiscoveredAsset& Right) {
         if (Left.IsDirty != Right.IsDirty)
         {
@@ -1509,6 +2731,10 @@ Result EditorAssetService::RefreshDiscovery()
             << m_assetManager->GetMountedPacks().size() << " mounted pack(s), "
             << RuntimeAssetCount << " runtime asset(s), "
             << DirtyAssetCount << " unsaved.";
+    if (!MetadataWarning.empty())
+    {
+        Message << ' ' << MetadataWarning;
+    }
     m_statusMessage = Message.str();
     return Ok();
 }
@@ -1649,7 +2875,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
             {
                 m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
             }
-            m_assetEditorDirty = false;
+            m_assetEditorDirty = m_assetEditorImportSettingsDirty;
         }
 
         m_statusMessage = "Saved runtime asset to pack: " + SavePathResult.value();
@@ -1733,7 +2959,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         {
             m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
         }
-        m_assetEditorDirty = false;
+        m_assetEditorDirty = m_assetEditorImportSettingsDirty;
     }
 
     m_statusMessage = "Saved asset update into pack: " + PackPathResult.value();
@@ -1768,6 +2994,22 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
         m_assetManager->ClearCache();
         m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
         m_assetPayloadOverrides.erase(AssetSnapshot.AssetId);
+        if (m_assetImportMetadata.erase(AssetSnapshot.AssetId) > 0)
+        {
+            m_assetImportMetadataDirty = true;
+            if (auto SaveResult = SaveAssetImportMetadataDatabase(); SaveResult)
+            {
+                m_assetImportMetadataDirty = false;
+            }
+            else
+            {
+                if (!m_statusMessage.empty())
+                {
+                    m_statusMessage += ' ';
+                }
+                m_statusMessage += "Import metadata update warning: " + SaveResult.error();
+            }
+        }
         if (m_selectedAssetKey == DeletedAssetKey)
         {
             m_selectedAssetKey.clear();
@@ -1898,6 +3140,22 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
     m_assetManager->ClearCache();
     m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
     m_assetPayloadOverrides.erase(AssetSnapshot.AssetId);
+    if (m_assetImportMetadata.erase(AssetSnapshot.AssetId) > 0)
+    {
+        m_assetImportMetadataDirty = true;
+        if (auto SaveResult = SaveAssetImportMetadataDatabase(); SaveResult)
+        {
+            m_assetImportMetadataDirty = false;
+        }
+        else
+        {
+            if (!m_statusMessage.empty())
+            {
+                m_statusMessage += ' ';
+            }
+            m_statusMessage += "Import metadata update warning: " + SaveResult.error();
+        }
+    }
     if (m_selectedAssetKey == DeletedAssetKey)
     {
         m_selectedAssetKey.clear();
@@ -2368,7 +3626,8 @@ Result EditorAssetService::CreateRuntimeMaterialInstanceAsset(EditorServiceConte
 Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
                                              const std::string_view SourcePath,
                                              const std::string_view DestinationFolderPath,
-                                             const std::unordered_map<std::string, std::string>& BuildOptions)
+                                             const std::unordered_map<std::string, std::string>& BuildOptions,
+                                             ::SnAPI::AssetPipeline::AssetImportSettingsPtr ImportSettings)
 {
     (void)Context;
 
@@ -2473,8 +3732,14 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
                                          "No importer can handle source: " + SourceFile.extension().string()));
     }
 
+    ::SnAPI::AssetPipeline::AssetImportSettingsPtr TypedImportSettings = std::move(ImportSettings);
+    if (!TypedImportSettings)
+    {
+        TypedImportSettings = BuildTypedImportSettingsForImporter(*Importer, ImportOptions);
+    }
+
     std::vector<::SnAPI::AssetPipeline::ImportedItem> ImportedItems{};
-    if (!Importer->Import(SourceRef, ImportedItems, PipelineContext))
+    if (!Importer->ImportWithSettings(SourceRef, TypedImportSettings.get(), ImportedItems, PipelineContext))
     {
         std::string ErrorMessage = "Source import failed";
         if (!ImportErrors.empty())
@@ -2522,6 +3787,11 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
     PackEntries.reserve(ImportedItems.size());
     for (auto& Item : ImportedItems)
     {
+        if (!Item.ImportSettings)
+        {
+            Item.ImportSettings = TypedImportSettings;
+        }
+
         ::SnAPI::AssetPipeline::IAssetCooker* Cooker =
             FindMatchingCooker(Item.AssetKind, Item.Intermediate.PayloadType, Cookers);
         if (!Cooker)
@@ -2539,6 +3809,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
         Request.VariantKey = Item.VariantKey;
         Request.Intermediate = std::move(Item.Intermediate);
         Request.Dependencies = std::move(Item.Dependencies);
+        Request.ImportSettings = Item.ImportSettings;
         Request.BuildOptions = ImportOptions;
 
         ::SnAPI::AssetPipeline::CookResult Result{};
@@ -2610,6 +3881,68 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
     if (!MountResult)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, MountResult.error()));
+    }
+
+    // Ensure subsequent loads resolve newly imported payloads instead of stale cached instances.
+    m_assetManager->ClearCache();
+
+    const std::string ImporterName = Importer->GetName() ? Importer->GetName() : "";
+    for (const auto& Item : ImportedItems)
+    {
+        AssetImportMetadataEntry Record{};
+        Record.Profile = ImportProfileFromImporterName(ImporterName);
+        Record.SourcePath = SourceFile.string();
+        Record.DestinationFolder = FolderPath;
+        Record.ImporterName = ImporterName;
+        Record.BuildOptions = ImportOptions;
+
+        if (const auto* AssimpTyped = dynamic_cast<const AssimpImporterSettings*>(Item.ImportSettings.get()))
+        {
+            FillAssimpImportSettingsFromTyped(*AssimpTyped, Record.Assimp);
+            RemoveManagedBuildOptions(Record.BuildOptions, kAssimpManagedBuildOptionKeys);
+            const auto TypedOptions = BuildOptionsFromAssimpImportSettings(Record.Assimp);
+            for (const auto& [OptionKey, OptionValue] : TypedOptions)
+            {
+                Record.BuildOptions[OptionKey] = OptionValue;
+            }
+            Record.BuildOptions["SnAPI.GF.Assimp.DefaultShaderModule"] =
+                AssimpTyped->DefaultShaderModule.empty() ? std::string(kDefaultMaterialShaderModule) : AssimpTyped->DefaultShaderModule;
+            Record.BuildOptions["SnAPI.GF.Assimp.DefaultShadingModel"] =
+                AssimpTyped->DefaultShadingModel.empty() ? std::string(kDefaultMaterialShadingModel) : AssimpTyped->DefaultShadingModel;
+            Record.Profile = EImportProfile::AssimpModel;
+        }
+        else if (const auto* TextureTyped =
+                     dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(Item.ImportSettings.get()))
+        {
+            FillTextureImportSettingsFromTyped(*TextureTyped, Record.Texture);
+            RemoveManagedBuildOptions(Record.BuildOptions, kTextureManagedBuildOptionKeys);
+            const auto TypedOptions = BuildOptionsFromTextureImportSettings(Record.Texture);
+            for (const auto& [OptionKey, OptionValue] : TypedOptions)
+            {
+                Record.BuildOptions[OptionKey] = OptionValue;
+            }
+            Record.Profile = EImportProfile::Texture;
+        }
+        else if (Record.Profile == EImportProfile::AssimpModel)
+        {
+            Record.BuildOptions = BuildOptionsFromAssimpImportSettings(Record.Assimp);
+        }
+        else if (Record.Profile == EImportProfile::Texture)
+        {
+            Record.BuildOptions = BuildOptionsFromTextureImportSettings(Record.Texture);
+        }
+
+        m_assetImportMetadata[Item.Id] = std::move(Record);
+    }
+
+    m_assetImportMetadataDirty = true;
+    if (auto SaveResult = SaveAssetImportMetadataDatabase(); SaveResult)
+    {
+        m_assetImportMetadataDirty = false;
+    }
+    else
+    {
+        ImportWarnings.push_back("Failed to persist import metadata: " + SaveResult.error());
     }
 
     auto RefreshResult = RefreshDiscovery();
@@ -2722,6 +4055,78 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         m_assetEditorTargetObject = m_assetEditorWorld.get();
         m_assetEditorTargetType = StaticTypeId<World>();
     }
+    else if (Asset->AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture)
+    {
+        auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+        if (!CookedPayloadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+        }
+
+        if (CookedPayloadResult->PayloadType != TextureCompressorPlugin::Payload_CompressorCookedInfo)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Texture asset has unexpected payload type"));
+        }
+
+        const auto* TextureSerializer = m_assetManager->GetRegistry().Find(TextureCompressorPlugin::Payload_CompressorCookedInfo);
+        if (!TextureSerializer)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::NotReady, "Texture serializer is not registered"));
+        }
+
+        TextureCompressorPlugin::TextureCompressorCookedInfo Cooked{};
+        if (!TextureSerializer->DeserializeFromBytes(
+                &Cooked,
+                CookedPayloadResult->Bytes.data(),
+                CookedPayloadResult->Bytes.size()))
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to deserialize cooked texture payload"));
+        }
+
+        m_assetEditorTextureCookedInfo = Cooked;
+        Editor::TextureAssetEditorPayload Payload{};
+        PopulateTextureEditorPayloadFromCooked(Cooked, Payload);
+        m_assetEditorTexturePayload = std::move(Payload);
+        // Texture compression knobs are import settings and require reimport.
+        // Keep cooked payload around for preview/intrinsic metadata, but do not expose it as runtime-editable state.
+        m_assetEditorTargetObject = nullptr;
+        m_assetEditorTargetType = {};
+    }
+    else if (Asset->AssetKind == AssetKindStaticMesh())
+    {
+        auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+        if (!CookedPayloadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+        }
+
+        if (CookedPayloadResult->PayloadType != PayloadStaticMesh())
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Static mesh asset has unexpected payload type"));
+        }
+
+        auto PayloadResult = DeserializeStaticMeshPayload(
+            CookedPayloadResult->Bytes.data(),
+            CookedPayloadResult->Bytes.size());
+        if (!PayloadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
+        }
+
+        m_assetEditorStaticMeshPayload = std::move(PayloadResult.value());
+        Editor::StaticMeshAssetEditorPayload EditorPayload{};
+        PopulateStaticMeshEditorPayloadFromCooked(*m_assetEditorStaticMeshPayload, EditorPayload);
+        m_assetEditorStaticMeshEditorPayload = std::move(EditorPayload);
+        m_assetEditorTargetObject = &(*m_assetEditorStaticMeshEditorPayload);
+        m_assetEditorTargetType = StaticTypeId<Editor::StaticMeshAssetEditorPayload>();
+    }
     else if (Asset->AssetKind == AssetKindMaterial())
     {
         if (!Asset->IsRuntime)
@@ -2763,6 +4168,15 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
             MaterialPayload Payload{};
             Payload.ShaderModule = Loaded.ShaderModule;
             Payload.ShadingModel = Loaded.ShadingModel;
+            Payload.FeatureAlbedoMap = Loaded.FeatureAlbedoMap;
+            Payload.FeatureNormalMap = Loaded.FeatureNormalMap;
+            Payload.FeatureRoughnessMap = Loaded.FeatureRoughnessMap;
+            Payload.FeatureMetalnessMap = Loaded.FeatureMetalnessMap;
+            Payload.FeatureOcclusionMap = Loaded.FeatureOcclusionMap;
+            Payload.FeatureAlphaTest = Loaded.FeatureAlphaTest;
+            Payload.FeatureAlphaBlend = Loaded.FeatureAlphaBlend;
+            Payload.FeatureDoubleSided = Loaded.FeatureDoubleSided;
+            Payload.FeatureInstancing = Loaded.FeatureInstancing;
             m_assetEditorMaterialPayload = std::move(Payload);
         }
         m_assetEditorTargetObject = &(*m_assetEditorMaterialPayload);
@@ -2842,6 +4256,10 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         }
         m_assetEditorTargetObject = &(*m_assetEditorMaterialInstancePayload);
         m_assetEditorTargetType = StaticTypeId<MaterialInstancePayload>();
+        if (auto SyncResult = SyncMaterialInstanceEditorPayloadFromDescriptor(); !SyncResult)
+        {
+            m_statusMessage = "Material instance descriptor sync warning: " + SyncResult.error().Message;
+        }
     }
     else
     {
@@ -2849,16 +4267,26 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported asset kind for inspector editing"));
     }
 
-    auto InitialPayloadResult = SerializeAssetEditorPayload();
-    if (!InitialPayloadResult)
+    (void)RefreshAssetEditorImportSettingsBinding(*Asset);
+
+    if (m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{})
     {
-        const std::string ErrorMessage = InitialPayloadResult.error();
-        ClearAssetEditorState();
-        return std::unexpected(MakeError(EErrorCode::InternalError, ErrorMessage));
+        auto InitialPayloadResult = SerializeAssetEditorPayload();
+        if (!InitialPayloadResult)
+        {
+            const std::string ErrorMessage = InitialPayloadResult.error();
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, ErrorMessage));
+        }
+        m_assetEditorBaselineCookedBytes = InitialPayloadResult->Bytes;
+    }
+    else
+    {
+        m_assetEditorBaselineCookedBytes.clear();
+        m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     }
 
-    m_assetEditorBaselineCookedBytes = InitialPayloadResult->Bytes;
-    m_assetEditorDirty = false;
+    m_assetEditorDirty = m_assetEditorImportSettingsDirty;
     m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     RefreshAssetEditorHierarchy();
     m_statusMessage = "Opened asset inspector: " + Asset->Name;
@@ -3068,7 +4496,7 @@ Result EditorAssetService::RemoveAssetEditorComponent(const NodeHandle& Owner, c
 
 void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
 {
-    if (m_assetEditorAssetKey.empty() || m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
+    if (m_assetEditorAssetKey.empty())
     {
         return;
     }
@@ -3121,6 +4549,22 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
         RefreshAssetEditorHierarchy();
     }
 
+    #if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (Asset->AssetKind == AssetKindMaterialInstance())
+    {
+        const std::string CurrentParentKey = m_assetEditorMaterialInstancePayload
+            ? BuildAssetRefIdentity(m_assetEditorMaterialInstancePayload->ParentMaterial)
+            : std::string{};
+        if (CurrentParentKey != m_assetEditorMaterialInstanceDescriptorParentKey)
+        {
+            if (auto SyncResult = SyncMaterialInstanceEditorPayloadFromDescriptor(); !SyncResult)
+            {
+                m_statusMessage = "Material instance descriptor sync warning: " + SyncResult.error().Message;
+            }
+        }
+    }
+    #endif
+
     m_assetEditorDirtyCheckCooldownSeconds -= std::max(0.0f, DeltaSeconds);
     if (m_assetEditorDirtyCheckCooldownSeconds > 0.0f)
     {
@@ -3128,26 +4572,63 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
     }
     m_assetEditorDirtyCheckCooldownSeconds = 0.2f;
 
-    auto SerializedPayloadResult = SerializeAssetEditorPayload();
-    if (!SerializedPayloadResult)
-    {
-        return;
-    }
+    const bool PreviousRuntimeDirty = m_assetPayloadOverrides.contains(m_assetEditorAssetId);
+    const bool PreviousImportDirty = m_assetEditorImportSettingsDirty;
+    const bool PreviousAnyDirty = m_assetEditorDirty;
 
-    const bool IsDirtyNow = SerializedPayloadResult->Bytes != m_assetEditorBaselineCookedBytes;
-    if (IsDirtyNow)
+    bool RuntimeDirtyNow = false;
+    if (m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{})
     {
-        m_assetPayloadOverrides[m_assetEditorAssetId] = *SerializedPayloadResult;
+        auto SerializedPayloadResult = SerializeAssetEditorPayload();
+        if (!SerializedPayloadResult)
+        {
+            return;
+        }
+
+        RuntimeDirtyNow = SerializedPayloadResult->Bytes != m_assetEditorBaselineCookedBytes;
+        if (RuntimeDirtyNow)
+        {
+            m_assetPayloadOverrides[m_assetEditorAssetId] = *SerializedPayloadResult;
+        }
+        else
+        {
+            m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+        }
     }
     else
     {
         m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     }
 
-    if (IsDirtyNow != m_assetEditorDirty)
+    bool ImportDirtyNow = false;
+    if (m_assetEditorImportSettingsObject != nullptr &&
+        m_assetEditorImportSettingsType != TypeId{} &&
+        m_assetEditorImportMetadataBaseline.has_value())
+    {
+        if (auto CurrentImportMetadata = BuildAssetEditorImportMetadataFromCurrentState(); CurrentImportMetadata.has_value())
+        {
+            ImportDirtyNow = !ImportMetadataRecordsEqual(*CurrentImportMetadata, *m_assetEditorImportMetadataBaseline);
+        }
+    }
+
+    const bool IsDirtyNow = RuntimeDirtyNow || ImportDirtyNow;
+    if (ImportDirtyNow != PreviousImportDirty)
+    {
+        m_assetEditorImportSettingsDirty = ImportDirtyNow;
+    }
+
+    if (IsDirtyNow != PreviousAnyDirty)
     {
         m_assetEditorDirty = IsDirtyNow;
         ++m_assetEditorSessionRevision;
+    }
+    else if (ImportDirtyNow != PreviousImportDirty)
+    {
+        ++m_assetEditorSessionRevision;
+    }
+
+    if (RuntimeDirtyNow != PreviousRuntimeDirty)
+    {
         (void)RefreshDiscovery();
     }
 }
@@ -3159,28 +4640,66 @@ Result EditorAssetService::SaveActiveAssetEditor()
         return std::unexpected(MakeError(EErrorCode::NotFound, "No active asset editor to save"));
     }
 
-    Result SaveResult = SaveAssetByKey(m_assetEditorAssetKey);
-    if (!SaveResult)
+    const bool HadRuntimeOverride = m_assetPayloadOverrides.contains(m_assetEditorAssetId);
+    const bool HadImportDirty = m_assetEditorImportSettingsDirty;
+
+    if (HadRuntimeOverride)
     {
-        return SaveResult;
+        Result SaveResult = SaveAssetByKey(m_assetEditorAssetKey);
+        if (!SaveResult)
+        {
+            return SaveResult;
+        }
+    }
+
+    if (m_assetEditorImportSettingsObject != nullptr && m_assetEditorImportSettingsType != TypeId{})
+    {
+        if (auto CurrentImportMetadata = BuildAssetEditorImportMetadataFromCurrentState(); CurrentImportMetadata.has_value())
+        {
+            if (!m_assetEditorImportMetadataBaseline.has_value() ||
+                !ImportMetadataRecordsEqual(*CurrentImportMetadata, *m_assetEditorImportMetadataBaseline))
+            {
+                m_assetImportMetadata[m_assetEditorAssetId] = *CurrentImportMetadata;
+                m_assetImportMetadataDirty = true;
+                if (auto SaveMetadataResult = SaveAssetImportMetadataDatabase(); !SaveMetadataResult)
+                {
+                    return std::unexpected(MakeError(EErrorCode::InternalError, SaveMetadataResult.error()));
+                }
+                m_assetImportMetadataDirty = false;
+                m_assetEditorImportMetadataBaseline = *CurrentImportMetadata;
+                m_assetEditorImportSettingsDirty = false;
+            }
+        }
     }
 
     const bool WasDirty = m_assetEditorDirty;
-    auto SerializedPayloadResult = SerializeAssetEditorPayload();
-    if (SerializedPayloadResult)
+    if (m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{})
     {
-        m_assetEditorBaselineCookedBytes = SerializedPayloadResult->Bytes;
+        auto SerializedPayloadResult = SerializeAssetEditorPayload();
+        if (SerializedPayloadResult)
+        {
+            m_assetEditorBaselineCookedBytes = SerializedPayloadResult->Bytes;
+        }
+        m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     }
-    m_assetEditorDirty = false;
+    else
+    {
+        m_assetEditorBaselineCookedBytes.clear();
+    }
+
+    m_assetEditorDirty = m_assetEditorImportSettingsDirty;
     m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
-    m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     if (m_assetEditorCanEditHierarchy)
     {
         RefreshAssetEditorHierarchy();
     }
-    if (WasDirty)
+    if (WasDirty || HadRuntimeOverride || HadImportDirty)
     {
         ++m_assetEditorSessionRevision;
+    }
+    if (!HadRuntimeOverride && HadImportDirty)
+    {
+        m_statusMessage = "Saved import settings for: " + m_assetEditorTitle;
     }
     return Ok();
 }
@@ -3188,7 +4707,13 @@ Result EditorAssetService::SaveActiveAssetEditor()
 EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSession() const
 {
     AssetEditorSessionView View{};
-    if (m_assetEditorAssetKey.empty() || m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
+    if (m_assetEditorAssetKey.empty())
+    {
+        return View;
+    }
+    const bool HasRuntimeTarget = m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{};
+    const bool HasImportTarget = m_assetEditorImportSettingsObject != nullptr && m_assetEditorImportSettingsType != TypeId{};
+    if (!HasRuntimeTarget && !HasImportTarget)
     {
         return View;
     }
@@ -3198,11 +4723,30 @@ EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSessio
     View.Title = m_assetEditorTitle;
     View.TargetType = m_assetEditorTargetType;
     View.TargetObject = m_assetEditorTargetObject;
+    View.ImportSettingsType = m_assetEditorImportSettingsType;
+    View.ImportSettingsObject = m_assetEditorImportSettingsObject;
     View.Nodes = m_assetEditorHierarchy;
     View.SelectedNode = m_assetEditorSelectedNode;
     View.CanEditHierarchy = m_assetEditorCanEditHierarchy;
+    View.HasImportSettings = HasImportTarget;
+    View.RuntimeDirty = m_assetPayloadOverrides.contains(m_assetEditorAssetId);
+    View.ImportSettingsDirty = m_assetEditorImportSettingsDirty;
     View.IsDirty = m_assetEditorDirty;
     View.CanSave = m_assetEditorCanSave;
+    View.CanReimport = m_assetEditorCanReimport;
+    if (m_assetEditorTextureCookedInfo.has_value())
+    {
+        const auto& Cooked = *m_assetEditorTextureCookedInfo;
+        View.HasTexturePreviewStats = true;
+        View.TexturePreviewWidth = Cooked.BaseWidth;
+        View.TexturePreviewHeight = Cooked.BaseHeight;
+        View.TexturePreviewMipCount = (Cooked.MipCount > 0u)
+            ? Cooked.MipCount
+            : static_cast<std::uint32_t>(Cooked.MipLevels.size());
+        View.TexturePreviewTarget = CompressionTargetName(ResolveCookedCompressionTarget(Cooked));
+        View.TexturePreviewFormat = TextureCompressorPlugin::GetFormatName(Cooked.Format);
+        View.TexturePreviewGpuSizeBytes = ComputeTextureGpuSizeBytes(Cooked);
+    }
     return View;
 }
 
@@ -3258,6 +4802,9 @@ Result EditorAssetService::RebuildAssetManager()
 {
     m_assetRenameOverrides.clear();
     m_assetPayloadOverrides.clear();
+    m_assetImportMetadata.clear();
+    m_assetImportMetadataPath.clear();
+    m_assetImportMetadataDirty = false;
     m_selectedAssetKey.clear();
     m_placementAssetKey.clear();
     m_previewSummary.clear();
@@ -3276,11 +4823,33 @@ Result EditorAssetService::RebuildAssetManager()
     RegisterAssetPipelinePayloads(m_assetManager->GetRegistry());
     RegisterAssetPipelineFactories(*m_assetManager);
     RegisterAssetPipelineSourceStages(*m_assetManager);
-    return RefreshDiscovery();
+
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    if (auto LoadMetadataResult = LoadAssetImportMetadataDatabase(); !LoadMetadataResult)
+    {
+        if (!m_statusMessage.empty())
+        {
+            m_statusMessage += ' ';
+        }
+        m_statusMessage += "Import metadata load warning: " + LoadMetadataResult.error();
+    }
+    else
+    {
+        (void)RefreshDiscovery();
+    }
+
+    return Ok();
 }
 
 Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Context)
 {
+    (void)TypeAutoRegistry::Instance().EnsureAll();
+
     m_editorTemplateAssetDirectory = EditorDefaultShapeAssetDirectory();
     if (m_editorTemplateAssetDirectory.empty())
     {
@@ -3314,7 +4883,7 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
         }
     }
 
-    auto DefaultShapeResult = EnsureDefaultShapePacks(m_editorTemplateAssetDirectory);
+    auto DefaultShapeResult = EnsureDefaultShapePacks(m_editorTemplateAssetDirectory, Context.Runtime().WorldPtr());
     if (!DefaultShapeResult)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, DefaultShapeResult.error()));
@@ -3322,7 +4891,32 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
 
     m_editorStarterLevelTemplatePackPath = m_editorTemplateAssetDirectory / std::string(kEditorStarterLevelTemplatePackFileName);
     Error.clear();
-    if (!std::filesystem::exists(m_editorStarterLevelTemplatePackPath, Error) || Error)
+    bool NeedStarterTemplatePack = !std::filesystem::exists(m_editorStarterLevelTemplatePackPath, Error) || Error;
+    if (!NeedStarterTemplatePack)
+    {
+        ::SnAPI::AssetPipeline::AssetPackReader ExistingReader{};
+        if (auto OpenResult = ExistingReader.Open(m_editorStarterLevelTemplatePackPath.string()); OpenResult)
+        {
+            const uint32_t AssetCount = ExistingReader.GetAssetCount();
+            bool HasLevelAsset = false;
+            for (uint32_t Index = 0; Index < AssetCount; ++Index)
+            {
+                auto InfoResult = ExistingReader.GetAssetInfo(Index);
+                if (InfoResult && InfoResult->AssetKind == AssetKindLevel())
+                {
+                    HasLevelAsset = true;
+                    break;
+                }
+            }
+            NeedStarterTemplatePack = !HasLevelAsset;
+        }
+        else
+        {
+            NeedStarterTemplatePack = true;
+        }
+    }
+
+    if (NeedStarterTemplatePack)
     {
         Level* SourceLevel = nullptr;
         if (auto* RuntimeWorld = Context.Runtime().WorldPtr(); RuntimeWorld)
@@ -3339,20 +4933,21 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
         }
 
         std::vector<uint8_t> StarterLevelBytes{};
+        bool SerializedFromSourceLevel = false;
         if (SourceLevel)
         {
             auto PayloadResult = LevelSerializer::Serialize(*SourceLevel);
-            if (!PayloadResult)
+            if (PayloadResult)
             {
-                return std::unexpected(PayloadResult.error());
-            }
-            auto SerializeResult = SerializeLevelPayload(*PayloadResult, StarterLevelBytes);
-            if (!SerializeResult)
-            {
-                return std::unexpected(SerializeResult.error());
+                auto SerializeResult = SerializeLevelPayload(*PayloadResult, StarterLevelBytes);
+                if (SerializeResult)
+                {
+                    SerializedFromSourceLevel = true;
+                }
             }
         }
-        else
+
+        if (!SerializedFromSourceLevel)
         {
             World ScratchWorld("Editor.StarterLevelTemplateScratch");
             auto LevelResult = ScratchWorld.CreateLevel("Level");
@@ -3930,6 +5525,683 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     return Ok();
 }
 
+std::filesystem::path EditorAssetService::ResolveImportMetadataPath() const
+{
+    std::filesystem::path AssetRoot{};
+    if (m_currentProject.IsLoaded && !m_currentProject.AssetRootDirectory.empty())
+    {
+        AssetRoot = std::filesystem::path(m_currentProject.AssetRootDirectory);
+    }
+    else if (const std::filesystem::path ResolverAssetRoot = SPathResolver::Instance().AssetRoot();
+             !ResolverAssetRoot.empty())
+    {
+        AssetRoot = ResolverAssetRoot;
+    }
+
+    if (AssetRoot.empty())
+    {
+        return {};
+    }
+
+    std::error_code Error{};
+    auto Canonical = std::filesystem::weakly_canonical(AssetRoot, Error);
+    if (!Error)
+    {
+        AssetRoot = std::move(Canonical);
+    }
+    else
+    {
+        Error.clear();
+        auto Absolute = std::filesystem::absolute(AssetRoot, Error);
+        if (!Error)
+        {
+            AssetRoot = std::move(Absolute);
+        }
+    }
+
+    return AssetRoot /
+        std::filesystem::path(std::string(kAssetImportMetadataDirectoryName)) /
+        std::filesystem::path(std::string(kAssetImportMetadataFileName));
+}
+
+std::expected<void, std::string> EditorAssetService::LoadAssetImportMetadataDatabase()
+{
+    m_assetImportMetadata.clear();
+    m_assetImportMetadataDirty = false;
+    m_assetImportMetadataPath = ResolveImportMetadataPath();
+    if (m_assetImportMetadataPath.empty())
+    {
+        return {};
+    }
+
+    std::error_code Error{};
+    if (!std::filesystem::exists(m_assetImportMetadataPath, Error))
+    {
+        return {};
+    }
+    if (Error)
+    {
+        return std::unexpected(
+            "Failed to query import metadata file '" + m_assetImportMetadataPath.string() + "': " + Error.message());
+    }
+
+    std::ifstream Input(m_assetImportMetadataPath, std::ios::binary);
+    if (!Input.is_open())
+    {
+        return std::unexpected("Failed to open import metadata file: " + m_assetImportMetadataPath.string());
+    }
+
+    AssetImportMetadataDatabaseDisk Database{};
+    bool Loaded = false;
+    try
+    {
+        cereal::JSONInputArchive Archive(Input);
+        Archive(cereal::make_nvp("Database", Database));
+        Loaded = true;
+    }
+    catch (...)
+    {
+        Input.clear();
+        Input.seekg(0, std::ios::beg);
+        try
+        {
+            cereal::JSONInputArchive Archive(Input);
+            Archive(Database);
+            Loaded = true;
+        }
+        catch (...)
+        {
+            Loaded = false;
+        }
+    }
+
+    if (!Loaded)
+    {
+        return std::unexpected(
+            "Failed to parse import metadata file '" + m_assetImportMetadataPath.string() + "'");
+    }
+
+    if (Database.Version != kAssetImportMetadataVersion)
+    {
+        return std::unexpected(
+            "Unsupported import metadata version " + std::to_string(Database.Version));
+    }
+
+    for (const auto& DiskEntry : Database.Entries)
+    {
+        const ::SnAPI::AssetPipeline::AssetId AssetId = ::SnAPI::AssetPipeline::AssetId::FromString(DiskEntry.AssetId);
+        if (AssetId.IsNull())
+        {
+            continue;
+        }
+
+        AssetImportMetadataEntry Entry{};
+        Entry.Profile = ImportProfileFromString(DiskEntry.Profile);
+        Entry.SourcePath = DiskEntry.SourcePath;
+        Entry.DestinationFolder = NormalizeAssetLogicalName(DiskEntry.DestinationFolder);
+        Entry.ImporterName = DiskEntry.ImporterName;
+        Entry.BuildOptions = DiskEntry.BuildOptions;
+        Entry.Assimp = DiskEntry.Assimp;
+        Entry.Texture = DiskEntry.Texture;
+
+        if (Entry.Profile == EImportProfile::Unknown)
+        {
+            Entry.Profile = ImportProfileFromImporterName(Entry.ImporterName);
+        }
+        if (Entry.Profile == EImportProfile::AssimpModel && Entry.BuildOptions.empty())
+        {
+            Entry.BuildOptions = BuildOptionsFromAssimpImportSettings(Entry.Assimp);
+        }
+        if (Entry.Profile == EImportProfile::Texture && Entry.BuildOptions.empty())
+        {
+            Entry.BuildOptions = BuildOptionsFromTextureImportSettings(Entry.Texture);
+        }
+
+        m_assetImportMetadata[AssetId] = std::move(Entry);
+    }
+
+    return {};
+}
+
+std::expected<void, std::string> EditorAssetService::SaveAssetImportMetadataDatabase() const
+{
+    if (m_assetImportMetadataPath.empty())
+    {
+        return {};
+    }
+
+    std::error_code Error{};
+    const std::filesystem::path ParentPath = m_assetImportMetadataPath.parent_path();
+    if (!ParentPath.empty())
+    {
+        std::filesystem::create_directories(ParentPath, Error);
+        if (Error)
+        {
+            return std::unexpected(
+                "Failed to create import metadata directory '" + ParentPath.string() + "': " + Error.message());
+        }
+    }
+
+    AssetImportMetadataDatabaseDisk Database{};
+    Database.Version = kAssetImportMetadataVersion;
+    Database.Entries.reserve(m_assetImportMetadata.size());
+    for (const auto& [AssetId, Entry] : m_assetImportMetadata)
+    {
+        AssetImportMetadataEntryDisk DiskEntry{};
+        DiskEntry.AssetId = AssetId.ToString();
+        DiskEntry.SourcePath = Entry.SourcePath;
+        DiskEntry.DestinationFolder = Entry.DestinationFolder;
+        DiskEntry.ImporterName = Entry.ImporterName;
+        DiskEntry.Profile = ImportProfileToString(Entry.Profile);
+        DiskEntry.BuildOptions = Entry.BuildOptions;
+        DiskEntry.Assimp = Entry.Assimp;
+        DiskEntry.Texture = Entry.Texture;
+        Database.Entries.push_back(std::move(DiskEntry));
+    }
+
+    std::sort(
+        Database.Entries.begin(),
+        Database.Entries.end(),
+        [](const AssetImportMetadataEntryDisk& Left, const AssetImportMetadataEntryDisk& Right) {
+            return Left.AssetId < Right.AssetId;
+        });
+
+    const std::filesystem::path TempPath = m_assetImportMetadataPath.string() + ".tmp";
+    std::ofstream Output(TempPath, std::ios::binary | std::ios::trunc);
+    if (!Output.is_open())
+    {
+        return std::unexpected("Failed to open temp import metadata file: " + TempPath.string());
+    }
+
+    try
+    {
+        cereal::JSONOutputArchive Archive(Output);
+        Archive(cereal::make_nvp("Database", Database));
+    }
+    catch (...)
+    {
+        return std::unexpected(
+            "Failed to serialize import metadata to file: " + TempPath.string());
+    }
+
+    Output.flush();
+    if (!Output.good())
+    {
+        return std::unexpected("Failed to flush import metadata file: " + TempPath.string());
+    }
+    Output.close();
+    if (!Output.good())
+    {
+        return std::unexpected("Failed to close import metadata file: " + TempPath.string());
+    }
+
+    Error.clear();
+    std::filesystem::rename(TempPath, m_assetImportMetadataPath, Error);
+    if (Error)
+    {
+        Error.clear();
+        std::filesystem::remove(m_assetImportMetadataPath, Error);
+        Error.clear();
+        std::filesystem::rename(TempPath, m_assetImportMetadataPath, Error);
+    }
+
+    if (Error)
+    {
+        return std::unexpected(
+            "Failed to commit import metadata file '" + m_assetImportMetadataPath.string() + "': " + Error.message());
+    }
+
+    return {};
+}
+
+bool EditorAssetService::RefreshAssetEditorImportSettingsBinding(const DiscoveredAsset& Asset)
+{
+    ClearAssetEditorImportSettingsBinding();
+
+    const auto MetadataIt = m_assetImportMetadata.find(Asset.AssetId);
+    if (MetadataIt == m_assetImportMetadata.end())
+    {
+        return false;
+    }
+
+    AssetImportMetadataEntry Metadata = MetadataIt->second;
+    if (Metadata.Profile == EImportProfile::Unknown)
+    {
+        Metadata.Profile = ImportProfileFromImporterName(Metadata.ImporterName);
+    }
+
+    if (Metadata.Profile == EImportProfile::AssimpModel)
+    {
+        if (auto Typed = BuildTypedImportSettingsForRecord(Metadata);
+            Typed && dynamic_cast<const AssimpImporterSettings*>(Typed.get()))
+        {
+            FillAssimpImportSettingsFromTyped(*static_cast<const AssimpImporterSettings*>(Typed.get()), Metadata.Assimp);
+        }
+        if (Metadata.BuildOptions.empty())
+        {
+            Metadata.BuildOptions = BuildOptionsFromAssimpImportSettings(Metadata.Assimp);
+            Metadata.BuildOptions["SnAPI.GF.Assimp.DefaultShaderModule"] = std::string(kDefaultMaterialShaderModule);
+            Metadata.BuildOptions["SnAPI.GF.Assimp.DefaultShadingModel"] = std::string(kDefaultMaterialShadingModel);
+        }
+
+        m_assetEditorAssimpImportSettings = Metadata.Assimp;
+        m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
+        m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
+    }
+    else if (Metadata.Profile == EImportProfile::Texture)
+    {
+        if (auto Typed = BuildTypedImportSettingsForRecord(Metadata);
+            Typed && dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(Typed.get()))
+        {
+            FillTextureImportSettingsFromTyped(
+                *static_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(Typed.get()),
+                Metadata.Texture);
+        }
+        if (Metadata.BuildOptions.empty())
+        {
+            Metadata.BuildOptions = BuildOptionsFromTextureImportSettings(Metadata.Texture);
+        }
+
+        m_assetEditorTextureImportSettings = Metadata.Texture;
+        m_assetEditorImportSettingsType = StaticTypeId<Editor::TextureImportSettings>();
+        m_assetEditorImportSettingsObject = &(*m_assetEditorTextureImportSettings);
+    }
+
+    if (m_assetEditorImportSettingsObject == nullptr || m_assetEditorImportSettingsType == TypeId{})
+    {
+        return false;
+    }
+
+    m_assetEditorImportMetadataBaseline = std::move(Metadata);
+    m_assetEditorImportSettingsDirty = false;
+    m_assetEditorCanReimport = !m_assetEditorImportMetadataBaseline->SourcePath.empty();
+    if (m_assetEditorCanReimport)
+    {
+        std::error_code Error{};
+        std::filesystem::path SourcePath = std::filesystem::path(m_assetEditorImportMetadataBaseline->SourcePath);
+        if (auto Resolved = SPathResolver::Instance().Resolve(m_assetEditorImportMetadataBaseline->SourcePath); Resolved)
+        {
+            SourcePath = *Resolved;
+        }
+        m_assetEditorCanReimport = std::filesystem::exists(SourcePath, Error) && !Error;
+    }
+    return true;
+}
+
+std::optional<EditorAssetService::AssetImportMetadataEntry> EditorAssetService::BuildAssetEditorImportMetadataFromCurrentState() const
+{
+    if (m_assetEditorImportSettingsObject == nullptr || m_assetEditorImportSettingsType == TypeId{})
+    {
+        return std::nullopt;
+    }
+
+    AssetImportMetadataEntry Metadata = m_assetEditorImportMetadataBaseline.value_or(AssetImportMetadataEntry{});
+    const auto PreviousBuildOptions = m_assetEditorImportMetadataBaseline
+        ? m_assetEditorImportMetadataBaseline->BuildOptions
+        : Metadata.BuildOptions;
+
+    if (m_assetEditorImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>())
+    {
+        const auto* Settings = static_cast<const Editor::AssimpImportSettings*>(m_assetEditorImportSettingsObject);
+        if (!Settings)
+        {
+            return std::nullopt;
+        }
+
+        Metadata.Profile = EImportProfile::AssimpModel;
+        Metadata.Assimp = *Settings;
+        Metadata.BuildOptions = PreviousBuildOptions;
+        RemoveManagedBuildOptions(Metadata.BuildOptions, kAssimpManagedBuildOptionKeys);
+        const auto TypedOptions = BuildOptionsFromAssimpImportSettings(*Settings);
+        for (const auto& [OptionKey, OptionValue] : TypedOptions)
+        {
+            Metadata.BuildOptions[OptionKey] = OptionValue;
+        }
+        Metadata.BuildOptions["SnAPI.GF.Assimp.DefaultShaderModule"] = OptionValueOr(
+            PreviousBuildOptions,
+            "SnAPI.GF.Assimp.DefaultShaderModule",
+            kDefaultMaterialShaderModule);
+        Metadata.BuildOptions["SnAPI.GF.Assimp.DefaultShadingModel"] = OptionValueOr(
+            PreviousBuildOptions,
+            "SnAPI.GF.Assimp.DefaultShadingModel",
+            kDefaultMaterialShadingModel);
+
+        if (Metadata.ImporterName.empty())
+        {
+            Metadata.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
+        }
+        return Metadata;
+    }
+
+    if (m_assetEditorImportSettingsType == StaticTypeId<Editor::TextureImportSettings>())
+    {
+        const auto* Settings = static_cast<const Editor::TextureImportSettings*>(m_assetEditorImportSettingsObject);
+        if (!Settings)
+        {
+            return std::nullopt;
+        }
+
+        Metadata.Profile = EImportProfile::Texture;
+        Metadata.Texture = *Settings;
+        Metadata.BuildOptions = PreviousBuildOptions;
+        RemoveManagedBuildOptions(Metadata.BuildOptions, kTextureManagedBuildOptionKeys);
+        const auto TypedOptions = BuildOptionsFromTextureImportSettings(*Settings);
+        for (const auto& [OptionKey, OptionValue] : TypedOptions)
+        {
+            Metadata.BuildOptions[OptionKey] = OptionValue;
+        }
+        if (Metadata.ImporterName.empty())
+        {
+            Metadata.ImporterName = "TextureCompressor.Importer";
+        }
+        return Metadata;
+    }
+
+    return std::nullopt;
+}
+
+bool EditorAssetService::ImportMetadataRecordsEqual(const AssetImportMetadataEntry& Left,
+                                                    const AssetImportMetadataEntry& Right) const
+{
+    const auto AssimpEqual = [](const Editor::AssimpImportSettings& A, const Editor::AssimpImportSettings& B) {
+        return A.GenerateNormals == B.GenerateNormals &&
+               A.GenerateTangents == B.GenerateTangents &&
+               A.FlipUVs == B.FlipUVs &&
+               A.OptimizeMeshes == B.OptimizeMeshes &&
+               A.ForceSkeletal == B.ForceSkeletal &&
+               A.ForceStatic == B.ForceStatic &&
+               A.ImportMaterials == B.ImportMaterials &&
+               A.ImportTextures == B.ImportTextures &&
+               A.ImportAnimations == B.ImportAnimations &&
+               A.ImportSkeleton == B.ImportSkeleton &&
+               A.MaxBonesPerVertex == B.MaxBonesPerVertex;
+    };
+    const auto TextureEqual = [](const Editor::TextureImportSettings& A, const Editor::TextureImportSettings& B) {
+        return A.Target == B.Target &&
+               A.Format == B.Format &&
+               A.Quality == B.Quality &&
+               A.ForceSrgb == B.ForceSrgb &&
+               A.ForceLinear == B.ForceLinear &&
+               A.ForceNormalMap == B.ForceNormalMap &&
+               A.MaxMips == B.MaxMips;
+    };
+
+    return Left.Profile == Right.Profile &&
+           Left.SourcePath == Right.SourcePath &&
+           Left.DestinationFolder == Right.DestinationFolder &&
+           Left.ImporterName == Right.ImporterName &&
+           Left.BuildOptions == Right.BuildOptions &&
+           AssimpEqual(Left.Assimp, Right.Assimp) &&
+           TextureEqual(Left.Texture, Right.Texture);
+}
+
+::SnAPI::AssetPipeline::AssetImportSettingsPtr EditorAssetService::BuildTypedImportSettingsForRecord(
+    const AssetImportMetadataEntry& Record) const
+{
+    if (Record.Profile == EImportProfile::AssimpModel)
+    {
+        auto Settings = std::make_shared<AssimpImporterSettings>();
+        Settings->Mesh.GenerateNormals = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.GenerateNormals",
+                Record.Assimp.GenerateNormals ? "true" : "false"),
+            Record.Assimp.GenerateNormals);
+        Settings->Mesh.GenerateTangents = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.GenerateTangents",
+                Record.Assimp.GenerateTangents ? "true" : "false"),
+            Record.Assimp.GenerateTangents);
+        Settings->Mesh.FlipUVs = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.FlipUVs",
+                Record.Assimp.FlipUVs ? "true" : "false"),
+            Record.Assimp.FlipUVs);
+        Settings->Mesh.OptimizeMeshes = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.OptimizeMeshes",
+                Record.Assimp.OptimizeMeshes ? "true" : "false"),
+            Record.Assimp.OptimizeMeshes);
+        Settings->Mesh.ForceSkeletal = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.ForceSkeletal",
+                Record.Assimp.ForceSkeletal ? "true" : "false"),
+            Record.Assimp.ForceSkeletal);
+        Settings->Mesh.ForceStatic = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.ForceStatic",
+                Record.Assimp.ForceStatic ? "true" : "false"),
+            Record.Assimp.ForceStatic);
+        Settings->Mesh.ImportMaterials = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.ImportMaterials",
+                Record.Assimp.ImportMaterials ? "true" : "false"),
+            Record.Assimp.ImportMaterials);
+        Settings->Mesh.ImportTextures = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.ImportTextures",
+                Record.Assimp.ImportTextures ? "true" : "false"),
+            Record.Assimp.ImportTextures);
+        Settings->Mesh.ImportAnimations = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.ImportAnimations",
+                Record.Assimp.ImportAnimations ? "true" : "false"),
+            Record.Assimp.ImportAnimations);
+        Settings->Mesh.ImportSkeleton = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "SnAPI.GF.Assimp.ImportSkeleton",
+                Record.Assimp.ImportSkeleton ? "true" : "false"),
+            Record.Assimp.ImportSkeleton);
+        Settings->Mesh.MaxBonesPerVertex = std::max(1u, Record.Assimp.MaxBonesPerVertex);
+        if (const auto MaxBones = ParseIntOption(
+                OptionValueOr(
+                    Record.BuildOptions,
+                    "SnAPI.GF.Assimp.MaxBonesPerVertex",
+                    std::to_string(Settings->Mesh.MaxBonesPerVertex)));
+            MaxBones.has_value())
+        {
+            Settings->Mesh.MaxBonesPerVertex = std::max(1, *MaxBones);
+        }
+        Settings->LogicalNameOverride = OptionValueOr(Record.BuildOptions, "SnAPI.GF.Assimp.LogicalName", "");
+        Settings->DefaultShaderModule = OptionValueOr(
+            Record.BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShaderModule",
+            kDefaultMaterialShaderModule);
+        Settings->DefaultShadingModel = OptionValueOr(
+            Record.BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShadingModel",
+            kDefaultMaterialShadingModel);
+        return Settings;
+    }
+
+    if (Record.Profile == EImportProfile::Texture)
+    {
+        auto Settings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
+        const std::string TargetText = ToLowerCopy(OptionValueOr(
+            Record.BuildOptions,
+            "texture.target",
+            Record.Texture.Target == Editor::ETextureCompressionTarget::ASTC ? "astc" : "bcn"));
+        Settings->Target = TargetText == "astc"
+            ? TextureCompressorPlugin::ECompressionTarget::ASTC
+            : TextureCompressorPlugin::ECompressionTarget::BCn;
+
+        const TextureCompressorPlugin::ECompressedFormat RequestedFormat = ParseTextureFormatOption(
+            OptionValueOr(Record.BuildOptions, "texture.format", ""));
+        Settings->Format = RequestedFormat == TextureCompressorPlugin::ECompressedFormat::Unknown
+            ? ToCookedTextureFormat(Record.Texture.Format)
+            : RequestedFormat;
+
+        const std::string QualityText = OptionValueOr(
+            Record.BuildOptions,
+            "texture.quality",
+            std::to_string(std::clamp(Record.Texture.Quality, 0.0f, 1.0f)));
+        try
+        {
+            Settings->Quality = std::clamp(std::stof(QualityText), 0.0f, 1.0f);
+        }
+        catch (...)
+        {
+            Settings->Quality = std::clamp(Record.Texture.Quality, 0.0f, 1.0f);
+        }
+
+        Settings->ForceNormalMap = ParseBoolOption(
+            OptionValueOr(
+                Record.BuildOptions,
+                "texture.normal_map",
+                Record.Texture.ForceNormalMap ? "true" : "false"),
+            Record.Texture.ForceNormalMap);
+
+        Settings->MaxMipCount = Record.Texture.MaxMips > 0
+            ? static_cast<int32_t>(Record.Texture.MaxMips)
+            : 0;
+        if (const auto MaxMips = ParseIntOption(OptionValueOr(
+                Record.BuildOptions,
+                "texture.max_mips",
+                std::to_string(Settings->MaxMipCount)));
+            MaxMips.has_value())
+        {
+            Settings->MaxMipCount = *MaxMips;
+        }
+
+        if (const auto SrgbText = OptionValueOr(Record.BuildOptions, "texture.srgb", "");
+            !SrgbText.empty())
+        {
+            Settings->ColorSpacePolicy = ParseBoolOption(SrgbText, true)
+                ? TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb
+                : TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+        }
+        else if (Record.Texture.ForceLinear)
+        {
+            Settings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+        }
+        else if (Record.Texture.ForceSrgb)
+        {
+            Settings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+        }
+        else
+        {
+            Settings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::Auto;
+        }
+        return Settings;
+    }
+
+    return {};
+}
+
+void EditorAssetService::ClearAssetEditorImportSettingsBinding()
+{
+    m_assetEditorAssimpImportSettings.reset();
+    m_assetEditorTextureImportSettings.reset();
+    m_assetEditorImportSettingsType = {};
+    m_assetEditorImportSettingsObject = nullptr;
+    m_assetEditorImportSettingsDirty = false;
+    m_assetEditorCanReimport = false;
+    m_assetEditorImportMetadataBaseline.reset();
+}
+
+Result EditorAssetService::ReimportActiveAsset(EditorServiceContext& Context)
+{
+    if (m_assetEditorAssetKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No active asset editor to reimport"));
+    }
+    if (m_assetPayloadOverrides.contains(m_assetEditorAssetId))
+    {
+        return std::unexpected(MakeError(
+            EErrorCode::InvalidArgument,
+            "Save runtime asset changes before reimporting"));
+    }
+    if (!m_assetEditorImportMetadataBaseline.has_value())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Active asset has no import metadata"));
+    }
+    if (!m_assetEditorCanReimport)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Active asset is not reimportable"));
+    }
+
+    const DiscoveredAsset* ActiveAsset = FindAssetByKey(m_assetEditorAssetKey);
+    if (!ActiveAsset)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Active asset was not found"));
+    }
+    const DiscoveredAsset AssetSnapshot = *ActiveAsset;
+
+    const auto CurrentImportMetadata = BuildAssetEditorImportMetadataFromCurrentState();
+    const AssetImportMetadataEntry Metadata =
+        CurrentImportMetadata.value_or(*m_assetEditorImportMetadataBaseline);
+
+    if (Metadata.SourcePath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Import source path is not recorded"));
+    }
+
+    std::filesystem::path SourcePath = std::filesystem::path(Metadata.SourcePath);
+    if (auto Resolved = SPathResolver::Instance().Resolve(Metadata.SourcePath); Resolved)
+    {
+        SourcePath = *Resolved;
+    }
+
+    std::error_code Error{};
+    if (!std::filesystem::exists(SourcePath, Error) || Error)
+    {
+        return std::unexpected(MakeError(
+            EErrorCode::NotFound,
+            "Reimport source path was not found: " + SourcePath.string()));
+    }
+
+    auto TypedImportSettings = BuildTypedImportSettingsForRecord(Metadata);
+    auto ReimportResult = ImportSourceAsset(
+        Context,
+        SourcePath.string(),
+        Metadata.DestinationFolder,
+        Metadata.BuildOptions,
+        std::move(TypedImportSettings));
+    if (!ReimportResult)
+    {
+        return ReimportResult;
+    }
+
+    std::string ReopenKey{};
+    for (const auto& Asset : m_assets)
+    {
+        if (Asset.AssetId == AssetSnapshot.AssetId)
+        {
+            ReopenKey = Asset.Key;
+            break;
+        }
+    }
+    if (ReopenKey.empty())
+    {
+        for (const auto& Asset : m_assets)
+        {
+            if (Asset.AssetKind == AssetSnapshot.AssetKind &&
+                Asset.Name == AssetSnapshot.Name &&
+                Asset.Variant == AssetSnapshot.Variant)
+            {
+                ReopenKey = Asset.Key;
+                break;
+            }
+        }
+    }
+    if (!ReopenKey.empty())
+    {
+        (void)SelectAssetByKey(ReopenKey);
+        (void)OpenAssetEditorByKey(ReopenKey);
+    }
+
+    return Ok();
+}
+
 BaseNode* EditorAssetService::ResolveAssetEditorNode(const NodeHandle& Node) const
 {
     if (Node.IsNull())
@@ -4090,6 +6362,127 @@ void EditorAssetService::RefreshAssetEditorHierarchy()
     }
 }
 
+Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
+{
+#if !defined(SNAPI_GF_ENABLE_RENDERER)
+    m_assetEditorMaterialInstanceDescriptorParentKey.clear();
+    return Ok();
+#else
+    if (!m_assetEditorMaterialInstancePayload || !m_assetManager)
+    {
+        m_assetEditorMaterialInstanceDescriptorParentKey.clear();
+        return Ok();
+    }
+
+    MaterialInstancePayload& Payload = *m_assetEditorMaterialInstancePayload;
+    const std::string ParentIdentity = BuildAssetRefIdentity(Payload.ParentMaterial);
+    m_assetEditorMaterialInstanceDescriptorParentKey = ParentIdentity;
+    if (ParentIdentity.empty())
+    {
+        return Ok();
+    }
+
+    MaterialPayload ParentMaterial{};
+    bool ParentResolved = false;
+
+    TAssetRef<MaterialAssetRuntime> ParentMaterialRef(Payload.ParentMaterial.AssetName, Payload.ParentMaterial.AssetId);
+    if (auto RuntimeResult = ParentMaterialRef.GetShared<MaterialAssetRuntime>(*m_assetManager);
+        RuntimeResult && RuntimeResult->Get())
+    {
+        ParentMaterial.ShaderModule = RuntimeResult->Get()->ShaderModule;
+        ParentMaterial.ShadingModel = RuntimeResult->Get()->ShadingModel;
+        ParentMaterial.FeatureAlbedoMap = RuntimeResult->Get()->FeatureAlbedoMap;
+        ParentMaterial.FeatureNormalMap = RuntimeResult->Get()->FeatureNormalMap;
+        ParentMaterial.FeatureRoughnessMap = RuntimeResult->Get()->FeatureRoughnessMap;
+        ParentMaterial.FeatureMetalnessMap = RuntimeResult->Get()->FeatureMetalnessMap;
+        ParentMaterial.FeatureOcclusionMap = RuntimeResult->Get()->FeatureOcclusionMap;
+        ParentMaterial.FeatureAlphaTest = RuntimeResult->Get()->FeatureAlphaTest;
+        ParentMaterial.FeatureAlphaBlend = RuntimeResult->Get()->FeatureAlphaBlend;
+        ParentMaterial.FeatureDoubleSided = RuntimeResult->Get()->FeatureDoubleSided;
+        ParentMaterial.FeatureInstancing = RuntimeResult->Get()->FeatureInstancing;
+        ParentResolved = true;
+    }
+
+    if (!ParentResolved)
+    {
+        const std::string ParentAssetName = ToLowerCopy(Payload.ParentMaterial.AssetName);
+        const std::string ParentAssetIdText = Payload.ParentMaterial.AssetId;
+        ::SnAPI::AssetPipeline::AssetId ParentAssetId{};
+        const bool HasParentId = !ParentAssetIdText.empty();
+        if (HasParentId)
+        {
+            ParentAssetId = ::SnAPI::AssetPipeline::AssetId::FromString(ParentAssetIdText);
+        }
+
+        const DiscoveredAsset* ParentAsset = nullptr;
+        if (HasParentId && !ParentAssetId.IsNull())
+        {
+            const auto It = std::ranges::find_if(m_assets, [&ParentAssetId](const DiscoveredAsset& Asset) {
+                return Asset.AssetId == ParentAssetId;
+            });
+            if (It != m_assets.end())
+            {
+                ParentAsset = &(*It);
+            }
+        }
+        if (!ParentAsset && !ParentAssetName.empty())
+        {
+            const auto It = std::ranges::find_if(m_assets, [&ParentAssetName](const DiscoveredAsset& Asset) {
+                return ToLowerCopy(Asset.Name) == ParentAssetName;
+            });
+            if (It != m_assets.end())
+            {
+                ParentAsset = &(*It);
+            }
+        }
+        if (!ParentAsset)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Parent material asset could not be resolved"));
+        }
+
+        auto CookedPayloadResult = BuildCookedPayloadForAsset(*ParentAsset);
+        if (!CookedPayloadResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
+        }
+        if (CookedPayloadResult->PayloadType != PayloadMaterial())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Parent material payload type mismatch"));
+        }
+
+        auto MaterialPayloadResult = DeserializeMaterialPayload(
+            CookedPayloadResult->Bytes.data(),
+            CookedPayloadResult->Bytes.size());
+        if (!MaterialPayloadResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, MaterialPayloadResult.error().Message));
+        }
+
+        ParentMaterial = std::move(MaterialPayloadResult.value());
+        ParentResolved = true;
+    }
+
+    if (!ParentResolved)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Unable to resolve parent material payload"));
+    }
+
+    auto DescriptorResult = BuildDescriptorForMaterialPayload(ParentMaterial);
+    if (!DescriptorResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, DescriptorResult.error()));
+    }
+
+    if (SyncPayloadToRuntimeDescriptor(Payload, *DescriptorResult))
+    {
+        m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
+        ++m_assetEditorSessionRevision;
+    }
+
+    return Ok();
+#endif
+}
+
 std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetService::SerializeAssetEditorPayload() const
 {
     if (m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
@@ -4169,6 +6562,73 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
         return ::SnAPI::AssetPipeline::TypedPayload(PayloadWorld(), WorldSerializer::kSchemaVersion, std::move(Bytes));
     }
 
+    if (m_assetEditorAssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture)
+    {
+        if (!m_assetEditorTextureCookedInfo)
+        {
+            return std::unexpected("Texture cooked payload is not loaded");
+        }
+
+        auto* TextureEditor = static_cast<Editor::TextureAssetEditorPayload*>(m_assetEditorTargetObject);
+        if (!TextureEditor)
+        {
+            return std::unexpected("Asset editor texture target is null");
+        }
+
+        TextureCompressorPlugin::TextureCompressorCookedInfo Cooked = *m_assetEditorTextureCookedInfo;
+        ApplyTextureEditorPayloadToCooked(*TextureEditor, Cooked);
+
+        const auto* TextureSerializer = m_assetManager
+            ? m_assetManager->GetRegistry().Find(TextureCompressorPlugin::Payload_CompressorCookedInfo)
+            : nullptr;
+        if (!TextureSerializer)
+        {
+            return std::unexpected("Texture serializer is not registered");
+        }
+
+        std::vector<uint8_t> Bytes{};
+        TextureSerializer->SerializeToBytes(&Cooked, Bytes);
+        if (Bytes.empty())
+        {
+            return std::unexpected("Failed to serialize cooked texture payload");
+        }
+
+        return ::SnAPI::AssetPipeline::TypedPayload(
+            TextureCompressorPlugin::Payload_CompressorCookedInfo,
+            TextureSerializer->GetSchemaVersion(),
+            std::move(Bytes));
+    }
+
+    if (m_assetEditorAssetKind == AssetKindStaticMesh())
+    {
+        if (!m_assetEditorStaticMeshPayload)
+        {
+            return std::unexpected("Static mesh payload is not loaded");
+        }
+
+        auto* StaticMeshEditor = static_cast<Editor::StaticMeshAssetEditorPayload*>(m_assetEditorTargetObject);
+        if (!StaticMeshEditor)
+        {
+            return std::unexpected("Asset editor static mesh target is null");
+        }
+
+        StaticMeshPayload Cooked = *m_assetEditorStaticMeshPayload;
+        ApplyStaticMeshEditorPayloadToCooked(*StaticMeshEditor, Cooked);
+
+        std::vector<uint8_t> Bytes{};
+        auto SerializeResult = SerializeStaticMeshPayload(Cooked, Bytes);
+        if (!SerializeResult)
+        {
+            return std::unexpected(SerializeResult.error().Message);
+        }
+
+        const auto* StaticMeshSerializer = m_assetManager
+            ? m_assetManager->GetRegistry().Find(PayloadStaticMesh())
+            : nullptr;
+        const uint32_t SchemaVersion = StaticMeshSerializer ? StaticMeshSerializer->GetSchemaVersion() : 2u;
+        return ::SnAPI::AssetPipeline::TypedPayload(PayloadStaticMesh(), SchemaVersion, std::move(Bytes));
+    }
+
     if (m_assetEditorAssetKind == AssetKindMaterial())
     {
         auto* Material = static_cast<MaterialPayload*>(m_assetEditorTargetObject);
@@ -4216,6 +6676,8 @@ void EditorAssetService::ClearAssetEditorState()
     const bool HadActiveSession = !m_assetEditorAssetKey.empty() ||
                                   m_assetEditorTargetObject != nullptr ||
                                   m_assetEditorTargetType != TypeId{} ||
+                                  m_assetEditorImportSettingsObject != nullptr ||
+                                  m_assetEditorImportSettingsType != TypeId{} ||
                                   !m_assetEditorHierarchy.empty() ||
                                   !m_assetEditorSelectedNode.IsNull() ||
                                   m_assetEditorDirty;
@@ -4231,6 +6693,12 @@ void EditorAssetService::ClearAssetEditorState()
     m_assetEditorCanEditHierarchy = false;
     m_assetEditorMaterialPayload.reset();
     m_assetEditorMaterialInstancePayload.reset();
+    m_assetEditorTextureCookedInfo.reset();
+    m_assetEditorTexturePayload.reset();
+    m_assetEditorStaticMeshPayload.reset();
+    m_assetEditorStaticMeshEditorPayload.reset();
+    ClearAssetEditorImportSettingsBinding();
+    m_assetEditorMaterialInstanceDescriptorParentKey.clear();
     m_assetEditorBaselineCookedBytes.clear();
     m_assetEditorTitle.clear();
     m_assetEditorSelectedNode = {};

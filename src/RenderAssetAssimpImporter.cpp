@@ -1,4 +1,5 @@
 #include "AssetPipelineIds.h"
+#include "RenderAssetImportSettings.h"
 #include "RenderAssetPayloads.h"
 #include "RenderAssetSourcePayloads.h"
 
@@ -119,25 +120,54 @@ constexpr std::array<std::string_view, 14> kSupportedModelExtensions{
     }
 }
 
-[[nodiscard]] MeshImportSettingsPayload ReadImportSettings(IPipelineContext& Ctx)
+[[nodiscard]] AssimpImporterSettings ReadAssimpImportSettings(
+    const ::SnAPI::AssetPipeline::IAssetImportSettings* ImportSettings,
+    IPipelineContext& Ctx)
 {
-    MeshImportSettingsPayload Settings{};
-    Settings.GenerateNormals =
-        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.GenerateNormals", Settings.GenerateNormals ? "true" : "false"), Settings.GenerateNormals);
-    Settings.GenerateTangents =
-        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.GenerateTangents", Settings.GenerateTangents ? "true" : "false"), Settings.GenerateTangents);
-    Settings.FlipUVs =
-        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.FlipUVs", Settings.FlipUVs ? "true" : "false"), Settings.FlipUVs);
-    Settings.OptimizeMeshes =
-        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.OptimizeMeshes", Settings.OptimizeMeshes ? "true" : "false"), Settings.OptimizeMeshes);
-    Settings.ForceSkeletal =
-        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ForceSkeletal", Settings.ForceSkeletal ? "true" : "false"), Settings.ForceSkeletal);
-    Settings.ForceStatic =
-        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ForceStatic", Settings.ForceStatic ? "true" : "false"), Settings.ForceStatic);
-    Settings.MaxBonesPerVertex = std::max<uint32_t>(
+    if (const auto* Typed = dynamic_cast<const AssimpImporterSettings*>(ImportSettings))
+    {
+        return *Typed;
+    }
+
+    AssimpImporterSettings Settings{};
+    Settings.Mesh.GenerateNormals =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.GenerateNormals", Settings.Mesh.GenerateNormals ? "true" : "false"),
+                  Settings.Mesh.GenerateNormals);
+    Settings.Mesh.GenerateTangents =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.GenerateTangents", Settings.Mesh.GenerateTangents ? "true" : "false"),
+                  Settings.Mesh.GenerateTangents);
+    Settings.Mesh.FlipUVs =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.FlipUVs", Settings.Mesh.FlipUVs ? "true" : "false"),
+                  Settings.Mesh.FlipUVs);
+    Settings.Mesh.OptimizeMeshes =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.OptimizeMeshes", Settings.Mesh.OptimizeMeshes ? "true" : "false"),
+                  Settings.Mesh.OptimizeMeshes);
+    Settings.Mesh.ForceSkeletal =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ForceSkeletal", Settings.Mesh.ForceSkeletal ? "true" : "false"),
+                  Settings.Mesh.ForceSkeletal);
+    Settings.Mesh.ForceStatic =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ForceStatic", Settings.Mesh.ForceStatic ? "true" : "false"),
+                  Settings.Mesh.ForceStatic);
+    Settings.Mesh.ImportMaterials =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ImportMaterials", Settings.Mesh.ImportMaterials ? "true" : "false"),
+                  Settings.Mesh.ImportMaterials);
+    Settings.Mesh.ImportTextures =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ImportTextures", Settings.Mesh.ImportTextures ? "true" : "false"),
+                  Settings.Mesh.ImportTextures);
+    Settings.Mesh.ImportAnimations =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ImportAnimations", Settings.Mesh.ImportAnimations ? "true" : "false"),
+                  Settings.Mesh.ImportAnimations);
+    Settings.Mesh.ImportSkeleton =
+        ParseBool(Ctx.GetOption("SnAPI.GF.Assimp.ImportSkeleton", Settings.Mesh.ImportSkeleton ? "true" : "false"),
+                  Settings.Mesh.ImportSkeleton);
+    Settings.Mesh.MaxBonesPerVertex = std::max<uint32_t>(
         1u,
-        ParseUInt(Ctx.GetOption("SnAPI.GF.Assimp.MaxBonesPerVertex", std::to_string(Settings.MaxBonesPerVertex)),
-                  Settings.MaxBonesPerVertex));
+        ParseUInt(Ctx.GetOption("SnAPI.GF.Assimp.MaxBonesPerVertex", std::to_string(Settings.Mesh.MaxBonesPerVertex)),
+                  Settings.Mesh.MaxBonesPerVertex));
+
+    Settings.LogicalNameOverride = Ctx.GetOption("SnAPI.GF.Assimp.LogicalName", "");
+    Settings.DefaultShaderModule = Ctx.GetOption("SnAPI.GF.Assimp.DefaultShaderModule", "DefaultGBufferMaterial");
+    Settings.DefaultShadingModel = Ctx.GetOption("SnAPI.GF.Assimp.DefaultShadingModel", "GBufferShadingModel");
     return Settings;
 }
 
@@ -150,6 +180,10 @@ constexpr std::array<std::string_view, 14> kSupportedModelExtensions{
         + "|opt=" + std::to_string(Settings.OptimizeMeshes ? 1 : 0)
         + "|skeletal=" + std::to_string(Settings.ForceSkeletal ? 1 : 0)
         + "|static=" + std::to_string(Settings.ForceStatic ? 1 : 0)
+        + "|mats=" + std::to_string(Settings.ImportMaterials ? 1 : 0)
+        + "|tex=" + std::to_string(Settings.ImportTextures ? 1 : 0)
+        + "|anim=" + std::to_string(Settings.ImportAnimations ? 1 : 0)
+        + "|skel=" + std::to_string(Settings.ImportSkeleton ? 1 : 0)
         + "|mbv=" + std::to_string(Settings.MaxBonesPerVertex);
 }
 
@@ -803,15 +837,17 @@ struct MeshImportBuffers
 [[nodiscard]] bool BuildAssimpItems(
     const SourceRef& Source,
     const aiScene& Scene,
-    const MeshImportSettingsPayload& ImportSettings,
+    const AssimpImporterSettings& ImportConfig,
     std::vector<ImportedItem>& OutItems,
     IPipelineContext& Ctx)
 {
-    const std::string LogicalNameOverride = Ctx.GetOption("SnAPI.GF.Assimp.LogicalName", "");
-    const std::string BaseLogicalName = LogicalNameOverride.empty() ? Source.Uri : LogicalNameOverride;
+    const MeshImportSettingsPayload& ImportSettings = ImportConfig.Mesh;
+    const std::string BaseLogicalName = ImportConfig.LogicalNameOverride.empty()
+                                            ? Source.Uri
+                                            : ImportConfig.LogicalNameOverride;
     const std::string VariantKey = BuildImportVariantKey(ImportSettings);
-    const std::string DefaultShaderModule = Ctx.GetOption("SnAPI.GF.Assimp.DefaultShaderModule", "SnAPI.Renderer.Materials.DefaultLit");
-    const std::string DefaultShadingModel = Ctx.GetOption("SnAPI.GF.Assimp.DefaultShadingModel", "Lit");
+    const std::string& DefaultShaderModule = ImportConfig.DefaultShaderModule;
+    const std::string& DefaultShadingModel = ImportConfig.DefaultShadingModel;
 
     const auto* MaterialSerializer = Ctx.FindSerializer(PayloadMaterial());
     const auto* MaterialInstanceSerializer = Ctx.FindSerializer(PayloadMaterialInstance());
@@ -854,7 +890,8 @@ struct MeshImportBuffers
     MaterialImportOutputs MaterialOutputs{};
     EmbeddedTextureImportOutputs EmbeddedTextureOutputs{};
     std::vector<ImportedItem> GeneratedItems{};
-    if (!BuildEmbeddedTextureItems(
+    if (ImportSettings.ImportTextures &&
+        !BuildEmbeddedTextureItems(
             Source,
             Scene,
             BaseLogicalName,
@@ -866,20 +903,22 @@ struct MeshImportBuffers
         return false;
     }
 
-    for (uint32_t MaterialIndex = 0; MaterialIndex < Scene.mNumMaterials; ++MaterialIndex)
+    if (ImportSettings.ImportMaterials)
     {
-        aiMaterial* AiMat = Scene.mMaterials[MaterialIndex];
-        if (!AiMat)
+        for (uint32_t MaterialIndex = 0; MaterialIndex < Scene.mNumMaterials; ++MaterialIndex)
         {
-            continue;
-        }
+            aiMaterial* AiMat = Scene.mMaterials[MaterialIndex];
+            if (!AiMat)
+            {
+                continue;
+            }
 
-        aiString MaterialName{};
-        if (AiMat->Get(AI_MATKEY_NAME, MaterialName) != AI_SUCCESS)
-        {
-            MaterialName = aiString("Material");
-        }
-        const std::string MaterialLabel = MaterialName.C_Str();
+            aiString MaterialName{};
+            if (AiMat->Get(AI_MATKEY_NAME, MaterialName) != AI_SUCCESS)
+            {
+                MaterialName = aiString("Material");
+            }
+            const std::string MaterialLabel = MaterialName.C_Str();
 
         ImportedItem MaterialItem{};
         MaterialItem.LogicalName = MakeScopedLogicalName(BaseLogicalName, "material", MaterialLabel, MaterialIndex);
@@ -893,8 +932,6 @@ struct MeshImportBuffers
         MaterialPayload MaterialPayloadData{};
         MaterialPayloadData.ShaderModule = DefaultShaderModule;
         MaterialPayloadData.ShadingModel = DefaultShadingModel;
-        MaterialSerializer->SerializeToBytes(&MaterialPayloadData, MaterialItem.Intermediate.Bytes);
-        GeneratedItems.push_back(std::move(MaterialItem));
 
         ImportedItem MaterialInstanceItem{};
         MaterialInstanceItem.LogicalName = MakeScopedLogicalName(BaseLogicalName, "matinst", MaterialLabel, MaterialIndex);
@@ -906,46 +943,112 @@ struct MeshImportBuffers
         MaterialInstanceItem.Intermediate.SchemaVersion = MaterialInstanceSerializer->GetSchemaVersion();
 
         MaterialInstancePayload MaterialInstancePayloadData{};
-        MaterialInstancePayloadData.ParentMaterial = MakeAssetRef(GeneratedItems.back());
+        MaterialInstancePayloadData.ParentMaterial = MakeAssetRef(MaterialItem);
+
+        const bool IsGBufferShadingModel = ToLowerAscii(DefaultShadingModel) == "gbuffershadingmodel";
+        const auto UpsertScalar = [&MaterialInstancePayloadData](std::string_view Name, const float Value) {
+            for (MaterialScalarParamPayload& Existing : MaterialInstancePayloadData.Scalars)
+            {
+                if (Existing.Name == Name)
+                {
+                    Existing.Value = Value;
+                    return;
+                }
+            }
+            MaterialScalarParamPayload Param{};
+            Param.Name = std::string(Name);
+            Param.Value = Value;
+            MaterialInstancePayloadData.Scalars.push_back(std::move(Param));
+        };
+        const auto UpsertVector = [&MaterialInstancePayloadData](std::string_view Name, const std::array<float, 4>& Value) {
+            for (MaterialVectorParamPayload& Existing : MaterialInstancePayloadData.Vectors)
+            {
+                if (Existing.Name == Name)
+                {
+                    Existing.Value = Value;
+                    return;
+                }
+            }
+            MaterialVectorParamPayload Param{};
+            Param.Name = std::string(Name);
+            Param.Value = Value;
+            MaterialInstancePayloadData.Vectors.push_back(std::move(Param));
+        };
+
+        if (IsGBufferShadingModel)
+        {
+            // Keep importer defaults aligned with GBufferShadingModel EditorDefault() values.
+            UpsertVector("Color", {1.0f, 1.0f, 1.0f, 1.0f});
+            UpsertScalar("Roughness", 0.8f);
+            UpsertScalar("Metallic", 0.0f);
+            UpsertScalar("Occlusion", 1.0f);
+        }
 
         aiColor4D BaseColor{};
         if (AiMat->Get(AI_MATKEY_BASE_COLOR, BaseColor) == AI_SUCCESS
             || AiMat->Get(AI_MATKEY_COLOR_DIFFUSE, BaseColor) == AI_SUCCESS)
         {
-            MaterialVectorParamPayload Param{};
-            Param.Name = "BaseColor";
-            Param.Value = {BaseColor.r, BaseColor.g, BaseColor.b, BaseColor.a};
-            MaterialInstancePayloadData.Vectors.push_back(std::move(Param));
+            if (std::isfinite(BaseColor.r) && std::isfinite(BaseColor.g) &&
+                std::isfinite(BaseColor.b) && std::isfinite(BaseColor.a))
+            {
+                UpsertVector("Color", {BaseColor.r, BaseColor.g, BaseColor.b, BaseColor.a});
+            }
         }
 
         aiColor4D EmissiveColor{};
         if (AiMat->Get(AI_MATKEY_COLOR_EMISSIVE, EmissiveColor) == AI_SUCCESS)
         {
-            MaterialVectorParamPayload Param{};
-            Param.Name = "EmissiveColor";
-            Param.Value = {EmissiveColor.r, EmissiveColor.g, EmissiveColor.b, EmissiveColor.a};
-            MaterialInstancePayloadData.Vectors.push_back(std::move(Param));
+            if (std::isfinite(EmissiveColor.r) && std::isfinite(EmissiveColor.g) &&
+                std::isfinite(EmissiveColor.b) && std::isfinite(EmissiveColor.a))
+            {
+                UpsertVector("EmissiveColor", {EmissiveColor.r, EmissiveColor.g, EmissiveColor.b, EmissiveColor.a});
+            }
         }
 
         float Roughness = 0.8f;
         if (AiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, Roughness) == AI_SUCCESS)
         {
-            MaterialScalarParamPayload Param{};
-            Param.Name = "Roughness";
-            Param.Value = Roughness;
-            MaterialInstancePayloadData.Scalars.push_back(std::move(Param));
+            if (std::isfinite(Roughness))
+            {
+                UpsertScalar("Roughness", Roughness);
+            }
         }
 
         float Metallic = 0.0f;
         if (AiMat->Get(AI_MATKEY_METALLIC_FACTOR, Metallic) == AI_SUCCESS)
         {
-            MaterialScalarParamPayload Param{};
-            Param.Name = "Metallic";
-            Param.Value = Metallic;
-            MaterialInstancePayloadData.Scalars.push_back(std::move(Param));
+            if (std::isfinite(Metallic))
+            {
+                UpsertScalar("Metallic", Metallic);
+            }
         }
 
+        std::unordered_set<std::string> AddedTextureSlots{};
+        const auto EnableMaterialFeatureForSlot = [&MaterialPayloadData](const std::string& SlotKey) {
+            if (SlotKey == "Material_Albedo")
+            {
+                MaterialPayloadData.FeatureAlbedoMap = true;
+                return;
+            }
+            if (SlotKey == "Material_Normal")
+            {
+                MaterialPayloadData.FeatureNormalMap = true;
+                return;
+            }
+            if (SlotKey == "Material_ORM")
+            {
+                MaterialPayloadData.FeatureRoughnessMap = true;
+                MaterialPayloadData.FeatureMetalnessMap = true;
+                MaterialPayloadData.FeatureOcclusionMap = true;
+            }
+        };
+
         const auto AddTextureParam = [&](const aiTextureType TextureType, std::string_view SlotName, const bool SRGB) {
+            const std::string SlotKey(SlotName);
+            if (AddedTextureSlots.contains(SlotKey))
+            {
+                return;
+            }
             if (AiMat->GetTextureCount(TextureType) == 0)
             {
                 return;
@@ -971,6 +1074,8 @@ struct MeshImportBuffers
                 Param.Texture = std::move(EmbeddedTextureRef);
                 Param.SRGB = SRGB;
                 MaterialInstancePayloadData.Textures.push_back(std::move(Param));
+                AddedTextureSlots.insert(SlotKey);
+                EnableMaterialFeatureForSlot(SlotKey);
                 return;
             }
 
@@ -995,24 +1100,32 @@ struct MeshImportBuffers
             Param.Texture.AssetId.clear();
             Param.SRGB = SRGB;
             MaterialInstancePayloadData.Textures.push_back(std::move(Param));
+            AddedTextureSlots.insert(SlotKey);
             MaterialOutputs.TextureDependencies.insert(ResolvedTextureUri);
+            EnableMaterialFeatureForSlot(SlotKey);
         };
 
-        AddTextureParam(aiTextureType_BASE_COLOR, "Material_Albedo", true);
-        AddTextureParam(aiTextureType_DIFFUSE, "Material_Albedo", true);
-        AddTextureParam(aiTextureType_NORMALS, "Material_Normal", false);
-        AddTextureParam(aiTextureType_METALNESS, "Material_Metallic", false);
-        AddTextureParam(aiTextureType_DIFFUSE_ROUGHNESS, "Material_Roughness", false);
-        AddTextureParam(aiTextureType_EMISSIVE, "Material_Emissive", true);
+            if (ImportSettings.ImportTextures)
+            {
+                AddTextureParam(aiTextureType_BASE_COLOR, "Material_Albedo", true);
+                AddTextureParam(aiTextureType_DIFFUSE, "Material_Albedo", true);
+                AddTextureParam(aiTextureType_NORMALS, "Material_Normal", false);
+                AddTextureParam(aiTextureType_METALNESS, "Material_ORM", false);
+                AddTextureParam(aiTextureType_DIFFUSE_ROUGHNESS, "Material_ORM", false);
+                AddTextureParam(aiTextureType_AMBIENT_OCCLUSION, "Material_ORM", false);
+            }
 
         for (const MaterialTextureParamPayload& TextureParam : MaterialInstancePayloadData.Textures)
         {
             MaterialInstanceItem.Dependencies.emplace_back(TextureParam.Texture.AssetName, 0);
         }
 
-        MaterialInstanceSerializer->SerializeToBytes(&MaterialInstancePayloadData, MaterialInstanceItem.Intermediate.Bytes);
-        MaterialOutputs.MaterialInstanceRefsBySlot[MaterialIndex] = MakeAssetRef(MaterialInstanceItem);
-        GeneratedItems.push_back(std::move(MaterialInstanceItem));
+            MaterialSerializer->SerializeToBytes(&MaterialPayloadData, MaterialItem.Intermediate.Bytes);
+            MaterialInstanceSerializer->SerializeToBytes(&MaterialInstancePayloadData, MaterialInstanceItem.Intermediate.Bytes);
+            MaterialOutputs.MaterialInstanceRefsBySlot[MaterialIndex] = MakeAssetRef(MaterialInstanceItem);
+            GeneratedItems.push_back(std::move(MaterialItem));
+            GeneratedItems.push_back(std::move(MaterialInstanceItem));
+        }
     }
 
     MeshImportBuffers MeshBuffers{};
@@ -1226,13 +1339,15 @@ struct MeshImportBuffers
             AppendArrayBytes(MeshBuffers.BoneWeights, VertexBoneWeights);
         }
 
-        for (uint32_t AnimationIndex = 0; AnimationIndex < Scene.mNumAnimations; ++AnimationIndex)
+        if (ImportSettings.ImportAnimations)
         {
-            const aiAnimation* Animation = Scene.mAnimations[AnimationIndex];
-            if (!Animation)
+            for (uint32_t AnimationIndex = 0; AnimationIndex < Scene.mNumAnimations; ++AnimationIndex)
             {
-                continue;
-            }
+                const aiAnimation* Animation = Scene.mAnimations[AnimationIndex];
+                if (!Animation)
+                {
+                    continue;
+                }
 
             AnimationPayload AnimationData{};
             AnimationData.Name = Animation->mName.length > 0 ? Animation->mName.C_Str() : ("Animation_" + std::to_string(AnimationIndex));
@@ -1296,45 +1411,54 @@ struct MeshImportBuffers
                 }
             }
 
-            if (!AnimationData.Tracks.empty())
-            {
-                MeshBuffers.Animations.push_back(std::move(AnimationData));
+                if (!AnimationData.Tracks.empty())
+                {
+                    MeshBuffers.Animations.push_back(std::move(AnimationData));
+                }
             }
         }
     }
 
-    ImportedItem SkeletonItem{};
+    std::optional<ImportedItem> SkeletonItem{};
     std::vector<ImportedItem> AnimationItems{};
     if (ImportAsSkeletal)
     {
-        SkeletonItem.LogicalName = MakeScopedLogicalName(BaseLogicalName, "skeleton", "default", 0u);
-        SkeletonItem.AssetKind = AssetKindSkeleton();
-        SkeletonItem.VariantKey = VariantKey;
-        SkeletonItem.Id = Ctx.MakeDeterministicAssetId(SkeletonItem.LogicalName, SkeletonItem.VariantKey);
-        SkeletonItem.Dependencies.emplace_back(Source.Uri, Source.ContentHash);
-        SkeletonItem.Intermediate.PayloadType = PayloadSkeleton();
-        SkeletonItem.Intermediate.SchemaVersion = SkeletonSerializer->GetSchemaVersion();
-
-        SkeletonPayload SkeletonData{};
-        SkeletonData.Name = std::filesystem::path(Source.Uri).stem().string();
-        SkeletonData.Bones = MeshBuffers.Bones;
-        SkeletonSerializer->SerializeToBytes(&SkeletonData, SkeletonItem.Intermediate.Bytes);
-        GeneratedItems.push_back(SkeletonItem);
-
-        for (uint32_t AnimationIndex = 0; AnimationIndex < MeshBuffers.Animations.size(); ++AnimationIndex)
+        if (ImportSettings.ImportSkeleton)
         {
-            ImportedItem AnimationItem{};
-            AnimationItem.LogicalName =
-                MakeScopedLogicalName(BaseLogicalName, "animation", MeshBuffers.Animations[AnimationIndex].Name, AnimationIndex);
-            AnimationItem.AssetKind = AssetKindAnimation();
-            AnimationItem.VariantKey = VariantKey;
-            AnimationItem.Id = Ctx.MakeDeterministicAssetId(AnimationItem.LogicalName, AnimationItem.VariantKey);
-            AnimationItem.Dependencies.emplace_back(Source.Uri, Source.ContentHash);
-            AnimationItem.Intermediate.PayloadType = PayloadAnimation();
-            AnimationItem.Intermediate.SchemaVersion = AnimationSerializer->GetSchemaVersion();
-            AnimationSerializer->SerializeToBytes(&MeshBuffers.Animations[AnimationIndex], AnimationItem.Intermediate.Bytes);
-            AnimationItems.push_back(AnimationItem);
-            GeneratedItems.push_back(std::move(AnimationItem));
+            ImportedItem BuiltSkeletonItem{};
+            BuiltSkeletonItem.LogicalName = MakeScopedLogicalName(BaseLogicalName, "skeleton", "default", 0u);
+            BuiltSkeletonItem.AssetKind = AssetKindSkeleton();
+            BuiltSkeletonItem.VariantKey = VariantKey;
+            BuiltSkeletonItem.Id = Ctx.MakeDeterministicAssetId(BuiltSkeletonItem.LogicalName, BuiltSkeletonItem.VariantKey);
+            BuiltSkeletonItem.Dependencies.emplace_back(Source.Uri, Source.ContentHash);
+            BuiltSkeletonItem.Intermediate.PayloadType = PayloadSkeleton();
+            BuiltSkeletonItem.Intermediate.SchemaVersion = SkeletonSerializer->GetSchemaVersion();
+
+            SkeletonPayload SkeletonData{};
+            SkeletonData.Name = std::filesystem::path(Source.Uri).stem().string();
+            SkeletonData.Bones = MeshBuffers.Bones;
+            SkeletonSerializer->SerializeToBytes(&SkeletonData, BuiltSkeletonItem.Intermediate.Bytes);
+            GeneratedItems.push_back(BuiltSkeletonItem);
+            SkeletonItem = std::move(BuiltSkeletonItem);
+        }
+
+        if (ImportSettings.ImportAnimations)
+        {
+            for (uint32_t AnimationIndex = 0; AnimationIndex < MeshBuffers.Animations.size(); ++AnimationIndex)
+            {
+                ImportedItem AnimationItem{};
+                AnimationItem.LogicalName =
+                    MakeScopedLogicalName(BaseLogicalName, "animation", MeshBuffers.Animations[AnimationIndex].Name, AnimationIndex);
+                AnimationItem.AssetKind = AssetKindAnimation();
+                AnimationItem.VariantKey = VariantKey;
+                AnimationItem.Id = Ctx.MakeDeterministicAssetId(AnimationItem.LogicalName, AnimationItem.VariantKey);
+                AnimationItem.Dependencies.emplace_back(Source.Uri, Source.ContentHash);
+                AnimationItem.Intermediate.PayloadType = PayloadAnimation();
+                AnimationItem.Intermediate.SchemaVersion = AnimationSerializer->GetSchemaVersion();
+                AnimationSerializer->SerializeToBytes(&MeshBuffers.Animations[AnimationIndex], AnimationItem.Intermediate.Bytes);
+                AnimationItems.push_back(AnimationItem);
+                GeneratedItems.push_back(std::move(AnimationItem));
+            }
         }
     }
 
@@ -1411,7 +1535,10 @@ struct MeshImportBuffers
         SourcePayload.BaseMesh.Mesh.BoundsMax = MeshBuffers.BoundsMax;
         SourcePayload.BaseMesh.Mesh.SubMeshes = MeshBuffers.SubMeshes;
         SourcePayload.Bones = MeshBuffers.Bones;
-        SourcePayload.Skeleton = MakeAssetRef(SkeletonItem);
+        if (SkeletonItem.has_value())
+        {
+            SourcePayload.Skeleton = MakeAssetRef(*SkeletonItem);
+        }
         SourcePayload.Animations.reserve(AnimationItems.size());
         for (const ImportedItem& AnimationItem : AnimationItems)
         {
@@ -1492,7 +1619,15 @@ public:
 
     bool Import(const SourceRef& Source, std::vector<ImportedItem>& OutItems, IPipelineContext& Ctx) override
     {
-        const MeshImportSettingsPayload ImportSettings = ReadImportSettings(Ctx);
+        return ImportWithSettings(Source, nullptr, OutItems, Ctx);
+    }
+
+    bool ImportWithSettings(const SourceRef& Source,
+                            const ::SnAPI::AssetPipeline::IAssetImportSettings* Settings,
+                            std::vector<ImportedItem>& OutItems,
+                            IPipelineContext& Ctx) override
+    {
+        const AssimpImporterSettings ImportSettings = ReadAssimpImportSettings(Settings, Ctx);
 
         unsigned int Flags = aiProcess_Triangulate
             | aiProcess_JoinIdenticalVertices
@@ -1501,19 +1636,19 @@ public:
             | aiProcess_ValidateDataStructure
             | aiProcess_LimitBoneWeights;
 
-        if (ImportSettings.GenerateNormals)
+        if (ImportSettings.Mesh.GenerateNormals)
         {
             Flags |= aiProcess_GenSmoothNormals;
         }
-        if (ImportSettings.GenerateTangents)
+        if (ImportSettings.Mesh.GenerateTangents)
         {
             Flags |= aiProcess_CalcTangentSpace;
         }
-        if (ImportSettings.OptimizeMeshes)
+        if (ImportSettings.Mesh.OptimizeMeshes)
         {
             Flags |= aiProcess_OptimizeMeshes | aiProcess_OptimizeGraph;
         }
-        if (ImportSettings.FlipUVs)
+        if (ImportSettings.Mesh.FlipUVs)
         {
             Flags |= aiProcess_FlipUVs;
         }
@@ -1526,10 +1661,24 @@ public:
             return false;
         }
 
+        const std::size_t ExistingCount = OutItems.size();
         if (!BuildAssimpItems(Source, *Scene, ImportSettings, OutItems, Ctx))
         {
             Ctx.LogError("RenderAsset Assimp importer failed to build imported items for %s", Source.Uri.c_str());
             return false;
+        }
+
+        if (Settings)
+        {
+            auto Cloned = Settings->Clone();
+            if (Cloned)
+            {
+                const ::SnAPI::AssetPipeline::AssetImportSettingsPtr SharedSettings(std::move(Cloned));
+                for (std::size_t Index = ExistingCount; Index < OutItems.size(); ++Index)
+                {
+                    OutItems[Index].ImportSettings = SharedSettings;
+                }
+            }
         }
 
         Ctx.LogInfo("RenderAsset Assimp importer produced %zu assets from %s", OutItems.size(), Source.Uri.c_str());

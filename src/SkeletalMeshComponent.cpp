@@ -142,7 +142,14 @@ bool SkeletalMeshComponent::ReloadMesh()
 
 void SkeletalMeshComponent::ClearMesh()
 {
-    
+    if (m_renderObject)
+    {
+        if (auto* Renderer = ResolveRendererSystem(); Renderer && Renderer->IsInitialized())
+        {
+            Renderer->RemoveRenderObject(m_renderObject);
+        }
+    }
+
     m_renderObject.reset();
     m_loadedPath.clear();
     m_loadedFromAsset = false;
@@ -431,40 +438,30 @@ void SkeletalMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRende
 
 void SkeletalMeshComponent::ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject)
 {
-    
+    static_cast<void>(RenderObject);
+
     auto* Renderer = ResolveRendererSystem();
     if (!Renderer || !Renderer->IsInitialized())
     {
         return;
     }
 
+    const bool EffectiveVisible = m_settings.RegisterWithRenderer && m_settings.Visible;
     const std::uint64_t PassGraphRevision = Renderer->RenderViewportPassGraphRevision();
     const bool PassStateChanged = !m_passStateInitialized
-                               || m_lastVisible != m_settings.Visible
+                               || m_lastVisible != EffectiveVisible
                                || m_lastCastShadows != m_settings.CastShadows
-                               || m_lastPassGraphRevision != PassGraphRevision;
+                               || m_lastPassGraphRevision != PassGraphRevision
+                               || m_registered != m_settings.RegisterWithRenderer;
     if (PassStateChanged)
     {
-        if (Renderer->ConfigureRenderObjectPasses(RenderObject, m_settings.Visible, m_settings.CastShadows))
+        if (Renderer->ConfigureRenderObjectPasses(m_renderObject, EffectiveVisible, m_settings.CastShadows))
         {
             m_passStateInitialized = true;
-            m_lastVisible = m_settings.Visible;
+            m_lastVisible = EffectiveVisible;
             m_lastCastShadows = m_settings.CastShadows;
             m_lastPassGraphRevision = PassGraphRevision;
-        }
-    }
-
-    if (!m_settings.RegisterWithRenderer)
-    {
-        m_registered = false;
-        return;
-    }
-
-    if (!m_registered)
-    {
-        if (Renderer->RegisterRenderObject(m_renderObject))
-        {
-            m_registered = true;
+            m_registered = m_settings.RegisterWithRenderer;
         }
     }
 }

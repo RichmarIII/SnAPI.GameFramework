@@ -150,7 +150,8 @@ What happens internally:
 - component creates one per-instance `MeshRenderObject`
 - default GBuffer/Shadow material instances are populated through `RendererSystem`
 - pass visibility (`Visible`) and shadow participation (`CastShadows`) are applied per render object
-- registration is done through `RendererSystem::RegisterRenderObject(...)`
+- pass routing is applied through `RendererSystem::ConfigureRenderObjectPasses(...)`
+- object teardown removes pass links through `RendererSystem::RemoveRenderObject(...)`
 
 ## 6. Skeletal/Rigid Animation Rendering (`SkeletalMeshComponent`)
 

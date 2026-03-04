@@ -11,6 +11,7 @@
 #include "PathResolver.h"
 #include "PawnBase.h"
 #include "PlayerStart.h"
+#include "RenderAssetImportSettings.h"
 #include "RendererSystem.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
@@ -22,6 +23,7 @@
 #include "World.h"
 
 #include <UIContext.h>
+#include <UIComboBox.h>
 #include <UIColorPicker.h>
 #include <UIDatePicker.h>
 #include <UIDockZone.h>
@@ -48,6 +50,7 @@
 #include <UIBreadcrumbs.h>
 #include <UIButton.h>
 #include <UIContextMenu.h>
+#include <TextureCompressorImportSettings.h>
 
 #include <array>
 #include <algorithm>
@@ -139,6 +142,61 @@ constexpr std::array<ToolbarActionSpec, 4> kToolbarActions{{
 }};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
+
+[[nodiscard]] constexpr int32_t GizmoSpaceToIndex(const EditorLayout::EGizmoSpace Space)
+{
+    switch (Space)
+    {
+    case EditorLayout::EGizmoSpace::World:
+        return 0;
+    case EditorLayout::EGizmoSpace::Object:
+        return 1;
+    case EditorLayout::EGizmoSpace::Camera:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+[[nodiscard]] constexpr EditorLayout::EGizmoSpace GizmoSpaceFromIndex(const int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        return EditorLayout::EGizmoSpace::Object;
+    case 2:
+        return EditorLayout::EGizmoSpace::Camera;
+    case 0:
+    default:
+        return EditorLayout::EGizmoSpace::World;
+    }
+}
+
+[[nodiscard]] constexpr int32_t SnapModeToIndex(const EditorLayout::ESnapMode Mode)
+{
+    switch (Mode)
+    {
+    case EditorLayout::ESnapMode::On:
+        return 1;
+    case EditorLayout::ESnapMode::Off:
+    default:
+        return 0;
+    }
+}
+
+[[nodiscard]] constexpr EditorLayout::ESnapMode SnapModeFromIndex(const int32_t Index)
+{
+    return Index == 1 ? EditorLayout::ESnapMode::On : EditorLayout::ESnapMode::Off;
+}
+
+[[nodiscard]] double SanitizePositiveStep(const double Value, const double Fallback)
+{
+    if (!std::isfinite(Value) || Value <= 0.0)
+    {
+        return std::max(0.0001, Fallback);
+    }
+    return std::max(0.0001, Value);
+}
 
 [[nodiscard]] std::string ResolveUIImageSource(std::string_view Source)
 {
@@ -964,9 +1022,15 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentInspectorModalOverlay = {};
     m_contentInspectorTitleText = {};
     m_contentInspectorStatusText = {};
+    m_contentInspectorHierarchyTitleText = {};
+    m_contentInspectorPreviewStatsText = {};
+    m_contentInspectorPreviewImage = {};
     m_contentInspectorHierarchyTree = {};
     m_contentInspectorPropertyPanel = {};
+    m_contentInspectorImportSettingsTitleText = {};
+    m_contentInspectorImportSettingsPanel = {};
     m_contentInspectorSaveButton = {};
+    m_contentInspectorReimportButton = {};
     m_contentAssetCards.clear();
     m_contentAssetCardButtons.clear();
     m_contentAssetCardIndices.clear();
@@ -1003,6 +1067,9 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentInspectorTargetBound = false;
     m_contentInspectorBoundObject = nullptr;
     m_contentInspectorBoundType = {};
+    m_contentInspectorImportTargetBound = false;
+    m_contentInspectorImportBoundObject = nullptr;
+    m_contentInspectorImportBoundType = {};
     m_contentAssetDetails = {};
     m_onContentAssetSelected = {};
     m_onContentAssetPlaceRequested = {};
@@ -1013,6 +1080,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onContentAssetCreateRequested = {};
     m_onContentAssetImportRequested = {};
     m_onContentAssetInspectorSaveRequested = {};
+    m_onContentAssetInspectorReimportRequested = {};
     m_onContentAssetInspectorCloseRequested = {};
     m_onContentAssetInspectorNodeSelected = {};
     m_onContentAssetInspectorHierarchyActionRequested = {};
@@ -2199,6 +2267,25 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
 
     auto HierarchyTitle = HierarchyHost.Add(SnAPI::UI::UIText("Asset Hierarchy"));
     HierarchyTitle.Element().ElementStyle().Apply("editor.panel_title");
+    m_contentInspectorHierarchyTitleText = HierarchyTitle.Handle();
+
+    auto PreviewStats = HierarchyHost.Add(SnAPI::UI::UIText{});
+    auto& PreviewStatsText = PreviewStats.Element();
+    PreviewStatsText.ElementStyle().Apply("editor.panel_subtitle");
+    PreviewStatsText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    PreviewStatsText.Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+    m_contentInspectorPreviewStatsText = PreviewStats.Handle();
+
+    auto PreviewImageBuilder = HierarchyHost.Add(SnAPI::UI::UIImage{});
+    auto& PreviewImage = PreviewImageBuilder.Element();
+    PreviewImage.Width().Set(SnAPI::UI::Sizing::Fill());
+    PreviewImage.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    PreviewImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+    PreviewImage.LazyLoad().Set(false);
+    PreviewImage.HAlign().Set(SnAPI::UI::EAlignment::Center);
+    PreviewImage.VAlign().Set(SnAPI::UI::EAlignment::Center);
+    PreviewImage.Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+    m_contentInspectorPreviewImage = PreviewImageBuilder.Handle();
 
     auto HierarchyTree = HierarchyHost.Add(SnAPI::UI::UITreeView{});
     auto& HierarchyTreeElement = HierarchyTree.Element();
@@ -2245,17 +2332,31 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     InspectorHostPanel.Padding().Set(6.0f);
     InspectorHostPanel.Gap().Set(6.0f);
 
-    auto PropertyPanelBuilder = InspectorHost.Add(UIPropertyPanel{});
-    auto& PropertyPanel = PropertyPanelBuilder.Element();
-    PropertyPanel.ElementStyle().Apply("editor.inspector_properties");
-    PropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
-    PropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    PropertyPanel.SetComponentContextMenuHandler(
+    auto RuntimeSettingsTitle = InspectorHost.Add(SnAPI::UI::UIText("Runtime Settings"));
+    RuntimeSettingsTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto RuntimePropertyPanelBuilder = InspectorHost.Add(UIPropertyPanel{});
+    auto& RuntimePropertyPanel = RuntimePropertyPanelBuilder.Element();
+    RuntimePropertyPanel.ElementStyle().Apply("editor.inspector_properties");
+    RuntimePropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    RuntimePropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(0.62f));
+    RuntimePropertyPanel.SetComponentContextMenuHandler(
         SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)>::Bind(
             [this](const NodeHandle OwnerNode, const TypeId& ComponentType, const SnAPI::UI::PointerEvent& Event) {
                 OpenContentAssetInspectorComponentContextMenu(OwnerNode, ComponentType, Event);
             }));
-    m_contentInspectorPropertyPanel = PropertyPanelBuilder.Handle();
+    m_contentInspectorPropertyPanel = RuntimePropertyPanelBuilder.Handle();
+
+    auto ImportSettingsTitle = InspectorHost.Add(SnAPI::UI::UIText("Import Settings"));
+    ImportSettingsTitle.Element().ElementStyle().Apply("editor.panel_title");
+    m_contentInspectorImportSettingsTitleText = ImportSettingsTitle.Handle();
+
+    auto ImportPropertyPanelBuilder = InspectorHost.Add(UIPropertyPanel{});
+    auto& ImportPropertyPanel = ImportPropertyPanelBuilder.Element();
+    ImportPropertyPanel.ElementStyle().Apply("editor.inspector_properties");
+    ImportPropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ImportPropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(0.38f));
+    m_contentInspectorImportSettingsPanel = ImportPropertyPanelBuilder.Handle();
 
     auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.Buttons"));
     auto& ButtonsRowPanel = ButtonsRow.Element();
@@ -2300,6 +2401,22 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     auto SaveLabel = SaveButton.Add(SnAPI::UI::UIText("Save"));
     SaveLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
     m_contentInspectorSaveButton = SaveButton.Handle();
+
+    auto ReimportButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& ReimportButtonElement = ReimportButton.Element();
+    ReimportButtonElement.ElementStyle().Apply("editor.toolbar_button");
+    ReimportButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    ReimportButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    ReimportButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    ReimportButtonElement.OnClick([this]() {
+        if (m_onContentAssetInspectorReimportRequested)
+        {
+            m_onContentAssetInspectorReimportRequested();
+        }
+    });
+    auto ReimportLabel = ReimportButton.Add(SnAPI::UI::UIText("Reimport"));
+    ReimportLabel.Element().ElementStyle().Apply("editor.toolbar_button_text");
+    m_contentInspectorReimportButton = ReimportButton.Handle();
 }
 
 void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
@@ -3156,6 +3273,11 @@ void EditorLayout::SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void
     m_onContentAssetInspectorSaveRequested = std::move(Handler);
 }
 
+void EditorLayout::SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onContentAssetInspectorReimportRequested = std::move(Handler);
+}
+
 void EditorLayout::SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler)
 {
     m_onContentAssetInspectorCloseRequested = std::move(Handler);
@@ -3180,6 +3302,7 @@ void EditorLayout::SetContentAssetDetails(ContentAssetDetails Details)
 
 void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState State)
 {
+    const bool SessionRevisionChanged = (m_contentAssetInspectorState.SessionRevision != State.SessionRevision);
     const bool NodesChanged = [&]() -> bool {
         if (m_contentAssetInspectorState.Nodes.size() != State.Nodes.size())
         {
@@ -3204,10 +3327,22 @@ void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState Stat
         (m_contentAssetInspectorState.Status != State.Status) ||
         (m_contentAssetInspectorState.TargetType != State.TargetType) ||
         (m_contentAssetInspectorState.TargetObject != State.TargetObject) ||
+        (m_contentAssetInspectorState.ImportSettingsType != State.ImportSettingsType) ||
+        (m_contentAssetInspectorState.ImportSettingsObject != State.ImportSettingsObject) ||
         (m_contentAssetInspectorState.SelectedNode != State.SelectedNode) ||
         (m_contentAssetInspectorState.CanEditHierarchy != State.CanEditHierarchy) ||
+        (m_contentAssetInspectorState.HasImportSettings != State.HasImportSettings) ||
+        (m_contentAssetInspectorState.RuntimeDirty != State.RuntimeDirty) ||
+        (m_contentAssetInspectorState.ImportSettingsDirty != State.ImportSettingsDirty) ||
         (m_contentAssetInspectorState.IsDirty != State.IsDirty) ||
         (m_contentAssetInspectorState.CanSave != State.CanSave) ||
+        (m_contentAssetInspectorState.CanReimport != State.CanReimport) ||
+        (m_contentAssetInspectorState.PreviewIconSource != State.PreviewIconSource) ||
+        (m_contentAssetInspectorState.PreviewTextureId != State.PreviewTextureId) ||
+        (m_contentAssetInspectorState.PreviewWidth != State.PreviewWidth) ||
+        (m_contentAssetInspectorState.PreviewHeight != State.PreviewHeight) ||
+        (m_contentAssetInspectorState.PreviewStatsPrimary != State.PreviewStatsPrimary) ||
+        (m_contentAssetInspectorState.PreviewStatsSecondary != State.PreviewStatsSecondary) ||
         (m_contentAssetInspectorState.SessionRevision != State.SessionRevision) ||
         NodesChanged;
 
@@ -3217,12 +3352,30 @@ void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState Stat
     }
 
     m_contentAssetInspectorState = std::move(State);
+    if (SessionRevisionChanged)
+    {
+        m_contentInspectorTargetBound = false;
+        m_contentInspectorBoundObject = nullptr;
+        m_contentInspectorBoundType = {};
+        m_contentInspectorImportTargetBound = false;
+        m_contentInspectorImportBoundObject = nullptr;
+        m_contentInspectorImportBoundType = {};
+    }
+
     if (!m_contentAssetInspectorState.Open)
     {
         m_contentAssetInspectorState.TargetObject = nullptr;
         m_contentAssetInspectorState.TargetType = {};
+        m_contentAssetInspectorState.ImportSettingsObject = nullptr;
+        m_contentAssetInspectorState.ImportSettingsType = {};
         m_contentAssetInspectorState.SelectedNode = {};
         m_contentAssetInspectorState.Nodes.clear();
+        m_contentAssetInspectorState.PreviewIconSource.clear();
+        m_contentAssetInspectorState.PreviewTextureId = 0;
+        m_contentAssetInspectorState.PreviewWidth = 0;
+        m_contentAssetInspectorState.PreviewHeight = 0;
+        m_contentAssetInspectorState.PreviewStatsPrimary.clear();
+        m_contentAssetInspectorState.PreviewStatsSecondary.clear();
 
         RefreshContentAssetInspectorModalVisibility();
         if (m_context)
@@ -4427,7 +4580,9 @@ void EditorLayout::EnsureContentAssetCardCapacity()
         FolderIconImage.Width().Set(SnAPI::UI::Sizing::Fill());
         FolderIconImage.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
         FolderIconImage.Mode().Set(SnAPI::UI::EImageMode::Aspect);
-        FolderIconImage.LazyLoad().Set(true);
+        // Asset-card icons are frequently rebound as list cells are recycled.
+        // Keep eager loading to avoid transient missing SVGs during source swaps.
+        FolderIconImage.LazyLoad().Set(false);
         FolderIconImage.HAlign().Set(SnAPI::UI::EAlignment::Center);
         FolderIconImage.VAlign().Set(SnAPI::UI::EAlignment::Center);
         FolderIconImage.Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
@@ -4513,6 +4668,60 @@ void EditorLayout::UpdateContentAssetCardWidgets()
             Panel->ElementStyle().Apply(ClassName);
         }
     };
+    const auto ApplyAssetCardIcon = [](SnAPI::UI::UIImage& Icon, const ContentAssetEntry& Asset) {
+        if (Asset.IconTextureId != 0)
+        {
+            Icon.Width().Set(SnAPI::UI::Sizing::Fill());
+            Icon.Height().Set(SnAPI::UI::Sizing::Auto());
+            Icon.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+            if (!Icon.Source().Get().empty())
+            {
+                Icon.Source().Set(std::string{});
+            }
+            if (Icon.Texture().Get().Value != Asset.IconTextureId)
+            {
+                Icon.Texture().Set(SnAPI::UI::TextureId{Asset.IconTextureId});
+            }
+            if (!(Icon.SvgOptions().Get() == SnAPI::UI::SVGImageOptions{}))
+            {
+                Icon.SvgOptions().Set(SnAPI::UI::SVGImageOptions{});
+            }
+            if (Asset.IconWidth > 0u && Asset.IconHeight > 0u)
+            {
+                Icon.SetIntrinsicSize(
+                    static_cast<float>(Asset.IconWidth),
+                    static_cast<float>(Asset.IconHeight));
+            }
+            Icon.Visibility().Set(SnAPI::UI::EVisibility::Visible);
+            return;
+        }
+
+        Icon.Width().Set(SnAPI::UI::Sizing::Fill());
+        Icon.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        Icon.Mode().Set(SnAPI::UI::EImageMode::Aspect);
+        std::string IconSource = ResolveUIImageSource(Asset.IconSource);
+        if (IconSource.empty())
+        {
+            IconSource = ResolveUIImageSource(kHierarchyNodeIconPath);
+        }
+        if (IconSource.empty())
+        {
+            Icon.Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+            return;
+        }
+
+        if (Icon.Source().Get() != IconSource)
+        {
+            Icon.Source().Set(IconSource);
+        }
+        SnAPI::UI::SVGImageOptions SvgOptions{};
+        SvgOptions.SetRasterSize(kDefaultSvgRasterSize, kDefaultSvgRasterSize, true);
+        if (!(Icon.SvgOptions().Get() == SvgOptions))
+        {
+            Icon.SvgOptions().Set(SvgOptions);
+        }
+        Icon.Visibility().Set(SnAPI::UI::EVisibility::Visible);
+    };
 
     for (std::size_t CardIndex = 0; CardIndex < m_contentAssetCards.size(); ++CardIndex)
     {
@@ -4592,7 +4801,7 @@ void EditorLayout::UpdateContentAssetCardWidgets()
         SetTextVisibility(Widgets.Variant, SnAPI::UI::EVisibility::Visible);
         if (CardIcon)
         {
-            CardIcon->Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+            ApplyAssetCardIcon(*CardIcon, Asset);
         }
         Button->Visibility().Set(SnAPI::UI::EVisibility::Visible);
     }
@@ -5704,25 +5913,111 @@ void EditorLayout::ConfirmContentAssetImport()
 
         if (m_contentImportProfile == EImportProfile::AssimpModel)
         {
+            auto TypedSettings = std::make_shared<AssimpImporterSettings>();
+            TypedSettings->Mesh.GenerateNormals = m_contentImportAssimpSettings.GenerateNormals;
+            TypedSettings->Mesh.GenerateTangents = m_contentImportAssimpSettings.GenerateTangents;
+            TypedSettings->Mesh.FlipUVs = m_contentImportAssimpSettings.FlipUVs;
+            TypedSettings->Mesh.OptimizeMeshes = m_contentImportAssimpSettings.OptimizeMeshes;
+            TypedSettings->Mesh.ForceSkeletal = m_contentImportAssimpSettings.ForceSkeletal;
+            TypedSettings->Mesh.ForceStatic = m_contentImportAssimpSettings.ForceStatic;
+            TypedSettings->Mesh.ImportMaterials = m_contentImportAssimpSettings.ImportMaterials;
+            TypedSettings->Mesh.ImportTextures = m_contentImportAssimpSettings.ImportTextures;
+            TypedSettings->Mesh.ImportAnimations = m_contentImportAssimpSettings.ImportAnimations;
+            TypedSettings->Mesh.ImportSkeleton = m_contentImportAssimpSettings.ImportSkeleton;
+            TypedSettings->Mesh.MaxBonesPerVertex = std::max(1u, m_contentImportAssimpSettings.MaxBonesPerVertex);
+            Request.ImportSettings = TypedSettings;
+
             Request.BuildOptions.emplace("SnAPI.GF.Assimp.GenerateNormals", BoolToText(m_contentImportAssimpSettings.GenerateNormals));
             Request.BuildOptions.emplace("SnAPI.GF.Assimp.GenerateTangents", BoolToText(m_contentImportAssimpSettings.GenerateTangents));
             Request.BuildOptions.emplace("SnAPI.GF.Assimp.FlipUVs", BoolToText(m_contentImportAssimpSettings.FlipUVs));
             Request.BuildOptions.emplace("SnAPI.GF.Assimp.OptimizeMeshes", BoolToText(m_contentImportAssimpSettings.OptimizeMeshes));
             Request.BuildOptions.emplace("SnAPI.GF.Assimp.ForceSkeletal", BoolToText(m_contentImportAssimpSettings.ForceSkeletal));
             Request.BuildOptions.emplace("SnAPI.GF.Assimp.ForceStatic", BoolToText(m_contentImportAssimpSettings.ForceStatic));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportMaterials", BoolToText(m_contentImportAssimpSettings.ImportMaterials));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportTextures", BoolToText(m_contentImportAssimpSettings.ImportTextures));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportAnimations", BoolToText(m_contentImportAssimpSettings.ImportAnimations));
+            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportSkeleton", BoolToText(m_contentImportAssimpSettings.ImportSkeleton));
             Request.BuildOptions.emplace(
                 "SnAPI.GF.Assimp.MaxBonesPerVertex",
                 std::to_string(std::max(1u, m_contentImportAssimpSettings.MaxBonesPerVertex)));
         }
         else if (m_contentImportProfile == EImportProfile::Texture)
         {
-            const std::string Target = TrimCopy(m_contentImportTextureSettings.Target);
-            Request.BuildOptions.emplace("texture.target", Target.empty() ? std::string("bcn") : ToLower(Target));
+            const auto TargetToOption = [](const ETextureCompressionTarget Target) {
+                return Target == ETextureCompressionTarget::ASTC ? std::string("astc") : std::string("bcn");
+            };
+            const auto FormatToOption = [](const ETextureCompressionFormat Format) -> std::string {
+                switch (Format)
+                {
+                case ETextureCompressionFormat::Auto: return {};
+                case ETextureCompressionFormat::BC1: return "bc1";
+                case ETextureCompressionFormat::BC3: return "bc3";
+                case ETextureCompressionFormat::BC4: return "bc4";
+                case ETextureCompressionFormat::BC5: return "bc5";
+                case ETextureCompressionFormat::BC6H: return "bc6h";
+                case ETextureCompressionFormat::BC7: return "bc7";
+                case ETextureCompressionFormat::ASTC_4x4: return "astc_4x4";
+                case ETextureCompressionFormat::ASTC_5x5: return "astc_5x5";
+                case ETextureCompressionFormat::ASTC_6x6: return "astc_6x6";
+                case ETextureCompressionFormat::ASTC_8x8: return "astc_8x8";
+                case ETextureCompressionFormat::ASTC_10x10: return "astc_10x10";
+                case ETextureCompressionFormat::ASTC_12x12: return "astc_12x12";
+                case ETextureCompressionFormat::ASTC_4x4_HDR: return "astc_4x4_hdr";
+                case ETextureCompressionFormat::ASTC_6x6_HDR: return "astc_6x6_hdr";
+                case ETextureCompressionFormat::ASTC_8x8_HDR: return "astc_8x8_hdr";
+                default: return {};
+                }
+            };
+            const auto FormatToTyped = [](const ETextureCompressionFormat Format) -> TextureCompressorPlugin::ECompressedFormat {
+                using TextureCompressorPlugin::ECompressedFormat;
+                switch (Format)
+                {
+                case ETextureCompressionFormat::BC1: return ECompressedFormat::BC1;
+                case ETextureCompressionFormat::BC3: return ECompressedFormat::BC3;
+                case ETextureCompressionFormat::BC4: return ECompressedFormat::BC4;
+                case ETextureCompressionFormat::BC5: return ECompressedFormat::BC5;
+                case ETextureCompressionFormat::BC6H: return ECompressedFormat::BC6H;
+                case ETextureCompressionFormat::BC7: return ECompressedFormat::BC7;
+                case ETextureCompressionFormat::ASTC_4x4: return ECompressedFormat::ASTC_4x4;
+                case ETextureCompressionFormat::ASTC_5x5: return ECompressedFormat::ASTC_5x5;
+                case ETextureCompressionFormat::ASTC_6x6: return ECompressedFormat::ASTC_6x6;
+                case ETextureCompressionFormat::ASTC_8x8: return ECompressedFormat::ASTC_8x8;
+                case ETextureCompressionFormat::ASTC_10x10: return ECompressedFormat::ASTC_10x10;
+                case ETextureCompressionFormat::ASTC_12x12: return ECompressedFormat::ASTC_12x12;
+                case ETextureCompressionFormat::ASTC_4x4_HDR: return ECompressedFormat::ASTC_4x4_HDR;
+                case ETextureCompressionFormat::ASTC_6x6_HDR: return ECompressedFormat::ASTC_6x6_HDR;
+                case ETextureCompressionFormat::ASTC_8x8_HDR: return ECompressedFormat::ASTC_8x8_HDR;
+                case ETextureCompressionFormat::Auto:
+                default: return ECompressedFormat::Unknown;
+                }
+            };
 
-            const std::string Format = TrimCopy(m_contentImportTextureSettings.Format);
-            if (!Format.empty())
+            auto TypedSettings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
+            TypedSettings->Target = m_contentImportTextureSettings.Target == ETextureCompressionTarget::ASTC
+                ? TextureCompressorPlugin::ECompressionTarget::ASTC
+                : TextureCompressorPlugin::ECompressionTarget::BCn;
+            TypedSettings->Format = FormatToTyped(m_contentImportTextureSettings.Format);
+            TypedSettings->Quality = std::clamp(m_contentImportTextureSettings.Quality, 0.0f, 1.0f);
+            TypedSettings->ForceNormalMap = m_contentImportTextureSettings.ForceNormalMap;
+            TypedSettings->MaxMipCount = m_contentImportTextureSettings.MaxMips > 0u
+                ? static_cast<int32_t>(m_contentImportTextureSettings.MaxMips)
+                : -1;
+            if (m_contentImportTextureSettings.ForceLinear)
             {
-                Request.BuildOptions.emplace("texture.format", ToLower(Format));
+                TypedSettings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+            }
+            else if (m_contentImportTextureSettings.ForceSrgb)
+            {
+                TypedSettings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+            }
+            Request.ImportSettings = TypedSettings;
+
+            Request.BuildOptions.emplace("texture.target", TargetToOption(m_contentImportTextureSettings.Target));
+
+            const std::string FormatOption = FormatToOption(m_contentImportTextureSettings.Format);
+            if (!FormatOption.empty())
+            {
+                Request.BuildOptions.emplace("texture.format", FormatOption);
             }
 
             const float ClampedQuality = std::clamp(m_contentImportTextureSettings.Quality, 0.0f, 1.0f);
@@ -5840,7 +6135,7 @@ void EditorLayout::RefreshContentAssetImportSummary()
     }
     else if (m_contentImportProfile == EImportProfile::AssimpModel)
     {
-        Message += "Importer: Assimp (models, skeletons, animations, materials, and embedded textures).";
+        Message += "Importer: Assimp (model pipeline with configurable materials/textures/animations/skeleton).";
     }
     else if (m_contentImportProfile == EImportProfile::Texture)
     {
@@ -6256,10 +6551,28 @@ void EditorLayout::DestroyContentAssetInspectorModalOverlay()
             PropertyPanel->ClearObject();
         }
     }
+    if (m_context && m_contentInspectorImportSettingsPanel.Id.Value != 0)
+    {
+        if (auto* PropertyPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorImportSettingsPanel.Id)))
+        {
+            PropertyPanel->ClearObject();
+        }
+    }
+    if (m_context && m_contentInspectorPreviewImage.Id.Value != 0)
+    {
+        if (auto* Preview = dynamic_cast<SnAPI::UI::UIImage*>(&m_context->GetElement(m_contentInspectorPreviewImage.Id)))
+        {
+            Preview->Texture().Set(SnAPI::UI::TextureId{});
+            Preview->Source().Set(std::string{});
+        }
+    }
 
     m_contentInspectorTargetBound = false;
     m_contentInspectorBoundObject = nullptr;
     m_contentInspectorBoundType = {};
+    m_contentInspectorImportTargetBound = false;
+    m_contentInspectorImportBoundObject = nullptr;
+    m_contentInspectorImportBoundType = {};
 
     if (m_context && m_contentInspectorModalOverlay.Id.Value != 0)
     {
@@ -6275,9 +6588,15 @@ void EditorLayout::DestroyContentAssetInspectorModalOverlay()
     m_contentInspectorModalOverlay = {};
     m_contentInspectorTitleText = {};
     m_contentInspectorStatusText = {};
+    m_contentInspectorHierarchyTitleText = {};
+    m_contentInspectorPreviewStatsText = {};
+    m_contentInspectorPreviewImage = {};
     m_contentInspectorHierarchyTree = {};
     m_contentInspectorPropertyPanel = {};
+    m_contentInspectorImportSettingsTitleText = {};
+    m_contentInspectorImportSettingsPanel = {};
     m_contentInspectorSaveButton = {};
+    m_contentInspectorReimportButton = {};
     m_contentInspectorVisibleNodes.clear();
 }
 
@@ -6287,11 +6606,23 @@ void EditorLayout::CloseContentAssetInspectorModal(const bool NotifyHandler)
     m_contentAssetInspectorState.Open = false;
     m_contentAssetInspectorState.TargetObject = nullptr;
     m_contentAssetInspectorState.TargetType = {};
+    m_contentAssetInspectorState.ImportSettingsObject = nullptr;
+    m_contentAssetInspectorState.ImportSettingsType = {};
     m_contentAssetInspectorState.SelectedNode = {};
     m_contentAssetInspectorState.Nodes.clear();
     m_contentAssetInspectorState.CanEditHierarchy = false;
+    m_contentAssetInspectorState.HasImportSettings = false;
+    m_contentAssetInspectorState.RuntimeDirty = false;
+    m_contentAssetInspectorState.ImportSettingsDirty = false;
     m_contentAssetInspectorState.IsDirty = false;
     m_contentAssetInspectorState.CanSave = false;
+    m_contentAssetInspectorState.CanReimport = false;
+    m_contentAssetInspectorState.PreviewIconSource.clear();
+    m_contentAssetInspectorState.PreviewTextureId = 0;
+    m_contentAssetInspectorState.PreviewWidth = 0;
+    m_contentAssetInspectorState.PreviewHeight = 0;
+    m_contentAssetInspectorState.PreviewStatsPrimary.clear();
+    m_contentAssetInspectorState.PreviewStatsSecondary.clear();
 
     RefreshContentAssetInspectorModalVisibility();
 
@@ -6404,10 +6735,10 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
         return;
     }
 
-    bool HasTarget = m_contentAssetInspectorState.TargetObject != nullptr &&
-                     m_contentAssetInspectorState.TargetType != TypeId{};
-    void* BindingTargetObject = m_contentAssetInspectorState.TargetObject;
-    TypeId BindingTargetType = m_contentAssetInspectorState.TargetType;
+    bool HasRuntimeTarget = m_contentAssetInspectorState.TargetObject != nullptr &&
+                            m_contentAssetInspectorState.TargetType != TypeId{};
+    void* RuntimeBindingTargetObject = m_contentAssetInspectorState.TargetObject;
+    TypeId RuntimeBindingTargetType = m_contentAssetInspectorState.TargetType;
     BaseNode* SelectedHierarchyNode = nullptr;
     if (m_contentAssetInspectorState.CanEditHierarchy && !m_contentAssetInspectorState.SelectedNode.IsNull())
     {
@@ -6418,11 +6749,21 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
         }
         if (SelectedHierarchyNode)
         {
-            BindingTargetObject = SelectedHierarchyNode;
-            BindingTargetType = SelectedHierarchyNode->TypeKey();
-            HasTarget = true;
+            RuntimeBindingTargetObject = SelectedHierarchyNode;
+            RuntimeBindingTargetType = SelectedHierarchyNode->TypeKey();
+            HasRuntimeTarget = true;
         }
     }
+    const bool HasImportTarget =
+        m_contentAssetInspectorState.HasImportSettings &&
+        m_contentAssetInspectorState.ImportSettingsObject != nullptr &&
+        m_contentAssetInspectorState.ImportSettingsType != TypeId{};
+    const bool HasHierarchy = m_contentAssetInspectorState.CanEditHierarchy &&
+                              !m_contentAssetInspectorState.Nodes.empty();
+    const bool HasPreview = m_contentAssetInspectorState.PreviewTextureId != 0 ||
+                            !m_contentAssetInspectorState.PreviewIconSource.empty();
+    const bool HasPreviewStats = !m_contentAssetInspectorState.PreviewStatsPrimary.empty() ||
+                                 !m_contentAssetInspectorState.PreviewStatsSecondary.empty();
 
     if (m_contentInspectorTitleText.Id.Value != 0)
     {
@@ -6450,7 +6791,7 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
                 {
                     StatusText = "Double-click an asset to inspect and edit properties.";
                 }
-                else if (!HasTarget)
+                else if (!HasRuntimeTarget && !HasImportTarget)
                 {
                     StatusText = "No editable payload is available for this asset.";
                 }
@@ -6466,9 +6807,22 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
                     }
                     else
                     {
-                        StatusText = m_contentAssetInspectorState.IsDirty
-                                         ? "Unsaved changes. Click Save to persist."
-                                         : "No pending edits.";
+                        if (m_contentAssetInspectorState.RuntimeDirty && m_contentAssetInspectorState.ImportSettingsDirty)
+                        {
+                            StatusText = "Runtime and import settings changed. Save settings, then Reimport to apply import changes.";
+                        }
+                        else if (m_contentAssetInspectorState.RuntimeDirty)
+                        {
+                            StatusText = "Runtime settings changed. Click Save to persist.";
+                        }
+                        else if (m_contentAssetInspectorState.ImportSettingsDirty)
+                        {
+                            StatusText = "Import settings changed. Save to persist and Reimport to apply.";
+                        }
+                        else
+                        {
+                            StatusText = "No pending edits.";
+                        }
                     }
                 }
             }
@@ -6476,15 +6830,112 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
         }
     }
 
+    if (m_contentInspectorHierarchyTitleText.Id.Value != 0)
+    {
+        if (auto* HierarchyTitle = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentInspectorHierarchyTitleText.Id)))
+        {
+            HierarchyTitle->Text().Set(HasHierarchy ? std::string("Asset Hierarchy") : std::string("Asset Preview"));
+        }
+    }
+
+    if (m_contentInspectorHierarchyTree.Id.Value != 0)
+    {
+        if (auto* HierarchyTree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_contentInspectorHierarchyTree.Id)))
+        {
+            HierarchyTree->Visibility().Set(
+                (m_contentAssetInspectorState.Open && HasHierarchy)
+                    ? SnAPI::UI::EVisibility::Visible
+                    : SnAPI::UI::EVisibility::Collapsed);
+        }
+    }
+
+    if (m_contentInspectorPreviewImage.Id.Value != 0)
+    {
+        if (auto* Preview = dynamic_cast<SnAPI::UI::UIImage*>(&m_context->GetElement(m_contentInspectorPreviewImage.Id)))
+        {
+            const bool ShowPreview = m_contentAssetInspectorState.Open && !HasHierarchy && HasPreview;
+            if (ShowPreview)
+            {
+                if (m_contentAssetInspectorState.PreviewTextureId != 0)
+                {
+                    Preview->Width().Set(SnAPI::UI::Sizing::Fill());
+                    Preview->Height().Set(SnAPI::UI::Sizing::Auto());
+                    Preview->Mode().Set(SnAPI::UI::EImageMode::Aspect);
+                    if (!Preview->Source().Get().empty())
+                    {
+                        Preview->Source().Set(std::string{});
+                    }
+                    if (Preview->Texture().Get().Value != m_contentAssetInspectorState.PreviewTextureId)
+                    {
+                        Preview->Texture().Set(SnAPI::UI::TextureId{m_contentAssetInspectorState.PreviewTextureId});
+                    }
+                    if (m_contentAssetInspectorState.PreviewWidth > 0u && m_contentAssetInspectorState.PreviewHeight > 0u)
+                    {
+                        Preview->SetIntrinsicSize(
+                            static_cast<float>(m_contentAssetInspectorState.PreviewWidth),
+                            static_cast<float>(m_contentAssetInspectorState.PreviewHeight));
+                    }
+                }
+                else
+                {
+                    Preview->Width().Set(SnAPI::UI::Sizing::Fill());
+                    Preview->Height().Set(SnAPI::UI::Sizing::Auto());
+                    Preview->Mode().Set(SnAPI::UI::EImageMode::Aspect);
+                    const std::string PreviewSource = ResolveUIImageSource(m_contentAssetInspectorState.PreviewIconSource);
+                    if (Preview->Source().Get() != PreviewSource)
+                    {
+                        Preview->Source().Set(PreviewSource);
+                    }
+                    if (!(Preview->SvgOptions().Get() == SnAPI::UI::SVGImageOptions{}))
+                    {
+                        Preview->SvgOptions().Set(SnAPI::UI::SVGImageOptions{});
+                    }
+                }
+                Preview->Visibility().Set(SnAPI::UI::EVisibility::Visible);
+            }
+            else
+            {
+                Preview->Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+            }
+        }
+    }
+
+    if (m_contentInspectorPreviewStatsText.Id.Value != 0)
+    {
+        if (auto* PreviewStats = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentInspectorPreviewStatsText.Id)))
+        {
+            const bool ShowPreviewStats = m_contentAssetInspectorState.Open && !HasHierarchy && HasPreview && HasPreviewStats;
+            if (ShowPreviewStats)
+            {
+                std::string StatsText = m_contentAssetInspectorState.PreviewStatsPrimary;
+                if (!m_contentAssetInspectorState.PreviewStatsSecondary.empty())
+                {
+                    if (!StatsText.empty())
+                    {
+                        StatsText += '\n';
+                    }
+                    StatsText += m_contentAssetInspectorState.PreviewStatsSecondary;
+                }
+                PreviewStats->Text().Set(std::move(StatsText));
+                PreviewStats->Visibility().Set(SnAPI::UI::EVisibility::Visible);
+            }
+            else
+            {
+                PreviewStats->Text().Set(std::string{});
+                PreviewStats->Visibility().Set(SnAPI::UI::EVisibility::Collapsed);
+            }
+        }
+    }
+
     if (m_contentInspectorPropertyPanel.Id.Value != 0)
     {
         if (auto* PropertyPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorPropertyPanel.Id)))
         {
-            if (m_contentAssetInspectorState.Open && HasTarget)
+            if (m_contentAssetInspectorState.Open && HasRuntimeTarget)
             {
                 if (!m_contentInspectorTargetBound ||
-                    m_contentInspectorBoundObject != BindingTargetObject ||
-                    m_contentInspectorBoundType != BindingTargetType)
+                    m_contentInspectorBoundObject != RuntimeBindingTargetObject ||
+                    m_contentInspectorBoundType != RuntimeBindingTargetType)
                 {
                     PropertyPanel->ClearObject();
                     if (SelectedHierarchyNode && m_contentAssetInspectorState.CanEditHierarchy)
@@ -6493,12 +6944,12 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
                     }
                     else
                     {
-                        m_contentInspectorTargetBound = PropertyPanel->BindObject(BindingTargetType, BindingTargetObject);
+                        m_contentInspectorTargetBound = PropertyPanel->BindObject(RuntimeBindingTargetType, RuntimeBindingTargetObject);
                     }
                     if (m_contentInspectorTargetBound)
                     {
-                        m_contentInspectorBoundObject = BindingTargetObject;
-                        m_contentInspectorBoundType = BindingTargetType;
+                        m_contentInspectorBoundObject = RuntimeBindingTargetObject;
+                        m_contentInspectorBoundType = RuntimeBindingTargetType;
                     }
                     else
                     {
@@ -6521,15 +6972,76 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
         }
     }
 
+    if (m_contentInspectorImportSettingsTitleText.Id.Value != 0)
+    {
+        if (auto* ImportTitle = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(m_contentInspectorImportSettingsTitleText.Id)))
+        {
+            ImportTitle->Text().Set(HasImportTarget
+                                        ? std::string("Import Settings (Requires Reimport)")
+                                        : std::string("Import Settings (Unavailable)"));
+        }
+    }
+
+    if (m_contentInspectorImportSettingsPanel.Id.Value != 0)
+    {
+        if (auto* ImportPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorImportSettingsPanel.Id)))
+        {
+            if (m_contentAssetInspectorState.Open && HasImportTarget)
+            {
+                if (!m_contentInspectorImportTargetBound ||
+                    m_contentInspectorImportBoundObject != m_contentAssetInspectorState.ImportSettingsObject ||
+                    m_contentInspectorImportBoundType != m_contentAssetInspectorState.ImportSettingsType)
+                {
+                    ImportPanel->ClearObject();
+                    m_contentInspectorImportTargetBound = ImportPanel->BindObject(
+                        m_contentAssetInspectorState.ImportSettingsType,
+                        m_contentAssetInspectorState.ImportSettingsObject);
+                    if (m_contentInspectorImportTargetBound)
+                    {
+                        m_contentInspectorImportBoundObject = m_contentAssetInspectorState.ImportSettingsObject;
+                        m_contentInspectorImportBoundType = m_contentAssetInspectorState.ImportSettingsType;
+                    }
+                    else
+                    {
+                        m_contentInspectorImportBoundObject = nullptr;
+                        m_contentInspectorImportBoundType = {};
+                    }
+                }
+                else
+                {
+                    ImportPanel->RefreshFromModel();
+                }
+            }
+            else if (m_contentInspectorImportTargetBound)
+            {
+                ImportPanel->ClearObject();
+                m_contentInspectorImportTargetBound = false;
+                m_contentInspectorImportBoundObject = nullptr;
+                m_contentInspectorImportBoundType = {};
+            }
+        }
+    }
+
     if (m_contentInspectorSaveButton.Id.Value != 0)
     {
         if (auto* SaveButton = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentInspectorSaveButton.Id)))
         {
             const bool CanSave = m_contentAssetInspectorState.Open &&
-                                 m_contentInspectorTargetBound &&
+                                 (m_contentInspectorTargetBound || m_contentInspectorImportTargetBound) &&
                                  m_contentAssetInspectorState.CanSave &&
                                  m_contentAssetInspectorState.IsDirty;
             SaveButton->SetDisabled(!CanSave);
+        }
+    }
+
+    if (m_contentInspectorReimportButton.Id.Value != 0)
+    {
+        if (auto* ReimportButton = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_contentInspectorReimportButton.Id)))
+        {
+            const bool CanReimport = m_contentAssetInspectorState.Open &&
+                                     m_contentInspectorImportTargetBound &&
+                                     m_contentAssetInspectorState.CanReimport;
+            ReimportButton->SetDisabled(!CanReimport);
         }
     }
 }
@@ -6795,13 +7307,55 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     BreadcrumbsElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     BreadcrumbsElement.SetCrumbs({"Game View", "Perspective", "Lit"});
 
+    auto GizmoControls = Header.Add(SnAPI::UI::UIPanel("Editor.GameHeader.GizmoControls"));
+    auto& GizmoControlsPanel = GizmoControls.Element();
+    ConfigureTransparentLayoutPanel(GizmoControlsPanel);
+    GizmoControlsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    GizmoControlsPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    GizmoControlsPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    GizmoControlsPanel.Gap().Set(6.0f);
+
+    auto SpaceLabel = GizmoControls.Add(SnAPI::UI::UIText("Space"));
+    auto& SpaceLabelText = SpaceLabel.Element();
+    SpaceLabelText.ElementStyle().Apply("editor.menu_item");
+    SpaceLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto SpaceCombo = GizmoControls.Add(SnAPI::UI::UIComboBox{});
+    auto& SpaceComboElement = SpaceCombo.Element();
+    SpaceComboElement.Width().Set(SnAPI::UI::Sizing::Fixed(120.0f));
+    SpaceComboElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpaceComboElement.Placeholder().Set(std::string("Space"));
+    SpaceComboElement.SetItems({"World", "Object", "Camera"});
+    (void)SpaceComboElement.SetSelectedIndex(GizmoSpaceToIndex(m_gizmoSpace), false);
+    SpaceComboElement.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_gizmoSpace = GizmoSpaceFromIndex(Index);
+    });
+
+    auto SnapLabel = GizmoControls.Add(SnAPI::UI::UIText("Snap"));
+    auto& SnapLabelText = SnapLabel.Element();
+    SnapLabelText.ElementStyle().Apply("editor.menu_item");
+    SnapLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto SnapCombo = GizmoControls.Add(SnAPI::UI::UIComboBox{});
+    auto& SnapComboElement = SnapCombo.Element();
+    SnapComboElement.Width().Set(SnAPI::UI::Sizing::Fixed(118.0f));
+    SnapComboElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SnapComboElement.Placeholder().Set(std::string("Snap"));
+    SnapComboElement.SetItems({"Off", "On"});
+    (void)SnapComboElement.SetSelectedIndex(SnapModeToIndex(m_snapMode), false);
+    SnapComboElement.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_snapMode = SnapModeFromIndex(Index);
+    });
+
     auto Viewport = GameViewTab.Add(UIRenderViewport{});
     auto& ViewportElement = Viewport.Element();
     ViewportElement.Width().Set(SnAPI::UI::Sizing::Fill());
     ViewportElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     ViewportElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     ViewportElement.ViewportName().Set(std::string("Editor.GameViewport"));
-    ViewportElement.PassGraphPreset().Set(ERenderViewportPassGraphPreset::DefaultWorld);
+    ViewportElement.PassGraphPreset().Set(ERenderViewportPassGraphPreset::EditorWorld);
     ViewportElement.AutoRegisterPassGraph().Set(true);
     ViewportElement.RenderScale().Set(1.0f);
     ViewportElement.Enabled().Set(true);
@@ -6923,35 +7477,53 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     auto SnapTitle = SnapCard.Add(SnAPI::UI::UIText("Snapping"));
     SnapTitle.Element().ElementStyle().Apply("editor.panel_title");
 
+    auto MoveSnapLabel = SnapCard.Add(SnAPI::UI::UIText("Move Step"));
+    MoveSnapLabel.Element().ElementStyle().Apply("editor.menu_item");
+
     auto MoveSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
     auto& MoveSnapField = MoveSnap.Element();
     MoveSnapField.ElementStyle().Apply("editor.number_field");
     MoveSnapField.Step().Set(0.1);
-    MoveSnapField.Value().Set(1.0);
+    MoveSnapField.Value().Set(m_moveSnapStep);
     MoveSnapField.Precision().Set(2u);
     MoveSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
     MoveSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
     MoveSnapField.Padding().Set(5.0f);
+    MoveSnapField.OnValueChanged([this](const double Value) {
+        m_moveSnapStep = SanitizePositiveStep(Value, m_moveSnapStep);
+    });
+
+    auto RotateSnapLabel = SnapCard.Add(SnAPI::UI::UIText("Rotate Step (deg)"));
+    RotateSnapLabel.Element().ElementStyle().Apply("editor.menu_item");
 
     auto RotateSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
     auto& RotateSnapField = RotateSnap.Element();
     RotateSnapField.ElementStyle().Apply("editor.number_field");
     RotateSnapField.Step().Set(1.0);
-    RotateSnapField.Value().Set(15.0);
+    RotateSnapField.Value().Set(m_rotateSnapStepDegrees);
     RotateSnapField.Precision().Set(1u);
     RotateSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
     RotateSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
     RotateSnapField.Padding().Set(5.0f);
+    RotateSnapField.OnValueChanged([this](const double Value) {
+        m_rotateSnapStepDegrees = SanitizePositiveStep(Value, m_rotateSnapStepDegrees);
+    });
+
+    auto ScaleSnapLabel = SnapCard.Add(SnAPI::UI::UIText("Scale Step"));
+    ScaleSnapLabel.Element().ElementStyle().Apply("editor.menu_item");
 
     auto ScaleSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
     auto& ScaleSnapField = ScaleSnap.Element();
     ScaleSnapField.ElementStyle().Apply("editor.number_field");
     ScaleSnapField.Step().Set(0.05);
-    ScaleSnapField.Value().Set(0.5);
+    ScaleSnapField.Value().Set(m_scaleSnapStep);
     ScaleSnapField.Precision().Set(2u);
     ScaleSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
     ScaleSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
     ScaleSnapField.Padding().Set(5.0f);
+    ScaleSnapField.OnValueChanged([this](const double Value) {
+        m_scaleSnapStep = SanitizePositiveStep(Value, m_scaleSnapStep);
+    });
 
     auto DateCard = ToolsScroll.Add(SnAPI::UI::UIPanel("Editor.Tools.Date"));
     auto& DateCardPanel = DateCard.Element();
