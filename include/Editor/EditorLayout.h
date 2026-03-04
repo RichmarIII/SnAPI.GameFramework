@@ -166,6 +166,19 @@ public:
         JoinLocalPlayer2,
     };
 
+    enum class EGizmoSpace : std::uint8_t
+    {
+        World = 0,
+        Object,
+        Camera
+    };
+
+    enum class ESnapMode : std::uint8_t
+    {
+        Off = 0,
+        On
+    };
+
     enum class EProjectAction : std::uint8_t
     {
         CreateNew,
@@ -191,6 +204,11 @@ public:
     [[nodiscard]] UIRenderViewport* GameViewport() const;
     [[nodiscard]] int32_t GameViewportTabIndex() const;
     [[nodiscard]] SnAPI::UI::UIContext* Context() const { return m_context; }
+    [[nodiscard]] EGizmoSpace GizmoSpace() const { return m_gizmoSpace; }
+    [[nodiscard]] bool GizmoSnappingEnabled() const { return m_snapMode == ESnapMode::On; }
+    [[nodiscard]] double MoveSnapStep() const { return m_moveSnapStep; }
+    [[nodiscard]] double RotateSnapStepDegrees() const { return m_rotateSnapStepDegrees; }
+    [[nodiscard]] double ScaleSnapStep() const { return m_scaleSnapStep; }
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
@@ -522,6 +540,11 @@ private:
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
     std::size_t m_boundInspectorComponentSignature = 0;
+    EGizmoSpace m_gizmoSpace = EGizmoSpace::World;
+    ESnapMode m_snapMode = ESnapMode::Off;
+    double m_moveSnapStep = 1.0;
+    double m_rotateSnapStepDegrees = 15.0;
+    double m_scaleSnapStep = 0.5;
     bool m_invalidationDebugOverlayEnabled = false;
     SnAPI::UI::PropertyMap m_viewModel{};
     bool m_built = false;

@@ -183,12 +183,17 @@ else()
 endif()
 
 if (SNAPI_GF_BUILD_EDITOR)
+    target_sources(SnAPI.GameFramework PRIVATE
+        src/Editor/EditorRenderPasses.cpp
+    )
+
     set(SNAPI_GF_EDITOR_SOURCES
         include/Editor/EditorCameraComponent.h
         include/Editor/EditorAssetService.h
         include/Editor/EditorExport.h
         include/Editor/EditorCoreServices.h
         include/Editor/EditorLayout.h
+        include/Editor/EditorRenderPasses.h
         include/Editor/EditorSelectionModel.h
         include/Editor/EditorSceneBootstrap.h
         include/Editor/EditorTheme.h

@@ -23,6 +23,7 @@
 #include "World.h"
 
 #include <UIContext.h>
+#include <UIComboBox.h>
 #include <UIColorPicker.h>
 #include <UIDatePicker.h>
 #include <UIDockZone.h>
@@ -141,6 +142,61 @@ constexpr std::array<ToolbarActionSpec, 4> kToolbarActions{{
 }};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
+
+[[nodiscard]] constexpr int32_t GizmoSpaceToIndex(const EditorLayout::EGizmoSpace Space)
+{
+    switch (Space)
+    {
+    case EditorLayout::EGizmoSpace::World:
+        return 0;
+    case EditorLayout::EGizmoSpace::Object:
+        return 1;
+    case EditorLayout::EGizmoSpace::Camera:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+[[nodiscard]] constexpr EditorLayout::EGizmoSpace GizmoSpaceFromIndex(const int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        return EditorLayout::EGizmoSpace::Object;
+    case 2:
+        return EditorLayout::EGizmoSpace::Camera;
+    case 0:
+    default:
+        return EditorLayout::EGizmoSpace::World;
+    }
+}
+
+[[nodiscard]] constexpr int32_t SnapModeToIndex(const EditorLayout::ESnapMode Mode)
+{
+    switch (Mode)
+    {
+    case EditorLayout::ESnapMode::On:
+        return 1;
+    case EditorLayout::ESnapMode::Off:
+    default:
+        return 0;
+    }
+}
+
+[[nodiscard]] constexpr EditorLayout::ESnapMode SnapModeFromIndex(const int32_t Index)
+{
+    return Index == 1 ? EditorLayout::ESnapMode::On : EditorLayout::ESnapMode::Off;
+}
+
+[[nodiscard]] double SanitizePositiveStep(const double Value, const double Fallback)
+{
+    if (!std::isfinite(Value) || Value <= 0.0)
+    {
+        return std::max(0.0001, Fallback);
+    }
+    return std::max(0.0001, Value);
+}
 
 [[nodiscard]] std::string ResolveUIImageSource(std::string_view Source)
 {
@@ -7251,13 +7307,55 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     BreadcrumbsElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     BreadcrumbsElement.SetCrumbs({"Game View", "Perspective", "Lit"});
 
+    auto GizmoControls = Header.Add(SnAPI::UI::UIPanel("Editor.GameHeader.GizmoControls"));
+    auto& GizmoControlsPanel = GizmoControls.Element();
+    ConfigureTransparentLayoutPanel(GizmoControlsPanel);
+    GizmoControlsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    GizmoControlsPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    GizmoControlsPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    GizmoControlsPanel.Gap().Set(6.0f);
+
+    auto SpaceLabel = GizmoControls.Add(SnAPI::UI::UIText("Space"));
+    auto& SpaceLabelText = SpaceLabel.Element();
+    SpaceLabelText.ElementStyle().Apply("editor.menu_item");
+    SpaceLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto SpaceCombo = GizmoControls.Add(SnAPI::UI::UIComboBox{});
+    auto& SpaceComboElement = SpaceCombo.Element();
+    SpaceComboElement.Width().Set(SnAPI::UI::Sizing::Fixed(120.0f));
+    SpaceComboElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SpaceComboElement.Placeholder().Set(std::string("Space"));
+    SpaceComboElement.SetItems({"World", "Object", "Camera"});
+    (void)SpaceComboElement.SetSelectedIndex(GizmoSpaceToIndex(m_gizmoSpace), false);
+    SpaceComboElement.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_gizmoSpace = GizmoSpaceFromIndex(Index);
+    });
+
+    auto SnapLabel = GizmoControls.Add(SnAPI::UI::UIText("Snap"));
+    auto& SnapLabelText = SnapLabel.Element();
+    SnapLabelText.ElementStyle().Apply("editor.menu_item");
+    SnapLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto SnapCombo = GizmoControls.Add(SnAPI::UI::UIComboBox{});
+    auto& SnapComboElement = SnapCombo.Element();
+    SnapComboElement.Width().Set(SnAPI::UI::Sizing::Fixed(118.0f));
+    SnapComboElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SnapComboElement.Placeholder().Set(std::string("Snap"));
+    SnapComboElement.SetItems({"Off", "On"});
+    (void)SnapComboElement.SetSelectedIndex(SnapModeToIndex(m_snapMode), false);
+    SnapComboElement.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_snapMode = SnapModeFromIndex(Index);
+    });
+
     auto Viewport = GameViewTab.Add(UIRenderViewport{});
     auto& ViewportElement = Viewport.Element();
     ViewportElement.Width().Set(SnAPI::UI::Sizing::Fill());
     ViewportElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     ViewportElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     ViewportElement.ViewportName().Set(std::string("Editor.GameViewport"));
-    ViewportElement.PassGraphPreset().Set(ERenderViewportPassGraphPreset::DefaultWorld);
+    ViewportElement.PassGraphPreset().Set(ERenderViewportPassGraphPreset::EditorWorld);
     ViewportElement.AutoRegisterPassGraph().Set(true);
     ViewportElement.RenderScale().Set(1.0f);
     ViewportElement.Enabled().Set(true);
@@ -7379,35 +7477,53 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     auto SnapTitle = SnapCard.Add(SnAPI::UI::UIText("Snapping"));
     SnapTitle.Element().ElementStyle().Apply("editor.panel_title");
 
+    auto MoveSnapLabel = SnapCard.Add(SnAPI::UI::UIText("Move Step"));
+    MoveSnapLabel.Element().ElementStyle().Apply("editor.menu_item");
+
     auto MoveSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
     auto& MoveSnapField = MoveSnap.Element();
     MoveSnapField.ElementStyle().Apply("editor.number_field");
     MoveSnapField.Step().Set(0.1);
-    MoveSnapField.Value().Set(1.0);
+    MoveSnapField.Value().Set(m_moveSnapStep);
     MoveSnapField.Precision().Set(2u);
     MoveSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
     MoveSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
     MoveSnapField.Padding().Set(5.0f);
+    MoveSnapField.OnValueChanged([this](const double Value) {
+        m_moveSnapStep = SanitizePositiveStep(Value, m_moveSnapStep);
+    });
+
+    auto RotateSnapLabel = SnapCard.Add(SnAPI::UI::UIText("Rotate Step (deg)"));
+    RotateSnapLabel.Element().ElementStyle().Apply("editor.menu_item");
 
     auto RotateSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
     auto& RotateSnapField = RotateSnap.Element();
     RotateSnapField.ElementStyle().Apply("editor.number_field");
     RotateSnapField.Step().Set(1.0);
-    RotateSnapField.Value().Set(15.0);
+    RotateSnapField.Value().Set(m_rotateSnapStepDegrees);
     RotateSnapField.Precision().Set(1u);
     RotateSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
     RotateSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
     RotateSnapField.Padding().Set(5.0f);
+    RotateSnapField.OnValueChanged([this](const double Value) {
+        m_rotateSnapStepDegrees = SanitizePositiveStep(Value, m_rotateSnapStepDegrees);
+    });
+
+    auto ScaleSnapLabel = SnapCard.Add(SnAPI::UI::UIText("Scale Step"));
+    ScaleSnapLabel.Element().ElementStyle().Apply("editor.menu_item");
 
     auto ScaleSnap = SnapCard.Add(SnAPI::UI::UINumberField{});
     auto& ScaleSnapField = ScaleSnap.Element();
     ScaleSnapField.ElementStyle().Apply("editor.number_field");
     ScaleSnapField.Step().Set(0.05);
-    ScaleSnapField.Value().Set(0.5);
+    ScaleSnapField.Value().Set(m_scaleSnapStep);
     ScaleSnapField.Precision().Set(2u);
     ScaleSnapField.Width().Set(SnAPI::UI::Sizing::Fill());
     ScaleSnapField.Height().Set(SnAPI::UI::Sizing::Auto());
     ScaleSnapField.Padding().Set(5.0f);
+    ScaleSnapField.OnValueChanged([this](const double Value) {
+        m_scaleSnapStep = SanitizePositiveStep(Value, m_scaleSnapStep);
+    });
 
     auto DateCard = ToolsScroll.Add(SnAPI::UI::UIPanel("Editor.Tools.Date"));
     auto& DateCardPanel = DateCard.Element();

@@ -87,6 +87,11 @@ public:
         return m_streamSource;
     }
 
+    [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject() const
+    {
+        return m_renderObject;
+    }
+
     void OnCreate();
     void OnDestroy();
     void Tick(float DeltaSeconds);

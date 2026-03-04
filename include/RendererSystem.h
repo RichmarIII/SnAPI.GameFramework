@@ -7,6 +7,7 @@
 #include <array>
 #include <filesystem>
 #include "GameThreading.h"
+#include <UUID.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -72,6 +73,7 @@ struct RendererBootstrapSettings
     bool EnableSsr = true; /**< @brief Register SSR + composite passes in default pass graph. */
     bool EnableBloom = true; /**< @brief Register bloom pass in default pass graph. */
     bool EnableAtmosphere = true; /**< @brief Register atmosphere + composite passes in default pass graph. */
+    bool AtmosphereWorldMode = false; /**< @brief Enable planet-scale atmosphere coordinates (`WORLD=1`); false uses regular-scene mode. */
     bool AutoHandleSwapChainResize = true; /**< @brief Detect window-size changes and recreate swapchain automatically. */
     bool AutoFallbackOnOutOfMemory = true; /**< @brief Retry renderer init with reduced settings when device-memory allocation fails. */
     float OutOfMemoryFallbackWindowWidth = 1920.0f; /**< @brief Maximum retry width used during out-of-memory fallback. */
@@ -97,7 +99,10 @@ enum class ERenderViewportPassGraphPreset : uint8_t
 {
     None = 0, /**< @brief Do not auto-register any passes. */
     UiPresentOnly, /**< @brief Register only UI + Present passes (editor shell style viewport). */
-    DefaultWorld /**< @brief Register default world stack (shadow/gbuffer/deferred/post/ui/present + optional effects). */
+    DefaultWorld, /**< @brief Register default world stack (shadow/gbuffer/deferred/post/ui/present + optional effects). */
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    EditorWorld /**< @brief Register editor world stack (default world + editor id/overlay passes). */
+#endif
 };
 
 /**
@@ -422,11 +427,111 @@ public:
     bool ClearRenderViewportNameOverrides(std::uint64_t ViewportID);
 
     /**
-     * @brief Register a render object for renderer draw submission.
+     * @brief Route one render object to a viewport-local pass type.
      * @param RenderObject Weak render object reference.
-     * @return True when render-object registration request was submitted.
+     * @param ViewportID Target viewport identifier.
+     * @param PassType Target pass type.
+     * @return True when routing was applied.
      */
-    bool RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject);
+    bool AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                         std::uint64_t ViewportID,
+                         SnAPI::Graphics::ERenderPassType PassType);
+
+    /**
+     * @brief Route one render object to one pass id.
+     * @param RenderObject Weak render object reference.
+     * @param PassID Target pass id.
+     * @return True when routing was applied.
+     */
+    bool AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                         const SnAPI::UUID& PassID);
+
+    /**
+     * @brief Remove one render object from a viewport-local pass type.
+     * @param RenderObject Weak render object reference.
+     * @param ViewportID Target viewport identifier.
+     * @param PassType Target pass type.
+     * @return True when an existing pass/object link was removed.
+     */
+    bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                            std::uint64_t ViewportID,
+                            SnAPI::Graphics::ERenderPassType PassType);
+
+    /**
+     * @brief Remove one render object from one pass id.
+     * @param RenderObject Weak render object reference.
+     * @param PassID Target pass id.
+     * @return True when an existing pass/object link was removed.
+     */
+    bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                            const SnAPI::UUID& PassID);
+
+    /**
+     * @brief Remove one render object from all renderer passes.
+     * @param RenderObject Weak render object reference.
+     * @return True when one or more pass/object links were removed.
+     */
+    bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject);
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    struct EditorImmediateRenderMetadata
+    {
+        bool IsGizmo = false;
+        std::uint32_t AxisTag = 0u;
+    };
+
+    /**
+     * @brief Queue one-frame editor-only render object submission.
+     * @param RenderObject Weak render object reference.
+     * @param ViewportID Target render viewport id.
+     * @param PassType Target pass type (for example EditorID / EditorOverlay).
+     * @return True when the object was routed to the target pass and tracked for end-of-frame removal.
+     */
+    bool QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                          std::uint64_t ViewportID,
+                                          SnAPI::Graphics::ERenderPassType PassType);
+
+    /**
+     * @brief Queue one-frame editor-only render object submission.
+     * @param RenderObject Weak render object reference.
+     * @param ViewportID Target render viewport id.
+     * @param PassType Target pass type (for example EditorID / EditorOverlay).
+     * @param Metadata Optional metadata consumed by editor passes for one-frame rendering behavior.
+     * @return True when the object was routed to the target pass and tracked for end-of-frame removal.
+     */
+    bool QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                          std::uint64_t ViewportID,
+                                          SnAPI::Graphics::ERenderPassType PassType,
+                                          const EditorImmediateRenderMetadata& Metadata);
+
+    /**
+     * @brief Sample editor id output for one viewport at normalized coordinates.
+     * @param ViewportID Target viewport id.
+     * @param NormalizedX Horizontal normalized coordinate in [0, 1].
+     * @param NormalizedY Vertical normalized coordinate in [0, 1].
+     * @param ResourceName Output resource name (defaults to `EditorID_Value`).
+     * @return Encoded render-object id when available.
+     */
+    [[nodiscard]] std::optional<std::uint32_t> ReadRenderViewportObjectID(std::uint64_t ViewportID,
+                                                                           float NormalizedX,
+                                                                           float NormalizedY,
+                                                                           std::string_view ResourceName = "EditorID_Value") const;
+
+    /**
+     * @brief Resolve a tracked render object from renderer id.
+     * @param RenderObjectID Stable render object id.
+     * @return Shared render object when currently tracked.
+     */
+    [[nodiscard]] std::shared_ptr<SnAPI::Graphics::IRenderObject> ResolveRenderObjectByID(std::uint32_t RenderObjectID) const;
+
+    /**
+     * @brief Resolve tracked renderer id for one render object pointer.
+     * @param RenderObject Render object to query.
+     * @return Stable renderer id when currently tracked by renderer.
+     */
+    [[nodiscard]] std::optional<std::uint32_t> RenderObjectID(
+        const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject) const;
+#endif
 
     /**
      * @brief Populate default material instances for a render object.
@@ -454,7 +559,9 @@ public:
      * @param CastShadows True to enable shadow pass rendering.
      * @return True when renderer was initialized and pass state was applied.
      */
-    bool ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, bool Visible, bool CastShadows) const;
+    bool ConfigureRenderObjectPasses(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                     bool Visible,
+                                     bool CastShadows);
 
     /**
      * @brief Monotonic revision for render-viewport pass graph topology changes.
@@ -625,7 +732,13 @@ private:
     bool CreateWindowResources();
     bool RegisterDefaultPassGraph();
     bool RegisterRenderViewportPassGraphUnlocked(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset, bool TrackDefaultPassPointers);
+    bool ConfigureRenderObjectPassesLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                           bool Visible,
+                                           bool CastShadows);
     void ResetPassPointers();
+    bool TrackRegisteredRenderObjectLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject);
+    bool UntrackRegisteredRenderObjectLocked(const SnAPI::Graphics::IRenderObject* RenderObject);
+    void PruneTrackedRenderObjectIfUnreferencedLocked(const SnAPI::Graphics::IRenderObject* RenderObject);
 
     struct TextRequest
     {
@@ -816,6 +929,16 @@ private:
     bool m_hasPendingSwapChainResize = false; /**< @brief True while window size has diverged and resize is being coalesced. */
     std::uint32_t m_pendingSwapChainStableFrames = 0; /**< @brief Consecutive frames where pending swapchain target stayed unchanged. */
     std::vector<std::weak_ptr<SnAPI::Graphics::IRenderObject>> m_registeredRenderObjects{}; /**< @brief Registered render objects that need end-of-frame state snapshots. */
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    struct EditorImmediateRenderObjectEntry
+    {
+        std::shared_ptr<SnAPI::Graphics::IRenderObject> RenderObject{};
+        std::uint64_t ViewportID{};
+        SnAPI::Graphics::ERenderPassType PassType{};
+        EditorImmediateRenderMetadata Metadata{};
+    };
+    std::vector<EditorImmediateRenderObjectEntry> m_editorImmediateRenderObjects{}; /**< @brief One-frame editor render-object submissions auto-removed after present. */
+#endif
     std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset> m_registeredViewportPassGraphs{}; /**< @brief Tracks preset assignment per viewport to prevent duplicate pass registration. */
     std::uint64_t m_renderViewportPassGraphRevision = 1; /**< @brief Monotonic revision incremented when viewport pass-graph topology changes. */
     bool m_initialized = false; /**< @brief True when backend lifecycle is active through this subsystem. */

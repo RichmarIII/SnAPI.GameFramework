@@ -1,4 +1,7 @@
 #include "RendererSystem.h"
+#if defined(WITH_EDITOR) && WITH_EDITOR
+#include "Editor/EditorRenderPasses.h"
+#endif
 #include "GameThreading.h"
 #include "PathResolver.h"
 
@@ -250,6 +253,17 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_hasPendingSwapChainResize = Other.m_hasPendingSwapChainResize;
     m_pendingSwapChainStableFrames = Other.m_pendingSwapChainStableFrames;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    m_editorImmediateRenderObjects = std::move(Other.m_editorImmediateRenderObjects);
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject)
+        {
+            Editor::SetEditorImmediateRenderObjectMetadata(Entry.RenderObject.get(), Entry.PassType, Entry.Metadata.IsGizmo, Entry.Metadata.AxisTag);
+        }
+    }
+#endif
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
     m_initialized = Other.m_initialized;
@@ -294,6 +308,10 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_hasPendingSwapChainResize = false;
     Other.m_pendingSwapChainStableFrames = 0;
     Other.m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    Other.m_editorImmediateRenderObjects.clear();
+#endif
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
     Other.m_initialized = false;
@@ -357,6 +375,17 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_hasPendingSwapChainResize = Other.m_hasPendingSwapChainResize;
     m_pendingSwapChainStableFrames = Other.m_pendingSwapChainStableFrames;
     m_registeredRenderObjects = std::move(Other.m_registeredRenderObjects);
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    m_editorImmediateRenderObjects = std::move(Other.m_editorImmediateRenderObjects);
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject)
+        {
+            Editor::SetEditorImmediateRenderObjectMetadata(Entry.RenderObject.get(), Entry.PassType, Entry.Metadata.IsGizmo, Entry.Metadata.AxisTag);
+        }
+    }
+#endif
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
     m_initialized = Other.m_initialized;
@@ -401,6 +430,9 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_hasPendingSwapChainResize = false;
     Other.m_pendingSwapChainStableFrames = 0;
     Other.m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    Other.m_editorImmediateRenderObjects.clear();
+#endif
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
     Other.m_initialized = false;
@@ -486,6 +518,10 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
         m_hasPendingSwapChainResize = false;
         m_pendingSwapChainStableFrames = 0;
         m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        Editor::ClearEditorImmediateRenderObjectMetadata();
+        m_editorImmediateRenderObjects.clear();
+#endif
         m_registeredViewportPassGraphs.clear();
         m_renderViewportPassGraphRevision = 1;
     };
@@ -569,6 +605,10 @@ bool RendererSystem::InitializeUnlocked()
     ResetPassPointers();
     m_passGraphRegistered = false;
     m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+    m_editorImmediateRenderObjects.clear();
+#endif
     m_registeredViewportPassGraphs.clear();
     m_renderViewportPassGraphRevision = 1;
     m_pendingSwapChainWidth = 0.0f;
@@ -1167,7 +1207,174 @@ bool RendererSystem::ClearRenderViewportNameOverrides(const std::uint64_t Viewpo
     return m_graphics->ClearRenderViewportNameOverrides(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID));
 }
 
-bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
+bool RendererSystem::TrackRegisteredRenderObjectLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
+{
+    if (!RenderObject)
+    {
+        return false;
+    }
+
+    const auto* RenderObjectPtr = RenderObject.get();
+    bool AlreadyTracked = false;
+    for (auto It = m_registeredRenderObjects.begin(); It != m_registeredRenderObjects.end();)
+    {
+        const auto ExistingShared = It->lock();
+        if (!ExistingShared)
+        {
+            It = m_registeredRenderObjects.erase(It);
+            continue;
+        }
+
+        if (ExistingShared.get() == RenderObjectPtr)
+        {
+            AlreadyTracked = true;
+        }
+        ++It;
+    }
+
+    if (!AlreadyTracked)
+    {
+        m_registeredRenderObjects.emplace_back(RenderObject);
+    }
+    return true;
+}
+
+bool RendererSystem::UntrackRegisteredRenderObjectLocked(const SnAPI::Graphics::IRenderObject* RenderObject)
+{
+    if (!RenderObject)
+    {
+        return false;
+    }
+
+    const auto NewEnd = std::ranges::remove_if(m_registeredRenderObjects,
+                                               [RenderObject](const std::weak_ptr<SnAPI::Graphics::IRenderObject>& Existing) {
+                                                   const auto ExistingShared = Existing.lock();
+                                                   return !ExistingShared || ExistingShared.get() == RenderObject;
+                                               }).begin();
+    const bool Removed = (NewEnd != m_registeredRenderObjects.end());
+    m_registeredRenderObjects.erase(NewEnd, m_registeredRenderObjects.end());
+    return Removed;
+}
+
+void RendererSystem::PruneTrackedRenderObjectIfUnreferencedLocked(const SnAPI::Graphics::IRenderObject* RenderObject)
+{
+    if (!m_graphics || !RenderObject)
+    {
+        return;
+    }
+
+    if (m_graphics->RenderObjectID(RenderObject).has_value())
+    {
+        return;
+    }
+
+    static_cast<void>(UntrackRegisteredRenderObjectLocked(RenderObject));
+}
+
+bool RendererSystem::ConfigureRenderObjectPassesLocked(
+    const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+    const bool Visible,
+    const bool CastShadows)
+{
+    if (!m_graphics || !RenderObject)
+    {
+        return false;
+    }
+
+    bool HasAnyTargetPass = false;
+    const auto ViewportIds = m_graphics->RenderViewportIDs();
+    const auto ConfigureViewportPasses = [&](const auto ViewportId) {
+        if (m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+        {
+            HasAnyTargetPass = true;
+            if (Visible)
+            {
+                if (m_graphics->AddRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+                {
+                    static_cast<void>(TrackRegisteredRenderObjectLocked(RenderObject));
+                }
+            }
+            else
+            {
+                if (m_graphics->RemoveRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
+                {
+                    PruneTrackedRenderObjectIfUnreferencedLocked(RenderObject.get());
+                }
+            }
+        }
+        if (m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+        {
+            HasAnyTargetPass = true;
+            if (Visible && CastShadows)
+            {
+                if (m_graphics->AddRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+                {
+                    static_cast<void>(TrackRegisteredRenderObjectLocked(RenderObject));
+                }
+            }
+            else
+            {
+                if (m_graphics->RemoveRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
+                {
+                    PruneTrackedRenderObjectIfUnreferencedLocked(RenderObject.get());
+                }
+            }
+        }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        if (m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::EditorID))
+        {
+            HasAnyTargetPass = true;
+            if (Visible)
+            {
+                if (m_graphics->AddRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::EditorID))
+                {
+                    static_cast<void>(TrackRegisteredRenderObjectLocked(RenderObject));
+                }
+            }
+            else
+            {
+                if (m_graphics->RemoveRenderObject(RenderObject, ViewportId, SnAPI::Graphics::ERenderPassType::EditorID))
+                {
+                    PruneTrackedRenderObjectIfUnreferencedLocked(RenderObject.get());
+                }
+            }
+        }
+#endif
+    };
+
+    for (const auto ViewportId : ViewportIds)
+    {
+        ConfigureViewportPasses(ViewportId);
+    }
+
+    RenderObject->SetCastsShadows(CastShadows);
+    return HasAnyTargetPass;
+}
+
+bool RendererSystem::AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                     const std::uint64_t ViewportID,
+                                     const SnAPI::Graphics::ERenderPassType PassType)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject || ViewportID == 0 || PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+    {
+        return false;
+    }
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    if (!m_graphics->AddRenderObject(SharedRenderObject, RendererViewportID, PassType))
+    {
+        return false;
+    }
+
+    static_cast<void>(TrackRegisteredRenderObjectLocked(SharedRenderObject));
+    return true;
+}
+
+bool RendererSystem::AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                     const SnAPI::UUID& PassID)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
@@ -1177,20 +1384,232 @@ bool RendererSystem::RegisterRenderObject(const std::weak_ptr<SnAPI::Graphics::I
         return false;
     }
 
-    m_graphics->RegisterRenderObject(SharedRenderObject);
-
-    const auto* RenderObjectPtr = SharedRenderObject.get();
-    const bool AlreadyTracked = std::ranges::any_of(m_registeredRenderObjects,
-                                                    [RenderObjectPtr](const std::weak_ptr<SnAPI::Graphics::IRenderObject>& Existing) {
-                                                        const auto ExistingShared = Existing.lock();
-                                                        return ExistingShared && ExistingShared.get() == RenderObjectPtr;
-                                                    });
-    if (!AlreadyTracked)
+    if (!m_graphics->AddRenderObject(SharedRenderObject, PassID))
     {
-        m_registeredRenderObjects.emplace_back(SharedRenderObject);
+        return false;
     }
+
+    static_cast<void>(TrackRegisteredRenderObjectLocked(SharedRenderObject));
     return true;
 }
+
+bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                        const std::uint64_t ViewportID,
+                                        const SnAPI::Graphics::ERenderPassType PassType)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject || ViewportID == 0 || PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+    {
+        return false;
+    }
+
+    const bool Removed = m_graphics->RemoveRenderObject(SharedRenderObject,
+                                                        static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID),
+                                                        PassType);
+    if (!Removed)
+    {
+        return false;
+    }
+
+    PruneTrackedRenderObjectIfUnreferencedLocked(SharedRenderObject.get());
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject
+            && Entry.RenderObject.get() == RenderObjectPtr
+            && Entry.ViewportID == ViewportID
+            && Entry.PassType == PassType)
+        {
+            Editor::RemoveEditorImmediateRenderObjectMetadata(RenderObjectPtr, Entry.PassType);
+        }
+    }
+    const auto ImmediateNewEnd = std::ranges::remove_if(m_editorImmediateRenderObjects,
+                                                         [RenderObjectPtr, ViewportID, PassType](const EditorImmediateRenderObjectEntry& Entry) {
+                                                             return Entry.RenderObject
+                                                                 && Entry.RenderObject.get() == RenderObjectPtr
+                                                                 && Entry.ViewportID == ViewportID
+                                                                 && Entry.PassType == PassType;
+                                                         }).begin();
+    if (ImmediateNewEnd != m_editorImmediateRenderObjects.end())
+    {
+        m_editorImmediateRenderObjects.erase(ImmediateNewEnd, m_editorImmediateRenderObjects.end());
+    }
+#endif
+
+    return true;
+}
+
+bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                        const SnAPI::UUID& PassID)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject)
+    {
+        return false;
+    }
+
+    const bool Removed = m_graphics->RemoveRenderObject(SharedRenderObject, PassID);
+    if (!Removed)
+    {
+        return false;
+    }
+
+    PruneTrackedRenderObjectIfUnreferencedLocked(SharedRenderObject.get());
+    return true;
+}
+
+bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!SharedRenderObject)
+    {
+        return false;
+    }
+
+    if (!m_graphics)
+    {
+        return false;
+    }
+
+    const bool RemovedAny = m_graphics->RemoveRenderObject(SharedRenderObject);
+    if (!RemovedAny)
+    {
+        return false;
+    }
+
+    static_cast<void>(UntrackRegisteredRenderObjectLocked(SharedRenderObject.get()));
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    for (const auto& Entry : m_editorImmediateRenderObjects)
+    {
+        if (Entry.RenderObject && Entry.RenderObject.get() == RenderObjectPtr)
+        {
+            Editor::RemoveEditorImmediateRenderObjectMetadata(RenderObjectPtr, Entry.PassType);
+        }
+    }
+    const auto ImmediateNewEnd = std::ranges::remove_if(m_editorImmediateRenderObjects,
+                                                         [RenderObjectPtr](const EditorImmediateRenderObjectEntry& Entry) {
+                                                             return !Entry.RenderObject || Entry.RenderObject.get() == RenderObjectPtr;
+                                                         }).begin();
+    if (ImmediateNewEnd != m_editorImmediateRenderObjects.end())
+    {
+        m_editorImmediateRenderObjects.erase(ImmediateNewEnd, m_editorImmediateRenderObjects.end());
+    }
+#endif
+
+    return true;
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool RendererSystem::QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                                      const std::uint64_t ViewportID,
+                                                      const SnAPI::Graphics::ERenderPassType PassType)
+{
+    return QueueEditorImmediateRenderObject(RenderObject, ViewportID, PassType, EditorImmediateRenderMetadata{});
+}
+
+bool RendererSystem::QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                                      const std::uint64_t ViewportID,
+                                                      const SnAPI::Graphics::ERenderPassType PassType,
+                                                      const EditorImmediateRenderMetadata& Metadata)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!m_graphics || !SharedRenderObject || ViewportID == 0 || PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+    {
+        return false;
+    }
+
+    const auto RendererViewportID = static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID);
+    if (!m_graphics->AddRenderObject(SharedRenderObject, RendererViewportID, PassType))
+    {
+        return false;
+    }
+    static_cast<void>(TrackRegisteredRenderObjectLocked(SharedRenderObject));
+    Editor::SetEditorImmediateRenderObjectMetadata(SharedRenderObject.get(), PassType, Metadata.IsGizmo, Metadata.AxisTag);
+
+    const auto* RenderObjectPtr = SharedRenderObject.get();
+    auto ExistingEntry = std::ranges::find_if(m_editorImmediateRenderObjects,
+                                              [RenderObjectPtr, ViewportID, PassType](const EditorImmediateRenderObjectEntry& Entry) {
+                                                  return Entry.RenderObject && Entry.RenderObject.get() == RenderObjectPtr
+                                                      && Entry.ViewportID == ViewportID
+                                                      && Entry.PassType == PassType;
+                                              });
+    if (ExistingEntry != m_editorImmediateRenderObjects.end())
+    {
+        ExistingEntry->Metadata = Metadata;
+    }
+    else
+    {
+        m_editorImmediateRenderObjects.push_back(EditorImmediateRenderObjectEntry{
+            .RenderObject = SharedRenderObject,
+            .ViewportID = ViewportID,
+            .PassType = PassType,
+            .Metadata = Metadata,
+        });
+    }
+
+    return true;
+}
+
+std::optional<std::uint32_t> RendererSystem::ReadRenderViewportObjectID(const std::uint64_t ViewportID,
+                                                                         const float NormalizedX,
+                                                                         const float NormalizedY,
+                                                                         const std::string_view ResourceName) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || ViewportID == 0 || ResourceName.empty())
+    {
+        return std::nullopt;
+    }
+
+    return m_graphics->ReadRenderViewportUintResource(static_cast<SnAPI::Graphics::RenderViewportID>(ViewportID),
+                                                      ResourceName,
+                                                      NormalizedX,
+                                                      NormalizedY);
+}
+
+std::shared_ptr<SnAPI::Graphics::IRenderObject> RendererSystem::ResolveRenderObjectByID(const std::uint32_t RenderObjectID) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics || RenderObjectID == 0)
+    {
+        return {};
+    }
+    return m_graphics->ResolveRenderObjectByID(RenderObjectID);
+}
+
+std::optional<std::uint32_t> RendererSystem::RenderObjectID(
+    const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    if (!m_graphics)
+    {
+        return std::nullopt;
+    }
+
+    const auto SharedRenderObject = RenderObject.lock();
+    if (!SharedRenderObject)
+    {
+        return std::nullopt;
+    }
+
+    return m_graphics->RenderObjectID(SharedRenderObject.get());
+}
+#endif
 
 bool RendererSystem::ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& RenderObject)
 {
@@ -1257,59 +1676,13 @@ std::shared_ptr<SnAPI::Graphics::Material> RendererSystem::DefaultShadowMaterial
     return m_defaultShadowMaterial;
 }
 
-bool RendererSystem::ConfigureRenderObjectPasses(SnAPI::Graphics::IRenderObject& RenderObject, const bool Visible, const bool CastShadows) const
+bool RendererSystem::ConfigureRenderObjectPasses(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
+                                                 const bool Visible,
+                                                 const bool CastShadows)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
-    if (!m_graphics)
-    {
-        return false;
-    }
-
-    bool ConfiguredAnyPass = false;
-    const auto ViewportIds = m_graphics->RenderViewportIDs();
-    const auto ConfigureViewportPasses = [&](const auto ViewportId) {
-        if (auto* GBufferPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::GBuffer))
-        {
-            RenderObject.EnablePass(GBufferPass->ID(), Visible);
-            ConfiguredAnyPass = true;
-        }
-        if (auto* ShadowPass = m_graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Shadow))
-        {
-            RenderObject.EnablePass(ShadowPass->ID(), Visible && CastShadows);
-            ConfiguredAnyPass = true;
-        }
-    };
-
-    for (const auto ViewportId : ViewportIds)
-    {
-        const auto PresetIt = m_registeredViewportPassGraphs.find(static_cast<std::uint64_t>(ViewportId));
-        if (PresetIt == m_registeredViewportPassGraphs.end())
-        {
-            continue;
-        }
-
-        if (PresetIt->second == ERenderViewportPassGraphPreset::UiPresentOnly ||
-            PresetIt->second == ERenderViewportPassGraphPreset::None)
-        {
-            continue;
-        }
-
-        ConfigureViewportPasses(ViewportId);
-    }
-
-    if (!ConfiguredAnyPass)
-    {
-        // Fallback: if pass-graph preset tracking is missing/stale, configure any viewport
-        // that actually exposes scene passes so primitives and runtime assets remain visible.
-        for (const auto ViewportId : ViewportIds)
-        {
-            ConfigureViewportPasses(ViewportId);
-        }
-    }
-
-    RenderObject.SetCastsShadows(CastShadows);
-    return ConfiguredAnyPass;
+    return ConfigureRenderObjectPassesLocked(RenderObject, Visible, CastShadows);
 }
 
 std::uint64_t RendererSystem::RenderViewportPassGraphRevision() const
@@ -2007,6 +2380,28 @@ void RendererSystem::EndFrame()
         }
     }
 
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (!m_editorImmediateRenderObjects.empty())
+    {
+        SNAPI_GF_PROFILE_SCOPE("Renderer.ClearEditorImmediateRenderObjects", "Rendering");
+        for (const auto& Entry : m_editorImmediateRenderObjects)
+        {
+            if (!Entry.RenderObject || Entry.ViewportID == 0 || Entry.PassType == SnAPI::Graphics::ERenderPassType::UnKnown)
+            {
+                continue;
+            }
+
+            Editor::RemoveEditorImmediateRenderObjectMetadata(Entry.RenderObject.get(), Entry.PassType);
+            m_graphics->RemoveRenderObject(Entry.RenderObject,
+                                           static_cast<SnAPI::Graphics::RenderViewportID>(Entry.ViewportID),
+                                           Entry.PassType);
+            PruneTrackedRenderObjectIfUnreferencedLocked(Entry.RenderObject.get());
+        }
+        m_editorImmediateRenderObjects.clear();
+        Editor::ClearEditorImmediateRenderObjectMetadata();
+    }
+#endif
+
     if (auto* Camera = m_graphics->ActiveCamera())
     {
         SNAPI_GF_PROFILE_SCOPE("Renderer.SaveCameraFrameState", "Rendering");
@@ -2082,6 +2477,10 @@ void RendererSystem::ShutdownUnlocked()
     m_hasPendingSwapChainResize = false;
     m_pendingSwapChainStableFrames = 0;
     m_registeredRenderObjects.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    m_editorImmediateRenderObjects.clear();
+    Editor::ClearEditorImmediateRenderObjectMetadata();
+#endif
 
     if (m_graphics)
     {
@@ -3239,7 +3638,11 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
             {
                 SetViewportFinalColorResource("UI_Opaque");
             }
-            else if (Preset == ERenderViewportPassGraphPreset::DefaultWorld)
+            else if (Preset == ERenderViewportPassGraphPreset::DefaultWorld
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                     || Preset == ERenderViewportPassGraphPreset::EditorWorld
+#endif
+                     )
             {
                 // Match legacy PresentPass behavior: present the fully composited LDR output.
                 SetViewportFinalColorResource("Composite_Out");
@@ -3295,11 +3698,20 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         return true;
     }
 
-    if (Preset != ERenderViewportPassGraphPreset::DefaultWorld)
+    if (Preset != ERenderViewportPassGraphPreset::DefaultWorld
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        && Preset != ERenderViewportPassGraphPreset::EditorWorld
+#endif
+        )
     {
         SNAPI_RENDERER_LOG_WARNING("Unsupported viewport pass graph preset value %u.", static_cast<unsigned>(Preset));
         return false;
     }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    const bool IsEditorWorldPreset = (Preset == ERenderViewportPassGraphPreset::EditorWorld);
+#else
+    const bool IsEditorWorldPreset = false;
+#endif
 
     if (!EnsureLightManagerInternal())
     {
@@ -3322,6 +3734,44 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {GBufferPass::PropertyNames::ShadersReductionProgram.data(), "TriangleReduction"},
         {GBufferPass::PropertyNames::ShadersInstanceCullProgram.data(), "InstanceCulling"},
         {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(), DepthConfig{.WriteDepth = true, .DepthTest = true, .WriteResourceName = "GBuffer_Depth"}}};
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    auto EditorIDPassProperties = PassProperties{
+        {AutoGeneratedPass::PropertyNames::PassName.data(), "Editor ID Pass"},
+        {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(),
+         std::string{SnAPI::GameFramework::Editor::GFEditorIDContract::ShadingModelModuleName}},
+        {SnAPI::GameFramework::Editor::GFEditorIDPass::PropertyNames::MaterialsModule.data(), "GFDefaultEditorIDMaterial"},
+        {GBufferPass::PropertyNames::ShadersCullProgram.data(), "TriangleCulling"},
+        {GBufferPass::PropertyNames::ShadersGenDrawIndirectProgram.data(), "GenDrawIndirect"},
+        {GBufferPass::PropertyNames::ShadersReductionProgram.data(), "TriangleReduction"},
+        {GBufferPass::PropertyNames::ShadersInstanceCullProgram.data(), "InstanceCulling"},
+        {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
+         DepthConfig{.WriteDepth = true, .DepthTest = true, .WriteResourceName = "EditorID_Depth"}},
+    };
+
+    auto EditorOverlayPassProperties = PassProperties{
+        {AutoGeneratedPass::PropertyNames::PassName.data(), "Editor Overlay Pass"},
+        {AutoGeneratedPass::PropertyNames::MaterialsShadingModel.data(),
+         std::string{SnAPI::GameFramework::Editor::GFEditorOverlayContract::ShadingModelModuleName}},
+        {SnAPI::GameFramework::Editor::GFEditorOverlayPass::PropertyNames::MaterialsModule.data(), "GFDefaultEditorOverlayMaterial"},
+        {GBufferPass::PropertyNames::ShadersCullProgram.data(), "TriangleCulling"},
+        {GBufferPass::PropertyNames::ShadersGenDrawIndirectProgram.data(), "GenDrawIndirect"},
+        {GBufferPass::PropertyNames::ShadersReductionProgram.data(), "TriangleReduction"},
+        {GBufferPass::PropertyNames::ShadersInstanceCullProgram.data(), "InstanceCulling"},
+        {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
+         DepthConfig{
+             .WriteDepth = true,
+             .SampleDepth = true,
+             .DepthTest = true,
+             .ClearDepth = 0.0f,
+             .ReadResourceName = "GBuffer_Depth", // Sample this resource
+             .WriteResourceName = "EditorOverlay_Depth", // Write/Test this resource
+             .ReadLayout = EImageLayout::DepthStencilReadOnlyOptimal}},
+        {AutoGeneratedPass::PropertyNames::PassOutputResourceNameOverrides.data(),
+         ResourceNameMappings{
+             {"Overlay_Out", "EditorOverlay_Color"}}},
+    };
+#endif
 
     auto ShadingPassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Shading Pass"},
@@ -3357,6 +3807,12 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data(),
          ResourceNameMappings{{"UI_Out", "UI_Opaque"}}},
     };
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (IsEditorWorldPreset)
+    {
+        CompositePassProperties[FullScreenPass::PropertyNames::MaterialsModule.data()] = std::string{"GFEditorCompositeMaterial"};
+    }
+#endif
 
     auto AtmosphereCompositePassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Atmosphere Composite Pass"},
@@ -3364,6 +3820,11 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         {FullScreenPass::PropertyNames::MaterialsModule.data(), "AtmosCompositeMaterial"},
         {AutoGeneratedPass::PropertyNames::PassDepthConfig.data(),
          DepthConfig{.WriteDepth = false, .SampleDepth = true, .DepthTest = false, .ReadResourceName = "GBuffer_Depth", .ReadLayout = EImageLayout::DepthStencilReadOnlyOptimal}}};
+    if (!m_settings.EnableSsr)
+    {
+        AtmosphereCompositePassProperties[AutoGeneratedPass::PropertyNames::PassInputResourceNameOverrides.data()] =
+            ResourceNameMappings{{"Shading_SSR", "Shading_Out"}};
+    }
 
     auto AtmospherePassProperties = PassProperties{
         {AutoGeneratedPass::PropertyNames::PassName.data(), "Atmosphere Pass"},
@@ -3385,6 +3846,14 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
     if (TrackDefaultPassPointers)
     {
         m_gbufferPass = RegisteredGBufferPass;
+    }
+
+    if (IsEditorWorldPreset)
+    {
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<SnAPI::GameFramework::Editor::GFEditorIDPass>(std::move(EditorIDPassProperties)));
+        m_graphics->RegisterPass(RendererViewportID, std::make_unique<SnAPI::GameFramework::Editor::GFEditorOverlayPass>(std::move(EditorOverlayPassProperties)));
+#endif
     }
 
     if (m_settings.EnableSsao)
@@ -3448,7 +3917,9 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
 
     if (m_settings.EnableAtmosphere)
     {
-        m_graphics->RegisterPass(RendererViewportID, std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties)));
+        auto Atmosphere = std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties));
+        Atmosphere->SetFeature(AtmospherePass::Feature::World, m_settings.AtmosphereWorldMode);
+        m_graphics->RegisterPass(RendererViewportID, std::move(Atmosphere));
         m_graphics->RegisterPass(RendererViewportID, std::make_unique<CompositePass>(std::move(AtmosphereCompositePassProperties)));
     }
 

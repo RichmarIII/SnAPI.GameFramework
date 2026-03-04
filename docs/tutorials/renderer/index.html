@@ -1200,7 +1200,7 @@
 <li>component creates one per-instance <code>MeshRenderObject</code></li>
 <li>default GBuffer/Shadow material instances are populated through <code>RendererSystem</code></li>
 <li>pass visibility (<code>Visible</code>) and shadow participation (<code>CastShadows</code>) are applied per render object</li>
-<li>registration is done through <code>RendererSystem::RegisterRenderObject(...)</code></li>
+<li>pass routing is applied through <code>RendererSystem::ConfigureRenderObjectPasses(...)</code></li> <li>object teardown removes pass links through <code>RendererSystem::RemoveRenderObject(...)</code></li>
 </ul>
 <h2 id="6-skeletalrigid-animation-rendering-skeletalmeshcomponent">6. Skeletal/Rigid Animation Rendering (<code>SkeletalMeshComponent</code>)<a class="headerlink" href="#6-skeletalrigid-animation-rendering-skeletalmeshcomponent" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;AnimatedActor&quot;</span><span class="p">);</span>
