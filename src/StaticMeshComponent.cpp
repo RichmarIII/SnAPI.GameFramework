@@ -372,11 +372,12 @@ void StaticMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
         return;
     }
 
-    if (Name == "MaterialInstanceOverrides")
-    {
-        ApplyConfiguredMaterialInstances(*m_renderObject);
-        ApplySharedMaterialInstances(*m_renderObject);
-    }
+    // Always refresh material bindings for settings edits in editor mode.
+    // Some property panels emit coarse field names (for example "Settings")
+    // instead of leaf names, so only checking "MaterialInstanceOverrides"
+    // can miss override updates.
+    ApplyConfiguredMaterialInstances(*m_renderObject);
+    ApplySharedMaterialInstances(*m_renderObject);
 
     if (m_settings.SyncFromTransform)
     {
@@ -416,6 +417,11 @@ bool StaticMeshComponent::EnsureMeshLoaded()
     if (!Renderer || !Renderer->IsInitialized())
     {
         return false;
+    }
+
+    if (m_renderObject)
+    {
+        return true;
     }
 
     // This means a stream source was manually set on this component

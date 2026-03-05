@@ -19,6 +19,7 @@
 #include "RenderAssetPayloads.h"
 #include "RenderAssetImportSettings.h"
 #include "RenderAssetRuntime.h"
+#include "RenderAssetSharedResources.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TransformComponent.h"
@@ -33,6 +34,7 @@
 #include <MaterialRuntimeDescriptor.hpp>
 #include <TMaterialFor.hpp>
 #include "StaticMeshComponent.h"
+#include "WorldRenderSettings.h"
 #endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include "ColliderComponent.h"
@@ -1732,6 +1734,85 @@ void ConfigureRendererShaderSearchRootForAssetRoot(GameRuntime& Runtime, const s
     }
 }
 
+[[nodiscard]] std::string NormalizeProjectPathField(const std::string_view RawValue)
+{
+    std::string Value = TrimCopy(std::string(RawValue));
+    if (Value.empty())
+    {
+        return {};
+    }
+
+    std::replace(Value.begin(), Value.end(), '\\', '/');
+    return std::filesystem::path(Value).lexically_normal().generic_string();
+}
+
+[[nodiscard]] std::string ToProjectRelativePathField(const std::string_view RawValue, const std::filesystem::path& BaseRoot)
+{
+    std::string Value = TrimCopy(std::string(RawValue));
+    if (Value.empty())
+    {
+        return {};
+    }
+    if (HasUriScheme(Value))
+    {
+        return Value;
+    }
+
+    std::filesystem::path ValuePath = std::filesystem::path(Value).lexically_normal();
+    if (ValuePath.is_absolute() && !BaseRoot.empty())
+    {
+        std::error_code RelativeError{};
+        std::filesystem::path RelativePath = std::filesystem::relative(ValuePath, BaseRoot, RelativeError);
+        if (!RelativeError && !RelativePath.empty())
+        {
+            const std::string RelativeText = RelativePath.generic_string();
+            if (!RelativeText.starts_with("../") && RelativeText != "..")
+            {
+                return std::filesystem::path(RelativeText).lexically_normal().generic_string();
+            }
+        }
+    }
+
+    return ValuePath.generic_string();
+}
+
+[[nodiscard]] std::expected<void, std::string> WriteProjectConfigFile(const std::filesystem::path& ProjectFilePath,
+                                                                      const std::string_view Name,
+                                                                      const std::string_view AssetRoot,
+                                                                      const std::string_view StartupLevelPack,
+                                                                      const std::string_view DefaultRenderSettingsAssetId)
+{
+    std::ofstream ProjectFile(ProjectFilePath, std::ios::binary | std::ios::trunc);
+    if (!ProjectFile.is_open())
+    {
+        return std::unexpected("Failed to open project file for writing");
+    }
+
+    ProjectFile << "{\n";
+    ProjectFile << "  \"version\": " << kProjectConfigVersion << ",\n";
+    ProjectFile << "  \"name\": \"" << JsonEscape(Name) << "\",\n";
+    ProjectFile << "  \"assetRoot\": \"" << JsonEscape(AssetRoot) << "\",\n";
+    ProjectFile << "  \"startupLevelPack\": \"" << JsonEscape(StartupLevelPack) << "\",\n";
+    ProjectFile << "  \"defaultRenderSettings\": \"" << JsonEscape(DefaultRenderSettingsAssetId) << "\"\n";
+    ProjectFile << "}\n";
+
+    if (!ProjectFile.good())
+    {
+        return std::unexpected("Failed to write project file");
+    }
+    ProjectFile.flush();
+    if (!ProjectFile.good())
+    {
+        return std::unexpected("Failed to flush project file");
+    }
+    ProjectFile.close();
+    if (!ProjectFile.good())
+    {
+        return std::unexpected("Failed to close project file");
+    }
+    return {};
+}
+
 struct DefaultShapePackSpec
 {
     const char* PackFileName = "";
@@ -2413,6 +2494,9 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     m_editorStarterLevelTemplatePackPath.clear();
     m_editorStarterScriptTemplatePath.clear();
     m_currentProject = {};
+    m_loadedDefaultRenderSettingsNode = {};
+    m_defaultRenderSettingsApplyPending = false;
+    m_defaultRenderSettingsLastPassGraphRevision = 0;
     ClearAssetEditorState();
 
     if (const std::filesystem::path ExistingAssetRoot = SPathResolver::Instance().AssetRoot();
@@ -2481,6 +2565,74 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     return Ok();
 }
 
+void EditorAssetService::Tick(EditorServiceContext& Context, float DeltaSeconds)
+{
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    (void)DeltaSeconds;
+    auto* RuntimeWorld = Context.Runtime().WorldPtr();
+    if (!RuntimeWorld)
+    {
+        return;
+    }
+
+    const std::string DefaultSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
+    if (DefaultSettingsAssetId.empty())
+    {
+        return;
+    }
+
+    BaseNode* LoadedNode = nullptr;
+    if (!m_loadedDefaultRenderSettingsNode.IsNull())
+    {
+        LoadedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+        if (!LoadedNode)
+        {
+            if (auto HandleResult = RuntimeWorld->NodeHandleById(m_loadedDefaultRenderSettingsNode.Id); HandleResult)
+            {
+                m_loadedDefaultRenderSettingsNode = *HandleResult;
+                LoadedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+            }
+            else
+            {
+                m_loadedDefaultRenderSettingsNode = {};
+            }
+        }
+    }
+
+    if (!LoadedNode)
+    {
+        (void)LoadProjectDefaultRenderSettings(Context);
+        LoadedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+        if (!LoadedNode)
+        {
+            return;
+        }
+    }
+
+    const std::uint64_t PassGraphRevision = RuntimeWorld->Renderer().RenderViewportPassGraphRevision();
+    const bool ShouldReapply = m_defaultRenderSettingsApplyPending
+                               || (PassGraphRevision != m_defaultRenderSettingsLastPassGraphRevision);
+    if (!ShouldReapply)
+    {
+        return;
+    }
+
+    m_defaultRenderSettingsLastPassGraphRevision = PassGraphRevision;
+    if (auto* SettingsNode = NodeCast<WorldRenderSettings>(LoadedNode))
+    {
+        SettingsNode->OnCreate();
+        m_defaultRenderSettingsApplyPending = false;
+    }
+    else
+    {
+        m_loadedDefaultRenderSettingsNode = {};
+    }
+#else
+    (void)Context;
+    (void)DeltaSeconds;
+#endif
+}
+
 void EditorAssetService::Shutdown(EditorServiceContext& Context)
 {
     (void)Context;
@@ -2501,6 +2653,9 @@ void EditorAssetService::Shutdown(EditorServiceContext& Context)
     m_editorStarterLevelTemplatePackPath.clear();
     m_editorStarterScriptTemplatePath.clear();
     m_currentProject = {};
+    m_loadedDefaultRenderSettingsNode = {};
+    m_defaultRenderSettingsApplyPending = false;
+    m_defaultRenderSettingsLastPassGraphRevision = 0;
     ClearAssetEditorState();
 }
 
@@ -2828,6 +2983,8 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
     }
 
     const std::string AssetKeySnapshot = Asset->Key;
+    const bool bTouchesMaterialRuntimeCache =
+        Asset->AssetKind == AssetKindMaterial() || Asset->AssetKind == AssetKindMaterialInstance();
 
     if (Asset->IsRuntime)
     {
@@ -2860,6 +3017,14 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError, SaveResult.error()));
         }
+
+        m_assetManager->ClearCache();
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        if (bTouchesMaterialRuntimeCache)
+        {
+            InvalidateRuntimeMaterialCaches();
+        }
+#endif
 
         m_assetRenameOverrides.erase(Asset->AssetId);
         m_assetPayloadOverrides.erase(Asset->AssetId);
@@ -2944,6 +3109,12 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         }
     }
     m_assetManager->ClearCache();
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (bTouchesMaterialRuntimeCache)
+    {
+        InvalidateRuntimeMaterialCaches();
+    }
+#endif
 
     m_assetRenameOverrides.erase(Asset->AssetId);
     m_assetPayloadOverrides.erase(Asset->AssetId);
@@ -5165,6 +5336,9 @@ Result EditorAssetService::LoadProjectStartupLevel(EditorServiceContext& Context
     }
 
     WorldPtr->Clear();
+    m_loadedDefaultRenderSettingsNode = {};
+    m_defaultRenderSettingsApplyPending = false;
+    m_defaultRenderSettingsLastPassGraphRevision = 0;
 
     std::error_code Error{};
     if (!std::filesystem::exists(StartupPackPath, Error) || Error)
@@ -5313,30 +5487,13 @@ Result EditorAssetService::CreateProject(EditorServiceContext& Context,
         }
     }
 
-    std::ofstream ProjectFile(ProjectFilePath, std::ios::binary | std::ios::trunc);
-    if (!ProjectFile.is_open())
+    if (auto WriteResult = WriteProjectConfigFile(ProjectFilePath,
+                                                  Name,
+                                                  std::string(kDefaultProjectAssetRoot),
+                                                  std::string(kDefaultProjectStartupLevelPack),
+                                                  std::string{}); !WriteResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create project file"));
-    }
-    ProjectFile << "{\n";
-    ProjectFile << "  \"version\": " << kProjectConfigVersion << ",\n";
-    ProjectFile << "  \"name\": \"" << JsonEscape(Name) << "\",\n";
-    ProjectFile << "  \"assetRoot\": \"" << JsonEscape(std::string(kDefaultProjectAssetRoot)) << "\",\n";
-    ProjectFile << "  \"startupLevelPack\": \"" << JsonEscape(std::string(kDefaultProjectStartupLevelPack)) << "\"\n";
-    ProjectFile << "}\n";
-    if (!ProjectFile.good())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to write project file"));
-    }
-    ProjectFile.flush();
-    if (!ProjectFile.good())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to flush project file"));
-    }
-    ProjectFile.close();
-    if (!ProjectFile.good())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to close project file"));
+        return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
     }
 
     auto LoadResult = LoadProject(Context, ProjectFilePath.string());
@@ -5414,6 +5571,10 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     {
         AssetRootField = std::string(kDefaultProjectAssetRoot);
     }
+    else if (!HasUriScheme(AssetRootField))
+    {
+        AssetRootField = NormalizeProjectPathField(AssetRootField);
+    }
 
     std::string StartupLevelPackField = std::string(kDefaultProjectStartupLevelPack);
     (void)JsonTryReadStringField(JsonText, "startupLevelPack", StartupLevelPackField);
@@ -5422,6 +5583,14 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     {
         StartupLevelPackField = std::string(kDefaultProjectStartupLevelPack);
     }
+    else if (!HasUriScheme(StartupLevelPackField))
+    {
+        StartupLevelPackField = NormalizeProjectPathField(StartupLevelPackField);
+    }
+
+    std::string DefaultRenderSettingsField{};
+    (void)JsonTryReadStringField(JsonText, "defaultRenderSettings", DefaultRenderSettingsField);
+    DefaultRenderSettingsField = TrimCopy(DefaultRenderSettingsField);
 
     const std::filesystem::path ProjectRoot = ProjectFile.parent_path();
     std::filesystem::path ResolvedAssetRoot = std::filesystem::path(AssetRootField);
@@ -5457,8 +5626,10 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     m_currentProject.Name = Name;
     m_currentProject.ProjectFilePath = ProjectFile.string();
     m_currentProject.ProjectRootDirectory = ProjectRoot.string();
+    m_currentProject.AssetRoot = AssetRootField;
     m_currentProject.AssetRootDirectory = ResolvedAssetRoot.string();
     m_currentProject.StartupLevelPack = StartupLevelPackField;
+    m_currentProject.DefaultRenderSettingsAssetId = DefaultRenderSettingsField;
 
     std::filesystem::path StartupPackPath = std::filesystem::path(StartupLevelPackField);
     if (HasUriScheme(StartupLevelPackField))
@@ -5520,8 +5691,158 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     {
         return LoadStartupResult;
     }
+    if (Result LoadDefaultsResult = LoadProjectDefaultRenderSettings(Context); !LoadDefaultsResult)
+    {
+        return LoadDefaultsResult;
+    }
 
     m_statusMessage = "Loaded project: " + m_currentProject.Name;
+    return Ok();
+}
+
+Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
+                                               const std::string_view ProjectName,
+                                               const std::string_view StartupLevelPack,
+                                               const std::string_view DefaultRenderSettingsAssetId)
+{
+    if (!m_currentProject.IsLoaded || m_currentProject.ProjectFilePath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "No loaded project to save settings for"));
+    }
+
+    const std::filesystem::path ProjectFilePath = std::filesystem::path(m_currentProject.ProjectFilePath).lexically_normal();
+    const std::filesystem::path ProjectRoot = ProjectFilePath.parent_path();
+
+    std::string NextName = TrimCopy(std::string(ProjectName));
+    if (NextName.empty())
+    {
+        NextName = TrimCopy(m_currentProject.Name);
+    }
+    if (NextName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project name cannot be empty"));
+    }
+
+    std::string NextAssetRoot = TrimCopy(m_currentProject.AssetRoot);
+    if (NextAssetRoot.empty())
+    {
+        if (!m_currentProject.AssetRootDirectory.empty())
+        {
+            NextAssetRoot = ToProjectRelativePathField(m_currentProject.AssetRootDirectory, ProjectRoot);
+        }
+        if (NextAssetRoot.empty())
+        {
+            NextAssetRoot = std::string(kDefaultProjectAssetRoot);
+        }
+    }
+
+    std::filesystem::path AssetRootPath = std::filesystem::path(m_currentProject.AssetRootDirectory);
+    if (AssetRootPath.empty())
+    {
+        AssetRootPath = std::filesystem::path(NextAssetRoot);
+        if (!HasUriScheme(NextAssetRoot) && !AssetRootPath.is_absolute())
+        {
+            AssetRootPath = ProjectRoot / AssetRootPath;
+        }
+    }
+    AssetRootPath = AssetRootPath.lexically_normal();
+
+    std::string NextStartupLevelPack = TrimCopy(std::string(StartupLevelPack));
+    if (NextStartupLevelPack.empty())
+    {
+        NextStartupLevelPack = TrimCopy(m_currentProject.StartupLevelPack);
+    }
+    if (NextStartupLevelPack.empty())
+    {
+        NextStartupLevelPack = std::string(kDefaultProjectStartupLevelPack);
+    }
+    if (!HasUriScheme(NextStartupLevelPack))
+    {
+        NextStartupLevelPack = ToProjectRelativePathField(NextStartupLevelPack, AssetRootPath);
+    }
+
+    std::string NextDefaultRenderSettingsAssetId = TrimCopy(std::string(DefaultRenderSettingsAssetId));
+    if (NextDefaultRenderSettingsAssetId.empty())
+    {
+        NextDefaultRenderSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
+    }
+
+    if (auto WriteResult = WriteProjectConfigFile(ProjectFilePath,
+                                                  NextName,
+                                                  NextAssetRoot,
+                                                  NextStartupLevelPack,
+                                                  NextDefaultRenderSettingsAssetId); !WriteResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
+    }
+
+    m_currentProject.Name = std::move(NextName);
+    m_currentProject.AssetRoot = std::move(NextAssetRoot);
+    m_currentProject.StartupLevelPack = std::move(NextStartupLevelPack);
+    m_currentProject.DefaultRenderSettingsAssetId = std::move(NextDefaultRenderSettingsAssetId);
+
+    if (Result LoadDefaultsResult = LoadProjectDefaultRenderSettings(Context); !LoadDefaultsResult)
+    {
+        return LoadDefaultsResult;
+    }
+
+    m_statusMessage = "Saved project settings: " + m_currentProject.Name;
+    return Ok();
+}
+
+Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext& Context)
+{
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto* RuntimeWorld = Context.Runtime().WorldPtr();
+    if (!RuntimeWorld || !m_assetManager)
+    {
+        return Ok();
+    }
+
+    if (!m_loadedDefaultRenderSettingsNode.IsNull())
+    {
+        (void)RuntimeWorld->DestroyNode(m_loadedDefaultRenderSettingsNode);
+        m_loadedDefaultRenderSettingsNode = {};
+    }
+    m_defaultRenderSettingsApplyPending = false;
+    // Force one deferred re-apply in Tick() after initial load.
+    // Editor viewport pass graphs can be registered after this call.
+    m_defaultRenderSettingsLastPassGraphRevision = 0;
+
+    const std::string DefaultSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
+    if (DefaultSettingsAssetId.empty())
+    {
+        return Ok();
+    }
+
+    TAssetRef<WorldRenderSettings> SettingsRef{};
+    SettingsRef.EditAssetId() = DefaultSettingsAssetId;
+    auto InstantiateResult = SettingsRef.Instantiate(*m_assetManager, *RuntimeWorld);
+    if (!InstantiateResult)
+    {
+        m_statusMessage = "Default render settings load failed: " + InstantiateResult.error();
+        m_defaultRenderSettingsApplyPending = false;
+    }
+    else
+    {
+        m_loadedDefaultRenderSettingsNode = *InstantiateResult;
+        if (auto* CreatedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+            auto* SettingsNode = NodeCast<WorldRenderSettings>(CreatedNode))
+        {
+            // Apply immediately for already-ready pass graphs.
+            SettingsNode->OnCreate();
+            // Also schedule one deferred apply when the pass graph revision is available/stable.
+            m_defaultRenderSettingsApplyPending = true;
+        }
+        else
+        {
+            m_loadedDefaultRenderSettingsNode = {};
+            m_defaultRenderSettingsApplyPending = false;
+        }
+    }
+#else
+    (void)Context;
+#endif
     return Ok();
 }
 

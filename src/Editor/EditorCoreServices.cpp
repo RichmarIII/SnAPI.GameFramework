@@ -1918,8 +1918,18 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         {
             ProjectResult = AssetService->LoadProject(Context, Request.ProjectFilePath);
         }
+        else if (Request.Action == EditorLayout::EProjectAction::SaveSettings)
+        {
+            ProjectResult = AssetService->SaveProjectSettings(
+                Context,
+                Request.ProjectName,
+                Request.StartupLevelPack,
+                Request.DefaultRenderSettingsAssetId);
+        }
 
-        if (ProjectResult)
+        if (ProjectResult &&
+            (Request.Action == EditorLayout::EProjectAction::CreateNew ||
+             Request.Action == EditorLayout::EProjectAction::OpenExisting))
         {
             (void)SceneService->EnsureEditorCamera(Context);
             SelectionService->Model().Clear();
@@ -2195,6 +2205,19 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     if (!AssetService || !IconService)
     {
         return;
+    }
+
+    {
+        const auto& CurrentProject = AssetService->CurrentProject();
+        EditorLayout::ProjectState ProjectState{};
+        ProjectState.IsLoaded = CurrentProject.IsLoaded;
+        ProjectState.Name = CurrentProject.Name;
+        ProjectState.ProjectFilePath = CurrentProject.ProjectFilePath;
+        ProjectState.ProjectRootDirectory = CurrentProject.ProjectRootDirectory;
+        ProjectState.AssetRootDirectory = CurrentProject.AssetRootDirectory;
+        ProjectState.StartupLevelPack = CurrentProject.StartupLevelPack;
+        ProjectState.DefaultRenderSettingsAssetId = CurrentProject.DefaultRenderSettingsAssetId;
+        m_layout.SetProjectState(std::move(ProjectState));
     }
 
     const auto& Assets = AssetService->Assets();

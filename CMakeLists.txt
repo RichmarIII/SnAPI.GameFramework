@@ -119,6 +119,14 @@ set(SNAPI_GF_SOURCES
     src/LocalPlayer.cpp
     src/LocalPlayerService.cpp
     src/MultiplayerConfigNode.cpp
+    src/SSAOParamsNode.cpp
+    src/SSRParamsNode.cpp
+    src/BloomParamsNode.cpp
+    src/AtmosphereParamsNode.cpp
+    src/AtmosphereCompositeParamsNode.cpp
+    src/HeightFogParamsNode.cpp
+    src/ToneMapParamsNode.cpp
+    src/WorldRenderSettings.cpp
     src/PawnBase.cpp
     src/PlayerStart.cpp
     src/NetworkSystem.cpp

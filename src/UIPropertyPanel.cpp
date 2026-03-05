@@ -13,7 +13,15 @@
 #include "PawnBase.h"
 #include "RenderAssetRuntime.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "AtmosphereCompositeParamsNode.h"
+#include "AtmosphereParamsNode.h"
+#include "BloomParamsNode.h"
+#include "HeightFogParamsNode.h"
+#include "SSAOParamsNode.h"
+#include "SSRParamsNode.h"
 #include "StaticMeshComponent.h"
+#include "ToneMapParamsNode.h"
+#include "WorldRenderSettings.h"
 #endif
 #include "SubClassOf.h"
 
@@ -59,6 +67,9 @@ constexpr float kValueLaneRatio = 1.8f;
 constexpr float kRowPadding = 4.0f;
 constexpr float kAxisTagWidth = 12.0f;
 constexpr float kVectorGap = 2.0f;
+constexpr int kFormatNumberPrecision = 9;
+constexpr uint32_t kFloatEditorPrecision = 7u;
+constexpr uint32_t kDoubleEditorPrecision = 9u;
 
 using SnAPI::UI::Color;
 
@@ -383,7 +394,7 @@ bool TryWriteAssetRefPayloadSelection(
 [[nodiscard]] std::string FormatNumber(const double Value)
 {
   std::ostringstream stream;
-  stream << std::fixed << std::setprecision(6) << Value;
+  stream << std::fixed << std::setprecision(kFormatNumberPrecision) << Value;
   std::string out = stream.str();
 
   while (!out.empty() && out.back() == '0')
@@ -1503,6 +1514,48 @@ void UIPropertyPanel::AddFieldEditor(
       {
         PopulateAssetRefOptions<TAssetRef<MaterialInstanceAssetRuntime>>(options);
       }
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<SSAOParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<SSRParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<BloomParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<BloomParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<AtmosphereParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<AtmosphereCompositeParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<HeightFogParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<ToneMapParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<WorldRenderSettings>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<WorldRenderSettings>>(options);
+      }
+#endif
       else if (editorKind == EEditorKind::AssetRef &&
                Field.FieldType == StaticTypeId<AssetRefPayload>())
       {
@@ -1548,8 +1601,16 @@ void UIPropertyPanel::AddFieldEditor(
       {
         numberField->Precision().Set(0u);
         numberField->Step().Set(1.0);
-        numberField->MinValue().Set(static_cast<double>(std::numeric_limits<int>::min()));
-        numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<int>::max()));
+        if (binding.FieldType == StaticTypeId<std::int64_t>())
+        {
+          numberField->MinValue().Set(static_cast<double>(std::numeric_limits<std::int64_t>::min()));
+          numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<std::int64_t>::max()));
+        }
+        else
+        {
+          numberField->MinValue().Set(static_cast<double>(std::numeric_limits<int>::min()));
+          numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<int>::max()));
+        }
       }
       else if (editorKind == EEditorKind::Unsigned)
       {
@@ -1567,14 +1628,14 @@ void UIPropertyPanel::AddFieldEditor(
       }
       else if (editorKind == EEditorKind::Float)
       {
-        numberField->Precision().Set(3u);
+        numberField->Precision().Set(kFloatEditorPrecision);
         numberField->Step().Set(0.01);
         numberField->MinValue().Set(-static_cast<double>(std::numeric_limits<float>::max()));
         numberField->MaxValue().Set(static_cast<double>(std::numeric_limits<float>::max()));
       }
       else
       {
-        numberField->Precision().Set(4u);
+        numberField->Precision().Set(kDoubleEditorPrecision);
         numberField->Step().Set(0.01);
         numberField->MinValue().Set(-std::numeric_limits<double>::max());
         numberField->MaxValue().Set(std::numeric_limits<double>::max());
@@ -1689,7 +1750,7 @@ void UIPropertyPanel::AddFieldEditor(
         }
         else
         {
-          numberField->Precision().Set(3u);
+          numberField->Precision().Set(kFloatEditorPrecision);
           numberField->Step().Set(0.01);
           numberField->MinValue().Set(-std::numeric_limits<double>::max());
           numberField->MaxValue().Set(std::numeric_limits<double>::max());
@@ -1952,7 +2013,7 @@ void UIPropertyPanel::AddMaterialScalarCollectionEditor(
       numberField->CaretColor().Set(kValueBorderFocused);
       numberField->SpinButtonColor().Set(Color{23, 27, 35, 252});
       numberField->SpinButtonHoverColor().Set(Color{31, 36, 46, 252});
-      numberField->Precision().Set(4u);
+      numberField->Precision().Set(kFloatEditorPrecision);
       numberField->Step().Set(0.01);
       numberField->MinValue().Set(-std::numeric_limits<double>::max());
       numberField->MaxValue().Set(std::numeric_limits<double>::max());
@@ -2143,7 +2204,7 @@ void UIPropertyPanel::AddMaterialVectorCollectionEditor(
         numberField->CaretColor().Set(kValueBorderFocused);
         numberField->SpinButtonColor().Set(Color{23, 27, 35, 252});
         numberField->SpinButtonHoverColor().Set(Color{31, 36, 46, 252});
-        numberField->Precision().Set(4u);
+        numberField->Precision().Set(kFloatEditorPrecision);
         numberField->Step().Set(0.01);
         numberField->MinValue().Set(-std::numeric_limits<double>::max());
         numberField->MaxValue().Set(std::numeric_limits<double>::max());
@@ -2937,7 +2998,7 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::Bool;
   }
-  if (Type == StaticTypeId<int>())
+  if (Type == StaticTypeId<int>() || Type == StaticTypeId<std::int64_t>())
   {
     return EEditorKind::Signed;
   }
@@ -3001,6 +3062,40 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::AssetRef;
   }
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+  if (Type == StaticTypeId<TAssetRef<SSAOParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<SSRParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<BloomParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+  if (Type == StaticTypeId<TAssetRef<WorldRenderSettings>>())
+  {
+    return EEditorKind::AssetRef;
+  }
+#endif
   if (Type == StaticTypeId<AssetRefPayload>())
   {
     return EEditorKind::AssetRef;
@@ -3314,6 +3409,80 @@ bool UIPropertyPanel::ReadFieldValue(
       OutBool = false;
       return true;
     }
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (Binding.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<SSAOParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<SSRParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<BloomParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<BloomParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<AtmosphereParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<AtmosphereCompositeParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<HeightFogParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<ToneMapParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<WorldRenderSettings>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<WorldRenderSettings>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+#endif
     if (Binding.FieldType == StaticTypeId<AssetRefPayload>())
     {
       if (!TryReadAssetRefPayloadSelectionLabel(constPointer, OutText))
@@ -3384,13 +3553,27 @@ bool UIPropertyPanel::ReadFieldValue(
     }
   case EEditorKind::Signed:
     {
-      const auto ref = value.AsConstRef<int>();
-      if (!ref)
+      if (Binding.FieldType == StaticTypeId<int>())
       {
-        return false;
+        const auto ref = value.AsConstRef<int>();
+        if (!ref)
+        {
+          return false;
+        }
+        OutText = std::to_string(ref->get());
+        return true;
       }
-      OutText = std::to_string(ref->get());
-      return true;
+      if (Binding.FieldType == StaticTypeId<std::int64_t>())
+      {
+        const auto ref = value.AsConstRef<std::int64_t>();
+        if (!ref)
+        {
+          return false;
+        }
+        OutText = std::to_string(ref->get());
+        return true;
+      }
+      return false;
     }
   case EEditorKind::Unsigned:
     {
@@ -3567,13 +3750,27 @@ bool UIPropertyPanel::WriteFieldValue(
   case EEditorKind::Signed:
     {
       std::int64_t parsed = 0;
-      if (!ParseSigned(TextValue, parsed) ||
-          parsed < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
-          parsed > static_cast<std::int64_t>(std::numeric_limits<int>::max()))
+      if (!ParseSigned(TextValue, parsed))
       {
         return false;
       }
-      return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(static_cast<int>(parsed)))));
+
+      if (Binding.FieldType == StaticTypeId<int>())
+      {
+        if (parsed < static_cast<std::int64_t>(std::numeric_limits<int>::min()) ||
+            parsed > static_cast<std::int64_t>(std::numeric_limits<int>::max()))
+        {
+          return false;
+        }
+        return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(static_cast<int>(parsed)))));
+      }
+
+      if (Binding.FieldType == StaticTypeId<std::int64_t>())
+      {
+        return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
+      }
+
+      return false;
     }
   case EEditorKind::Unsigned:
     {
@@ -3797,6 +3994,40 @@ bool UIPropertyPanel::WriteFieldValue(
       {
         return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<MaterialInstanceAssetRuntime>>(mutablePointer, selected));
       }
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+      if (Binding.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSAOParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSRParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<BloomParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<BloomParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<AtmosphereParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<AtmosphereCompositeParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<HeightFogParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<ToneMapParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<WorldRenderSettings>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<WorldRenderSettings>>(mutablePointer, selected));
+      }
+#endif
       if (Binding.FieldType == StaticTypeId<AssetRefPayload>())
       {
         return finalizeWrite(TryWriteAssetRefPayloadSelection(mutablePointer, selected));

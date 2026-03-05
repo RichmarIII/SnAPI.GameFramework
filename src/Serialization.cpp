@@ -21,8 +21,6 @@
 #include "BaseComponent.h"
 #include "Level.h"
 #include "NodeCast.h"
-#include "PawnBase.h"
-#include "PlayerStart.h"
 #include "Relevance.h"
 #include "RenderAssetRuntime.h"
 #include "ScriptComponent.h"
@@ -1289,14 +1287,22 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
 
     if (BaseNode* Node = Owner.Borrowed())
     {
-        if (auto* Pawn = NodeCast<PawnBase>(Node))
+        (void)TypeAutoRegistry::Instance().Ensure(Node->TypeKey());
+        if (const TypeInfo* NodeTypeInfo = TypeRegistry::Instance().Find(Node->TypeKey());
+            NodeTypeInfo && NodeTypeInfo->NodeOnCreate)
         {
-            Pawn->OnCreate();
-        }
-
-        if (auto* Start = NodeCast<PlayerStart>(Node))
-        {
-            Start->OnCreate();
+            try
+            {
+                NodeTypeInfo->NodeOnCreate(Node, &WorldRef);
+            }
+            catch (const std::exception& Ex)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+            }
+            catch (...)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, "Node OnCreate invocation threw"));
+            }
         }
     }
 
@@ -1724,6 +1730,7 @@ void RegisterSerializationDefaults()
     auto& ValueRegistry = ValueCodecRegistry::Instance();
     ValueRegistry.Register<bool>();
     ValueRegistry.Register<int>();
+    ValueRegistry.Register<std::int64_t>();
     ValueRegistry.Register<unsigned int>();
     ValueRegistry.Register<std::uint64_t>();
     ValueRegistry.Register<float>();

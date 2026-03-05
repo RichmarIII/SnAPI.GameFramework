@@ -19,6 +19,8 @@
 namespace SnAPI::GameFramework
 {
 
+class IWorld;
+
 /**
  * @brief Heterogeneous hash functor for string-key lookups.
  * @remarks Supports `std::string` and `std::string_view` without transient allocations.
@@ -164,6 +166,7 @@ struct TypeInfo
 #if defined(WITH_EDITOR) && WITH_EDITOR
     using EditorPropertyChangedInvoker = void(*)(void* Instance, std::string_view Name);
 #endif
+    using NodeOnCreateInvoker = void(*)(void* Instance, IWorld* WorldRef);
 
     TypeId Id; /**< @brief Type id (UUID). */
     std::string Name; /**< @brief Fully qualified type name. */
@@ -176,6 +179,7 @@ struct TypeInfo
     bool IsEnum = false; /**< @brief True when this type represents an enum. */
     bool EnumIsSigned = false; /**< @brief True when enum underlying type is signed. */
     std::vector<EnumValueInfo> EnumValues; /**< @brief Enum entries for tooling/editor usage. */
+    NodeOnCreateInvoker NodeOnCreate = nullptr; /**< @brief Optional node OnCreate callback for BaseNode-derived types. */
 #if defined(WITH_EDITOR) && WITH_EDITOR
     EditorPropertyChangedInvoker EditorPropertyChanged = nullptr; /**< @brief Optional editor-only property changed callback. */
 #endif

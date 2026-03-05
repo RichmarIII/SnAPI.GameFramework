@@ -20,6 +20,7 @@
 #include "UIPropertyPanel.h"
 #include "UIRenderViewport.h"
 #include "UISystem.h"
+#include "WorldRenderSettings.h"
 #include "World.h"
 
 #include <UIContext.h>
@@ -118,6 +119,7 @@ constexpr std::string_view kProjectWelcomeOpenIconPath = "editor://Assets/folder
 constexpr std::string_view kProjectWelcomeCreateIconPath = "editor://Assets/level.svg";
 constexpr std::string_view kProjectWelcomeRecentIconPath = "editor://Assets/folder.svg";
 constexpr std::string_view kProjectWelcomeFooterIconPath = "editor://Assets/world.svg";
+constexpr std::string_view kProjectSettingsIconPath = "editor://Assets/settings.svg";
 constexpr std::string_view kDefaultProjectConfigFileName = "project.snproj.json";
 constexpr int kDefaultSvgRasterSize = 256;
 constexpr float kEditorIconScale = 2.0f;
@@ -286,6 +288,7 @@ constexpr std::string_view kContextMenuItemContentInspectorAddNodeTypePrefix = "
 constexpr std::string_view kContextMenuItemContentInspectorAddComponentTypePrefix = "asset_inspector.add_component.type.";
 constexpr std::string_view kContextMenuItemFileNewProjectId = "menu.file.new_project";
 constexpr std::string_view kContextMenuItemFileOpenProjectId = "menu.file.open_project";
+constexpr std::string_view kContextMenuItemFileProjectSettingsId = "menu.file.project_settings";
 
 constexpr std::array<std::string_view, 14> kImportModelExtensions{
     ".fbx", ".gltf", ".glb", ".obj", ".dae", ".blend", ".3ds", ".ply",
@@ -982,6 +985,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     DestroyContentAssetCreateModalOverlay();
     DestroyContentAssetImportModalOverlay();
     DestroyProjectModalOverlay();
+    DestroyProjectSettingsModalOverlay();
     DestroyContentAssetInspectorModalOverlay();
     if (m_context && m_shellRoot.Id.Value != 0)
     {
@@ -1056,10 +1060,16 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectModalOpen = false;
     m_projectModalRequired = false;
     m_projectModalShowWelcome = false;
+    m_projectSettingsModalOpen = false;
     m_projectModalAction = EProjectAction::CreateNew;
     m_projectNameText.clear();
     m_projectDirectoryText.clear();
     m_projectFilePathText.clear();
+    m_projectSettingsNameText.clear();
+    m_projectSettingsStartupPackText.clear();
+    m_projectSettingsDefaultRenderSettingsAssetId.clear();
+    m_projectSettingsRenderSettingsOptions.clear();
+    m_projectState = {};
     m_recentProjects.clear();
     m_contentAssetInspectorState = {};
     m_contentInspectorVisibleNodes.clear();
@@ -1117,6 +1127,11 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectDirectoryInput = {};
     m_projectFilePathInput = {};
     m_projectModalOkButton = {};
+    m_projectSettingsModalOverlay = {};
+    m_projectSettingsNameInput = {};
+    m_projectSettingsStartupPackInput = {};
+    m_projectSettingsDefaultRenderSettingsCombo = {};
+    m_projectSettingsSaveButton = {};
     m_viewModel = SnAPI::UI::PropertyMap{};
     m_built = false;
 }
@@ -2121,6 +2136,9 @@ void EditorLayout::EnsureContentAssetImportModalOverlay()
     PropertyPanel.ElementStyle().Apply("editor.inspector_properties");
     PropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     PropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    PropertyPanel.ShowHorizontalScrollbar().Set(false);
+    PropertyPanel.ShowVerticalScrollbar().Set(true);
+    PropertyPanel.Smooth().Set(true);
     m_contentImportSettingsPanel = PropertyPanelBuilder.Handle();
 
     auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentImport.Buttons"));
@@ -2340,6 +2358,9 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     RuntimePropertyPanel.ElementStyle().Apply("editor.inspector_properties");
     RuntimePropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     RuntimePropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(0.62f));
+    RuntimePropertyPanel.ShowHorizontalScrollbar().Set(false);
+    RuntimePropertyPanel.ShowVerticalScrollbar().Set(true);
+    RuntimePropertyPanel.Smooth().Set(true);
     RuntimePropertyPanel.SetComponentContextMenuHandler(
         SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)>::Bind(
             [this](const NodeHandle OwnerNode, const TypeId& ComponentType, const SnAPI::UI::PointerEvent& Event) {
@@ -2356,6 +2377,9 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     ImportPropertyPanel.ElementStyle().Apply("editor.inspector_properties");
     ImportPropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     ImportPropertyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(0.38f));
+    ImportPropertyPanel.ShowHorizontalScrollbar().Set(false);
+    ImportPropertyPanel.ShowVerticalScrollbar().Set(true);
+    ImportPropertyPanel.Smooth().Set(true);
     m_contentInspectorImportSettingsPanel = ImportPropertyPanelBuilder.Handle();
 
     auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ContentInspector.Buttons"));
@@ -3161,6 +3185,23 @@ void EditorLayout::SetProjectActionHandler(SnAPI::UI::TDelegate<void(const Proje
     m_onProjectActionRequested = std::move(Handler);
 }
 
+void EditorLayout::SetProjectState(ProjectState State)
+{
+    m_projectState = std::move(State);
+
+    if (!m_projectState.IsLoaded && m_projectSettingsModalOpen)
+    {
+        CloseProjectSettingsModal();
+    }
+
+    if (!m_projectSettingsModalOpen)
+    {
+        m_projectSettingsNameText = m_projectState.Name;
+        m_projectSettingsStartupPackText = m_projectState.StartupLevelPack;
+        m_projectSettingsDefaultRenderSettingsAssetId = m_projectState.DefaultRenderSettingsAssetId;
+    }
+}
+
 void EditorLayout::SetProjectSelectionRequired(const bool Required)
 {
     const bool Changed = (m_projectModalRequired != Required);
@@ -3172,6 +3213,11 @@ void EditorLayout::SetProjectSelectionRequired(const bool Required)
 
     if (m_projectModalRequired)
     {
+        if (m_projectSettingsModalOpen)
+        {
+            CloseProjectSettingsModal();
+        }
+
         if (!m_projectModalOpen)
         {
             OpenProjectWelcomeModal();
@@ -3895,6 +3941,22 @@ void EditorLayout::OpenFileMenu()
         .IsSeparator = false,
         .Checked = false,
     });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = "menu.file.sep.project",
+        .Label = {},
+        .Shortcut = std::nullopt,
+        .Enabled = false,
+        .IsSeparator = true,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemFileProjectSettingsId),
+        .Label = "Project Settings...",
+        .Shortcut = std::nullopt,
+        .Enabled = m_projectState.IsLoaded,
+        .IsSeparator = false,
+        .Checked = false,
+    });
 
     OpenContextMenu(OpenPosition, std::move(Items));
 }
@@ -4231,6 +4293,10 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
         else if (Item.Id == kContextMenuItemFileOpenProjectId)
         {
             OpenProjectOpenModal();
+        }
+        else if (Item.Id == kContextMenuItemFileProjectSettingsId)
+        {
+            OpenProjectSettingsModal();
         }
         return;
     }
@@ -5647,6 +5713,260 @@ void EditorLayout::DestroyProjectModalOverlay()
     m_projectModalOkButton = {};
 }
 
+void EditorLayout::EnsureProjectSettingsModalOverlay()
+{
+    if (!m_context || m_projectSettingsModalOverlay.Id.Value != 0 || !m_projectSettingsModalOpen)
+    {
+        return;
+    }
+
+    auto Root = m_context->Root();
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(false);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 214));
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(10.0f);
+    OverlayPanel.ContentPadding().Set(12.0f);
+    ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
+    m_projectSettingsModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ProjectSettingsModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.ElementStyle().Apply("editor.project_modal_root");
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(10.0f);
+    ModalPanel.Gap().Set(10.0f);
+
+    auto HeaderRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectSettingsModal.Header"));
+    auto& HeaderRowPanel = HeaderRow.Element();
+    ConfigureTransparentLayoutPanel(HeaderRowPanel);
+    HeaderRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HeaderRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HeaderRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    HeaderRowPanel.Gap().Set(8.0f);
+    HeaderRowPanel.Padding().Set(0.0f);
+
+    auto HeaderIcon = HeaderRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kProjectSettingsIconPath)));
+    auto& HeaderIconImage = HeaderIcon.Element();
+    ConfigureSvgIcon(HeaderIconImage, 18.0f, SnAPI::UI::Color::RGB(230, 206, 162));
+    HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto Title = HeaderRow.Add(SnAPI::UI::UIText("Project Settings"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.project_welcome_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    TitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    std::string SubtitleValue = "Configure project defaults and save to project.snproj.json.";
+    if (!m_projectState.ProjectFilePath.empty())
+    {
+        SubtitleValue += " File: " + m_projectState.ProjectFilePath;
+    }
+    auto Subtitle = Modal.Add(SnAPI::UI::UIText(SubtitleValue));
+    auto& SubtitleText = Subtitle.Element();
+    SubtitleText.ElementStyle().Apply("editor.project_welcome_subtitle");
+    SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto FormPanel = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectSettingsModal.FormPanel"));
+    auto& FormPanelElement = FormPanel.Element();
+    FormPanelElement.ElementStyle().Apply("editor.project_modal_form_panel");
+    FormPanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    FormPanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    FormPanelElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    FormPanelElement.Padding().Set(10.0f);
+    FormPanelElement.Gap().Set(8.0f);
+
+    auto NameLabel = FormPanel.Add(SnAPI::UI::UIText("Project Name"));
+    NameLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+    auto NameInput = FormPanel.Add(SnAPI::UI::UITextInput{});
+    auto& NameInputElement = NameInput.Element();
+    NameInputElement.ElementStyle().Apply("editor.text_input");
+    NameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    NameInputElement.Resizable().Set(false);
+    NameInputElement.Multiline().Set(false);
+    NameInputElement.AcceptTab().Set(false);
+    NameInputElement.Placeholder().Set("Project");
+    NameInputElement.Text().Set(m_projectSettingsNameText);
+    NameInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_projectSettingsNameText = Value;
+        RefreshProjectSettingsModalSaveButtonState();
+    }));
+    m_projectSettingsNameInput = NameInput.Handle();
+
+    auto StartupLabel = FormPanel.Add(SnAPI::UI::UIText("Startup Level Pack"));
+    StartupLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+    auto StartupInput = FormPanel.Add(SnAPI::UI::UIFilesystemPicker{});
+    auto& StartupInputElement = StartupInput.Element();
+    StartupInputElement.ElementStyle().Apply("editor.filesystem_picker");
+    StartupInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    StartupInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    StartupInputElement.ReadOnly().Set(false);
+    StartupInputElement.AllowMultiSelect().Set(false);
+    StartupInputElement.PickDirectories().Set(false);
+    StartupInputElement.ShowDirectories().Set(true);
+    StartupInputElement.ShowFiles().Set(true);
+    StartupInputElement.RestrictToRoot().Set(false);
+    StartupInputElement.Placeholder().Set(std::string("Path to startup level pack"));
+    StartupInputElement.SetAllowedExtensions({".snpak"});
+
+    std::string StartupPickerValue = m_projectSettingsStartupPackText;
+    if (!StartupPickerValue.empty() && StartupPickerValue.find("://") == std::string::npos)
+    {
+        std::filesystem::path StartupPath = std::filesystem::path(StartupPickerValue);
+        if (!StartupPath.is_absolute() && !m_projectState.AssetRootDirectory.empty())
+        {
+            StartupPath = std::filesystem::path(m_projectState.AssetRootDirectory) / StartupPath;
+        }
+        StartupPickerValue = StartupPath.lexically_normal().string();
+    }
+    StartupInputElement.Value().Set(StartupPickerValue);
+    if (!m_projectState.AssetRootDirectory.empty())
+    {
+        StartupInputElement.CurrentPath().Set(m_projectState.AssetRootDirectory);
+    }
+    else if (!StartupPickerValue.empty())
+    {
+        StartupInputElement.CurrentPath().Set(std::filesystem::path(StartupPickerValue).parent_path().string());
+    }
+    StartupInputElement.OnSelectionChanged(
+        SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind([this](const std::vector<std::string>& Values) {
+            if (!Values.empty())
+            {
+                m_projectSettingsStartupPackText = Values.front();
+                RefreshProjectSettingsModalSaveButtonState();
+            }
+        }));
+    m_projectSettingsStartupPackInput = StartupInput.Handle();
+
+    auto DefaultRenderSettingsLabel = FormPanel.Add(SnAPI::UI::UIText("Default Render Settings"));
+    DefaultRenderSettingsLabel.Element().ElementStyle().Apply("editor.menu_item");
+
+    auto DefaultRenderSettingsCombo = FormPanel.Add(SnAPI::UI::UIComboBox{});
+    auto& DefaultRenderSettingsComboElement = DefaultRenderSettingsCombo.Element();
+    DefaultRenderSettingsComboElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    DefaultRenderSettingsComboElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    DefaultRenderSettingsComboElement.Placeholder().Set(std::string("Select WorldRenderSettings asset"));
+    DefaultRenderSettingsComboElement.MaxDropdownHeight().Set(230.0f);
+
+    m_projectSettingsRenderSettingsOptions.clear();
+    m_projectSettingsRenderSettingsOptions.emplace_back("<None>", std::string{});
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    const auto Entries = TAssetRef<WorldRenderSettings>::EnumerateCompatibleAssets();
+    for (const auto& Entry : Entries)
+    {
+        m_projectSettingsRenderSettingsOptions.emplace_back(Entry.Label, Entry.AssetId);
+    }
+#endif
+
+    std::vector<std::string> OptionLabels{};
+    OptionLabels.reserve(m_projectSettingsRenderSettingsOptions.size());
+    int32_t SelectedIndex = 0;
+    for (std::size_t Index = 0; Index < m_projectSettingsRenderSettingsOptions.size(); ++Index)
+    {
+        OptionLabels.push_back(m_projectSettingsRenderSettingsOptions[Index].first);
+        if (!m_projectSettingsDefaultRenderSettingsAssetId.empty() &&
+            m_projectSettingsRenderSettingsOptions[Index].second == m_projectSettingsDefaultRenderSettingsAssetId)
+        {
+            SelectedIndex = static_cast<int32_t>(Index);
+        }
+    }
+    if (!m_projectSettingsDefaultRenderSettingsAssetId.empty() && SelectedIndex == 0)
+    {
+        std::string MissingLabel = "<Missing> [" + m_projectSettingsDefaultRenderSettingsAssetId + "]";
+        m_projectSettingsRenderSettingsOptions.emplace_back(MissingLabel, m_projectSettingsDefaultRenderSettingsAssetId);
+        OptionLabels.push_back(std::move(MissingLabel));
+        SelectedIndex = static_cast<int32_t>(m_projectSettingsRenderSettingsOptions.size() - 1);
+    }
+
+    DefaultRenderSettingsComboElement.SetItems(std::move(OptionLabels));
+    (void)DefaultRenderSettingsComboElement.SetSelectedIndex(SelectedIndex, false);
+    DefaultRenderSettingsComboElement.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (Index >= 0 && static_cast<std::size_t>(Index) < m_projectSettingsRenderSettingsOptions.size())
+        {
+            m_projectSettingsDefaultRenderSettingsAssetId = m_projectSettingsRenderSettingsOptions[static_cast<std::size_t>(Index)].second;
+        }
+        else
+        {
+            m_projectSettingsDefaultRenderSettingsAssetId.clear();
+        }
+    });
+    m_projectSettingsDefaultRenderSettingsCombo = DefaultRenderSettingsCombo.Handle();
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectSettingsModal.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ConfigureTransparentLayoutPanel(ButtonsRowPanel);
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ButtonsRowPanel.Gap().Set(8.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ProjectSettingsModal.ButtonSpacer"));
+    auto& SpacerPanel = Spacer.Element();
+    ConfigureLayoutSpacerPanel(SpacerPanel);
+    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& CancelButtonElement = CancelButton.Element();
+    CancelButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
+    CancelButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    CancelButtonElement.OnClick([this]() {
+        CloseProjectSettingsModal();
+    });
+    auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
+    auto& CancelLabelText = CancelLabel.Element();
+    CancelLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    CancelLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto SaveButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& SaveButtonElement = SaveButton.Element();
+    SaveButtonElement.ElementStyle().Apply("editor.project_modal_action_button_primary");
+    SaveButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    SaveButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    SaveButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    SaveButtonElement.OnClick([this]() {
+        ConfirmProjectSettingsModal();
+    });
+    auto SaveLabel = SaveButton.Add(SnAPI::UI::UIText("Save Settings"));
+    auto& SaveLabelText = SaveLabel.Element();
+    SaveLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    SaveLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    m_projectSettingsSaveButton = SaveButton.Handle();
+
+    RefreshProjectSettingsModalSaveButtonState();
+}
+
+void EditorLayout::DestroyProjectSettingsModalOverlay()
+{
+    if (m_context && m_projectSettingsModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_projectSettingsModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_projectSettingsModalOverlay = {};
+    m_projectSettingsNameInput = {};
+    m_projectSettingsStartupPackInput = {};
+    m_projectSettingsDefaultRenderSettingsCombo = {};
+    m_projectSettingsSaveButton = {};
+}
+
 void EditorLayout::OpenContentAssetCreateModal()
 {
     if (!m_context)
@@ -6172,6 +6492,7 @@ void EditorLayout::OpenProjectWelcomeModal()
     }
 
     CloseContextMenu();
+    CloseProjectSettingsModal();
     m_projectModalOpen = true;
     m_projectModalShowWelcome = true;
     m_projectModalAction = EProjectAction::CreateNew;
@@ -6211,6 +6532,7 @@ void EditorLayout::OpenProjectCreateModal()
     }
 
     CloseContextMenu();
+    CloseProjectSettingsModal();
     m_projectModalAction = EProjectAction::CreateNew;
     m_projectModalOpen = true;
     m_projectModalShowWelcome = false;
@@ -6239,6 +6561,7 @@ void EditorLayout::OpenProjectOpenModal()
     }
 
     CloseContextMenu();
+    CloseProjectSettingsModal();
     m_projectModalAction = EProjectAction::OpenExisting;
     m_projectModalOpen = true;
     m_projectModalShowWelcome = false;
@@ -6256,6 +6579,90 @@ void EditorLayout::OpenProjectOpenModal()
     RefreshProjectModalVisibility();
     RefreshProjectModalOkButtonState();
     m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::OpenProjectSettingsModal()
+{
+    if (!m_context || !m_projectState.IsLoaded)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    m_projectSettingsModalOpen = true;
+    m_projectSettingsNameText = m_projectState.Name;
+    m_projectSettingsStartupPackText = m_projectState.StartupLevelPack;
+    m_projectSettingsDefaultRenderSettingsAssetId = m_projectState.DefaultRenderSettingsAssetId;
+    DestroyProjectSettingsModalOverlay();
+    RefreshProjectSettingsModalVisibility();
+    RefreshProjectSettingsModalSaveButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::CloseProjectSettingsModal()
+{
+    if (!m_projectSettingsModalOpen && m_projectSettingsModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    m_projectSettingsModalOpen = false;
+    RefreshProjectSettingsModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::ConfirmProjectSettingsModal()
+{
+    if (!m_projectSettingsModalOpen)
+    {
+        return;
+    }
+
+    if (m_context && m_projectSettingsNameInput.Id.Value != 0)
+    {
+        if (auto* NameInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_projectSettingsNameInput.Id)))
+        {
+            m_projectSettingsNameText = NameInput->Text().Get();
+        }
+    }
+
+    if (m_context && m_projectSettingsStartupPackInput.Id.Value != 0)
+    {
+        if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectSettingsStartupPackInput.Id)))
+        {
+            m_projectSettingsStartupPackText = TrimCopy(
+                Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
+            if (m_projectSettingsStartupPackText.empty())
+            {
+                const auto Selected = Picker->SelectedFilesystemPaths();
+                if (!Selected.empty())
+                {
+                    m_projectSettingsStartupPackText = Selected.front().string();
+                }
+            }
+        }
+    }
+
+    ProjectActionRequest Request{};
+    Request.Action = EProjectAction::SaveSettings;
+    Request.ProjectName = TrimCopy(m_projectSettingsNameText);
+    Request.ProjectFilePath = m_projectState.ProjectFilePath;
+    Request.StartupLevelPack = TrimCopy(m_projectSettingsStartupPackText);
+    Request.DefaultRenderSettingsAssetId = TrimCopy(m_projectSettingsDefaultRenderSettingsAssetId);
+    if (Request.ProjectName.empty())
+    {
+        RefreshProjectSettingsModalSaveButtonState();
+        return;
+    }
+
+    if (m_onProjectActionRequested)
+    {
+        m_onProjectActionRequested(Request);
+    }
+    CloseProjectSettingsModal();
 }
 
 void EditorLayout::CloseProjectModal(const bool ForceClose)
@@ -6373,6 +6780,11 @@ void EditorLayout::ConfirmProjectModal()
 
 void EditorLayout::RememberRecentProject(const ProjectActionRequest& Request)
 {
+    if (Request.Action == EProjectAction::SaveSettings)
+    {
+        return;
+    }
+
     if (Request.Action == EProjectAction::CreateNew)
     {
         const std::string ProjectName = TrimCopy(Request.ProjectName);
@@ -6539,6 +6951,45 @@ void EditorLayout::RefreshProjectModalOkButtonState()
     if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_projectModalOkButton.Id)))
     {
         Button->SetDisabled(!CanConfirm);
+    }
+}
+
+void EditorLayout::RefreshProjectSettingsModalVisibility()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_projectSettingsModalOpen)
+    {
+        EnsureProjectSettingsModalOverlay();
+        return;
+    }
+
+    DestroyProjectSettingsModalOverlay();
+}
+
+void EditorLayout::RefreshProjectSettingsModalSaveButtonState()
+{
+    if (!m_context || m_projectSettingsSaveButton.Id.Value == 0)
+    {
+        return;
+    }
+
+    std::string NameText = TrimCopy(m_projectSettingsNameText);
+    if (NameText.empty() && m_projectSettingsNameInput.Id.Value != 0)
+    {
+        if (auto* NameInput = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_projectSettingsNameInput.Id)))
+        {
+            NameText = TrimCopy(NameInput->Text().Get());
+        }
+    }
+
+    const bool CanSave = m_projectState.IsLoaded && !NameText.empty();
+    if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_projectSettingsSaveButton.Id)))
+    {
+        Button->SetDisabled(!CanSave);
     }
 }
 

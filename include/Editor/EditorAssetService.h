@@ -97,12 +97,15 @@ public:
         std::string Name{};
         std::string ProjectFilePath{};
         std::string ProjectRootDirectory{};
+        std::string AssetRoot{};
         std::string AssetRootDirectory{};
         std::string StartupLevelPack{};
+        std::string DefaultRenderSettingsAssetId{};
     };
 
     [[nodiscard]] std::string_view Name() const override;
     Result Initialize(EditorServiceContext& Context) override;
+    void Tick(EditorServiceContext& Context, float DeltaSeconds) override;
     void Shutdown(EditorServiceContext& Context) override;
 
     [[nodiscard]] const std::vector<DiscoveredAsset>& Assets() const { return m_assets; }
@@ -155,6 +158,10 @@ public:
     Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
     Result CreateProject(EditorServiceContext& Context, std::string_view ProjectName, std::string_view ParentDirectory);
     Result LoadProject(EditorServiceContext& Context, std::string_view ProjectFilePath);
+    Result SaveProjectSettings(EditorServiceContext& Context,
+                               std::string_view ProjectName,
+                               std::string_view StartupLevelPack,
+                               std::string_view DefaultRenderSettingsAssetId);
     [[nodiscard]] const ProjectInfo& CurrentProject() const { return m_currentProject; }
 
     [[nodiscard]] const std::string& PreviewSummary() const { return m_previewSummary; }
@@ -180,6 +187,7 @@ private:
     Result EnsureProjectStarterLevelPack(const std::filesystem::path& ProjectAssetRoot,
                                          const std::filesystem::path& StartupPackPath);
     Result LoadProjectStartupLevel(EditorServiceContext& Context, const std::filesystem::path& StartupPackPath);
+    Result LoadProjectDefaultRenderSettings(EditorServiceContext& Context);
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> SerializeAssetEditorPayload() const;
     Result SyncMaterialInstanceEditorPayloadFromDescriptor();
     struct AssetImportMetadataEntry
@@ -218,6 +226,9 @@ private:
     std::filesystem::path m_editorStarterLevelTemplatePackPath{};
     std::filesystem::path m_editorStarterScriptTemplatePath{};
     ProjectInfo m_currentProject{};
+    NodeHandle m_loadedDefaultRenderSettingsNode{};
+    bool m_defaultRenderSettingsApplyPending = false;
+    std::uint64_t m_defaultRenderSettingsLastPassGraphRevision = 0;
 
     std::unique_ptr<::SnAPI::GameFramework::World> m_assetEditorWorld{};
     NodeHandle m_assetEditorRootHandle{};

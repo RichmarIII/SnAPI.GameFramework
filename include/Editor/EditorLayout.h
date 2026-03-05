@@ -19,6 +19,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace SnAPI::UI
@@ -40,6 +41,7 @@ class UITreeView;
 class ITreeItemSource;
 class UIContextMenu;
 class UIButton;
+class UIComboBox;
 template<typename TElement>
 class TElementBuilder;
 } // namespace SnAPI::UI
@@ -183,6 +185,7 @@ public:
     {
         CreateNew,
         OpenExisting,
+        SaveSettings,
     };
 
     struct ProjectActionRequest
@@ -191,6 +194,19 @@ public:
         std::string ProjectName{};
         std::string ProjectDirectory{};
         std::string ProjectFilePath{};
+        std::string StartupLevelPack{};
+        std::string DefaultRenderSettingsAssetId{};
+    };
+
+    struct ProjectState
+    {
+        bool IsLoaded = false;
+        std::string Name{};
+        std::string ProjectFilePath{};
+        std::string ProjectRootDirectory{};
+        std::string AssetRootDirectory{};
+        std::string StartupLevelPack{};
+        std::string DefaultRenderSettingsAssetId{};
     };
 
     Result Build(GameRuntime& Runtime,
@@ -213,6 +229,7 @@ public:
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
     void SetProjectActionHandler(SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> Handler);
+    void SetProjectState(ProjectState State);
     void SetProjectSelectionRequired(bool Required);
     void SetContentAssets(std::vector<ContentAssetEntry> Assets);
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
@@ -281,6 +298,8 @@ private:
     void DestroyContentAssetInspectorModalOverlay();
     void EnsureProjectModalOverlay();
     void DestroyProjectModalOverlay();
+    void EnsureProjectSettingsModalOverlay();
+    void DestroyProjectSettingsModalOverlay();
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
@@ -336,10 +355,15 @@ private:
     void OpenProjectWelcomeModal();
     void OpenProjectCreateModal();
     void OpenProjectOpenModal();
+    void OpenProjectSettingsModal();
+    void CloseProjectSettingsModal();
+    void ConfirmProjectSettingsModal();
     void CloseProjectModal(bool ForceClose = false);
     void ConfirmProjectModal();
     void RefreshProjectModalVisibility();
     void RefreshProjectModalOkButtonState();
+    void RefreshProjectSettingsModalVisibility();
+    void RefreshProjectSettingsModalSaveButtonState();
     void RememberRecentProject(const ProjectActionRequest& Request);
     void RememberRecentProjectFile(std::string ProjectFilePath, std::string ProjectName = {});
     void CloseContentAssetInspectorModal(bool NotifyHandler);
@@ -420,6 +444,11 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectDirectoryInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectFilePathInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectModalOkButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectSettingsModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectSettingsNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectSettingsStartupPackInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_projectSettingsDefaultRenderSettingsCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectSettingsSaveButton{};
 
     struct ContentAssetCardWidgets
     {
@@ -470,10 +499,16 @@ private:
     bool m_projectModalOpen = false;
     bool m_projectModalRequired = false;
     bool m_projectModalShowWelcome = false;
+    bool m_projectSettingsModalOpen = false;
     EProjectAction m_projectModalAction = EProjectAction::CreateNew;
     std::string m_projectNameText{};
     std::string m_projectDirectoryText{};
     std::string m_projectFilePathText{};
+    std::string m_projectSettingsNameText{};
+    std::string m_projectSettingsStartupPackText{};
+    std::string m_projectSettingsDefaultRenderSettingsAssetId{};
+    std::vector<std::pair<std::string, std::string>> m_projectSettingsRenderSettingsOptions{};
+    ProjectState m_projectState{};
     std::vector<RecentProjectEntry> m_recentProjects{};
     std::vector<NodeHandle> m_contentInspectorVisibleNodes{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentInspectorHierarchySource{};

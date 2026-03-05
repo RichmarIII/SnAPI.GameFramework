@@ -150,6 +150,58 @@ private:
         }
     }
 
+    template<typename TObject>
+    static constexpr bool SupportsNodeOnCreateWithWorldV =
+        requires(TObject& Value, IWorld& WorldRef) {
+            { Value.OnCreate(WorldRef) } -> std::same_as<void>;
+        };
+
+    template<typename TObject>
+    static constexpr bool SupportsNodeOnCreateNoWorldV =
+        requires(TObject& Value) {
+            { Value.OnCreate() } -> std::same_as<void>;
+        };
+
+    static constexpr bool HasDeclaredNodeOnCreateV =
+        std::is_base_of_v<BaseNode, T> &&
+        (SupportsNodeOnCreateWithWorldV<T> || SupportsNodeOnCreateNoWorldV<T>);
+
+    static void InvokeDeclaredNodeOnCreate(T& Typed, IWorld* const WorldRef)
+    {
+        if constexpr (SupportsNodeOnCreateWithWorldV<T>)
+        {
+            if (WorldRef)
+            {
+                Typed.OnCreate(*WorldRef);
+                return;
+            }
+        }
+
+        if constexpr (SupportsNodeOnCreateNoWorldV<T>)
+        {
+            Typed.OnCreate();
+        }
+    }
+
+    static void InvokeNodeOnCreateCallback(void* const Instance, IWorld* const WorldRef)
+    {
+        if (!Instance)
+        {
+            return;
+        }
+        auto* Typed = static_cast<T*>(Instance);
+        InvokeDeclaredNodeOnCreate(*Typed, WorldRef);
+    }
+
+    static TypeInfo::NodeOnCreateInvoker NodeOnCreateInvokerForType()
+    {
+        if constexpr (HasDeclaredNodeOnCreateV)
+        {
+            return &InvokeNodeOnCreateCallback;
+        }
+        return nullptr;
+    }
+
 #if defined(WITH_EDITOR) && WITH_EDITOR
     template<typename TObject>
     static constexpr bool DeclaresEditorOnPropertyChangedStringViewV =
@@ -300,6 +352,7 @@ public:
         m_info.Id = TypeIdFromName(Name);
         m_info.Size = sizeof(T);
         m_info.Align = alignof(T);
+        m_info.NodeOnCreate = NodeOnCreateInvokerForType();
 #if defined(WITH_EDITOR) && WITH_EDITOR
         m_info.EditorPropertyChanged = EditorOnPropertyChangedInvokerForType();
 #endif

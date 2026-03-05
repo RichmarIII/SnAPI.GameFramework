@@ -30,10 +30,30 @@ class PawnBase;
 struct StaticMeshAssetRuntime;
 struct SkeletalMeshAssetRuntime;
 struct MaterialInstanceAssetRuntime;
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+class SSAOParamsNode;
+class SSRParamsNode;
+class BloomParamsNode;
+class AtmosphereParamsNode;
+class AtmosphereCompositeParamsNode;
+class HeightFogParamsNode;
+class ToneMapParamsNode;
+class WorldRenderSettings;
+#endif
 using PawnBaseAssetRef = TAssetRef<PawnBase, void>;
 using StaticMeshAssetRef = TAssetRef<StaticMeshAssetRuntime, void>;
 using SkeletalMeshAssetRef = TAssetRef<SkeletalMeshAssetRuntime, void>;
 using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAssetRuntime, void>;
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+using SSAOParamsNodeAssetRef = TAssetRef<SSAOParamsNode, void>;
+using SSRParamsNodeAssetRef = TAssetRef<SSRParamsNode, void>;
+using BloomParamsNodeAssetRef = TAssetRef<BloomParamsNode, void>;
+using AtmosphereParamsNodeAssetRef = TAssetRef<AtmosphereParamsNode, void>;
+using AtmosphereCompositeParamsNodeAssetRef = TAssetRef<AtmosphereCompositeParamsNode, void>;
+using HeightFogParamsNodeAssetRef = TAssetRef<HeightFogParamsNode, void>;
+using ToneMapParamsNodeAssetRef = TAssetRef<ToneMapParamsNode, void>;
+using WorldRenderSettingsAssetRef = TAssetRef<WorldRenderSettings, void>;
+#endif
 
 /**
  * @brief Built-in type name registrations for reflection.
@@ -42,6 +62,7 @@ using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAssetRuntime, void>;
 SNAPI_DEFINE_TYPE_NAME(void, "void")
 SNAPI_DEFINE_TYPE_NAME(bool, "bool")
 SNAPI_DEFINE_TYPE_NAME(int, "int")
+SNAPI_DEFINE_TYPE_NAME(std::int64_t, "int64")
 SNAPI_DEFINE_TYPE_NAME(unsigned int, "uint")
 SNAPI_DEFINE_TYPE_NAME(std::uint64_t, "uint64")
 SNAPI_DEFINE_TYPE_NAME(float, "float")
@@ -59,6 +80,16 @@ SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAP
 SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalMeshAssetRuntime>")
 SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>")
 SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>>")
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+SNAPI_DEFINE_TYPE_NAME(SSAOParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSAOParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(SSRParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSRParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(BloomParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::BloomParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(AtmosphereParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::AtmosphereParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(AtmosphereCompositeParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::AtmosphereCompositeParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(HeightFogParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::HeightFogParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(ToneMapParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::ToneMapParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(WorldRenderSettingsAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::WorldRenderSettings>")
+#endif
 SNAPI_DEFINE_TYPE_NAME(NodeHandle, "SnAPI::GameFramework::NodeHandle")
 SNAPI_DEFINE_TYPE_NAME(ComponentHandle, "SnAPI::GameFramework::ComponentHandle")
 #if defined(SNAPI_GF_ENABLE_UI)
