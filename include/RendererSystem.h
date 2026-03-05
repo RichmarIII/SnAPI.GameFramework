@@ -73,6 +73,7 @@ struct RendererBootstrapSettings
     bool EnableSsr = true; /**< @brief Register SSR + composite passes in default pass graph. */
     bool EnableBloom = true; /**< @brief Register bloom pass in default pass graph. */
     bool EnableAtmosphere = true; /**< @brief Register atmosphere + composite passes in default pass graph. */
+    bool EnableHeightFog = true; /**< @brief Register analytic height fog pass in default pass graph. */
     bool AtmosphereWorldMode = false; /**< @brief Enable planet-scale atmosphere coordinates (`WORLD=1`); false uses regular-scene mode. */
     bool AutoHandleSwapChainResize = true; /**< @brief Detect window-size changes and recreate swapchain automatically. */
     bool AutoFallbackOnOutOfMemory = true; /**< @brief Retry renderer init with reduced settings when device-memory allocation fails. */

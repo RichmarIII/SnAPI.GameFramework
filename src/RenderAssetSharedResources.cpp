@@ -1748,6 +1748,15 @@ void ApplyRuntimeOrDefaultMaterialInstances(
     }
 }
 
+void InvalidateRuntimeMaterialCaches()
+{
+    auto& SharedState = RenderAssetSharedResourcesOps::SharedState();
+    std::scoped_lock Lock(SharedState.MaterialCacheMutex);
+    SharedState.GBufferMaterialInstances.clear();
+    SharedState.ShadowMaterialInstances.clear();
+    SharedState.RuntimeMaterials.clear();
+}
+
 } // namespace SnAPI::GameFramework
 
 #endif // SNAPI_GF_ENABLE_RENDERER
