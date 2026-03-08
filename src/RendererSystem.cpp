@@ -17,6 +17,7 @@
 #include <exception>
 #include <filesystem>
 #include <limits>
+#include <unordered_set>
 #include <utility>
 
 #include <PCH.hpp>
@@ -2443,10 +2444,37 @@ void RendererSystem::EndFrame()
     }
 #endif
 
-    if (auto* Camera = m_graphics->ActiveCamera())
     {
         SNAPI_GF_PROFILE_SCOPE("Renderer.SaveCameraFrameState", "Rendering");
-        Camera->SaveFrameState();
+        std::unordered_set<SnAPI::Graphics::ICamera*> CamerasToSave{};
+
+        if (auto* ActiveCamera = m_graphics->ActiveCamera())
+        {
+            CamerasToSave.insert(ActiveCamera);
+        }
+
+        const auto ViewportIds = m_graphics->RenderViewportIDs();
+        for (const auto ViewportID : ViewportIds)
+        {
+            const auto Config = m_graphics->GetRenderViewportConfig(ViewportID);
+            if (!Config.has_value() || !Config->Enabled)
+            {
+                continue;
+            }
+
+            if (Config->pCamera != nullptr)
+            {
+                CamerasToSave.insert(Config->pCamera);
+            }
+        }
+
+        for (auto* Camera : CamerasToSave)
+        {
+            if (Camera != nullptr)
+            {
+                Camera->SaveFrameState();
+            }
+        }
     }
 
     SNAPI_GF_PROFILE_SCOPE("Renderer.SaveRenderObjectFrameState", "Rendering");
@@ -4004,8 +4032,9 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         }
 
         auto SSR = std::make_unique<SSRPass>(std::move(SSRPassProperties));
-        SSR->SetFeature(SSRPass::Feature::SpatialDenoise, true);
+        SSR->SetFeature(SSRPass::Feature::HalfResolution, true);
         SSR->SetFeature(SSRPass::Feature::TemporalFilter, true);
+        SSR->SetFeature(SSRPass::Feature::SpatialDenoise, true);
         SSR->SetMaxRoughness(0.8f);
         SSR->SetRoughnessThreshold(0.2f);
         SSR->SetMaxSteps(32);

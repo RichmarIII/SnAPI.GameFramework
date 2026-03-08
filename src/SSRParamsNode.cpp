@@ -34,7 +34,7 @@ std::uint32_t ClampMinOne(const std::uint32_t Value)
 
 std::uint32_t ClampDebugMode(const std::uint32_t Value)
 {
-    return std::min<std::uint32_t>(Value, 5u);
+    return std::min<std::uint32_t>(Value, 12u);
 }
 
 std::uint64_t ViewportSelectionKey(const std::int64_t ViewportID)
