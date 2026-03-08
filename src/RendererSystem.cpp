@@ -4004,6 +4004,7 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         }
 
         auto SSR = std::make_unique<SSRPass>(std::move(SSRPassProperties));
+        SSR->SetFeature(SSRPass::Feature::SpatialDenoise, true);
         SSR->SetFeature(SSRPass::Feature::TemporalFilter, true);
         SSR->SetMaxRoughness(0.8f);
         SSR->SetRoughnessThreshold(0.2f);
