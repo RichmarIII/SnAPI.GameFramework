@@ -122,6 +122,7 @@ set(SNAPI_GF_SOURCES
     src/SSAOParamsNode.cpp
     src/SSGIParamsNode.cpp
     src/SSRParamsNode.cpp
+    src/TAAParamsNode.cpp
     src/BloomParamsNode.cpp
     src/AtmosphereParamsNode.cpp
     src/AtmosphereCompositeParamsNode.cpp

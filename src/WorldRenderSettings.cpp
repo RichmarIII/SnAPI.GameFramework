@@ -62,6 +62,9 @@ const TAssetRef<SSGIParamsNode>& WorldRenderSettings::GetSSGIParams() const { re
 TAssetRef<SSRParamsNode>& WorldRenderSettings::EditSSRParams() { return m_ssrParams; }
 const TAssetRef<SSRParamsNode>& WorldRenderSettings::GetSSRParams() const { return m_ssrParams; }
 
+TAssetRef<TAAParamsNode>& WorldRenderSettings::EditTAAParams() { return m_taaParams; }
+const TAssetRef<TAAParamsNode>& WorldRenderSettings::GetTAAParams() const { return m_taaParams; }
+
 TAssetRef<BloomParamsNode>& WorldRenderSettings::EditBloomParams() { return m_bloomParams; }
 const TAssetRef<BloomParamsNode>& WorldRenderSettings::GetBloomParams() const { return m_bloomParams; }
 
@@ -118,6 +121,7 @@ void WorldRenderSettings::ApplyReferencedSettings()
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssaoParams, m_spawnedSSAO);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssgiParams, m_spawnedSSGI);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssrParams, m_spawnedSSR);
+    EnsureReferencedNode(*WorldPtr, ParentHandle, m_taaParams, m_spawnedTAA);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_bloomParams, m_spawnedBloom);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_atmosphereParams, m_spawnedAtmosphere);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_atmosphereCompositeParams, m_spawnedAtmosphereComposite);

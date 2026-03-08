@@ -78,6 +78,7 @@
 #include "SSAOParamsNode.h"
 #include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
+#include "TAAParamsNode.h"
 #include "BloomParamsNode.h"
 #include "AtmosphereParamsNode.h"
 #include "AtmosphereCompositeParamsNode.h"

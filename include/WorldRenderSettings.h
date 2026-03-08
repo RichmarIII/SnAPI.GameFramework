@@ -15,6 +15,7 @@
 #include "SSAOParamsNode.h"
 #include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
+#include "TAAParamsNode.h"
 #include "ToneMapParamsNode.h"
 
 namespace SnAPI::GameFramework
@@ -52,6 +53,7 @@ namespace SnAPI::GameFramework
  * @see SSAOParamsNode
  * @see SSGIParamsNode
  * @see SSRParamsNode
+ * @see TAAParamsNode
  * @see BloomParamsNode
  */
 class SNAPI_GAMEFRAMEWORK_API WorldRenderSettings : public BaseNode
@@ -76,6 +78,11 @@ public:
     TAssetRef<SSRParamsNode>& EditSSRParams();
     /** @brief Access the referenced SSR parameter asset. @return Const asset reference. */
     const TAssetRef<SSRParamsNode>& GetSSRParams() const;
+
+    /** @brief Access the referenced TAA parameter asset. @return Mutable asset reference. */
+    TAssetRef<TAAParamsNode>& EditTAAParams();
+    /** @brief Access the referenced TAA parameter asset. @return Const asset reference. */
+    const TAssetRef<TAAParamsNode>& GetTAAParams() const;
 
     /** @brief Access the referenced bloom parameter asset. @return Mutable asset reference. */
     TAssetRef<BloomParamsNode>& EditBloomParams();
@@ -134,6 +141,7 @@ private:
     TAssetRef<SSAOParamsNode> m_ssaoParams{};
     TAssetRef<SSGIParamsNode> m_ssgiParams{};
     TAssetRef<SSRParamsNode> m_ssrParams{};
+    TAssetRef<TAAParamsNode> m_taaParams{};
     TAssetRef<BloomParamsNode> m_bloomParams{};
     TAssetRef<AtmosphereParamsNode> m_atmosphereParams{};
     TAssetRef<AtmosphereCompositeParamsNode> m_atmosphereCompositeParams{};
@@ -143,6 +151,7 @@ private:
     NodeHandle m_spawnedSSAO{};
     NodeHandle m_spawnedSSGI{};
     NodeHandle m_spawnedSSR{};
+    NodeHandle m_spawnedTAA{};
     NodeHandle m_spawnedBloom{};
     NodeHandle m_spawnedAtmosphere{};
     NodeHandle m_spawnedAtmosphereComposite{};
