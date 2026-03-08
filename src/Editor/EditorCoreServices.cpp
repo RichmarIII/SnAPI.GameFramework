@@ -730,15 +730,14 @@ private:
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
-    (void)WorldRef;
-    if (auto* Start = NodeCast<PlayerStart>(&Node))
+    if (NodeCast<PlayerStart>(&Node) != nullptr)
     {
-        Start->OnCreate();
+        (void)WorldRef.RequestNodeOnCreate(Node.Handle());
     }
 
-    if (auto* Pawn = NodeCast<PawnBase>(&Node))
+    if (NodeCast<PawnBase>(&Node) != nullptr)
     {
-        Pawn->OnCreate();
+        (void)WorldRef.RequestNodeOnCreate(Node.Handle());
     }
 }
 

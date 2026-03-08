@@ -13,56 +13,62 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Auto-registration registry for reflected types keyed by TypeId.
- * @remarks This is used to lazily register reflection metadata on first use.
+ * @ingroup SnAPI_GameFramework
+ * @brief Registry of lazy reflection-registration callbacks keyed by deterministic `TypeId`.
  *
- * The intent is:
- * - Each reflected type registers a lightweight "ensure" callback at static-init time
- *   (via SNAPI_REFLECT_TYPE in a .cpp).
- * - TypeRegistry/serialization can call Ensure(TypeId) on demand when a TypeId is
- *   encountered before its TypeInfo has been registered.
+ * `TypeAutoRegistry` decouples cheap static initialization from expensive `TypeRegistry` mutation.
+ * Each reflected type installs an ensure callback during static initialization, and the callback is
+ * executed only when some runtime path first needs the metadata.
  *
- * This avoids relying on cross-TU static initialization order for the heavy
- * TypeRegistry registration work.
+ * Core semantics:
+ * - `Register()` stores the first callback for a `TypeId`.
+ * - A second registration for the same `TypeId` is ignored and debug-asserted unless it is the same callback.
+ * - `Ensure()` looks up the callback without holding the lock during execution.
+ * - `EnsureAll()` snapshots the current key set and attempts every ensure callback, returning the first error but continuing best-effort.
  *
- * Contract:
- * - ensure callbacks must be idempotent and thread-safe for repeated calls
- * - registration collisions are tolerated only when callback identity matches
+ * Threading model:
+ * - Thread-safe. Internal maps are guarded by `GameMutex`.
+ * - Ensure callbacks themselves must still be idempotent and safe for repeated calls.
  */
 class TypeAutoRegistry
 {
 public:
-    /** @brief Ensure callback signature. Should be idempotent. */
+    /** @brief Ensure callback signature. Implementations should be idempotent and return `Ok()` if the type is already registered. */
     using EnsureFn = Result(*)();
 
-    /** @brief Access singleton instance. */
+    /** @brief Access the process-wide singleton. */
     static TypeAutoRegistry& Instance();
 
     /**
-     * @brief Register an ensure callback for a TypeId.
+     * @brief Register an ensure callback for a `TypeId`.
      * @param Id Stable type id.
      * @param Name Stable type name (for diagnostics).
      * @param Fn Ensure function pointer.
-     * @remarks Duplicate registrations are ignored if identical.
+     *
+     * The first callback wins. Later registrations for the same id are ignored; in debug builds the
+     * registry asserts if the callback pointer differs.
      */
     void Register(const TypeId& Id, std::string_view Name, EnsureFn Fn);
 
     /**
-     * @brief Ensure a TypeId has been registered with TypeRegistry.
+     * @brief Ensure that a `TypeId` has registered metadata in `TypeRegistry`.
      * @param Id Type id.
      * @return Success or error.
-     * @remarks Returns NotFound if no ensure callback exists for Id.
+     *
+     * Returns `NotFound` when no auto-registration entry exists for the supplied id.
      */
     Result Ensure(const TypeId& Id) const;
 
     /**
-     * @brief Ensure every auto-registered type has been registered with TypeRegistry.
-     * @return Success or first encountered error.
-     * @remarks Continues best-effort through all entries so late entries can still register.
+     * @brief Ensure every currently registered auto-type has been registered with `TypeRegistry`.
+     * @return Success or the first encountered error.
+     *
+     * The registry continues best-effort after the first failure so later entries still get a chance
+     * to register.
      */
     Result EnsureAll() const;
 
-    /** @brief Check whether an ensure callback is registered for Id. */
+    /** @brief Check whether an ensure callback exists for a `TypeId`. */
     bool Has(const TypeId& Id) const;
 
 private:

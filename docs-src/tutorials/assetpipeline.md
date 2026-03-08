@@ -1,8 +1,14 @@
 # AssetPipeline Integration
 
-This page shows the full flow to package a `World`/`Level`/`NodeGraph` into `.snpak` and load it back through `AssetManager`.
+GameFramework integrates with SnAPI.AssetPipeline at the payload and runtime-factory level.
 
-The same pattern is used by `examples/FeatureShowcase` and `examples/WorldPerfBenchmark`.
+The important update since older docs is the payload surface:
+
+- node payloads
+- level payloads
+- world payloads
+
+not old graph payloads.
 
 ## 1. Build Runtime Data
 
@@ -11,35 +17,59 @@ RegisterBuiltinTypes();
 
 World WorldInstance("GameWorld");
 auto LevelHandle = WorldInstance.CreateLevel("MainLevel");
-auto LevelRef = WorldInstance.LevelRef(LevelHandle.value());
+if (!LevelHandle)
+{
+    return;
+}
 
-auto GraphHandle = LevelRef->CreateGraph("Gameplay");
-auto GraphRef = LevelRef->Graph(GraphHandle.value());
+auto* LevelRef = NodeCast<Level>(LevelHandle->Borrowed());
+if (!LevelRef)
+{
+    return;
+}
 
-(void)GraphRef->CreateNode("Player");
+(void)LevelRef->CreateNode<BaseNode>("Player");
+(void)LevelRef->CreateNode<BaseNode>("Camera");
 ```
 
-## 2. Serialize to Payload Bytes
+## 2. Serialize To Payload Bytes
 
 ```cpp
-auto WorldPayloadResult = WorldSerializer::Serialize(WorldInstance);
-if (!WorldPayloadResult)
+auto WorldPayload = WorldSerializer::Serialize(WorldInstance);
+if (!WorldPayload)
 {
     return;
 }
 
 std::vector<uint8_t> WorldBytes;
-if (!SerializeWorldPayload(WorldPayloadResult.value(), WorldBytes))
+if (!SerializeWorldPayload(*WorldPayload, WorldBytes))
 {
     return;
 }
 ```
 
-## 3. Write a `.snpak`
+You can do the same with:
+
+- `NodeSerializer` + `SerializeNodePayload`
+- `LevelSerializer` + `SerializeLevelPayload`
+
+## 3. Register Payload Types And Factories
 
 ```cpp
-#include "AssetPackWriter.h"
+::SnAPI::AssetPipeline::AssetManager Manager;
+RegisterAssetPipelinePayloads(Manager.GetRegistry());
+Manager.GetRegistry().Freeze();
+RegisterAssetPipelineFactories(Manager);
+```
 
+Why this matters:
+
+- payload registration teaches the asset system how to decode the bytes
+- factory registration teaches it how to materialize runtime objects from those payloads
+
+## 4. Write A `.snpak`
+
+```cpp
 ::SnAPI::AssetPipeline::AssetPackWriter Writer;
 
 ::SnAPI::AssetPipeline::AssetPackEntry Entry;
@@ -53,37 +83,13 @@ Entry.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
     WorldBytes);
 
 Writer.AddAsset(std::move(Entry));
-
-auto WriteResult = Writer.Write("DemoContent.snpak");
-if (!WriteResult)
-{
-    return;
-}
+(void)Writer.Write("DemoContent.snpak");
 ```
 
-## 4. Register GameFramework Payload + Runtime Factories
+## 5. Mount And Load
 
 ```cpp
-#include "AssetManager.h"
-
-::SnAPI::AssetPipeline::AssetManager Manager;
-
-RegisterAssetPipelinePayloads(Manager.GetRegistry());
-Manager.GetRegistry().Freeze();
-RegisterAssetPipelineFactories(Manager);
-```
-
-Why this order matters:
-
-1. payload serializers must be in the payload registry
-2. optional `Freeze()` locks registry for fast read-only lookups
-3. runtime factories enable `Load<T>`/`Get<T>` materialization
-
-## 5. Mount and Load
-
-```cpp
-auto MountResult = Manager.MountPack("DemoContent.snpak");
-if (!MountResult)
+if (!Manager.MountPack("DemoContent.snpak"))
 {
     return;
 }
@@ -95,22 +101,45 @@ if (!LoadedWorld)
 }
 ```
 
-The returned world can be traversed normally (`Levels()`, `CreateNode`, `NodePool().ForEach`, etc.).
+The loaded world is a detached runtime object you can inspect or integrate like any other world object, depending on your asset usage pattern.
 
-## 6. Common Failure Cases
+## 6. `TAssetRef<T>` Is The High-Level Link Type
 
-- `Type not registered` on load:
-    - `RegisterBuiltinTypes()` was not called early enough.
-    - The type’s reflection macro was never linked/referenced.
-- `Failed to load world from AssetManager`:
-    - payload serializers/factories were not registered.
-    - payload type/schema mismatch.
-- Objects deserialize but links are missing:
-    - verify handles/UUID fields were reflected and serialized.
+Use `TAssetRef<T>` when you want a reflected reference to a node, level, world, mesh-backed type, or other asset-managed object.
 
-## 7. Compression Notes
+Key facts:
 
-Compression behavior is primarily configured in SnAPI.AssetPipeline (writer settings and optional per-entry overrides).
-GameFramework payload integration is compatible with those settings because it only provides payload bytes and factories.
+- it can resolve by asset id or asset name
+- it can use a default asset manager
+- it supports load-style flows without forcing you to hand-roll registry lookups every time
 
-Next: [Networking Replication and RPC](networking.md)
+## 7. Practical Guidance
+
+### Use node payloads for prefab-like subtree content
+
+Good for:
+
+- a single spawnable prop cluster
+- a pawn archetype subtree
+- a compact authored gameplay object
+
+### Use level payloads for authored chunks
+
+Good for:
+
+- a playable arena
+- a streamed dungeon room
+- a mission slice
+
+### Use world payloads for complete runtime snapshots or packs
+
+Good for:
+
+- full sample worlds
+- benchmark scenes
+- end-to-end integration tests
+
+## What To Read Next
+
+- [Networking, Replication, and Reflected RPC](networking.md)
+- [Shipyard Save/Load](shipyard_save_load.md)

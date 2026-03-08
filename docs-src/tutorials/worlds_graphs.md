@@ -1,36 +1,48 @@
-# Worlds and Graphs
+# Worlds, Levels, and Hierarchies
 
-This page explains the runtime object model. If this is clear, everything else (input, ui, physics, serialization, replication, audio) becomes much easier.
+This is the most important tutorial in the docs because it fixes the biggest source of confusion from older material.
 
-## 1. Runtime Hierarchy
+## The Current Hierarchy
 
-SnAPI.GameFramework is centered around node graphs:
+The public beginner-facing hierarchy is:
 
-- `World` is the runtime root.
-- `Level` is a node type that also behaves like a graph.
-- `NodeGraph` is a node that owns other nodes.
-- `BaseNode` is a regular node.
-- `IComponent` attaches behavior/state to a node.
+- `GameRuntime` owns a `World`
+- `World` owns nodes
+- `Level` is a node used as a grouping root or partition
+- `BaseNode` is the normal gameplay node type
+- `BaseComponent` attaches behavior or data to a node
 
-Because `Level` and `NodeGraph` are nodes, graphs can be nested.
+There is no separate `NodeGraph` layer you need to create first.
 
-## 2. Handles vs Borrowed Pointers
+## `World` Is The Owner
 
-You will use two access patterns constantly:
+The world owns:
 
-- `NodeHandle` / `ComponentHandle`: stable identity (UUID + runtime-key cache)
-- `Borrowed()` pointer: quick lookup for immediate use
+- node lifetime
+- component lifetime
+- runtime hierarchy
+- subsystem objects
+- runtime ECS mirroring
 
-Important rule:
+That is why almost all creation APIs eventually forward into `World`, even when you call them through a `Level`.
 
-- Do not cache borrowed pointers long-term. Resolve from the handle when needed.
-- In hot/runtime APIs, pass handles by `const&` so runtime-key refresh survives the call.
-- Passing handles by value can force repeated UUID fallback lookups.
+## `Level` Is A Convenience Node
 
-## 3. Create a World, Level, Graph, and Nodes
+`Level` is not a second storage system. It is a `BaseNode`-derived type that forwards graph-style helper calls back into the world.
+
+That gives you level-style authoring without splitting ownership.
+
+Use it when you want:
+
+- a root level in the world
+- nested content partitions
+- a clear parent for a group of related nodes
+
+## Build A Tiny Hierarchy
 
 ```cpp
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 using namespace SnAPI::GameFramework;
 
@@ -40,111 +52,153 @@ void BuildScene()
 
     World WorldInstance("GameWorld");
 
-    auto LevelHandleResult = WorldInstance.CreateLevel("MainLevel");
-    if (!LevelHandleResult)
+    auto MainLevelHandle = WorldInstance.CreateLevel("MainLevel");
+    if (!MainLevelHandle)
     {
         return;
     }
 
-    auto LevelResult = WorldInstance.LevelRef(LevelHandleResult.value());
-    if (!LevelResult)
+    auto* MainLevel = NodeCast<Level>(MainLevelHandle->Borrowed());
+    if (!MainLevel)
     {
         return;
     }
 
-    Level& MainLevel = *LevelResult;
-
-    auto GraphHandleResult = MainLevel.CreateGraph("Gameplay");
-    if (!GraphHandleResult)
+    auto GameplayPartitionHandle = MainLevel->CreateNode<Level>("Gameplay");
+    auto PropsPartitionHandle = MainLevel->CreateNode<Level>("Props");
+    if (!GameplayPartitionHandle || !PropsPartitionHandle)
     {
         return;
     }
 
-    auto GraphResult = MainLevel.Graph(GraphHandleResult.value());
-    if (!GraphResult)
+    auto* Gameplay = NodeCast<Level>(GameplayPartitionHandle->Borrowed());
+    auto* Props = NodeCast<Level>(PropsPartitionHandle->Borrowed());
+    if (!Gameplay || !Props)
     {
         return;
     }
 
-    NodeGraph& Gameplay = *GraphResult;
-
-    auto PlayerResult = Gameplay.CreateNode("Player");
-    auto CameraResult = Gameplay.CreateNode("Camera");
-    if (!PlayerResult || !CameraResult)
+    auto PlayerHandle = Gameplay->CreateNode<BaseNode>("Player");
+    auto CameraHandle = Gameplay->CreateNode<BaseNode>("CameraBoom");
+    auto LampHandle = Props->CreateNode<BaseNode>("Lamp");
+    if (!PlayerHandle || !CameraHandle || !LampHandle)
     {
         return;
     }
 
-    // Parent-child relation: Camera becomes child of Player.
-    (void)Gameplay.AttachChild(PlayerResult.value(), CameraResult.value());
+    (void)WorldInstance.AttachChild(*PlayerHandle, *CameraHandle);
 }
 ```
 
-## 4. Frame Lifecycle
+What happened here:
 
-Tick order is tree-driven from graph roots.
-`World` also runs subsystem work during frame lifecycle:
+- the world created the root level
+- the root level created two child `Level` partitions
+- those partitions created regular child nodes
+- the world remained the actual owner of every created object
 
-- networking session pumping in `Tick` + `EndFrame`
-- optional physics stepping in `Tick` and/or `FixedTick` (based on physics settings)
-- audio system update in `Tick`
-- UI context tick in `Tick` (when UI integration is enabled)
-- renderer submit/present in `EndFrame` (when renderer integration is enabled)
+## Handles vs Borrowed Pointers
 
-Typical frame loop:
+You will use both constantly.
+
+### Use handles for identity
+
+- storing references in save data
+- replication
+- cross-frame references
+- parent/child relationships
+
+### Use borrowed pointers for immediate work
+
+- changing a field right now
+- calling `Add<T>()`
+- reading state during this scope
+
+Bad pattern:
+
+- caching a borrowed pointer and assuming it survives destroy, reload, or shutdown
+
+Good pattern:
+
+- storing a `NodeHandle`
+- resolving with `Borrowed()` when needed
+
+## Frame Order Matters
+
+If you are manually driving a world, the full loop is:
 
 ```cpp
-void RunFrame(World& WorldInstance, float DeltaSeconds)
+WorldInstance.FixedTick(FixedDeltaSeconds); // optional, possibly several times
+WorldInstance.Tick(DeltaSeconds);
+WorldInstance.LateTick(DeltaSeconds);
+WorldInstance.EndFrame();
+```
+
+Most users should not hand-roll this. Use `GameRuntime` instead:
+
+```cpp
+GameRuntime Runtime;
+GameRuntimeSettings Settings{};
+Settings.WorldName = "GameWorld";
+Runtime.Init(Settings);
+
+while (Runtime.Update(1.0f / 60.0f))
 {
-    WorldInstance.Tick(DeltaSeconds);
-    WorldInstance.FixedTick(DeltaSeconds); // optional if you use fixed-step logic
-    WorldInstance.LateTick(DeltaSeconds);
-    WorldInstance.EndFrame(); // processes deferred destruction
 }
 ```
 
-Why `EndFrame()` matters:
+`GameRuntime` handles:
 
-- `DestroyNode()` and component `Remove<T>()` are deferred.
-- Handles remain valid until `EndFrame()`.
-- This prevents mid-frame invalidation bugs.
-- Renderer frame submission also happens from world `EndFrame()`, so skipping it can stall visual updates.
+- fixed-step accumulation
+- late tick
+- end-frame
+- optional platform/UI event forwarding
+- frame pacing
 
-If you prefer less boilerplate in apps/examples, use `GameRuntime` and call `Runtime.Update(DeltaSeconds)`.
-`GameRuntime` orchestrates world lifecycle phases while `World` owns subsystem ticking/pumping.
+## Destruction Is Usually Deferred
 
-## 5. Standalone Graphs (Prefab-Style)
+`DestroyNode()` schedules destruction. Actual removal typically happens in `World::EndFrame()`.
 
-Standalone graphs are valid data containers:
+Why that design exists:
 
-```cpp
-NodeGraph PrefabGraph("EnemyPrefab");
-auto EnemyRoot = PrefabGraph.CreateNode("EnemyRoot");
-```
+- traversal can continue safely through the frame
+- handles stay meaningful until the flush point
+- subsystems can release resources in a predictable phase
 
-They can be serialized and reused, but they are not automatically pumped by a world loop unless you call tick methods yourself.
+If you are testing manual world code and forget `EndFrame()`, destroyed nodes can appear to "stick around" longer than you expect.
 
-## 6. World Ownership Pointer (`INode::World()`)
+## Runtime ECS Mirror
 
-Every node has `World()` access:
+Even if you only use classic nodes and components, the world mirrors hierarchy into `WorldEcsRuntime`.
 
-- In a world-owned tree, `World()` points to that `World`.
-- In standalone/prefab graphs, `World()` may be `nullptr`.
+You mostly do not have to care about that until you want:
 
-This is how systems are accessed from gameplay code:
+- runtime-only dense components
+- explicit runtime tick priority
+- ECS-only high-frequency data
 
-```cpp
-auto* OwnerNode = SomeComponent.Owner().Borrowed();
-if (OwnerNode && OwnerNode->World())
-{
-    // OwnerNode->World()->Input(), OwnerNode->World()->UI(), OwnerNode->World()->Audio(), etc.
-}
-```
+When you do, `BaseNode` exposes helpers like:
 
-## 7. Common Mistakes
+- `AddRuntimeComponent<T>()`
+- `RuntimeComponent<T>()`
+- `RemoveRuntimeComponent<T>()`
 
-- Creating logic that assumes `World()` is always non-null.
-- Forgetting `EndFrame()` and then wondering why removed objects still appear valid.
-- Caching borrowed pointers across frame boundaries.
+## Common Mistakes
 
-Next: [Nodes and Components](nodes_components.md)
+### Looking for `CreateGraph()`
+
+That is old documentation. Use `CreateLevel()` or `CreateNode<Level>()` for partitions.
+
+### Treating `Level` as a separate storage root
+
+It is a convenience node over world ownership, not a second allocator or object registry.
+
+### Forgetting `RegisterBuiltinTypes()` in ad hoc tools/tests
+
+If reflection-driven features are involved, register builtins unless your host does it for you.
+
+## What To Read Next
+
+- [Nodes and Components](nodes_components.md)
+- [First Play Session](first_play_session.md)
+- [Architecture](../architecture.md)

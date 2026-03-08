@@ -23,7 +23,28 @@ namespace SnAPI::GameFramework
 class RendererSystem;
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief Component that owns and synchronizes a renderer directional light.
+ *
+ * `DirectionalLightComponent` owns one renderer directional-light object and keeps it
+ * registered with the world's `RendererSystem` light manager while the component is enabled.
+ * The component is data-driven: every update pushes the current `Settings` state into the
+ * renderer light rather than requiring gameplay code to touch the renderer directly.
+ *
+ * Core semantics:
+ * - `Settings::Enabled` controls whether a renderer light should exist at all
+ * - disabling releases the renderer light registration and owned shared handle
+ * - enabling re-registers the light if the renderer/light manager is available
+ * - color, intensity, shadow, and cascade settings are clamped to safe non-negative ranges before upload
+ *
+ * Ownership and lifetime:
+ * - The component owns a shared handle to the renderer light it creates.
+ * - `Light()` returns a non-owning pointer that becomes invalid after `OnDestroy()` or `ReleaseLight()`.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see RendererSystem
  */
 class DirectionalLightComponent : public BaseComponent, public ComponentCRTP<DirectionalLightComponent>
 {
@@ -33,6 +54,11 @@ public:
 
     /**
      * @brief Runtime directional-light settings.
+     *
+     * Units:
+     * - `Direction` is a world-space direction vector.
+     * - `ShadowFarDistance` is in world units.
+     * - `ShadowBias` and `SoftnessFactor` are unitless tuning values.
      */
     struct Settings
     {
@@ -63,14 +89,21 @@ public:
         return m_settings;
     }
 
+    /** @brief Access the owned renderer light. @return Non-owning light pointer or `nullptr` when not registered. */
     SnAPI::Graphics::DirectionalLight* Light();
+    /** @brief Access the owned renderer light (const). @return Non-owning light pointer or `nullptr` when not registered. */
     const SnAPI::Graphics::DirectionalLight* Light() const;
 
+    /** @brief Register the light if enabled and apply current settings. */
     void OnCreate();
+    /** @brief Remove the light from the renderer and release the owned handle. */
     void OnDestroy();
+    /** @brief Variable-step update hook. @param DeltaSeconds Frame delta in seconds. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only update hook. @param DeltaSeconds Frame delta in seconds. */
     void EditorTick(float DeltaSeconds);
+    /** @brief Editor-only property change hook. @param Name Changed reflected field name. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 

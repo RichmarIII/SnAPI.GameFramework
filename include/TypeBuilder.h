@@ -20,15 +20,27 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Fluent builder for registering reflection metadata.
- * @tparam T Type to register.
- * @remarks
- * Builder collects full reflected metadata for a type and commits into `TypeRegistry`.
+ * @ingroup SnAPI_GameFramework
+ * @brief Fluent builder for registering reflection metadata for one type.
+ * @tparam T Type being registered.
+ *
+ * `TTypeBuilder<T>` accumulates a `TypeInfo` record and then commits it into `TypeRegistry`.
+ *
+ * Design responsibilities:
+ * - declare direct base-type relationships
+ * - describe fields as readable, writable, or read-write reflected properties
+ * - describe reflected methods and constructors
+ * - automatically bridge supported node `OnCreate` and editor property-change callbacks
+ * - automatically register component serialization when `T` derives from `BaseComponent`
  *
  * Best-practice lifecycle:
- * 1. define fields/methods/constructors/base types
- * 2. call `Register()` once in one translation unit (typically through `SNAPI_REFLECT_TYPE`)
- * 3. let `TypeAutoRegistry` ensure-on-first-use resolve registration at runtime
+ * 1. add base types, fields, methods, and constructors
+ * 2. call `Register()` exactly once in one translation unit, usually through `SNAPI_REFLECT_TYPE`
+ * 3. let `TypeAutoRegistry` ensure the metadata on first use
+ *
+ * Threading model:
+ * - Building is single-threaded, local-value work.
+ * - Registration delegates to `TypeRegistry`, which is process-global and synchronized.
  */
 template<typename T>
 class TTypeBuilder
@@ -342,9 +354,11 @@ private:
 
 public:
     /**
-     * @brief Construct a builder for a type name.
-     * @param Name Fully qualified type name.
-     * @remarks The TypeId is derived from Name via TypeIdFromName.
+     * @brief Construct a builder for a reflected type name.
+     * @param Name Fully qualified stable reflected type name.
+     *
+     * The builder derives `TypeId` from `Name`, captures `sizeof(T)` / `alignof(T)`, and wires any
+     * supported node/editor callback shims into the pending `TypeInfo`.
      */
     explicit TTypeBuilder(const char* Name)
     {
@@ -359,13 +373,15 @@ public:
     }
 
     /**
-     * @brief Register a base type.
-     * @tparam BaseT Base class type.
-     * @return Reference to the builder for chaining.
-     * @remarks
-     * Base metadata is used for:
-     * - `TypeRegistry::IsA`/`Derived`
-     * - inherited field/method traversal in serialization/replication/RPC lookup.
+     * @brief Register one direct reflected base type.
+     * @tparam BaseT Reflected base class type.
+     * @return Builder reference for chaining.
+     *
+     * The base type is lazily ensured in `TypeRegistry` as a side effect. Base relationships are used
+     * by:
+     * - `TypeRegistry::IsA()` and `Derived()`
+     * - inherited field and method collection
+     * - reflected type compatibility checks in systems like assets and subclass selection
      */
     template<typename BaseT>
     TTypeBuilder& Base()
@@ -377,18 +393,23 @@ public:
     }
 
     /**
-     * @brief Register a field with getter/setter support.
-     * @tparam FieldT Field type.
-     * @param Name Field name.
+     * @brief Reflect a data member through a pointer-to-member.
+     * @tparam FieldT Data-member type.
+     * @param Name Stable reflected field name.
      * @param Member Pointer-to-member field.
-     * @return Reference to the builder for chaining.
-     * @remarks
-     * Member-pointer registration emits:
-     * - Variant getter/setter
-     * - direct pointer accessors
-     * - optional field flags (e.g., replication)
+     * @param Flags Optional field flags.
+     * @return Builder reference for chaining.
      *
-     * Const member fields are reflected as read-only; setter returns error at runtime.
+     * Generated metadata includes:
+     * - variant getter/setter access
+     * - non-owning `VariantView` access
+     * - direct const/mutable pointer accessors for hot paths
+     *
+     * For non-const fields, reflected writes compare old vs new values when possible and notify the
+     * editor property-changed hook only when the value actually changed.
+     *
+     * @warning Const member fields are reflected as read-only. Attempts to assign through the setter
+     * fail at runtime.
      */
     template<typename FieldT>
     TTypeBuilder& Field(const char* Name, FieldT T::*Member, FieldFlags Flags = {})
@@ -479,13 +500,15 @@ public:
     }
 
     /**
-     * @brief Register a read-only field from a getter method.
+     * @brief Reflect a read-only field through a getter method.
      * @tparam GetterMethod Getter member-function pointer type.
-     * @param Name Field name.
-     * @param Getter Getter method (`T::GetX()` or `T::GetX() const`).
-     * @return Reference to the builder for chaining.
-     * @remarks
-     * Getter return can be by value, reference, or const reference.
+     * @param Name Stable reflected field name.
+     * @param Getter Getter method.
+     * @param Flags Optional field flags.
+     * @return Builder reference for chaining.
+     *
+     * Getter return may be by value or by reference. Reference-returning getters additionally expose
+     * `VariantView` and raw-pointer read access where possible.
      */
     template<typename GetterMethod>
     requires (IsGetterMethodV<GetterMethod>)
@@ -541,14 +564,17 @@ public:
     }
 
     /**
-     * @brief Register a write-only field from a setter method.
+     * @brief Reflect a write-only field through a setter method.
      * @tparam SetterMethod Setter member-function pointer type.
-     * @param Name Field name.
-     * @param Setter Setter method (`T::SetX(value)`).
-     * @return Reference to the builder for chaining.
-     * @remarks
-     * Setter parameter can be value/reference/const-reference.
-     * Setter return can be void, bool, or Result.
+     * @param Name Stable reflected field name.
+     * @param Setter Setter method.
+     * @param Flags Optional field flags.
+     * @return Builder reference for chaining.
+     *
+     * Supported setter return contracts:
+     * - `void`: assignment always succeeds
+     * - `bool`: `false` is treated as a rejected value
+     * - `Result`: full error propagation
      */
     template<typename SetterMethod>
     requires (IsSetterMethodV<SetterMethod>)
@@ -583,16 +609,17 @@ public:
     }
 
     /**
-     * @brief Register a readable/writable field using getter + setter methods.
+     * @brief Reflect a read-write field through getter and setter methods.
      * @tparam GetterMethod Getter member-function pointer type.
      * @tparam SetterMethod Setter member-function pointer type.
-     * @param Name Field name.
-     * @param Getter Getter method (`T::GetX()` or `T::GetX() const`).
-     * @param Setter Setter method (`T::SetX(value)`).
-     * @return Reference to the builder for chaining.
-     * @remarks
-     * Getter return can be value/reference/const-reference.
-     * Setter parameter can be value/reference/const-reference.
+     * @param Name Stable reflected field name.
+     * @param Getter Getter method.
+     * @param Setter Setter method.
+     * @param Flags Optional field flags.
+     * @return Builder reference for chaining.
+     *
+     * When the getter return type is copy-constructible and equality comparable, reflected writes
+     * compare pre- and post-set values so editor property-change notifications fire only on real changes.
      */
     template<typename GetterMethod, typename SetterMethod>
     requires (IsGetterMethodV<GetterMethod> && IsSetterMethodV<SetterMethod>)
@@ -706,11 +733,10 @@ public:
     }
 
     /**
-     * @brief Typed bridge for overloaded method names in getter+setter registration.
-     * @remarks
-     * Enables calls such as:
-     * `Field("Name", &Type::Name, &Type::Name)` when one overload is a const getter
-     * and another overload is a single-parameter setter.
+     * @brief Overload bridge for getter/setter pairs that share the same member name.
+     *
+     * This allows declarations such as `Field("Name", &Type::Name, &Type::Name)` where overload
+     * resolution would otherwise be ambiguous.
      */
     template<typename GetterReturn, typename SetterArg, typename SetterReturn>
     TTypeBuilder& Field(
@@ -733,11 +759,24 @@ public:
     }
 
     /**
-     * @brief Legacy accessor registration overload.
-     * @deprecated Use Field(Name, Getter), Field(Name, Setter), or Field(Name, Getter, Setter).
+     * @brief Reflect a read-write field through an editable-reference accessor and a const getter.
+     * @param Name Stable reflected field name.
+     * @param Getter Mutable accessor that returns the stored field by non-const reference.
+     * @param GetterConst Read-only accessor that returns the same field by const reference.
+     * @param Flags Optional field flags.
+     * @return Builder reference for chaining.
+     *
+     * This bridge exists for the engine's common `EditX()/GetX()` pattern, where a type exposes a
+     * mutable reference for in-place editor/gameplay mutation and a separate const accessor for
+     * read-only reflection and serialization.
+     *
+     * Semantics:
+     * - Reflected reads use `Getter`.
+     * - Reflected writes assign through the reference returned by `Getter`.
+     * - Const pointer/view access uses `GetterConst`.
+     * - Editor property-change notifications are emitted only when the assigned value actually changes.
      */
     template<typename FieldT>
-    [[deprecated("Use Field(Name, Getter), Field(Name, Setter), or Field(Name, Getter, Setter).")]]
     TTypeBuilder& Field(
         const char* Name,
         FieldT& (T::*Getter)(),
@@ -810,13 +849,15 @@ public:
     }
 
     /**
-     * @brief Register a non-const method for reflection.
+     * @brief Reflect a non-const method.
      * @tparam R Return type.
      * @tparam Args Parameter pack.
-     * @param Name Method name.
+     * @param Name Stable reflected method name.
      * @param Method Pointer to member function.
-     * @return Reference to the builder for chaining.
-     * @remarks Method flags can mark RPC intent and reliability semantics.
+     * @param Flags Optional method flags.
+     * @return Builder reference for chaining.
+     *
+     * Invocation is bridged through `MakeInvoker()` so callers can use type-erased `Variant` argument packs.
      */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...), MethodFlags Flags = {})
@@ -840,13 +881,15 @@ public:
     }
 
     /**
-     * @brief Register a const method for reflection.
+     * @brief Reflect a const method.
      * @tparam R Return type.
      * @tparam Args Parameter pack.
-     * @param Name Method name.
+     * @param Name Stable reflected method name.
      * @param Method Pointer to const member function.
-     * @return Reference to the builder for chaining.
-     * @remarks Constness is encoded in metadata and enforced through invoker binding.
+     * @param Flags Optional method flags.
+     * @return Builder reference for chaining.
+     *
+     * Constness is stored in metadata and exposed to callers through `MethodInfo::IsConst`.
      */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const, MethodFlags Flags = {})
@@ -870,12 +913,12 @@ public:
     }
 
     /**
-     * @brief Register a constructor signature.
+     * @brief Reflect a constructor signature.
      * @tparam Args Constructor argument types.
-     * @return Reference to the builder for chaining.
-     * @remarks
-     * Constructor metadata powers runtime creation by type id (serialization spawn paths,
-     * script/runtime factories, replication instantiation).
+     * @return Builder reference for chaining.
+     *
+     * Constructor metadata powers runtime creation by `TypeId` in systems such as serialization,
+     * script binding, editor creation flows, and component registration helpers.
      */
     template<typename... Args>
     TTypeBuilder& Constructor()
@@ -894,11 +937,14 @@ public:
     }
 
     /**
-     * @brief Register the built TypeInfo into the global TypeRegistry.
-     * @return Pointer to stored TypeInfo or error.
-     * @remarks
-     * If `T` derives from `BaseComponent`, this also auto-registers component serialization
-     * in `ComponentSerializationRegistry`.
+     * @brief Commit the accumulated `TypeInfo` into the global `TypeRegistry`.
+     * @return Pointer to the stored `TypeInfo` or an error.
+     *
+     * Additional side effects:
+     * - if `T` derives from `BaseComponent`, `ComponentSerializationRegistry::Register<T>()` is attempted
+     * - node `OnCreate` and editor property-changed callback shims are already embedded in the metadata
+     *
+     * @warning The builder should be consumed only once. `Register()` moves out of the accumulated metadata.
      */
     TExpected<TypeInfo*> Register()
     {

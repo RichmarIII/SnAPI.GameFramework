@@ -10,33 +10,35 @@
 namespace SnAPI::GameFramework
 {
 /**
- * Auto-registration helpers for reflection and serialization.
+ * @ingroup SnAPI_GameFramework
+ * @brief Macro-based helpers for lazy reflection auto-registration.
  *
- * Usage (place in a single .cpp per type to avoid duplicate registration):
- *   SNAPI_REFLECT_TYPE(MyType, (TTypeBuilder<MyType>(MyType::kTypeName)
- *       .Base<BaseNode>()
- *       .Field("Health", &MyType::m_health)
- *       .Constructor<>()
- *       .Register()));
+ * Typical usage places one `SNAPI_REFLECT_TYPE(...)` or `SNAPI_REFLECT_COMPONENT(...)` invocation in
+ * exactly one `.cpp` file per reflected type:
  *
- *   SNAPI_REFLECT_COMPONENT(MyComponent, (TTypeBuilder<MyComponent>(MyComponent::kTypeName)
- *       .Field("Speed", &MyComponent::m_speed)
- *       .Constructor<>()
- *       .Register()));
+ * `SNAPI_REFLECT_TYPE(MyType, (TTypeBuilder<MyType>(MyType::kTypeName).Field(...).Register()));`
  *
- * The builder expression should register the type with TypeRegistry. If a node must be
- * created by TypeId (serialization, scripting), register a default constructor.
- * Types are registered lazily: the macro installs an "ensure" callback keyed by
- * deterministic TypeId. The actual TypeRegistry registration is performed on first use
- * (TypeRegistry::Find on miss, or explicit TypeAutoRegistry::Ensure).
+ * Design intent:
+ * - static initialization installs a cheap ensure callback into `TypeAutoRegistry`
+ * - heavy `TypeRegistry` mutation is deferred until first use
+ * - this reduces dependency on cross-translation-unit static initialization order
+ *
+ * If a type must be created by reflected constructor metadata, the builder expression should include
+ * a matching `Constructor<...>()` registration.
  */
 
 using TTypeRegisterFn = void(*)();
 
 /**
- * @brief Helper that executes a registration function at static initialization.
- * @remarks Used by SNAPI_REFLECT_TYPE and SNAPI_REFLECT_COMPONENT macros.
- * @note Static initialization order across translation units is undefined.
+ * @ingroup SnAPI_GameFramework
+ * @brief Tiny helper that runs a function during static initialization.
+ *
+ * `TTypeRegistrar` is intentionally minimal: it simply executes a registration thunk when the static
+ * object is constructed. The thunk normally registers an ensure callback with `TypeAutoRegistry`,
+ * not the full type metadata itself.
+ *
+ * @note Static initialization order across translation units is still undefined, which is why the
+ * heavy registration work is deferred to lazy ensure callbacks.
  */
 class TTypeRegistrar
 {
@@ -76,10 +78,15 @@ public:
 #endif
 
 /**
- * @brief Register a reflected type using a builder expression (lazy).
+ * @ingroup SnAPI_GameFramework
+ * @brief Low-level macro that installs a lazy ensure callback for a reflected type.
  * @param BuilderExpr Expression that builds and registers the type.
  * @param Id Unique counter to avoid symbol collisions.
- * @remarks Use SNAPI_REFLECT_TYPE instead of calling this directly.
+ *
+ * `BuilderExpr` is executed at most once through a `std::once_flag`. Non-`AlreadyExists` errors are
+ * cached and replayed on later ensure attempts.
+ *
+ * @warning This is an implementation macro. Use `SNAPI_REFLECT_TYPE` instead.
  */
 #define SNAPI_REFLECT_TYPE_IMPL(Type, BuilderExpr, Id) \
     namespace \
@@ -114,19 +121,25 @@ public:
     }
 
 /**
- * @brief Register a reflected type using a builder expression (lazy).
+ * @ingroup SnAPI_GameFramework
+ * @brief Register a reflected type through a lazy `TypeAutoRegistry` ensure callback.
  * @param Type C++ type being registered.
  * @param BuilderExpr Expression that builds and registers the type's TypeInfo.
- * @remarks Place this in a single .cpp per type to avoid duplicate registration.
+ *
+ * Place this in exactly one translation unit per type. The first use of the type's `TypeId` or type
+ * name can then trigger actual `TypeRegistry` registration on demand.
  */
 #define SNAPI_REFLECT_TYPE(Type, BuilderExpr) SNAPI_REFLECT_TYPE_IMPL(Type, BuilderExpr, __COUNTER__)
 
 /**
- * @brief Register a reflected component type and its serializer.
+ * @ingroup SnAPI_GameFramework
+ * @brief Register a reflected component type.
  * @param ComponentType Component C++ type.
  * @param BuilderExpr Expression that builds and registers the type's TypeInfo.
- * @remarks Components are automatically registered with ComponentSerializationRegistry
- *          by TTypeBuilder<>::Register when they derive from BaseComponent.
+ *
+ * Components still use the same lazy registration path as other reflected types. Their component
+ * serialization registration is handled by `TTypeBuilder<T>::Register()` when `T` derives from
+ * `BaseComponent`.
  */
 #define SNAPI_REFLECT_COMPONENT(ComponentType, BuilderExpr) \
     SNAPI_REFLECT_TYPE(ComponentType, BuilderExpr)

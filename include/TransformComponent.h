@@ -9,18 +9,39 @@ namespace SnAPI::GameFramework
 class BaseNode;
 
 /**
- * @brief Plain transform value used for hierarchy/world-space calculations.
+ * @ingroup SnAPI_GameFramework
+ * @brief Plain transform value used for hierarchy and world-space calculations.
+ *
+ * `NodeTransform` is the value type used by transform helpers throughout the module.
+ * Depending on context it may represent local space or world space; call sites define
+ * which interpretation is in effect.
  */
 struct NodeTransform
 {
     Vec3 Position{}; /**< @brief Position in local or world space depending on context. */
-    Quat Rotation = Quat::Identity(); /**< @brief Rotation in local or world space depending on context. */
+    Quat Rotation = Quat::Identity(); /**< @brief Rotation in local or world space depending on context. Expected to be normalized by helper APIs. */
     Vec3 Scale{1.0f, 1.0f, 1.0f}; /**< @brief Scale in local or world space depending on context. */
 };
 
 /**
- * @brief Basic transform component (position, quaternion rotation, scale).
- * @remarks Minimal spatial state component used by examples and built-in systems.
+ * @ingroup SnAPI_GameFramework
+ * @brief Basic transform component storing local position, rotation, and scale.
+ *
+ * `TransformComponent` is the canonical spatial state component for scene-graph nodes.
+ * In addition to storing local transform values, it provides static helpers for composing,
+ * querying, and writing world transforms across parent chains and nested graph boundaries.
+ *
+ * Core semantics:
+ * - component fields represent local space relative to the node's parent
+ * - world-transform helpers traverse full parent chains and can cross nested-graph ownership boundaries
+ * - when ECS runtime transform data is available, helpers synchronize component data into the runtime and query it for authoritative world transforms
+ * - write helpers can create the component on demand when `CreateIfMissing` is enabled
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see BaseNode
+ * @see NodeTransform
  */
 class TransformComponent : public BaseComponent, public ComponentCRTP<TransformComponent>
 {

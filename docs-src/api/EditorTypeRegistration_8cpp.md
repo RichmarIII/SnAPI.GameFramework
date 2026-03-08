@@ -1,0 +1,1 @@
+# File `EditorTypeRegistration.cpp`

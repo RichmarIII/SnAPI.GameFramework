@@ -61,191 +61,320 @@ namespace SnAPI::GameFramework::Editor
 class EditorSelectionModel;
 
 /**
+ * @ingroup SnAPI_GameFramework_Editor
  * @brief Builds and owns the editor shell widget tree inside the root UI context.
+ *
+ * `EditorLayout` is the concrete UI composition object for the editor shell. It creates the menu bar,
+ * toolbar, hierarchy, game viewport tabs, inspector panes, content browser, and project/asset modal
+ * overlays inside the root `UIContext` exposed by the running `GameRuntime`.
+ *
+ * Core semantics:
+ * - `Build()` tears down any previous shell, registers required external elements, and rebuilds the
+ *   entire widget tree for the current runtime and theme.
+ * - `Sync()` is the steady-state update path. It refreshes the hierarchy, current inspector target,
+ *   invalidation overlay state, and game viewport camera binding without rebuilding the shell.
+ * - The class stores UI callbacks as delegates. Higher-level services provide those delegates and are
+ *   responsible for translating them into editor actions.
+ * - Content-browser and inspector payload setters copy lightweight view-model data but may contain
+ *   borrowed raw object pointers for property panels; those pointers must remain valid until replaced
+ *   by a subsequent state push or until the layout is shut down.
+ *
+ * Ownership and lifetime:
+ * - `EditorLayout` value-owns its UI element handles and modal/view-model state.
+ * - Returned pointers such as `GameViewport()` and `Context()` are non-owning and become invalid when
+ *   the layout is shut down or rebuilt.
+ *
+ * Threading model:
+ * - Main-thread only.
  */
 class EditorLayout final
 {
 public:
+    /**
+     * @brief One content-browser card entry.
+     *
+     * This structure carries the normalized display data needed to render a single asset entry in the
+     * content browser grid or list.
+     */
     struct ContentAssetEntry
     {
-        std::string Key{};
-        std::string Name{};
-        std::string Type{};
-        std::string Variant{};
-        std::string IconSource{};
-        std::uint32_t IconTextureId = 0;
-        std::uint32_t IconWidth = 0;
-        std::uint32_t IconHeight = 0;
-        bool IsRuntime = false;
-        bool IsDirty = false;
+        std::string Key{}; /**< @brief Stable asset key used to route selection, placement, save, delete, and rename callbacks. */
+        std::string Name{}; /**< @brief User-facing asset display name. */
+        std::string Type{}; /**< @brief Short reflected type/category label shown on the asset card. */
+        std::string Variant{}; /**< @brief Additional subtype or variant label for disambiguation. */
+        std::string IconSource{}; /**< @brief Logical fallback icon identifier used when no thumbnail texture is available. */
+        std::uint32_t IconTextureId = 0; /**< @brief External UI texture id for thumbnail rendering, or `0` when no texture preview exists. */
+        std::uint32_t IconWidth = 0; /**< @brief Thumbnail width in pixels. */
+        std::uint32_t IconHeight = 0; /**< @brief Thumbnail height in pixels. */
+        bool IsRuntime = false; /**< @brief `true` when the asset currently lives only in runtime/editor memory rather than persisted project content. */
+        bool IsDirty = false; /**< @brief `true` when the asset has unsaved runtime or import-setting changes. */
     };
 
+    /**
+     * @brief Detail-pane payload for the currently selected content asset.
+     */
     struct ContentAssetDetails
     {
-        std::string Name{};
-        std::string Type{};
-        std::string Variant{};
-        std::string AssetId{};
-        std::string Status{};
-        bool IsRuntime = false;
-        bool IsDirty = false;
-        bool CanPlace = true;
-        bool CanSave = true;
+        std::string Name{}; /**< @brief User-facing asset name shown in the details pane. */
+        std::string Type{}; /**< @brief Reflected type/category label. */
+        std::string Variant{}; /**< @brief Variant or subtype label. */
+        std::string AssetId{}; /**< @brief Stable serialized asset identifier, if the asset has one. */
+        std::string Status{}; /**< @brief Human-readable status text such as load/save/import state. */
+        bool IsRuntime = false; /**< @brief `true` when the asset is runtime-only and not yet persisted into project content. */
+        bool IsDirty = false; /**< @brief `true` when the selected asset has unsaved changes. */
+        bool CanPlace = true; /**< @brief `true` when the asset may be instantiated or placed into the world from the browser. */
+        bool CanSave = true; /**< @brief `true` when a save action should be enabled for the selected asset. */
     };
 
+    /**
+     * @brief Request payload emitted when the create-asset modal is confirmed.
+     */
     struct ContentAssetCreateRequest
     {
-        TypeId Type{};
-        std::string Name{};
-        std::string FolderPath{};
+        TypeId Type{}; /**< @brief Reflected asset type selected in the create modal. */
+        std::string Name{}; /**< @brief User-entered asset name after layout-side trimming and validation. */
+        std::string FolderPath{}; /**< @brief Content-browser folder path that should receive the new asset. */
     };
 
+    /**
+     * @brief Request payload emitted when the import-asset modal is confirmed.
+     */
     struct ContentAssetImportRequest
     {
-        std::string SourcePath{};
-        std::string FolderPath{};
-        std::unordered_map<std::string, std::string> BuildOptions{};
-        ::SnAPI::AssetPipeline::AssetImportSettingsPtr ImportSettings{};
+        std::string SourcePath{}; /**< @brief Source file path chosen by the user for import. */
+        std::string FolderPath{}; /**< @brief Destination content folder path inside the current project. */
+        std::unordered_map<std::string, std::string> BuildOptions{}; /**< @brief Normalized string build options derived from the selected import profile. */
+        ::SnAPI::AssetPipeline::AssetImportSettingsPtr ImportSettings{}; /**< @brief Owning pointer to the typed import-settings object selected in the modal. */
     };
 
+    /**
+     * @brief State payload for the asset-inspector modal.
+     *
+     * The inspector modal can edit a runtime asset object, optional import settings, and an optional
+     * node hierarchy view for hierarchical assets. `TargetObject` and `ImportSettingsObject` are
+     * borrowed raw pointers; they must remain valid until a new state payload is pushed or the modal
+     * is closed.
+     */
     struct ContentAssetInspectorState
     {
+        /**
+         * @brief One visible node entry in the inspector hierarchy tree.
+         */
         struct NodeEntry
         {
-            NodeHandle Handle{};
-            int Depth = 0;
-            std::string Label{};
+            NodeHandle Handle{}; /**< @brief Stable handle for the represented node. */
+            int Depth = 0; /**< @brief Tree depth used to rebuild a flat hierarchical view. */
+            std::string Label{}; /**< @brief User-facing node label. */
         };
 
-        bool Open = false;
-        std::string AssetKey{};
-        std::string Title{};
-        std::string Status{};
-        TypeId TargetType{};
-        void* TargetObject = nullptr;
-        TypeId ImportSettingsType{};
-        void* ImportSettingsObject = nullptr;
-        std::vector<NodeEntry> Nodes{};
-        NodeHandle SelectedNode{};
-        bool CanEditHierarchy = false;
-        bool HasImportSettings = false;
-        bool RuntimeDirty = false;
-        bool ImportSettingsDirty = false;
-        bool IsDirty = false;
-        bool CanSave = false;
-        bool CanReimport = false;
-        std::string PreviewIconSource{};
-        std::uint32_t PreviewTextureId = 0;
-        std::uint32_t PreviewWidth = 0;
-        std::uint32_t PreviewHeight = 0;
-        std::string PreviewStatsPrimary{};
-        std::string PreviewStatsSecondary{};
-        std::uint64_t SessionRevision = 0;
+        bool Open = false; /**< @brief `true` when the asset-inspector modal should be visible. */
+        std::string AssetKey{}; /**< @brief Stable asset key of the asset being inspected. */
+        std::string Title{}; /**< @brief Modal title text. */
+        std::string Status{}; /**< @brief Human-readable status line for save/import/runtime state. */
+        TypeId TargetType{}; /**< @brief Reflected type of `TargetObject`. */
+        void* TargetObject = nullptr; /**< @brief Borrowed pointer to the runtime asset object currently bound into the property panel. */
+        TypeId ImportSettingsType{}; /**< @brief Reflected type of `ImportSettingsObject`, if any. */
+        void* ImportSettingsObject = nullptr; /**< @brief Borrowed pointer to the editable import-settings object, if any. */
+        std::vector<NodeEntry> Nodes{}; /**< @brief Flattened hierarchy view shown for hierarchical assets. */
+        NodeHandle SelectedNode{}; /**< @brief Currently selected hierarchy node within the inspected asset. */
+        bool CanEditHierarchy = false; /**< @brief `true` when hierarchy add/remove actions should be enabled. */
+        bool HasImportSettings = false; /**< @brief `true` when the asset exposes import settings for editing. */
+        bool RuntimeDirty = false; /**< @brief `true` when the runtime asset object has unsaved edits. */
+        bool ImportSettingsDirty = false; /**< @brief `true` when import settings have unsaved edits. */
+        bool IsDirty = false; /**< @brief Aggregate dirty flag used by the modal save affordances. */
+        bool CanSave = false; /**< @brief `true` when the save button should be enabled. */
+        bool CanReimport = false; /**< @brief `true` when the reimport action is available. */
+        std::string PreviewIconSource{}; /**< @brief Logical fallback icon for the preview panel. */
+        std::uint32_t PreviewTextureId = 0; /**< @brief External UI texture id for the preview image, or `0` when no preview texture exists. */
+        std::uint32_t PreviewWidth = 0; /**< @brief Preview texture width in pixels. */
+        std::uint32_t PreviewHeight = 0; /**< @brief Preview texture height in pixels. */
+        std::string PreviewStatsPrimary{}; /**< @brief Primary preview statistics line. */
+        std::string PreviewStatsSecondary{}; /**< @brief Secondary preview statistics line. */
+        std::uint64_t SessionRevision = 0; /**< @brief Revision token used to avoid rebinding unchanged asset-editor sessions. */
     };
 
+    /**
+     * @brief Hierarchy action kinds emitted by hierarchy context menus.
+     */
     enum class EHierarchyAction : std::uint8_t
     {
-        AddNodeType,
-        AddComponentType,
-        RemoveComponentType,
-        DeleteNode,
-        CreatePrefab,
+        AddNodeType, /**< @brief Create a new child node of the chosen reflected type. */
+        AddComponentType, /**< @brief Attach a component of the chosen reflected type to the target node. */
+        RemoveComponentType, /**< @brief Remove the specified component type from the target node. */
+        DeleteNode, /**< @brief Delete the target node. */
+        CreatePrefab, /**< @brief Create a prefab asset from the target node subtree. */
     };
 
+    /**
+     * @brief Payload describing one hierarchy action request.
+     */
     struct HierarchyActionRequest
     {
-        EHierarchyAction Action = EHierarchyAction::AddNodeType;
-        NodeHandle TargetNode{};
-        bool TargetIsWorldRoot = false;
-        TypeId Type{};
+        EHierarchyAction Action = EHierarchyAction::AddNodeType; /**< @brief Requested hierarchy action. */
+        NodeHandle TargetNode{}; /**< @brief Target node for the action, when applicable. */
+        bool TargetIsWorldRoot = false; /**< @brief `true` when the action conceptually targets the world root rather than a concrete node. */
+        TypeId Type{}; /**< @brief Reflected node or component type associated with add/remove requests. */
     };
 
+    /**
+     * @brief Toolbar actions emitted by the editor shell.
+     */
     enum class EToolbarAction : std::uint8_t
     {
-        Play,
-        Pause,
-        Stop,
-        JoinLocalPlayer2,
+        Play, /**< @brief Start or resume Play-In-Editor. */
+        Pause, /**< @brief Pause the active PIE session. */
+        Stop, /**< @brief Stop PIE and restore the editor world snapshot. */
+        JoinLocalPlayer2, /**< @brief Request that a second local player join the current session. */
     };
 
+    /**
+     * @brief Transform-gizmo space selection exposed by the tools pane.
+     */
     enum class EGizmoSpace : std::uint8_t
     {
-        World = 0,
-        Object,
-        Camera
+        World = 0, /**< @brief Interpret gizmo axes in world space. */
+        Object, /**< @brief Interpret gizmo axes in the selected object's local basis. */
+        Camera /**< @brief Interpret gizmo axes relative to the active editor camera. */
     };
 
+    /**
+     * @brief Binary snapping toggle used by the tools pane.
+     */
     enum class ESnapMode : std::uint8_t
     {
-        Off = 0,
-        On
+        Off = 0, /**< @brief Do not quantize transform interaction deltas. */
+        On /**< @brief Quantize transform interaction deltas using the configured snap steps. */
     };
 
+    /**
+     * @brief Project-management actions emitted by project modals.
+     */
     enum class EProjectAction : std::uint8_t
     {
-        CreateNew,
-        OpenExisting,
-        SaveSettings,
+        CreateNew, /**< @brief Create a new project from the values entered in the create-project flow. */
+        OpenExisting, /**< @brief Open an existing project file selected by the user. */
+        SaveSettings, /**< @brief Persist project settings edits for the currently loaded project. */
     };
 
+    /**
+     * @brief Payload describing one project action request.
+     */
     struct ProjectActionRequest
     {
-        EProjectAction Action = EProjectAction::CreateNew;
-        std::string ProjectName{};
-        std::string ProjectDirectory{};
-        std::string ProjectFilePath{};
-        std::string StartupLevelPack{};
-        std::string DefaultRenderSettingsAssetId{};
+        EProjectAction Action = EProjectAction::CreateNew; /**< @brief Requested project action. */
+        std::string ProjectName{}; /**< @brief User-facing project name. */
+        std::string ProjectDirectory{}; /**< @brief Directory that should contain the project when creating a new one. */
+        std::string ProjectFilePath{}; /**< @brief Absolute project file path used for open/save workflows. */
+        std::string StartupLevelPack{}; /**< @brief Asset id or pack path for the project's startup level. */
+        std::string DefaultRenderSettingsAssetId{}; /**< @brief Default render-settings asset id chosen in project settings. */
     };
 
+    /**
+     * @brief Current loaded-project state shown by the shell.
+     */
     struct ProjectState
     {
-        bool IsLoaded = false;
-        std::string Name{};
-        std::string ProjectFilePath{};
-        std::string ProjectRootDirectory{};
-        std::string AssetRootDirectory{};
-        std::string StartupLevelPack{};
-        std::string DefaultRenderSettingsAssetId{};
+        bool IsLoaded = false; /**< @brief `true` when an editor project is currently loaded. */
+        std::string Name{}; /**< @brief Project display name. */
+        std::string ProjectFilePath{}; /**< @brief Absolute path to the active project file. */
+        std::string ProjectRootDirectory{}; /**< @brief Root directory that contains the project file and related metadata. */
+        std::string AssetRootDirectory{}; /**< @brief Root content directory shown by the content browser. */
+        std::string StartupLevelPack{}; /**< @brief Configured startup level asset identifier or pack path. */
+        std::string DefaultRenderSettingsAssetId{}; /**< @brief Configured default render-settings asset identifier. */
     };
 
+    /**
+     * @brief Build or rebuild the full editor shell for the supplied runtime.
+     * @param Runtime Borrowed runtime that exposes the root UI context and world services.
+     * @param Theme Borrowed theme applied to the shell.
+     * @param ActiveCamera Non-owning active editor camera pointer used for initial hierarchy/inspector/game-view setup.
+     * @param SelectionModel Borrowed selection model used for hierarchy and inspector binding.
+     * @return Success or an error.
+     *
+     * `Build()` first shuts down any previously built shell, then registers external elements such as
+     * `UIRenderViewport` and `UIPropertyPanel`, resolves the root UI context, and composes the full shell.
+     */
     Result Build(GameRuntime& Runtime,
                  SnAPI::UI::Theme& Theme,
                  CameraComponent* ActiveCamera,
                  EditorSelectionModel* SelectionModel);
+    /**
+     * @brief Destroy the current shell and clear all element handles, modal state, and callback bindings.
+     * @param Runtime Borrowed runtime associated with the current layout, or `nullptr` when tearing down detached state.
+     */
     void Shutdown(GameRuntime* Runtime);
 
+    /**
+     * @brief Synchronize the built shell with current runtime, selection, and camera state.
+     * @param Runtime Borrowed runtime.
+     * @param ActiveCamera Non-owning active editor camera pointer.
+     * @param SelectionModel Borrowed selection model.
+     * @param DeltaSeconds Frame delta time in seconds.
+     *
+     * This is the steady-state update path and does not rebuild the shell.
+     */
     void Sync(GameRuntime& Runtime, CameraComponent* ActiveCamera, EditorSelectionModel* SelectionModel, float DeltaSeconds);
+    /** @brief Query whether the shell is currently built. */
     [[nodiscard]] bool IsBuilt() const { return m_built; }
+    /** @brief Access the embedded game-viewport UI element. @return Non-owning pointer or `nullptr`. */
     [[nodiscard]] UIRenderViewport* GameViewport() const;
+    /** @brief Index of the active game-viewport tab within the game-view tab control, or a negative value if unavailable. */
     [[nodiscard]] int32_t GameViewportTabIndex() const;
+    /** @brief Access the root UI context currently hosting the shell. @return Non-owning pointer or `nullptr`. */
     [[nodiscard]] SnAPI::UI::UIContext* Context() const { return m_context; }
+    /** @brief Current gizmo-space selection from the tools UI. */
     [[nodiscard]] EGizmoSpace GizmoSpace() const { return m_gizmoSpace; }
+    /** @brief Query whether transform snapping is currently enabled in the tools UI. */
     [[nodiscard]] bool GizmoSnappingEnabled() const { return m_snapMode == ESnapMode::On; }
+    /** @brief Translation snap step in world units. */
     [[nodiscard]] double MoveSnapStep() const { return m_moveSnapStep; }
+    /** @brief Rotation snap increment in degrees. */
     [[nodiscard]] double RotateSnapStepDegrees() const { return m_rotateSnapStepDegrees; }
+    /** @brief Scale snap increment in scalar units. */
     [[nodiscard]] double ScaleSnapStep() const { return m_scaleSnapStep; }
+    /** @brief Install the callback invoked when the user chooses a hierarchy node. */
     void SetHierarchySelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
+    /** @brief Install the callback invoked when the user requests a hierarchy mutation. */
     void SetHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
+    /** @brief Install the callback invoked when the user presses a toolbar action. */
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
+    /** @brief Install the callback invoked for project create/open/save-settings flows. */
     void SetProjectActionHandler(SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> Handler);
+    /** @brief Replace the loaded-project view state shown across project-sensitive UI. */
     void SetProjectState(ProjectState State);
+    /** @brief Control whether the shell should force the user through project selection before normal editing. */
     void SetProjectSelectionRequired(bool Required);
+    /** @brief Replace the content-browser asset list. */
     void SetContentAssets(std::vector<ContentAssetEntry> Assets);
+    /** @brief Install the callback invoked when the user selects or double-clicks a content asset. */
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
+    /** @brief Install the callback invoked when the user requests asset placement into the world. */
     void SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user requests asset save. */
     void SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user requests asset deletion. */
     void SetContentAssetDeleteHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user confirms an asset rename. */
     void SetContentAssetRenameHandler(SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user requests a content refresh. */
     void SetContentAssetRefreshHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the create-asset modal is confirmed. */
     void SetContentAssetCreateHandler(SnAPI::UI::TDelegate<void(const ContentAssetCreateRequest&)> Handler);
+    /** @brief Install the callback invoked when the import-asset modal is confirmed. */
     void SetContentAssetImportHandler(SnAPI::UI::TDelegate<void(const ContentAssetImportRequest&)> Handler);
+    /** @brief Install the callback invoked when the asset-inspector save action is chosen. */
     void SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the asset-inspector reimport action is chosen. */
     void SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the asset-inspector modal is closed by the user. */
     void SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user selects a node inside the asset-inspector hierarchy. */
     void SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
+    /** @brief Install the callback invoked when the user requests a hierarchy edit inside the asset-inspector modal. */
     void SetContentAssetInspectorHierarchyActionHandler(SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> Handler);
+    /** @brief Replace the detail-pane payload for the currently selected content asset. */
     void SetContentAssetDetails(ContentAssetDetails Details);
+    /** @brief Replace the asset-inspector modal state. */
     void SetContentAssetInspectorState(ContentAssetInspectorState State);
 
 private:

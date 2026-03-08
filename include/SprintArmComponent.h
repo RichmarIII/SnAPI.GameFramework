@@ -11,13 +11,28 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Camera boom-style component for third-person pawn view control.
- * @remarks
- * Owns yaw/pitch view state and drives sibling `CameraComponent` offsets so camera
- * placement and rotation stay coherent with the pawn body orientation.
+ * @ingroup SnAPI_GameFramework
+ * @brief Camera-boom component for third-person pawn view control.
  *
- * Look input can be fed directly via `AddLookInput` or through sibling
- * `InputIntentComponent` when present.
+ * `SprintArmComponent` stores view yaw/pitch state and writes the resulting boom offset
+ * into a sibling `CameraComponent`. It can also optionally rotate the owning node's yaw
+ * so body orientation follows the view, making it the stock third-person camera rig helper
+ * used by built-in pawn types.
+ *
+ * Core semantics:
+ * - actual camera application happens in `LateTick(...)`
+ * - queued look input is accumulated through `AddLookInput(...)` and/or consumed from a sibling `InputIntentComponent`
+ * - when `DriveOwnerYaw` is enabled, only yaw is written back to the owning node transform
+ * - the component forces the sibling camera to use transform synchronization and writes camera local offsets each frame
+ *
+ * Ownership and lifetime:
+ * - The component does not own the camera; it mutates a sibling `CameraComponent` if one exists.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see CameraComponent
+ * @see InputIntentComponent
  */
 class SNAPI_GAMEFRAMEWORK_API SprintArmComponent : public BaseComponent, public ComponentCRTP<SprintArmComponent>
 {
@@ -28,7 +43,11 @@ public:
     static constexpr int kTickPriority = -5;
 
     /**
-     * @brief Runtime configuration for sprint arm pose and behavior.
+     * @brief Runtime configuration for spring-arm pose and behavior.
+     *
+     * Units:
+     * - angles are in degrees
+     * - `ArmLength` and `SocketOffset` are in world units
      */
     struct Settings
     {
@@ -56,12 +75,14 @@ public:
         return m_settings;
     }
 
+    /** @brief Initialize internal yaw/pitch state from settings and owner pose, then apply the arm immediately. */
     void OnCreate();
-    /** @brief Variable-step input staging pass (currently unused). */
+    /** @brief Variable-step input staging pass. @param DeltaSeconds Frame delta in seconds. @remarks Currently retained for tick-order symmetry. */
     void Tick(float DeltaSeconds);
-    /** @brief Variable-step view/camera application pass. */
+    /** @brief Variable-step view/camera application pass. @param DeltaSeconds Frame delta in seconds. */
     void LateTick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only property change hook. @param Name Changed reflected field name. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 

@@ -6,14 +6,14 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
         <link rel="canonical" href="https://richmarIII.github.io/SnAPI.GameFramework/tutorials/renderer/">
       
       
-        <link rel="prev" href="../nodes_components/">
+        <link rel="prev" href="../ui/">
       
       
         <link rel="next" href="../physics/">
@@ -23,11 +23,11 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
-        <title>Renderer Integration and Mesh Components - SnAPI.GameFramework</title>
+        <title>Renderer Integration - SnAPI.GameFramework</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#renderer-integration-and-mesh-components" class="md-skip">
+        <a href="#renderer-integration" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Renderer Integration and Mesh Components
+              Renderer Integration
             
           </span>
         </div>
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -481,6 +542,62 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -500,7 +617,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -518,7 +635,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -544,10 +661,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-build-time-integration-rules" class="md-nav__link">
+  <a href="#1-bootstrap-through-gameruntime" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Build-Time Integration Rules
+        1. Bootstrap Through GameRuntime
       
     </span>
   </a>
@@ -555,10 +672,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-bootstrap-renderer-from-gameruntimesettings" class="md-nav__link">
+  <a href="#2-the-world-submits-renderer-work-in-endframe" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Bootstrap Renderer from GameRuntimeSettings
+        2. The World Submits Renderer Work In EndFrame
       
     </span>
   </a>
@@ -566,10 +683,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-runtime-lifecycle-who-calls-present" class="md-nav__link">
+  <a href="#3-add-a-camera" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Runtime Lifecycle: Who Calls Present?
+        3. Add A Camera
       
     </span>
   </a>
@@ -577,10 +694,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-camera-setup-with-cameracomponent" class="md-nav__link">
+  <a href="#4-add-a-static-mesh" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Camera Setup with CameraComponent
+        4. Add A Static Mesh
       
     </span>
   </a>
@@ -588,10 +705,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-static-mesh-rendering-staticmeshcomponent" class="md-nav__link">
+  <a href="#5-add-a-skeletal-mesh" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Static Mesh Rendering (StaticMeshComponent)
+        5. Add A Skeletal Mesh
       
     </span>
   </a>
@@ -599,10 +716,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-skeletalrigid-animation-rendering-skeletalmeshcomponent" class="md-nav__link">
+  <a href="#6-understand-the-current-render-object-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Skeletal/Rigid Animation Rendering (SkeletalMeshComponent)
+        6. Understand The Current Render Object Model
       
     </span>
   </a>
@@ -610,10 +727,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-post-refactor-model-mesh-asset-vs-render-object" class="md-nav__link">
+  <a href="#7-world-render-settings" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Post-Refactor Model: Mesh Asset vs Render Object
+        7. World Render Settings
       
     </span>
   </a>
@@ -621,10 +738,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#8-material-sharing-for-high-instance-counts" class="md-nav__link">
+  <a href="#8-uirenderviewport-is-layout-driven" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8. Material Sharing for High Instance Counts
+        8. UIRenderViewport Is Layout-Driven
       
     </span>
   </a>
@@ -632,43 +749,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#9-manual-renderer-access-from-gameplay-code" class="md-nav__link">
+  <a href="#9-common-mistakes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        9. Manual Renderer Access from Gameplay Code
+        9. Common Mistakes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="9. Common Mistakes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#assuming-renderer-init-implies-viewport-init" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Assuming renderer init implies viewport init
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#10-multiplayer-example-rendering-profiling-mode" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#forgetting-endframe-in-a-manual-loop" class="md-nav__link">
     <span class="md-ellipsis">
       
-        10. Multiplayer Example Rendering + Profiling Mode
+        Forgetting EndFrame() in a manual loop
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#11-common-mistakes" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#treating-worldrendersettings-like-a-camera" class="md-nav__link">
     <span class="md-ellipsis">
       
-        11. Common Mistakes
+        Treating WorldRenderSettings like a camera
       
     </span>
   </a>
   
 </li>
+        
+      </ul>
+    </nav>
+  
+</li>
       
         <li class="md-nav__item">
-  <a href="#12-what-to-read-next" class="md-nav__link">
+  <a href="#what-to-read-next" class="md-nav__link">
     <span class="md-ellipsis">
       
-        12. What to Read Next
+        What To Read Next
       
     </span>
   </a>
@@ -810,7 +944,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -875,6 +1009,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1070,239 +1573,168 @@
 
 
 
-<h1 id="renderer-integration-and-mesh-components">Renderer Integration and Mesh Components<a class="headerlink" href="#renderer-integration-and-mesh-components" title="Permanent link">&para;</a></h1>
-<p>This guide explains how SnAPI.GameFramework integrates with SnAPI.Renderer in the current post-refactor architecture.</p>
-<p>By the end, you should understand:</p>
-<ol>
-<li>when renderer integration is compiled in</li>
-<li>how to bootstrap renderer through <code>GameRuntimeSettings</code></li>
-<li>how <code>World</code> frame lifecycle drives renderer submit/present</li>
-<li>how camera/static/skeletal components work together</li>
-<li>why mesh assets are now separated from per-instance render state (<code>MeshRenderObject</code>)</li>
-</ol>
-<h2 id="1-build-time-integration-rules">1. Build-Time Integration Rules<a class="headerlink" href="#1-build-time-integration-rules" title="Permanent link">&para;</a></h2>
-<p>Renderer support is compile-time gated by <code>SNAPI_GF_ENABLE_RENDERER</code>.</p>
-<p>In this repository, that define is added when CMake can locate a SnAPI.Renderer source tree and create <code>SnAPI.Renderer</code> target.</p>
-<p>CMake resolution order:</p>
-<ol>
-<li><code>-DSNAPI_GF_RENDERER_SOURCE_DIR=/path/to/SnAPI.Renderer</code></li>
-<li>fallback local path <code>/mnt/Apps/Dev/Repositories/SnAPI.Renderer</code></li>
-<li>if neither is present, renderer integration is skipped and related components are not compiled</li>
-</ol>
-<p>Typical dev configure command:</p>
-<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build/debug<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DSNAPI_GF_BUILD_EXAMPLES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DSNAPI_GF_BUILD_TESTS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DSNAPI_GF_RENDERER_SOURCE_DIR<span class="o">=</span>/mnt/Apps/Dev/Repositories/SnAPI.Renderer
-</code></pre></div>
-<h2 id="2-bootstrap-renderer-from-gameruntimesettings">2. Bootstrap Renderer from <code>GameRuntimeSettings</code><a class="headerlink" href="#2-bootstrap-renderer-from-gameruntimesettings" title="Permanent link">&para;</a></h2>
-<p><code>GameRuntime</code> is the simplest way to start renderer-backed worlds.</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;GameFramework.hpp&quot;</span>
-
-<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">SnAPI</span><span class="o">::</span><span class="nn">GameFramework</span><span class="p">;</span>
-
-<span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
+<h1 id="renderer-integration">Renderer Integration<a class="headerlink" href="#renderer-integration" title="Permanent link">&para;</a></h1>
+<p>Renderer support is optional, world-owned, and tightly tied to end-of-frame submission.</p>
+<p>The short version is:</p>
+<ul>
+<li><code>RendererSystem</code> is the world-owned renderer adapter</li>
+<li>camera and mesh components bridge gameplay objects into renderer objects</li>
+<li>UI viewport binding is explicit</li>
+<li>some viewport creation is lazy, especially through <code>UIRenderViewport</code></li>
+</ul>
+<h2 id="1-bootstrap-through-gameruntime">1. Bootstrap Through <code>GameRuntime</code><a class="headerlink" href="#1-bootstrap-through-gameruntime" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
 <span class="n">GameRuntimeSettings</span><span class="w"> </span><span class="n">Settings</span><span class="p">{};</span>
-<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;RendererWorld&quot;</span><span class="p">;</span>
-<span class="n">Settings</span><span class="p">.</span><span class="n">RegisterBuiltins</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-
-<span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">EnableFixedTick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">FixedDeltaSeconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;RenderWorld&quot;</span><span class="p">;</span>
 
 <span class="n">GameRuntimeRendererSettings</span><span class="w"> </span><span class="n">Renderer</span><span class="p">{};</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">WindowTitle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;SnAPI.GameFramework Renderer&quot;</span><span class="p">;</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">WindowWidth</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1600.0f</span><span class="p">;</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">WindowHeight</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">900.0f</span><span class="p">;</span>
+<span class="n">Renderer</span><span class="p">.</span><span class="n">CreateGraphicsApi</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="n">Renderer</span><span class="p">.</span><span class="n">CreateWindow</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="n">Renderer</span><span class="p">.</span><span class="n">WindowTitle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;SnAPI.GameFramework&quot;</span><span class="p">;</span>
+<span class="n">Renderer</span><span class="p">.</span><span class="n">WindowWidth</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1280.0f</span><span class="p">;</span>
+<span class="n">Renderer</span><span class="p">.</span><span class="n">WindowHeight</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">720.0f</span><span class="p">;</span>
 <span class="n">Renderer</span><span class="p">.</span><span class="n">CreateDefaultLighting</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="n">Renderer</span><span class="p">.</span><span class="n">RegisterDefaultPassGraph</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="n">Renderer</span><span class="p">.</span><span class="n">CreateDefaultMaterials</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">EnableSsao</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">EnableSsr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">EnableBloom</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Renderer</span><span class="p">.</span><span class="n">EnableAtmosphere</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-
+<span class="n">Renderer</span><span class="p">.</span><span class="n">CreateDefaultEnvironmentProbe</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="n">Settings</span><span class="p">.</span><span class="n">Renderer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Renderer</span><span class="p">;</span>
 
-<span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">InitResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">InitResult</span><span class="p">)</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">InitResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span><span class="w"> </span><span class="o">!</span><span class="n">InitResult</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="c1">// handle init error</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Important behavior:</p>
+<p>Key fact: the renderer subsystem initializes during <code>GameRuntime::Init()</code>, before the gameplay host starts.</p>
+<h2 id="2-the-world-submits-renderer-work-in-endframe">2. The World Submits Renderer Work In <code>EndFrame</code><a class="headerlink" href="#2-the-world-submits-renderer-work-in-endframe" title="Permanent link">&para;</a></h2>
+<p>Renderer frame submission does not happen during node constructors or random gameplay callbacks.</p>
+<p>It happens from <code>World::EndFrame()</code>.</p>
+<p>That is also where the world:</p>
 <ul>
-<li>if <code>Settings.Renderer</code> is <code>std::nullopt</code>, the world runs without renderer backend</li>
-<li>if set, <code>GameRuntime::Init(...)</code> initializes world renderer subsystem</li>
-<li><code>GameRuntime::Shutdown()</code> cleanly shuts renderer down</li>
+<li>builds bound UI render packets</li>
+<li>queues them into renderer viewports</li>
+<li>calls <code>RendererSystem::EndFrame()</code></li>
 </ul>
-<h2 id="3-runtime-lifecycle-who-calls-present">3. Runtime Lifecycle: Who Calls Present?<a class="headerlink" href="#3-runtime-lifecycle-who-calls-present" title="Permanent link">&para;</a></h2>
-<p><code>World::EndFrame()</code> triggers renderer work when renderer is enabled:</p>
-<ul>
-<li><code>NodeGraph::EndFrame()</code> runs first</li>
-<li>then <code>RendererSystem::EndFrame()</code> runs</li>
-</ul>
-<p><code>RendererSystem::EndFrame()</code> is responsible for:</p>
-<ul>
-<li>optional swapchain resize handling</li>
-<li><code>BeginFrame(...)</code> / pass execution / <code>EndFrame(...)</code> on graphics API</li>
-<li>camera previous-frame save (<code>SaveFrameState()</code>)</li>
-<li>render-object previous-frame save (<code>SaveFrameState()</code>)</li>
-</ul>
-<p>This is why temporal effects and motion vectors stay frame-consistent without manual per-object bookkeeping in gameplay code.</p>
-<h2 id="4-camera-setup-with-cameracomponent">4. Camera Setup with <code>CameraComponent</code><a class="headerlink" href="#4-camera-setup-with-cameracomponent" title="Permanent link">&para;</a></h2>
-<p><code>CameraComponent</code> owns a renderer <code>CameraBase</code> and can auto-sync from <code>TransformComponent</code>.</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">CameraNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;MainCamera&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">CameraNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNodeResult</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">CameraNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">()</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">nullptr</span><span class="p">;</span>
+<p>If you hand-roll a world loop and skip <code>EndFrame()</code>, renderer work will not behave correctly.</p>
+<h2 id="3-add-a-camera">3. Add A Camera<a class="headerlink" href="#3-add-a-camera" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">CameraHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;MainCamera&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">CameraHandle</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">CameraNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">CameraNode</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">CameraTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">CameraTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">8.0f</span><span class="p">};</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">8.0f</span><span class="p">);</span>
+<span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">Camera</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">CameraComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Camera</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">FovDegrees</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
-<span class="n">Camera</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">NearClip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.05f</span><span class="p">;</span>
-<span class="n">Camera</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">FarClip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">5000.0f</span><span class="p">;</span>
-<span class="n">Camera</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Aspect</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">16.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">9.0f</span><span class="p">;</span>
-<span class="n">Camera</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">SyncFromTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Camera</span><span class="o">-&gt;</span><span class="n">SetActive</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Camera</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">CameraComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Settings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Camera</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">FovDegrees</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">NearClip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.05f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">FarClip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">5000.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">Aspect</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">16.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">9.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">SyncFromTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">Active</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="p">}</span>
 </code></pre></div>
-<p><code>CameraComponent</code> resolves world renderer through <code>Owner()-&gt;World()-&gt;Renderer()</code> and updates active camera ownership automatically.</p>
-<h2 id="5-static-mesh-rendering-staticmeshcomponent">5. Static Mesh Rendering (<code>StaticMeshComponent</code>)<a class="headerlink" href="#5-static-mesh-rendering-staticmeshcomponent" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">CubeNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Cube&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">CubeNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CubeNodeResult</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">CubeNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">()</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">nullptr</span><span class="p">;</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">CubeNode</span><span class="p">)</span>
+<p><code>CameraComponent</code> owns one renderer camera instance and can derive its pose from the owner's <code>TransformComponent</code>.</p>
+<h2 id="4-add-a-static-mesh">4. Add A Static Mesh<a class="headerlink" href="#4-add-a-static-mesh" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">CubeHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Cube&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">CubeHandle</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">CubeTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CubeNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">CubeTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">CubeTransform</span><span class="o">-&gt;</span><span class="n">Scale</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">CubeMesh</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CubeNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">StaticMeshComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">MeshSettings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CubeMesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
-<span class="n">MeshSettings</span><span class="p">.</span><span class="n">MeshPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;assets/cube.obj&quot;</span><span class="p">;</span>
-<span class="n">MeshSettings</span><span class="p">.</span><span class="n">Visible</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">MeshSettings</span><span class="p">.</span><span class="n">CastShadows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">MeshSettings</span><span class="p">.</span><span class="n">SyncFromTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">MeshSettings</span><span class="p">.</span><span class="n">RegisterWithRenderer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-
-<span class="c1">// Optional if you edited path at runtime and want immediate reload:</span>
-<span class="n">CubeMesh</span><span class="o">-&gt;</span><span class="n">ReloadMesh</span><span class="p">();</span>
-</code></pre></div>
-<p>What happens internally:</p>
-<ul>
-<li>mesh data is loaded once through <code>MeshManager</code> cache</li>
-<li>component creates one per-instance <code>MeshRenderObject</code></li>
-<li>default GBuffer/Shadow material instances are populated through <code>RendererSystem</code></li>
-<li>pass visibility (<code>Visible</code>) and shadow participation (<code>CastShadows</code>) are applied per render object</li>
-<li>pass routing is applied through <code>RendererSystem::ConfigureRenderObjectPasses(...)</code></li> <li>object teardown removes pass links through <code>RendererSystem::RemoveRenderObject(...)</code></li>
-</ul>
-<h2 id="6-skeletalrigid-animation-rendering-skeletalmeshcomponent">6. Skeletal/Rigid Animation Rendering (<code>SkeletalMeshComponent</code>)<a class="headerlink" href="#6-skeletalrigid-animation-rendering-skeletalmeshcomponent" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;AnimatedActor&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">ActorNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">()</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">nullptr</span><span class="p">;</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">ActorNode</span><span class="p">)</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Cube</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CubeHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Cube</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">ActorTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">ActorTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Skeletal</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">SkeletalMeshComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">SkeletalSettings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Skeletal</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
-<span class="n">SkeletalSettings</span><span class="p">.</span><span class="n">MeshPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;assets/robot.glb&quot;</span><span class="p">;</span>
-<span class="n">SkeletalSettings</span><span class="p">.</span><span class="n">Visible</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">SkeletalSettings</span><span class="p">.</span><span class="n">CastShadows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">SkeletalSettings</span><span class="p">.</span><span class="n">AutoPlayAnimations</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">SkeletalSettings</span><span class="p">.</span><span class="n">LoopAnimations</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">SkeletalSettings</span><span class="p">.</span><span class="n">AnimationName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;Idle&quot;</span><span class="p">;</span><span class="w"> </span><span class="c1">// empty string = play all</span>
-
-<span class="c1">// Runtime control:</span>
-<span class="n">Skeletal</span><span class="o">-&gt;</span><span class="n">PlayAnimation</span><span class="p">(</span><span class="s">&quot;Run&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">true</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">);</span>
-<span class="c1">// Skeletal-&gt;StopAnimations();</span>
-</code></pre></div>
-<p><code>SkeletalMeshComponent</code> advances rigid animation state on its <code>MeshRenderObject</code> each tick, then renderer consumes updated transforms in pass execution.</p>
-<h2 id="7-post-refactor-model-mesh-asset-vs-render-object">7. Post-Refactor Model: Mesh Asset vs Render Object<a class="headerlink" href="#7-post-refactor-model-mesh-asset-vs-render-object" title="Permanent link">&para;</a></h2>
-<p>This is the key architecture update:</p>
-<ul>
-<li><code>Mesh</code> is now asset data holder (vertices, indices, submeshes, materials, rigid parts, animation tracks)</li>
-<li>runtime instance state lives on <code>IRenderObject</code> implementations (currently <code>MeshRenderObject</code>)</li>
-</ul>
-<p>Per-instance state now includes:</p>
-<ul>
-<li>world transform / previous-frame world transform</li>
-<li>per-submesh material instances and shadow material instances</li>
-<li>per-pass visibility flags</li>
-<li>shadow-cast and triangle-culling toggles</li>
-<li>animation playback state</li>
-</ul>
-<p>Why this matters:</p>
-<ul>
-<li>many game objects can share one mesh asset + one vertex stream set</li>
-<li>you avoid accidental per-instance mesh duplication</li>
-<li>material/pass toggles become true instance-level controls</li>
-</ul>
-<h2 id="8-material-sharing-for-high-instance-counts">8. Material Sharing for High Instance Counts<a class="headerlink" href="#8-material-sharing-for-high-instance-counts" title="Permanent link">&para;</a></h2>
-<p>For large crowds/prop fields, <code>StaticMeshComponent</code> supports overriding all submesh materials with shared instances:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Renderer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">Renderer</span><span class="p">().</span><span class="n">Graphics</span><span class="p">();</span>
-<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Renderer</span><span class="p">;</span><span class="w"> </span><span class="c1">// acquire/create your own material instances as needed</span>
-
-<span class="c1">// After you created shared material instances:</span>
-<span class="n">CubeMesh</span><span class="o">-&gt;</span><span class="n">SetSharedMaterialInstances</span><span class="p">(</span><span class="n">SharedGBufferMaterialInstance</span><span class="p">,</span>
-<span class="w">                                     </span><span class="n">SharedShadowMaterialInstance</span><span class="p">);</span>
-</code></pre></div>
-<p>This is useful when you want many objects to intentionally share descriptor state and reduce VRAM churn.</p>
-<h2 id="9-manual-renderer-access-from-gameplay-code">9. Manual Renderer Access from Gameplay Code<a class="headerlink" href="#9-manual-renderer-access-from-gameplay-code" title="Permanent link">&para;</a></h2>
-<p>You can interact with renderer subsystem directly:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">RendererSystem</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">Renderer</span><span class="p">();</span>
-
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">RendererSystem</span><span class="p">.</span><span class="n">IsInitialized</span><span class="p">())</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cube</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">())</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="n">RendererSystem</span><span class="p">.</span><span class="n">QueueText</span><span class="p">(</span><span class="s">&quot;Hello Renderer&quot;</span><span class="p">,</span><span class="w"> </span><span class="mf">20.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">20.0f</span><span class="p">);</span>
+<span class="w">    </span><span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">);</span>
+<span class="p">}</span>
 
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">RendererSystem</span><span class="p">.</span><span class="n">HasOpenWindow</span><span class="p">())</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="c1">// headless or window closed</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Mesh</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Cube</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">StaticMeshComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">MeshSettings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
+<span class="w">    </span><span class="n">MeshSettings</span><span class="p">.</span><span class="n">MeshPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;primitive://box&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MeshSettings</span><span class="p">.</span><span class="n">Visible</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MeshSettings</span><span class="p">.</span><span class="n">CastShadows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MeshSettings</span><span class="p">.</span><span class="n">SyncFromTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MeshSettings</span><span class="p">.</span><span class="n">RegisterWithRenderer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Useful APIs:</p>
+<p>Important detail:</p>
 <ul>
-<li><code>SetActiveCamera(...)</code></li>
-<li><code>QueueText(...)</code></li>
-<li><code>LoadDefaultFont(...)</code></li>
-<li><code>RecreateSwapChain()</code></li>
-<li><code>DefaultGBufferMaterial()</code> / <code>DefaultShadowMaterial()</code></li>
+<li>the current <code>StaticMeshComponent</code> path reliably supports built-in primitive tokens like <code>primitive://box</code></li>
+<li>non-primitive <code>MeshPath</code> values are best treated as compatibility/change keys unless you are intentionally using the asset-driven path</li>
 </ul>
-<h2 id="10-multiplayer-example-rendering-profiling-mode">10. Multiplayer Example Rendering + Profiling Mode<a class="headerlink" href="#10-multiplayer-example-rendering-profiling-mode" title="Permanent link">&para;</a></h2>
-<p><code>examples/MultiplayerExample</code> requires renderer integration and uses renderer-backed scene setup.</p>
-<p>Profiler mode defaults to raw replay capture in this example. To switch to live stream mode:</p>
-<div class="highlight"><pre><span></span><code><span class="nv">SNAPI_MULTIPLAYER_PROFILER_MODE</span><span class="o">=</span>stream<span class="w"> </span>./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--local
-</code></pre></div>
-<h2 id="11-common-mistakes">11. Common Mistakes<a class="headerlink" href="#11-common-mistakes" title="Permanent link">&para;</a></h2>
+<h2 id="5-add-a-skeletal-mesh">5. Add A Skeletal Mesh<a class="headerlink" href="#5-add-a-skeletal-mesh" title="Permanent link">&para;</a></h2>
+<p><code>SkeletalMeshComponent</code> is more asset-driven than <code>StaticMeshComponent</code>.</p>
+<p>Its settings still expose <code>MeshPath</code>, but the current implementation treats asset-driven data as the primary load path and uses <code>MeshPath</code> mainly for compatibility and change detection.</p>
+<p>Common settings:</p>
 <ul>
-<li>Renderer features not available at compile-time:</li>
-<li>forgot to provide <code>SNAPI_GF_RENDERER_SOURCE_DIR</code> and local fallback path is absent</li>
-<li>Mesh never appears:</li>
-<li><code>MeshPath</code> invalid</li>
-<li><code>RegisterWithRenderer=false</code></li>
-<li>no active camera</li>
-<li>Object visible but no shadows:</li>
-<li><code>CastShadows=false</code></li>
-<li>shadow pass disabled in renderer bootstrap</li>
-<li>Flickering temporal motion vectors:</li>
-<li>custom frame loop skips <code>World::EndFrame()</code></li>
+<li><code>Visible</code></li>
+<li><code>CastShadows</code></li>
+<li><code>SyncFromTransform</code></li>
+<li><code>RegisterWithRenderer</code></li>
+<li><code>AutoPlayAnimations</code></li>
+<li><code>LoopAnimations</code></li>
+<li><code>AnimationName</code></li>
 </ul>
-<h2 id="12-what-to-read-next">12. What to Read Next<a class="headerlink" href="#12-what-to-read-next" title="Permanent link">&para;</a></h2>
+<h2 id="6-understand-the-current-render-object-model">6. Understand The Current Render Object Model<a class="headerlink" href="#6-understand-the-current-render-object-model" title="Permanent link">&para;</a></h2>
+<p>The old docs tended to blur asset data and per-instance renderer state. The current model is clearer.</p>
+<ul>
+<li>mesh assets are shared data</li>
+<li>per-instance render state lives on renderer objects</li>
+<li>components bridge node state into those renderer objects</li>
+</ul>
+<p>Why that split matters:</p>
+<ul>
+<li>many nodes can share one source mesh</li>
+<li>each instance can still have unique transform and pass membership</li>
+<li>visibility and shadow participation are per-instance decisions</li>
+</ul>
+<h2 id="7-world-render-settings">7. World Render Settings<a class="headerlink" href="#7-world-render-settings" title="Permanent link">&para;</a></h2>
+<p><code>WorldRenderSettings</code> is a node-level convenience container for post-processing and atmospheric settings.</p>
+<p>It is world-facing render configuration, not a camera replacement.</p>
+<p>Typical responsibilities:</p>
+<ul>
+<li>referencing SSAO/SSR/Bloom/ToneMap parameter nodes</li>
+<li>applying world-scoped render configuration once the renderer is ready</li>
+</ul>
+<p>Because viewport creation can be lazy in editor flows, render-setting nodes should not assume all viewports already exist at constructor time.</p>
+<h2 id="8-uirenderviewport-is-layout-driven">8. <code>UIRenderViewport</code> Is Layout-Driven<a class="headerlink" href="#8-uirenderviewport-is-layout-driven" title="Permanent link">&para;</a></h2>
+<p>When you embed a renderer viewport in UI, the viewport does not exist immediately when the UI element is constructed.</p>
+<p>It is created and synchronized from <code>Arrange()</code> and <code>Paint()</code>.</p>
+<p>That means these assumptions are wrong:</p>
+<ul>
+<li>"my node constructor can immediately find every viewport"</li>
+<li>"a viewport-backed UI element guarantees a swapchain during creation"</li>
+<li>"editor scene nodes should set viewport-dependent state before layout runs"</li>
+</ul>
+<p>The framework now uses deferred bootstrap behavior to avoid exactly those bugs.</p>
+<h2 id="9-common-mistakes">9. Common Mistakes<a class="headerlink" href="#9-common-mistakes" title="Permanent link">&para;</a></h2>
+<h3 id="assuming-renderer-init-implies-viewport-init">Assuming renderer init implies viewport init<a class="headerlink" href="#assuming-renderer-init-implies-viewport-init" title="Permanent link">&para;</a></h3>
+<p>Renderer subsystem initialization and viewport creation are different stages.</p>
+<h3 id="forgetting-endframe-in-a-manual-loop">Forgetting <code>EndFrame()</code> in a manual loop<a class="headerlink" href="#forgetting-endframe-in-a-manual-loop" title="Permanent link">&para;</a></h3>
+<p>That skips renderer submission.</p>
+<h3 id="treating-worldrendersettings-like-a-camera">Treating <code>WorldRenderSettings</code> like a camera<a class="headerlink" href="#treating-worldrendersettings-like-a-camera" title="Permanent link">&para;</a></h3>
+<p>They solve different problems.</p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../physics/">Physics System and Components</a></li>
-<li><a href="../networking/">Networking Replication and RPC</a></li>
-<li><a href="../../architecture/">Architecture</a></li>
+<li><a href="../postcard_renderer/">Postcard Renderer</a></li>
+<li><a href="../tool_world_vs_game_world/">Tool World vs Game World</a></li>
 </ul>
 
 

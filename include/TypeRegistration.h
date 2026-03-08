@@ -11,13 +11,18 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Ensure a type is registered in TypeRegistry and return its TypeId pointer.
- * @tparam T Type with a stable TTypeNameV<T>.
- * @return Pointer to a stable TypeId on success, or error.
- * @remarks
- * This is the central "register-on-first-use" entrypoint:
- * - fast path: return cached id if metadata already exists
- * - slow path: invoke TypeAutoRegistry ensure callback and verify registration landed
+ * @ingroup SnAPI_GameFramework
+ * @brief Ensure that a type's reflection metadata has been registered and return its `TypeId`.
+ * @tparam T Type with a stable `TTypeNameV<T>`.
+ * @return Pointer to the stable `TypeId` on success, or an error.
+ *
+ * This is the central register-on-first-use entrypoint used by reflective template APIs.
+ *
+ * Core semantics:
+ * - Fast path: if the type already exists in `TypeRegistry`, return immediately.
+ * - Slow path: invoke `TypeAutoRegistry::Ensure()` for the deterministic `StaticTypeId<T>()`.
+ * - If auto-registration reports an error but the type is already present, the existing registration wins.
+ * - If ensure succeeds but the type is still absent, the call fails.
  */
 template<typename T>
 inline TExpected<TypeId*> StaticType()
@@ -47,9 +52,13 @@ inline TExpected<TypeId*> StaticType()
 }
 
 /**
- * @brief Ensure reflection registration for a type.
- * @tparam T Type with a stable TTypeNameV<T>.
- * @remarks Convenience assert-checked wrapper used by template APIs (`CreateNode<T>`, `Add<T>`, ...).
+ * @ingroup SnAPI_GameFramework
+ * @brief Assert that reflection registration exists for a type.
+ * @tparam T Type with a stable `TTypeNameV<T>`.
+ *
+ * This is the assert-checked convenience wrapper used by higher-level template APIs such as node or
+ * component creation helpers. In debug builds it surfaces missing registration early instead of
+ * letting later reflective operations fail indirectly.
  */
 template<typename T>
 inline void EnsureReflectionRegistered()
@@ -59,9 +68,16 @@ inline void EnsureReflectionRegistered()
 }
 
 /**
- * @brief Register built-in types and default serializers.
- * @remarks Must be called once at startup before using reflection/serialization.
- * @note Safe to call multiple times; duplicate registrations are ignored or fail gracefully.
+ * @ingroup SnAPI_GameFramework
+ * @brief Register the framework's builtin reflection metadata set.
+ *
+ * This installs plain metadata for primitive, math, handle, and subsystem enum types that do not use
+ * `SNAPI_REFLECT_TYPE`. The implementation intentionally ignores duplicate-registration failures, so
+ * the function behaves as a best-effort idempotent bootstrap step.
+ *
+ * Usage guidance:
+ * - Call during runtime bootstrap before systems rely on reflection, serialization, scripting, or RPC.
+ * - Call before freezing the `TypeRegistry`.
  */
 void RegisterBuiltinTypes();
 

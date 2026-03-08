@@ -1,7 +1,18 @@
 #pragma once
 
 /**
- * @brief Export/import macro for SnAPI.GameFramework.Editor shared builds.
+ * @ingroup SnAPI_GameFramework_Editor
+ * @def SNAPI_GAMEFRAMEWORK_EDITOR_API
+ * @brief Symbol visibility macro for the editor shared-library boundary.
+ *
+ * This macro decorates public editor types and functions that must remain visible when
+ * `SnAPI.GameFramework.Editor` is built as a shared library. It expands to:
+ * - `__declspec(dllexport)` while building the DLL on Windows
+ * - `__declspec(dllimport)` while consuming the DLL on Windows
+ * - default symbol visibility attributes on GCC/Clang
+ * - an empty definition for static-library style builds
+ *
+ * The macro has no runtime cost. Its only purpose is ABI visibility across compilation units.
  */
 #if defined(_WIN32)
     #if defined(SNAPI_GAMEFRAMEWORK_EDITOR_BUILD_DLL)

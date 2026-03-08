@@ -1,6 +1,6 @@
 # SnAPI::GameFramework::HandleHash
 
-Hash functor for THandle.
+Hash functor for `THandle`.
 
 ## Public Functions
 

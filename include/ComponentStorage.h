@@ -25,17 +25,25 @@ namespace SnAPI::GameFramework
 class TypeRegistry;
 
 /**
- * @brief Global registry for component type indices and masks.
- * @remarks Provides stable bit positions for fast component queries.
+ * @ingroup SnAPI_GameFramework
+ * @brief Global allocator for compact component-type bit indices.
+ *
+ * `ComponentTypeRegistry` turns arbitrary reflected component `TypeId`s into dense bit
+ * positions used by masks and query acceleration structures. The assigned index for a
+ * type remains stable for the lifetime of the process.
+ *
+ * Threading:
+ * - Not generally thread-safe.
+ * - Internal `GameMutex` use validates affinity only.
  */
 class ComponentTypeRegistry
 {
 public:
     /**
-     * @brief Get or assign a bit index for a component type.
+     * @brief Get the existing bit index for a component type, or assign a new one.
      * @param Id Component type id.
      * @return Bit index for the type.
-     * @remarks Increments the version when a new type is added.
+     * @remarks `Version()` is incremented only when a previously unseen type is added.
      */
     static uint32_t TypeIndex(const TypeId& Id)
     {
@@ -52,9 +60,9 @@ public:
     }
 
     /**
-     * @brief Get the current registry version.
+     * @brief Get the current mutation version of the registry.
      * @return Version counter.
-     * @remarks Incremented when new types are registered.
+     * @remarks Useful for invalidating cached masks sized from `WordCount()`.
      */
     static uint32_t Version()
     {
@@ -62,10 +70,7 @@ public:
         return m_version;
     }
 
-    /**
-     * @brief Get the number of 64-bit words required for the mask.
-     * @return Word count for the current type set.
-     */
+    /** @brief Get the number of 64-bit words needed to represent the current type set. */
     static size_t WordCount()
     {
         GameLockGuard Lock(m_mutex);
@@ -80,8 +85,21 @@ private:
 };
 
 /**
- * @brief Type-erased interface for component storage.
- * @remarks Level uses this to manage components generically.
+ * @ingroup SnAPI_GameFramework
+ * @brief Type-erased storage interface for one component type.
+ *
+ * `ComponentStorageView` is the cold-path abstraction used when world/level code needs
+ * to work with "a component storage" without statically knowing `T`. Concrete hot-path
+ * iteration still happens in `TComponentStorage<T>`.
+ *
+ * Ownership and lifetime:
+ * - The storage owns component instances.
+ * - Borrowed pointers returned from `Borrowed()` remain valid only until that component
+ *   is removed, the storage reaches `EndFrame()`, or `Clear()` is called.
+ *
+ * Threading:
+ * - Main-thread only unless an outer system guarantees exclusive access.
+ *
  * @note Handle parameters are `const&` by design. Handle resolution may refresh
  * runtime-key fields on the caller-owned handle instance; passing by value would
  * drop that refresh and can force repeated UUID fallback lookups.
@@ -179,14 +197,29 @@ public:
 };
 
 /**
- * @brief Typed component storage for a specific component type.
+ * @ingroup SnAPI_GameFramework
+ * @brief Dense one-component-per-node storage for a specific component type.
  * @tparam T Component type.
- * @remarks
- * Maintains one-component-per-owner invariant for type `T` and coordinates:
- * - pool allocation/deferred destroy
- * - owner-node to component-id indexing
- * - object registry registration/unregistration
- * - lifecycle callbacks (`OnCreate`/`OnDestroy`)
+ *
+ * This storage is the bridge between object-like component lifetime and data-oriented
+ * ticking. It maintains:
+ * - a deferred-destroy object pool for the component instances
+ * - an owner UUID map for slow-path lookup
+ * - a sparse runtime-owner map for fast-path lookup
+ * - a dense linear array for cache-friendly iteration
+ *
+ * Core semantics:
+ * - A node may own at most one `T`.
+ * - `Add*()` immediately inserts into the dense set and object registry.
+ * - `Remove()` detaches the component from the owner immediately, but physical
+ *   destruction and `OnDestroy()` are deferred until `EndFrame()`.
+ * - Dense order is unstable; removals use swap-pop compaction.
+ *
+ * Threading:
+ * - Main-thread only.
+ *
+ * @see ComponentStorageView
+ * @see TObjectPool
  */
 template<typename T>
 class TComponentStorage final : public ComponentStorageView
@@ -203,21 +236,17 @@ public:
         return m_typeId;
     }
 
-    /**
-     * @brief Add a component with a generated UUID.
-     * @param Owner Owner node handle.
-     * @return Reference wrapper or error.
-     */
+    /** @brief Add a default-constructed component with a generated UUID. */
     TExpectedRef<T> Add(const NodeHandle& Owner)
     {
         return AddWithId(Owner, NewUuid());
     }
 
     /**
-     * @brief Add a component with constructor arguments.
+     * @brief Add a component constructed from caller-provided arguments.
      * @param Owner Owner node handle.
      * @param args Constructor arguments.
-     * @return Reference wrapper or error.
+     * @return Borrowed reference to the attached component, or an error on failure.
      */
     template<typename... Args>
     TExpectedRef<T> Add(const NodeHandle& Owner, Args&&... args)
@@ -226,12 +255,21 @@ public:
     }
 
     /**
-     * @brief Add a component with an explicit UUID.
+     * @brief Add a component under an explicit UUID.
      * @param Owner Owner node handle.
      * @param Id Component UUID.
      * @param args Constructor arguments.
-     * @return Reference wrapper or error.
-     * @remarks Used by deserialization/replication restore paths to preserve identity continuity.
+     * @return Borrowed reference to the attached component, or an error on failure.
+     *
+     * Semantics:
+     * - Fails when the owner already has a `T`.
+     * - Sets owner/id/runtime identity/type key fields on the component.
+     * - Registers the component in `ObjectRegistry`.
+     * - Invokes `OnCreate()` immediately unless component `OnCreate` is currently
+     *   suppressed by `ScopedComponentOnCreateSuppression`.
+     *
+     * This is the entry point used by deserialization and replication paths that need
+     * identity continuity rather than a fresh UUID.
      */
     template<typename... Args>
     TExpectedRef<T> AddWithId(const NodeHandle& Owner, const Uuid& Id, Args&&... args)
@@ -273,9 +311,10 @@ public:
     }
 
     /**
-     * @brief Get a component by owner.
+     * @brief Resolve the component currently attached to an owner node.
      * @param Owner Owner node handle.
-     * @return Reference wrapper or error.
+     * @return Borrowed reference to the component, or `NotFound` when the owner does not
+     *         currently have this component.
      */
     TExpectedRef<T> Component(const NodeHandle& Owner)
     {
@@ -310,10 +349,14 @@ public:
     }
 
     /**
-     * @brief Remove a component from a node.
+     * @brief Detach a component from its owner and schedule it for deferred destruction.
      * @param Owner Node handle.
-     * @remarks
-     * Index mapping is removed immediately; physical destruction and OnDestroy happen during EndFrame.
+     *
+     * Semantics:
+     * - Owner lookup tables are updated immediately.
+     * - Dense storage is compacted immediately with swap-pop.
+     * - The component instance remains alive until `EndFrame()`.
+     * - `OnDestroy()` and `ObjectRegistry` unregistration happen during `EndFrame()`.
      */
     void Remove(const NodeHandle& Owner) override
     {
@@ -414,13 +457,13 @@ public:
     }
 
     /**
-     * @brief Tick all components in dense storage order.
+     * @brief Tick all active components in dense storage order.
      * @param NodeIsActive Owner-node activity predicate.
      * @param UserData Opaque predicate context.
      * @param DeltaSeconds Time since last tick.
-     * @remarks
-     * This is the hot-path runtime update mode: dense linear traversal with
-     * no per-owner hash lookup once entries are built.
+     *
+     * The owner node is also gated through `NodeIsActive` when that callback is
+     * provided. Owner-node pointers are lazily cached per dense entry.
      */
     void TickAll(NodeActivePredicate NodeIsActive, void* UserData, float DeltaSeconds) override
     {
@@ -522,9 +565,10 @@ public:
     }
 
     /**
-     * @brief Borrow the component instance (mutable).
+     * @brief Borrow the attached component instance.
      * @param Owner Node handle.
-     * @return Pointer to component or nullptr.
+     * @return Non-owning component pointer, or `nullptr` when the owner has no `T`.
+     * @warning Borrowed pointers must not be cached across removal, `EndFrame()`, or `Clear()`.
      */
     void* Borrowed(const NodeHandle& Owner) override
     {
@@ -552,9 +596,11 @@ public:
     }
 
     /**
-     * @brief Process pending destruction at end-of-frame.
-     * @remarks Calls OnDestroy and unregisters components.
-     * @note Ordering is deterministic by pending queue insertion order.
+     * @brief Finalize all removals that were deferred earlier in the frame.
+     * @remarks
+     * Destruction order matches the order components were queued in `m_pendingDestroy`.
+     * `OnDestroy()` runs before `ObjectRegistry` unregistration and before the pool drops
+     * the underlying object.
      */
     void EndFrame() override
     {
@@ -575,9 +621,10 @@ public:
     }
 
     /**
-     * @brief Clear all components immediately.
-     * @remarks Calls OnDestroy and clears internal mappings.
-     * @note Immediate path bypasses deferred destroy semantics.
+     * @brief Destroy every stored component immediately and reset the storage to empty.
+     * @remarks
+     * This bypasses deferred-destroy semantics and invalidates all borrowed component
+     * pointers immediately.
      */
     void Clear() override
     {
@@ -593,18 +640,17 @@ public:
         m_pool.Clear();
     }
 
-    /**
-     * @brief Number of dense entries currently stored.
-     */
+    /** @brief Get the current dense entry count. */
     std::size_t DenseSize() const
     {
         return m_dense.size();
     }
 
     /**
-     * @brief Borrow owner handle at dense index.
+     * @brief Read the owner handle stored at a dense index.
      * @param Index Dense index.
-     * @return Owner handle or null handle when out-of-range.
+     * @return Copy of the stored owner handle, or a null handle when out of range.
+     * @warning Dense indices are not stable across removals.
      */
     NodeHandle DenseOwner(std::size_t Index) const
     {
@@ -616,9 +662,10 @@ public:
     }
 
     /**
-     * @brief Borrow component pointer at dense index.
+     * @brief Borrow the component pointer stored at a dense index.
      * @param Index Dense index.
-     * @return Component pointer or nullptr when out-of-range/missing.
+     * @return Non-owning component pointer or `nullptr` when out of range.
+     * @warning Dense indices are unstable and should not be persisted.
      */
     T* DenseComponent(std::size_t Index)
     {

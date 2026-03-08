@@ -15,6 +15,10 @@
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Placeholder runtime texture type used when renderer support is not compiled in.
+ */
 struct TextureAssetRuntime
 {
 };
@@ -25,61 +29,90 @@ using RuntimeTextureAsset = ::SnAPI::Graphics::IGPUImage;
 using RuntimeTextureAsset = TextureAssetRuntime;
 #endif
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime representation of a base material asset.
+ *
+ * This is the resolved form consumed by renderer/material binding helpers rather than the on-disk
+ * serialized payload object.
+ */
 struct MaterialAssetRuntime
 {
-    std::string ShaderModule{};
-    std::string ShadingModel{};
-    bool FeatureAlbedoMap = false;
-    bool FeatureNormalMap = false;
-    bool FeatureRoughnessMap = false;
-    bool FeatureMetalnessMap = false;
-    bool FeatureOcclusionMap = false;
-    bool FeatureAlphaTest = false;
-    bool FeatureAlphaBlend = false;
-    bool FeatureDoubleSided = false;
-    bool FeatureInstancing = false;
-    bool bLegacyInferFeaturesFromTextures = false;
+    std::string ShaderModule{}; /**< @brief Renderer shader module name. */
+    std::string ShadingModel{}; /**< @brief Renderer shading-model name. */
+    bool FeatureAlbedoMap = false; /**< @brief Enables albedo texture features. */
+    bool FeatureNormalMap = false; /**< @brief Enables normal texture features. */
+    bool FeatureRoughnessMap = false; /**< @brief Enables roughness texture features. */
+    bool FeatureMetalnessMap = false; /**< @brief Enables metalness texture features. */
+    bool FeatureOcclusionMap = false; /**< @brief Enables occlusion texture features. */
+    bool FeatureAlphaTest = false; /**< @brief Enables alpha-test rendering behavior. */
+    bool FeatureAlphaBlend = false; /**< @brief Enables alpha-blend rendering behavior. */
+    bool FeatureDoubleSided = false; /**< @brief Enables double-sided rendering when supported. */
+    bool FeatureInstancing = false; /**< @brief Enables per-instance data support. */
+    bool bLegacyInferFeaturesFromTextures = false; /**< @brief Compatibility flag for older material assets that infer features from bound textures. */
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime representation of a material-instance asset.
+ */
 struct MaterialInstanceAssetRuntime
 {
-    TAssetRef<MaterialAssetRuntime> ParentMaterial{};
-    std::vector<MaterialScalarParamPayload> Scalars{};
-    std::vector<MaterialVectorParamPayload> Vectors{};
-    std::vector<std::string> TextureSlots{};
-    std::vector<TAssetRef<RuntimeTextureAsset>> Textures{};
+    TAssetRef<MaterialAssetRuntime> ParentMaterial{}; /**< @brief Referenced parent base material. */
+    std::vector<MaterialScalarParamPayload> Scalars{}; /**< @brief Scalar parameter overrides. */
+    std::vector<MaterialVectorParamPayload> Vectors{}; /**< @brief Vector parameter overrides. */
+    std::vector<std::string> TextureSlots{}; /**< @brief Texture-slot names paired with `Textures` by index. */
+    std::vector<TAssetRef<RuntimeTextureAsset>> Textures{}; /**< @brief Texture references paired with `TextureSlots` by index. */
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime representation of a static mesh asset.
+ *
+ * Bulk stream bytes are loaded lazily through `LoadBulk`.
+ */
 struct StaticMeshAssetRuntime
 {
-    ::SnAPI::AssetPipeline::AssetId SourceAssetId{};
-    std::string Name{};
-    std::vector<StaticSubMeshPayload> SubMeshes{};
-    std::vector<MeshStreamChunkRef> Streams{};
-    std::vector<TAssetRef<MaterialInstanceAssetRuntime>> MaterialInstances{};
-    std::function<std::expected<std::vector<uint8_t>, std::string>(uint32_t)> LoadBulk{};
+    ::SnAPI::AssetPipeline::AssetId SourceAssetId{}; /**< @brief Source asset id used for cache keys and diagnostics. */
+    std::string Name{}; /**< @brief Logical mesh name. */
+    std::vector<StaticSubMeshPayload> SubMeshes{}; /**< @brief Submesh index ranges and material-slot mapping. */
+    std::vector<MeshStreamChunkRef> Streams{}; /**< @brief Bulk stream references for vertex and index data. */
+    std::vector<TAssetRef<MaterialInstanceAssetRuntime>> MaterialInstances{}; /**< @brief Material-instance references indexed by material slot. */
+    std::function<std::expected<std::vector<uint8_t>, std::string>(uint32_t)> LoadBulk{}; /**< @brief Callback that loads one bulk-data slot by index on demand. */
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime representation of a skeleton asset.
+ */
 struct SkeletonAssetRuntime
 {
-    std::string Name{};
-    std::vector<SkeletalBonePayload> Bones{};
+    std::string Name{}; /**< @brief Skeleton name. */
+    std::vector<SkeletalBonePayload> Bones{}; /**< @brief Ordered bone list. */
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime representation of an animation asset.
+ */
 struct AnimationAssetRuntime
 {
-    std::string Name{};
-    float DurationSeconds = 0.0f;
-    float TicksPerSecond = 0.0f;
-    std::vector<AnimationTrackPayload> Tracks{};
+    std::string Name{}; /**< @brief Animation clip name. */
+    float DurationSeconds = 0.0f; /**< @brief Clip duration in seconds. */
+    float TicksPerSecond = 0.0f; /**< @brief Tick rate used by the source animation data. */
+    std::vector<AnimationTrackPayload> Tracks{}; /**< @brief Per-bone animation tracks. */
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime representation of a skeletal mesh asset.
+ */
 struct SkeletalMeshAssetRuntime : public StaticMeshAssetRuntime
 {
-    std::vector<SkeletalBonePayload> Bones{};
-    TAssetRef<SkeletonAssetRuntime> Skeleton{};
-    std::vector<TAssetRef<AnimationAssetRuntime>> Animations{};
-    uint32_t SkeletonAnimationBulkIndex = std::numeric_limits<uint32_t>::max();
+    std::vector<SkeletalBonePayload> Bones{}; /**< @brief Embedded bone list used for skinning. */
+    TAssetRef<SkeletonAssetRuntime> Skeleton{}; /**< @brief Referenced skeleton asset. */
+    std::vector<TAssetRef<AnimationAssetRuntime>> Animations{}; /**< @brief Referenced animation assets. */
+    uint32_t SkeletonAnimationBulkIndex = std::numeric_limits<uint32_t>::max(); /**< @brief Bulk-data slot for packed skeleton-animation helper data, or `max` when absent. */
 };
 
 } // namespace SnAPI::GameFramework

@@ -15,12 +15,27 @@ namespace SnAPI::GameFramework
 {
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief Bootstrap settings for world-owned SnAPI.Input integration.
- * @remarks
- * This settings object controls:
- * - Which backend is instantiated for the world input context.
- * - Which built-in backend factories are auto-registered into the runtime registry.
- * - Per-context feature switches via `InputBackendCreateDesc`.
+ *
+ * `InputBootstrapSettings` captures the complete policy used when `InputSystem`
+ * creates its single world-scoped `InputContext`. The settings are copied during
+ * `InputSystem::Initialize(...)` and become the authoritative startup snapshot for
+ * that system instance until the next reinitialization.
+ *
+ * Core semantics:
+ * - exactly one backend is selected for context creation
+ * - backend factory registration flags only affect initialization-time registry setup
+ * - `CreateDesc` is forwarded directly into SnAPI.Input and therefore defines backend-specific behavior
+ *
+ * Validation:
+ * - initialization fails if `Backend` is invalid
+ * - initialization fails if the chosen backend factory is unavailable
+ *
+ * Threading model:
+ * - Treat this as immutable configuration data after passing it to `Initialize(...)`.
+ *
+ * @see InputSystem
  */
 struct InputBootstrapSettings
 {
@@ -55,16 +70,41 @@ struct InputBootstrapSettings
 };
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief World-owned adapter over SnAPI.Input runtime/context.
- * @remarks
- * This subsystem provides a single world-scoped input context with:
- * - explicit initialize/shutdown lifecycle,
- * - backend-factory registration for shipped backends,
- * - per-frame pumping that updates normalized snapshot/event buffers.
  *
- * Threading:
- * - Internal state is game-thread owned.
- * - Cross-thread interactions should use `EnqueueTask(...)`.
+ * `InputSystem` gives each `World` a single normalized input pipeline. It owns the
+ * underlying SnAPI.Input runtime registry and, once initialized, exactly one active
+ * `InputContext`. Gameplay code, UI, and services read from that shared context instead
+ * of each creating separate backend handles.
+ *
+ * Why this abstraction exists:
+ * - to make input initialization follow world/runtime lifetime instead of global process lifetime
+ * - to normalize backend selection behind a stable GameFramework surface
+ * - to provide one place where per-frame pumping and cross-thread task marshalling are coordinated
+ *
+ * Core semantics:
+ * - `Initialize(...)` replaces any previous context and settings snapshot
+ * - `Pump()` is the frame boundary that refreshes snapshot, events, devices, and action state
+ * - accessors such as `Snapshot()` and `Events()` return borrowed pointers into the active context
+ * - borrowed pointers become invalid when the system shuts down or is reinitialized
+ *
+ * Ownership and lifetime:
+ * - Owned by `World`.
+ * - Owns the `InputRuntime` and active `InputContext`.
+ * - Returned pointers are non-owning and must not be cached across lifecycle changes.
+ *
+ * Threading model:
+ * - Main-thread oriented.
+ * - Internal state is guarded by `GameMutex`, but callers should still treat mutation APIs as serialized.
+ * - Cross-thread work should be marshaled via `EnqueueTask(...)`.
+ *
+ * Performance notes:
+ * - `Pump()` is expected once per frame.
+ * - Accessors are constant-time and allocation-free.
+ *
+ * @see World
+ * @see InputBootstrapSettings
  */
 class InputSystem final : public ITaskDispatcher
 {
@@ -92,19 +132,25 @@ public:
     /**
      * @brief Initialize input system with default bootstrap settings.
      * @return Success or error.
+     * @post On success, the system owns an initialized `InputContext`.
+     * @warning Reinitializes the system and discards any previous context state.
      */
     Result Initialize();
 
     /**
      * @brief Initialize input system with explicit bootstrap settings.
-     * @param Settings Input bootstrap settings.
+     * @param Settings Input bootstrap settings copied into the system on success.
      * @return Success or error.
+     * @post On success, `Settings()` returns a copy of @p Settings and the active context is recreated.
+     * @warning Reinitializes the system and discards any previous context state.
      */
     Result Initialize(const InputBootstrapSettings& Settings);
 
     /**
      * @brief Shutdown active input context.
-     * @remarks Safe to call repeatedly.
+     * @remarks
+     * Safe to call repeatedly. After shutdown, all pointers previously returned by
+     * `Context()`, `Snapshot()`, `Events()`, `Devices()`, and `Actions()` are invalid.
      */
     void Shutdown();
 
@@ -117,6 +163,9 @@ public:
     /**
      * @brief Pump one input frame and update normalized snapshot/events.
      * @return Success or error.
+     * @pre The system must be initialized.
+     * @post On success, `Snapshot()`, `Events()`, `Devices()`, and `Actions()` reflect the latest backend state.
+     * @warning This is the frame boundary for world input state; skipping it leaves consumers observing stale data.
      */
     Result Pump();
 
@@ -142,6 +191,7 @@ public:
     /**
      * @brief Access active bootstrap settings snapshot.
      * @return Settings currently used by this subsystem.
+     * @remarks Returns a borrowed reference owned by the subsystem.
      */
     const InputBootstrapSettings& Settings() const;
 
@@ -150,6 +200,7 @@ public:
      * @return Mutable runtime reference.
      * @remarks
      * Advanced use only. Prefer `Initialize(...)` for standard startup flow.
+     * Mutating the runtime directly can change which backends or factories are available to future initialization calls.
      */
     SnAPI::Input::InputRuntime& Runtime();
 
@@ -161,43 +212,49 @@ public:
 
     /**
      * @brief Access active input context.
-     * @return Context pointer or nullptr when uninitialized.
+     * @return Non-owning context pointer or `nullptr` when uninitialized.
+     * @warning The returned pointer is invalidated by `Shutdown()` and successful reinitialization.
      */
     SnAPI::Input::InputContext* Context();
 
     /**
      * @brief Access active input context (const).
-     * @return Context pointer or nullptr when uninitialized.
+     * @return Non-owning context pointer or `nullptr` when uninitialized.
+     * @warning The returned pointer is invalidated by `Shutdown()` and successful reinitialization.
      */
     const SnAPI::Input::InputContext* Context() const;
 
     /**
      * @brief Access latest normalized snapshot.
-     * @return Snapshot pointer or nullptr when uninitialized.
+     * @return Non-owning snapshot pointer or `nullptr` when uninitialized.
+     * @remarks The snapshot contents change on each successful `Pump()`.
      */
     const SnAPI::Input::InputSnapshot* Snapshot() const;
 
     /**
      * @brief Access latest event stream.
-     * @return Event vector pointer or nullptr when uninitialized.
+     * @return Non-owning event-vector pointer or `nullptr` when uninitialized.
+     * @remarks The pointed-to container belongs to the active input context.
      */
     const std::vector<SnAPI::Input::InputEvent>* Events() const;
 
     /**
      * @brief Access latest enumerated devices.
-     * @return Device vector pointer or nullptr when uninitialized.
+     * @return Non-owning device-vector pointer or `nullptr` when uninitialized.
+     * @remarks Device objects are owned by the active backend/context.
      */
     const std::vector<std::shared_ptr<SnAPI::Input::IInputDevice>>* Devices() const;
 
     /**
      * @brief Access mutable action map bound to active context.
-     * @return Action map pointer or nullptr when uninitialized.
+     * @return Non-owning action-map pointer or `nullptr` when uninitialized.
+     * @remarks Mutations affect how future `Pump()` calls interpret backend input.
      */
     SnAPI::Input::ActionMap* Actions();
 
     /**
      * @brief Access immutable action map bound to active context.
-     * @return Action map pointer or nullptr when uninitialized.
+     * @return Non-owning action-map pointer or `nullptr` when uninitialized.
      */
     const SnAPI::Input::ActionMap* Actions() const;
 

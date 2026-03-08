@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::detail::TArgStorage
 
-Storage selection for reflected arguments.
+Internal storage selection for extracted reflected arguments.
+
+Lvalue references are stored as `std::reference_wrapper`, while by-value arguments are copied.
 
 ## Public Types
 

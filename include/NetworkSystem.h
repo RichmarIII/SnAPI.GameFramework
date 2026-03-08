@@ -25,9 +25,20 @@ namespace SnAPI::GameFramework
 class IWorld;
 
 /**
- * @brief Settings used when `NetworkSystem` owns the session/transport.
- * @remarks
- * This is the world-owned bootstrap path used by `GameRuntime`.
+ * @ingroup SnAPI_GameFramework
+ * @brief Settings used when `NetworkSystem` owns the session and UDP transport.
+ *
+ * `NetworkBootstrapSettings` describes the self-contained bootstrap path where
+ * GameFramework creates the transport, session, replication bridge, and RPC bridge
+ * on behalf of a `World`. This is the standard path used by `GameRuntime`.
+ *
+ * Core semantics:
+ * - `Role` determines whether the resulting session behaves as server, client, or listen server
+ * - bind/connect fields are only consumed by `InitializeOwnedSession(...)`
+ * - session listeners are borrowed only; ownership stays with the caller
+ * - `RpcTargetId` namespaces reflection RPC binding for the world bridge
+ *
+ * @see NetworkSystem
  */
 struct NetworkBootstrapSettings
 {
@@ -44,16 +55,39 @@ struct NetworkBootstrapSettings
 };
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief World-owned networking subsystem for replication and reflection RPC.
- * @remarks
- * Binds SnAPI.Networking session/services to a graph-aware runtime bridge layer:
- * - `NetReplicationBridge` for spawn/update/despawn reflection replication
- * - `NetRpcBridge` for reflection-driven RPC routing on nodes/components
  *
- * Lifecycle and ownership:
+ * `NetworkSystem` is the world-level adapter between the scene graph/ECS model and
+ * SnAPI.Networking session services. It wires replication and reflection RPC to world
+ * nodes/components so higher-level gameplay code can reason in terms of `World`,
+ * `NodeHandle`, and reflected methods instead of packet formats.
+ *
+ * Why this abstraction exists:
+ * - to keep transport/session lifetime aligned with world lifetime
+ * - to centralize bridge setup for replication and RPC
+ * - to expose simple authority queries and connection snapshots to gameplay systems
+ *
+ * Core semantics:
+ * - `InitializeOwnedSession(...)` tears down any previous owned session before creating a new one
+ * - the system owns the bootstrap path transport/session/services it creates
+ * - `Session()`, `Transport()`, `Replication()`, `Rpc()`, and bridge accessors return borrowed handles
+ * - when no session is attached, `IsServer()` defaults to `true` so offline worlds behave authoritatively
+ *
+ * Ownership and lifetime:
  * - Owned by `World`.
- * - Owns networking session/transport lifecycle.
- * - Service/bridge objects are owned by this subsystem once attached.
+ * - Owns the `NetSession` and `UdpTransportAsio` created by the owned-session bootstrap path.
+ * - Owns replication/RPC bridge objects.
+ * - Listener pointers in `NetworkBootstrapSettings` are borrowed and must outlive session initialization.
+ *
+ * Threading model:
+ * - Main-thread oriented for setup/teardown.
+ * - Cross-thread work should be marshaled via `EnqueueTask(...)`.
+ *
+ * @see World
+ * @see NetworkBootstrapSettings
+ * @see NetReplicationBridge
+ * @see NetRpcBridge
  */
 class NetworkSystem final : public ITaskDispatcher
 {
@@ -86,21 +120,24 @@ public:
     void ExecuteQueuedTasks();
 
     /**
-     * @brief Initialize and own a session + UDP transport for this world.
-     * @param Settings Bootstrap settings.
+     * @brief Initialize and own a session plus UDP transport for this world.
+     * @param Settings Bootstrap settings copied during initialization.
      * @return Success or error.
+     * @post On success, replication and RPC bridges are bound to the created session.
+     * @warning Replaces any previously owned session state.
      */
     Result InitializeOwnedSession(const NetworkBootstrapSettings& Settings);
 
     /**
      * @brief Shutdown owned session/transport and clear attachment state.
+     * @remarks Borrowed session, transport, service, and bridge pointers may change or become null after this call.
      */
     void ShutdownOwnedSession();
 
     /**
      * @brief Access the attached session.
-     * @return Session pointer or nullptr when detached.
-     * @remarks Session is owned by this subsystem.
+     * @return Non-owning session pointer or `nullptr` when detached.
+     * @remarks Session is owned by this subsystem in the owned-session bootstrap path.
      */
     SnAPI::Networking::NetSession* Session() const
     {
@@ -108,8 +145,9 @@ public:
     }
 
     /**
-     * @brief Access owned UDP transport (if initialized via owned-session path).
+     * @brief Access owned UDP transport.
      * @return Shared transport pointer or null.
+     * @remarks Non-null only when initialized through the owned-session bootstrap path.
      */
     std::shared_ptr<SnAPI::Networking::UdpTransportAsio> Transport() const
     {
@@ -138,8 +176,8 @@ public:
 
     /**
      * @brief Access replication bridge.
-     * @return Bridge pointer.
-     * @remarks Null until wiring completes.
+     * @return Non-owning bridge pointer.
+     * @remarks Null until session wiring completes.
      */
     NetReplicationBridge* ReplicationBridge() const
     {
@@ -148,8 +186,8 @@ public:
 
     /**
      * @brief Access RPC bridge.
-     * @return Bridge pointer.
-     * @remarks Null until wiring completes.
+     * @return Non-owning bridge pointer.
+     * @remarks Null until session wiring completes.
      */
     NetRpcBridge* RpcBridge() const
     {
@@ -157,15 +195,18 @@ public:
     }
 
     /**
-     * @brief True when acting as server.
+     * @brief Check whether the attached session currently has server authority.
+     * @return `true` when the session is server-capable, or when no session is attached.
      */
     bool IsServer() const;
     /**
-     * @brief True when acting as client.
+     * @brief Check whether the attached session currently has client role.
+     * @return `true` when the attached session is client-capable.
      */
     bool IsClient() const;
     /**
-     * @brief True when acting as listen-server (server+client role).
+     * @brief Check whether the attached session is a listen server.
+     * @return `true` when the session has both server and client roles.
      */
     bool IsListenServer() const;
 

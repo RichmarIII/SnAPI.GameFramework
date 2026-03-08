@@ -1,5 +1,5 @@
 site_name: SnAPI.GameFramework
-site_description: Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration
+site_description: World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting
 site_url: https://richmarIII.github.io/SnAPI.GameFramework
 repo_url: https://github.com/RichmarIII/SnAPI.GameFramework
 repo_name: RichmarIII/SnAPI.GameFramework
@@ -64,18 +64,30 @@ nav:
   - Start Here: tutorials.md
   - Architecture: architecture.md
   - Tutorials:
-      - Worlds and Graphs: tutorials/worlds_graphs.md
-      - Nodes and Components: tutorials/nodes_components.md
-      - Input System: tutorials/input.md
-      - UI System: tutorials/ui.md
-      - Renderer Integration and Mesh Components: tutorials/renderer.md
-      - Physics System and Components: tutorials/physics.md
-      - Physics Queries and Events: tutorials/physics_queries_events.md
-      - Reflection and Serialization: tutorials/reflection_serialization.md
-      - AssetPipeline Integration: tutorials/assetpipeline.md
-      - Networking Replication and RPC: tutorials/networking.md
-      - Audio Components: tutorials/audio.md
-      - Testing and Validation: tutorials/testing.md
+      - Core Guides:
+          - Worlds, Levels, and Hierarchies: tutorials/worlds_graphs.md
+          - Nodes and Components: tutorials/nodes_components.md
+          - Input System: tutorials/input.md
+          - UI System: tutorials/ui.md
+          - Renderer Integration: tutorials/renderer.md
+          - Physics System and Components: tutorials/physics.md
+          - Physics Queries and Events: tutorials/physics_queries_events.md
+          - Reflection and Serialization: tutorials/reflection_serialization.md
+          - AssetPipeline Integration: tutorials/assetpipeline.md
+          - Networking, Replication, and Reflected RPC: tutorials/networking.md
+          - Audio Components: tutorials/audio.md
+          - Testing and Validation: tutorials/testing.md
+      - Project Labs:
+          - First Play Session: tutorials/first_play_session.md
+          - Space Station Partitions: tutorials/space_station_partitions.md
+          - Couch Co-op Laser Tag: tutorials/couch_coop_laser_tag.md
+          - Haunted Radio: tutorials/haunted_radio.md
+          - Bouncy Basement: tutorials/bouncy_basement.md
+          - Shipyard Save/Load: tutorials/shipyard_save_load.md
+          - Postcard Renderer: tutorials/postcard_renderer.md
+          - Net Arena: tutorials/net_arena.md
+          - Tool World vs Game World: tutorials/tool_world_vs_game_world.md
+          - Scripted Gadget Lab: tutorials/scripted_gadget_lab.md
   - API Reference:
       - Overview: api/index.md
       - Namespaces: api/namespaces.md

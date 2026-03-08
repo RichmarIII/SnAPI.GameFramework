@@ -1,6 +1,6 @@
 # SnAPI::GameFramework::TransparentStringEqual
 
-Heterogeneous equality functor for string-key lookups.
+Heterogeneous equality functor paired with `TransparentStringHash`.
 
 ## Public Types
 

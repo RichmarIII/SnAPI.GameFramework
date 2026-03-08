@@ -36,10 +36,21 @@ namespace SnAPI::GameFramework
 class GameplayHost;
 
 /**
- * @brief World frame-phase execution policy.
- * @remarks
- * This allows editor/runtime/PIE worlds to share one implementation while
- * selectively enabling simulation and subsystem phases.
+ * @ingroup SnAPI_GameFramework
+ * @brief Per-frame execution policy used by `World`.
+ *
+ * `WorldExecutionProfile` allows one concrete `World` implementation to serve different
+ * operating modes by selectively enabling or disabling frame phases and subsystem work.
+ * Runtime gameplay, tool-time editor worlds, and PIE all reuse the same data structures but
+ * choose different policy defaults.
+ *
+ * Semantics:
+ * - Each flag gates one well-defined piece of world behavior for the current frame.
+ * - Profiles are intended to be cheap value objects that can be swapped as mode changes occur.
+ * - Disabling a phase does not necessarily mean the corresponding subsystem is uninitialized; it only changes execution.
+ *
+ * @see World
+ * @see EWorldKind
  */
 struct WorldExecutionProfile
 {
@@ -72,17 +83,32 @@ struct WorldExecutionProfile
 };
 
 /**
- * @brief Concrete world root that owns levels and subsystems.
- * @remarks
- * `World` is the top-level runtime orchestration object:
- * - implements `IWorld` for node/component storage and subsystem contracts
- * - owns subsystem instances (job system + optional input/ui/audio/networking/
- *   physics/renderer adapters)
+ * @ingroup SnAPI_GameFramework
+ * @brief Concrete world implementation that owns graph storage, subsystems, and frame execution.
  *
- * Responsibility boundaries:
- * - world controls frame lifecycle and end-of-frame flush
- * - levels are regular `BaseNode`-derived nodes stored by world
- * - nodes/components can query world context through `Owner()->World()`
+ * `World` is the default implementation behind `IWorld`. It owns the concrete node pool,
+ * ECS runtime state, script runtime, task dispatcher, and optional subsystems such as input,
+ * UI, networking, physics, audio, and rendering. `GameRuntime` typically owns exactly one
+ * `World` instance for the lifetime of a running session.
+ *
+ * Design responsibilities:
+ * - own all world-level object storage and identity registration
+ * - drive frame phases (`Tick`, `FixedTick`, `LateTick`, `EndFrame`)
+ * - expose subsystem access through one authoritative root
+ * - mediate editor/runtime/PIE behavior through `WorldExecutionProfile`
+ *
+ * Ownership and lifetime:
+ * - `World` owns its subsystem instances directly.
+ * - Nodes and runtime component records are owned by world-managed storage.
+ * - Raw node/component pointers obtained from the world are borrowed and become invalid when the underlying object is destroyed.
+ *
+ * Threading model:
+ * - Main-thread only for graph mutation and frame execution.
+ * - Background work should be marshaled back through the task-dispatch APIs instead of mutating world state directly.
+ *
+ * @see IWorld
+ * @see GameRuntime
+ * @see WorldExecutionProfile
  */
 class World : public IWorld, public ITaskDispatcher
 {
@@ -118,6 +144,18 @@ public:
      */
     void Name(std::string NameValue);
 
+    /**
+     * @brief Create a node of reflected type `T`.
+     * @tparam T Concrete node type deriving from `BaseNode`.
+     * @tparam Args Additional constructor arguments; currently unsupported by the ECS-only creation path.
+     * @param NameValue Display/debug name assigned to the node.
+     * @param args Additional constructor arguments. Must be omitted; passing any value causes the call
+     *        to fail with `EErrorCode::InvalidArgument`.
+     * @return Handle to the created node or an error.
+     * @remarks
+     * Node storage is owned by the world. The returned handle is the stable public identity;
+     * callers do not own the created node object.
+     */
     template<typename T = BaseNode, typename... Args>
     TExpected<NodeHandle> CreateNode(std::string NameValue, Args&&... args)
     {
@@ -130,6 +168,17 @@ public:
         return CreateNode(StaticTypeId<T>(), std::move(NameValue));
     }
 
+    /**
+     * @brief Create a node of reflected type `T` with an explicit UUID.
+     * @tparam T Concrete node type deriving from `BaseNode`.
+     * @tparam Args Additional constructor arguments; currently unsupported by the ECS-only creation path.
+     * @param Id Explicit stable identity to assign to the node.
+     * @param NameValue Display/debug name assigned to the node.
+     * @param args Additional constructor arguments. Must be omitted; passing any value causes the call
+     *        to fail with `EErrorCode::InvalidArgument`.
+     * @return Handle to the created node or an error.
+     * @remarks Use this when reconstructing persisted or replicated object identity.
+     */
     template<typename T = BaseNode, typename... Args>
     TExpected<NodeHandle> CreateNodeWithId(const Uuid& Id, std::string NameValue, Args&&... args)
     {
@@ -167,12 +216,38 @@ public:
     Result RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type) override;
     TExpected<void*> CreateComponent(const NodeHandle& Owner, const TypeId& Type) override;
     TExpected<void*> CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) override;
+    Result RequestNodeOnCreate(const NodeHandle& Handle) override;
+    bool AreNodeOnCreateCallbacksDeferred() const override;
     bool IsServer() const;
     bool IsClient() const;
     bool IsListenServer() const;
+    /**
+     * @brief Set the high-level world kind used by runtime/editor code paths.
+     * @param Kind New world role label.
+     */
     void SetWorldKind(EWorldKind Kind);
+    /**
+     * @brief Get the active execution profile that gates frame phases and subsystem work.
+     * @return Current execution profile by const reference.
+     */
     const WorldExecutionProfile& ExecutionProfile() const;
+    /**
+     * @brief Replace the active execution profile.
+     * @param Profile New execution profile to apply.
+     */
     void SetExecutionProfile(const WorldExecutionProfile& Profile);
+    /**
+     * @brief Enable or disable deferred node `OnCreate` delivery.
+     * @param Deferred When `true`, future node `OnCreate` requests are queued instead of invoked immediately.
+     * @remarks Used during bootstrap flows where node logic must wait until dependent subsystems are ready.
+     */
+    void DeferNodeOnCreateCallbacks(bool Deferred);
+    /**
+     * @brief Flush all queued node `OnCreate` callbacks.
+     * @return Success or the first callback error encountered.
+     * @remarks This also clears deferred mode before processing the queue.
+     */
+    Result FlushDeferredNodeOnCreate();
 
     /**
      * @brief Enqueue work on the world (game) thread.
@@ -445,6 +520,8 @@ private:
 #endif
     EWorldKind m_worldKind = EWorldKind::Runtime; /**< @brief Role/classification of this world instance. */
     WorldExecutionProfile m_executionProfile{}; /**< @brief Per-world frame-phase execution policy. */
+    std::vector<NodeHandle> m_pendingNodeOnCreate{}; /**< @brief Deferred node OnCreate queue used during bootstrap barriers. */
+    bool m_deferNodeOnCreateCallbacks = false; /**< @brief True while node OnCreate invocations should be queued. */
     bool m_fixedTickEnabled = false; /**< @brief Runtime fixed-step enable state for current frame. */
     float m_fixedTickDeltaSeconds = 0.0f; /**< @brief Runtime fixed-step interval snapshot for current frame. */
     float m_fixedTickInterpolationAlpha = 1.0f; /**< @brief Runtime interpolation alpha between fixed samples for current frame. */

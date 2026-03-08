@@ -8,19 +8,29 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Helper for registering reflected types with script bindings.
- * @remarks
- * Current implementation is a validation stub that ensures reflected metadata is present.
- * Backends can extend this class/pattern to emit concrete VM bindings.
+ * @ingroup SnAPI_GameFramework
+ * @brief Reflection-validation entry point for script-binding registration.
+ *
+ * `ScriptBindings` currently acts as a minimal front door for script backends that need
+ * to ensure a type is reflected before generating or attaching bindings.
+ *
+ * Current semantics:
+ * - No backend-specific binding tables are emitted here yet.
+ * - `RegisterType<T>()` succeeds only when `T` is already present in `TypeRegistry`.
+ * - Missing reflection metadata is reported as `EErrorCode::NotFound`.
+ *
+ * This keeps the public API stable while the concrete scripting backends evolve.
  */
 class ScriptBindings
 {
 public:
     /**
-     * @brief Register a type for scripting.
+     * @brief Validate that a type is reflected and therefore eligible for scripting integration.
      * @tparam T Type to register.
-     * @return Success or error if the type is not reflected.
-     * @remarks Extend this for backend-specific binding generation.
+     * @return Success when reflection metadata exists for `T`; otherwise an error.
+     *
+     * Backends can extend this pattern to emit VM bindings, native thunks, or ABI glue
+     * after the metadata presence check succeeds.
      */
     template<typename T>
     static TExpected<void> RegisterType()

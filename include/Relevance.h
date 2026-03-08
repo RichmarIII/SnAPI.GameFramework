@@ -18,45 +18,84 @@ namespace SnAPI::GameFramework
 class Level;
 
 /**
- * @brief Context passed to relevance policy evaluation.
- * @remarks Provides access to the node handle and owning graph.
+ * @ingroup SnAPI_GameFramework
+ * @brief Inputs provided to a relevance-policy evaluation.
+ *
+ * Relevance policies are intentionally evaluated against a narrow context rather than
+ * against the full world API. This keeps the policy contract cheap to pass around and
+ * makes the decision inputs explicit.
+ *
+ * Lifetime and ownership:
+ * - `Node` is a value handle copy.
+ * - `Graph` is a borrowed reference to the owning level and must not be retained past
+ *   the evaluation call.
+ *
+ * Threading:
+ * - Main-thread only unless the owning level explicitly guarantees otherwise.
  */
 struct RelevanceContext
 {
-    NodeHandle Node; /**< @brief Node being evaluated. */
-    std::reference_wrapper<Level> Graph; /**< @brief Owning graph. */
+    NodeHandle Node; /**< @brief Handle of the node currently being tested for relevance. */
+    std::reference_wrapper<Level> Graph; /**< @brief Borrowed owning level used for neighborhood or graph-aware decisions. */
 };
 
 /**
- * @brief Registry for relevance policy types.
- * @remarks
- * Static process-wide registry that binds policy type ids to evaluate callbacks.
- * Relevance components store policy data + type id, while Level executes callbacks
- * during relevance evaluation passes.
+ * @ingroup SnAPI_GameFramework
+ * @brief Process-wide registry that binds reflected relevance-policy types to evaluation callbacks.
+ *
+ * `RelevanceComponent` stores policy state in type-erased form. The registry supplies
+ * the code path that turns that erased payload back into "call `PolicyT::Evaluate(...)`".
+ * This keeps runtime storage compact while still allowing arbitrary policy structs to be
+ * registered lazily on first use.
+ *
+ * Core semantics:
+ * - Registration is keyed by reflected `TypeId`.
+ * - Duplicate registration of the same type is ignored.
+ * - The registry does not own policy instances; it only owns dispatch metadata.
+ * - `Find()` returns metadata only when the policy type has already been registered.
+ *
+ * Threading:
+ * - Not generally thread-safe.
+ * - Internal `GameMutex` use provides affinity validation, not real mutual exclusion.
+ * - Register and lookup on the game thread or provide external synchronization.
+ *
+ * @see RelevanceComponent
  */
 class RelevancePolicyRegistry
 {
 public:
     /**
-     * @brief Signature for relevance evaluation callbacks.
-     * @param PolicyData Pointer to policy instance.
-     * @param Context Evaluation context.
-     * @return True if the node is relevant/active.
+     * @brief Type-erased function signature used to evaluate one policy instance.
+     * @param PolicyData Borrowed pointer to the stored policy object. The pointee must
+     *        be of the same concrete type that was passed to `Register<PolicyT>()`.
+     * @param Context Borrowed evaluation inputs for the current node.
+     * @return `true` when the node should be treated as relevant/active.
      */
     using EvaluateFn = bool(*)(const void* PolicyData, const RelevanceContext& Context);
 
     /**
-     * @brief Stored policy metadata.
+     * @brief Dispatch metadata recorded for a registered policy type.
+     *
+     * The registry is intentionally minimal today: evaluation is the only required
+     * behavior. Additional policy-side metadata can be added here later without
+     * changing the component storage format.
      */
     struct PolicyInfo
     {
-        EvaluateFn Evaluate = nullptr; /**< @brief Evaluation callback. */
+        EvaluateFn Evaluate = nullptr; /**< @brief Type-erased evaluation entry point for the policy type. */
     };
 
     /**
-     * @brief Register a policy type.
+     * @brief Register a policy type and its type-erased evaluation trampoline.
      * @tparam PolicyT Policy type (must implement Evaluate).
-     * @remarks Duplicate registrations are ignored to keep registration idempotent.
+     *
+     * `PolicyT` is expected to provide `bool Evaluate(const RelevanceContext&) const`
+     * or another compatible callable member used by `EvaluateImpl`.
+     *
+     * Registration is idempotent. Re-registering an already-known type leaves the
+     * original metadata in place.
+     *
+     * @note This function does not create or own policy instances.
      */
     template<typename PolicyT>
     static void Register()
@@ -71,9 +110,12 @@ public:
     }
 
     /**
-     * @brief Find policy metadata by TypeId.
-     * @param PolicyId Policy type id.
-     * @return Pointer to PolicyInfo or nullptr.
+     * @brief Look up dispatch metadata for a previously registered policy type.
+     * @param PolicyId Reflected policy type id.
+     * @return Pointer to registry-owned metadata, or `nullptr` when the type has not
+     *         been registered.
+     *
+     * The returned pointer is borrowed and remains valid until static shutdown.
      */
     static const PolicyInfo* Find(const TypeId& PolicyId)
     {
@@ -88,11 +130,11 @@ public:
 
 private:
     /**
-     * @brief Internal evaluation wrapper for PolicyT.
+     * @brief Type-specific trampoline used by the registry to erase policy storage.
      * @tparam PolicyT Policy type.
-     * @param PolicyData Pointer to policy instance.
-     * @param Context Evaluation context.
-     * @return True if relevant.
+     * @param PolicyData Borrowed pointer to a stored `PolicyT` instance.
+     * @param Context Borrowed evaluation context.
+     * @return `true` when `PolicyT::Evaluate(Context)` reports the node as relevant.
      */
     template<typename PolicyT>
     static bool EvaluateImpl(const void* PolicyData, const RelevanceContext& Context)
@@ -106,10 +148,34 @@ private:
 };
 
 /**
- * @brief Component that drives relevance evaluation for a node.
- * @remarks
- * Holds type-erased policy instance and latest evaluation outputs.
- * Level relevance pass reads this component to decide node activation.
+ * @ingroup SnAPI_GameFramework
+ * @brief Component that stores per-node relevance policy state and the latest evaluation result.
+ *
+ * A `RelevanceComponent` turns arbitrary policy data into something the level can
+ * evaluate uniformly. The component owns an erased policy payload plus two cached
+ * outputs:
+ * - whether the node is currently considered active/relevant
+ * - the last score produced by the broader relevance pass
+ *
+ * Why it exists:
+ * - policy structs stay plain data types instead of polymorphic heap hierarchies
+ * - node storage can keep one uniform component type
+ * - evaluation code can dispatch through `RelevancePolicyRegistry`
+ *
+ * Ownership and lifetime:
+ * - The component owns the current policy payload through `std::shared_ptr<void>`.
+ * - Replacing the policy releases the previous payload when no longer referenced.
+ * - Returned policy data from `PolicyData()` is borrowed and type-erased.
+ *
+ * Threading:
+ * - Main-thread only.
+ * - Mutating the policy while a relevance pass is in progress is not supported.
+ *
+ * Invariants:
+ * - `m_policyId` is meaningful only when `m_policyData` holds a matching payload.
+ * - `Active()` and `LastScore()` are cache fields; they do not trigger evaluation.
+ *
+ * @see RelevancePolicyRegistry
  */
 class RelevanceComponent : public BaseComponent, public ComponentCRTP<RelevanceComponent>
 {
@@ -118,10 +184,18 @@ public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RelevanceComponent";
 
     /**
-     * @brief Set the relevance policy for this component.
+     * @brief Replace the stored relevance policy payload with a new concrete policy value.
      * @tparam PolicyT Policy type.
-     * @param Policy Policy instance to store.
-     * @remarks Registers policy type metadata on first use and replaces existing policy instance.
+     * @param Policy Policy value to copy or move into component-owned storage.
+     *
+     * Semantics:
+     * - Ensures `PolicyT` is registered in `RelevancePolicyRegistry`.
+     * - Replaces any previously stored policy object.
+     * - Updates `PolicyId()` to the reflected id for `PolicyT`.
+     *
+     * Ownership:
+     * - Ownership of the stored instance transfers into the component's internal
+     *   shared payload.
      */
     template<typename PolicyT>
     void Policy(PolicyT Policy)
@@ -132,8 +206,10 @@ public:
     }
 
     /**
-     * @brief Get the policy type id.
-     * @return TypeId of the policy.
+     * @brief Get the reflected type id of the currently stored policy payload.
+     * @return Borrowed reference to the stored policy type id.
+     *
+     * Returns the nil/default `TypeId` when no policy has been configured yet.
      */
     const TypeId& PolicyId() const
     {
@@ -141,9 +217,12 @@ public:
     }
 
     /**
-     * @brief Get the stored policy instance.
-     * @return Shared pointer to the policy data.
-     * @remarks The stored pointer is type-erased.
+     * @brief Access the owned, type-erased policy payload.
+     * @return Borrowed reference to the internal shared payload.
+     *
+     * The pointer is intentionally type-erased. Callers are expected to pair this with
+     * `PolicyId()` and `RelevancePolicyRegistry::Find()` rather than static-casting it
+     * blindly.
      */
     const std::shared_ptr<void>& PolicyData() const
     {
@@ -151,8 +230,8 @@ public:
     }
 
     /**
-     * @brief Get the active state computed by relevance.
-     * @return True if relevant.
+     * @brief Read the most recently applied relevance-active flag.
+     * @return `true` when the last relevance pass marked this node active.
      */
     bool Active() const
     {
@@ -160,8 +239,10 @@ public:
     }
 
     /**
-     * @brief Set the active state computed by relevance.
-     * @param Active New active state.
+     * @brief Store the most recently computed relevance-active flag.
+     * @param Active New cached active state.
+     *
+     * This is a passive cache write. It does not itself evaluate the policy.
      */
     void Active(bool Active)
     {
@@ -169,8 +250,8 @@ public:
     }
 
     /**
-     * @brief Get the last computed relevance score.
-     * @return Score value.
+     * @brief Read the last score written by the relevance system.
+     * @return Cached score value.
      */
     float LastScore() const
     {
@@ -178,8 +259,8 @@ public:
     }
 
     /**
-     * @brief Set the last computed relevance score.
-     * @param Score Score value.
+     * @brief Store the score produced by the latest relevance evaluation.
+     * @param Score Cached score value.
      */
     void LastScore(float Score)
     {

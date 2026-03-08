@@ -12,13 +12,44 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Strongly typed UUID handle for framework objects.
- * @tparam T Resolved object type (e.g., BaseNode, BaseComponent).
- * @remarks Handles do not own objects; they resolve via ObjectRegistry.
- * @note Borrowed pointers must not be cached.
- * @note Pass handles by reference in hot/runtime APIs. `Borrowed()` refreshes
- * runtime-key fields on the handle instance; passing by value can cause repeated
- * UUID fallback lookups.
+ * @ingroup SnAPI_GameFramework
+ * @brief Strongly typed, non-owning identity token for framework objects.
+ *
+ * `THandle<T>` is the public identity boundary for world-owned objects such as nodes and
+ * components. A handle stores the stable UUID that survives serialization, replication, and
+ * deferred-destroy windows, plus optional runtime slot metadata used as a fast-path for hot
+ * resolution through `ObjectRegistry`.
+ *
+ * Why this exists:
+ * - raw pointers are fast but unsafe to persist across frames, loads, or destroy queues
+ * - UUIDs are stable but expensive to hash/resolve repeatedly in hot paths
+ * - `THandle` combines both: a stable external identity plus an internal cached runtime key
+ *
+ * Core semantics:
+ * - Handles never own the target object.
+ * - Equality compares stable UUID identity, not pointer identity.
+ * - A non-null handle may still fail to resolve if the object has been destroyed or is not loaded.
+ * - Successful `Borrowed()` resolution may refresh the cached runtime key on the handle instance.
+ *
+ * Ownership and lifetime:
+ * - The caller owns only the handle value, never the resolved object.
+ * - Borrowed pointers returned from `Borrowed()` are transient views and must not be cached.
+ * - The handle may outlive the target object; resolution then returns `nullptr`.
+ *
+ * Threading:
+ * - Copying and comparing handles is thread-safe.
+ * - Calling `Borrowed()` on the same handle instance from multiple threads is not thread-safe,
+ *   because the runtime cache fields are updated lazily.
+ * - External synchronization is required if one handle instance is shared across threads.
+ *
+ * Performance:
+ * - Fast path is O(1) when runtime key fields are valid.
+ * - Slow UUID fallback requires registry lookup and is more expensive; avoid it in hot loops.
+ *
+ * @tparam T Resolved object type (for example `BaseNode` or `BaseComponent`).
+ * @see NodeHandle
+ * @see ComponentHandle
+ * @see ObjectRegistry
  */
 template<typename T>
 struct THandle
@@ -64,10 +95,10 @@ struct THandle
     {
     }
 
-    Uuid Id{}; /**< @brief UUID of the referenced object. */
-    mutable uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Runtime pool token (optional fast-path identity). */
-    mutable uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Runtime pool slot index (optional fast-path identity). */
-    mutable uint32_t RuntimeGeneration = 0; /**< @brief Runtime pool slot generation for stale-handle rejection. */
+    Uuid Id{}; /**< @brief Stable UUID of the referenced object; this is the canonical identity used for equality and persistence. */
+    mutable uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Optional cached pool token used to bypass UUID lookup during hot resolution. */
+    mutable uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Optional cached slot index paired with `RuntimePoolToken` for fast lookup. */
+    mutable uint32_t RuntimeGeneration = 0; /**< @brief Cached generation used to reject stale slot reuse after object destruction. */
 
     /**
      * @brief Check if the handle is null.
@@ -119,13 +150,13 @@ struct THandle
 
     // Borrowed pointers are valid only for the current frame; do not cache or store them.
     /**
-     * @brief Resolve to a borrowed pointer (const).
-     * @return Pointer to the object, or nullptr if not loaded/registered.
+     * @brief Resolve to a non-owning pointer using cached runtime identity when possible.
+     * @return Non-owning pointer to the object, or `nullptr` if the object is not currently registered.
      * @remarks
      * Fast path uses runtime pool token/index/generation only (no UUID hash lookup).
      * On success, runtime identity is refreshed on this handle instance.
-     * Returns nullptr when runtime identity is unavailable.
-     * @note The returned pointer must not be stored.
+     * Returns `nullptr` when the object cannot be resolved.
+     * @note The returned pointer must not be stored across frames or destroy boundaries.
      */
     T* Borrowed() const
     {
@@ -147,13 +178,13 @@ struct THandle
 
     // Borrowed pointers are valid only for the current frame; do not cache or store them.
     /**
-     * @brief Resolve to a borrowed pointer (mutable).
-     * @return Pointer to the object, or nullptr if not loaded/registered.
+     * @brief Resolve to a non-owning pointer using cached runtime identity when possible.
+     * @return Non-owning pointer to the object, or `nullptr` if the object is not currently registered.
      * @remarks
      * Fast path uses runtime pool token/index/generation only (no UUID hash lookup).
      * On success, runtime identity is refreshed on this handle instance.
-     * Returns nullptr when runtime identity is unavailable.
-     * @note The returned pointer must not be stored.
+     * Returns `nullptr` when the object cannot be resolved.
+     * @note The returned pointer must not be stored across frames or destroy boundaries.
      */
     T* Borrowed()
     {
@@ -195,8 +226,8 @@ struct THandle
     }
 
     /**
-     * @brief Check whether the handle resolves to a live object.
-     * @return True when the object is registered.
+     * @brief Check whether the handle resolves to a live object through the fast path.
+     * @return `true` when the object is currently registered and reachable through `Borrowed()`.
      * @remarks
      * Fast path uses runtime slot identity only. For UUID-only persistence handles,
      * use `IsValidSlowByUuid()`.
@@ -217,8 +248,9 @@ struct THandle
 };
 
 /**
- * @brief Hash functor for THandle.
- * @remarks Uses UUID hash for stable bucket distribution.
+ * @ingroup SnAPI_GameFramework
+ * @brief Hash functor for `THandle`.
+ * @remarks Uses UUID hash so associative containers follow stable object identity.
  */
 struct HandleHash
 {

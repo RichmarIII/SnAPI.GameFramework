@@ -7,54 +7,41 @@ title: SnAPI.GameFramework
     <p class="snapi-kicker">Gameplay framework for C++23</p>
     <h1>SnAPI.GameFramework</h1>
     <p>
-      A data-driven game framework centered around Node graphs, reflection metadata,
-      serialization pipelines, and network-aware gameplay systems.
-      It integrates directly with SnAPI.AssetPipeline, SnAPI.Input, SnAPI.UI, SnAPI.Networking, SnAPI.Audio, SnAPI.Physics, and SnAPI.Renderer.
+      A world-owned gameplay framework built around <code>GameRuntime</code>, <code>World</code>,
+      <code>Level</code>, <code>BaseNode</code>, <code>BaseComponent</code>, reflection,
+      serialization, replication, and subsystem adapters for input, UI, networking, physics,
+      audio, rendering, and scripting.
     </p>
     <div class="snapi-actions">
-      <a class="md-button md-button--primary" href="tutorials/">Get Started</a>
-      <a class="md-button" href="api/">API Reference</a>
+      <a class="md-button md-button--primary" href="tutorials/">Start Here</a>
       <a class="md-button" href="architecture/">Architecture</a>
+      <a class="md-button" href="api/">API Reference</a>
     </div>
     <div class="snapi-badges">
-      <span class="snapi-badge">Node Graphs</span>
+      <span class="snapi-badge">GameRuntime</span>
+      <span class="snapi-badge">World + Levels</span>
+      <span class="snapi-badge">Nodes + Components</span>
       <span class="snapi-badge">Reflection</span>
       <span class="snapi-badge">Serialization</span>
       <span class="snapi-badge">Replication + RPC</span>
-      <span class="snapi-badge">Input System</span>
-      <span class="snapi-badge">UI System</span>
-      <span class="snapi-badge">Physics Simulation</span>
-      <span class="snapi-badge">Audio Components</span>
-      <span class="snapi-badge">Renderer Integration</span>
+      <span class="snapi-badge">GameplayHost</span>
+      <span class="snapi-badge">Physics</span>
+      <span class="snapi-badge">Renderer</span>
+      <span class="snapi-badge">Editor + UI Viewports</span>
     </div>
     <div class="snapi-hero__features">
-      <strong>What you get</strong>
+      <strong>What the current framework actually looks like</strong>
       <ul>
-        <li>World/Level/NodeGraph runtime architecture with clean hierarchy and tick orchestration.</li>
-        <li>Standalone graph support for prefab-style authored content that can be serialized and reused.</li>
-        <li>UUID-first identity model with stable handles and safe end-of-frame destruction semantics.</li>
-        <li>Data-driven node/component composition with minimal boilerplate and strong runtime ergonomics.</li>
-        <li>Lazy, register-on-first-use reflection that avoids giant startup registration lists.</li>
-        <li>Type-safe reflection metadata for fields, methods, constructors, and inheritance chains.</li>
-        <li>Field and method flags for replication and network RPC intent directly in reflected metadata.</li>
-        <li>Ergonomic gameplay RPC dispatch with `INode::CallRPC(...)` / `IComponent::CallRPC(...)` role-aware helpers.</li>
-        <li>World-owned `InputSystem` adapter over SnAPI.Input with backend-agnostic context lifecycle and normalized snapshot/event access.</li>
-        <li>World-owned `UISystem` adapter over SnAPI.UI with explicit context lifecycle, typed input forwarding, and packetized UI render output.</li>
-        <li>Reflection-powered graph, level, and world serialization with schema-versioned payloads.</li>
-        <li>Custom value codec extension points (`TValueCodec<T>`) for packed/high-performance data formats.</li>
-        <li>World-owned `PhysicsSystem` adapter over SnAPI.Physics with backend routing and coupling support.</li>
-        <li>World-owned `RendererSystem` adapter over SnAPI.Renderer with optional default pass graph/window bootstrap.</li>
-        <li>Built-in renderer components: `CameraComponent`, `StaticMeshComponent`, and `SkeletalMeshComponent`.</li>
-        <li>Post-refactor render architecture where mesh assets are shared data and per-instance render state uses `IRenderObject`/`MeshRenderObject`.</li>
-        <li>Component-level pass visibility/shadow toggles and per-instance material overrides for renderer-backed gameplay objects.</li>
-        <li>Built-in `ColliderComponent`, `RigidBodyComponent`, and `CharacterMovementController` for fast gameplay iteration.</li>
-        <li>Configurable physics stepping policy (fixed tick, variable tick, or fully manual step) per world runtime settings.</li>
-        <li>Direct access to query/event APIs (`Raycast`, `Sweep`, `Overlap`, collision/trigger events) through world physics scene.</li>
-        <li>First-class SnAPI.AssetPipeline integration for cooking, packing, mounting, and runtime loading.</li>
-        <li>SnAPI.Networking bridges for auto-spawned replicated nodes/components and reflection-driven RPC.</li>
-        <li>World-owned subsystem pattern (`Owner()->World()->...`) for scalable engine module integration.</li>
-        <li>Integrated SnAPI.Audio listener/source components with transform-driven 3D spatial updates.</li>
-        <li>Catch2 test coverage across handles, reflection, serialization, relevance, and replication behavior.</li>
+        <li><code>GameRuntime</code> owns one <code>World</code> and drives init, frame update, and shutdown.</li>
+        <li><code>World</code> owns the node hierarchy, runtime ECS mirror, script runtime, and optional subsystems.</li>
+        <li><code>Level</code> is a convenience node type for grouping content. Nested partitions are built with child <code>Level</code> nodes, not a separate public <code>NodeGraph</code> type.</li>
+        <li><code>BaseNode</code> and <code>BaseComponent</code> are the main gameplay building blocks users derive from.</li>
+        <li>Handles are durable identity. Borrowed pointers are short-lived views into world-owned storage.</li>
+        <li>Reflection metadata powers serialization, replication, editor property panels, and reflected RPC dispatch.</li>
+        <li><code>NodeSerializer</code>, <code>LevelSerializer</code>, and <code>WorldSerializer</code> replace the old graph serializer flow.</li>
+        <li><code>NetworkSystem</code> wires <code>NetReplicationBridge</code> and <code>NetRpcBridge</code> into the active session.</li>
+        <li><code>GameplayHost</code> manages high-level join/leave/load flows, game/game-mode objects, and local-player state.</li>
+        <li>Editor bootstrap now defers node/component <code>OnCreate</code> work until the UI viewport and render path are ready.</li>
       </ul>
     </div>
   </div>
@@ -63,60 +50,70 @@ title: SnAPI.GameFramework
 ## Quick Start
 
 ```bash
-cmake -S . -B build/debug -DSNAPI_GF_BUILD_TESTS=ON -DSNAPI_GF_BUILD_DOCS=ON
+cmake -S . -B build/debug \
+  -DSNAPI_GF_BUILD_TESTS=ON \
+  -DSNAPI_GF_BUILD_EXAMPLES=ON \
+  -DSNAPI_GF_BUILD_DOCS=ON
 cmake --build build/debug
 ctest --test-dir build/debug --output-on-failure
 ```
 
-## Learn The System
+## If You Read The Old Docs
+
+The biggest conceptual change is this:
+
+- Old docs talked about `World -> Level -> NodeGraph -> Node -> Component`.
+- The current public model is `GameRuntime -> World -> Level -> BaseNode/BaseComponent`.
+- If you want nested content partitions, create child `Level` nodes.
+- If you want pure runtime ECS data, use runtime components through `WorldEcsRuntime` and the `BaseNode::AddRuntimeComponent<T>()` helpers.
+
+## Recommended First Reads
 
 <div class="snapi-grid">
   <a class="snapi-card" href="tutorials/worlds_graphs/">
-    <h3>Worlds and Graphs</h3>
-    <p>How World, Level, NodeGraph, and BaseNode fit together.</p>
+    <h3>Worlds, Levels, and Hierarchies</h3>
+    <p>Learn the real object model before touching subsystems.</p>
   </a>
   <a class="snapi-card" href="tutorials/nodes_components/">
     <h3>Nodes and Components</h3>
-    <p>Create gameplay objects, add components, and drive lifecycle events.</p>
+    <p>Build gameplay objects, attach components, and understand ownership.</p>
   </a>
-  <a class="snapi-card" href="tutorials/input/">
-    <h3>Input System</h3>
-    <p>Initialize world input, choose backends, and consume normalized snapshot/events.</p>
+  <a class="snapi-card" href="tutorials/first_play_session/">
+    <h3>First Play Session</h3>
+    <p>Build a tiny playable runtime using the current framework flow.</p>
   </a>
-  <a class="snapi-card" href="tutorials/ui/">
-    <h3>UI System</h3>
-    <p>Initialize world UI, push events into `UIContext`, and build per-frame render packets.</p>
-  </a>
-  <a class="snapi-card" href="tutorials/renderer/">
-    <h3>Renderer Integration</h3>
-    <p>Bootstrap world renderer, cameras, and mesh components with the new render-object flow.</p>
-  </a>
-  <a class="snapi-card" href="tutorials/reflection_serialization/">
-    <h3>Reflection and Serialization</h3>
-    <p>Use TTypeBuilder metadata and reflection-driven serializers.</p>
-  </a>
-  <a class="snapi-card" href="tutorials/assetpipeline/">
-    <h3>AssetPipeline Integration</h3>
-    <p>Save/load NodeGraph, Level, and World payloads as assets.</p>
+  <a class="snapi-card" href="tutorials/tool_world_vs_game_world/">
+    <h3>Tool World vs Game World</h3>
+    <p>Understand execution profiles, deferred OnCreate, and editor/runtime differences.</p>
   </a>
   <a class="snapi-card" href="tutorials/networking/">
     <h3>Networking</h3>
-    <p>Replicate nodes/components and invoke reflection RPC methods.</p>
+    <p>See how replication, reflected RPC, and GameplayHost fit together now.</p>
   </a>
-  <a class="snapi-card" href="tutorials/physics/">
-    <h3>Physics Components</h3>
-    <p>Configure world physics, rigid bodies, colliders, and character movement.</p>
-  </a>
-  <a class="snapi-card" href="tutorials/physics_queries_events/">
-    <h3>Physics Queries and Events</h3>
-    <p>Run raycasts/overlaps, drain events, and tune backend routing/couplings.</p>
-  </a>
-  <a class="snapi-card" href="tutorials/audio/">
-    <h3>Audio Components</h3>
-    <p>Attach listeners and sources powered by SnAPI.Audio.</p>
+  <a class="snapi-card" href="tutorials/scripted_gadget_lab/">
+    <h3>Scripted Gadget Lab</h3>
+    <p>Wire a script-backed gameplay object into the runtime lifecycle.</p>
   </a>
 </div>
 
-## Renderer Refactor Context (2026-02-15)
+## Newcomer Project Labs
 
-These docs and examples include the renderer-side `IRenderObject` / `MeshRenderObject` model and are aligned with the post-refactor integration in `SnAPI.GameFramework`.
+These are the fun, guided tutorials added for this docs refresh:
+
+1. [First Play Session](tutorials/first_play_session.md)
+2. [Space Station Partitions](tutorials/space_station_partitions.md)
+3. [Couch Co-op Laser Tag](tutorials/couch_coop_laser_tag.md)
+4. [Haunted Radio](tutorials/haunted_radio.md)
+5. [Bouncy Basement](tutorials/bouncy_basement.md)
+6. [Shipyard Save/Load](tutorials/shipyard_save_load.md)
+7. [Postcard Renderer](tutorials/postcard_renderer.md)
+8. [Net Arena](tutorials/net_arena.md)
+9. [Tool World vs Game World](tutorials/tool_world_vs_game_world.md)
+10. [Scripted Gadget Lab](tutorials/scripted_gadget_lab.md)
+
+## Module Map
+
+- [Start Here](tutorials.md): guided learning order and tutorial catalog
+- [Architecture](architecture.md): frame order, init order, ownership, and subsystem model
+- [API Reference](api/index.md): generated from the current public headers
+- `Docs/GameFramework/README.md` in the repository: module overview used as the contract-writing baseline for the API contract pass

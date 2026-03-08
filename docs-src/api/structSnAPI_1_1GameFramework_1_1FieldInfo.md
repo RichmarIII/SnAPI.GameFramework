@@ -1,6 +1,13 @@
 # SnAPI::GameFramework::FieldInfo
 
-Reflection metadata for a field.
+Reflection metadata for one field-like property.
+
+Field access is intentionally multi-lane:
+- `Getter` / `Setter` provide value-semantic access through `Variant`
+- `ViewGetter` provides a non-owning `VariantView` fast path
+- `ConstPointer` / `MutablePointer` provide raw-address access for hot serialization and replication paths
+
+Not every lane is required to be populated. Read-only and write-only reflected properties are represented by leaving unsupported accessors absent or returning errors.
 
 ## Public Members
 

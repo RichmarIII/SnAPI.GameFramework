@@ -11,13 +11,18 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief High-level world role used by runtime/editor flows.
+ * @ingroup SnAPI_GameFramework
+ * @brief High-level world role used by runtime, editor, and Play-In-Editor flows.
+ * @remarks
+ * The world kind is an execution-context label, not an ownership boundary. The same concrete
+ * `World` implementation can run with different policies depending on whether it is being used
+ * for gameplay, tool-time editing, or a PIE session.
  */
 enum class EWorldKind : std::uint8_t
 {
-    Runtime,
-    Editor,
-    PIE
+    Runtime, /**< @brief Normal gameplay/runtime execution context. */
+    Editor,  /**< @brief Tool-time editor context where gameplay simulation may be disabled. */
+    PIE      /**< @brief Play-In-Editor context using runtime-like simulation rules. */
 };
 
 class Level;
@@ -52,17 +57,53 @@ class RendererSystem;
 class ScriptRuntimeService;
 
 /**
- * @brief Root runtime container contract for gameplay sessions.
- * @remarks
- * A world is the top-level execution root that owns levels and optional subsystem
- * integrations (input/ui/audio/networking/physics/renderer). Worlds drive frame
- * lifecycle (`Tick`/`EndFrame`) and establish authoritative context for
- * contained node graphs.
+ * @ingroup SnAPI_GameFramework
+ * @brief Root world contract for graph ownership, subsystem access, and frame execution.
+ *
+ * `IWorld` is the central runtime abstraction that every higher-level gameplay or editor
+ * system talks to. It owns the authoritative node/component graph, exposes the optional
+ * subsystems bound into that graph, and defines the frame lifecycle used by `GameRuntime`
+ * and editor tooling.
+ *
+ * Design intent:
+ * - centralize object ownership so nodes and components have one authoritative lifetime
+ * - separate public world semantics from the concrete `World` implementation
+ * - let runtime, editor, and PIE share one API while using different execution profiles
+ *
+ * Ownership and lifetime:
+ * - The world owns node storage, runtime node/component records, and subsystem instances.
+ * - Pointers and references returned from world lookup APIs are borrowed views.
+ * - Implementations may defer actual destruction until `EndFrame` to preserve frame-stable handles.
+ *
+ * Threading model:
+ * - Unless a method explicitly says otherwise, graph mutation and direct node/component access are main-thread only.
+ * - The interface itself is not generally thread-safe; external synchronization is required for concurrent use.
+ *
+ * Invariants:
+ * - `NodeHandle` / `ComponentHandle` are the stable public identity boundary.
+ * - Execution policy queries (`ShouldRunGameplay()`, `ShouldTickUI()`, and similar) describe what the world will do this frame.
+ * - Subsystem accessors return live subsystem instances owned by the world.
+ *
+ * @see World
+ * @see GameRuntime
+ * @see BaseNode
+ * @see BaseComponent
  */
 class IWorld
 {
 public:
+    /**
+     * @brief Callback used when iterating runtime child nodes without allocating a snapshot array.
+     * @param UserData Opaque caller-owned context pointer.
+     * @param Child Child runtime handle currently being visited.
+     */
     using RuntimeChildVisitor = void(*)(void* UserData, RuntimeNodeHandle Child);
+    /**
+     * @brief Callback used when iterating concrete world-owned node objects.
+     * @param UserData Opaque caller-owned context pointer.
+     * @param Handle Stable handle for the visited node.
+     * @param Node Borrowed reference to the visited node object.
+     */
     using NodeVisitor = void(*)(void* UserData, const NodeHandle& Handle, BaseNode& Node);
 
     /** @brief Virtual destructor. */
@@ -217,6 +258,21 @@ public:
      * @return Raw component pointer or error.
      */
     virtual TExpected<void*> CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) = 0;
+
+    /**
+     * @brief Request node `OnCreate` execution for a world-owned node.
+     * @param Handle Target node handle.
+     * @return Success or error.
+     * @remarks
+     * Worlds may defer invocation temporarily during bootstrap and flush it once
+     * dependent subsystems are ready.
+     */
+    virtual Result RequestNodeOnCreate(const NodeHandle& Handle) = 0;
+    /**
+     * @brief Check whether node `OnCreate` invocations are currently deferred.
+     * @return True when node create callbacks will be queued instead of invoked immediately.
+     */
+    virtual bool AreNodeOnCreateCallbacksDeferred() const = 0;
 
     /**
      * @brief Per-frame tick.

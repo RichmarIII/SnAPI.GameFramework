@@ -3,6 +3,22 @@
 ## Functions
 
 <div class="snapi-api-card" markdown="1">
+### `void cereal::serialize(Archive &Ar, SnAPI::GameFramework::Editor::AssimpImportSettings &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void cereal::serialize(Archive &Ar, SnAPI::GameFramework::Editor::TextureImportSettings &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `void cereal::save(Archive &ArchiveRef, const SnAPI::GameFramework::Uuid &Id)`
 
 cereal save function for Uuid.

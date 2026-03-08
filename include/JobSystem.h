@@ -7,17 +7,25 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Minimal job system facade for internal parallelism.
- * @remarks Currently single-threaded; ParallelFor executes serially.
- * @note Designed as a stable integration seam for a future true task scheduler.
+ * @ingroup SnAPI_GameFramework
+ * @brief Minimal job-system facade for internal data-parallel work.
+ *
+ * This is currently a serial compatibility layer rather than a real scheduler. Its main purpose is to
+ * give callers a stable API boundary that can later be backed by a true worker pool without rewriting
+ * call sites.
+ *
+ * Current semantics:
+ * - `ParallelFor()` executes synchronously on the calling thread.
+ * - `WorkerCount` is configuration state only and does not affect execution yet.
  */
 class JobSystem
 {
 public:
     /**
-     * @brief Set the desired worker count.
+     * @brief Set the desired worker-count hint.
      * @param Count Number of worker threads.
-     * @remarks Currently stored for future use.
+     *
+     * The current implementation stores the value only for future use.
      */
     void WorkerCount(uint32_t Count)
     {
@@ -25,8 +33,8 @@ public:
     }
 
     /**
-     * @brief Get the configured worker count.
-     * @return Worker count value.
+     * @brief Get the configured worker-count hint.
+     * @return Worker-count hint value.
      */
     uint32_t WorkerCount() const
     {
@@ -34,10 +42,14 @@ public:
     }
 
     /**
-     * @brief Execute a parallel-for workload.
+     * @brief Execute a parallel-for style workload.
      * @param Count Number of iterations.
      * @param Fn Function invoked per index.
-     * @remarks Current implementation is deterministic serial execution on calling thread.
+     *
+     * Current implementation:
+     * - deterministic serial execution
+     * - on the calling thread
+     * - with one callback per index in `[0, Count)`
      */
     void ParallelFor(size_t Count, const std::function<void(size_t)>& Fn) const
     {

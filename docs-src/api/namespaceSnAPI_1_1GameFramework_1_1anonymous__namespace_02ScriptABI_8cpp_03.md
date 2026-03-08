@@ -32,6 +32,20 @@ Get the sentinel value used for invalid handles.
 **Returns:** Sentinel handle value.
 </div>
 <div class="snapi-api-card" markdown="1">
+### `std::vector< ReflectedFieldRef > SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}::CollectReflectedFields(const TypeId &Type)`
+
+**Parameters**
+
+- `Type`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `std::vector< ReflectedMethodRef > SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}::CollectReflectedMethods(const TypeId &Type)`
+
+**Parameters**
+
+- `Type`:
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `Variant * SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}::FromHandle(SnGfVariantHandle Handle)`
 
 Convert a variant handle to a Variant pointer.

@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::ConstructorInfo
 
-Reflection metadata for a constructor.
+Reflection metadata for one constructor signature.
+
+Constructor callbacks return an owning `shared_ptr<void>` so type-erased creation can be routed through a common interface.
 
 ## Public Members
 

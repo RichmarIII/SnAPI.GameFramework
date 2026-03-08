@@ -18,15 +18,30 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Shared audio system wrapper for SnAPI.Audio.
- * @remarks
- * World-owned subsystem that encapsulates backend engine lifetime.
- * Initialization is explicit/lazy; callers can probe readiness via `IsInitialized`.
+ * @ingroup SnAPI_GameFramework
+ * @brief World-owned audio engine wrapper for SnAPI.Audio.
  *
- * Threading:
- * - Internal state is game-thread owned (`GameMutex` assertion-only guard).
- * - Cross-thread callers should use `EnqueueTask`, which is the only path
- *   that takes a real mutex lock.
+ * `AudioSystem` owns the single shared audio engine used by a `World`. It gives
+ * gameplay and component code one stable place to initialize audio output, query
+ * readiness, and run per-frame backend maintenance without exposing engine lifetime
+ * as a process-global concern.
+ *
+ * Core semantics:
+ * - initialization is explicit and idempotent
+ * - the engine object is lazily allocated on first initialize call
+ * - `Update()` is the frame hook that lets the backend process pending work
+ * - `Engine()` returns a borrowed pointer that is only valid while the subsystem remains alive and initialized
+ *
+ * Ownership and lifetime:
+ * - Owned by `World`.
+ * - Owns the backend `AudioEngine` instance.
+ * - Returned engine pointers are non-owning.
+ *
+ * Threading model:
+ * - Main-thread oriented.
+ * - Cross-thread callers should marshal through `EnqueueTask(...)`.
+ *
+ * @see World
  */
 class AudioSystem final : public ITaskDispatcher
 {
@@ -48,17 +63,21 @@ public:
     AudioSystem& operator=(AudioSystem&& Other) noexcept;
 
     /**
-     * @brief Initialize the shared audio engine.
-     * @param Spec Device specification override.
-     * @return True if initialization succeeds or is already initialized.
-     * @remarks Allows caller-provided backend device/sample configuration.
+     * @brief Initialize the shared audio engine with default device settings.
+     * @return `true` if initialization succeeds or was already complete.
      */
     bool Initialize();
+    /**
+     * @brief Initialize the shared audio engine with an explicit device specification.
+     * @param Spec Device specification override forwarded to the backend.
+     * @return `true` if initialization succeeds or was already complete.
+     * @remarks Allows caller-provided backend device/sample configuration.
+     */
     bool Initialize(const SnAPI::Audio::AudioDeviceSpec& Spec);
 
     /**
      * @brief Shut down the shared audio engine.
-     * @remarks Safe to call repeatedly.
+     * @remarks Safe to call repeatedly. Borrowed pointers from `Engine()` become invalid after shutdown.
      */
     void Shutdown();
 
@@ -70,15 +89,21 @@ public:
 
     /**
      * @brief Access the shared audio engine.
-     * @return Pointer to AudioEngine or nullptr.
-     * @remarks Borrowed pointer; do not store past subsystem lifetime changes.
+     * @return Non-owning pointer to `AudioEngine` or `nullptr`.
+     * @warning Do not retain the pointer across `Shutdown()` or subsystem destruction.
      */
     SnAPI::Audio::AudioEngine* Engine();
+    /**
+     * @brief Access the shared audio engine (const).
+     * @return Non-owning pointer to `AudioEngine` or `nullptr`.
+     * @warning Do not retain the pointer across `Shutdown()` or subsystem destruction.
+     */
     const SnAPI::Audio::AudioEngine* Engine() const;
 
     /**
      * @brief Update the audio system for this frame.
-     * @param DeltaSeconds Time since last update.
+     * @param DeltaSeconds Time since last update in seconds.
+     * @remarks No-op when the engine is absent or not initialized.
      */
     void Update(float DeltaSeconds);
 

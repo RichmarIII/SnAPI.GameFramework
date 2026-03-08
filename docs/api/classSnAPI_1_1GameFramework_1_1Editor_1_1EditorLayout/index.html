@@ -1,0 +1,2729 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
+      
+      
+      
+        <link rel="canonical" href="https://richmarIII.github.io/SnAPI.GameFramework/api/classSnAPI_1_1GameFramework_1_1Editor_1_1EditorLayout/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+    
+    
+      
+        <title>SnAPI::GameFramework::Editor::EditorLayout - SnAPI.GameFramework</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Space+Grotesk:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Space Grotesk";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#snapigameframeworkeditoreditorlayout" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="SnAPI.GameFramework" class="md-header__button md-logo" aria-label="SnAPI.GameFramework" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SnAPI.GameFramework
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              SnAPI::GameFramework::Editor::EditorLayout
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/RichmarIII/SnAPI.GameFramework" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    RichmarIII/SnAPI.GameFramework
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="SnAPI.GameFramework" class="md-nav__button md-logo" aria-label="SnAPI.GameFramework" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    SnAPI.GameFramework
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/RichmarIII/SnAPI.GameFramework" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    RichmarIII/SnAPI.GameFramework
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/worlds_graphs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worlds, Levels, and Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/nodes_components/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics System and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/physics_queries_events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Queries and Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/reflection_serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reflection and Serialization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/assetpipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AssetPipeline Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/networking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking, Replication, and Reflected RPC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/audio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing and Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../namespaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Namespaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="snapigameframeworkeditoreditorlayout">SnAPI::GameFramework::Editor::EditorLayout<a class="headerlink" href="#snapigameframeworkeditoreditorlayout" title="Permanent link">&para;</a></h1>
+<p>Builds and owns the editor shell widget tree inside the root UI context.</p>
+<p><code>EditorLayout</code> is the concrete UI composition object for the editor shell. It creates the menu bar, toolbar, hierarchy, game viewport tabs, inspector panes, content browser, and project/asset modal overlays inside the root <code>UIContext</code> exposed by the running <code>GameRuntime</code>.</p>
+<p>Core semantics:
+- <code>Build()</code> tears down any previous shell, registers required external elements, and rebuilds the entire widget tree for the current runtime and theme.
+- <code>Sync()</code> is the steady-state update path. It refreshes the hierarchy, current inspector target, invalidation overlay state, and game viewport camera binding without rebuilding the shell.
+- The class stores UI callbacks as delegates. Higher-level services provide those delegates and are responsible for translating them into editor actions.
+- Content-browser and inspector payload setters copy lightweight view-model data but may contain borrowed raw object pointers for property panels; those pointers must remain valid until replaced by a subsequent state push or until the layout is shut down.</p>
+<p>Ownership and lifetime:
+- <code>EditorLayout</code> value-owns its UI element handles and modal/view-model state.
+- Returned pointers such as <code>GameViewport()</code> and <code>Context()</code> are non-owning and become invalid when the layout is shut down or rebuilt.</p>
+<p>Threading model:
+- Main-thread only.</p>
+<h2 id="contents">Contents<a class="headerlink" href="#contents" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentAssetEntry</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentAssetDetails</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentAssetCreateRequest</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentAssetImportRequest</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentAssetInspectorState</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::HierarchyActionRequest</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ProjectActionRequest</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ProjectState</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::HierarchyEntry</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentAssetCardWidgets</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::ContentBrowserEntry</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::EditorLayout::RecentProjectEntry</li>
+</ul>
+<h2 id="public-types">Public Types<a class="headerlink" href="#public-types" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="enum-ehierarchyaction"><code>enum EHierarchyAction</code><a class="headerlink" href="#enum-ehierarchyaction" title="Permanent link">&para;</a></h3>
+<p>Hierarchy action kinds emitted by hierarchy context menus.</p>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>AddNodeType</code>: Create a new child node of the chosen reflected type.</li>
+<li><code>AddComponentType</code>: Attach a component of the chosen reflected type to the target node.</li>
+<li><code>RemoveComponentType</code>: Remove the specified component type from the target node.</li>
+<li><code>DeleteNode</code>: Delete the target node.</li>
+<li><code>CreatePrefab</code>: Create a prefab asset from the target node subtree.</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-etoolbaraction"><code>enum EToolbarAction</code><a class="headerlink" href="#enum-etoolbaraction" title="Permanent link">&para;</a></h3>
+<p>Toolbar actions emitted by the editor shell.</p>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>Play</code>: Start or resume Play-In-Editor.</li>
+<li><code>Pause</code>: Pause the active PIE session.</li>
+<li><code>Stop</code>: Stop PIE and restore the editor world snapshot.</li>
+<li><code>JoinLocalPlayer2</code>: Request that a second local player join the current session.</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-egizmospace"><code>enum EGizmoSpace</code><a class="headerlink" href="#enum-egizmospace" title="Permanent link">&para;</a></h3>
+<p>Transform-gizmo space selection exposed by the tools pane.</p>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>World</code>: Interpret gizmo axes in world space.</li>
+<li><code>Object</code>: Interpret gizmo axes in the selected object's local basis.</li>
+<li><code>Camera</code>: Interpret gizmo axes relative to the active editor camera.</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-esnapmode"><code>enum ESnapMode</code><a class="headerlink" href="#enum-esnapmode" title="Permanent link">&para;</a></h3>
+<p>Binary snapping toggle used by the tools pane.</p>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>Off</code>: Do not quantize transform interaction deltas.</li>
+<li><code>On</code>: Quantize transform interaction deltas using the configured snap steps.</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-eprojectaction"><code>enum EProjectAction</code><a class="headerlink" href="#enum-eprojectaction" title="Permanent link">&para;</a></h3>
+<p>Project-management actions emitted by project modals.</p>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>CreateNew</code>: Create a new project from the values entered in the create-project flow.</li>
+<li><code>OpenExisting</code>: Open an existing project file selected by the user.</li>
+<li><code>SaveSettings</code>: Persist project settings edits for the currently loaded project.</li>
+</ul>
+</div>
+<h2 id="private-types">Private Types<a class="headerlink" href="#private-types" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="enum-ehierarchyentrykind"><code>enum EHierarchyEntryKind</code><a class="headerlink" href="#enum-ehierarchyentrykind" title="Permanent link">&para;</a></h3>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>World</code></li>
+<li><code>Level</code></li>
+<li><code>Node</code></li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-eimportprofile"><code>enum EImportProfile</code><a class="headerlink" href="#enum-eimportprofile" title="Permanent link">&para;</a></h3>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>Unknown</code></li>
+<li><code>AssimpModel</code></li>
+<li><code>Texture</code></li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-econtextmenuscope"><code>enum EContextMenuScope</code><a class="headerlink" href="#enum-econtextmenuscope" title="Permanent link">&para;</a></h3>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>None</code></li>
+<li><code>MenuBar</code></li>
+<li><code>HierarchyItem</code></li>
+<li><code>InspectorComponent</code></li>
+<li><code>ContentAssetItem</code></li>
+<li><code>ContentBrowser</code></li>
+<li><code>ContentInspectorHierarchyItem</code></li>
+<li><code>ContentInspectorComponent</code></li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="enum-ependinghierarchymenu"><code>enum EPendingHierarchyMenu</code><a class="headerlink" href="#enum-ependinghierarchymenu" title="Permanent link">&para;</a></h3>
+<p><strong>Values</strong></p>
+<ul>
+<li><code>None</code></li>
+<li><code>Root</code></li>
+<li><code>AddNodeTypes</code></li>
+<li><code>AddComponentTypes</code></li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworkeditoreditorlayoutpanelbuilder-snapiuitelementbuildersnapiuiuipanel"><code>using SnAPI::GameFramework::Editor::EditorLayout::PanelBuilder = SnAPI::UI::TElementBuilder&lt;SnAPI::UI::UIPanel&gt;</code><a class="headerlink" href="#using-snapigameframeworkeditoreditorlayoutpanelbuilder-snapiuitelementbuildersnapiuiuipanel" title="Permanent link">&para;</a></h3>
+</div>
+<h2 id="private-members">Private Members<a class="headerlink" href="#private-members" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="snapiuiuicontext-snapigameframeworkeditoreditorlayoutm_context"><code>SnAPI::UI::UIContext* SnAPI::GameFramework::Editor::EditorLayout::m_context</code><a class="headerlink" href="#snapiuiuicontext-snapigameframeworkeditoreditorlayoutm_context" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="gameruntime-snapigameframeworkeditoreditorlayoutm_runtime"><code>GameRuntime* SnAPI::GameFramework::Editor::EditorLayout::m_runtime</code><a class="headerlink" href="#gameruntime-snapigameframeworkeditoreditorlayoutm_runtime" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuipanel-snapigameframeworkeditoreditorlayoutm_shellroot"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIPanel&gt; SnAPI::GameFramework::Editor::EditorLayout::m_shellRoot</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuipanel-snapigameframeworkeditoreditorlayoutm_shellroot" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitabs-snapigameframeworkeditoreditorlayoutm_gameviewtabs"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITabs&gt; SnAPI::GameFramework::Editor::EditorLayout::m_gameViewTabs</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitabs-snapigameframeworkeditoreditorlayoutm_gameviewtabs" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandleuirenderviewport-snapigameframeworkeditoreditorlayoutm_gameviewport"><code>SnAPI::UI::ElementHandle&lt;UIRenderViewport&gt; SnAPI::GameFramework::Editor::EditorLayout::m_gameViewport</code><a class="headerlink" href="#snapiuielementhandleuirenderviewport-snapigameframeworkeditoreditorlayoutm_gameviewport" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_inspectorpropertypanel"><code>SnAPI::UI::ElementHandle&lt;UIPropertyPanel&gt; SnAPI::GameFramework::Editor::EditorLayout::m_inspectorPropertyPanel</code><a class="headerlink" href="#snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_inspectorpropertypanel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitreeview-snapigameframeworkeditoreditorlayoutm_hierarchytree"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITreeView&gt; SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyTree</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitreeview-snapigameframeworkeditoreditorlayoutm_hierarchytree" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuicontextmenu-snapigameframeworkeditoreditorlayoutm_contextmenu"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIContextMenu&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contextMenu</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuicontextmenu-snapigameframeworkeditoreditorlayoutm_contextmenu" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibadge-snapigameframeworkeditoreditorlayoutm_hierarchycountbadge"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIBadge&gt; SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyCountBadge</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibadge-snapigameframeworkeditoreditorlayoutm_hierarchycountbadge" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuiswitch-snapigameframeworkeditoreditorlayoutm_invalidationdebugtoggleswitch"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UISwitch&gt; SnAPI::GameFramework::Editor::EditorLayout::m_invalidationDebugToggleSwitch</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuiswitch-snapigameframeworkeditoreditorlayoutm_invalidationdebugtoggleswitch" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_invalidationdebugtogglelabel"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_invalidationDebugToggleLabel</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_invalidationdebugtogglelabel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentsearchinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITextInput&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentSearchInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentsearchinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibreadcrumbs-snapigameframeworkeditoreditorlayoutm_contentpathbreadcrumbs"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIBreadcrumbs&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentPathBreadcrumbs</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibreadcrumbs-snapigameframeworkeditoreditorlayoutm_contentpathbreadcrumbs" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentassetnamevalue"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITextInput&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetNameValue</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentassetnamevalue" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassettypevalue"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetTypeValue</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassettypevalue" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetvariantvalue"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetVariantValue</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetvariantvalue" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetidvalue"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetIdValue</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetidvalue" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetstatusvalue"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetStatusValue</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetstatusvalue" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentplacebutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentPlaceButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentplacebutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentsavebutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentSaveButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentsavebutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuilistview-snapigameframeworkeditoreditorlayoutm_contentassetslist"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIListView&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetsList</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuilistview-snapigameframeworkeditoreditorlayoutm_contentassetslist" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetsemptyhint"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetsEmptyHint</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentassetsemptyhint" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_contentcreatemodaloverlay"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIModal&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateModalOverlay</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_contentcreatemodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitreeview-snapigameframeworkeditoreditorlayoutm_contentcreatetypetree"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITreeView&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateTypeTree</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitreeview-snapigameframeworkeditoreditorlayoutm_contentcreatetypetree" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentcreatesearchinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITextInput&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateSearchInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentcreatesearchinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentcreatenameinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITextInput&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateNameInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_contentcreatenameinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentcreateokbutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateOkButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentcreateokbutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_contentimportmodaloverlay"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIModal&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentImportModalOverlay</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_contentimportmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_contentimportsourcepicker"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIFilesystemPicker&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentImportSourcePicker</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_contentimportsourcepicker" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentimportsummarytext"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentImportSummaryText</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentimportsummarytext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_contentimportsettingspanel"><code>SnAPI::UI::ElementHandle&lt;UIPropertyPanel&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentImportSettingsPanel</code><a class="headerlink" href="#snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_contentimportsettingspanel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentimportokbutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentImportOkButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentimportokbutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_contentinspectormodaloverlay"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIModal&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorModalOverlay</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_contentinspectormodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectortitletext"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorTitleText</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectortitletext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorstatustext"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorStatusText</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorstatustext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorhierarchytitletext"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorHierarchyTitleText</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorhierarchytitletext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorpreviewstatstext"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorPreviewStatsText</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorpreviewstatstext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuiimage-snapigameframeworkeditoreditorlayoutm_contentinspectorpreviewimage"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIImage&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorPreviewImage</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuiimage-snapigameframeworkeditoreditorlayoutm_contentinspectorpreviewimage" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitreeview-snapigameframeworkeditoreditorlayoutm_contentinspectorhierarchytree"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITreeView&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorHierarchyTree</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitreeview-snapigameframeworkeditoreditorlayoutm_contentinspectorhierarchytree" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_contentinspectorpropertypanel"><code>SnAPI::UI::ElementHandle&lt;UIPropertyPanel&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorPropertyPanel</code><a class="headerlink" href="#snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_contentinspectorpropertypanel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorimportsettingstitletext"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIText&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorImportSettingsTitleText</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitext-snapigameframeworkeditoreditorlayoutm_contentinspectorimportsettingstitletext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_contentinspectorimportsettingspanel"><code>SnAPI::UI::ElementHandle&lt;UIPropertyPanel&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorImportSettingsPanel</code><a class="headerlink" href="#snapiuielementhandleuipropertypanel-snapigameframeworkeditoreditorlayoutm_contentinspectorimportsettingspanel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentinspectorsavebutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorSaveButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentinspectorsavebutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentinspectorreimportbutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorReimportButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentinspectorreimportbutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_menufilebutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_menuFileButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_menufilebutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_projectmodaloverlay"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIModal&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectModalOverlay</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_projectmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_projectnameinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITextInput&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectNameInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_projectnameinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_projectdirectoryinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIFilesystemPicker&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectDirectoryInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_projectdirectoryinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_projectfilepathinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIFilesystemPicker&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectFilePathInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_projectfilepathinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_projectmodalokbutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectModalOkButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_projectmodalokbutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_projectsettingsmodaloverlay"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIModal&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsModalOverlay</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuimodal-snapigameframeworkeditoreditorlayoutm_projectsettingsmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_projectsettingsnameinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UITextInput&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsNameInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuitextinput-snapigameframeworkeditoreditorlayoutm_projectsettingsnameinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_projectsettingsstartuppackinput"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIFilesystemPicker&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsStartupPackInput</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuifilesystempicker-snapigameframeworkeditoreditorlayoutm_projectsettingsstartuppackinput" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuicombobox-snapigameframeworkeditoreditorlayoutm_projectsettingsdefaultrendersettingscombo"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIComboBox&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsDefaultRenderSettingsCombo</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuicombobox-snapigameframeworkeditoreditorlayoutm_projectsettingsdefaultrendersettingscombo" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_projectsettingssavebutton"><code>SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsSaveButton</code><a class="headerlink" href="#snapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_projectsettingssavebutton" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorcontentassetcardwidgets-snapigameframeworkeditoreditorlayoutm_contentassetcards"><code>std::vector&lt;ContentAssetCardWidgets&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetCards</code><a class="headerlink" href="#stdvectorcontentassetcardwidgets-snapigameframeworkeditoreditorlayoutm_contentassetcards" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorsnapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentassetcardbuttons"><code>std::vector&lt;SnAPI::UI::ElementHandle&lt;SnAPI::UI::UIButton&gt; &gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetCardButtons</code><a class="headerlink" href="#stdvectorsnapiuielementhandlesnapiuiuibutton-snapigameframeworkeditoreditorlayoutm_contentassetcardbuttons" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorstdsize_t-snapigameframeworkeditoreditorlayoutm_contentassetcardindices"><code>std::vector&lt;std::size_t&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetCardIndices</code><a class="headerlink" href="#stdvectorstdsize_t-snapigameframeworkeditoreditorlayoutm_contentassetcardindices" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorcontentbrowserentry-snapigameframeworkeditoreditorlayoutm_contentbrowserentries"><code>std::vector&lt;ContentBrowserEntry&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentBrowserEntries</code><a class="headerlink" href="#stdvectorcontentbrowserentry-snapigameframeworkeditoreditorlayoutm_contentbrowserentries" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorcontentassetentry-snapigameframeworkeditoreditorlayoutm_contentassets"><code>std::vector&lt;ContentAssetEntry&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentAssets</code><a class="headerlink" href="#stdvectorcontentassetentry-snapigameframeworkeditoreditorlayoutm_contentassets" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="contentassetdetails-snapigameframeworkeditoreditorlayoutm_contentassetdetails"><code>ContentAssetDetails SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetDetails</code><a class="headerlink" href="#contentassetdetails-snapigameframeworkeditoreditorlayoutm_contentassetdetails" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_contentassetfiltertext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetFilterText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_contentassetfiltertext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_contentcurrentfolder"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_contentCurrentFolder</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_contentcurrentfolder" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_selectedcontentassetkey"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_selectedContentAssetKey</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_selectedcontentassetkey" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_selectedcontentfolderpath"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_selectedContentFolderPath</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_selectedcontentfolderpath" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_lastcontentassetclickkey"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_lastContentAssetClickKey</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_lastcontentassetclickkey" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdchronosteady_clocktime_point-snapigameframeworkeditoreditorlayoutm_lastcontentassetclicktime"><code>std::chrono::steady_clock::time_point SnAPI::GameFramework::Editor::EditorLayout::m_lastContentAssetClickTime</code><a class="headerlink" href="#stdchronosteady_clocktime_point-snapigameframeworkeditoreditorlayoutm_lastcontentassetclicktime" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_contentcreatemodalopen"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateModalOpen</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_contentcreatemodalopen" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_contentcreatetypefiltertext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateTypeFilterText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_contentcreatetypefiltertext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_contentcreatenametext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateNameText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_contentcreatenametext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="typeid-snapigameframeworkeditoreditorlayoutm_contentcreateselectedtype"><code>TypeId SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateSelectedType</code><a class="headerlink" href="#typeid-snapigameframeworkeditoreditorlayoutm_contentcreateselectedtype" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectortypeid-snapigameframeworkeditoreditorlayoutm_contentcreatevisibletypes"><code>std::vector&lt;TypeId&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateVisibleTypes</code><a class="headerlink" href="#stdvectortypeid-snapigameframeworkeditoreditorlayoutm_contentcreatevisibletypes" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdshared_ptrsnapiuiitreeitemsource-snapigameframeworkeditoreditorlayoutm_contentcreatetypesource"><code>std::shared_ptr&lt;SnAPI::UI::ITreeItemSource&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentCreateTypeSource</code><a class="headerlink" href="#stdshared_ptrsnapiuiitreeitemsource-snapigameframeworkeditoreditorlayoutm_contentcreatetypesource" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_contentimportmodalopen"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_contentImportModalOpen</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_contentimportmodalopen" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_contentimportsourcepath"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_contentImportSourcePath</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_contentimportsourcepath" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="eimportprofile-snapigameframeworkeditoreditorlayoutm_contentimportprofile"><code>EImportProfile SnAPI::GameFramework::Editor::EditorLayout::m_contentImportProfile</code><a class="headerlink" href="#eimportprofile-snapigameframeworkeditoreditorlayoutm_contentimportprofile" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="assimpimportsettings-snapigameframeworkeditoreditorlayoutm_contentimportassimpsettings"><code>AssimpImportSettings SnAPI::GameFramework::Editor::EditorLayout::m_contentImportAssimpSettings</code><a class="headerlink" href="#assimpimportsettings-snapigameframeworkeditoreditorlayoutm_contentimportassimpsettings" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="textureimportsettings-snapigameframeworkeditoreditorlayoutm_contentimporttexturesettings"><code>TextureImportSettings SnAPI::GameFramework::Editor::EditorLayout::m_contentImportTextureSettings</code><a class="headerlink" href="#textureimportsettings-snapigameframeworkeditoreditorlayoutm_contentimporttexturesettings" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="contentassetinspectorstate-snapigameframeworkeditoreditorlayoutm_contentassetinspectorstate"><code>ContentAssetInspectorState SnAPI::GameFramework::Editor::EditorLayout::m_contentAssetInspectorState</code><a class="headerlink" href="#contentassetinspectorstate-snapigameframeworkeditoreditorlayoutm_contentassetinspectorstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_projectmodalopen"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_projectModalOpen</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_projectmodalopen" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_projectmodalrequired"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_projectModalRequired</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_projectmodalrequired" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_projectmodalshowwelcome"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_projectModalShowWelcome</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_projectmodalshowwelcome" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_projectsettingsmodalopen"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsModalOpen</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_projectsettingsmodalopen" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="eprojectaction-snapigameframeworkeditoreditorlayoutm_projectmodalaction"><code>EProjectAction SnAPI::GameFramework::Editor::EditorLayout::m_projectModalAction</code><a class="headerlink" href="#eprojectaction-snapigameframeworkeditoreditorlayoutm_projectmodalaction" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_projectnametext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_projectNameText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_projectnametext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_projectdirectorytext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_projectDirectoryText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_projectdirectorytext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_projectfilepathtext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_projectFilePathText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_projectfilepathtext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsnametext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsNameText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsnametext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsstartuppacktext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsStartupPackText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsstartuppacktext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsdefaultrendersettingsassetid"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsDefaultRenderSettingsAssetId</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsdefaultrendersettingsassetid" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorstdpairstdstring-stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsrendersettingsoptions"><code>std::vector&lt;std::pair&lt;std::string, std::string&gt; &gt; SnAPI::GameFramework::Editor::EditorLayout::m_projectSettingsRenderSettingsOptions</code><a class="headerlink" href="#stdvectorstdpairstdstring-stdstring-snapigameframeworkeditoreditorlayoutm_projectsettingsrendersettingsoptions" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="projectstate-snapigameframeworkeditoreditorlayoutm_projectstate"><code>ProjectState SnAPI::GameFramework::Editor::EditorLayout::m_projectState</code><a class="headerlink" href="#projectstate-snapigameframeworkeditoreditorlayoutm_projectstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectorrecentprojectentry-snapigameframeworkeditoreditorlayoutm_recentprojects"><code>std::vector&lt;RecentProjectEntry&gt; SnAPI::GameFramework::Editor::EditorLayout::m_recentProjects</code><a class="headerlink" href="#stdvectorrecentprojectentry-snapigameframeworkeditoreditorlayoutm_recentprojects" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectornodehandle-snapigameframeworkeditoreditorlayoutm_contentinspectorvisiblenodes"><code>std::vector&lt;NodeHandle&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorVisibleNodes</code><a class="headerlink" href="#stdvectornodehandle-snapigameframeworkeditoreditorlayoutm_contentinspectorvisiblenodes" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdshared_ptrsnapiuiitreeitemsource-snapigameframeworkeditoreditorlayoutm_contentinspectorhierarchysource"><code>std::shared_ptr&lt;SnAPI::UI::ITreeItemSource&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorHierarchySource</code><a class="headerlink" href="#stdshared_ptrsnapiuiitreeitemsource-snapigameframeworkeditoreditorlayoutm_contentinspectorhierarchysource" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_contentinspectortargetbound"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorTargetBound</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_contentinspectortargetbound" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutm_contentinspectorboundobject"><code>void* SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorBoundObject</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutm_contentinspectorboundobject" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="typeid-snapigameframeworkeditoreditorlayoutm_contentinspectorboundtype"><code>TypeId SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorBoundType</code><a class="headerlink" href="#typeid-snapigameframeworkeditoreditorlayoutm_contentinspectorboundtype" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_contentinspectorimporttargetbound"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorImportTargetBound</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_contentinspectorimporttargetbound" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutm_contentinspectorimportboundobject"><code>void* SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorImportBoundObject</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutm_contentinspectorimportboundobject" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="typeid-snapigameframeworkeditoreditorlayoutm_contentinspectorimportboundtype"><code>TypeId SnAPI::GameFramework::Editor::EditorLayout::m_contentInspectorImportBoundType</code><a class="headerlink" href="#typeid-snapigameframeworkeditoreditorlayoutm_contentinspectorimportboundtype" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-stdstring-bool-snapigameframeworkeditoreditorlayoutm_oncontentassetselected"><code>SnAPI::UI::TDelegate&lt;void(const std::string&amp;, bool)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetSelected</code><a class="headerlink" href="#snapiuitdelegatevoidconst-stdstring-bool-snapigameframeworkeditoreditorlayoutm_oncontentassetselected" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetplacerequested"><code>SnAPI::UI::TDelegate&lt;void(const std::string&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetPlaceRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetplacerequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetsaverequested"><code>SnAPI::UI::TDelegate&lt;void(const std::string&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetSaveRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetsaverequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetdeleterequested"><code>SnAPI::UI::TDelegate&lt;void(const std::string&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetDeleteRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetdeleterequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-stdstring-const-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetrenamerequested"><code>SnAPI::UI::TDelegate&lt;void(const std::string&amp;, const std::string&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetRenameRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-stdstring-const-stdstring-snapigameframeworkeditoreditorlayoutm_oncontentassetrenamerequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetrefreshrequested"><code>SnAPI::UI::TDelegate&lt;void()&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetRefreshRequested</code><a class="headerlink" href="#snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetrefreshrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-contentassetcreaterequest-snapigameframeworkeditoreditorlayoutm_oncontentassetcreaterequested"><code>SnAPI::UI::TDelegate&lt;void(const ContentAssetCreateRequest&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetCreateRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-contentassetcreaterequest-snapigameframeworkeditoreditorlayoutm_oncontentassetcreaterequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-contentassetimportrequest-snapigameframeworkeditoreditorlayoutm_oncontentassetimportrequested"><code>SnAPI::UI::TDelegate&lt;void(const ContentAssetImportRequest&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetImportRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-contentassetimportrequest-snapigameframeworkeditoreditorlayoutm_oncontentassetimportrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorsaverequested"><code>SnAPI::UI::TDelegate&lt;void()&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetInspectorSaveRequested</code><a class="headerlink" href="#snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorsaverequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorreimportrequested"><code>SnAPI::UI::TDelegate&lt;void()&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetInspectorReimportRequested</code><a class="headerlink" href="#snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorreimportrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorcloserequested"><code>SnAPI::UI::TDelegate&lt;void()&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetInspectorCloseRequested</code><a class="headerlink" href="#snapiuitdelegatevoid-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorcloserequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-nodehandle-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectornodeselected"><code>SnAPI::UI::TDelegate&lt;void(const NodeHandle&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetInspectorNodeSelected</code><a class="headerlink" href="#snapiuitdelegatevoidconst-nodehandle-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectornodeselected" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-hierarchyactionrequest-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorhierarchyactionrequested"><code>SnAPI::UI::TDelegate&lt;void(const HierarchyActionRequest&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onContentAssetInspectorHierarchyActionRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-hierarchyactionrequest-snapigameframeworkeditoreditorlayoutm_oncontentassetinspectorhierarchyactionrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdshared_ptrsnapiuiitreeitemsource-snapigameframeworkeditoreditorlayoutm_hierarchyitemsource"><code>std::shared_ptr&lt;SnAPI::UI::ITreeItemSource&gt; SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyItemSource</code><a class="headerlink" href="#stdshared_ptrsnapiuiitreeitemsource-snapigameframeworkeditoreditorlayoutm_hierarchyitemsource" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="econtextmenuscope-snapigameframeworkeditoreditorlayoutm_contextmenuscope"><code>EContextMenuScope SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuScope</code><a class="headerlink" href="#econtextmenuscope-snapigameframeworkeditoreditorlayoutm_contextmenuscope" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="ependinghierarchymenu-snapigameframeworkeditoreditorlayoutm_pendinghierarchymenu"><code>EPendingHierarchyMenu SnAPI::GameFramework::Editor::EditorLayout::m_pendingHierarchyMenu</code><a class="headerlink" href="#ependinghierarchymenu-snapigameframeworkeditoreditorlayoutm_pendinghierarchymenu" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdoptionalstdsize_t-snapigameframeworkeditoreditorlayoutm_pendinghierarchymenuindex"><code>std::optional&lt;std::size_t&gt; SnAPI::GameFramework::Editor::EditorLayout::m_pendingHierarchyMenuIndex</code><a class="headerlink" href="#stdoptionalstdsize_t-snapigameframeworkeditoreditorlayoutm_pendinghierarchymenuindex" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuiuipoint-snapigameframeworkeditoreditorlayoutm_pendinghierarchymenuopenposition"><code>SnAPI::UI::UIPoint SnAPI::GameFramework::Editor::EditorLayout::m_pendingHierarchyMenuOpenPosition</code><a class="headerlink" href="#snapiuiuipoint-snapigameframeworkeditoreditorlayoutm_pendinghierarchymenuopenposition" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdoptionalstdsize_t-snapigameframeworkeditoreditorlayoutm_contextmenuhierarchyindex"><code>std::optional&lt;std::size_t&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuHierarchyIndex</code><a class="headerlink" href="#stdoptionalstdsize_t-snapigameframeworkeditoreditorlayoutm_contextmenuhierarchyindex" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdoptionalstdsize_t-snapigameframeworkeditoreditorlayoutm_contextmenuassetindex"><code>std::optional&lt;std::size_t&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuAssetIndex</code><a class="headerlink" href="#stdoptionalstdsize_t-snapigameframeworkeditoreditorlayoutm_contextmenuassetindex" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="nodehandle-snapigameframeworkeditoreditorlayoutm_contextmenucontentinspectornode"><code>NodeHandle SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuContentInspectorNode</code><a class="headerlink" href="#nodehandle-snapigameframeworkeditoreditorlayoutm_contextmenucontentinspectornode" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdoptionalnodehandle-snapigameframeworkeditoreditorlayoutm_contextmenucomponentowner"><code>std::optional&lt;NodeHandle&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuComponentOwner</code><a class="headerlink" href="#stdoptionalnodehandle-snapigameframeworkeditoreditorlayoutm_contextmenucomponentowner" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="typeid-snapigameframeworkeditoreditorlayoutm_contextmenucomponenttype"><code>TypeId SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuComponentType</code><a class="headerlink" href="#typeid-snapigameframeworkeditoreditorlayoutm_contextmenucomponenttype" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectortypeid-snapigameframeworkeditoreditorlayoutm_contextmenunodetypes"><code>std::vector&lt;TypeId&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuNodeTypes</code><a class="headerlink" href="#stdvectortypeid-snapigameframeworkeditoreditorlayoutm_contextmenunodetypes" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectortypeid-snapigameframeworkeditoreditorlayoutm_contextmenucomponenttypes"><code>std::vector&lt;TypeId&gt; SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuComponentTypes</code><a class="headerlink" href="#stdvectortypeid-snapigameframeworkeditoreditorlayoutm_contextmenucomponenttypes" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuiuipoint-snapigameframeworkeditoreditorlayoutm_contextmenuopenposition"><code>SnAPI::UI::UIPoint SnAPI::GameFramework::Editor::EditorLayout::m_contextMenuOpenPosition</code><a class="headerlink" href="#snapiuiuipoint-snapigameframeworkeditoreditorlayoutm_contextmenuopenposition" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvectornodehandle-snapigameframeworkeditoreditorlayoutm_hierarchyvisiblenodes"><code>std::vector&lt;NodeHandle&gt; SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyVisibleNodes</code><a class="headerlink" href="#stdvectornodehandle-snapigameframeworkeditoreditorlayoutm_hierarchyvisiblenodes" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stduint64_t-snapigameframeworkeditoreditorlayoutm_hierarchysignature"><code>std::uint64_t SnAPI::GameFramework::Editor::EditorLayout::m_hierarchySignature</code><a class="headerlink" href="#stduint64_t-snapigameframeworkeditoreditorlayoutm_hierarchysignature" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdsize_t-snapigameframeworkeditoreditorlayoutm_hierarchynodecount"><code>std::size_t SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyNodeCount</code><a class="headerlink" href="#stdsize_t-snapigameframeworkeditoreditorlayoutm_hierarchynodecount" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="nodehandle-snapigameframeworkeditoreditorlayoutm_hierarchyvisualselection"><code>NodeHandle SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyVisualSelection</code><a class="headerlink" href="#nodehandle-snapigameframeworkeditoreditorlayoutm_hierarchyvisualselection" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoreditorlayoutm_hierarchyfiltertext"><code>std::string SnAPI::GameFramework::Editor::EditorLayout::m_hierarchyFilterText</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoreditorlayoutm_hierarchyfiltertext" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="editorselectionmodel-snapigameframeworkeditoreditorlayoutm_selection"><code>EditorSelectionModel* SnAPI::GameFramework::Editor::EditorLayout::m_selection</code><a class="headerlink" href="#editorselectionmodel-snapigameframeworkeditoreditorlayoutm_selection" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-nodehandle-snapigameframeworkeditoreditorlayoutm_onhierarchynodechosen"><code>SnAPI::UI::TDelegate&lt;void(const NodeHandle&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onHierarchyNodeChosen</code><a class="headerlink" href="#snapiuitdelegatevoidconst-nodehandle-snapigameframeworkeditoreditorlayoutm_onhierarchynodechosen" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-hierarchyactionrequest-snapigameframeworkeditoreditorlayoutm_onhierarchyactionrequested"><code>SnAPI::UI::TDelegate&lt;void(const HierarchyActionRequest&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onHierarchyActionRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-hierarchyactionrequest-snapigameframeworkeditoreditorlayoutm_onhierarchyactionrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidetoolbaraction-snapigameframeworkeditoreditorlayoutm_ontoolbaractionrequested"><code>SnAPI::UI::TDelegate&lt;void(EToolbarAction)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onToolbarActionRequested</code><a class="headerlink" href="#snapiuitdelegatevoidetoolbaraction-snapigameframeworkeditoreditorlayoutm_ontoolbaractionrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitdelegatevoidconst-projectactionrequest-snapigameframeworkeditoreditorlayoutm_onprojectactionrequested"><code>SnAPI::UI::TDelegate&lt;void(const ProjectActionRequest&amp;)&gt; SnAPI::GameFramework::Editor::EditorLayout::m_onProjectActionRequested</code><a class="headerlink" href="#snapiuitdelegatevoidconst-projectactionrequest-snapigameframeworkeditoreditorlayoutm_onprojectactionrequested" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutm_boundinspectorobject"><code>void* SnAPI::GameFramework::Editor::EditorLayout::m_boundInspectorObject</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutm_boundinspectorobject" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="typeid-snapigameframeworkeditoreditorlayoutm_boundinspectortype"><code>TypeId SnAPI::GameFramework::Editor::EditorLayout::m_boundInspectorType</code><a class="headerlink" href="#typeid-snapigameframeworkeditoreditorlayoutm_boundinspectortype" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdsize_t-snapigameframeworkeditoreditorlayoutm_boundinspectorcomponentsignature"><code>std::size_t SnAPI::GameFramework::Editor::EditorLayout::m_boundInspectorComponentSignature</code><a class="headerlink" href="#stdsize_t-snapigameframeworkeditoreditorlayoutm_boundinspectorcomponentsignature" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="egizmospace-snapigameframeworkeditoreditorlayoutm_gizmospace"><code>EGizmoSpace SnAPI::GameFramework::Editor::EditorLayout::m_gizmoSpace</code><a class="headerlink" href="#egizmospace-snapigameframeworkeditoreditorlayoutm_gizmospace" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="esnapmode-snapigameframeworkeditoreditorlayoutm_snapmode"><code>ESnapMode SnAPI::GameFramework::Editor::EditorLayout::m_snapMode</code><a class="headerlink" href="#esnapmode-snapigameframeworkeditoreditorlayoutm_snapmode" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="double-snapigameframeworkeditoreditorlayoutm_movesnapstep"><code>double SnAPI::GameFramework::Editor::EditorLayout::m_moveSnapStep</code><a class="headerlink" href="#double-snapigameframeworkeditoreditorlayoutm_movesnapstep" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="double-snapigameframeworkeditoreditorlayoutm_rotatesnapstepdegrees"><code>double SnAPI::GameFramework::Editor::EditorLayout::m_rotateSnapStepDegrees</code><a class="headerlink" href="#double-snapigameframeworkeditoreditorlayoutm_rotatesnapstepdegrees" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="double-snapigameframeworkeditoreditorlayoutm_scalesnapstep"><code>double SnAPI::GameFramework::Editor::EditorLayout::m_scaleSnapStep</code><a class="headerlink" href="#double-snapigameframeworkeditoreditorlayoutm_scalesnapstep" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_invalidationdebugoverlayenabled"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_invalidationDebugOverlayEnabled</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_invalidationdebugoverlayenabled" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuipropertymap-snapigameframeworkeditoreditorlayoutm_viewmodel"><code>SnAPI::UI::PropertyMap SnAPI::GameFramework::Editor::EditorLayout::m_viewModel</code><a class="headerlink" href="#snapiuipropertymap-snapigameframeworkeditoreditorlayoutm_viewmodel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutm_built"><code>bool SnAPI::GameFramework::Editor::EditorLayout::m_built</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutm_built" title="Permanent link">&para;</a></h3>
+</div>
+<h2 id="public-functions">Public Functions<a class="headerlink" href="#public-functions" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="result-snapigameframeworkeditoreditorlayoutbuildgameruntime-runtime-snapiuitheme-theme-cameracomponent-activecamera-editorselectionmodel-selectionmodel"><code>Result SnAPI::GameFramework::Editor::EditorLayout::Build(GameRuntime &amp;Runtime, SnAPI::UI::Theme &amp;Theme, CameraComponent *ActiveCamera, EditorSelectionModel *SelectionModel)</code><a class="headerlink" href="#result-snapigameframeworkeditoreditorlayoutbuildgameruntime-runtime-snapiuitheme-theme-cameracomponent-activecamera-editorselectionmodel-selectionmodel" title="Permanent link">&para;</a></h3>
+<p>Build or rebuild the full editor shell for the supplied runtime.</p>
+<p><code>Build()</code> first shuts down any previously built shell, then registers external elements such as <code>UIRenderViewport</code> and <code>UIPropertyPanel</code>, resolves the root UI context, and composes the full shell.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>: Borrowed runtime that exposes the root UI context and world services.</li>
+<li><code>Theme</code>: Borrowed theme applied to the shell.</li>
+<li><code>ActiveCamera</code>: Non-owning active editor camera pointer used for initial hierarchy/inspector/game-view setup.</li>
+<li><code>SelectionModel</code>: Borrowed selection model used for hierarchy and inspector binding.</li>
+</ul>
+<p><strong>Returns:</strong> Success or an error.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutshutdowngameruntime-runtime"><code>void SnAPI::GameFramework::Editor::EditorLayout::Shutdown(GameRuntime *Runtime)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutshutdowngameruntime-runtime" title="Permanent link">&para;</a></h3>
+<p>Destroy the current shell and clear all element handles, modal state, and callback bindings.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>: Borrowed runtime associated with the current layout, or <code>nullptr</code> when tearing down detached state.</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsyncgameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel-float-deltaseconds"><code>void SnAPI::GameFramework::Editor::EditorLayout::Sync(GameRuntime &amp;Runtime, CameraComponent *ActiveCamera, EditorSelectionModel *SelectionModel, float DeltaSeconds)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsyncgameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel-float-deltaseconds" title="Permanent link">&para;</a></h3>
+<p>Synchronize the built shell with current runtime, selection, and camera state.</p>
+<p>This is the steady-state update path and does not rebuild the shell.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>: Borrowed runtime.</li>
+<li><code>ActiveCamera</code>: Non-owning active editor camera pointer.</li>
+<li><code>SelectionModel</code>: Borrowed selection model.</li>
+<li><code>DeltaSeconds</code>: Frame delta time in seconds.</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutisbuilt-const"><code>bool SnAPI::GameFramework::Editor::EditorLayout::IsBuilt() const</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutisbuilt-const" title="Permanent link">&para;</a></h3>
+<p>Query whether the shell is currently built.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="uirenderviewport-snapigameframeworkeditoreditorlayoutgameviewport-const"><code>UIRenderViewport * SnAPI::GameFramework::Editor::EditorLayout::GameViewport() const</code><a class="headerlink" href="#uirenderviewport-snapigameframeworkeditoreditorlayoutgameviewport-const" title="Permanent link">&para;</a></h3>
+<p>Access the embedded game-viewport UI element.</p>
+<p><strong>Returns:</strong> Non-owning pointer or <code>nullptr</code>.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="int32_t-snapigameframeworkeditoreditorlayoutgameviewporttabindex-const"><code>int32_t SnAPI::GameFramework::Editor::EditorLayout::GameViewportTabIndex() const</code><a class="headerlink" href="#int32_t-snapigameframeworkeditoreditorlayoutgameviewporttabindex-const" title="Permanent link">&para;</a></h3>
+<p>Index of the active game-viewport tab within the game-view tab control, or a negative value if unavailable.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuiuicontext-snapigameframeworkeditoreditorlayoutcontext-const"><code>SnAPI::UI::UIContext * SnAPI::GameFramework::Editor::EditorLayout::Context() const</code><a class="headerlink" href="#snapiuiuicontext-snapigameframeworkeditoreditorlayoutcontext-const" title="Permanent link">&para;</a></h3>
+<p>Access the root UI context currently hosting the shell.</p>
+<p><strong>Returns:</strong> Non-owning pointer or <code>nullptr</code>.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="egizmospace-snapigameframeworkeditoreditorlayoutgizmospace-const"><code>EGizmoSpace SnAPI::GameFramework::Editor::EditorLayout::GizmoSpace() const</code><a class="headerlink" href="#egizmospace-snapigameframeworkeditoreditorlayoutgizmospace-const" title="Permanent link">&para;</a></h3>
+<p>Current gizmo-space selection from the tools UI.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutgizmosnappingenabled-const"><code>bool SnAPI::GameFramework::Editor::EditorLayout::GizmoSnappingEnabled() const</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutgizmosnappingenabled-const" title="Permanent link">&para;</a></h3>
+<p>Query whether transform snapping is currently enabled in the tools UI.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="double-snapigameframeworkeditoreditorlayoutmovesnapstep-const"><code>double SnAPI::GameFramework::Editor::EditorLayout::MoveSnapStep() const</code><a class="headerlink" href="#double-snapigameframeworkeditoreditorlayoutmovesnapstep-const" title="Permanent link">&para;</a></h3>
+<p>Translation snap step in world units.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="double-snapigameframeworkeditoreditorlayoutrotatesnapstepdegrees-const"><code>double SnAPI::GameFramework::Editor::EditorLayout::RotateSnapStepDegrees() const</code><a class="headerlink" href="#double-snapigameframeworkeditoreditorlayoutrotatesnapstepdegrees-const" title="Permanent link">&para;</a></h3>
+<p>Rotation snap increment in degrees.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="double-snapigameframeworkeditoreditorlayoutscalesnapstep-const"><code>double SnAPI::GameFramework::Editor::EditorLayout::ScaleSnapStep() const</code><a class="headerlink" href="#double-snapigameframeworkeditoreditorlayoutscalesnapstep-const" title="Permanent link">&para;</a></h3>
+<p>Scale snap increment in scalar units.</p>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsethierarchyselectionhandlersnapiuitdelegate-voidconst-nodehandle-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetHierarchySelectionHandler(SnAPI::UI::TDelegate&lt; void(const NodeHandle &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsethierarchyselectionhandlersnapiuitdelegate-voidconst-nodehandle-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user chooses a hierarchy node.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsethierarchyactionhandlersnapiuitdelegate-voidconst-hierarchyactionrequest-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetHierarchyActionHandler(SnAPI::UI::TDelegate&lt; void(const HierarchyActionRequest &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsethierarchyactionhandlersnapiuitdelegate-voidconst-hierarchyactionrequest-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user requests a hierarchy mutation.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsettoolbaractionhandlersnapiuitdelegate-voidetoolbaraction-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetToolbarActionHandler(SnAPI::UI::TDelegate&lt; void(EToolbarAction)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsettoolbaractionhandlersnapiuitdelegate-voidetoolbaraction-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user presses a toolbar action.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetprojectactionhandlersnapiuitdelegate-voidconst-projectactionrequest-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetProjectActionHandler(SnAPI::UI::TDelegate&lt; void(const ProjectActionRequest &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetprojectactionhandlersnapiuitdelegate-voidconst-projectactionrequest-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked for project create/open/save-settings flows.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetprojectstateprojectstate-state"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetProjectState(ProjectState State)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetprojectstateprojectstate-state" title="Permanent link">&para;</a></h3>
+<p>Replace the loaded-project view state shown across project-sensitive UI.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>State</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetprojectselectionrequiredbool-required"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetProjectSelectionRequired(bool Required)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetprojectselectionrequiredbool-required" title="Permanent link">&para;</a></h3>
+<p>Control whether the shell should force the user through project selection before normal editing.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Required</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetsstdvector-contentassetentry-assets"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssets(std::vector&lt; ContentAssetEntry &gt; Assets)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetsstdvector-contentassetentry-assets" title="Permanent link">&para;</a></h3>
+<p>Replace the content-browser asset list.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Assets</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetselectionhandlersnapiuitdelegate-voidconst-stdstring-bool-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetSelectionHandler(SnAPI::UI::TDelegate&lt; void(const std::string &amp;, bool)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetselectionhandlersnapiuitdelegate-voidconst-stdstring-bool-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user selects or double-clicks a content asset.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetplacehandlersnapiuitdelegate-voidconst-stdstring-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetPlaceHandler(SnAPI::UI::TDelegate&lt; void(const std::string &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetplacehandlersnapiuitdelegate-voidconst-stdstring-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user requests asset placement into the world.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetsavehandlersnapiuitdelegate-voidconst-stdstring-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetSaveHandler(SnAPI::UI::TDelegate&lt; void(const std::string &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetsavehandlersnapiuitdelegate-voidconst-stdstring-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user requests asset save.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetdeletehandlersnapiuitdelegate-voidconst-stdstring-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetDeleteHandler(SnAPI::UI::TDelegate&lt; void(const std::string &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetdeletehandlersnapiuitdelegate-voidconst-stdstring-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user requests asset deletion.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetrenamehandlersnapiuitdelegate-voidconst-stdstring-const-stdstring-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetRenameHandler(SnAPI::UI::TDelegate&lt; void(const std::string &amp;, const std::string &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetrenamehandlersnapiuitdelegate-voidconst-stdstring-const-stdstring-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user confirms an asset rename.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetrefreshhandlersnapiuitdelegate-void-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetRefreshHandler(SnAPI::UI::TDelegate&lt; void()&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetrefreshhandlersnapiuitdelegate-void-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user requests a content refresh.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetcreatehandlersnapiuitdelegate-voidconst-contentassetcreaterequest-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetCreateHandler(SnAPI::UI::TDelegate&lt; void(const ContentAssetCreateRequest &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetcreatehandlersnapiuitdelegate-voidconst-contentassetcreaterequest-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the create-asset modal is confirmed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetimporthandlersnapiuitdelegate-voidconst-contentassetimportrequest-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetImportHandler(SnAPI::UI::TDelegate&lt; void(const ContentAssetImportRequest &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetimporthandlersnapiuitdelegate-voidconst-contentassetimportrequest-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the import-asset modal is confirmed.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorsavehandlersnapiuitdelegate-void-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetInspectorSaveHandler(SnAPI::UI::TDelegate&lt; void()&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorsavehandlersnapiuitdelegate-void-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the asset-inspector save action is chosen.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorreimporthandlersnapiuitdelegate-void-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate&lt; void()&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorreimporthandlersnapiuitdelegate-void-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the asset-inspector reimport action is chosen.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorclosehandlersnapiuitdelegate-void-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate&lt; void()&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorclosehandlersnapiuitdelegate-void-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the asset-inspector modal is closed by the user.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectornodeselectionhandlersnapiuitdelegate-voidconst-nodehandle-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate&lt; void(const NodeHandle &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectornodeselectionhandlersnapiuitdelegate-voidconst-nodehandle-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user selects a node inside the asset-inspector hierarchy.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorhierarchyactionhandlersnapiuitdelegate-voidconst-hierarchyactionrequest-handler"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetInspectorHierarchyActionHandler(SnAPI::UI::TDelegate&lt; void(const HierarchyActionRequest &amp;)&gt; Handler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorhierarchyactionhandlersnapiuitdelegate-voidconst-hierarchyactionrequest-handler" title="Permanent link">&para;</a></h3>
+<p>Install the callback invoked when the user requests a hierarchy edit inside the asset-inspector modal.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetdetailscontentassetdetails-details"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetDetails(ContentAssetDetails Details)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetdetailscontentassetdetails-details" title="Permanent link">&para;</a></h3>
+<p>Replace the detail-pane payload for the currently selected content asset.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Details</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorstatecontentassetinspectorstate-state"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState State)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetcontentassetinspectorstatecontentassetinspectorstate-state" title="Permanent link">&para;</a></h3>
+<p>Replace the asset-inspector modal state.</p>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>State</code>:</li>
+</ul>
+</div>
+<h2 id="private-functions">Private Functions<a class="headerlink" href="#private-functions" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutregisterexternalelementsgameruntime-runtime"><code>bool SnAPI::GameFramework::Editor::EditorLayout::RegisterExternalElements(GameRuntime &amp;Runtime)</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutregisterexternalelementsgameruntime-runtime" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuiuicontext-snapigameframeworkeditoreditorlayoutrootcontextgameruntime-runtime-const"><code>SnAPI::UI::UIContext * SnAPI::GameFramework::Editor::EditorLayout::RootContext(GameRuntime &amp;Runtime) const</code><a class="headerlink" href="#snapiuiuicontext-snapigameframeworkeditoreditorlayoutrootcontextgameruntime-runtime-const" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildshellsnapiuiuicontext-context-gameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildShell(SnAPI::UI::UIContext &amp;Context, GameRuntime &amp;Runtime, CameraComponent *ActiveCamera, EditorSelectionModel *SelectionModel)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildshellsnapiuiuicontext-context-gameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Context</code>: </li>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>: </li>
+<li><code>SelectionModel</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutconfigurerootsnapiuiuicontext-context"><code>void SnAPI::GameFramework::Editor::EditorLayout::ConfigureRoot(SnAPI::UI::UIContext &amp;Context)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutconfigurerootsnapiuiuicontext-context" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Context</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildmenubarpanelbuilder-root"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildMenuBar(PanelBuilder &amp;Root)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildmenubarpanelbuilder-root" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Root</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildtoolbarpanelbuilder-root"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildToolbar(PanelBuilder &amp;Root)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildtoolbarpanelbuilder-root" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Root</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildworkspacepanelbuilder-root-gameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildWorkspace(PanelBuilder &amp;Root, GameRuntime &amp;Runtime, CameraComponent *ActiveCamera, EditorSelectionModel *SelectionModel)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildworkspacepanelbuilder-root-gameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Root</code>: </li>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>: </li>
+<li><code>SelectionModel</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildcontentbrowserpanelbuilder-root"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildContentBrowser(PanelBuilder &amp;Root)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildcontentbrowserpanelbuilder-root" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Root</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensurecontextmenuoverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureContextMenuOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensurecontextmenuoverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensurecontentassetcreatemodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureContentAssetCreateModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensurecontentassetcreatemodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutdestroycontentassetcreatemodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::DestroyContentAssetCreateModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutdestroycontentassetcreatemodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensurecontentassetimportmodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureContentAssetImportModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensurecontentassetimportmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutdestroycontentassetimportmodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::DestroyContentAssetImportModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutdestroycontentassetimportmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensurecontentassetinspectormodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureContentAssetInspectorModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensurecontentassetinspectormodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutdestroycontentassetinspectormodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::DestroyContentAssetInspectorModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutdestroycontentassetinspectormodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensureprojectmodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureProjectModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensureprojectmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutdestroyprojectmodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::DestroyProjectModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutdestroyprojectmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensureprojectsettingsmodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureProjectSettingsModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensureprojectsettingsmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutdestroyprojectsettingsmodaloverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::DestroyProjectSettingsModalOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutdestroyprojectsettingsmodaloverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildhierarchypanepanelbuilder-workspace-gameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildHierarchyPane(PanelBuilder &amp;Workspace, GameRuntime &amp;Runtime, CameraComponent *ActiveCamera, EditorSelectionModel *SelectionModel)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildhierarchypanepanelbuilder-workspace-gameruntime-runtime-cameracomponent-activecamera-editorselectionmodel-selectionmodel" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Workspace</code>: </li>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>: </li>
+<li><code>SelectionModel</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildgamepanepanelbuilder-workspace-gameruntime-runtime-cameracomponent-activecamera"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildGamePane(PanelBuilder &amp;Workspace, GameRuntime &amp;Runtime, CameraComponent *ActiveCamera)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildgamepanepanelbuilder-workspace-gameruntime-runtime-cameracomponent-activecamera" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Workspace</code>: </li>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildinspectorpanepanelbuilder-workspace-basenode-selectednode-cameracomponent-activecamera"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildInspectorPane(PanelBuilder &amp;Workspace, BaseNode *SelectedNode, CameraComponent *ActiveCamera)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildinspectorpanepanelbuilder-workspace-basenode-selectednode-cameracomponent-activecamera" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Workspace</code>: </li>
+<li><code>SelectedNode</code>: </li>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbuildcontentdetailspanepanelbuilder-detailstab"><code>void SnAPI::GameFramework::Editor::EditorLayout::BuildContentDetailsPane(PanelBuilder &amp;DetailsTab)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbuildcontentdetailspanepanelbuilder-detailstab" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>DetailsTab</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensuredefaultselectioncameracomponent-activecamera"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureDefaultSelection(CameraComponent *ActiveCamera)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensuredefaultselectioncameracomponent-activecamera" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsynchierarchygameruntime-runtime-cameracomponent-activecamera"><code>void SnAPI::GameFramework::Editor::EditorLayout::SyncHierarchy(GameRuntime &amp;Runtime, CameraComponent *ActiveCamera)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsynchierarchygameruntime-runtime-cameracomponent-activecamera" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrebuildhierarchytreeconst-stdvector-hierarchyentry-entries-const-nodehandle-selectednode"><code>void SnAPI::GameFramework::Editor::EditorLayout::RebuildHierarchyTree(const std::vector&lt; HierarchyEntry &gt; &amp;Entries, const NodeHandle &amp;SelectedNode)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrebuildhierarchytreeconst-stdvector-hierarchyentry-entries-const-nodehandle-selectednode" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Entries</code>: </li>
+<li><code>SelectedNode</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsynchierarchyselectionconst-nodehandle-selectednode"><code>void SnAPI::GameFramework::Editor::EditorLayout::SyncHierarchySelection(const NodeHandle &amp;SelectedNode)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsynchierarchyselectionconst-nodehandle-selectednode" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>SelectedNode</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutcollecthierarchyentriesworld-worldref-stdvector-hierarchyentry-outentries-const"><code>bool SnAPI::GameFramework::Editor::EditorLayout::CollectHierarchyEntries(World &amp;WorldRef, std::vector&lt; HierarchyEntry &gt; &amp;OutEntries) const</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutcollecthierarchyentriesworld-worldref-stdvector-hierarchyentry-outentries-const" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>WorldRef</code>: </li>
+<li><code>OutEntries</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stduint64_t-snapigameframeworkeditoreditorlayoutcomputehierarchysignatureconst-stdvector-hierarchyentry-entries-const"><code>std::uint64_t SnAPI::GameFramework::Editor::EditorLayout::ComputeHierarchySignature(const std::vector&lt; HierarchyEntry &gt; &amp;Entries) const</code><a class="headerlink" href="#stduint64_t-snapigameframeworkeditoreditorlayoutcomputehierarchysignatureconst-stdvector-hierarchyentry-entries-const" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Entries</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutonhierarchynodechosenconst-nodehandle-handle"><code>void SnAPI::GameFramework::Editor::EditorLayout::OnHierarchyNodeChosen(const NodeHandle &amp;Handle)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutonhierarchynodechosenconst-nodehandle-handle" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Handle</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="basenode-snapigameframeworkeditoreditorlayoutresolveselectednodegameruntime-runtime-cameracomponent-activecamera-const"><code>BaseNode * SnAPI::GameFramework::Editor::EditorLayout::ResolveSelectedNode(GameRuntime &amp;Runtime, CameraComponent *ActiveCamera) const</code><a class="headerlink" href="#basenode-snapigameframeworkeditoreditorlayoutresolveselectednodegameruntime-runtime-cameracomponent-activecamera-const" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoreditorlayoutqueryinvalidationdebugoverlayenabled-const"><code>bool SnAPI::GameFramework::Editor::EditorLayout::QueryInvalidationDebugOverlayEnabled() const</code><a class="headerlink" href="#bool-snapigameframeworkeditoreditorlayoutqueryinvalidationdebugoverlayenabled-const" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsetinvalidationdebugoverlayenabledbool-enabled"><code>void SnAPI::GameFramework::Editor::EditorLayout::SetInvalidationDebugOverlayEnabled(bool Enabled)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsetinvalidationdebugoverlayenabledbool-enabled" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Enabled</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayouttoggleinvalidationdebugoverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::ToggleInvalidationDebugOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayouttoggleinvalidationdebugoverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsyncinvalidationdebugoverlay"><code>void SnAPI::GameFramework::Editor::EditorLayout::SyncInvalidationDebugOverlay()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsyncinvalidationdebugoverlay" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutpublishinvalidationdebugstate"><code>void SnAPI::GameFramework::Editor::EditorLayout::PublishInvalidationDebugState()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutpublishinvalidationdebugstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayouthandlecontentassetcardclickedstdsize_t-assetindex"><code>void SnAPI::GameFramework::Editor::EditorLayout::HandleContentAssetCardClicked(std::size_t AssetIndex)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayouthandlecontentassetcardclickedstdsize_t-assetindex" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>AssetIndex</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutselectcontentassetstdsize_t-assetindex-bool-notifyselection-bool-isdoubleclick"><code>void SnAPI::GameFramework::Editor::EditorLayout::SelectContentAsset(std::size_t AssetIndex, bool NotifySelection, bool IsDoubleClick)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutselectcontentassetstdsize_t-assetindex-bool-notifyselection-bool-isdoubleclick" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>AssetIndex</code>: </li>
+<li><code>NotifySelection</code>: </li>
+<li><code>IsDoubleClick</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenhierarchycontextmenustdsize_t-itemindex-const-snapiuipointerevent-event"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenHierarchyContextMenu(std::size_t ItemIndex, const SnAPI::UI::PointerEvent &amp;Event)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenhierarchycontextmenustdsize_t-itemindex-const-snapiuipointerevent-event" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ItemIndex</code>: </li>
+<li><code>Event</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenhierarchyaddtypemenubool-addcomponents"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenHierarchyAddTypeMenu(bool AddComponents)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenhierarchyaddtypemenubool-addcomponents" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>AddComponents</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontentassetcontextmenustdsize_t-assetindex-const-snapiuipointerevent-event"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContentAssetContextMenu(std::size_t AssetIndex, const SnAPI::UI::PointerEvent &amp;Event)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontentassetcontextmenustdsize_t-assetindex-const-snapiuipointerevent-event" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>AssetIndex</code>: </li>
+<li><code>Event</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenfilemenu"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenFileMenu()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenfilemenu" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopeninspectorcomponentcontextmenuconst-nodehandle-ownernode-const-typeid-componenttype-const-snapiuipointerevent-event"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenInspectorComponentContextMenu(const NodeHandle &amp;OwnerNode, const TypeId &amp;ComponentType, const SnAPI::UI::PointerEvent &amp;Event)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopeninspectorcomponentcontextmenuconst-nodehandle-ownernode-const-typeid-componenttype-const-snapiuipointerevent-event" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>OwnerNode</code>: </li>
+<li><code>ComponentType</code>: </li>
+<li><code>Event</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontentbrowsercontextmenuconst-snapiuipointerevent-event"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent &amp;Event)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontentbrowsercontextmenuconst-snapiuipointerevent-event" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Event</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontextmenuconst-snapiuiuipoint-screenposition-stdvector-snapiuiuicontextmenuitem-items"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContextMenu(const SnAPI::UI::UIPoint &amp;ScreenPosition, std::vector&lt; SnAPI::UI::UIContextMenuItem &gt; Items)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontextmenuconst-snapiuiuipoint-screenposition-stdvector-snapiuiuicontextmenuitem-items" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ScreenPosition</code>: </li>
+<li><code>Items</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutclosecontextmenu"><code>void SnAPI::GameFramework::Editor::EditorLayout::CloseContextMenu()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutclosecontextmenu" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutoncontextmenuiteminvokedconst-snapiuiuicontextmenuitem-item"><code>void SnAPI::GameFramework::Editor::EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem &amp;Item)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutoncontextmenuiteminvokedconst-snapiuiuicontextmenuitem-item" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Item</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutensurecontentassetcardcapacity"><code>void SnAPI::GameFramework::Editor::EditorLayout::EnsureContentAssetCardCapacity()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutensurecontentassetcardcapacity" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutupdatecontentassetcardwidgets"><code>void SnAPI::GameFramework::Editor::EditorLayout::UpdateContentAssetCardWidgets()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutupdatecontentassetcardwidgets" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutapplycontentassetfilter"><code>void SnAPI::GameFramework::Editor::EditorLayout::ApplyContentAssetFilter()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutapplycontentassetfilter" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontentassetcreatemodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContentAssetCreateModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontentassetcreatemodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutclosecontentassetcreatemodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::CloseContentAssetCreateModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutclosecontentassetcreatemodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutconfirmcontentassetcreate"><code>void SnAPI::GameFramework::Editor::EditorLayout::ConfirmContentAssetCreate()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutconfirmcontentassetcreate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetcreatemodalvisibility"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetCreateModalVisibility()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetcreatemodalvisibility" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrebuildcontentassetcreatetypetree"><code>void SnAPI::GameFramework::Editor::EditorLayout::RebuildContentAssetCreateTypeTree()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrebuildcontentassetcreatetypetree" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetcreateokbuttonstate"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetCreateOkButtonState()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetcreateokbuttonstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontentassetimportmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContentAssetImportModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontentassetimportmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutclosecontentassetimportmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::CloseContentAssetImportModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutclosecontentassetimportmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutconfirmcontentassetimport"><code>void SnAPI::GameFramework::Editor::EditorLayout::ConfirmContentAssetImport()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutconfirmcontentassetimport" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportmodalvisibility"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetImportModalVisibility()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportmodalvisibility" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportprofile"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetImportProfile()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportprofile" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportsettingspanel"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetImportSettingsPanel()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportsettingspanel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportsummary"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetImportSummary()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportsummary" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportokbuttonstate"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetImportOkButtonState()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetimportokbuttonstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenprojectwelcomemodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenProjectWelcomeModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenprojectwelcomemodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenprojectcreatemodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenProjectCreateModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenprojectcreatemodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenprojectopenmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenProjectOpenModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenprojectopenmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopenprojectsettingsmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenProjectSettingsModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopenprojectsettingsmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutcloseprojectsettingsmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::CloseProjectSettingsModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutcloseprojectsettingsmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutconfirmprojectsettingsmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::ConfirmProjectSettingsModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutconfirmprojectsettingsmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutcloseprojectmodalbool-forceclosefalse"><code>void SnAPI::GameFramework::Editor::EditorLayout::CloseProjectModal(bool ForceClose=false)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutcloseprojectmodalbool-forceclosefalse" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ForceClose</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutconfirmprojectmodal"><code>void SnAPI::GameFramework::Editor::EditorLayout::ConfirmProjectModal()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutconfirmprojectmodal" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshprojectmodalvisibility"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshProjectModalVisibility()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshprojectmodalvisibility" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshprojectmodalokbuttonstate"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshProjectModalOkButtonState()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshprojectmodalokbuttonstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshprojectsettingsmodalvisibility"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshProjectSettingsModalVisibility()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshprojectsettingsmodalvisibility" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshprojectsettingsmodalsavebuttonstate"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshProjectSettingsModalSaveButtonState()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshprojectsettingsmodalsavebuttonstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrememberrecentprojectconst-projectactionrequest-request"><code>void SnAPI::GameFramework::Editor::EditorLayout::RememberRecentProject(const ProjectActionRequest &amp;Request)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrememberrecentprojectconst-projectactionrequest-request" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Request</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrememberrecentprojectfilestdstring-projectfilepath-stdstring-projectname"><code>void SnAPI::GameFramework::Editor::EditorLayout::RememberRecentProjectFile(std::string ProjectFilePath, std::string ProjectName={})</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrememberrecentprojectfilestdstring-projectfilepath-stdstring-projectname" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ProjectFilePath</code>: </li>
+<li><code>ProjectName</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutclosecontentassetinspectormodalbool-notifyhandler"><code>void SnAPI::GameFramework::Editor::EditorLayout::CloseContentAssetInspectorModal(bool NotifyHandler)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutclosecontentassetinspectormodalbool-notifyhandler" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>NotifyHandler</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetinspectormodalvisibility"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetInspectorModalVisibility()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetinspectormodalvisibility" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetinspectormodalstate"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetInspectorModalState()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetinspectormodalstate" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrebuildcontentassetinspectorhierarchytree"><code>void SnAPI::GameFramework::Editor::EditorLayout::RebuildContentAssetInspectorHierarchyTree()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrebuildcontentassetinspectorhierarchytree" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontentassetinspectorhierarchycontextmenustdsize_t-itemindex-const-snapiuipointerevent-event"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContentAssetInspectorHierarchyContextMenu(std::size_t ItemIndex, const SnAPI::UI::PointerEvent &amp;Event)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontentassetinspectorhierarchycontextmenustdsize_t-itemindex-const-snapiuipointerevent-event" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ItemIndex</code>: </li>
+<li><code>Event</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutopencontentassetinspectorcomponentcontextmenuconst-nodehandle-ownernode-const-typeid-componenttype-const-snapiuipointerevent-event"><code>void SnAPI::GameFramework::Editor::EditorLayout::OpenContentAssetInspectorComponentContextMenu(const NodeHandle &amp;OwnerNode, const TypeId &amp;ComponentType, const SnAPI::UI::PointerEvent &amp;Event)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutopencontentassetinspectorcomponentcontextmenuconst-nodehandle-ownernode-const-typeid-componenttype-const-snapiuipointerevent-event" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>OwnerNode</code>: </li>
+<li><code>ComponentType</code>: </li>
+<li><code>Event</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrebuildcontentbrowserentries"><code>void SnAPI::GameFramework::Editor::EditorLayout::RebuildContentBrowserEntries()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrebuildcontentbrowserentries" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentbrowserpath"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentBrowserPath()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentbrowserpath" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetcardselectionstyles"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetCardSelectionStyles()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetcardselectionstyles" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutrefreshcontentassetdetailsviewmodel"><code>void SnAPI::GameFramework::Editor::EditorLayout::RefreshContentAssetDetailsViewModel()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutrefreshcontentassetdetailsviewmodel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdsize_t-snapigameframeworkeditoreditorlayoutresolveselectedcontentassetindex-const"><code>std::size_t SnAPI::GameFramework::Editor::EditorLayout::ResolveSelectedContentAssetIndex() const</code><a class="headerlink" href="#stdsize_t-snapigameframeworkeditoreditorlayoutresolveselectedcontentassetindex-const" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutinitializeviewmodel"><code>void SnAPI::GameFramework::Editor::EditorLayout::InitializeViewModel()</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutinitializeviewmodel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuitpropertyref-tvalue-snapigameframeworkeditoreditorlayoutviewmodelpropertyconst-snapiuipropertykey-key"><code>SnAPI::UI::TPropertyRef&lt; TValue &gt; SnAPI::GameFramework::Editor::EditorLayout::ViewModelProperty(const SnAPI::UI::PropertyKey Key)</code><a class="headerlink" href="#snapiuitpropertyref-tvalue-snapigameframeworkeditoreditorlayoutviewmodelpropertyconst-snapiuipropertykey-key" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Key</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutbindinspectortargetbasenode-selectednode-cameracomponent-activecamera"><code>void SnAPI::GameFramework::Editor::EditorLayout::BindInspectorTarget(BaseNode *SelectedNode, CameraComponent *ActiveCamera)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutbindinspectortargetbasenode-selectednode-cameracomponent-activecamera" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>SelectedNode</code>: </li>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoreditorlayoutsyncgameviewportcameragameruntime-runtime-cameracomponent-activecamera"><code>void SnAPI::GameFramework::Editor::EditorLayout::SyncGameViewportCamera(GameRuntime &amp;Runtime, CameraComponent *ActiveCamera)</code><a class="headerlink" href="#void-snapigameframeworkeditoreditorlayoutsyncgameviewportcameragameruntime-runtime-cameracomponent-activecamera" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Runtime</code>: </li>
+<li><code>ActiveCamera</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="uirenderviewport-snapigameframeworkeditoreditorlayoutresolvegameviewport-const"><code>UIRenderViewport * SnAPI::GameFramework::Editor::EditorLayout::ResolveGameViewport() const</code><a class="headerlink" href="#uirenderviewport-snapigameframeworkeditoreditorlayoutresolvegameviewport-const" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiuiuitabs-snapigameframeworkeditoreditorlayoutresolvegameviewtabs-const"><code>SnAPI::UI::UITabs * SnAPI::GameFramework::Editor::EditorLayout::ResolveGameViewTabs() const</code><a class="headerlink" href="#snapiuiuitabs-snapigameframeworkeditoreditorlayoutresolvegameviewtabs-const" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="uipropertypanel-snapigameframeworkeditoreditorlayoutresolveinspectorpanel-const"><code>UIPropertyPanel * SnAPI::GameFramework::Editor::EditorLayout::ResolveInspectorPanel() const</code><a class="headerlink" href="#uipropertypanel-snapigameframeworkeditoreditorlayoutresolveinspectorpanel-const" title="Permanent link">&para;</a></h3>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.indexes", "toc.integrate", "content.code.copy", "content.tabs.link", "search.highlight", "search.suggest", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

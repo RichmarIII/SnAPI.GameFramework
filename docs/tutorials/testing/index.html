@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -16,14 +16,14 @@
         <link rel="prev" href="../audio/">
       
       
-        <link rel="next" href="../../api/">
+        <link rel="next" href="../first_play_session/">
       
       
         
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -484,6 +545,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -491,7 +608,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -631,7 +748,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -740,10 +857,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-build-and-run-unit-tests" class="md-nav__link">
+  <a href="#1-build-and-run-tests" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Build and Run Unit Tests
+        1. Build And Run Tests
       
     </span>
   </a>
@@ -751,10 +868,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-what-is-already-covered" class="md-nav__link">
+  <a href="#2-what-the-current-test-suite-covers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. What Is Already Covered
+        2. What The Current Test Suite Covers
       
     </span>
   </a>
@@ -762,10 +879,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-run-integration-examples" class="md-nav__link">
+  <a href="#3-use-tests-as-documentation-of-contracts" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Run Integration Examples
+        3. Use Tests As Documentation Of Contracts
       
     </span>
   </a>
@@ -773,10 +890,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-suggested-test-matrix-for-changes" class="md-nav__link">
+  <a href="#4-fast-targeted-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Suggested Test Matrix For Changes
+        4. Fast Targeted Commands
       
     </span>
   </a>
@@ -784,10 +901,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-add-a-new-test-template" class="md-nav__link">
+  <a href="#5-example-runs-still-matter" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Add a New Test (Template)
+        5. Example Runs Still Matter
       
     </span>
   </a>
@@ -795,10 +912,82 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-ci-friendly-command-set" class="md-nav__link">
+  <a href="#6-good-change-specific-checklists" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. CI-Friendly Command Set
+        6. Good Change-Specific Checklists
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="6. Good Change-Specific Checklists">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reflection-or-serialization-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reflection or serialization changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#networking-or-gameplay-host-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Networking or gameplay host changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#physics-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Physics changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#runtimeworld-execution-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime/world execution changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-a-minimal-new-test-pattern" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. A Minimal New Test Pattern
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-read-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What To Read Next
       
     </span>
   </a>
@@ -808,6 +997,375 @@
     </ul>
   
 </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
       
     </li>
   
@@ -1005,158 +1563,146 @@
 
 
 <h1 id="testing-and-validation">Testing and Validation<a class="headerlink" href="#testing-and-validation" title="Permanent link">&para;</a></h1>
-<p>This page gives a practical test workflow for GameFramework features.</p>
-<h2 id="1-build-and-run-unit-tests">1. Build and Run Unit Tests<a class="headerlink" href="#1-build-and-run-unit-tests" title="Permanent link">&para;</a></h2>
+<p>The tests in this repository are a good map of what the framework currently guarantees.</p>
+<h2 id="1-build-and-run-tests">1. Build And Run Tests<a class="headerlink" href="#1-build-and-run-tests" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build/debug<span class="w"> </span>-DSNAPI_GF_BUILD_TESTS<span class="o">=</span>ON
 cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
 ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure
 </code></pre></div>
-<p>The main test binary is <code>GameFrameworkTests</code> (Catch2).</p>
-<h2 id="2-what-is-already-covered">2. What Is Already Covered<a class="headerlink" href="#2-what-is-already-covered" title="Permanent link">&para;</a></h2>
-<p>Current tests include:</p>
+<h2 id="2-what-the-current-test-suite-covers">2. What The Current Test Suite Covers<a class="headerlink" href="#2-what-the-current-test-suite-covers" title="Permanent link">&para;</a></h2>
+<p>Representative coverage in <code>tests/</code> includes:</p>
 <ul>
-<li><code>tests/HandleTests.cpp</code><ul>
-<li>handle validity and end-of-frame deletion behavior</li>
+<li><code>HandleTests.cpp</code></li>
+<li>end-of-frame deletion semantics</li>
+<li>UUID-only and runtime-backed handle resolution</li>
+<li><code>EcsOnlyWorldTests.cpp</code></li>
+<li>ECS-only world ticks</li>
+<li>hierarchy mirroring</li>
+<li>recursive destroy</li>
+<li>level wrapper behavior</li>
+<li><code>GameRuntimeTests.cpp</code></li>
+<li><code>GameRuntime::Update()</code> world driving</li>
+<li>fixed-step backlog behavior</li>
+<li>networking subsystem initialization through runtime settings</li>
+<li><code>GameplayHostTests.cpp</code></li>
+<li>join/leave flow</li>
+<li>policy hooks</li>
+<li>possession selection</li>
+<li>connection lifecycle callbacks</li>
+<li><code>InputSystemTests.cpp</code></li>
+<li>input bootstrap and world tick pumping</li>
+<li><code>SerializationTests.cpp</code></li>
+<li>node subtree round-trip</li>
+<li><code>OnCreate</code> after fields are populated</li>
+<li>legacy vector/quaternion payload compatibility</li>
+<li>UUID regeneration/remapping</li>
+<li>value codec registry behavior</li>
+<li><code>LevelWorldSerializationTests.cpp</code></li>
+<li>nested level round-trips</li>
+<li>world round-trips</li>
+<li>repeated-instantiation UUID regeneration</li>
+<li><code>NetReplicationTests.cpp</code></li>
+<li>spawn/update ordering</li>
+<li>pending parent/component resolution</li>
+<li>session-backed snapshot replication</li>
+<li><code>WorldNetworkingTests.cpp</code></li>
+<li>world role visibility to nodes/components</li>
+<li><code>CallRPC(...)</code> routing by role</li>
+<li><code>PhysicsIntegrationTests.cpp</code></li>
+<li>runtime physics bootstrap</li>
+<li>fixed-tick stepping</li>
+<li>character movement</li>
+<li>floating-origin behavior</li>
+<li>sleep/wake activity changes</li>
+<li><code>WorldEcsRuntimeTests.cpp</code></li>
+<li>storage priority ordering</li>
+<li>runtime component attach/remove</li>
+<li>runtime hierarchy correctness</li>
+<li>execution-profile gating</li>
 </ul>
-</li>
-<li><code>tests/NodeGraphTests.cpp</code><ul>
-<li>node + component ticking through graph hierarchy</li>
-</ul>
-</li>
-<li><code>tests/ReflectionTests.cpp</code><ul>
-<li>type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags</li>
-</ul>
-</li>
-<li><code>tests/SerializationTests.cpp</code><ul>
-<li>graph serialization round-trip, cross-graph handle resolution, custom <code>TValueCodec</code></li>
-</ul>
-</li>
-<li><code>tests/LevelWorldSerializationTests.cpp</code><ul>
-<li>level/world serialization round-trips</li>
-</ul>
-</li>
-<li><code>tests/RelevanceTests.cpp</code><ul>
-<li>relevance policy gating tick</li>
-</ul>
-</li>
-<li><code>tests/NetReplicationTests.cpp</code><ul>
-<li>replication spawn/update ordering and session integration</li>
-</ul>
-</li>
-<li><code>tests/WorldNetworkingTests.cpp</code><ul>
-<li>world-owned networking system wiring, replication/rpc bridge integration</li>
-<li><code>INode::CallRPC</code> / <code>IComponent::CallRPC</code> role-based routing behavior</li>
-<li>component <code>TypeKey</code> assignment for reflection RPC dispatch</li>
-</ul>
-</li>
-<li><code>tests/PhysicsIntegrationTests.cpp</code><ul>
-<li>runtime physics bootstrap through <code>GameRuntimeSettings::Physics</code></li>
-<li>rigid body simulation updates transform over fixed ticks</li>
-<li><code>CharacterMovementController</code> movement/jump integration with rigid body</li>
-</ul>
-</li>
-</ul>
-<h2 id="3-run-integration-examples">3. Run Integration Examples<a class="headerlink" href="#3-run-integration-examples" title="Permanent link">&para;</a></h2>
-<p>Unit tests are necessary but not sufficient for gameplay systems.
-Also run these binaries:</p>
+<h2 id="3-use-tests-as-documentation-of-contracts">3. Use Tests As Documentation Of Contracts<a class="headerlink" href="#3-use-tests-as-documentation-of-contracts" title="Permanent link">&para;</a></h2>
+<p>If you are unsure whether something is guaranteed, the fastest check is often:</p>
+<div class="highlight"><pre><span></span><code>rg<span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;TEST_CASE&quot;</span><span class="w"> </span>tests
+</code></pre></div>
+<p>This repository's tests are useful because many of them target behavioral contracts rather than just implementation helpers.</p>
+<h2 id="4-fast-targeted-commands">4. Fast Targeted Commands<a class="headerlink" href="#4-fast-targeted-commands" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Physics|CharacterMovement&quot;</span>
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Serialization|LevelWorld&quot;</span>
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Networking|Replication|GameplayHost&quot;</span>
+</code></pre></div>
+<h2 id="5-example-runs-still-matter">5. Example Runs Still Matter<a class="headerlink" href="#5-example-runs-still-matter" title="Permanent link">&para;</a></h2>
+<p>Run the examples after substantial changes:</p>
 <div class="highlight"><pre><span></span><code>./build/debug/examples/FeatureShowcase/FeatureShowcase
 ./build/debug/examples/WorldPerfBenchmark/WorldPerfBenchmark
+./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--local
 ./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--server
 ./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--client
 </code></pre></div>
-<p>This validates end-to-end behavior (asset packs, runtime factories, replication bridges, rendering loop).</p>
-<h2 id="4-suggested-test-matrix-for-changes">4. Suggested Test Matrix For Changes<a class="headerlink" href="#4-suggested-test-matrix-for-changes" title="Permanent link">&para;</a></h2>
-<p>If you change reflection code:</p>
+<p>Why:</p>
 <ul>
-<li>run <code>ReflectionTests</code> and <code>SerializationTests</code></li>
-<li>verify lazy auto-registration still resolves types on first use</li>
+<li>tests validate contracts in isolation</li>
+<li>examples validate whole-system integration</li>
 </ul>
-<p>If you change serialization code:</p>
+<h2 id="6-good-change-specific-checklists">6. Good Change-Specific Checklists<a class="headerlink" href="#6-good-change-specific-checklists" title="Permanent link">&para;</a></h2>
+<h3 id="reflection-or-serialization-changes">Reflection or serialization changes<a class="headerlink" href="#reflection-or-serialization-changes" title="Permanent link">&para;</a></h3>
+<p>Run:</p>
 <ul>
-<li>run <code>SerializationTests</code>, <code>LevelWorldSerializationTests</code></li>
-<li>run <code>FeatureShowcase</code> to confirm real payload load path</li>
+<li><code>ReflectionTests</code></li>
+<li><code>SerializationTests</code></li>
+<li><code>LevelWorldSerializationTests</code></li>
+<li><code>FeatureShowcase</code></li>
 </ul>
-<p>If you change networking/replication code:</p>
+<h3 id="networking-or-gameplay-host-changes">Networking or gameplay host changes<a class="headerlink" href="#networking-or-gameplay-host-changes" title="Permanent link">&para;</a></h3>
+<p>Run:</p>
 <ul>
-<li>run <code>NetReplicationTests</code></li>
-<li>run <code>WorldNetworkingTests</code></li>
-<li>validate <code>CallRPC(...)</code> routes correctly for server/client/listen-server roles</li>
-<li>run multiplayer example across two processes/devices</li>
-<li>watch connection dumps:<ul>
-<li><code>pending_rel</code> should not grow forever</li>
-<li>non-zero <code>pkt_lost</code> alone is not a failure if reliable backlog drains and gameplay state remains correct</li>
+<li><code>NetReplicationTests</code></li>
+<li><code>WorldNetworkingTests</code></li>
+<li><code>GameplayHostTests</code></li>
+<li>multiplayer example in at least server/client mode</li>
 </ul>
-</li>
-</ul>
-<p>If you change physics code:</p>
+<h3 id="physics-changes">Physics changes<a class="headerlink" href="#physics-changes" title="Permanent link">&para;</a></h3>
+<p>Run:</p>
 <ul>
-<li>run <code>PhysicsIntegrationTests</code></li>
-<li>verify world physics bootstrap still succeeds in runtime init</li>
-<li>verify stepping policy (<code>TickInFixedTick</code> / <code>TickInVariableTick</code>) matches expected update path</li>
-<li>verify rigid body transform sync behavior:<ul>
-<li>dynamic bodies pull from physics</li>
-<li>static/kinematic bodies push to physics</li>
+<li><code>PhysicsIntegrationTests</code></li>
+<li>any example that relies on fixed-step pawn motion or rigid bodies</li>
 </ul>
-</li>
-<li>verify grounded probe and jump behavior if character movement logic changed</li>
-</ul>
-<p>Fast physics-only test command:</p>
-<div class="highlight"><pre><span></span><code>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Physics|CharacterMovementController&quot;</span>
-</code></pre></div>
-<p>If you change renderer integration code:</p>
+<h3 id="runtimeworld-execution-changes">Runtime/world execution changes<a class="headerlink" href="#runtimeworld-execution-changes" title="Permanent link">&para;</a></h3>
+<p>Run:</p>
 <ul>
-<li>build with renderer source configured (<code>SNAPI_GF_RENDERER_SOURCE_DIR=...</code>)</li>
-<li>run <code>MultiplayerExample --local</code> and verify:<ul>
-<li>window/bootstrap succeeds</li>
-<li>camera is active and scene is visible</li>
-<li>static/skeletal mesh components render with expected pass/shadow behavior</li>
+<li><code>GameRuntimeTests</code></li>
+<li><code>EcsOnlyWorldTests</code></li>
+<li><code>WorldEcsRuntimeTests</code></li>
+<li><code>HandleTests</code></li>
 </ul>
-</li>
-<li>verify no visual regression in frame lifecycle:<ul>
-<li><code>World::EndFrame()</code> still drives renderer submit/present</li>
-<li>temporal effects remain stable (no previous-frame state regressions)</li>
-</ul>
-</li>
-</ul>
-<p>If you change component lifecycle code:</p>
-<ul>
-<li>run <code>NodeGraphTests</code> and <code>HandleTests</code></li>
-<li>verify deferred destruction semantics still hold</li>
-</ul>
-<h2 id="5-add-a-new-test-template">5. Add a New Test (Template)<a class="headerlink" href="#5-add-a-new-test-template" title="Permanent link">&para;</a></h2>
+<h2 id="7-a-minimal-new-test-pattern">7. A Minimal New Test Pattern<a class="headerlink" href="#7-a-minimal-new-test-pattern" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;catch2/catch_test_macros.hpp&gt;</span>
 <span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;GameFramework.hpp&quot;</span>
 
 <span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">SnAPI</span><span class="o">::</span><span class="nn">GameFramework</span><span class="p">;</span>
 
-<span class="n">TEST_CASE</span><span class="p">(</span><span class="s">&quot;My feature round-trips&quot;</span><span class="p">)</span>
+<span class="n">TEST_CASE</span><span class="p">(</span><span class="s">&quot;World creates and destroys a node&quot;</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="n">RegisterBuiltinTypes</span><span class="p">();</span>
 
-<span class="w">    </span><span class="n">NodeGraph</span><span class="w"> </span><span class="n">Graph</span><span class="p">;</span>
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">NodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Actor&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="n">REQUIRE</span><span class="p">(</span><span class="n">NodeResult</span><span class="p">);</span>
+<span class="w">    </span><span class="n">World</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">(</span><span class="s">&quot;TestWorld&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">HandleResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Actor&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="n">REQUIRE</span><span class="p">(</span><span class="n">HandleResult</span><span class="p">);</span>
 
-<span class="w">    </span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Node</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
-<span class="w">    </span><span class="n">REQUIRE</span><span class="p">(</span><span class="n">Node</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="k">nullptr</span><span class="p">);</span>
-
-<span class="w">    </span><span class="c1">// setup</span>
-
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">Payload</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeGraphSerializer</span><span class="o">::</span><span class="n">Serialize</span><span class="p">(</span><span class="n">Graph</span><span class="p">);</span>
-<span class="w">    </span><span class="n">REQUIRE</span><span class="p">(</span><span class="n">Payload</span><span class="p">);</span>
-
-<span class="w">    </span><span class="n">NodeGraph</span><span class="w"> </span><span class="n">Loaded</span><span class="p">;</span>
-<span class="w">    </span><span class="n">REQUIRE</span><span class="p">(</span><span class="n">NodeGraphSerializer</span><span class="o">::</span><span class="n">Deserialize</span><span class="p">(</span><span class="n">Payload</span><span class="p">.</span><span class="n">value</span><span class="p">(),</span><span class="w"> </span><span class="n">Loaded</span><span class="p">));</span>
-
-<span class="w">    </span><span class="c1">// assert</span>
+<span class="w">    </span><span class="n">REQUIRE</span><span class="p">(</span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">DestroyNode</span><span class="p">(</span><span class="o">*</span><span class="n">HandleResult</span><span class="p">));</span>
+<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span>
 <span class="p">}</span>
 </code></pre></div>
-<h2 id="6-ci-friendly-command-set">6. CI-Friendly Command Set<a class="headerlink" href="#6-ci-friendly-command-set" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build/ci<span class="w"> </span>-DSNAPI_GF_BUILD_TESTS<span class="o">=</span>ON<span class="w"> </span>-DSNAPI_GF_BUILD_EXAMPLES<span class="o">=</span>ON
-cmake<span class="w"> </span>--build<span class="w"> </span>build/ci<span class="w"> </span>--config<span class="w"> </span>Release
-ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/ci<span class="w"> </span>--output-on-failure
-</code></pre></div>
-<p>Use this baseline before merging engine-level changes.</p>
+<p>That pattern is intentionally simple:</p>
+<ul>
+<li>set up the minimal world state</li>
+<li>exercise one contract</li>
+<li>flush <code>EndFrame()</code> when destruction behavior matters</li>
+</ul>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../../architecture/">Architecture</a></li>
+<li><a href="../first_play_session/">First Play Session</a></li>
+</ul>
 
 
 

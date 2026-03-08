@@ -21,19 +21,37 @@ class IWorld;
 class Variant;
 
 /**
- * @brief Runtime contract for attachable node behavior/data units.
- * @remarks
- * Components are identity-bearing objects with independent lifecycle hooks that are
- * attached to nodes by graph-managed storage.
+ * @ingroup SnAPI_GameFramework
+ * @brief Canonical base type for runtime components attached to nodes.
+ *
+ * A `BaseComponent` models attachable gameplay data or behavior that participates in the
+ * lifecycle of an owning node. Components are identified independently from their node so
+ * they can be serialized, replicated, and targeted by reflection/RPC systems without using
+ * raw pointers as the public contract.
+ *
+ * Why this type exists:
+ * - to keep reusable behavior/data separate from hierarchy objects
+ * - to give each attachment a stable identity and reflected type
+ * - to let the world own lifecycle, replication, and tick dispatch uniformly
  *
  * Ownership and lifetime:
- * - Stored/owned by typed component storages (`TComponentStorage<T>`).
- * - Addressable by UUID (`ComponentHandle`) through `ObjectRegistry`.
- * - Destruction is deferred to end-of-frame to keep handles stable within a frame.
+ * - Components are owned by world-managed runtime storage, not by callers.
+ * - `Owner()` and `OwnerNode()` are non-owning links back to the attaching node.
+ * - Destruction is typically deferred until end-of-frame so handles remain stable during the active frame.
+ * - `OnCreate()` delivery may be temporarily suppressed during bootstrap and replayed once the world is ready.
  *
- * Execution context:
- * - `OwnerNode()` and `World()` are resolved dynamically through handle/graph links.
- * - Role helpers (`IsServer`/`IsClient`/`IsListenServer`) proxy world networking state.
+ * Threading model:
+ * - Main-thread only for attachment, mutation, and lifecycle callbacks unless a derived type documents otherwise.
+ * - Borrowed owner/world pointers are not synchronized for concurrent use.
+ *
+ * Invariants:
+ * - `TypeKey()` must identify the concrete reflected component type.
+ * - `Id()` is the stable public identity used by handles, replication, and serialization.
+ * - `Owner()` is null only when the component is detached or not yet fully initialized.
+ *
+ * @see BaseNode
+ * @see ComponentHandle
+ * @see IWorld
  */
 class BaseComponent
 {
@@ -44,47 +62,52 @@ public:
     ~BaseComponent() = default;
 
     /**
-     * @brief Called immediately after component creation.
-     * @remarks Runs once after storage/owner identity is assigned and registration is complete.
+     * @brief Component construction lifecycle hook.
+     * @remarks
+     * Runs after owner identity, reflected type, and registry linkage have been established.
+     * Worlds may suppress immediate delivery during bootstrap and flush it later once dependent
+     * subsystems are ready.
      */
     void OnCreate() {}
     /**
-     * @brief Called just before component destruction.
-     * @remarks Runs during end-of-frame destroy flush or immediate clear path.
+     * @brief Component destruction lifecycle hook.
+     * @remarks Runs during end-of-frame destroy flush or immediate clear paths while world context is still valid.
      */
     void OnDestroy() {}
     /**
-     * @brief Per-frame update hook.
-     * @param DeltaSeconds Time since last tick.
-     * @remarks Called from owning node traversal when node/component are active.
+     * @brief Early variable-step update hook.
+     * @param DeltaSeconds Time since last tick in seconds.
+     * @remarks Called from owning node traversal when node and component are both active.
      */
     void PreTick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
-     * @brief Per-frame update hook.
-     * @param DeltaSeconds Time since last tick.
-     * @remarks Called from owning node traversal when node/component are active.
+     * @brief Primary variable-step update hook.
+     * @param DeltaSeconds Time since last tick in seconds.
+     * @remarks Called from owning node traversal when node and component are both active.
      */
     void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Fixed-step update hook.
-     * @param DeltaSeconds Fixed time step.
+     * @param DeltaSeconds Fixed time step in seconds.
      * @remarks Intended for deterministic simulation work.
      */
     void FixedTick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Late update hook.
-     * @param DeltaSeconds Time since last tick.
+     * @param DeltaSeconds Time since last tick in seconds.
      * @remarks Invoked after regular per-frame tick traversal.
      */
     void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
     /**
      * @brief Post update hook.
-     * @param DeltaSeconds Time since last tick.
+     * @param DeltaSeconds Time since last tick in seconds.
      * @remarks Invoked after regular variable-step and late phases.
      */
     void PostTick(float DeltaSeconds) { (void)DeltaSeconds; }
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only update hook used when the owning world is executing in editor mode. @param DeltaSeconds Time since last tick in seconds. */
     void EditorTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /** @brief Editor-only callback fired after a reflected property changes. @param Name Reflected property name. */
     void EditorOnPropertyChanged(std::string_view Name) { (void)Name; }
 #endif
 

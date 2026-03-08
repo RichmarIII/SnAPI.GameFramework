@@ -3,54 +3,128 @@
 ## Contents
 
 - **Namespace:** SnAPI::GameFramework::detail
+- **Namespace:** SnAPI::GameFramework::Editor
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{AssetPipelineFactories.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{AssetPipelineSerializers.cpp}
-- **Namespace:** SnAPI::GameFramework::anonymous_namespace{IComponent.cpp}
-- **Namespace:** SnAPI::GameFramework::anonymous_namespace{INode.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{AssetRef.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{BaseComponent.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{BaseNode.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{FollowTargetComponent.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{GameplayHost.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{GameRuntime.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{InputIntentComponent.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{LocalPlayer.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{LocalPlayerService.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{PathResolver.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{RenderAssetAssimpImporter.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{RenderAssetPayloads.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{RenderAssetSourcePayloads.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{RenderAssetSourcePipeline.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{ScriptComponent.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{ScriptRuntime.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{TransformComponent.cpp}
 - **Namespace:** SnAPI::GameFramework::anonymous_namespace{TypeRegistry.cpp}
+- **Namespace:** SnAPI::GameFramework::anonymous_namespace{World.cpp}
+- **Type:** SnAPI::GameFramework::NodeAssetLoadParams
+- **Type:** SnAPI::GameFramework::LevelAssetLoadParams
+- **Type:** SnAPI::GameFramework::WorldAssetLoadParams
+- **Type:** SnAPI::GameFramework::THasAssetRefDefaultName
+- **Type:** SnAPI::GameFramework::THasAssetRefDefaultName< TTag, std::void_t< decltype(TTag::Value)> >
+- **Type:** SnAPI::GameFramework::TAssetRef
+- **Type:** SnAPI::GameFramework::BaseComponent
 - **Type:** SnAPI::GameFramework::BaseNode
+- **Type:** SnAPI::GameFramework::TSubClassOf
 - **Type:** SnAPI::GameFramework::ComponentTypeRegistry
-- **Type:** SnAPI::GameFramework::IComponentStorage
+- **Type:** SnAPI::GameFramework::ComponentStorageView
 - **Type:** SnAPI::GameFramework::TComponentStorage
 - **Type:** SnAPI::GameFramework::Error
 - **Type:** SnAPI::GameFramework::TExpectedRef
 - **Type:** SnAPI::GameFramework::TFlags
 - **Type:** SnAPI::GameFramework::EnableFlags
+- **Type:** SnAPI::GameFramework::FollowTargetComponent
+- **Type:** SnAPI::GameFramework::GameRuntimeGameplaySettings
+- **Type:** SnAPI::GameFramework::GameplayHost
+- **Type:** SnAPI::GameFramework::GameplayRpcGateway
 - **Type:** SnAPI::GameFramework::GameRuntimeTickSettings
 - **Type:** SnAPI::GameFramework::GameRuntimeSettings
 - **Type:** SnAPI::GameFramework::GameRuntime
+- **Type:** SnAPI::GameFramework::ITaskDispatcher
+- **Type:** SnAPI::GameFramework::TaskDispatcherScope
+- **Type:** SnAPI::GameFramework::TaskHandle
+- **Type:** SnAPI::GameFramework::GameMutex
+- **Type:** SnAPI::GameFramework::TSystemTaskQueue
 - **Type:** SnAPI::GameFramework::THandle
 - **Type:** SnAPI::GameFramework::HandleHash
-- **Type:** SnAPI::GameFramework::IComponent
-- **Type:** SnAPI::GameFramework::ILevel
-- **Type:** SnAPI::GameFramework::INode
+- **Type:** SnAPI::GameFramework::IGame
+- **Type:** SnAPI::GameFramework::IGameMode
+- **Type:** SnAPI::GameFramework::IGameService
+- **Type:** SnAPI::GameFramework::InputIntentComponent
+- **Type:** SnAPI::GameFramework::TObjectPool
+- **Type:** SnAPI::GameFramework::TDenseRuntimeHandle
 - **Type:** SnAPI::GameFramework::IWorld
 - **Type:** SnAPI::GameFramework::JobSystem
 - **Type:** SnAPI::GameFramework::Level
-- **Type:** SnAPI::GameFramework::NodeGraph
-- **Type:** SnAPI::GameFramework::TObjectPool
+- **Type:** SnAPI::GameFramework::LocalPlayer
+- **Type:** SnAPI::GameFramework::LocalPlayerService
+- **Type:** SnAPI::GameFramework::MultiplayerConfigNode
 - **Type:** SnAPI::GameFramework::ObjectRegistry
+- **Type:** SnAPI::GameFramework::SPathResolver
+- **Type:** SnAPI::GameFramework::PawnBase
+- **Type:** SnAPI::GameFramework::PlayerStart
 - **Type:** SnAPI::GameFramework::RelevanceContext
 - **Type:** SnAPI::GameFramework::RelevancePolicyRegistry
 - **Type:** SnAPI::GameFramework::RelevanceComponent
+- **Type:** SnAPI::GameFramework::AssimpImporterSettings
+- **Type:** SnAPI::GameFramework::AssetRefPayload
+- **Type:** SnAPI::GameFramework::MeshStreamChunkRef
+- **Type:** SnAPI::GameFramework::StaticSubMeshPayload
+- **Type:** SnAPI::GameFramework::StaticMeshPayload
+- **Type:** SnAPI::GameFramework::SkeletalBonePayload
+- **Type:** SnAPI::GameFramework::SkeletonPayload
+- **Type:** SnAPI::GameFramework::AnimationKeyFramePayload
+- **Type:** SnAPI::GameFramework::AnimationTrackPayload
+- **Type:** SnAPI::GameFramework::AnimationPayload
+- **Type:** SnAPI::GameFramework::SkeletalMeshPayload
+- **Type:** SnAPI::GameFramework::MaterialPayload
+- **Type:** SnAPI::GameFramework::MaterialScalarParamPayload
+- **Type:** SnAPI::GameFramework::MaterialVectorParamPayload
+- **Type:** SnAPI::GameFramework::MaterialTextureParamPayload
+- **Type:** SnAPI::GameFramework::MaterialInstancePayload
+- **Type:** SnAPI::GameFramework::TextureAssetRuntime
+- **Type:** SnAPI::GameFramework::MaterialAssetRuntime
+- **Type:** SnAPI::GameFramework::MaterialInstanceAssetRuntime
+- **Type:** SnAPI::GameFramework::StaticMeshAssetRuntime
+- **Type:** SnAPI::GameFramework::SkeletonAssetRuntime
+- **Type:** SnAPI::GameFramework::AnimationAssetRuntime
+- **Type:** SnAPI::GameFramework::SkeletalMeshAssetRuntime
+- **Type:** SnAPI::GameFramework::MeshStreamSourcePayload
+- **Type:** SnAPI::GameFramework::MeshImportSettingsPayload
+- **Type:** SnAPI::GameFramework::StaticMeshSourcePayload
+- **Type:** SnAPI::GameFramework::SkeletalMeshSourcePayload
 - **Type:** SnAPI::GameFramework::ScriptBindings
 - **Type:** SnAPI::GameFramework::ScriptComponent
-- **Type:** SnAPI::GameFramework::IScriptEngine
-- **Type:** SnAPI::GameFramework::ScriptRuntime
+- **Type:** SnAPI::GameFramework::ScriptInstanceContext
+- **Type:** SnAPI::GameFramework::ScriptCreateInfo
+- **Type:** SnAPI::GameFramework::IScript
+- **Type:** SnAPI::GameFramework::IScriptEngineBackend
+- **Type:** SnAPI::GameFramework::ScriptRuntimeService
 - **Type:** SnAPI::GameFramework::TSerializationContext
+- **Type:** SnAPI::GameFramework::TDeserializeOptions
 - **Type:** SnAPI::GameFramework::TValueCodec
+- **Type:** SnAPI::GameFramework::TValueCodec< TAssetRef< TBase, TNameTag > >
+- **Type:** SnAPI::GameFramework::TValueCodec< std::vector< T > >
 - **Type:** SnAPI::GameFramework::ValueCodecRegistry
 - **Type:** SnAPI::GameFramework::ComponentSerializationRegistry
 - **Type:** SnAPI::GameFramework::NodeComponentPayload
 - **Type:** SnAPI::GameFramework::NodePayload
-- **Type:** SnAPI::GameFramework::NodeGraphPayload
 - **Type:** SnAPI::GameFramework::LevelPayload
 - **Type:** SnAPI::GameFramework::WorldPayload
-- **Type:** SnAPI::GameFramework::NodeGraphSerializer
+- **Type:** SnAPI::GameFramework::NodeSerializer
 - **Type:** SnAPI::GameFramework::LevelSerializer
 - **Type:** SnAPI::GameFramework::WorldSerializer
+- **Type:** SnAPI::GameFramework::NodeTransform
 - **Type:** SnAPI::GameFramework::TransformComponent
 - **Type:** SnAPI::GameFramework::TTypeRegistrar
 - **Type:** SnAPI::GameFramework::TypeAutoRegistry
@@ -63,166 +137,48 @@
 - **Type:** SnAPI::GameFramework::FieldInfo
 - **Type:** SnAPI::GameFramework::MethodInfo
 - **Type:** SnAPI::GameFramework::ConstructorInfo
+- **Type:** SnAPI::GameFramework::EnumValueInfo
 - **Type:** SnAPI::GameFramework::TypeInfo
+- **Type:** SnAPI::GameFramework::ReflectedFieldRef
+- **Type:** SnAPI::GameFramework::ReflectedMethodRef
 - **Type:** SnAPI::GameFramework::TypeRegistry
 - **Type:** SnAPI::GameFramework::UuidParts
 - **Type:** SnAPI::GameFramework::UuidHash
 - **Type:** SnAPI::GameFramework::Variant
 - **Type:** SnAPI::GameFramework::VariantView
+- **Type:** SnAPI::GameFramework::WorldExecutionProfile
 - **Type:** SnAPI::GameFramework::World
-
-## Enumerations
-
-<div class="snapi-api-card" markdown="1">
-### `enum EErrorCode`
-
-Canonical error codes used by the framework.
-
-**Values**
-
-- `None`: No error.
-- `NotFound`: Requested item was not found.
-- `InvalidArgument`: One or more arguments are invalid.
-- `TypeMismatch`: Type mismatch or unsafe conversion.
-- `OutOfRange`: Index or value is out of range.
-- `AlreadyExists`: Attempted to create an object that already exists.
-- `NotReady`: Subsystem or object is not ready.
-- `InternalError`: Unexpected internal failure.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `enum EObjectKind`
-
-Kind of object stored in the registry.
-
-**Values**
-
-- `Node`: BaseNode-derived object.
-- `Component`: IComponent-derived object.
-- `Other`: Arbitrary registered type.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `enum EFieldFlagBits`
-
-Field-level flags for reflection metadata.
-
-**Values**
-
-- `None`: No special field behavior flags.
-- `Replication`: Field is eligible for replication payload traversal.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `enum EMethodFlagBits`
-
-Method-level flags for reflection metadata.
-
-**Values**
-
-- `None`: No special method behavior flags.
-- `RpcReliable`: Prefer reliable transport channel for RPC dispatch.
-- `RpcUnreliable`: Prefer unreliable transport channel for RPC dispatch.
-- `RpcNetServer`: Method is intended as server-target endpoint.
-- `RpcNetClient`: Method is intended as client-target endpoint.
-- `RpcNetMulticast`: Method is intended for server-initiated multicast dispatch.
-</div>
+- **Type:** SnAPI::GameFramework::ScopedComponentOnCreateSuppression
+- **Type:** SnAPI::GameFramework::TRuntimeTickCRTP
+- **Type:** SnAPI::GameFramework::NodeCRTP
+- **Type:** SnAPI::GameFramework::ComponentCRTP
+- **Type:** SnAPI::GameFramework::TDenseRuntimeStorage
+- **Type:** SnAPI::GameFramework::RuntimeNodeRecord
+- **Type:** SnAPI::GameFramework::RuntimeComponentRecord
+- **Type:** SnAPI::GameFramework::RuntimeNodeTransform
+- **Type:** SnAPI::GameFramework::WorldNodeRuntime
+- **Type:** SnAPI::GameFramework::WorldEcsRuntime
 
 ## Type Aliases
 
 <div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::TExpected = std::expected<T, Error>`
-
-Convenience alias for std::expected with framework Error.
+### `using SnAPI::GameFramework::TAssetManagerResolver = std::function<::SnAPI::AssetPipeline::AssetManager*()>`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Result = TExpected<void>`
-
-Convenience alias for operations returning only success/failure.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `typedef THandle< BaseNode > SnAPI::GameFramework::NodeHandle = THandle<BaseNode>`
-
-Handle type for nodes.
-
-Handle type for nodes (local alias).
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::ComponentHandle = THandle<IComponent>`
-
-Handle type for components.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::MethodInvoker = std::function<TExpected<Variant>(void* Instance, std::span<const Variant> Args)>`
-
-Function type for reflected method invocation.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Scalar = SnAPI::Math::Scalar`
-
-Canonical scalar type used by GameFramework math aliases.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Vec3 = SnAPI::Math::Vec3`
-
-Canonical 3D vector type used across runtime and serialization.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Quat = SnAPI::Math::Quat`
-
-Canonical quaternion type used for interop with systems that need quaternion rotation.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Transform = SnAPI::Math::Transform`
-
-Canonical transform type (position + quaternion rotation).
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Aabb = SnAPI::Math::Aabb`
-
-Canonical AABB type.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::ScriptInstanceId = uint64_t`
-
-Unique identifier for a script instance.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::TTypeRegisterFn = void(*)()`
-
-Auto-registration helpers for reflection and serialization.
-
-Usage (place in a single .cpp per type to avoid duplicate registration): SNAPI_REFLECT_TYPE(MyType, (TTypeBuilder<MyType>(MyType::kTypeName) .Base<BaseNode>() .Field("Health", &MyType::m_health) .Constructor<>() .Register()));
-
-SNAPI_REFLECT_COMPONENT(MyComponent, (TTypeBuilder<MyComponent>(MyComponent::kTypeName) .Field("Speed", &MyComponent::m_speed) .Constructor<>() .Register()));
-
-The builder expression should register the type with TypeRegistry. If a node must be created by TypeId (serialization, scripting), register a default constructor. Types are registered lazily: the macro installs an "ensure" callback keyed by deterministic TypeId. The actual TypeRegistry registration is performed on first use (TypeRegistry::Find on miss, or explicit TypeAutoRegistry::Ensure).
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::FieldFlags = TFlags<EFieldFlagBits>`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::MethodFlags = TFlags<EMethodFlagBits>`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::Uuid = uuids::uuid`
-
-UUID type used throughout the framework.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `using SnAPI::GameFramework::TypeId = Uuid`
-
-Strong alias for TypeId values.
+### `using SnAPI::GameFramework::RuntimeTextureAsset = TextureAssetRuntime`
 </div>
 
 ## Variables
 
 <div class="snapi-api-card" markdown="1">
-### `const char* SnAPI::GameFramework::kAssetKindNodeGraphName`
-
-Asset kind name for NodeGraph assets.
-</div>
-<div class="snapi-api-card" markdown="1">
 ### `const char* SnAPI::GameFramework::kAssetKindLevelName`
 
 Asset kind name for Level assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kAssetKindNodeName`
+
+Asset kind name for Node assets.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `const char* SnAPI::GameFramework::kAssetKindWorldName`
@@ -230,9 +186,39 @@ Asset kind name for Level assets.
 Asset kind name for World assets.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `const char* SnAPI::GameFramework::kPayloadNodeGraphName`
+### `const char* SnAPI::GameFramework::kAssetKindStaticMeshName`
 
-Payload type name for NodeGraph cooked data.
+Asset kind name for StaticMesh assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kAssetKindSkeletalMeshName`
+
+Asset kind name for SkeletalMesh assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kAssetKindMaterialName`
+
+Asset kind name for Material assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kAssetKindMaterialInstanceName`
+
+Asset kind name for MaterialInstance assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kAssetKindSkeletonName`
+
+Asset kind name for Skeleton assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kAssetKindAnimationName`
+
+Asset kind name for Animation assets.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadNodeName`
+
+Payload type name for Node cooked data.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `const char* SnAPI::GameFramework::kPayloadLevelName`
@@ -245,74 +231,65 @@ Payload type name for Level cooked data.
 Payload type name for World cooked data.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `bool SnAPI::GameFramework::EnableFlagsV`
+### `const char* SnAPI::GameFramework::kPayloadStaticMeshName`
+
+Payload type name for StaticMesh cooked data.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `const char* SnAPI::GameFramework::TTypeNameV`
+### `const char* SnAPI::GameFramework::kPayloadSkeletalMeshName`
 
-Convenience alias for TTypeName<T>::Value.
+Payload type name for SkeletalMesh cooked data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadMaterialName`
+
+Payload type name for Material cooked data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadMaterialInstanceName`
+
+Payload type name for MaterialInstance cooked data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadSkeletonName`
+
+Payload type name for Skeleton cooked data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadAnimationName`
+
+Payload type name for Animation cooked data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadStaticMeshSourceName`
+
+Payload type name for StaticMesh source-intermediate data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `const char* SnAPI::GameFramework::kPayloadSkeletalMeshSourceName`
+
+Payload type name for SkeletalMesh source-intermediate data.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `& SnAPI::GameFramework::TSubClassOf< PawnBase >::EditTypeId`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `& SnAPI::GameFramework::TAssetRef< PawnBase >::EditAssetId`
 </div>
 
 ## Functions
 
 <div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry &Registry)`
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindLevel()`
 
-Register GameFramework payload serializers with the AssetPipeline registry.
-
-**Parameters**
-
-- `Registry`: Payload registry.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager &Manager)`
-
-Register GameFramework runtime factories with the AssetManager.
-
-**Parameters**
-
-- `Manager`: Asset manager.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `inline ::SnAPI::AssetPipeline::Uuid SnAPI::GameFramework::AssetPipelineNamespace()`
-
-Namespace UUID for AssetPipeline ids.
-
-**Returns:** Namespace UUID.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetPipelineTypeIdFromName(std::string_view Name)`
-
-Generate a deterministic TypeId from a name.
-
-**Parameters**
-
-- `Name`: Name string.
-
-**Returns:** UUIDv5-based TypeId.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `inline ::SnAPI::AssetPipeline::AssetId SnAPI::GameFramework::AssetPipelineAssetIdFromName(std::string_view Name)`
-
-Generate a deterministic AssetId from a name.
-
-**Parameters**
-
-- `Name`: Name string.
-
-**Returns:** UUIDv5-based AssetId.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindNodeGraph()`
-
-Get the AssetPipeline TypeId for NodeGraph assets.
+Get the AssetPipeline TypeId for Level assets.
 
 **Returns:** TypeId value.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindLevel()`
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindNode()`
 
-Get the AssetPipeline TypeId for Level assets.
+Get the AssetPipeline TypeId for Node assets.
 
 **Returns:** TypeId value.
 </div>
@@ -324,9 +301,51 @@ Get the AssetPipeline TypeId for World assets.
 **Returns:** TypeId value.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadNodeGraph()`
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindStaticMesh()`
 
-Get the payload TypeId for NodeGraph payloads.
+Get the AssetPipeline TypeId for StaticMesh assets.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindSkeletalMesh()`
+
+Get the AssetPipeline TypeId for SkeletalMesh assets.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindMaterial()`
+
+Get the AssetPipeline TypeId for Material assets.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindMaterialInstance()`
+
+Get the AssetPipeline TypeId for MaterialInstance assets.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindSkeleton()`
+
+Get the AssetPipeline TypeId for Skeleton assets.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::AssetKindAnimation()`
+
+Get the AssetPipeline TypeId for Animation assets.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadNode()`
+
+Get the payload TypeId for Node payloads.
 
 **Returns:** TypeId value.
 </div>
@@ -345,31 +364,66 @@ Get the payload TypeId for World payloads.
 **Returns:** TypeId value.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer > SnAPI::GameFramework::CreateNodeGraphPayloadSerializer()`
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadStaticMesh()`
 
-Create the payload serializer for NodeGraph cooked data.
+Get the payload TypeId for StaticMesh payloads.
 
-Create the NodeGraph payload serializer.
-
-**Returns:** Serializer instance.
+**Returns:** TypeId value.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer > SnAPI::GameFramework::CreateLevelPayloadSerializer()`
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadSkeletalMesh()`
 
-Create the payload serializer for Level cooked data.
+Get the payload TypeId for SkeletalMesh payloads.
 
-Create the Level payload serializer.
-
-**Returns:** Serializer instance.
+**Returns:** TypeId value.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer > SnAPI::GameFramework::CreateWorldPayloadSerializer()`
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadMaterial()`
 
-Create the payload serializer for World cooked data.
+Get the payload TypeId for Material payloads.
 
-Create the World payload serializer.
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadMaterialInstance()`
 
-**Returns:** Serializer instance.
+Get the payload TypeId for MaterialInstance payloads.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadSkeleton()`
+
+Get the payload TypeId for Skeleton payloads.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadAnimation()`
+
+Get the payload TypeId for Animation payloads.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadStaticMeshSource()`
+
+Get the payload TypeId for StaticMesh source-intermediate payloads.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `inline ::SnAPI::AssetPipeline::TypeId SnAPI::GameFramework::PayloadSkeletalMeshSource()`
+
+Get the payload TypeId for SkeletalMesh source-intermediate payloads.
+
+**Returns:** TypeId value.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::SNAPI_DEFINE_TYPE_NAME(Editor::ETextureCompressionTarget, "SnAPI.GameFramework.Editor.ETextureCompressionTarget")`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::SNAPI_DEFINE_TYPE_NAME(Editor::ETextureCompressionFormat, "SnAPI.GameFramework.Editor.ETextureCompressionFormat")`
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `Result SnAPI::GameFramework::Ok()`
@@ -395,204 +449,28 @@ Construct an Error value.
 **Returns:** Error instance with the provided data.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::enable_if_t< EnableFlagsV< Enum >, TFlags< Enum > > SnAPI::GameFramework::operator|(Enum Left, Enum Right)`
-
-Combine two enum flag bits into a TFlags value.
-
-**Parameters**
-
-- `Left`: 
-- `Right`:
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter > SnAPI::GameFramework::CreateRenderAssetJsonImporter()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::enable_if_t< EnableFlagsV< Enum >, TFlags< Enum > > SnAPI::GameFramework::operator&(Enum Left, Enum Right)`
-
-Intersect two enum flag bits into a TFlags value.
-
-**Parameters**
-
-- `Left`: 
-- `Right`:
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter > SnAPI::GameFramework::CreateRenderAssetAssimpImporter()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `MethodInvoker SnAPI::GameFramework::MakeInvoker(R(T::*Method)(Args...))`
-
-Create a MethodInvoker for a non-const member function.
-
-Create a MethodInvoker for a const member function.
-
-**Parameters**
-
-- `Method`: Const member function pointer.
-
-**Returns:** Callable MethodInvoker.
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker > SnAPI::GameFramework::CreateRenderMaterialCooker()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `TExpected< void > SnAPI::GameFramework::SerializeNodeGraphPayload(const NodeGraphPayload &Payload, std::vector< uint8_t > &OutBytes)`
-
-Serialize a NodeGraphPayload to bytes.
-
-**Parameters**
-
-- `Payload`: Payload to serialize.
-- `OutBytes`: Output byte vector.
-
-**Returns:** Success or error.
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker > SnAPI::GameFramework::CreateRenderMaterialInstanceCooker()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `TExpected< NodeGraphPayload > SnAPI::GameFramework::DeserializeNodeGraphPayload(const uint8_t *Bytes, size_t Size)`
-
-Deserialize a NodeGraphPayload from bytes.
-
-**Parameters**
-
-- `Bytes`: Byte buffer.
-- `Size`: Byte count.
-
-**Returns:** Payload or error.
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker > SnAPI::GameFramework::CreateRenderSkeletonCooker()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `TExpected< void > SnAPI::GameFramework::SerializeLevelPayload(const LevelPayload &Payload, std::vector< uint8_t > &OutBytes)`
-
-Serialize a LevelPayload to bytes.
-
-**Parameters**
-
-- `Payload`: Payload to serialize.
-- `OutBytes`: Output byte vector.
-
-**Returns:** Success or error.
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker > SnAPI::GameFramework::CreateRenderAnimationCooker()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `TExpected< LevelPayload > SnAPI::GameFramework::DeserializeLevelPayload(const uint8_t *Bytes, size_t Size)`
-
-Deserialize a LevelPayload from bytes.
-
-**Parameters**
-
-- `Bytes`: Byte buffer.
-- `Size`: Byte count.
-
-**Returns:** Payload or error.
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker > SnAPI::GameFramework::CreateRenderStaticMeshCooker()`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `TExpected< void > SnAPI::GameFramework::SerializeWorldPayload(const WorldPayload &Payload, std::vector< uint8_t > &OutBytes)`
-
-Serialize a WorldPayload to bytes.
-
-**Parameters**
-
-- `Payload`: Payload to serialize.
-- `OutBytes`: Output byte vector.
-
-**Returns:** Success or error.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `TExpected< WorldPayload > SnAPI::GameFramework::DeserializeWorldPayload(const uint8_t *Bytes, size_t Size)`
-
-Deserialize a WorldPayload from bytes.
-
-**Parameters**
-
-- `Bytes`: Byte buffer.
-- `Size`: Byte count.
-
-**Returns:** Payload or error.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::RegisterSerializationDefaults()`
-
-Register default serialization codecs and component serializers.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `const TypeId & SnAPI::GameFramework::StaticTypeId()`
-
-Get the deterministic TypeId for a type, cached in a function-local static.
-
-**Returns:** Stable TypeId reference.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `TExpected< TypeId * > SnAPI::GameFramework::StaticType()`
-
-Ensure a type is registered in TypeRegistry and return its TypeId pointer.
-
-**Returns:** Pointer to a stable TypeId on success, or error.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::EnsureReflectionRegistered()`
-
-Ensure reflection registration for a type.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::RegisterBuiltinTypes()`
-
-Register built-in types and default serializers.
-
-**Notes**
-
-- Safe to call multiple times; duplicate registrations are ignored or fail gracefully.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `const Uuid & SnAPI::GameFramework::TypeIdNamespace()`
-
-Namespace UUID for deterministic type id generation.
-
-**Returns:** Stable namespace UUID.
-
-**Notes**
-
-- Keep this stable across versions for serialized compatibility.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `TypeId SnAPI::GameFramework::TypeIdFromName(std::string_view Name)`
-
-Generate a stable TypeId from a fully qualified name.
-
-**Parameters**
-
-- `Name`: Fully qualified type name.
-
-**Returns:** UUIDv5 derived from the name and TypeIdNamespace.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `Uuid SnAPI::GameFramework::NewUuid()`
-
-Generate a new random UUID (UUIDv4).
-
-**Returns:** Newly generated UUID.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `std::string SnAPI::GameFramework::ToString(const Uuid &Id)`
-
-Convert a UUID to its canonical string form.
-
-**Parameters**
-
-- `Id`: UUID to convert.
-
-**Returns:** Lowercase UUID string.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `UuidParts SnAPI::GameFramework::ToParts(const Uuid &Id)`
-
-Convert a UUID to a split High/Low representation.
-
-**Parameters**
-
-- `Id`: UUID to split.
-
-**Returns:** UuidParts containing the high/low 64-bit values.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `Uuid SnAPI::GameFramework::FromParts(UuidParts Parts)`
-
-Reconstruct a UUID from split High/Low parts.
-
-**Parameters**
-
-- `Parts`: High/Low representation.
-
-**Returns:** Reconstructed UUID.
+### `std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker > SnAPI::GameFramework::CreateRenderSkeletalMeshCooker()`
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `static void SnAPI::GameFramework::RegisterAssetPipelinePlugin(::SnAPI::AssetPipeline::IPluginRegistrar &Registrar)`
@@ -604,13 +482,46 @@ Register the GameFramework AssetPipeline plugin.
 - `Registrar`: AssetPipeline plugin registrar.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `&PerfComponentB::m_value Constructor() .Register()))`
+### `SnAPI::GameFramework::Field("Name", &BaseNode::Name, &BaseNode::Name) .Method("OnPossess"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&BaseNode::OnPossess SnAPI::GameFramework::Method("OnUnpossess", &BaseNode::OnUnpossess) .Constructor<>() .Register()))`
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `SnAPI::GameFramework::Base< BaseNode >() .Constructor<>() .Register()))`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `SnAPI::GameFramework::Base< NodeGraph >() .Constructor<>() .Register()))`
+### `&PerfComponentB::m_value Constructor() .Register()))`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `EFieldFlagBits::Replication SnAPI::GameFramework::Field("PossessedNode", &LocalPlayer::EditPossessedNode, &LocalPlayer::GetPossessedNode, EFieldFlagBits::Replication) .Field("AcceptInput"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `EFieldFlagBits::Replication EFieldFlagBits::Replication SnAPI::GameFramework::Field("OwnerConnectionId", &LocalPlayer::EditOwnerConnectionId, &LocalPlayer::GetOwnerConnectionId, EFieldFlagBits::Replication) .Method("ServerRequestPossess"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `EFieldFlagBits::Replication EFieldFlagBits::Replication EMethodFlagBits::RpcReliable EMethodFlagBits::RpcNetServer SnAPI::GameFramework::Method("ServerRequestUnpossess", &LocalPlayer::ServerRequestUnpossess, EMethodFlagBits::RpcReliable|EMethodFlagBits::RpcNetServer) .Constructor<>() .Register()))`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::Field("TypeName", &TSubClassOf< PawnBase >::EditTypeName, &TSubClassOf< PawnBase >::GetTypeName) .Field("TypeId"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::Field("AssetName", &TAssetRef< PawnBase >::EditAssetName, &TAssetRef< PawnBase >::GetAssetName) .Field("AssetId"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&PawnBase::OnPossess SnAPI::GameFramework::Method("OnUnpossess", &PawnBase::OnUnpossess) .Constructor<>() .Register()))`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&MultiplayerConfigNode::GetLocalPlayerCount SnAPI::GameFramework::Field("Splitscreen", &MultiplayerConfigNode::EditSplitscreen, &MultiplayerConfigNode::GetSplitscreen) .Field("AutoJoinAdditionalLocalPlayers"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&MultiplayerConfigNode::GetLocalPlayerCount &MultiplayerConfigNode::GetAutoJoinAdditionalLocalPlayers SnAPI::GameFramework::Field("RequireGamepadForAdditionalPlayers", &MultiplayerConfigNode::EditRequireGamepadForAdditionalPlayers, &MultiplayerConfigNode::GetRequireGamepadForAdditionalPlayers) .Constructor<>() .Register()))`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `EMethodFlagBits::RpcReliable EMethodFlagBits::RpcNetServer SnAPI::GameFramework::Method("ServerRequestLeavePlayer", &GameplayRpcGateway::ServerRequestLeavePlayer, EMethodFlagBits::RpcReliable|EMethodFlagBits::RpcNetServer) .Method("ServerRequestLoadLevel"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `EMethodFlagBits::RpcReliable EMethodFlagBits::RpcNetServer EMethodFlagBits::RpcReliable EMethodFlagBits::RpcNetServer SnAPI::GameFramework::Method("ServerRequestUnloadLevel", &GameplayRpcGateway::ServerRequestUnloadLevel, EMethodFlagBits::RpcReliable|EMethodFlagBits::RpcNetServer) .Constructor<>() .Register()))`
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `SnAPI::GameFramework::Field("Position", &TransformComponent::Position, EFieldFlagBits::Replication) .Field("Rotation"`
@@ -619,10 +530,177 @@ Register the GameFramework AssetPipeline plugin.
 ### `EFieldFlagBits::Replication SnAPI::GameFramework::Field("Scale", &TransformComponent::Scale, EFieldFlagBits::Replication) .Constructor<>() .Register()))`
 </div>
 <div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::Field("Target", &FollowTargetComponent::Settings::Target) .Field("PositionOffset"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&FollowTargetComponent::Settings::PositionOffset SnAPI::GameFramework::Field("SyncPosition", &FollowTargetComponent::Settings::SyncPosition) .Field("SyncRotation"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&FollowTargetComponent::Settings::PositionOffset &FollowTargetComponent::Settings::SyncRotation SnAPI::GameFramework::Field("RotationOffset", &FollowTargetComponent::Settings::RotationOffset) .Field("PositionSmoothingHz"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `&FollowTargetComponent::Settings::PositionOffset &FollowTargetComponent::Settings::SyncRotation &FollowTargetComponent::Settings::PositionSmoothingHz SnAPI::GameFramework::Field("RotationSmoothingHz", &FollowTargetComponent::Settings::RotationSmoothingHz) .Field("ResolveTargetByUuidFallback"`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `SnAPI::GameFramework::Field("Settings", &FollowTargetComponent::EditSettings, &FollowTargetComponent::GetSettings, EFieldFlagBits::Replication) .Constructor<>() .Register()))`
+</div>
+<div class="snapi-api-card" markdown="1">
 ### `SnAPI::GameFramework::Field("ScriptModule", &ScriptComponent::ScriptModule) .Field("ScriptType"`
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `&ScriptComponent::ScriptType SnAPI::GameFramework::Field("Instance", &ScriptComponent::Instance) .Constructor<>() .Register()))`
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, AssetRefPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MeshStreamChunkRef &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, StaticSubMeshPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, StaticMeshPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, SkeletalBonePayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, SkeletonPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, AnimationKeyFramePayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, AnimationTrackPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, AnimationPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, SkeletalMeshPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MaterialPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MaterialScalarParamPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MaterialVectorParamPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MaterialTextureParamPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MaterialInstancePayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MeshStreamSourcePayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MeshImportSettingsPayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, StaticMeshSourcePayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
+</div>
+<div class="snapi-api-card" markdown="1">
+### `void SnAPI::GameFramework::serialize(Archive &Ar, SkeletalMeshSourcePayload &Value)`
+
+**Parameters**
+
+- `Ar`: 
+- `Value`:
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::serialize(Archive &ArchiveRef, NodeComponentPayload &Value)`
@@ -638,16 +716,6 @@ cereal serialize for NodeComponentPayload.
 ### `void SnAPI::GameFramework::serialize(Archive &ArchiveRef, NodePayload &Value)`
 
 cereal serialize for NodePayload.
-
-**Parameters**
-
-- `ArchiveRef`: Archive.
-- `Value`: Payload to serialize.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::serialize(Archive &ArchiveRef, NodeGraphPayload &Value)`
-
-cereal serialize for NodeGraphPayload.
 
 **Parameters**
 

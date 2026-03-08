@@ -11,5 +11,8 @@
 - **Type:** SnAPI::GameFramework::FieldInfo
 - **Type:** SnAPI::GameFramework::MethodInfo
 - **Type:** SnAPI::GameFramework::ConstructorInfo
+- **Type:** SnAPI::GameFramework::EnumValueInfo
 - **Type:** SnAPI::GameFramework::TypeInfo
+- **Type:** SnAPI::GameFramework::ReflectedFieldRef
+- **Type:** SnAPI::GameFramework::ReflectedMethodRef
 - **Type:** SnAPI::GameFramework::TypeRegistry

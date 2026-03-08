@@ -1,39 +1,9 @@
 # File `Profiling.h`
 
-## Macros
+Optional profiler-integration macros for instrumenting GameFramework code.
 
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GF_PROFILE_SCOPE`
+These macros wrap the profiler backend behind compile-time feature gates so call sites can stay uniform whether profiling support is enabled or compiled out.
 
-**Parameters**
-
-- `Name`: 
-- `Category`:
-</div>
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GF_PROFILE_FUNCTION`
-
-**Parameters**
-
-- `Category`:
-</div>
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GF_PROFILE_SET_THREAD_NAME`
-
-**Parameters**
-
-- `Name`:
-</div>
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GF_PROFILE_BEGIN_FRAME_AUTO`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GF_PROFILE_BEGIN_FRAME`
-
-**Parameters**
-
-- `FrameIndex`:
-</div>
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GF_PROFILE_END_FRAME`
-</div>
+Disabled-build semantics:
+- Every macro becomes a no-op expression.
+- Call sites do not need additional `#if` guards.

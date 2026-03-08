@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -16,14 +16,14 @@
         <link rel="prev" href="../worlds_graphs/">
       
       
-        <link rel="next" href="../renderer/">
+        <link rel="next" href="../input/">
       
       
         
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -516,10 +577,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-node-vs-component" class="md-nav__link">
+  <a href="#what-belongs-on-a-node" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Node vs Component
+        What Belongs On A Node
       
     </span>
   </a>
@@ -527,10 +588,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-define-a-custom-node-and-component" class="md-nav__link">
+  <a href="#what-belongs-on-a-component" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Define a Custom Node and Component
+        What Belongs On A Component
       
     </span>
   </a>
@@ -538,10 +599,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-register-reflection-once-in-a-cpp" class="md-nav__link">
+  <a href="#a-small-custom-node-and-component" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Register Reflection Once in a .cpp
+        A Small Custom Node And Component
       
     </span>
   </a>
@@ -549,10 +610,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-spawn-nodes-and-add-components" class="md-nav__link">
+  <a href="#reflect-them-if-you-need-engine-features" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Spawn Nodes and Add Components
+        Reflect Them If You Need Engine Features
       
     </span>
   </a>
@@ -560,10 +621,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-query-and-remove-components" class="md-nav__link">
+  <a href="#attaching-components" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Query and Remove Components
+        Attaching Components
       
     </span>
   </a>
@@ -571,10 +632,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-tick-order-for-node-components" class="md-nav__link">
+  <a href="#lifecycle-hooks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Tick Order for Node + Components
+        Lifecycle Hooks
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Lifecycle Hooks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#oncreate-is-not-a-constructor-substitute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OnCreate is not a constructor substitute
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#oncreate-can-be-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OnCreate can be deferred
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#activity-replication-and-destroy-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Activity, Replication, and Destroy State
       
     </span>
   </a>
@@ -582,10 +682,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-replication-gate-important" class="md-nav__link">
+  <a href="#runtime-components" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Replication Gate (Important)
+        Runtime Components
       
     </span>
   </a>
@@ -593,10 +693,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#8-role-helpers-and-callrpc" class="md-nav__link">
+  <a href="#design-heuristics" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8. Role Helpers and CallRPC(...)
+        Design Heuristics
       
     </span>
   </a>
@@ -604,21 +704,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#9-built-in-physics-components" class="md-nav__link">
+  <a href="#what-to-read-next" class="md-nav__link">
     <span class="md-ellipsis">
       
-        9. Built-In Physics Components
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#10-built-in-renderer-components" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        10. Built-In Renderer Components
+        What To Read Next
       
     </span>
   </a>
@@ -641,6 +730,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -648,7 +793,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -788,7 +933,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -853,6 +998,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1049,226 +1563,184 @@
 
 
 <h1 id="nodes-and-components">Nodes and Components<a class="headerlink" href="#nodes-and-components" title="Permanent link">&para;</a></h1>
-<p>This page shows how to design gameplay types and attach reusable behavior.</p>
-<h2 id="1-node-vs-component">1. Node vs Component<a class="headerlink" href="#1-node-vs-component" title="Permanent link">&para;</a></h2>
-<p>Use a <strong>node</strong> when the thing needs identity in the hierarchy (name, children, transform owner, etc.).</p>
-<p>Use a <strong>component</strong> for modular data/behavior you can attach to many node types.</p>
-<h2 id="2-define-a-custom-node-and-component">2. Define a Custom Node and Component<a class="headerlink" href="#2-define-a-custom-node-and-component" title="Permanent link">&para;</a></h2>
-<p>Header (<code>MyGameplayTypes.h</code>):</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#pragma once</span>
-
-<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;GameFramework.hpp&quot;</span>
+<p>Once the world hierarchy is clear, the next question is how to model gameplay objects.</p>
+<p>The answer in this framework is still straightforward:</p>
+<ul>
+<li>derive a node when the thing needs identity, hierarchy, or a distinct semantic role</li>
+<li>attach components when you want reusable behavior or state</li>
+</ul>
+<h2 id="what-belongs-on-a-node">What Belongs On A Node<a class="headerlink" href="#what-belongs-on-a-node" title="Permanent link">&para;</a></h2>
+<p>A node is the right place for:</p>
+<ul>
+<li>a gameplay identity like <code>PawnBase</code>, <code>LocalPlayer</code>, <code>PlayerStart</code>, or <code>WorldRenderSettings</code></li>
+<li>hierarchy ownership</li>
+<li>cross-system references that conceptually belong to the whole object</li>
+<li>high-level callbacks like possession or spawn semantics</li>
+</ul>
+<h2 id="what-belongs-on-a-component">What Belongs On A Component<a class="headerlink" href="#what-belongs-on-a-component" title="Permanent link">&para;</a></h2>
+<p>A component is the right place for:</p>
+<ul>
+<li>transform</li>
+<li>physics state</li>
+<li>audio playback</li>
+<li>camera state</li>
+<li>input adaptation</li>
+<li>script binding</li>
+<li>small reusable behaviors</li>
+</ul>
+<h2 id="a-small-custom-node-and-component">A Small Custom Node And Component<a class="headerlink" href="#a-small-custom-node-and-component" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;GameFramework.hpp&quot;</span>
 
 <span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">SnAPI</span><span class="o">::</span><span class="nn">GameFramework</span><span class="p">;</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">PlayerNode</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseNode</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">TreasureNode</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseNode</span>
 <span class="p">{</span>
 <span class="k">public</span><span class="o">:</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::PlayerNode&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::TreasureNode&quot;</span><span class="p">;</span>
 
-<span class="w">    </span><span class="kt">int</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">EditHealth</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">m_health</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">int</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">GetHealth</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">m_health</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">Tick</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="n">DeltaSeconds</span><span class="p">)</span><span class="w"> </span><span class="k">override</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">DeltaSeconds</span><span class="p">;</span>
-<span class="w">        </span><span class="c1">// Player-specific logic</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="k">private</span><span class="o">:</span>
-<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">m_health</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">Coins</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="n">Claimed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
 <span class="p">};</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">MovementComponent</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">IComponent</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">SpinComponent</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseComponent</span><span class="p">,</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">ComponentCRTP</span><span class="o">&lt;</span><span class="n">SpinComponent</span><span class="o">&gt;</span>
 <span class="p">{</span>
 <span class="k">public</span><span class="o">:</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::MovementComponent&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::SpinComponent&quot;</span><span class="p">;</span>
 
-<span class="w">    </span><span class="kt">float</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">EditMaxSpeed</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">m_maxSpeed</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">float</span><span class="o">&amp;</span><span class="w"> </span><span class="nf">GetMaxSpeed</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">return</span><span class="w"> </span><span class="n">m_maxSpeed</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="kt">float</span><span class="w"> </span><span class="n">DegreesPerSecond</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">90.0f</span><span class="p">;</span>
 
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">Tick</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="n">DeltaSeconds</span><span class="p">)</span><span class="w"> </span><span class="k">override</span>
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">Tick</span><span class="p">(</span><span class="kt">float</span><span class="w"> </span><span class="n">DeltaSeconds</span><span class="p">)</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">DeltaSeconds</span><span class="p">;</span>
-<span class="w">        </span><span class="c1">// Movement logic using Owner().Borrowed()</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="w">        </span><span class="n">BaseNode</span><span class="o">*</span><span class="w"> </span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OwnerNode</span><span class="p">();</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">OwnerNode</span><span class="p">)</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
 
-<span class="k">private</span><span class="o">:</span>
-<span class="w">    </span><span class="kt">float</span><span class="w"> </span><span class="n">m_maxSpeed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">;</span>
+<span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">TransformResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">OwnerNode</span><span class="o">-&gt;</span><span class="n">Component</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">TransformResult</span><span class="p">)</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="p">;</span>
+<span class="w">        </span><span class="p">}</span>
+
+<span class="w">        </span><span class="c1">// Replace this with your actual quaternion update logic.</span>
+<span class="w">        </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">DeltaSeconds</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
 </code></pre></div>
-<h2 id="3-register-reflection-once-in-a-cpp">3. Register Reflection Once in a <code>.cpp</code><a class="headerlink" href="#3-register-reflection-once-in-a-cpp" title="Permanent link">&para;</a></h2>
-<p>Source (<code>MyGameplayTypes.cpp</code>):</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;MyGameplayTypes.h&quot;</span>
-
-<span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">PlayerNode</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">PlayerNode</span><span class="o">&gt;</span><span class="p">(</span><span class="n">PlayerNode</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
+<p>The important part is structural:</p>
+<ul>
+<li>the node carries identity and game meaning</li>
+<li>the component carries a reusable behavior</li>
+</ul>
+<h2 id="reflect-them-if-you-need-engine-features">Reflect Them If You Need Engine Features<a class="headerlink" href="#reflect-them-if-you-need-engine-features" title="Permanent link">&para;</a></h2>
+<p>If a type needs serialization, editor property inspection, replication metadata, or reflected RPC, register it.</p>
+<div class="highlight"><pre><span></span><code><span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">TreasureNode</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">TreasureNode</span><span class="o">&gt;</span><span class="p">(</span><span class="n">TreasureNode</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Base</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Health&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">PlayerNode</span><span class="o">::</span><span class="n">EditHealth</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">PlayerNode</span><span class="o">::</span><span class="n">GetHealth</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Coins&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">TreasureNode</span><span class="o">::</span><span class="n">Coins</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Claimed&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">TreasureNode</span><span class="o">::</span><span class="n">Claimed</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
 
-<span class="n">SNAPI_REFLECT_COMPONENT</span><span class="p">(</span><span class="n">MovementComponent</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">MovementComponent</span><span class="o">&gt;</span><span class="p">(</span><span class="n">MovementComponent</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;MaxSpeed&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">MovementComponent</span><span class="o">::</span><span class="n">EditMaxSpeed</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">MovementComponent</span><span class="o">::</span><span class="n">GetMaxSpeed</span><span class="p">)</span>
+<span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">SpinComponent</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">SpinComponent</span><span class="o">&gt;</span><span class="p">(</span><span class="n">SpinComponent</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;DegreesPerSecond&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">SpinComponent</span><span class="o">::</span><span class="n">DegreesPerSecond</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
 </code></pre></div>
-<p>Notes:</p>
-<ul>
-<li><code>SNAPI_REFLECT_COMPONENT</code> is an alias of <code>SNAPI_REFLECT_TYPE</code>.</li>
-<li>For components, <code>TTypeBuilder&lt;&gt;::Register()</code> auto-registers component serialization support.</li>
-</ul>
-<h2 id="4-spawn-nodes-and-add-components">4. Spawn Nodes and Add Components<a class="headerlink" href="#4-spawn-nodes-and-add-components" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="n">World</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">(</span><span class="s">&quot;GameWorld&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">LevelHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateLevel</span><span class="p">(</span><span class="s">&quot;MainLevel&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">LevelRef</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">LevelRef</span><span class="p">(</span><span class="n">LevelHandle</span><span class="p">.</span><span class="n">value</span><span class="p">());</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">PlayerHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LevelRef</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">PlayerNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Player</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">PlayerNode</span><span class="o">*&gt;</span><span class="p">(</span><span class="n">PlayerHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">());</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Player</span><span class="p">)</span>
+<h2 id="attaching-components">Attaching Components<a class="headerlink" href="#attaching-components" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">TreasureHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">TreasureNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Treasure&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">TreasureHandle</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="n">Player</span><span class="o">-&gt;</span><span class="n">EditHealth</span><span class="p">()</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">150</span><span class="p">;</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">MoveResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Player</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">MovementComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">MoveResult</span><span class="p">)</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Treasure</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">TreasureHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Treasure</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="n">MoveResult</span><span class="o">-&gt;</span><span class="n">EditMaxSpeed</span><span class="p">()</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">8.0f</span><span class="p">;</span>
-<span class="p">}</span>
-</code></pre></div>
-<h2 id="5-query-and-remove-components">5. Query and Remove Components<a class="headerlink" href="#5-query-and-remove-components" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Player</span><span class="o">-&gt;</span><span class="n">Has</span><span class="o">&lt;</span><span class="n">MovementComponent</span><span class="o">&gt;</span><span class="p">())</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">Move</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Player</span><span class="o">-&gt;</span><span class="n">Component</span><span class="o">&lt;</span><span class="n">MovementComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Move</span><span class="p">)</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="kt">float</span><span class="w"> </span><span class="n">CurrentSpeed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Move</span><span class="o">-&gt;</span><span class="n">GetMaxSpeed</span><span class="p">();</span>
-<span class="w">        </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">CurrentSpeed</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="n">Player</span><span class="o">-&gt;</span><span class="n">Remove</span><span class="o">&lt;</span><span class="n">MovementComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="c1">// Actual destruction happens at end-of-frame.</span>
-<span class="n">WorldInstance</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Treasure</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Spin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Treasure</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">SpinComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Spin</span><span class="o">-&gt;</span><span class="n">DegreesPerSecond</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">180.0f</span><span class="p">;</span>
+<span class="p">}</span>
 </code></pre></div>
-<h2 id="6-tick-order-for-node-components">6. Tick Order for Node + Components<a class="headerlink" href="#6-tick-order-for-node-components" title="Permanent link">&para;</a></h2>
-<p>For a node in an active tree:</p>
+<p>Useful helpers on <code>BaseNode</code>:</p>
+<ul>
+<li><code>Add&lt;T&gt;()</code></li>
+<li><code>Component&lt;T&gt;()</code></li>
+<li><code>Has&lt;T&gt;()</code></li>
+<li><code>Remove&lt;T&gt;()</code></li>
+</ul>
+<p>These all route through world-owned storage.</p>
+<h2 id="lifecycle-hooks">Lifecycle Hooks<a class="headerlink" href="#lifecycle-hooks" title="Permanent link">&para;</a></h2>
+<p>Nodes and components can implement:</p>
+<ul>
+<li><code>OnCreate</code></li>
+<li><code>OnDestroy</code></li>
+<li><code>PreTick</code></li>
+<li><code>Tick</code></li>
+<li><code>FixedTick</code></li>
+<li><code>LateTick</code></li>
+<li><code>PostTick</code></li>
+<li><code>EndFrame</code></li>
+<li>editor-only hooks when built with editor support</li>
+</ul>
+<p>Use them carefully.</p>
+<h3 id="oncreate-is-not-a-constructor-substitute"><code>OnCreate</code> is not a constructor substitute<a class="headerlink" href="#oncreate-is-not-a-constructor-substitute" title="Permanent link">&para;</a></h3>
+<p><code>OnCreate</code> exists because the object needs to be world-owned and registered first.</p>
+<p>That matters for:</p>
+<ul>
+<li>looking up the world</li>
+<li>adding sibling components</li>
+<li>interacting with networking or renderer state</li>
+<li>editor bootstrap deferral</li>
+</ul>
+<h3 id="oncreate-can-be-deferred"><code>OnCreate</code> can be deferred<a class="headerlink" href="#oncreate-can-be-deferred" title="Permanent link">&para;</a></h3>
+<p>This is especially important in the editor path.</p>
+<p>If your node depends on renderer viewports or editor UI state, do not assume <code>OnCreate</code> runs at the instant the C++ object was allocated. The framework can intentionally defer it until the world is actually ready.</p>
+<h2 id="activity-replication-and-destroy-state">Activity, Replication, and Destroy State<a class="headerlink" href="#activity-replication-and-destroy-state" title="Permanent link">&para;</a></h2>
+<p>Every node and component has separate concepts for:</p>
+<ul>
+<li>active or inactive execution</li>
+<li>replicated or local-only behavior</li>
+<li>pending destroy</li>
+</ul>
+<p>Those are not the same thing.</p>
+<ul>
+<li><code>Active(false)</code> stops tick-style execution.</li>
+<li><code>Replicated(true)</code> only opens the object-level replication gate.</li>
+<li><code>PendingDestroy()</code> means the object has been scheduled for cleanup.</li>
+</ul>
+<h2 id="runtime-components">Runtime Components<a class="headerlink" href="#runtime-components" title="Permanent link">&para;</a></h2>
+<p>Classic components are not the only option.</p>
+<p>If you want very dense runtime-only state, you can attach runtime ECS components through the runtime mirror.</p>
+<p>Typical reasons to use runtime components:</p>
+<ul>
+<li>thousands of lightweight simulation records</li>
+<li>explicit tick-priority ordering</li>
+<li>data that does not need the full reflected component model</li>
+</ul>
+<p>Do not reach for runtime components by default. Start with classic nodes/components first.</p>
+<h2 id="design-heuristics">Design Heuristics<a class="headerlink" href="#design-heuristics" title="Permanent link">&para;</a></h2>
+<p>Use these rules when deciding between node vs component:</p>
 <ol>
-<li><code>Node::Tick(...)</code></li>
-<li>all attached component <code>Tick(...)</code></li>
-<li>child nodes recursively</li>
+<li>If it needs its own handle and hierarchy identity, make it a node.</li>
+<li>If it is reusable behavior, make it a component.</li>
+<li>If it is world-scoped policy rather than object behavior, consider a world subsystem, gameplay service, or a special node like <code>WorldRenderSettings</code>.</li>
+<li>If it needs fixed-step, high-density runtime processing, consider a runtime component.</li>
 </ol>
-<p>Same pattern exists for <code>FixedTick</code> and <code>LateTick</code>.</p>
-<h2 id="7-replication-gate-important">7. Replication Gate (Important)<a class="headerlink" href="#7-replication-gate-important" title="Permanent link">&para;</a></h2>
-<p>Component/field replication is not automatic just because a field has replication flags.</p>
-<p>You also need:</p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>Node-&gt;Replicated(true)</code></li>
-<li><code>Component-&gt;Replicated(true)</code></li>
+<li><a href="../input/">Input System</a></li>
+<li><a href="../physics/">Physics System and Components</a></li>
+<li><a href="../reflection_serialization/">Reflection and Serialization</a></li>
 </ul>
-<p>Without those runtime flags, replication payloads for that object are skipped.</p>
-<h2 id="8-role-helpers-and-callrpc">8. Role Helpers and <code>CallRPC(...)</code><a class="headerlink" href="#8-role-helpers-and-callrpc" title="Permanent link">&para;</a></h2>
-<p>Both <code>INode</code> and <code>IComponent</code> expose:</p>
-<ul>
-<li><code>IsServer()</code></li>
-<li><code>IsClient()</code></li>
-<li><code>IsListenServer()</code></li>
-<li><code>CallRPC("ReflectedMethodName", args...)</code></li>
-</ul>
-<p>Example pattern for a server-authoritative action:</p>
-<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">WeaponComponent::StartFire</span><span class="p">()</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;StartFireServer&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span><span class="n">StartFireClient</span><span class="p">();</span>
-<span class="p">}</span>
-
-<span class="kt">void</span><span class="w"> </span><span class="nf">WeaponComponent::StartFireServer</span><span class="p">()</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;StartFireClient&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span><span class="n">StartFireClient</span><span class="p">();</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>This keeps gameplay call sites small while preserving server/client/multicast routing via reflection method flags.</p>
-<h2 id="9-built-in-physics-components">9. Built-In Physics Components<a class="headerlink" href="#9-built-in-physics-components" title="Permanent link">&para;</a></h2>
-<p>GameFramework includes physics-ready components:</p>
-<ul>
-<li><code>ColliderComponent</code><ul>
-<li>Shape and material/filter data (box/sphere/capsule, friction, restitution, layer, mask, trigger).</li>
-</ul>
-</li>
-<li><code>RigidBodyComponent</code><ul>
-<li>Creates backend body from node transform + collider settings and syncs transform each fixed tick.</li>
-</ul>
-</li>
-<li><code>CharacterMovementController</code><ul>
-<li>Movement/jump helper that drives a sibling <code>RigidBodyComponent</code> and performs grounded ray probes.</li>
-</ul>
-</li>
-</ul>
-<p>Minimal setup:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">ActorResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;PhysicsActor&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Actor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Actor</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Actor</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Collider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Actor</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">ColliderComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Collider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Shape</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="c1">// box</span>
-<span class="n">Collider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">HalfExtent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Body</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Actor</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">RigidBodyComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Body</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">BodyType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span><span class="w"> </span><span class="c1">// dynamic</span>
-<span class="n">Body</span><span class="o">-&gt;</span><span class="n">RecreateBody</span><span class="p">();</span><span class="w">              </span><span class="c1">// apply edited settings immediately</span>
-</code></pre></div>
-<p>For full physics flow (world bootstrap, stepping policy, character movement, queries/events), continue to the physics tutorials.</p>
-<h2 id="10-built-in-renderer-components">10. Built-In Renderer Components<a class="headerlink" href="#10-built-in-renderer-components" title="Permanent link">&para;</a></h2>
-<p>When renderer integration is compiled in (<code>SNAPI_GF_ENABLE_RENDERER</code>), GameFramework also provides renderer bridge components:</p>
-<ul>
-<li><code>CameraComponent</code><ul>
-<li>Owns a renderer camera and can become world active camera.</li>
-<li>Can pull pose from sibling <code>TransformComponent</code> each tick.</li>
-</ul>
-</li>
-<li><code>StaticMeshComponent</code><ul>
-<li>Loads mesh asset data and creates per-instance render-object state.</li>
-<li>Supports visibility/shadow toggles and shared material instance overrides.</li>
-</ul>
-</li>
-<li><code>SkeletalMeshComponent</code><ul>
-<li>Same asset/render-object pattern with rigid animation playback helpers.</li>
-</ul>
-</li>
-</ul>
-<p>Minimal setup:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">VisualResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;VisualActor&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Visual</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">VisualResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Visual</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="p">;</span>
-<span class="p">}</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">T</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Visual</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">T</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Mesh</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Visual</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">StaticMeshComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">MeshPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;assets/cube.obj&quot;</span><span class="p">;</span>
-<span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Visible</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Mesh</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">CastShadows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-</code></pre></div>
-<p>For renderer bootstrap, camera ownership, and the post-refactor <code>Mesh</code> vs <code>MeshRenderObject</code> model, read the renderer tutorial next.</p>
-<p>Next: <a href="../renderer/">Renderer Integration and Mesh Components</a></p>
 
 
 

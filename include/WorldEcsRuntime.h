@@ -25,26 +25,60 @@ namespace SnAPI::GameFramework
 
 class IWorld;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Access the thread-local suppression flag used to defer runtime/component `OnCreate` execution.
+ *
+ * This low-level flag is primarily for bootstrap code that needs objects to exist before
+ * their `OnCreate` hooks are allowed to run. The flag is thread-local so one thread can
+ * defer creation callbacks without affecting unrelated owner threads.
+ *
+ * @return Reference to the current thread's suppression flag.
+ *
+ * @warning Prefer `ScopedComponentOnCreateSuppression` over mutating this flag directly.
+ */
 inline bool& ComponentOnCreateSuppressionFlag()
 {
     static thread_local bool SuppressOnCreate = false;
     return SuppressOnCreate;
 }
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Check whether runtime/component `OnCreate` hooks are currently suppressed on this thread.
+ * @return `true` when newly created runtime objects should defer `OnCreate` until a later flush.
+ */
 inline bool IsComponentOnCreateSuppressed()
 {
     return ComponentOnCreateSuppressionFlag();
 }
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief RAII helper that defers runtime/component `OnCreate` hooks for the current thread.
+ *
+ * Nested scopes are supported. Destruction restores the previous suppression state rather
+ * than unconditionally setting the flag to `false`.
+ *
+ * Typical usage:
+ * - create nodes/components/runtime records during bootstrap or deserialization
+ * - initialize dependent systems
+ * - call the relevant `FlushPendingOnCreate()` API once the environment is ready
+ *
+ * Threading:
+ * - Affects only the current thread because the underlying flag is thread-local.
+ */
 class ScopedComponentOnCreateSuppression
 {
 public:
+    /** @brief Enable `OnCreate` suppression for the current thread, preserving the previous state. */
     ScopedComponentOnCreateSuppression()
         : m_previousState(ComponentOnCreateSuppressionFlag())
     {
         ComponentOnCreateSuppressionFlag() = true;
     }
 
+    /** @brief Restore the previous suppression state for the current thread. */
     ~ScopedComponentOnCreateSuppression()
     {
         ComponentOnCreateSuppressionFlag() = m_previousState;
@@ -58,10 +92,16 @@ private:
 };
 
 /**
- * @brief Runtime object contract marker for the ECS refactor path.
- * @remarks
- * Runtime node/component types are required to be non-polymorphic so hot-path
- * updates stay free of vtable dispatch.
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time contract for types that may live in the dense ECS runtime.
+ *
+ * Runtime objects are intentionally constrained:
+ * - they must be class types
+ * - they must be non-polymorphic
+ * - they must expose a static reflected name through `TTypeNameV<T>`
+ *
+ * The main design goal is hot-path storage and ticking without vtable dispatch or heap
+ * indirection per object.
  */
 template<typename T>
 concept NonPolymorphicRuntimeType =
@@ -72,174 +112,298 @@ concept NonPolymorphicRuntimeType =
     };
 
 /**
- * @brief CRTP marker for runtime ECS tickable types.
- * @tparam TDerived Concrete runtime object type.
- * @remarks
- * Kept marker-only so lifecycle hooks stay fully optional and are detected
- * directly from the concrete type.
+ * @ingroup SnAPI_GameFramework
+ * @brief Marker CRTP base for dense runtime objects that participate in the generic runtime-phase system.
+ * @tparam TDerived Concrete runtime type.
+ *
+ * The base is marker-only. It does not provide virtual hooks or storage. Lifecycle
+ * functions are discovered directly on `TDerived` via the surrounding concepts.
  */
 template<typename TDerived>
 struct TRuntimeTickCRTP
 {
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` derives from `TRuntimeTickCRTP<T>`.
+ */
 template<typename T>
 inline constexpr bool kUsesRuntimeTickCRTP = std::is_base_of_v<TRuntimeTickCRTP<T>, T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Marker CRTP base for dense runtime node records.
+ * @tparam TDerived Concrete runtime node type.
+ */
 template<typename TDerived>
 struct NodeCRTP
 {
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Marker CRTP base for dense runtime component records.
+ * @tparam TDerived Concrete runtime component type.
+ */
 template<typename TDerived>
 struct ComponentCRTP
 {
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` derives from `NodeCRTP<T>`.
+ */
 template<typename T>
 inline constexpr bool kUsesNodeCRTP = std::is_base_of_v<NodeCRTP<T>, T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` derives from `ComponentCRTP<T>`.
+ */
 template<typename T>
 inline constexpr bool kUsesComponentCRTP = std::is_base_of_v<ComponentCRTP<T>, T>;
 
 /**
- * @brief Full runtime phase contract for non-polymorphic ECS objects.
- * @remarks
- * Runtime types must use one of the runtime marker CRTP bases and provide
- * optional lifecycle hooks (`OnCreate`, `Tick`, `FixedTick`, ...).
- * Hooks are invoked only when explicitly declared on the concrete type.
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time contract for types eligible to live in `TDenseRuntimeStorage`.
+ *
+ * A valid runtime type must satisfy `NonPolymorphicRuntimeType` and opt into one of the
+ * marker CRTP families. Optional lifecycle hooks such as `OnCreate`, `Tick`,
+ * `FixedTick`, `LateTick`, and `PostTick` are then detected automatically.
  */
 template<typename T>
 concept RuntimeTickType =
     NonPolymorphicRuntimeType<T> &&
     (kUsesRuntimeTickCRTP<T> || kUsesNodeCRTP<T> || kUsesComponentCRTP<T>);
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void OnCreate(IWorld&)`.
+ */
 template<typename T>
 concept DeclaresOnCreateWithWorld =
     requires {
         { &T::OnCreate } -> std::same_as<void (T::*)(IWorld&)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void OnCreate()`.
+ */
 template<typename T>
 concept DeclaresOnCreateNoWorld =
     requires {
         { &T::OnCreate } -> std::same_as<void (T::*)()>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `OnCreate` signature.
+ */
 template<typename T>
 concept HasRuntimeOnCreatePhase = DeclaresOnCreateWithWorld<T> || DeclaresOnCreateNoWorld<T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void OnDestroy(IWorld&)`.
+ */
 template<typename T>
 concept DeclaresOnDestroyWithWorld =
     requires {
         { &T::OnDestroy } -> std::same_as<void (T::*)(IWorld&)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void OnDestroy()`.
+ */
 template<typename T>
 concept DeclaresOnDestroyNoWorld =
     requires {
         { &T::OnDestroy } -> std::same_as<void (T::*)()>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `OnDestroy` signature.
+ */
 template<typename T>
 concept HasRuntimeOnDestroyPhase = DeclaresOnDestroyWithWorld<T> || DeclaresOnDestroyNoWorld<T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void PreTick(IWorld&, float)`.
+ */
 template<typename T>
 concept DeclaresPreTickWithWorld =
     requires {
         { &T::PreTick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void PreTick(float)`.
+ */
 template<typename T>
 concept DeclaresPreTickNoWorld =
     requires {
         { &T::PreTick } -> std::same_as<void (T::*)(float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `PreTick` signature.
+ */
 template<typename T>
 concept HasRuntimePreTickPhase = DeclaresPreTickWithWorld<T> || DeclaresPreTickNoWorld<T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void Tick(IWorld&, float)`.
+ */
 template<typename T>
 concept DeclaresTickWithWorld =
     requires {
         { &T::Tick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void Tick(float)`.
+ */
 template<typename T>
 concept DeclaresTickNoWorld =
     requires {
         { &T::Tick } -> std::same_as<void (T::*)(float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `Tick` signature.
+ */
 template<typename T>
 concept HasRuntimeTickPhase = DeclaresTickWithWorld<T> || DeclaresTickNoWorld<T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void FixedTick(IWorld&, float)`.
+ */
 template<typename T>
 concept DeclaresFixedTickWithWorld =
     requires {
         { &T::FixedTick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void FixedTick(float)`.
+ */
 template<typename T>
 concept DeclaresFixedTickNoWorld =
     requires {
         { &T::FixedTick } -> std::same_as<void (T::*)(float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `FixedTick` signature.
+ */
 template<typename T>
 concept HasRuntimeFixedTickPhase = DeclaresFixedTickWithWorld<T> || DeclaresFixedTickNoWorld<T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void LateTick(IWorld&, float)`.
+ */
 template<typename T>
 concept DeclaresLateTickWithWorld =
     requires {
         { &T::LateTick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void LateTick(float)`.
+ */
 template<typename T>
 concept DeclaresLateTickNoWorld =
     requires {
         { &T::LateTick } -> std::same_as<void (T::*)(float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `LateTick` signature.
+ */
 template<typename T>
 concept HasRuntimeLateTickPhase = DeclaresLateTickWithWorld<T> || DeclaresLateTickNoWorld<T>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void PostTick(IWorld&, float)`.
+ */
 template<typename T>
 concept DeclaresPostTickWithWorld =
     requires {
         { &T::PostTick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void PostTick(float)`.
+ */
 template<typename T>
 concept DeclaresPostTickNoWorld =
     requires {
         { &T::PostTick } -> std::same_as<void (T::*)(float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `PostTick` signature.
+ */
 template<typename T>
 concept HasRuntimePostTickPhase = DeclaresPostTickWithWorld<T> || DeclaresPostTickNoWorld<T>;
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void EditorTick(IWorld&, float)`.
+ */
 template<typename T>
 concept DeclaresEditorTickWithWorld =
     requires {
         { &T::EditorTick } -> std::same_as<void (T::*)(IWorld&, float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` declares `void EditorTick(float)`.
+ */
 template<typename T>
 concept DeclaresEditorTickNoWorld =
     requires {
         { &T::EditorTick } -> std::same_as<void (T::*)(float)>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` exposes any supported `EditorTick` signature.
+ */
 template<typename T>
 concept HasRuntimeEditorTickPhase = DeclaresEditorTickWithWorld<T> || DeclaresEditorTickNoWorld<T>;
 #endif
 
 /**
- * @brief Compile-time tick priority helper.
+ * @ingroup SnAPI_GameFramework
+ * @brief Read a runtime type's compile-time tick priority.
  * @tparam TObject Runtime object type.
- * @return Tick priority (default 0 when no `kTickPriority` exists).
+ * @return `TObject::kTickPriority` when present, otherwise `0`.
+ *
+ * Lower values execute earlier because `WorldEcsRuntime` sorts tick entries in ascending
+ * priority order.
  */
 template<typename TObject>
 consteval int RuntimeTickPriority()
@@ -255,8 +419,19 @@ consteval int RuntimeTickPriority()
 }
 
 /**
- * @brief Dense runtime handle used by world-owned typed storages.
+ * @ingroup SnAPI_GameFramework
+ * @brief Generation-safe handle used by dense ECS runtime storages.
  * @tparam TObject Runtime object type.
+ *
+ * `TDenseRuntimeHandle` is the runtime-only equivalent of an engine handle:
+ * - `Id` provides stable identity across serialization-like boundaries
+ * - `StorageToken` identifies the owning dense storage instance
+ * - `Index` addresses the current slot inside that storage
+ * - `Generation` rejects stale handles after slot reuse
+ *
+ * Ownership and lifetime:
+ * - The handle is a value type and owns no object memory.
+ * - A handle remains valid only while the target slot is alive and its generation matches.
  */
 template<typename TObject>
 struct TDenseRuntimeHandle
@@ -269,16 +444,19 @@ struct TDenseRuntimeHandle
     uint32_t Index = kInvalidIndex;
     uint32_t Generation = 0;
 
+    /** @brief Return `true` when the handle carries no UUID identity. */
     bool IsNull() const noexcept
     {
         return Id.is_nil();
     }
 
+    /** @brief Return `true` when the handle contains a storage token plus slot index. */
     bool HasRuntimeKey() const noexcept
     {
         return StorageToken != kInvalidStorageToken && Index != kInvalidIndex;
     }
 
+    /** @brief Boolean test for non-null handle identity. */
     explicit operator bool() const noexcept
     {
         return !IsNull();
@@ -288,10 +466,32 @@ struct TDenseRuntimeHandle
 };
 
 /**
- * @brief Hot-path dense typed storage with generation-safe handles.
+ * @ingroup SnAPI_GameFramework
+ * @brief Dense, generation-safe storage for one runtime object type.
  * @tparam TObject Non-polymorphic runtime object type.
- * @remarks
- * Storage is contiguous by type and ticked without virtual dispatch.
+ *
+ * `TDenseRuntimeStorage` is the hot-path container behind the ECS refactor. Objects are
+ * stored contiguously in `m_denseObjects`, while stable identity is tracked through a
+ * slot table plus generation-safe handles.
+ *
+ * Core semantics:
+ * - Dense order is unstable and may change on destroy via swap-pop compaction.
+ * - UUID identity is unique within the storage.
+ * - `OnCreate` may run immediately or be deferred via `PendingOnCreate`.
+ * - `OnDestroy` runs synchronously during destroy/clear, not at a later frame boundary.
+ *
+ * Ownership and lifetime:
+ * - The storage owns all contained `TObject` instances by value.
+ * - Resolved pointers are borrowed and invalidated by any destroy or clear that moves or
+ *   erases the underlying dense array.
+ *
+ * Threading:
+ * - Main-thread only.
+ *
+ * Performance:
+ * - Handle resolution is O(1).
+ * - UUID fallback resolution is O(1) average through `m_idToSlot`.
+ * - Tick phases iterate linearly over contiguous storage.
  */
 template<RuntimeTickType TObject>
 class TDenseRuntimeStorage final
@@ -313,33 +513,60 @@ public:
 
     using Handle = TDenseRuntimeHandle<TObject>;
 
+    /**
+     * @brief Construct a storage bound to a specific storage token.
+     * @param StorageToken Storage identity used to validate handles. `0` is replaced with `1`.
+     */
     explicit TDenseRuntimeStorage(
         const uint32_t StorageToken = 1)
         : m_storageToken(StorageToken == Handle::kInvalidStorageToken ? 1u : StorageToken)
     {
     }
 
+    /** @brief Get the stable token that identifies this storage instance in handles. */
     [[nodiscard]] uint32_t StorageToken() const noexcept
     {
         return m_storageToken;
     }
 
+    /** @brief Get the current number of live runtime objects in dense storage. */
     [[nodiscard]] std::size_t Size() const noexcept
     {
         return m_denseObjects.size();
     }
 
+    /** @brief Return `true` when the storage contains no live objects. */
     [[nodiscard]] bool Empty() const noexcept
     {
         return m_denseObjects.empty();
     }
 
+    /**
+     * @brief Create a new runtime object with a generated UUID.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param Args Constructor arguments for `TObject`.
+     * @return Handle to the created object, or an error on failure.
+     */
     template<typename... TArgs>
     TExpected<Handle> Create(IWorld& WorldRef, TArgs&&... Args)
     {
         return CreateWithId(WorldRef, NewUuid(), std::forward<TArgs>(Args)...);
     }
 
+    /**
+     * @brief Create a new runtime object under an explicit UUID.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param Id Stable identity for the new object.
+     * @param Args Constructor arguments for `TObject`.
+     * @return Handle to the created object, or an error when the UUID is invalid,
+     *         duplicated, or construction fails.
+     *
+     * Semantics:
+     * - UUID collisions fail and do not overwrite an existing object.
+     * - If `OnCreate` is suppressed on the current thread, the object is marked
+     *   `PendingOnCreate` and must be flushed later.
+     * - On construction failure, slot allocation is rolled back.
+     */
     template<typename... TArgs>
     TExpected<Handle> CreateWithId(IWorld& WorldRef, const Uuid& Id, TArgs&&... Args)
     {
@@ -375,15 +602,30 @@ public:
             if (!IsComponentOnCreateSuppressed())
             {
                 InvokeOnCreate(m_denseObjects.back(), WorldRef);
+                Slot.PendingOnCreate = false;
+            }
+            else
+            {
+                Slot.PendingOnCreate = true;
             }
         }
         else
         {
             (void)WorldRef;
+            Slot.PendingOnCreate = false;
         }
         return MakeHandle(SlotIndex);
     }
 
+    /**
+     * @brief Destroy a runtime object by handle.
+     * @param WorldRef Owning world passed through to `OnDestroy` when present.
+     * @param InHandle Handle to destroy.
+     * @return `true` when the handle resolved and the object was destroyed.
+     *
+     * Destruction is immediate. Dense order may change because the last dense object is
+     * swapped into the removed slot.
+     */
     bool Destroy(IWorld& WorldRef, const Handle& InHandle)
     {
         uint32_t SlotIndex = Handle::kInvalidIndex;
@@ -396,6 +638,12 @@ public:
         return true;
     }
 
+    /**
+     * @brief Destroy a runtime object by UUID fallback lookup.
+     * @param WorldRef Owning world passed through to `OnDestroy`.
+     * @param Id UUID to destroy.
+     * @return `true` when the UUID resolved to a live object.
+     */
     bool DestroySlow(IWorld& WorldRef, const Uuid& Id)
     {
         auto It = m_idToSlot.find(Id);
@@ -414,6 +662,11 @@ public:
         return true;
     }
 
+    /**
+     * @brief Resolve a handle to a borrowed mutable object pointer.
+     * @param InHandle Handle to resolve.
+     * @return Borrowed pointer to the live object, or `nullptr` if the handle is stale.
+     */
     TObject* Resolve(const Handle& InHandle)
     {
         uint32_t SlotIndex = Handle::kInvalidIndex;
@@ -426,6 +679,7 @@ public:
         return &m_denseObjects[Slot.DenseIndex];
     }
 
+    /** @brief Const overload of `Resolve(const Handle&)`. */
     const TObject* Resolve(const Handle& InHandle) const
     {
         uint32_t SlotIndex = Handle::kInvalidIndex;
@@ -438,6 +692,12 @@ public:
         return &m_denseObjects[Slot.DenseIndex];
     }
 
+    /**
+     * @brief Resolve a UUID to a borrowed mutable object pointer.
+     * @param Id UUID to resolve.
+     * @return Borrowed pointer to the live object, or `nullptr` when missing.
+     * @note This is the slow path compared with handle resolution.
+     */
     TObject* ResolveSlowById(const Uuid& Id)
     {
         auto It = m_idToSlot.find(Id);
@@ -461,6 +721,7 @@ public:
         return &m_denseObjects[Slot.DenseIndex];
     }
 
+    /** @brief Const overload of `ResolveSlowById(const Uuid&)`. */
     const TObject* ResolveSlowById(const Uuid& Id) const
     {
         auto It = m_idToSlot.find(Id);
@@ -484,6 +745,11 @@ public:
         return &m_denseObjects[Slot.DenseIndex];
     }
 
+    /**
+     * @brief Rebuild a current handle from a UUID.
+     * @param Id UUID to resolve.
+     * @return Fresh handle for the live object, or an error when not found.
+     */
     TExpected<Handle> HandleById(const Uuid& Id) const
     {
         auto It = m_idToSlot.find(Id);
@@ -507,6 +773,11 @@ public:
         return MakeHandle(SlotIndex);
     }
 
+    /**
+     * @brief Execute the storage's `PreTick` phase across all live objects.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void PreTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         if constexpr (kHasPreTickPhase)
@@ -523,6 +794,11 @@ public:
         }
     }
 
+    /**
+     * @brief Execute the storage's `Tick` phase across all live objects.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void Tick(IWorld& WorldRef, const float DeltaSeconds)
     {
         if constexpr (kHasTickPhase)
@@ -539,6 +815,11 @@ public:
         }
     }
 
+    /**
+     * @brief Execute the storage's `FixedTick` phase across all live objects.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param DeltaSeconds Fixed-step delta in seconds.
+     */
     void FixedTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         if constexpr (kHasFixedTickPhase)
@@ -555,6 +836,11 @@ public:
         }
     }
 
+    /**
+     * @brief Execute the storage's `LateTick` phase across all live objects.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void LateTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         if constexpr (kHasLateTickPhase)
@@ -571,6 +857,11 @@ public:
         }
     }
 
+    /**
+     * @brief Execute the storage's `PostTick` phase across all live objects.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void PostTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         if constexpr (kHasPostTickPhase)
@@ -588,6 +879,11 @@ public:
     }
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /**
+     * @brief Execute the storage's editor-only tick phase across all live objects.
+     * @param WorldRef Owning world passed through to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void EditorTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         if constexpr (kHasEditorTickPhase)
@@ -605,6 +901,39 @@ public:
     }
 #endif
 
+    /**
+     * @brief Invoke any deferred `OnCreate` hooks that were suppressed during creation.
+     * @param WorldRef Owning world passed through to `OnCreate`.
+     *
+     * Ordering is slot-table order, which usually matches creation order but is not
+     * documented as a stable cross-version contract.
+     */
+    void FlushPendingOnCreate(IWorld& WorldRef)
+    {
+        if constexpr (!kHasOnCreatePhase)
+        {
+            (void)WorldRef;
+            return;
+        }
+
+        for (SlotMeta& Slot : m_slots)
+        {
+            if (!Slot.Alive || !Slot.PendingOnCreate || Slot.DenseIndex >= m_denseObjects.size())
+            {
+                continue;
+            }
+
+            InvokeOnCreate(m_denseObjects[Slot.DenseIndex], WorldRef);
+            Slot.PendingOnCreate = false;
+        }
+    }
+
+    /**
+     * @brief Destroy all live objects immediately and reset the storage to empty.
+     * @param WorldRef Owning world passed through to `OnDestroy`.
+     *
+     * This invalidates every outstanding handle and borrowed pointer.
+     */
     void Clear(IWorld& WorldRef)
     {
         if constexpr (kHasOnDestroyPhase)
@@ -631,6 +960,7 @@ public:
             Slot.Id = {};
             Slot.Alive = false;
             Slot.DenseIndex = Handle::kInvalidIndex;
+            Slot.PendingOnCreate = false;
             Slot.Generation = (Slot.Generation == std::numeric_limits<uint32_t>::max()) ? 1u : (Slot.Generation + 1u);
             if (Slot.Generation == 0u)
             {
@@ -791,6 +1121,7 @@ private:
         uint32_t Generation = 1;
         uint32_t DenseIndex = Handle::kInvalidIndex;
         bool Alive = false;
+        bool PendingOnCreate = false;
     };
 
     Handle MakeHandle(const uint32_t SlotIndex) const
@@ -842,6 +1173,7 @@ private:
         Slot.Id = Id;
         Slot.Alive = false;
         Slot.DenseIndex = Handle::kInvalidIndex;
+        Slot.PendingOnCreate = false;
         if (Slot.Generation == 0u)
         {
             Slot.Generation = 1u;
@@ -862,6 +1194,7 @@ private:
         Slot.Id = {};
         Slot.DenseIndex = Handle::kInvalidIndex;
         Slot.Alive = false;
+        Slot.PendingOnCreate = false;
         m_freeSlotIndices.push_back(SlotIndex);
     }
 
@@ -906,6 +1239,7 @@ private:
         Slot.Id = {};
         Slot.Alive = false;
         Slot.DenseIndex = Handle::kInvalidIndex;
+        Slot.PendingOnCreate = false;
         Slot.Generation = (Slot.Generation == std::numeric_limits<uint32_t>::max()) ? 1u : (Slot.Generation + 1u);
         if (Slot.Generation == 0u)
         {
@@ -922,25 +1256,52 @@ private:
     std::unordered_map<Uuid, uint32_t, UuidHash> m_idToSlot{};
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Minimal runtime-owned metadata stored for each ECS runtime node.
+ *
+ * This is the compact node-side record tracked by `WorldNodeRuntime`. Higher-level node
+ * behavior may still live elsewhere; this struct only carries the identity and flags
+ * needed by the dense runtime layer itself.
+ */
 struct RuntimeNodeRecord final : NodeCRTP<RuntimeNodeRecord>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RuntimeNodeRecord";
 
-    std::string Name{"Node"};
-    TypeId Type{};
-    bool Active = true;
-    bool Replicated = false;
+    std::string Name{"Node"}; /**< @brief Debug/editor-facing node label. */
+    TypeId Type{}; /**< @brief Reflected runtime node type. */
+    bool Active = true; /**< @brief Runtime active flag available to higher-level systems. */
+    bool Replicated = false; /**< @brief Replication intent flag for networking layers. */
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Typed handle alias for runtime nodes stored in `WorldNodeRuntime`.
+ */
 using RuntimeNodeHandle = TDenseRuntimeHandle<RuntimeNodeRecord>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Minimal marker record used to type-erase runtime component handles.
+ */
 struct RuntimeComponentRecord final
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RuntimeComponentRecord";
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Type-erased dense handle used for runtime components attached to nodes.
+ */
 using RuntimeComponentHandle = TDenseRuntimeHandle<RuntimeComponentRecord>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Convert a typed dense runtime handle into the generic runtime-component handle form.
+ * @tparam TObject Concrete runtime component type.
+ * @param InHandle Typed handle to convert.
+ * @return Handle with identical identity fields but erased component type.
+ */
 template<typename TObject>
 RuntimeComponentHandle ToRuntimeComponentHandle(const TDenseRuntimeHandle<TObject>& InHandle)
 {
@@ -951,6 +1312,16 @@ RuntimeComponentHandle ToRuntimeComponentHandle(const TDenseRuntimeHandle<TObjec
         .Generation = InHandle.Generation};
 }
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Reinterpret a generic runtime-component handle as a typed dense handle.
+ * @tparam TObject Concrete runtime component type expected by the caller.
+ * @param InHandle Generic runtime-component handle.
+ * @return Typed handle carrying the same identity fields.
+ *
+ * This conversion does not validate that the handle really points at storage for
+ * `TObject`. Callers are expected to pair it with a known component type.
+ */
 template<typename TObject>
 TDenseRuntimeHandle<TObject> ToTypedRuntimeHandle(const RuntimeComponentHandle& InHandle)
 {
@@ -961,29 +1332,68 @@ TDenseRuntimeHandle<TObject> ToTypedRuntimeHandle(const RuntimeComponentHandle& 
         .Generation = InHandle.Generation};
 }
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Local or world transform used by the dense runtime node hierarchy.
+ *
+ * Units and coordinate space:
+ * - `Position` uses the same world-space units as the rest of GameFramework.
+ * - `Rotation` is a quaternion.
+ * - `Scale` is component-wise relative scale.
+ */
 struct RuntimeNodeTransform
 {
-    Vec3 Position{};
-    Quat Rotation = Quat::Identity();
-    Vec3 Scale{1.0f, 1.0f, 1.0f};
+    Vec3 Position{}; /**< @brief Translation in local or world space, depending on the API. */
+    Quat Rotation = Quat::Identity(); /**< @brief Orientation quaternion. */
+    Vec3 Scale{1.0f, 1.0f, 1.0f}; /**< @brief Component-wise scale. */
 };
 
 /**
- * @brief World-owned dense hierarchy runtime for nodes.
- * @remarks
- * This is the first replacement slice for `Level` ownership semantics.
- * Node identity + hierarchy are centralized under `IWorld`.
+ * @ingroup SnAPI_GameFramework
+ * @brief Dense hierarchy runtime that owns runtime nodes, parent/child links, and cached transforms.
+ *
+ * `WorldNodeRuntime` is the node-side half of the ECS runtime refactor. It centralizes:
+ * - runtime node identity and metadata
+ * - parent/child hierarchy links
+ * - root tracking
+ * - local and cached world transforms
+ *
+ * Core semantics:
+ * - Handles are generation-safe and become invalid once a node slot is reused.
+ * - Root membership is maintained automatically by attach/detach operations.
+ * - World transforms are cached and recomputed lazily when a subtree is marked dirty.
+ * - Destroying a node destroys its entire subtree iteratively in child-first order.
+ *
+ * Threading:
+ * - Main-thread only.
  */
 class WorldNodeRuntime final
 {
 public:
     using Handle = RuntimeNodeHandle;
 
+    /**
+     * @brief Create a runtime node with a generated UUID.
+     * @param WorldRef Owning world passed to runtime lifecycle hooks.
+     * @param Name Debug/editor-facing node name.
+     * @param Type Reflected runtime node type.
+     * @return Handle to the new node, or an error on failure.
+     */
     TExpected<Handle> CreateNode(IWorld& WorldRef, std::string Name, const TypeId& Type)
     {
         return CreateNodeWithId(WorldRef, NewUuid(), std::move(Name), Type);
     }
 
+    /**
+     * @brief Create a runtime node with an explicit UUID.
+     * @param WorldRef Owning world passed to runtime lifecycle hooks.
+     * @param Id Stable node identity.
+     * @param Name Debug/editor-facing node name.
+     * @param Type Reflected runtime node type.
+     * @return Handle to the new node, or an error when creation fails.
+     *
+     * Newly created nodes start as roots with no parent and no explicit local transform.
+     */
     TExpected<Handle> CreateNodeWithId(IWorld& WorldRef, const Uuid& Id, std::string Name, const TypeId& Type)
     {
         if (Type == TypeId{})
@@ -1017,6 +1427,12 @@ public:
         return CreatedHandle;
     }
 
+    /**
+     * @brief Destroy a runtime node and all descendants.
+     * @param WorldRef Owning world passed to runtime lifecycle hooks.
+     * @param NodeHandle Root of the subtree to destroy.
+     * @return Success or an error when the handle is invalid.
+     */
     Result DestroyNode(IWorld& WorldRef, const Handle NodeHandle)
     {
         if (NodeHandle.IsNull())
@@ -1027,6 +1443,13 @@ public:
         return DestroyNodeIterative(WorldRef, NodeHandle);
     }
 
+    /**
+     * @brief Attach a child node under a parent node.
+     * @param ParentHandle Parent runtime node.
+     * @param ChildHandle Child runtime node.
+     * @return Success or an error when handles are invalid, the child already has a
+     *         parent, or the operation would create a cycle.
+     */
     Result AttachChild(const Handle ParentHandle, const Handle ChildHandle)
     {
         if (ParentHandle.IsNull() || ChildHandle.IsNull())
@@ -1085,6 +1508,11 @@ public:
         return Ok();
     }
 
+    /**
+     * @brief Detach a node from its current parent, promoting it to a root.
+     * @param ChildHandle Child runtime node to detach.
+     * @return Success or an error when the handle is invalid.
+     */
     Result DetachChild(const Handle ChildHandle)
     {
         if (ChildHandle.IsNull())
@@ -1116,21 +1544,29 @@ public:
         return Ok();
     }
 
+    /** @brief Resolve a runtime node handle to borrowed mutable node metadata. */
     [[nodiscard]] RuntimeNodeRecord* Resolve(const Handle NodeHandle)
     {
         return m_nodes.Resolve(NodeHandle);
     }
 
+    /** @brief Const overload of `Resolve(const Handle)`. */
     [[nodiscard]] const RuntimeNodeRecord* Resolve(const Handle NodeHandle) const
     {
         return m_nodes.Resolve(NodeHandle);
     }
 
+    /** @brief Rebuild a current runtime node handle from a UUID. */
     [[nodiscard]] TExpected<Handle> HandleById(const Uuid& Id) const
     {
         return m_nodes.HandleById(Id);
     }
 
+    /**
+     * @brief Get the parent handle of a runtime node.
+     * @param ChildHandle Child runtime node.
+     * @return Parent handle when the link is valid, otherwise a null handle.
+     */
     [[nodiscard]] Handle Parent(const Handle ChildHandle) const
     {
         const HierarchyEntry* ChildState = EntryForHandle(ChildHandle);
@@ -1143,6 +1579,11 @@ public:
         return EntryForHandle(ParentHandle) ? ParentHandle : Handle{};
     }
 
+    /**
+     * @brief Collect the current live children of a parent node.
+     * @param ParentHandle Parent runtime node.
+     * @return Vector of live child handles in stored child order.
+     */
     [[nodiscard]] std::vector<Handle> Children(const Handle ParentHandle) const
     {
         const HierarchyEntry* ParentState = EntryForHandle(ParentHandle);
@@ -1159,6 +1600,12 @@ public:
         return Result;
     }
 
+    /**
+     * @brief Visit each live child handle of a parent node.
+     * @tparam TVisitor Callable invocable as `Visitor(Handle)`.
+     * @param ParentHandle Parent runtime node.
+     * @param Visitor Callback invoked for each currently live child.
+     */
     template<typename TVisitor>
         requires std::invocable<TVisitor, Handle>
     void ForEachChild(const Handle ParentHandle, TVisitor&& Visitor) const
@@ -1178,16 +1625,27 @@ public:
         }
     }
 
+    /** @brief Borrow the current root-handle list. */
     [[nodiscard]] const std::vector<Handle>& Roots() const
     {
         return m_roots;
     }
 
+    /** @brief Get the number of live runtime nodes. */
     [[nodiscard]] std::size_t Size() const
     {
         return m_nodes.Size();
     }
 
+    /**
+     * @brief Assign an explicit local transform to a runtime node.
+     * @param NodeHandle Target runtime node.
+     * @param LocalTransform Local transform relative to the parent.
+     * @return `true` when the node exists and the transform was stored.
+     *
+     * The input rotation is normalized before storage. The entire subtree is marked dirty
+     * so cached world transforms will be recomputed lazily.
+     */
     bool SetLocalTransform(const Handle NodeHandle, const RuntimeNodeTransform& LocalTransform)
     {
         if (!m_nodes.Resolve(NodeHandle))
@@ -1207,6 +1665,14 @@ public:
         return true;
     }
 
+    /**
+     * @brief Remove a node's explicit local transform.
+     * @param NodeHandle Target runtime node.
+     * @return `true` when the node exists.
+     *
+     * Clearing a local transform means the node contributes no authored transform of its
+     * own; world transform queries may then inherit only ancestor transforms.
+     */
     bool ClearLocalTransform(const Handle NodeHandle)
     {
         if (!m_nodes.Resolve(NodeHandle))
@@ -1231,6 +1697,12 @@ public:
         return true;
     }
 
+    /**
+     * @brief Read the stored local transform for a node.
+     * @param NodeHandle Target runtime node.
+     * @param OutTransform Receives the local transform on success. Reset to identity on entry.
+     * @return `true` when the node has an explicit local transform.
+     */
     bool TryGetLocalTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform) const
     {
         OutTransform = IdentityTransform();
@@ -1250,6 +1722,15 @@ public:
         return true;
     }
 
+    /**
+     * @brief Compute or fetch the cached world transform for a node.
+     * @param NodeHandle Target runtime node.
+     * @param OutTransform Receives the computed world transform. Reset to identity on entry.
+     * @return `true` when the node has a world transform to report.
+     *
+     * Returns `false` both for invalid nodes and for valid nodes that neither define a
+     * local transform nor inherit one from an ancestor.
+     */
     bool TryGetWorldTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform)
     {
         OutTransform = IdentityTransform();
@@ -1261,6 +1742,12 @@ public:
         return HasTransform;
     }
 
+    /**
+     * @brief Compute the world transform of a node's parent.
+     * @param NodeHandle Child runtime node.
+     * @param OutTransform Receives the parent world transform.
+     * @return `true` when the node has a parent and that parent has a world transform.
+     */
     bool TryGetParentWorldTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform)
     {
         OutTransform = IdentityTransform();
@@ -1283,6 +1770,15 @@ public:
         return HasTransform;
     }
 
+    /**
+     * @brief Set a node's world transform by converting it into local space relative to the parent.
+     * @param NodeHandle Target runtime node.
+     * @param WorldTransform Desired world-space transform.
+     * @return `true` when the node exists and the local transform was updated.
+     *
+     * Parent scale is inverted with a safety threshold, so near-zero parent scale axes
+     * collapse to `0` rather than producing infinities.
+     */
     bool TrySetWorldTransform(const Handle NodeHandle, const RuntimeNodeTransform& WorldTransform)
     {
         if (NodeHandle.IsNull() || !m_nodes.Resolve(NodeHandle))
@@ -1301,6 +1797,10 @@ public:
         return SetLocalTransform(NodeHandle, Local);
     }
 
+    /**
+     * @brief Destroy all runtime nodes and reset the hierarchy runtime to empty.
+     * @param WorldRef Owning world passed to runtime lifecycle hooks.
+     */
     void Clear(IWorld& WorldRef)
     {
         m_hierarchyBySlot.clear();
@@ -1658,25 +2158,64 @@ private:
 };
 
 /**
- * @brief World-owned typed storage registry for ECS runtime objects.
- * @remarks
- * Hot-path updates avoid virtual dispatch. Type erasure is reserved for cold
- * reflection/serialization style access.
+ * @ingroup SnAPI_GameFramework
+ * @brief World-owned orchestration layer for dense runtime nodes and typed runtime component storages.
+ *
+ * `WorldEcsRuntime` is the top-level container that ties together:
+ * - `WorldNodeRuntime` for runtime node identity and hierarchy
+ * - lazily created `TDenseRuntimeStorage<T>` instances for concrete runtime types
+ * - one-component-per-type attachments from runtime nodes to runtime components
+ * - globally ordered tick dispatch by compile-time priority
+ *
+ * Core semantics:
+ * - Typed `Storage<T>()` creation is lazy and also registers tick dispatch for `T` when
+ *   it exposes any runtime tick phase.
+ * - Tick order is ascending `RuntimeTickPriority<T>()`; ties keep storage creation order.
+ * - The typed `AddComponent<T>()` path can create storage on demand.
+ * - The dynamic `AddComponent(TypeId)` path only works for types whose storage model has
+ *   already been created.
+ * - `FlushPendingOnCreate()` iterates an `unordered_map`, so inter-type flush order is
+ *   intentionally unspecified.
+ *
+ * Threading:
+ * - Main-thread only.
  */
 class WorldEcsRuntime final
 {
 public:
+    /**
+     * @brief Minimal cold-path interface for type-erased runtime storages.
+     *
+     * This interface exists for reflection, serialization, and dynamic component APIs.
+     * Hot-path ticking continues to operate through typed storage pointers.
+     */
     class IErasedStorage
     {
     public:
+        /** @brief Virtual destructor. */
         virtual ~IErasedStorage() = default;
+        /** @brief Get the reflected type stored by this erased storage. */
         [[nodiscard]] virtual TypeId Type() const = 0;
+        /** @brief Get the current live object count. */
         [[nodiscard]] virtual std::size_t Size() const = 0;
+        /** @brief Resolve an object by UUID to a borrowed mutable pointer. */
         [[nodiscard]] virtual void* ResolveRaw(const Uuid& Id) = 0;
+        /** @brief Resolve an object by UUID to a borrowed const pointer. */
         [[nodiscard]] virtual const void* ResolveRaw(const Uuid& Id) const = 0;
+        /** @brief Destroy an object by UUID. */
         virtual bool DestroyById(IWorld& WorldRef, const Uuid& Id) = 0;
     };
 
+    /**
+     * @brief Get or lazily create the typed storage for `TObject`.
+     * @tparam TObject Runtime object type.
+     * @return Reference to the owned typed storage.
+     *
+     * The first call also:
+     * - acquires a unique storage token
+     * - creates the erased storage model
+     * - registers tick dispatch when the type exposes any runtime tick phase
+     */
     template<RuntimeTickType TObject>
     TDenseRuntimeStorage<TObject>& Storage()
     {
@@ -1698,6 +2237,11 @@ public:
         return *TypedStorage;
     }
 
+    /**
+     * @brief Find an existing typed storage without creating one.
+     * @tparam TObject Runtime object type.
+     * @return Pointer to the storage, or `nullptr` when no storage has been created yet.
+     */
     template<RuntimeTickType TObject>
     TDenseRuntimeStorage<TObject>* FindStorage()
     {
@@ -1710,6 +2254,7 @@ public:
         return nullptr;
     }
 
+    /** @brief Const overload of `FindStorage<TObject>()`. */
     template<RuntimeTickType TObject>
     const TDenseRuntimeStorage<TObject>* FindStorage() const
     {
@@ -1722,6 +2267,7 @@ public:
         return nullptr;
     }
 
+    /** @brief Find an existing erased storage by reflected type id. */
     [[nodiscard]] IErasedStorage* FindErased(const TypeId& Type)
     {
         if (auto It = m_storages.find(Type); It != m_storages.end())
@@ -1731,6 +2277,7 @@ public:
         return nullptr;
     }
 
+    /** @brief Const overload of `FindErased(const TypeId&)`. */
     [[nodiscard]] const IErasedStorage* FindErased(const TypeId& Type) const
     {
         if (auto It = m_storages.find(Type); It != m_storages.end())
@@ -1740,16 +2287,27 @@ public:
         return nullptr;
     }
 
+    /** @brief Access the world-owned runtime node hierarchy. */
     [[nodiscard]] WorldNodeRuntime& Nodes()
     {
         return m_nodeRuntime;
     }
 
+    /** @brief Const access to the world-owned runtime node hierarchy. */
     [[nodiscard]] const WorldNodeRuntime& Nodes() const
     {
         return m_nodeRuntime;
     }
 
+    /**
+     * @brief Create and attach a typed runtime component to a runtime node.
+     * @tparam TObject Runtime component type.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param Owner Runtime node that will own the component.
+     * @param Args Constructor arguments for `TObject`.
+     * @return Typed runtime-component handle, or an error when the node is invalid or
+     *         already owns that component type.
+     */
     template<RuntimeTickType TObject, typename... TArgs>
     TExpected<TDenseRuntimeHandle<TObject>> AddComponent(IWorld& WorldRef,
                                                          const RuntimeNodeHandle Owner,
@@ -1779,6 +2337,15 @@ public:
         return *CreateResult;
     }
 
+    /**
+     * @brief Create and attach a typed runtime component under an explicit UUID.
+     * @tparam TObject Runtime component type.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param Owner Runtime node that will own the component.
+     * @param Id Stable component identity.
+     * @param Args Constructor arguments for `TObject`.
+     * @return Typed runtime-component handle, or an error on failure.
+     */
     template<RuntimeTickType TObject, typename... TArgs>
     TExpected<TDenseRuntimeHandle<TObject>> AddComponentWithId(IWorld& WorldRef,
                                                                const RuntimeNodeHandle Owner,
@@ -1809,6 +2376,7 @@ public:
         return *CreateResult;
     }
 
+    /** @brief Resolve a typed runtime component attached to a node. */
     template<RuntimeTickType TObject>
     TObject* Component(const RuntimeNodeHandle Owner)
     {
@@ -1835,6 +2403,7 @@ public:
         return TypedStorage->Resolve(ToTypedRuntimeHandle<TObject>(GenericHandle));
     }
 
+    /** @brief Const overload of `Component<TObject>(...)`. */
     template<RuntimeTickType TObject>
     const TObject* Component(const RuntimeNodeHandle Owner) const
     {
@@ -1861,6 +2430,16 @@ public:
         return TypedStorage->Resolve(ToTypedRuntimeHandle<TObject>(GenericHandle));
     }
 
+    /**
+     * @brief Remove a typed runtime component from a node.
+     * @tparam TObject Runtime component type.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param Owner Runtime node that owns the component.
+     * @return `true` when the underlying typed storage destroyed the component.
+     *
+     * @warning Current behavior removes the node-to-component attachment record once it
+     *          is found, even if the typed storage destroy path reports failure.
+     */
     template<RuntimeTickType TObject>
     bool RemoveComponent(IWorld& WorldRef, const RuntimeNodeHandle Owner)
     {
@@ -1887,6 +2466,17 @@ public:
         return Destroyed;
     }
 
+    /**
+     * @brief Dynamically create and attach a runtime component by reflected type id.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param Owner Runtime node that will own the component.
+     * @param Type Reflected component type.
+     * @return Generic runtime-component handle, or an error on failure.
+     *
+     * Unlike the typed overload, this path does not create a storage model implicitly.
+     * The target storage must already exist, usually because `Storage<T>()` was created
+     * earlier for that runtime type.
+     */
     TExpected<RuntimeComponentHandle> AddComponent(IWorld& WorldRef,
                                                    const RuntimeNodeHandle Owner,
                                                    const TypeId& Type)
@@ -1894,6 +2484,14 @@ public:
         return AddComponentWithId(WorldRef, Owner, Type, {});
     }
 
+    /**
+     * @brief Dynamic overload of `AddComponent(...)` with explicit component UUID.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param Owner Runtime node that will own the component.
+     * @param Type Reflected component type.
+     * @param Id Explicit component UUID. A nil UUID requests auto-generation.
+     * @return Generic runtime-component handle, or an error on failure.
+     */
     TExpected<RuntimeComponentHandle> AddComponentWithId(IWorld& WorldRef,
                                                          const RuntimeNodeHandle Owner,
                                                          const TypeId& Type,
@@ -1932,6 +2530,16 @@ public:
         return *CreateResult;
     }
 
+    /**
+     * @brief Remove a dynamically addressed runtime component from a node.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param Owner Runtime node that owns the component.
+     * @param Type Reflected component type.
+     * @return Success when the backing storage destroy path succeeded, otherwise an error.
+     *
+     * @warning As with the typed overload, the node attachment record is removed even if
+     *          the underlying storage destroy path fails.
+     */
     Result RemoveComponent(IWorld& WorldRef,
                            const RuntimeNodeHandle Owner,
                            const TypeId& Type)
@@ -1972,12 +2580,19 @@ public:
         return Destroyed ? Ok() : std::unexpected(MakeError(EErrorCode::NotFound, "Runtime component not found"));
     }
 
+    /** @brief Return `true` when a runtime node currently owns a component of the given reflected type. */
     [[nodiscard]] bool HasComponent(const RuntimeNodeHandle Owner, const TypeId& Type) const
     {
         const NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
         return Attachment && FindNodeComponentIndex(*Attachment, Type).has_value();
     }
 
+    /**
+     * @brief Fetch the generic runtime-component handle attached to a node for a specific reflected type.
+     * @param Owner Runtime node owner.
+     * @param Type Reflected component type.
+     * @return Generic runtime-component handle, or an error when the attachment is absent.
+     */
     [[nodiscard]] TExpected<RuntimeComponentHandle> ComponentHandle(const RuntimeNodeHandle Owner,
                                                                     const TypeId& Type) const
     {
@@ -1996,6 +2611,13 @@ public:
         return Attachment->Components[*LinkIndex].Handle;
     }
 
+    /**
+     * @brief Resolve a generic runtime-component handle to a raw mutable pointer.
+     * @param Handle Generic runtime-component handle.
+     * @param Type Reflected component type expected by the caller.
+     * @return Borrowed pointer to the live component, or `nullptr` when the handle/type
+     *         pair does not resolve.
+     */
     [[nodiscard]] void* ResolveComponentRaw(const RuntimeComponentHandle Handle, const TypeId& Type)
     {
         if (Handle.IsNull() || Type == TypeId{})
@@ -2017,6 +2639,7 @@ public:
         return nullptr;
     }
 
+    /** @brief Const overload of `ResolveComponentRaw(...)`. */
     [[nodiscard]] const void* ResolveComponentRaw(const RuntimeComponentHandle Handle, const TypeId& Type) const
     {
         if (Handle.IsNull() || Type == TypeId{})
@@ -2038,6 +2661,14 @@ public:
         return nullptr;
     }
 
+    /**
+     * @brief Destroy a runtime node subtree and all runtime components attached within that subtree.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param RootHandle Root of the subtree to destroy.
+     * @return Success or an error when the root handle is invalid.
+     *
+     * Components are destroyed child-first before the node hierarchy itself is removed.
+     */
     Result DestroyRuntimeNode(IWorld& WorldRef, const RuntimeNodeHandle RootHandle)
     {
         if (RootHandle.IsNull())
@@ -2076,6 +2707,15 @@ public:
         return m_nodeRuntime.DestroyNode(WorldRef, RootHandle);
     }
 
+    /**
+     * @brief Execute variable-step runtime phases across all registered storages.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     *
+     * Per-storage execution order is ascending runtime tick priority, then storage
+     * creation order for ties. Within a storage, phases execute as `PreTick`, `Tick`,
+     * `PostTick`.
+     */
     void Tick(IWorld& WorldRef, const float DeltaSeconds)
     {
         for (const TickEntry& Entry : m_tickEntries)
@@ -2096,6 +2736,11 @@ public:
     }
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /**
+     * @brief Execute editor-only runtime phases across all registered storages.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void EditorTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         for (const TickEntry& Entry : m_tickEntries)
@@ -2108,6 +2753,11 @@ public:
     }
 #endif
 
+    /**
+     * @brief Execute fixed-step runtime phases across all registered storages.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param DeltaSeconds Fixed-step delta in seconds.
+     */
     void FixedTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         for (const TickEntry& Entry : m_tickEntries)
@@ -2119,6 +2769,11 @@ public:
         }
     }
 
+    /**
+     * @brief Execute late runtime phases across all registered storages.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     * @param DeltaSeconds Variable-step delta in seconds.
+     */
     void LateTick(IWorld& WorldRef, const float DeltaSeconds)
     {
         for (const TickEntry& Entry : m_tickEntries)
@@ -2130,6 +2785,28 @@ public:
         }
     }
 
+    /**
+     * @brief Flush deferred `OnCreate` hooks across all storages.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     *
+     * @warning Cross-storage flush order is unspecified because storages are traversed
+     *          through an `unordered_map`.
+     */
+    void FlushPendingOnCreate(IWorld& WorldRef)
+    {
+        for (auto& [_, StorageModel] : m_storages)
+        {
+            if (StorageModel)
+            {
+                StorageModel->FlushPendingOnCreate(WorldRef);
+            }
+        }
+    }
+
+    /**
+     * @brief Destroy all runtime components and nodes and reset the ECS runtime to empty.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     */
     void Clear(IWorld& WorldRef)
     {
         for (const NodeComponentAttachment& Attachment : m_nodeComponentsBySlot)
@@ -2308,6 +2985,7 @@ private:
     public:
         [[nodiscard]] virtual uint32_t StorageToken() const = 0;
         [[nodiscard]] virtual TExpected<RuntimeComponentHandle> CreateDefault(IWorld& WorldRef, const Uuid* ExplicitId) = 0;
+        virtual void FlushPendingOnCreate(IWorld& WorldRef) = 0;
         virtual bool DestroyByRuntimeHandle(IWorld& WorldRef, RuntimeComponentHandle Handle) = 0;
         [[nodiscard]] virtual void* ResolveRawByRuntimeHandle(RuntimeComponentHandle Handle) = 0;
         [[nodiscard]] virtual const void* ResolveRawByRuntimeHandle(RuntimeComponentHandle Handle) const = 0;
@@ -2378,6 +3056,11 @@ private:
                 }
                 return ToRuntimeComponentHandle(*CreateResult);
             }
+        }
+
+        void FlushPendingOnCreate(IWorld& WorldRef) override
+        {
+            TypedStorage.FlushPendingOnCreate(WorldRef);
         }
 
         bool DestroyByRuntimeHandle(IWorld& WorldRef, const RuntimeComponentHandle Handle) override

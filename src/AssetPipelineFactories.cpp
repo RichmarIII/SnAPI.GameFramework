@@ -680,10 +680,6 @@ protected:
 
 } // namespace
 
-/**
- * @brief Register GameFramework payload serializers with the AssetPipeline registry.
- * @param Registry Payload registry.
- */
 void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Registry)
 {
     Registry.Register(CreateNodePayloadSerializer());
@@ -699,10 +695,6 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
     Registry.Register(CreateSkeletalMeshSourcePayloadSerializer());
 }
 
-/**
- * @brief Register GameFramework runtime factories with the AssetManager.
- * @param Manager Asset manager.
- */
 void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manager)
 {
     Manager.RegisterPayloadMigration(PayloadNode(), 1u, NodeSerializer::kSchemaVersion, MigrateNodePayloadBaseNodeName);

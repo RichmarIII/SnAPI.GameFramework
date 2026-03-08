@@ -1,5 +1,16 @@
 #pragma once
 
+/**
+ * @file BaseNode.inl
+ * @ingroup SnAPI_GameFramework
+ * @brief Inline/template definitions for the runtime-component bridge on `BaseNode`.
+ *
+ * These helpers implement the modern ECS-runtime-backed node/component API:
+ * - typed component add/query/remove convenience on `BaseNode`
+ * - synchronization between dense runtime component storage and legacy node-side caches
+ * - object-registry registration for runtime-owned components
+ */
+
 #include <type_traits>
 
 #include "Assert.h"
@@ -14,6 +25,15 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+/**
+ * @brief Mirror a newly attached runtime component into the node's legacy component caches.
+ * @param Node Owning node to update.
+ * @param Type Reflected component type.
+ * @param ComponentPtr Borrowed component pointer for special-case cache updates.
+ *
+ * This updates the node-side component bit mask, reflected type list, storage-cache
+ * slots, and relevance pointer when the component is a `RelevanceComponent`.
+ */
 inline void RegisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type, void* ComponentPtr)
 {
     const uint32_t TypeIndex = ComponentTypeRegistry::TypeIndex(Type);
@@ -63,6 +83,14 @@ inline void RegisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type, v
     }
 }
 
+/**
+ * @brief Remove a runtime component from the node's legacy component caches.
+ * @param Node Owning node to update.
+ * @param Type Reflected component type being detached.
+ *
+ * This clears the component mask bit, removes the reflected type entry, erases the
+ * parallel storage-cache entry, and resets the relevance cache when applicable.
+ */
 inline void UnregisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type)
 {
     const uint32_t TypeIndex = ComponentTypeRegistry::TypeIndex(Type);
@@ -99,6 +127,17 @@ inline void UnregisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type)
     }
 }
 
+/**
+ * @brief Initialize legacy `BaseComponent` state for a newly created dense runtime component.
+ * @tparam TComponent Concrete runtime component type.
+ * @param Node Owning node.
+ * @param Handle Dense runtime-component handle.
+ * @param Component Newly created component instance.
+ *
+ * When `TComponent` derives from `BaseComponent`, this bridges the dense runtime record
+ * back into the legacy object-facing fields and registers the component in
+ * `ObjectRegistry`.
+ */
 template<RuntimeTickType TComponent>
 void InitializeRuntimeComponentState(BaseNode& Node,
                                      const TDenseRuntimeHandle<TComponent>& Handle,

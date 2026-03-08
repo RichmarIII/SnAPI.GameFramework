@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -484,6 +545,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -491,7 +608,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -600,10 +717,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-accessing-the-scene-safely" class="md-nav__link">
+  <a href="#1-the-scene-is-borrowed-from-physicssystem" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Accessing the Scene Safely
+        1. The Scene Is Borrowed From PhysicsSystem
       
     </span>
   </a>
@@ -611,10 +728,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-raycast-example" class="md-nav__link">
+  <a href="#2-queries-live-on-the-scene" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Raycast Example
+        2. Queries Live On The Scene
       
     </span>
   </a>
@@ -622,10 +739,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-sweep-and-overlap-patterns" class="md-nav__link">
+  <a href="#3-use-queries-for-gameplay-decisions" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Sweep and Overlap Patterns
+        3. Use Queries For Gameplay Decisions
       
     </span>
   </a>
@@ -633,10 +750,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-draining-collision-and-trigger-events" class="md-nav__link">
+  <a href="#4-event-drain-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Draining Collision and Trigger Events
+        4. Event Drain Flow
       
     </span>
   </a>
@@ -644,10 +761,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-backend-routing-and-couplings" class="md-nav__link">
+  <a href="#5-listener-based-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Backend Routing and Couplings
+        5. Listener-Based Flow
       
     </span>
   </a>
@@ -655,10 +772,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-manual-step-mode-for-custom-pipelines" class="md-nav__link">
+  <a href="#6-query-availability-in-editor-worlds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Manual Step Mode for Custom Pipelines
+        6. Query Availability In Editor Worlds
       
     </span>
   </a>
@@ -666,32 +783,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-threading-and-performance-guidance" class="md-nav__link">
+  <a href="#7-practical-guidance" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Threading and Performance Guidance
+        7. Practical Guidance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Practical Guidance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#use-explicit-listeners-for-long-lived-systems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use explicit listeners for long-lived systems
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#8-common-pitfalls" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#use-drainevents-for-frame-local-consumers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8. Common Pitfalls
+        Use DrainEvents(...) for frame-local consumers
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#9-validation-checklist" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#do-not-confuse-event-drain-with-backend-polling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        9. Validation Checklist
+        Do not confuse event drain with backend polling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-read-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What To Read Next
       
     </span>
   </a>
@@ -777,7 +922,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -842,6 +987,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1038,236 +1552,92 @@
 
 
 <h1 id="physics-queries-and-events">Physics Queries and Events<a class="headerlink" href="#physics-queries-and-events" title="Permanent link">&para;</a></h1>
-<p>This page covers the direct-physics API path for advanced gameplay:</p>
-<ol>
-<li>raycasts, sweeps, overlaps</li>
-<li>contact/trigger event draining</li>
-<li>backend routing and domain couplings</li>
-<li>performance and threading patterns</li>
-</ol>
-<p>Use this page after <a href="../physics/">Physics System and Components</a>.</p>
-<h2 id="1-accessing-the-scene-safely">1. Accessing the Scene Safely<a class="headerlink" href="#1-accessing-the-scene-safely" title="Permanent link">&para;</a></h2>
-<p><code>World::Physics()</code> gives access to the adapter and scene pointer:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Scene</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldRef</span><span class="p">.</span><span class="n">Physics</span><span class="p">().</span><span class="n">Scene</span><span class="p">();</span>
+<p>Simulation is only half of the physics story. The other half is asking questions and reacting to events.</p>
+<p>The world-owned <code>PhysicsSystem</code> gives you both.</p>
+<h2 id="1-the-scene-is-borrowed-from-physicssystem">1. The Scene Is Borrowed From <code>PhysicsSystem</code><a class="headerlink" href="#1-the-scene-is-borrowed-from-physicssystem" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Scene</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">Physics</span><span class="p">().</span><span class="n">Scene</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Scene</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="p">;</span><span class="w"> </span><span class="c1">// physics not initialized</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>From there, use domain interfaces:</p>
+<p>That pointer is borrowed and only valid while the physics system remains initialized.</p>
+<h2 id="2-queries-live-on-the-scene">2. Queries Live On The Scene<a class="headerlink" href="#2-queries-live-on-the-scene" title="Permanent link">&para;</a></h2>
+<p>The exact query domain is exposed by the physics backend scene. In practice, this is where raycasts, sweeps, overlaps, and other scene queries live.</p>
+<p>The GameFramework-side rule is simple:</p>
 <ul>
-<li><code>Scene-&gt;Rigid()</code></li>
-<li><code>Scene-&gt;Query()</code></li>
-<li><code>Scene-&gt;Character()</code></li>
-<li><code>Scene-&gt;Vehicle()</code></li>
-<li><code>Scene-&gt;SoftBody()</code></li>
-<li><code>Scene-&gt;Cloth()</code></li>
+<li>get the scene from <code>World::Physics()</code></li>
+<li>issue queries against the scene's query-facing API</li>
+<li>keep world/physics coordinate conversion rules consistent by going through the world physics system</li>
 </ul>
-<p>Most gameplay code in GameFramework currently interacts with:</p>
+<h2 id="3-use-queries-for-gameplay-decisions">3. Use Queries For Gameplay Decisions<a class="headerlink" href="#3-use-queries-for-gameplay-decisions" title="Permanent link">&para;</a></h2>
+<p>Typical uses:</p>
 <ul>
-<li><code>Rigid()</code> through <code>RigidBodyComponent</code></li>
-<li><code>Query()</code> directly or through helpers like <code>CharacterMovementController</code></li>
-</ul>
-<h2 id="2-raycast-example">2. Raycast Example<a class="headerlink" href="#2-raycast-example" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;array&gt;</span>
-
-<span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">RaycastHit</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Hits</span><span class="p">{};</span>
-
-<span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">RaycastRequest</span><span class="w"> </span><span class="n">Request</span><span class="p">{};</span>
-<span class="n">Request</span><span class="p">.</span><span class="n">Origin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">Request</span><span class="p">.</span><span class="n">Direction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">-1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">Request</span><span class="p">.</span><span class="n">Distance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">50.0f</span><span class="p">;</span>
-<span class="n">Request</span><span class="p">.</span><span class="n">Mask</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0xFFFFFFFFu</span><span class="p">;</span>
-<span class="n">Request</span><span class="p">.</span><span class="n">Mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EQueryMode</span><span class="o">::</span><span class="n">ClosestHit</span><span class="p">;</span>
-
-<span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">Count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Scene</span><span class="o">-&gt;</span><span class="n">Query</span><span class="p">().</span><span class="n">Raycast</span><span class="p">(</span><span class="n">Request</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">RaycastHit</span><span class="o">&gt;</span><span class="p">(</span><span class="n">Hits</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">Hits</span><span class="p">.</span><span class="n">size</span><span class="p">()));</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">Count</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Hit</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Hits</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
-<span class="w">    </span><span class="c1">// Hit.Body, Hit.Position, Hit.Normal, Hit.Distance</span>
-<span class="p">}</span>
-</code></pre></div>
-<p>Practical notes:</p>
-<ul>
-<li>keep <code>Direction</code> normalized to avoid ambiguous distance interpretation</li>
-<li>use narrow masks to reduce query work in large scenes</li>
-<li><code>ClosestHit</code> is cheaper and usually what gameplay needs</li>
-</ul>
-<h2 id="3-sweep-and-overlap-patterns">3. Sweep and Overlap Patterns<a class="headerlink" href="#3-sweep-and-overlap-patterns" title="Permanent link">&para;</a></h2>
-<p>Sweep checks motion of a shape along a direction.
-Overlap checks which shapes currently intersect a pose.</p>
-<div class="highlight"><pre><span></span><code><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">SweepRequest</span><span class="w"> </span><span class="n">Sweep</span><span class="p">{};</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Shape</span><span class="p">.</span><span class="n">Type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EShapeType</span><span class="o">::</span><span class="n">Capsule</span><span class="p">;</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Shape</span><span class="p">.</span><span class="n">Capsule</span><span class="p">.</span><span class="n">Radius</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.4f</span><span class="p">;</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Shape</span><span class="p">.</span><span class="n">Capsule</span><span class="p">.</span><span class="n">HalfHeight</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.9f</span><span class="p">;</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Start</span><span class="p">.</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Direction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Distance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">;</span>
-<span class="n">Sweep</span><span class="p">.</span><span class="n">Mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EQueryMode</span><span class="o">::</span><span class="n">ClosestHit</span><span class="p">;</span>
-
-<span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">SweepHit</span><span class="w"> </span><span class="n">SweepHit</span><span class="p">{};</span>
-<span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">SweepCount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Scene</span><span class="o">-&gt;</span><span class="n">Query</span><span class="p">().</span><span class="n">Sweep</span><span class="p">(</span><span class="n">Sweep</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">SweepHit</span><span class="o">&gt;</span><span class="p">(</span><span class="o">&amp;</span><span class="n">SweepHit</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">));</span>
-</code></pre></div>
-<div class="highlight"><pre><span></span><code><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">OverlapRequest</span><span class="w"> </span><span class="n">Overlap</span><span class="p">{};</span>
-<span class="n">Overlap</span><span class="p">.</span><span class="n">Shape</span><span class="p">.</span><span class="n">Type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EShapeType</span><span class="o">::</span><span class="n">Sphere</span><span class="p">;</span>
-<span class="n">Overlap</span><span class="p">.</span><span class="n">Shape</span><span class="p">.</span><span class="n">Sphere</span><span class="p">.</span><span class="n">Radius</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">3.0f</span><span class="p">;</span>
-<span class="n">Overlap</span><span class="p">.</span><span class="n">Pose</span><span class="p">.</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">Overlap</span><span class="p">.</span><span class="n">Mask</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0xFFFFFFFFu</span><span class="p">;</span>
-
-<span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">OverlapHit</span><span class="p">,</span><span class="w"> </span><span class="mi">64</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Overlaps</span><span class="p">{};</span>
-<span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">OverlapCount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Scene</span><span class="o">-&gt;</span><span class="n">Query</span><span class="p">().</span><span class="n">Overlap</span><span class="p">(</span>
-<span class="w">    </span><span class="n">Overlap</span><span class="p">,</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">OverlapHit</span><span class="o">&gt;</span><span class="p">(</span><span class="n">Overlaps</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">Overlaps</span><span class="p">.</span><span class="n">size</span><span class="p">()));</span>
-</code></pre></div>
-<p>When to use each:</p>
-<ul>
-<li>raycast:<ul>
+<li>grounding probes</li>
 <li>line-of-sight checks</li>
-<li>ground probes</li>
-<li>interaction traces</li>
+<li>weapon hitscan</li>
+<li>trigger-like checks without adding new bodies</li>
+<li>spawn validation</li>
 </ul>
-</li>
-<li>sweep:<ul>
-<li>predictive collision checks for moving volumes</li>
-<li>custom controller motion validation</li>
+<p><code>CharacterMovementController</code> itself uses a downward probe to determine grounded state.</p>
+<p>That is a good example of the intended pattern: gameplay systems should query the world physics scene instead of inventing local collision guesses.</p>
+<h2 id="4-event-drain-flow">4. Event Drain Flow<a class="headerlink" href="#4-event-drain-flow" title="Permanent link">&para;</a></h2>
+<p><code>PhysicsSystem::Step(...)</code> does more than advance the simulation.</p>
+<p>It also:</p>
+<ul>
+<li>fetches results</li>
+<li>drains backend events</li>
+<li>stores a pending event queue</li>
+<li>notifies listeners</li>
 </ul>
-</li>
-<li>overlap:<ul>
-<li>area triggers</li>
-<li>nearby object scans</li>
-</ul>
-</li>
-</ul>
-<h2 id="4-draining-collision-and-trigger-events">4. Draining Collision and Trigger Events<a class="headerlink" href="#4-draining-collision-and-trigger-events" title="Permanent link">&para;</a></h2>
-<p><code>PhysicsSystem</code> exposes an event queue drain API.</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;array&gt;</span>
-
-<span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">PhysicsEvent</span><span class="p">,</span><span class="w"> </span><span class="mi">256</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Events</span><span class="p">{};</span>
-<span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">EventCount</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldRef</span><span class="p">.</span><span class="n">Physics</span><span class="p">().</span><span class="n">DrainEvents</span><span class="p">(</span>
-<span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">PhysicsEvent</span><span class="o">&gt;</span><span class="p">(</span><span class="n">Events</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">Events</span><span class="p">.</span><span class="n">size</span><span class="p">()));</span>
-
-<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">EventCount</span><span class="p">;</span><span class="w"> </span><span class="o">++</span><span class="n">i</span><span class="p">)</span>
+<p>You can consume the pending queue explicitly with <code>DrainEvents(...)</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="n">std</span><span class="o">::</span><span class="n">array</span><span class="o">&lt;</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">PhysicsEvent</span><span class="p">,</span><span class="w"> </span><span class="mi">64</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Events</span><span class="p">{};</span>
+<span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">Count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">Physics</span><span class="p">().</span><span class="n">DrainEvents</span><span class="p">(</span><span class="n">Events</span><span class="p">);</span>
+<span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">Index</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">Index</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">Count</span><span class="p">;</span><span class="w"> </span><span class="o">++</span><span class="n">Index</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">E</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Events</span><span class="p">[</span><span class="n">i</span><span class="p">];</span>
-<span class="w">    </span><span class="k">switch</span><span class="w"> </span><span class="p">(</span><span class="n">E</span><span class="p">.</span><span class="n">Type</span><span class="p">)</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">SnAPI</span><span class="o">::</span><span class="no">Physics</span><span class="o">::</span><span class="no">EPhysicsEventType</span><span class="o">::</span><span class="no">ContactBegin</span><span class="p">:</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">SnAPI</span><span class="o">::</span><span class="no">Physics</span><span class="o">::</span><span class="no">EPhysicsEventType</span><span class="o">::</span><span class="no">ContactPersist</span><span class="p">:</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">SnAPI</span><span class="o">::</span><span class="no">Physics</span><span class="o">::</span><span class="no">EPhysicsEventType</span><span class="o">::</span><span class="no">ContactEnd</span><span class="p">:</span>
-<span class="w">        </span><span class="c1">// E.BodyA / E.BodyB / E.Contact</span>
-<span class="w">        </span><span class="k">break</span><span class="p">;</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">SnAPI</span><span class="o">::</span><span class="no">Physics</span><span class="o">::</span><span class="no">EPhysicsEventType</span><span class="o">::</span><span class="no">TriggerBegin</span><span class="p">:</span>
-<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">SnAPI</span><span class="o">::</span><span class="no">Physics</span><span class="o">::</span><span class="no">EPhysicsEventType</span><span class="o">::</span><span class="no">TriggerEnd</span><span class="p">:</span>
-<span class="w">        </span><span class="c1">// trigger pair started/stopped overlapping</span>
-<span class="w">        </span><span class="k">break</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Event</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Events</span><span class="p">[</span><span class="n">Index</span><span class="p">];</span>
+<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Event</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Recommended pattern:</p>
+<h2 id="5-listener-based-flow">5. Listener-Based Flow<a class="headerlink" href="#5-listener-based-flow" title="Permanent link">&para;</a></h2>
+<p>There are two listener styles:</p>
 <ul>
-<li>drain once per frame after stepping (or after <code>Runtime.Update(...)</code>)</li>
-<li>translate body handles to gameplay object handles if needed</li>
-<li>process with idempotent logic, especially for <code>ContactPersist</code></li>
+<li>general event listeners for all drained events</li>
+<li>body sleep listeners for one body's sleep/wake notifications</li>
 </ul>
-<h2 id="5-backend-routing-and-couplings">5. Backend Routing and Couplings<a class="headerlink" href="#5-backend-routing-and-couplings" title="Permanent link">&para;</a></h2>
-<p><code>PhysicsBootstrapSettings</code> includes:</p>
+<p>That split is intentional.</p>
+<p>Use general listeners for gameplay systems that care about broad scene events.
+Use body sleep listeners for body-local state transitions.</p>
+<h2 id="6-query-availability-in-editor-worlds">6. Query Availability In Editor Worlds<a class="headerlink" href="#6-query-availability-in-editor-worlds" title="Permanent link">&para;</a></h2>
+<p>The execution profile can disable simulation while still allowing query-style access.</p>
+<p>That is important in editor/tooling workflows where you want:</p>
 <ul>
-<li><code>Routing</code>: choose backend per domain (<code>Rigid</code>, <code>Query</code>, <code>Character</code>, etc.)</li>
-<li><code>Couplings</code>: describe cross-domain interactions</li>
+<li>collider previews</li>
+<li>selection hit tests</li>
+<li>placement validation</li>
 </ul>
-<p>Even if all domains currently use Jolt, keep explicit routing in your settings for clarity and future migration.</p>
-<div class="highlight"><pre><span></span><code><span class="n">GameRuntimePhysicsSettings</span><span class="w"> </span><span class="n">Physics</span><span class="p">{};</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">RigidBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">QueryBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">CharacterBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">VehicleBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">SoftBodyBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">ClothBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-
-<span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">CouplingDesc</span><span class="w"> </span><span class="n">ClothToRigid</span><span class="p">{};</span>
-<span class="n">ClothToRigid</span><span class="p">.</span><span class="n">A</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsDomain</span><span class="o">::</span><span class="n">Cloth</span><span class="p">;</span>
-<span class="n">ClothToRigid</span><span class="p">.</span><span class="n">B</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsDomain</span><span class="o">::</span><span class="n">Rigid</span><span class="p">;</span>
-<span class="n">ClothToRigid</span><span class="p">.</span><span class="n">Mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">ECouplingMode</span><span class="o">::</span><span class="n">OneWay</span><span class="p">;</span>
-<span class="n">ClothToRigid</span><span class="p">.</span><span class="n">MaxPairsPerStep</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">8192</span><span class="p">;</span>
-
-<span class="n">Physics</span><span class="p">.</span><span class="n">Couplings</span><span class="p">.</span><span class="n">push_back</span><span class="p">(</span><span class="n">ClothToRigid</span><span class="p">);</span>
-</code></pre></div>
-<p>Design guidance:</p>
+<p>without running actual gameplay physics simulation.</p>
+<h2 id="7-practical-guidance">7. Practical Guidance<a class="headerlink" href="#7-practical-guidance" title="Permanent link">&para;</a></h2>
+<h3 id="use-explicit-listeners-for-long-lived-systems">Use explicit listeners for long-lived systems<a class="headerlink" href="#use-explicit-listeners-for-long-lived-systems" title="Permanent link">&para;</a></h3>
+<p>Good examples:</p>
 <ul>
-<li>keep couplings explicit and bounded</li>
-<li>start with minimal coupling set, then expand by measured need</li>
-<li>avoid hidden coupling assumptions in gameplay systems</li>
+<li>gameplay analytics</li>
+<li>trigger routers</li>
+<li>editor visualization systems</li>
 </ul>
-<h2 id="6-manual-step-mode-for-custom-pipelines">6. Manual Step Mode for Custom Pipelines<a class="headerlink" href="#6-manual-step-mode-for-custom-pipelines" title="Permanent link">&para;</a></h2>
-<p>If you need strict control over simulation phase order:</p>
-<ol>
-<li>configure <code>TickInFixedTick = false</code> and <code>TickInVariableTick = false</code></li>
-<li>call <code>WorldRef.Physics().Step(FixedDeltaSeconds)</code> manually</li>
-<li>run event drain and gameplay reactions in your own sequence</li>
-</ol>
-<p>Example:</p>
-<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">FixedDt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
-
-<span class="n">WorldRef</span><span class="p">.</span><span class="n">Tick</span><span class="p">(</span><span class="n">FrameDt</span><span class="p">);</span><span class="w">          </span><span class="c1">// gameplay tick, no physics step here</span>
-<span class="n">WorldRef</span><span class="p">.</span><span class="n">Physics</span><span class="p">().</span><span class="n">Step</span><span class="p">(</span><span class="n">FixedDt</span><span class="p">);</span>
-<span class="n">WorldRef</span><span class="p">.</span><span class="n">LateTick</span><span class="p">(</span><span class="n">FrameDt</span><span class="p">);</span>
-<span class="n">WorldRef</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span>
-</code></pre></div>
-<p>This pattern is useful when integrating deterministic simulation pipelines.</p>
-<h2 id="7-threading-and-performance-guidance">7. Threading and Performance Guidance<a class="headerlink" href="#7-threading-and-performance-guidance" title="Permanent link">&para;</a></h2>
-<p>Current behavior:</p>
+<h3 id="use-drainevents-for-frame-local-consumers">Use <code>DrainEvents(...)</code> for frame-local consumers<a class="headerlink" href="#use-drainevents-for-frame-local-consumers" title="Permanent link">&para;</a></h3>
+<p>Good examples:</p>
 <ul>
-<li><code>PhysicsSystem</code> guards lifecycle/state transitions with a mutex.</li>
-<li>scene/domain objects are backend implementations (Jolt-backed currently).</li>
+<li>a debug overlay that prints contacts this frame</li>
+<li>a test case validating specific event ordering</li>
 </ul>
-<p>Practical guidance for gameplay code:</p>
+<h3 id="do-not-confuse-event-drain-with-backend-polling">Do not confuse event drain with backend polling<a class="headerlink" href="#do-not-confuse-event-drain-with-backend-polling" title="Permanent link">&para;</a></h3>
+<p><code>DrainEvents(...)</code> consumes the GameFramework-owned pending queue, not the raw backend directly.</p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
 <ul>
-<li>treat the world thread as the authoritative gameplay mutation thread</li>
-<li>avoid long-lived cached raw scene pointers across ownership/lifecycle transitions</li>
-<li>batch query/event processing where possible instead of many tiny scattered calls</li>
+<li><a href="../testing/">Testing and Validation</a></li>
+<li><a href="../bouncy_basement/">Bouncy Basement</a></li>
 </ul>
-<p>Performance tips:</p>
-<ul>
-<li>keep query masks narrow</li>
-<li>prefer <code>ClosestHit</code> unless you truly need all hits</li>
-<li>avoid frequent body destroy/recreate churn in frame loops</li>
-<li>use <code>SetVelocity</code> for deterministic controller steering, not repeated recreate/setup</li>
-</ul>
-<h2 id="8-common-pitfalls">8. Common Pitfalls<a class="headerlink" href="#8-common-pitfalls" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Draining no events:<ul>
-<li>scene not initialized</li>
-<li>no contacts/triggers generated for current setup</li>
-</ul>
-</li>
-<li>Raycasts always miss:<ul>
-<li>wrong mask/layer assumptions</li>
-<li>direction/distance values not what you expect</li>
-</ul>
-</li>
-<li>Unexpected jitter:<ul>
-<li>gameplay transform writes fighting physics sync path</li>
-<li>mixed stepping configuration or inconsistent fixed delta</li>
-</ul>
-</li>
-<li>Domain API call returns errors:<ul>
-<li>invalid handles (destroyed or never created)</li>
-<li>backend/domain not available in current routing</li>
-</ul>
-</li>
-</ul>
-<h2 id="9-validation-checklist">9. Validation Checklist<a class="headerlink" href="#9-validation-checklist" title="Permanent link">&para;</a></h2>
-<p>Before merging physics-heavy changes:</p>
-<ol>
-<li>run <code>PhysicsIntegrationTests</code></li>
-<li>run full <code>GameFrameworkTests</code></li>
-<li>sanity-check your runtime tick policy</li>
-<li>confirm query/event paths under expected load</li>
-</ol>
-<p>You can start with:</p>
-<div class="highlight"><pre><span></span><code>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Physics|CharacterMovementController&quot;</span>
-</code></pre></div>
-<p>Next: <a href="../reflection_serialization/">Reflection and Serialization</a></p>
 
 
 

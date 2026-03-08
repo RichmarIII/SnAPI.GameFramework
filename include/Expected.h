@@ -9,9 +9,20 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Canonical error codes used by the framework.
- * @remarks These codes accompany Error to categorize failures.
- * @note EErrorCode::None indicates success.
+ * @ingroup SnAPI_GameFramework
+ * @brief Canonical error categories used by the framework's non-exception result model.
+ *
+ * The framework favors explicit error-return contracts over throwing exceptions from
+ * normal control flow. `EErrorCode` provides the coarse failure class, while `Error::Message`
+ * carries human-readable detail that is suitable for logs, editor diagnostics, and tests.
+ *
+ * Stability contract:
+ * - `None` always means success.
+ * - The remaining values describe category, not source location.
+ * - Callers should branch on the enum first and treat the message as diagnostic text.
+ *
+ * @see Error
+ * @see TExpected
  */
 enum class EErrorCode
 {
@@ -26,9 +37,29 @@ enum class EErrorCode
 };
 
 /**
- * @brief Error payload for TExpected results.
- * @remarks Use Code for programmatic checks and Message for human-readable details.
- * @note A default-constructed Error represents success (EErrorCode::None).
+ * @ingroup SnAPI_GameFramework
+ * @brief Error payload stored by `TExpected` and `Result`.
+ *
+ * `Error` is the standard failure object returned by the framework. It intentionally stays
+ * lightweight: one categorical code plus one descriptive message. This keeps API contracts
+ * predictable and easy to surface through editor UI, logs, and tests without forcing callers
+ * into exception-based handling.
+ *
+ * Semantics:
+ * - A default-constructed `Error` represents success.
+ * - `operator bool()` returns `true` for failure, not success.
+ * - `Message` is intended for diagnostics and may change over time; do not parse it for logic.
+ *
+ * Ownership and lifetime:
+ * - `Message` is owned by the `Error` instance.
+ * - Copies are independent and safe to store.
+ *
+ * Threading:
+ * - Plain value type. Safe to copy across threads.
+ *
+ * @warning `if (ErrorValue)` means "there is an error", which is the inverse of many success-style APIs.
+ * @see EErrorCode
+ * @see TExpected
  */
 struct Error
 {
@@ -65,16 +96,50 @@ struct Error
 };
 
 /**
- * @brief Convenience alias for std::expected with framework Error.
- * @remarks Use TExpected<T> for functions that may fail.
+ * @ingroup SnAPI_GameFramework
+ * @brief Convenience alias for `std::expected<T, Error>`.
+ *
+ * Use `TExpected<T>` for APIs that may fail while still returning a value on success.
+ * This is the primary success/failure transport used by public GameFramework APIs.
+ *
+ * Contract:
+ * - Success contains a `T`.
+ * - Failure contains an `Error`.
+ * - The alias itself adds no extra behavior beyond naming consistency.
+ *
+ * @tparam T Success payload type.
+ * @see Result
+ * @see Error
  */
 template<typename T>
 using TExpected = std::expected<T, Error>;
 
 /**
- * @brief Lightweight expected wrapper that stores a reference.
- * @remarks Use for APIs that return non-owning references with error handling.
- * @note The referenced object must outlive this wrapper.
+ * @ingroup SnAPI_GameFramework
+ * @brief `expected`-style wrapper for non-owning references.
+ *
+ * `std::expected` cannot directly store references, so `TExpectedRef<T>` wraps
+ * `std::reference_wrapper<T>` while preserving the familiar `has_value` / `value` /
+ * `error` access pattern. It is used throughout the framework for APIs that borrow an
+ * existing object instead of transferring ownership.
+ *
+ * Core semantics:
+ * - Success means "a borrowed reference is currently available".
+ * - Failure means "no reference could be produced; inspect `error()` for the reason".
+ * - The wrapper never owns the referenced object.
+ *
+ * Ownership and lifetime:
+ * - The caller does not own the referenced object.
+ * - The referenced object must outlive the wrapper and any references obtained from it.
+ * - Destroying or invalidating the underlying object also invalidates the borrowed reference contract.
+ *
+ * Threading:
+ * - Thread-safety is exactly the same as the referenced object.
+ * - The wrapper itself performs no synchronization.
+ *
+ * @tparam T Referenced object type.
+ * @see TExpected
+ * @see Result
  */
 template<typename T>
 class TExpectedRef
@@ -249,8 +314,11 @@ private:
 };
 
 /**
- * @brief Convenience alias for operations returning only success/failure.
- * @remarks Equivalent to TExpected<void>.
+ * @ingroup SnAPI_GameFramework
+ * @brief Convenience alias for operations that report only success or failure.
+ * @remarks Equivalent to `TExpected<void>`.
+ * @see TExpected
+ * @see Ok
  */
 using Result = TExpected<void>;
 

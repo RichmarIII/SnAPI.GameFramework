@@ -2618,10 +2618,12 @@ void EditorAssetService::Tick(EditorServiceContext& Context, float DeltaSeconds)
     }
 
     m_defaultRenderSettingsLastPassGraphRevision = PassGraphRevision;
-    if (auto* SettingsNode = NodeCast<WorldRenderSettings>(LoadedNode))
+    if (NodeCast<WorldRenderSettings>(LoadedNode) != nullptr)
     {
-        SettingsNode->OnCreate();
-        m_defaultRenderSettingsApplyPending = false;
+        if (const Result RequestResult = RuntimeWorld->RequestNodeOnCreate(m_loadedDefaultRenderSettingsNode); RequestResult)
+        {
+            m_defaultRenderSettingsApplyPending = false;
+        }
     }
     else
     {
@@ -5827,10 +5829,10 @@ Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext
     {
         m_loadedDefaultRenderSettingsNode = *InstantiateResult;
         if (auto* CreatedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
-            auto* SettingsNode = NodeCast<WorldRenderSettings>(CreatedNode))
+            NodeCast<WorldRenderSettings>(CreatedNode) != nullptr)
         {
             // Apply immediately for already-ready pass graphs.
-            SettingsNode->OnCreate();
+            (void)RuntimeWorld->RequestNodeOnCreate(m_loadedDefaultRenderSettingsNode);
             // Also schedule one deferred apply when the pass graph revision is available/stable.
             m_defaultRenderSettingsApplyPending = true;
         }

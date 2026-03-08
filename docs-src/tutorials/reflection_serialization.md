@@ -1,200 +1,171 @@
 # Reflection and Serialization
 
-This page explains the type system that powers serialization, replication, and reflection-based RPC.
+Reflection is one of the core services in the framework. It is not just for editor tooling.
 
-## 1. Startup: Register Builtins
+It drives:
 
-Call this once during startup:
+- serialization
+- replication metadata
+- reflected RPC dispatch
+- property panels
+- dynamic component creation during load
 
-```cpp
-RegisterBuiltinTypes();
-```
+## 1. Register Types Deliberately
 
-It registers built-in value types and default serialization codecs.
+A reflected type needs:
 
-## 2. Register-on-First-Use Model
-
-SnAPI.GameFramework uses lazy reflection registration:
-
-- `SNAPI_REFLECT_TYPE(...)` stores an ensure callback in `TypeAutoRegistry`.
-- `TypeRegistry::Find(...)` can trigger that callback on first miss.
-- The heavy registration runs once (`std::call_once`).
-
-Why this model helps:
-
-- No giant central type list.
-- No cross-translation-unit init ordering dependency for full metadata.
-- Pay-for-what-you-use behavior.
-
-### Linker/stripping note
-
-`SNAPI_REFLECT_TYPE` installs static registration glue in its translation unit.
-To guarantee that translation unit is linked in static library/plugin builds, ensure something in that unit is referenced by the final binary (or explicitly force-link the object/library according to your build system).
-
-## 3. Defining Reflected Types
+- a stable `kTypeName`
+- a `TTypeBuilder<...>` registration block
+- a default constructor when the engine needs to create it dynamically
 
 ```cpp
-class EnemyNode final : public BaseNode
+class CargoNode final : public BaseNode
 {
 public:
-    static constexpr const char* kTypeName = "MyGame::EnemyNode";
+    static constexpr const char* kTypeName = "MyGame::CargoNode";
 
-    int Health = 100;
+    int Value = 100;
+    NodeHandle DockTarget{};
+};
 
-    void ServerSetHealth(int InValue)
+SNAPI_REFLECT_TYPE(CargoNode, (TTypeBuilder<CargoNode>(CargoNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("Value", &CargoNode::Value)
+    .Field("DockTarget", &CargoNode::DockTarget)
+    .Constructor<>()
+    .Register()));
+```
+
+## 2. Reflection And Replication Flags Share The Same Metadata
+
+Fields can carry flags such as replication.
+Methods can carry flags such as RPC routing.
+
+```cpp
+struct DoorState
+{
+    static constexpr const char* kTypeName = "MyGame::DoorState";
+    bool Open = false;
+};
+
+class DoorNode final : public BaseNode
+{
+public:
+    static constexpr const char* kTypeName = "MyGame::DoorNode";
+
+    DoorState State{};
+
+    void ServerToggle()
     {
-        Health = InValue;
+        State.Open = !State.Open;
     }
 };
 
-class InventoryComponent final : public IComponent
-{
-public:
-    static constexpr const char* kTypeName = "MyGame::InventoryComponent";
+SNAPI_REFLECT_TYPE(DoorState, (TTypeBuilder<DoorState>(DoorState::kTypeName)
+    .Field("Open", &DoorState::Open, EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
 
-    int Gold = 0;
-};
-
-SNAPI_REFLECT_TYPE(EnemyNode, (TTypeBuilder<EnemyNode>(EnemyNode::kTypeName)
+SNAPI_REFLECT_TYPE(DoorNode, (TTypeBuilder<DoorNode>(DoorNode::kTypeName)
     .Base<BaseNode>()
-    .Field("Health", &EnemyNode::Health, EFieldFlagBits::Replication)
-    .Method("ServerSetHealth",
-            &EnemyNode::ServerSetHealth,
+    .Field("State", &DoorNode::State)
+    .Method("ServerToggle", &DoorNode::ServerToggle,
             EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
     .Constructor<>()
     .Register()));
-
-SNAPI_REFLECT_COMPONENT(InventoryComponent, (TTypeBuilder<InventoryComponent>(InventoryComponent::kTypeName)
-    .Field("Gold", &InventoryComponent::Gold, EFieldFlagBits::Replication)
-    .Constructor<>()
-    .Register()));
 ```
 
-Important points:
+## 3. Serialize A Node, Level, Or World
 
-- Always register base classes with `.Base<...>()` to preserve inheritance queries.
-- Register a default constructor if the type must be created from type metadata (serialization/network spawn paths).
+The current serializer surface is:
 
-## 4. `StaticTypeId<T>()` and `StaticType<T>()`
+- `NodeSerializer`
+- `LevelSerializer`
+- `WorldSerializer`
 
-Use cached type identity in hot paths:
-
-```cpp
-const TypeId& CachedId = StaticTypeId<EnemyNode>();
-auto EnsureResult = StaticType<EnemyNode>(); // returns TExpected<TypeId*>
-```
-
-- `StaticTypeId<T>()` is deterministic and cached via function-local static.
-- `StaticType<T>()` ensures reflection registration exists before use.
-
-Hot path guidance:
-
-- prefer `StaticTypeId<T>()` over repeated `TypeIdFromName(...)`.
-- use `StaticType<T>()` when you need to force ensure-on-first-use behavior.
-
-## 5. Value Serialization (`TValueCodec<T>`)
-
-Most primitive/trivial types already work.
-For custom packed formats, specialize `TValueCodec<T>`.
+### Node example
 
 ```cpp
-struct PackedVec2
+auto* Node = Handle.Borrowed();
+if (!Node)
 {
-    static constexpr const char* kTypeName = "MyGame::PackedVec2";
-    int32_t X = 0;
-    int32_t Y = 0;
-};
+    return;
+}
 
-template<>
-struct TValueCodec<PackedVec2>
-{
-    static TExpected<void> Encode(const PackedVec2& Value,
-                                  cereal::BinaryOutputArchive& Archive,
-                                  const TSerializationContext&)
-    {
-        int32_t Packed = (Value.X << 16) | (Value.Y & 0xFFFF);
-        Archive(Packed);
-        return Ok();
-    }
-
-    static TExpected<PackedVec2> Decode(cereal::BinaryInputArchive& Archive,
-                                        const TSerializationContext&)
-    {
-        int32_t Packed = 0;
-        Archive(Packed);
-        return PackedVec2{(Packed >> 16), (Packed & 0xFFFF)};
-    }
-
-    static TExpected<void> DecodeInto(PackedVec2& Value,
-                                      cereal::BinaryInputArchive& Archive,
-                                      const TSerializationContext&)
-    {
-        int32_t Packed = 0;
-        Archive(Packed);
-        Value.X = (Packed >> 16);
-        Value.Y = (Packed & 0xFFFF);
-        return Ok();
-    }
-};
-```
-
-## 6. Replication + Nested Types + Value Codecs
-
-For a reflected field marked with `EFieldFlagBits::Replication`:
-
-- if a `TValueCodec<FieldType>` is registered, replication uses that codec for the field value.
-- if no codec is registered, replication recursively visits nested reflected fields and serializes only nested fields that also have replication flags.
-
-That means field flags are still important for nested structs.
-Example: if `Settings` is replicated but only `Settings.SoundPath` is flagged, only `SoundPath` replicates unless you provide a codec that serializes the whole `Settings` value.
-
-## 7. Graph/Level/World Serialization
-
-### Graph to payload bytes
-
-```cpp
-NodeGraph Graph("Gameplay");
-auto PayloadResult = NodeGraphSerializer::Serialize(Graph);
+auto PayloadResult = NodeSerializer::Serialize(*Node);
 if (!PayloadResult)
 {
     return;
 }
 
 std::vector<uint8_t> Bytes;
-auto BytesResult = SerializeNodeGraphPayload(PayloadResult.value(), Bytes);
-if (!BytesResult)
+if (!SerializeNodePayload(*PayloadResult, Bytes))
 {
     return;
 }
 ```
 
-### Payload bytes back to graph
+### Node deserialize example
 
 ```cpp
-auto PayloadRoundTrip = DeserializeNodeGraphPayload(Bytes.data(), Bytes.size());
-if (!PayloadRoundTrip)
+World LoadedWorld("LoadedWorld");
+auto PayloadResult = DeserializeNodePayload(Bytes.data(), Bytes.size());
+if (!PayloadResult)
 {
     return;
 }
 
-NodeGraph Loaded;
-auto LoadResult = NodeGraphSerializer::Deserialize(PayloadRoundTrip.value(), Loaded);
-if (!LoadResult)
+auto NodeResult = NodeSerializer::Deserialize(*PayloadResult, LoadedWorld);
+if (!NodeResult)
 {
     return;
 }
 ```
 
-The same pattern exists for `LevelSerializer` + `WorldSerializer` and their payload byte helpers.
+The same pattern exists for levels and whole worlds.
 
-## 8. Component Serialization Registration
+## 4. `TDeserializeOptions` Matters
 
-Why components are special:
+The most important option beginners should know is `RegenerateObjectIds`.
 
-- Components are created dynamically by type id during graph/world deserialization.
-- `ComponentSerializationRegistry` provides the creation + field-serialization callbacks.
+Use it when you are instantiating the same payload multiple times into one world and need fresh identities.
 
-You normally do **not** need to register this manually for normal reflected components.
-`TTypeBuilder<ComponentT>::Register()` does it automatically when `ComponentT` derives from `IComponent`.
+That is the correct path for prefab-like repeated instantiation.
 
-Next: [AssetPipeline Integration](assetpipeline.md)
+## 5. `OnCreate` During Deserialize
+
+Deserialization is intentionally two-phase enough to avoid partial-state callbacks.
+
+The important rule is:
+
+- fields are populated first
+- `OnCreate` is not allowed to observe half-deserialized state
+
+This is covered by tests such as the serialization test that verifies component `OnCreate` runs once after deserialized fields are populated.
+
+## 6. Value Codecs
+
+When a field type has a `TValueCodec<T>`, serialization and replication can treat it as a packed value.
+
+Without a value codec, nested reflection metadata is used instead.
+
+This is the rule that explains a lot of replication behavior for nested structs.
+
+## 7. Common Mistakes
+
+### Using old serializer names
+
+Use `NodeSerializer`, `LevelSerializer`, and `WorldSerializer`.
+
+### Forgetting default constructors
+
+Dynamic load paths need a constructor they can invoke.
+
+### Forgetting reflection on handle-carrying fields
+
+If a field stores a `NodeHandle`, `ComponentHandle`, `TAssetRef<T>`, or custom struct and you expect serialization to see it, reflect it.
+
+## What To Read Next
+
+- [AssetPipeline Integration](assetpipeline.md)
+- [Shipyard Save/Load](shipyard_save_load.md)

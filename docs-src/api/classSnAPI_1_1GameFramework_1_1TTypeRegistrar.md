@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::TTypeRegistrar
 
-Helper that executes a registration function at static initialization.
+Tiny helper that runs a function during static initialization.
+
+`TTypeRegistrar` is intentionally minimal: it simply executes a registration thunk when the static object is constructed. The thunk normally registers an ensure callback with `TypeAutoRegistry`, not the full type metadata itself.
 
 ## Public Functions
 

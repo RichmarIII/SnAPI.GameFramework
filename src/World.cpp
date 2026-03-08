@@ -220,6 +220,30 @@ BaseNode* ResolveNodeIncludingPendingDestroy(const std::shared_ptr<TObjectPool<B
 
     return ObjectRegistry::Instance().Resolve<BaseNode>(Handle.Id);
 }
+
+Result InvokeNodeOnCreateCallback(IWorld& WorldRef, BaseNode& Node)
+{
+    const TypeInfo* NodeTypeInfo = TypeRegistry::Instance().Find(Node.TypeKey());
+    if (!NodeTypeInfo || !NodeTypeInfo->NodeOnCreate)
+    {
+        return Ok();
+    }
+
+    try
+    {
+        NodeTypeInfo->NodeOnCreate(&Node, &WorldRef);
+    }
+    catch (const std::exception& Ex)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+    }
+    catch (...)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Node OnCreate invocation threw"));
+    }
+
+    return Ok();
+}
 } // namespace
 
 WorldExecutionProfile WorldExecutionProfile::Runtime()
@@ -779,6 +803,36 @@ TExpected<void*> World::CreateComponentWithId(const NodeHandle& Owner, const Typ
     return ComponentSerializationRegistry::Instance().CreateWithId(*this, Owner, Type, Id);
 }
 
+Result World::RequestNodeOnCreate(const NodeHandle& Handle)
+{
+    if (Handle.IsNull())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is null"));
+    }
+
+    BaseNode* Node = Handle.Borrowed();
+    if (!Node)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
+    }
+
+    if (m_deferNodeOnCreateCallbacks)
+    {
+        if (std::find(m_pendingNodeOnCreate.begin(), m_pendingNodeOnCreate.end(), Handle) == m_pendingNodeOnCreate.end())
+        {
+            m_pendingNodeOnCreate.push_back(Handle);
+        }
+        return Ok();
+    }
+
+    return InvokeNodeOnCreateCallback(*this, *Node);
+}
+
+bool World::AreNodeOnCreateCallbacksDeferred() const
+{
+    return m_deferNodeOnCreateCallbacks;
+}
+
 bool World::IsServer() const
 {
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
@@ -819,6 +873,35 @@ const WorldExecutionProfile& World::ExecutionProfile() const
 void World::SetExecutionProfile(const WorldExecutionProfile& Profile)
 {
     m_executionProfile = Profile;
+}
+
+void World::DeferNodeOnCreateCallbacks(const bool Deferred)
+{
+    m_deferNodeOnCreateCallbacks = Deferred;
+}
+
+Result World::FlushDeferredNodeOnCreate()
+{
+    m_deferNodeOnCreateCallbacks = false;
+
+    std::vector<NodeHandle> Pending = std::move(m_pendingNodeOnCreate);
+    m_pendingNodeOnCreate.clear();
+
+    for (const NodeHandle& Handle : Pending)
+    {
+        BaseNode* Node = Handle.Borrowed();
+        if (!Node)
+        {
+            continue;
+        }
+
+        if (const Result InvokeResult = InvokeNodeOnCreateCallback(*this, *Node); !InvokeResult)
+        {
+            return InvokeResult;
+        }
+    }
+
+    return Ok();
 }
 
 void World::Tick(const float DeltaSeconds)
@@ -1027,6 +1110,8 @@ void World::EndFrame()
 
 void World::Clear()
 {
+    m_pendingNodeOnCreate.clear();
+    m_deferNodeOnCreateCallbacks = false;
     if (m_nodePool)
     {
         m_nodePool->ForEachAll([&](const NodeHandle& Handle, BaseNode& Node) {

@@ -2,6 +2,7 @@
 
 ## Contents
 
+- **Type:** SnAPI::GameFramework::detail::TaskState
 - **Type:** SnAPI::GameFramework::detail::TArgStorage
 
 ## Type Aliases
@@ -9,31 +10,17 @@
 <div class="snapi-api-card" markdown="1">
 ### `using SnAPI::GameFramework::detail::TArgStorageT = typename TArgStorage<Arg>::Type`
 
-Helper alias for argument storage type.
+Helper alias for the extracted storage type of one reflected argument.
 </div>
 
 ## Functions
 
 <div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::detail::DebugAssertFail(const char *File, int Line, const char *Condition, const std::string &Message)`
-
-Internal handler for failed debug assertions.
-
-**Parameters**
-
-- `File`: Source file where the assertion failed.
-- `Line`: Line number where the assertion failed.
-- `Condition`: Stringified assertion condition.
-- `Message`: Formatted diagnostic message.
-
-**Notes**
-
-- This function always terminates the process via std::abort().
-</div>
-<div class="snapi-api-card" markdown="1">
 ### `TExpected< TArgStorageT< Arg > > SnAPI::GameFramework::detail::ExtractArg(const Variant &Value)`
 
-Extract a typed argument from a Variant.
+Extract one typed argument from a `Variant`.
+
+Mutable lvalue references require a mutable reference payload in `Value`.
 
 **Parameters**
 
@@ -44,13 +31,13 @@ Extract a typed argument from a Variant.
 <div class="snapi-api-card" markdown="1">
 ### `Arg SnAPI::GameFramework::detail::ConvertArg(TArgStorageT< Arg > &Storage)`
 
-Convert storage wrapper to the actual argument type.
+Convert extracted storage to the actual invocation argument type.
 
 **Parameters**
 
-- `Storage`: Storage wrapper.
+- `Storage`: Extracted storage wrapper.
 
-**Returns:** Argument value or reference.
+**Returns:** Value copy or lvalue reference as required by `Arg`.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `TExpected< Variant > SnAPI::GameFramework::detail::InvokeImpl(T *Instance, R(T::*Method)(Args...), std::span< const Variant > ArgsPack, std::index_sequence< I... >)`
@@ -60,7 +47,7 @@ Invoke a non-const member function with reflected args.
 **Parameters**
 
 - `Instance`: Pointer to instance.
-- `Method`: Member function pointer.
+- `Method`: 
 - `ArgsPack`: Packed arguments.
 
 **Returns:** Variant containing the result or error.
@@ -73,7 +60,7 @@ Invoke a const member function with reflected args.
 **Parameters**
 
 - `Instance`: Pointer to const instance.
-- `Method`: Const member function pointer.
+- `Method`: 
 - `ArgsPack`: Packed arguments.
 
 **Returns:** Variant containing the result or error.

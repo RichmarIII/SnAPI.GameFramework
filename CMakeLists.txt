@@ -120,6 +120,7 @@ set(SNAPI_GF_SOURCES
     src/LocalPlayerService.cpp
     src/MultiplayerConfigNode.cpp
     src/SSAOParamsNode.cpp
+    src/SSGIParamsNode.cpp
     src/SSRParamsNode.cpp
     src/BloomParamsNode.cpp
     src/AtmosphereParamsNode.cpp

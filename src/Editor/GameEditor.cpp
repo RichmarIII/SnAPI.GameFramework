@@ -233,7 +233,53 @@ Result GameEditor::InitializeRuntime(const GameEditorSettings& Settings)
 Result GameEditor::InitializeEditorModules()
 {
     EnsureDefaultServicesRegistered();
+
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+    if (auto* WorldPtr = m_runtime.WorldPtr();
+        WorldPtr && WorldPtr->Renderer().IsInitialized() && WorldPtr->UI().IsInitialized())
+    {
+        WorldPtr->DeferNodeOnCreateCallbacks(true);
+
+        {
+            ScopedComponentOnCreateSuppression SuppressOnCreate{};
+
+            if (const Result InitResult = InitializeServices(); !InitResult)
+            {
+                WorldPtr->DeferNodeOnCreateCallbacks(false);
+                return InitResult;
+            }
+
+            TickServices(0.0f);
+            WorldPtr->UI().Tick(0.0f);
+            WorldPtr->EndFrame();
+        }
+
+        WorldPtr->DeferNodeOnCreateCallbacks(false);
+        return FinalizeBootstrapLifecycle();
+    }
+#endif
+
     return InitializeServices();
+}
+
+Result GameEditor::FinalizeBootstrapLifecycle()
+{
+    auto* WorldPtr = m_runtime.WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Editor runtime world is not available"));
+    }
+
+    WorldPtr->EcsRuntime().FlushPendingOnCreate(*WorldPtr);
+    if (const Result FlushNodesResult = WorldPtr->FlushDeferredNodeOnCreate(); !FlushNodesResult)
+    {
+        return FlushNodesResult;
+    }
+
+    TickServices(0.0f);
+    WorldPtr->Tick(0.0f);
+    WorldPtr->EndFrame();
+    return Ok();
 }
 
 void GameEditor::ShutdownEditorModules()

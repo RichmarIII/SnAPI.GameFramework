@@ -1,11 +1,17 @@
 # SnAPI::GameFramework::ComponentTypeRegistry
 
-Global registry for component type indices and masks.
+Global allocator for compact component-type bit indices.
+
+`ComponentTypeRegistry` turns arbitrary reflected component `TypeId`s into dense bit positions used by masks and query acceleration structures. The assigned index for a type remains stable for the lifetime of the process.
+
+Threading:
+- Not generally thread-safe.
+- Internal `GameMutex` use validates affinity only.
 
 ## Private Static Attrib
 
 <div class="snapi-api-card" markdown="1">
-### `std::mutex SnAPI::GameFramework::ComponentTypeRegistry::m_mutex`
+### `GameMutex SnAPI::GameFramework::ComponentTypeRegistry::m_mutex`
 
 Protects registry state.
 </div>
@@ -25,7 +31,7 @@ Version counter.
 <div class="snapi-api-card" markdown="1">
 ### `static uint32_t SnAPI::GameFramework::ComponentTypeRegistry::TypeIndex(const TypeId &Id)`
 
-Get or assign a bit index for a component type.
+Get the existing bit index for a component type, or assign a new one.
 
 **Parameters**
 
@@ -36,14 +42,12 @@ Get or assign a bit index for a component type.
 <div class="snapi-api-card" markdown="1">
 ### `static uint32_t SnAPI::GameFramework::ComponentTypeRegistry::Version()`
 
-Get the current registry version.
+Get the current mutation version of the registry.
 
 **Returns:** Version counter.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `static size_t SnAPI::GameFramework::ComponentTypeRegistry::WordCount()`
 
-Get the number of 64-bit words required for the mask.
-
-**Returns:** Word count for the current type set.
+Get the number of 64-bit words needed to represent the current type set.
 </div>

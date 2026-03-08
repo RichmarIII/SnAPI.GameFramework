@@ -13,22 +13,34 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Type-erased value container used by reflection and scripting.
- * @remarks Stores either an owned value or a reference with constness tracking.
- * @note Type identity is tracked by deterministic reflected `TypeId`.
+ * @ingroup SnAPI_GameFramework
+ * @brief Type-erased value container used by reflection, scripting, and generic invocation.
+ *
+ * `Variant` stores either:
+ * - an owned heap-allocated value
+ * - a borrowed mutable reference
+ * - a borrowed const reference
+ * - a distinguished `void` marker
+ *
+ * Core semantics:
+ * - Type identity is tracked by deterministic reflected `TypeId`.
+ * - Owned values use shared heap storage so `Variant` remains cheap to copy.
+ * - Reference variants do not own the referenced object; callers must guarantee lifetime.
+ * - Reference constness is enforced by `AsRef()`.
+ *
+ * Threading model:
+ * - Copying and moving the `Variant` object is thread-safe in isolation.
+ * - Access to referenced payloads follows the thread-safety rules of the referenced object.
  */
 class Variant
 {
 public:
-    /**
-     * @brief Construct an empty (void) variant.
-     */
+    /** @brief Construct an empty variant. The default state behaves like a void variant with no payload storage. */
     Variant() = default;
 
     /**
-     * @brief Create a void variant.
+     * @brief Create an explicit void variant.
      * @return Variant representing void.
-     * @remarks Useful for void return types.
      */
     static Variant Void()
     {
@@ -44,7 +56,8 @@ public:
      * @tparam T Value type.
      * @param Value Value to store (moved or copied).
      * @return Variant owning the value.
-     * @remarks Stores value on heap via shared ownership to preserve copyable variant semantics.
+     *
+     * The value is copied or moved into heap storage owned by the variant.
      */
     template<typename T>
     static Variant FromValue(T Value)
@@ -63,7 +76,8 @@ public:
      * @tparam T Referenced type.
      * @param Value Reference to the object.
      * @return Variant referencing the object.
-     * @note Caller must guarantee lifetime; no ownership is transferred.
+     *
+     * @warning Borrowed reference valid only while `Value` remains alive.
      */
     template<typename T>
     static Variant FromRef(T& Value)
@@ -81,7 +95,8 @@ public:
      * @tparam T Referenced type.
      * @param Value Const reference to the object.
      * @return Variant referencing the object as const.
-     * @note Caller must guarantee lifetime; mutable extraction will fail by design.
+     *
+     * @warning Borrowed reference valid only while `Value` remains alive.
      */
     template<typename T>
     static Variant FromConstRef(const T& Value)
@@ -95,8 +110,8 @@ public:
     }
 
     /**
-     * @brief Get the stored type id.
-     * @return TypeId for the stored value.
+     * @brief Get the stored reflected type id.
+     * @return Type id for the stored value or the void marker type.
      */
     const TypeId& Type() const
     {
@@ -104,8 +119,8 @@ public:
     }
 
     /**
-     * @brief Check whether this is a void variant.
-     * @return True if the variant represents void.
+     * @brief Check whether this variant represents `void`.
+     * @return `true` when the stored type id is the void marker type.
      */
     bool IsVoid() const
     {
@@ -113,8 +128,8 @@ public:
     }
 
     /**
-     * @brief Check whether this variant stores a reference.
-     * @return True if it stores a reference; false if it owns the value.
+     * @brief Check whether this variant stores a borrowed reference.
+     * @return `true` for borrowed reference payloads, `false` for owned values and void.
      */
     bool IsRef() const
     {
@@ -122,8 +137,8 @@ public:
     }
 
     /**
-     * @brief Check whether a referenced value is const.
-     * @return True if reference is const.
+     * @brief Check whether the stored reference payload is const-qualified.
+     * @return `true` only for const-reference payloads.
      */
     bool IsConst() const
     {
@@ -131,9 +146,10 @@ public:
     }
 
     /**
-     * @brief Borrow the underlying pointer (mutable).
-     * @return Pointer to stored value or reference.
-     * @remarks Low-level escape hatch for performance-critical internals; caller is responsible for type safety.
+     * @brief Borrow the underlying payload pointer as mutable.
+     * @return Raw payload pointer, or `nullptr` when no payload exists.
+     *
+     * @warning This bypasses type and constness checks. Callers are responsible for correctness.
      */
     void* Borrowed()
     {
@@ -141,8 +157,8 @@ public:
     }
 
     /**
-     * @brief Borrow the underlying pointer (const).
-     * @return Pointer to stored value or reference.
+     * @brief Borrow the underlying payload pointer as const.
+     * @return Raw payload pointer, or `nullptr` when no payload exists.
      */
     const void* Borrowed() const
     {
@@ -150,9 +166,9 @@ public:
     }
 
     /**
-     * @brief Type check helper.
+     * @brief Check whether the stored payload type matches `T`.
      * @tparam T Expected type.
-     * @return True if the stored type matches T.
+     * @return `true` when the stored reflected type id equals `T`.
      */
     template<typename T>
     bool Is() const
@@ -161,10 +177,14 @@ public:
     }
 
     /**
-     * @brief Get a mutable reference to the stored value.
+     * @brief Extract a mutable reference to the stored payload.
      * @tparam T Expected type.
      * @return Reference wrapper on success; error otherwise.
-     * @remarks Fails on type mismatch or when backing storage is const-referenced.
+     *
+     * Fails when:
+     * - the stored type does not match `T`
+     * - the payload is a const reference
+     * - no payload storage exists
      */
     template<typename T>
     TExpected<std::reference_wrapper<T>> AsRef()
@@ -186,7 +206,7 @@ public:
     }
 
     /**
-     * @brief Get a const reference to the stored value.
+     * @brief Extract a const reference to the stored payload.
      * @tparam T Expected type.
      * @return Const reference wrapper on success; error otherwise.
      */
@@ -226,10 +246,15 @@ private:
 };
 
 /**
- * @brief Non-owning view into a Variant-like value.
- * @remarks
- * Lightweight read/write view used to avoid allocating/copying `Variant` in hot paths
- * (serialization/replication field traversal).
+ * @ingroup SnAPI_GameFramework
+ * @brief Non-owning typed view into external payload storage.
+ *
+ * `VariantView` is the zero-allocation counterpart to `Variant` used on hot reflective traversal
+ * paths such as serialization and replication.
+ *
+ * Ownership and lifetime:
+ * - `VariantView` never owns storage.
+ * - The caller must guarantee that the referenced payload remains alive for the lifetime of the view.
  */
 class VariantView
 {
@@ -237,10 +262,10 @@ public:
     /** @brief Construct an empty invalid view. */
     VariantView() = default;
     /**
-     * @brief Construct explicit typed view.
+     * @brief Construct an explicit typed view.
      * @param Type Reflected payload type id.
      * @param Ptr Raw payload pointer.
-     * @param IsConst Whether mutable access is disallowed.
+     * @param IsConst Whether mutable borrowing is disallowed.
      */
     VariantView(TypeId Type, const void* Ptr, bool IsConst)
         : m_type(std::move(Type))
@@ -249,27 +274,27 @@ public:
     {
     }
 
-    /** @brief Get reflected payload type id for this view. */
+    /** @brief Get the reflected payload type id for this view. */
     const TypeId& Type() const
     {
         return m_type;
     }
 
-    /** @brief Check if mutable access is disallowed. */
+    /** @brief Check whether mutable access is disallowed. */
     bool IsConst() const
     {
         return m_isConst;
     }
 
-    /** @brief Borrow const payload pointer. */
+    /** @brief Borrow the payload pointer as const. */
     const void* Borrowed() const
     {
         return m_ptr;
     }
 
     /**
-     * @brief Borrow mutable payload pointer.
-     * @return Mutable pointer when view is non-const, otherwise nullptr.
+     * @brief Borrow the payload pointer as mutable.
+     * @return Mutable pointer when the view is non-const, otherwise `nullptr`.
      */
     void* BorrowedMutable()
     {

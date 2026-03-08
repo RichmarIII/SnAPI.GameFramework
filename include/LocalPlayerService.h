@@ -11,12 +11,24 @@ namespace SnAPI::GameFramework
 class GameplayHost;
 
 /**
- * @brief Default gameplay service that assigns local input devices to local players.
- * @remarks
+ * @ingroup SnAPI_GameFramework
+ * @brief Default gameplay service that maps locally owned players to local input devices.
+ *
+ * `LocalPlayerService` is the stock service registered by `GameplayHost` when
+ * `GameRuntimeGameplaySettings::RegisterDefaultLocalPlayerService` is enabled.
+ * It inspects the current input snapshot and keeps `LocalPlayer` device assignment state
+ * synchronized with the available local gamepads.
+ *
  * Policy:
- * - player index `N` maps to gamepad `N` when connected
- * - player index `0` falls back to unassigned (keyboard/mouse/global input path)
- *   when no gamepad is present
+ * - locally owned player index `N` maps to gamepad slot `N` when one exists
+ * - remote-owned players are explicitly stripped of local device assignments
+ * - player index `0` naturally falls back to the unassigned keyboard/mouse path when no gamepad exists
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see LocalPlayer
+ * @see GameplayHost
  */
 class SNAPI_GAMEFRAMEWORK_API LocalPlayerService final : public IGameService
 {

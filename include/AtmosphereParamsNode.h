@@ -18,75 +18,158 @@ class AtmospherePass;
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Data-driven node that configures atmospheric scattering passes for one or more viewports.
+ *
+ * `AtmosphereParamsNode` stores the physically-inspired atmosphere parameters that should be pushed
+ * into renderer-owned `AtmospherePass` instances. It does not create the pass or the viewport; it
+ * waits for those resources to exist, sanitizes its stored state, then uploads the current values.
+ *
+ * Viewport selection semantics:
+ * - Negative viewport ids target all current renderer viewports.
+ * - Non-negative ids target exactly one renderer viewport with the same numeric id.
+ * - Recreated pass graphs are detected automatically through the renderer's pass-graph revision.
+ *
+ * Parameter semantics:
+ * - Direction vectors are interpreted in world space and normalized before upload.
+ * - Scattering and absorption coefficients are non-negative and sanitized if non-finite.
+ * - Planet and atmosphere radii are expressed in meters.
+ * - Sample counts are integer quality controls for the view and sun integration loops.
+ *
+ * Ownership and lifetime:
+ * - The node owns only serialized atmosphere configuration.
+ * - The renderer owns the actual atmosphere passes and may recreate them at any time.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @warning Editing fields through `Edit*()` changes stored values immediately, but renderer-side
+ * state changes remain lazy and depend on the normal apply/retry hooks.
+ *
+ * @see RendererSystem
+ * @see WorldRenderSettings
+ */
 class SNAPI_GAMEFRAMEWORK_API AtmosphereParamsNode : public BaseNode
 {
 public:
+    /** @brief Stable reflected type name used for serialization and asset lookup. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::AtmosphereParamsNode";
 
+    /** @brief Construct an unnamed atmosphere settings node with default Earth-like tuning values. */
     AtmosphereParamsNode();
+    /**
+     * @brief Construct a named atmosphere settings node.
+     * @param Name Debug/editor-facing node name stored by the base node.
+     */
     explicit AtmosphereParamsNode(std::string Name);
 
+    /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
     std::int64_t& EditViewportID();
+    /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
+    /** @brief Access the world-atmosphere feature toggle. @return Mutable flag enabling the pass's world-mode feature. */
     bool& EditWorldMode();
+    /** @brief Read the world-atmosphere feature toggle. @return Stored world-mode flag. */
     const bool& GetWorldMode() const;
 
+    /** @brief Access the primary sun direction. @return Mutable world-space direction vector; normalized before upload. */
     Vec3& EditSunDirection();
+    /** @brief Read the primary sun direction. @return Stored world-space direction vector. */
     const Vec3& GetSunDirection() const;
 
+    /** @brief Access the sun spectral color multiplier. @return Mutable non-negative RGB value. */
     Vec3& EditSunColor();
+    /** @brief Read the sun spectral color multiplier. @return Stored RGB value. */
     const Vec3& GetSunColor() const;
 
+    /** @brief Access the final atmosphere exposure. @return Mutable non-negative exposure scalar. */
     float& EditExposure();
+    /** @brief Read the final atmosphere exposure. @return Stored exposure scalar. */
     const float& GetExposure() const;
 
+    /** @brief Access the sun radiance multiplier. @return Mutable non-negative intensity scalar. */
     float& EditSunIntensity();
+    /** @brief Read the sun radiance multiplier. @return Stored intensity scalar. */
     const float& GetSunIntensity() const;
 
+    /** @brief Access Rayleigh scattering coefficients. @return Mutable non-negative RGB scattering coefficients. */
     Vec3& EditRayleighScattering();
+    /** @brief Read Rayleigh scattering coefficients. @return Stored RGB scattering coefficients. */
     const Vec3& GetRayleighScattering() const;
 
+    /** @brief Access the Rayleigh scale height. @return Mutable scale height in meters; sanitized to stay positive. */
     float& EditRayleighScaleHeight();
+    /** @brief Read the Rayleigh scale height. @return Stored scale height in meters. */
     const float& GetRayleighScaleHeight() const;
 
+    /** @brief Access Mie scattering coefficients. @return Mutable non-negative RGB scattering coefficients. */
     Vec3& EditMieScattering();
+    /** @brief Read Mie scattering coefficients. @return Stored RGB scattering coefficients. */
     const Vec3& GetMieScattering() const;
 
+    /** @brief Access the Mie scale height. @return Mutable scale height in meters; sanitized to stay positive. */
     float& EditMieScaleHeight();
+    /** @brief Read the Mie scale height. @return Stored scale height in meters. */
     const float& GetMieScaleHeight() const;
 
+    /** @brief Access Mie absorption coefficients. @return Mutable non-negative RGB absorption coefficients. */
     Vec3& EditMieAbsorption();
+    /** @brief Read Mie absorption coefficients. @return Stored RGB absorption coefficients. */
     const Vec3& GetMieAbsorption() const;
 
+    /** @brief Access the Mie anisotropy parameter. @return Mutable forward-scattering `g` term. */
     float& EditMieAnisotropyG();
+    /** @brief Read the Mie anisotropy parameter. @return Stored `g` term. */
     const float& GetMieAnisotropyG() const;
 
+    /** @brief Access the planet radius. @return Mutable radius in meters; sanitized to a finite positive value. */
     float& EditPlanetRadiusMeters();
+    /** @brief Read the planet radius. @return Stored radius in meters. */
     const float& GetPlanetRadiusMeters() const;
 
+    /** @brief Access the atmosphere outer radius. @return Mutable radius in meters; forced above planet radius when applied. */
     float& EditAtmosphereRadiusMeters();
+    /** @brief Read the atmosphere outer radius. @return Stored radius in meters. */
     const float& GetAtmosphereRadiusMeters() const;
 
+    /** @brief Access the camera offset above ground. @return Mutable offset in meters. */
     float& EditCameraGroundOffsetMeters();
+    /** @brief Read the camera offset above ground. @return Stored offset in meters. */
     const float& GetCameraGroundOffsetMeters() const;
 
+    /** @brief Access the maximum sun-distance parameter. @return Mutable distance in meters. */
     float& EditMaxSunDistanceMeters();
+    /** @brief Read the maximum sun-distance parameter. @return Stored distance in meters. */
     const float& GetMaxSunDistanceMeters() const;
 
+    /** @brief Access the number of primary view samples. @return Mutable sample count controlling atmospheric integration quality. */
     std::uint32_t& EditViewSampleCount();
+    /** @brief Read the number of primary view samples. @return Stored sample count. */
     const std::uint32_t& GetViewSampleCount() const;
 
+    /** @brief Access the number of sun-light samples. @return Mutable sample count controlling lighting quality. */
     std::uint32_t& EditSunSampleCount();
+    /** @brief Read the number of sun-light samples. @return Stored sample count. */
     const std::uint32_t& GetSunSampleCount() const;
 
+    /** @brief Access the multi-scattering strength term. @return Mutable non-negative scattering strength scalar. */
     float& EditMultiScatterStrength();
+    /** @brief Read the multi-scattering strength term. @return Stored scattering strength scalar. */
     const float& GetMultiScatterStrength() const;
 
+    /**
+     * @brief Mark the node dirty and attempt an initial atmosphere upload.
+     * @remarks Safe before renderer readiness; missing passes simply cause later retries.
+     */
     void OnCreate();
+    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
     void EditorTick(float DeltaSeconds);
+    /** @brief Mark the node dirty after reflected editor edits. @param Name Name of the changed property. Currently unused. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 

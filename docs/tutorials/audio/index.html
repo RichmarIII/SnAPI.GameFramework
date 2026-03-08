@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -484,6 +545,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -491,7 +608,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -631,7 +748,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -712,10 +829,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-architecture" class="md-nav__link">
+  <a href="#1-add-a-listener" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Architecture
+        1. Add A Listener
       
     </span>
   </a>
@@ -723,10 +840,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-add-a-listener-to-a-camera-node" class="md-nav__link">
+  <a href="#2-add-a-source" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Add a Listener to a Camera Node
+        2. Add A Source
       
     </span>
   </a>
@@ -734,10 +851,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-add-a-source-to-an-actor-node" class="md-nav__link">
+  <a href="#3-understand-deferred-playback" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Add a Source to an Actor Node
+        3. Understand Deferred Playback
       
     </span>
   </a>
@@ -745,10 +862,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-runtime-control" class="md-nav__link">
+  <a href="#4-network-aware-playback" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Runtime Control
+        4. Network-Aware Playback
       
     </span>
   </a>
@@ -756,10 +873,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-networked-playback-flow" class="md-nav__link">
+  <a href="#5-what-actually-replicates" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Networked Playback Flow
+        5. What Actually Replicates
       
     </span>
   </a>
@@ -767,10 +884,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-what-actually-replicates" class="md-nav__link">
+  <a href="#6-sound-data-is-not-replicated" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. What Actually Replicates
+        6. Sound Data Is Not Replicated
       
     </span>
   </a>
@@ -778,43 +895,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-field-flags-vs-value-codec-nested-structs" class="md-nav__link">
+  <a href="#what-to-read-next" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Field Flags vs Value Codec (Nested Structs)
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#8-important-runtime-notes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        8. Important Runtime Notes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#9-minimal-frame-pump" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        9. Minimal Frame Pump
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#10-troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        10. Troubleshooting
+        What To Read Next
       
     </span>
   </a>
@@ -853,6 +937,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1049,144 +1502,103 @@
 
 
 <h1 id="audio-components">Audio Components<a class="headerlink" href="#audio-components" title="Permanent link">&para;</a></h1>
-<p>This page explains how audio is integrated into GameFramework through world-owned subsystems and components.</p>
-<h2 id="1-architecture">1. Architecture<a class="headerlink" href="#1-architecture" title="Permanent link">&para;</a></h2>
+<p>Audio follows the same world-owned pattern as the other subsystems.</p>
 <ul>
-<li><code>World</code> owns <code>AudioSystem</code>.</li>
-<li><code>World</code> also owns <code>NetworkSystem</code>, so audio gameplay RPC can route through world networking.</li>
-<li><code>World::Tick(...)</code> performs the per-frame <code>AudioSystem::Update(...)</code>.</li>
-<li><code>AudioListenerComponent</code> writes listener transform each tick.</li>
-<li><code>AudioSourceComponent</code> controls emitter, sound loading, playback, and spatial settings.</li>
+<li><code>World</code> owns <code>AudioSystem</code></li>
+<li><code>AudioListenerComponent</code> writes the shared listener transform</li>
+<li><code>AudioSourceComponent</code> owns an emitter handle and optional replicated playback flow</li>
 </ul>
-<p>Design goal: gameplay code accesses systems through world context (<code>Owner()-&gt;World()-&gt;Audio()</code> pattern), not globals.</p>
-<h2 id="2-add-a-listener-to-a-camera-node">2. Add a Listener to a Camera Node<a class="headerlink" href="#2-add-a-listener-to-a-camera-node" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">CameraNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Camera&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">CameraNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">CameraTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">CameraTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">2.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">-6.0f</span><span class="p">);</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Listener</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">AudioListenerComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Listener</span><span class="o">-&gt;</span><span class="n">Active</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
-</code></pre></div>
-<p>What happens:</p>
-<ul>
-<li><code>OnCreate()</code> initializes audio system lazily.</li>
-<li>Each tick, listener transform is pushed to <code>AudioEngine</code>.</li>
-<li>The audio backend frame update itself is handled once by <code>World::Tick(...)</code>.</li>
-</ul>
-<h2 id="3-add-a-source-to-an-actor-node">3. Add a Source to an Actor Node<a class="headerlink" href="#3-add-a-source-to-an-actor-node" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Graph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Speaker&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">ActorNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">ActorTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">ActorTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">);</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">Source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ActorNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">AudioSourceComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">SoundPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;assets/audio/loop.wav&quot;</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Streaming</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">AutoPlay</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Looping</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Volume</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.8f</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">MinDistance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">MaxDistance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">40.0f</span><span class="p">;</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Rolloff</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">;</span>
-</code></pre></div>
-<h2 id="4-runtime-control">4. Runtime Control<a class="headerlink" href="#4-runtime-control" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="n">Source</span><span class="o">-&gt;</span><span class="n">Play</span><span class="p">();</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">Stop</span><span class="p">();</span>
-
-<span class="kt">bool</span><span class="w"> </span><span class="n">Loaded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Source</span><span class="o">-&gt;</span><span class="n">IsLoaded</span><span class="p">();</span>
-<span class="kt">bool</span><span class="w"> </span><span class="n">Playing</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Source</span><span class="o">-&gt;</span><span class="n">IsPlaying</span><span class="p">();</span>
-
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">LoadSound</span><span class="p">(</span><span class="s">&quot;assets/audio/one_shot.wav&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">false</span><span class="p">);</span>
-<span class="n">Source</span><span class="o">-&gt;</span><span class="n">UnloadSound</span><span class="p">();</span>
-</code></pre></div>
-<p><code>AudioSourceComponent</code> keeps emitter state synced with current settings and owner transform.</p>
-<h2 id="5-networked-playback-flow">5. Networked Playback Flow<a class="headerlink" href="#5-networked-playback-flow" title="Permanent link">&para;</a></h2>
-<p><code>AudioSourceComponent</code> exposes gameplay methods (<code>Play</code>, <code>Stop</code>) and internally routes through <code>IComponent::CallRPC(...)</code> when networking is attached.</p>
-<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">AudioSourceComponent::Play</span><span class="p">()</span>
+<h2 id="1-add-a-listener">1. Add A Listener<a class="headerlink" href="#1-add-a-listener" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">CameraHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;AudioCamera&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">CameraHandle</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">CallRPC</span><span class="p">(</span><span class="s">&quot;PlayServer&quot;</span><span class="p">))</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="k">return</span><span class="p">;</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="w">    </span><span class="n">PlayClient</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">CameraNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">CameraNode</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.8f</span><span class="p">,</span><span class="w"> </span><span class="mf">-6.0f</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Listener</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CameraNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">AudioListenerComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Listener</span><span class="o">-&gt;</span><span class="n">SetActive</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
 <span class="p">}</span>
 </code></pre></div>
-<p><code>Play()</code> flow:</p>
-<ol>
-<li>Client call: <code>CallRPC("PlayServer")</code> forwards to server.</li>
-<li>Server <code>PlayServer</code>: <code>CallRPC("PlayClient")</code> multicasts.</li>
-<li><code>PlayClient</code>: executes playback on listening peers.</li>
-</ol>
-<p><code>Stop()</code> follows the same pattern (<code>Stop -&gt; StopServer -&gt; StopClient</code>).</p>
-<p>Dedicated server guard:</p>
+<p>Important reality:</p>
 <ul>
-<li><code>PlayClient</code>/<code>StopClient</code> do not emit audio on non-listen dedicated server instances.</li>
-<li>Listen server will execute local playback plus multicast to clients.</li>
+<li>the audio backend has one shared listener state per world audio system</li>
+<li>multiple active listener components are not arbitrated</li>
+<li>the last active listener to tick wins</li>
 </ul>
-<h2 id="6-what-actually-replicates">6. What Actually Replicates<a class="headerlink" href="#6-what-actually-replicates" title="Permanent link">&para;</a></h2>
-<p>By default in built-in reflection registration:</p>
-<ul>
-<li><code>AudioSourceComponent::Settings</code> is replication-visible as a container field.</li>
-<li>Inside <code>Settings</code>, only <code>SoundPath</code> is flagged for replication.</li>
-<li>Other settings (<code>Volume</code>, <code>Looping</code>, distances, etc.) are local unless you add replication flags for them.</li>
-</ul>
-<p>Important consequence:</p>
-<ul>
-<li>current default network payload for settings carries the path string (<code>SoundPath</code>), not the full settings struct.</li>
-<li>audio bytes are not replicated; clients must resolve/load the referenced asset locally.</li>
-</ul>
-<h2 id="7-field-flags-vs-value-codec-nested-structs">7. Field Flags vs Value Codec (Nested Structs)<a class="headerlink" href="#7-field-flags-vs-value-codec-nested-structs" title="Permanent link">&para;</a></h2>
-<p>Replication for a reflected field behaves as follows:</p>
-<ul>
-<li>if the field type has a registered value codec, that codec serializes the full field value.</li>
-<li>if no codec exists, replication walks nested reflected fields and serializes only nested fields marked with replication flags.</li>
-</ul>
-<p>For <code>AudioSourceComponent::Settings</code>, default behavior is nested-field traversal, so only flagged members replicate.</p>
-<h2 id="8-important-runtime-notes">8. Important Runtime Notes<a class="headerlink" href="#8-important-runtime-notes" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Source/listener components rely on owner node transform if <code>TransformComponent</code> exists.</li>
-<li>Audio system initialization is lazy (<code>Initialize()</code> called as needed).</li>
-<li>Audio components are ordinary reflected components, so they serialize like other components.</li>
-</ul>
-<h2 id="9-minimal-frame-pump">9. Minimal Frame Pump<a class="headerlink" href="#9-minimal-frame-pump" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">Running</span><span class="p">)</span>
+<h2 id="2-add-a-source">2. Add A Source<a class="headerlink" href="#2-add-a-source" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">SpeakerHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Speaker&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">SpeakerHandle</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">Dt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">Tick</span><span class="p">(</span><span class="n">Dt</span><span class="p">);</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">LateTick</span><span class="p">(</span><span class="n">Dt</span><span class="p">);</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Speaker</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SpeakerHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Speaker</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Speaker</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Source</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Speaker</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">AudioSourceComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Settings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Source</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">SoundPath</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;assets/audio/loop.wav&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">Streaming</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">AutoPlay</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">Looping</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">Volume</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.8f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">MinDistance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">MaxDistance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">40.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">Settings</span><span class="p">.</span><span class="n">Rolloff</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Listener/source updates happen through normal component ticking.
-Audio backend update is world-owned, not component-owned.</p>
-<h2 id="10-troubleshooting">10. Troubleshooting<a class="headerlink" href="#10-troubleshooting" title="Permanent link">&para;</a></h2>
+<h2 id="3-understand-deferred-playback">3. Understand Deferred Playback<a class="headerlink" href="#3-understand-deferred-playback" title="Permanent link">&para;</a></h2>
+<p><code>AudioSourceComponent</code> can defer actual playback if the sound or engine is not ready yet.</p>
+<p>That means calling <code>Play()</code> does not guarantee the backend starts in the same line of code. It guarantees the component records the intent and tries to fulfill it when the load/runtime state allows.</p>
+<h2 id="4-network-aware-playback">4. Network-Aware Playback<a class="headerlink" href="#4-network-aware-playback" title="Permanent link">&para;</a></h2>
+<p><code>AudioSourceComponent::Play()</code> and <code>Stop()</code> are gameplay-facing entry points.</p>
+<p>They follow a role-aware flow:</p>
 <ul>
-<li>
-<p>No audio output:</p>
+<li>client tries the server RPC path first</li>
+<li>authority applies local state and fans out to client endpoints</li>
+<li>dedicated servers skip actual local playback</li>
+</ul>
+<p>So the high-level rule is:</p>
 <ul>
-<li>verify audio asset path in <code>Settings.SoundPath</code></li>
-<li>ensure listener exists and is active</li>
-<li>ensure source was loaded/played</li>
+<li>call <code>Play()</code> / <code>Stop()</code> from gameplay code</li>
+<li>do not manually jump straight to <code>PlayClient()</code> unless you are intentionally bypassing the normal routing</li>
 </ul>
-</li>
-<li>
-<p>Replicated play event arrives but no sound:</p>
+<h2 id="5-what-actually-replicates">5. What Actually Replicates<a class="headerlink" href="#5-what-actually-replicates" title="Permanent link">&para;</a></h2>
+<p>The settings field itself is reflected and marked for replication, but actual nested replication still depends on reflected field metadata and codec behavior.</p>
+<p>The practical point is:</p>
 <ul>
-<li>ensure the client machine can resolve the same <code>SoundPath</code></li>
-<li>confirm the source node/component has <code>Replicated(true)</code> enabled</li>
+<li>do not assume every nested audio setting auto-replicates just because the settings container exists</li>
+<li>verify the actual reflected fields and replication flags for the values you care about</li>
 </ul>
-</li>
-<li>
-<p>Spatial audio sounds wrong:</p>
+<h2 id="6-sound-data-is-not-replicated">6. Sound Data Is Not Replicated<a class="headerlink" href="#6-sound-data-is-not-replicated" title="Permanent link">&para;</a></h2>
+<p>Only metadata and gameplay intent are networked.</p>
+<p>Clients are still expected to resolve and load the referenced audio asset locally.</p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
 <ul>
-<li>check transform values and distance parameters (<code>MinDistance</code>, <code>MaxDistance</code>, <code>Rolloff</code>)</li>
+<li><a href="../haunted_radio/">Haunted Radio</a></li>
+<li><a href="../networking/">Networking, Replication, and Reflected RPC</a></li>
 </ul>
-</li>
-</ul>
-<p>Next: <a href="../testing/">Testing and Validation</a></p>
 
 
 

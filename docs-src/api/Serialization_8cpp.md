@@ -11,3 +11,5 @@
 - **Type:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::SerializableField
 - **Type:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::SerializableFieldCacheEntry
 - **Type:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::TypeVisitGuard
+- **Type:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::PendingNodeDeserialize
+- **Type:** SnAPI::GameFramework::anonymous_namespace{Serialization.cpp}::TObjectIdRemap

@@ -8,6 +8,7 @@
 namespace SnAPI::GameFramework::detail
 {
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief Internal handler for failed debug assertions.
  * @param File Source file where the assertion failed.
  * @param Line Line number where the assertion failed.
@@ -27,7 +28,8 @@ inline void DebugAssertFail(const char* File, int Line, const char* Condition, c
 
 #ifndef NDEBUG
 /**
- * @brief Debug-only assertion with formatted diagnostic message.
+ * @ingroup SnAPI_GameFramework
+ * @brief Debug-only assertion macro with formatted diagnostic output.
  * @param condition Expression that must evaluate to true.
  * @param fmt std::format-style format string.
  * @remarks When the condition is false, a detailed message is printed and the
@@ -43,7 +45,8 @@ inline void DebugAssertFail(const char* File, int Line, const char* Condition, c
         } while (0)
 #else
 /**
- * @brief Release-build no-op for DEBUG_ASSERT.
+ * @ingroup SnAPI_GameFramework
+ * @brief Release-build no-op for `DEBUG_ASSERT`.
  * @param condition Expression that is ignored in release builds.
  * @param fmt Unused.
  * @remarks Keeps call sites intact while removing runtime cost.

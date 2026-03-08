@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -484,6 +545,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -491,7 +608,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -670,7 +787,7 @@
   <a href="#2-serialize-to-payload-bytes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Serialize to Payload Bytes
+        2. Serialize To Payload Bytes
       
     </span>
   </a>
@@ -678,10 +795,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-write-a-snpak" class="md-nav__link">
+  <a href="#3-register-payload-types-and-factories" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Write a .snpak
+        3. Register Payload Types And Factories
       
     </span>
   </a>
@@ -689,10 +806,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-register-gameframework-payload-runtime-factories" class="md-nav__link">
+  <a href="#4-write-a-snpak" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Register GameFramework Payload + Runtime Factories
+        4. Write A .snpak
       
     </span>
   </a>
@@ -703,7 +820,7 @@
   <a href="#5-mount-and-load" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Mount and Load
+        5. Mount And Load
       
     </span>
   </a>
@@ -711,10 +828,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-common-failure-cases" class="md-nav__link">
+  <a href="#6-tassetreft-is-the-high-level-link-type" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Common Failure Cases
+        6. TAssetRef&lt;T&gt; Is The High-Level Link Type
       
     </span>
   </a>
@@ -722,10 +839,60 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-compression-notes" class="md-nav__link">
+  <a href="#7-practical-guidance" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Compression Notes
+        7. Practical Guidance
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Practical Guidance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#use-node-payloads-for-prefab-like-subtree-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use node payloads for prefab-like subtree content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-level-payloads-for-authored-chunks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use level payloads for authored chunks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-world-payloads-for-complete-runtime-snapshots-or-packs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use world payloads for complete runtime snapshots or packs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-read-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What To Read Next
       
     </span>
   </a>
@@ -755,7 +922,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -820,6 +987,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1016,37 +1552,64 @@
 
 
 <h1 id="assetpipeline-integration">AssetPipeline Integration<a class="headerlink" href="#assetpipeline-integration" title="Permanent link">&para;</a></h1>
-<p>This page shows the full flow to package a <code>World</code>/<code>Level</code>/<code>NodeGraph</code> into <code>.snpak</code> and load it back through <code>AssetManager</code>.</p>
-<p>The same pattern is used by <code>examples/FeatureShowcase</code> and <code>examples/WorldPerfBenchmark</code>.</p>
+<p>GameFramework integrates with SnAPI.AssetPipeline at the payload and runtime-factory level.</p>
+<p>The important update since older docs is the payload surface:</p>
+<ul>
+<li>node payloads</li>
+<li>level payloads</li>
+<li>world payloads</li>
+</ul>
+<p>not old graph payloads.</p>
 <h2 id="1-build-runtime-data">1. Build Runtime Data<a class="headerlink" href="#1-build-runtime-data" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="n">RegisterBuiltinTypes</span><span class="p">();</span>
 
 <span class="n">World</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">(</span><span class="s">&quot;GameWorld&quot;</span><span class="p">);</span>
 <span class="k">auto</span><span class="w"> </span><span class="n">LevelHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateLevel</span><span class="p">(</span><span class="s">&quot;MainLevel&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">LevelRef</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">LevelRef</span><span class="p">(</span><span class="n">LevelHandle</span><span class="p">.</span><span class="n">value</span><span class="p">());</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">LevelHandle</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">GraphHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LevelRef</span><span class="o">-&gt;</span><span class="n">CreateGraph</span><span class="p">(</span><span class="s">&quot;Gameplay&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">GraphRef</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">LevelRef</span><span class="o">-&gt;</span><span class="n">Graph</span><span class="p">(</span><span class="n">GraphHandle</span><span class="p">.</span><span class="n">value</span><span class="p">());</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">LevelRef</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeCast</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span><span class="p">(</span><span class="n">LevelHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">());</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">LevelRef</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
 
-<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">GraphRef</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">LevelRef</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">LevelRef</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Camera&quot;</span><span class="p">);</span>
 </code></pre></div>
-<h2 id="2-serialize-to-payload-bytes">2. Serialize to Payload Bytes<a class="headerlink" href="#2-serialize-to-payload-bytes" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">WorldPayloadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldSerializer</span><span class="o">::</span><span class="n">Serialize</span><span class="p">(</span><span class="n">WorldInstance</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">WorldPayloadResult</span><span class="p">)</span>
+<h2 id="2-serialize-to-payload-bytes">2. Serialize To Payload Bytes<a class="headerlink" href="#2-serialize-to-payload-bytes" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">WorldPayload</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldSerializer</span><span class="o">::</span><span class="n">Serialize</span><span class="p">(</span><span class="n">WorldInstance</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">WorldPayload</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
 <span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">WorldBytes</span><span class="p">;</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">SerializeWorldPayload</span><span class="p">(</span><span class="n">WorldPayloadResult</span><span class="p">.</span><span class="n">value</span><span class="p">(),</span><span class="w"> </span><span class="n">WorldBytes</span><span class="p">))</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">SerializeWorldPayload</span><span class="p">(</span><span class="o">*</span><span class="n">WorldPayload</span><span class="p">,</span><span class="w"> </span><span class="n">WorldBytes</span><span class="p">))</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<h2 id="3-write-a-snpak">3. Write a <code>.snpak</code><a class="headerlink" href="#3-write-a-snpak" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;AssetPackWriter.h&quot;</span>
-
-<span class="o">::</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">AssetPipeline</span><span class="o">::</span><span class="n">AssetPackWriter</span><span class="w"> </span><span class="n">Writer</span><span class="p">;</span>
+<p>You can do the same with:</p>
+<ul>
+<li><code>NodeSerializer</code> + <code>SerializeNodePayload</code></li>
+<li><code>LevelSerializer</code> + <code>SerializeLevelPayload</code></li>
+</ul>
+<h2 id="3-register-payload-types-and-factories">3. Register Payload Types And Factories<a class="headerlink" href="#3-register-payload-types-and-factories" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="o">::</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">AssetPipeline</span><span class="o">::</span><span class="n">AssetManager</span><span class="w"> </span><span class="n">Manager</span><span class="p">;</span>
+<span class="n">RegisterAssetPipelinePayloads</span><span class="p">(</span><span class="n">Manager</span><span class="p">.</span><span class="n">GetRegistry</span><span class="p">());</span>
+<span class="n">Manager</span><span class="p">.</span><span class="n">GetRegistry</span><span class="p">().</span><span class="n">Freeze</span><span class="p">();</span>
+<span class="n">RegisterAssetPipelineFactories</span><span class="p">(</span><span class="n">Manager</span><span class="p">);</span>
+</code></pre></div>
+<p>Why this matters:</p>
+<ul>
+<li>payload registration teaches the asset system how to decode the bytes</li>
+<li>factory registration teaches it how to materialize runtime objects from those payloads</li>
+</ul>
+<h2 id="4-write-a-snpak">4. Write A <code>.snpak</code><a class="headerlink" href="#4-write-a-snpak" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="o">::</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">AssetPipeline</span><span class="o">::</span><span class="n">AssetPackWriter</span><span class="w"> </span><span class="n">Writer</span><span class="p">;</span>
 
 <span class="o">::</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">AssetPipeline</span><span class="o">::</span><span class="n">AssetPackEntry</span><span class="w"> </span><span class="n">Entry</span><span class="p">;</span>
 <span class="n">Entry</span><span class="p">.</span><span class="n">Id</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">AssetPipelineAssetIdFromName</span><span class="p">(</span><span class="s">&quot;demo.world&quot;</span><span class="p">);</span>
@@ -1059,31 +1622,10 @@
 <span class="w">    </span><span class="n">WorldBytes</span><span class="p">);</span>
 
 <span class="n">Writer</span><span class="p">.</span><span class="n">AddAsset</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">Entry</span><span class="p">));</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">WriteResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Writer</span><span class="p">.</span><span class="n">Write</span><span class="p">(</span><span class="s">&quot;DemoContent.snpak&quot;</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">WriteResult</span><span class="p">)</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">return</span><span class="p">;</span>
-<span class="p">}</span>
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Writer</span><span class="p">.</span><span class="n">Write</span><span class="p">(</span><span class="s">&quot;DemoContent.snpak&quot;</span><span class="p">);</span>
 </code></pre></div>
-<h2 id="4-register-gameframework-payload-runtime-factories">4. Register GameFramework Payload + Runtime Factories<a class="headerlink" href="#4-register-gameframework-payload-runtime-factories" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;AssetManager.h&quot;</span>
-
-<span class="o">::</span><span class="n">SnAPI</span><span class="o">::</span><span class="n">AssetPipeline</span><span class="o">::</span><span class="n">AssetManager</span><span class="w"> </span><span class="n">Manager</span><span class="p">;</span>
-
-<span class="n">RegisterAssetPipelinePayloads</span><span class="p">(</span><span class="n">Manager</span><span class="p">.</span><span class="n">GetRegistry</span><span class="p">());</span>
-<span class="n">Manager</span><span class="p">.</span><span class="n">GetRegistry</span><span class="p">().</span><span class="n">Freeze</span><span class="p">();</span>
-<span class="n">RegisterAssetPipelineFactories</span><span class="p">(</span><span class="n">Manager</span><span class="p">);</span>
-</code></pre></div>
-<p>Why this order matters:</p>
-<ol>
-<li>payload serializers must be in the payload registry</li>
-<li>optional <code>Freeze()</code> locks registry for fast read-only lookups</li>
-<li>runtime factories enable <code>Load&lt;T&gt;</code>/<code>Get&lt;T&gt;</code> materialization</li>
-</ol>
-<h2 id="5-mount-and-load">5. Mount and Load<a class="headerlink" href="#5-mount-and-load" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">MountResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Manager</span><span class="p">.</span><span class="n">MountPack</span><span class="p">(</span><span class="s">&quot;DemoContent.snpak&quot;</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">MountResult</span><span class="p">)</span>
+<h2 id="5-mount-and-load">5. Mount And Load<a class="headerlink" href="#5-mount-and-load" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Manager</span><span class="p">.</span><span class="n">MountPack</span><span class="p">(</span><span class="s">&quot;DemoContent.snpak&quot;</span><span class="p">))</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
@@ -1094,28 +1636,42 @@
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>The returned world can be traversed normally (<code>Levels()</code>, <code>CreateNode</code>, <code>NodePool().ForEach</code>, etc.).</p>
-<h2 id="6-common-failure-cases">6. Common Failure Cases<a class="headerlink" href="#6-common-failure-cases" title="Permanent link">&para;</a></h2>
+<p>The loaded world is a detached runtime object you can inspect or integrate like any other world object, depending on your asset usage pattern.</p>
+<h2 id="6-tassetreft-is-the-high-level-link-type">6. <code>TAssetRef&lt;T&gt;</code> Is The High-Level Link Type<a class="headerlink" href="#6-tassetreft-is-the-high-level-link-type" title="Permanent link">&para;</a></h2>
+<p>Use <code>TAssetRef&lt;T&gt;</code> when you want a reflected reference to a node, level, world, mesh-backed type, or other asset-managed object.</p>
+<p>Key facts:</p>
 <ul>
-<li><code>Type not registered</code> on load:<ul>
-<li><code>RegisterBuiltinTypes()</code> was not called early enough.</li>
-<li>The type’s reflection macro was never linked/referenced.</li>
+<li>it can resolve by asset id or asset name</li>
+<li>it can use a default asset manager</li>
+<li>it supports load-style flows without forcing you to hand-roll registry lookups every time</li>
 </ul>
-</li>
-<li><code>Failed to load world from AssetManager</code>:<ul>
-<li>payload serializers/factories were not registered.</li>
-<li>payload type/schema mismatch.</li>
+<h2 id="7-practical-guidance">7. Practical Guidance<a class="headerlink" href="#7-practical-guidance" title="Permanent link">&para;</a></h2>
+<h3 id="use-node-payloads-for-prefab-like-subtree-content">Use node payloads for prefab-like subtree content<a class="headerlink" href="#use-node-payloads-for-prefab-like-subtree-content" title="Permanent link">&para;</a></h3>
+<p>Good for:</p>
+<ul>
+<li>a single spawnable prop cluster</li>
+<li>a pawn archetype subtree</li>
+<li>a compact authored gameplay object</li>
 </ul>
-</li>
-<li>Objects deserialize but links are missing:<ul>
-<li>verify handles/UUID fields were reflected and serialized.</li>
+<h3 id="use-level-payloads-for-authored-chunks">Use level payloads for authored chunks<a class="headerlink" href="#use-level-payloads-for-authored-chunks" title="Permanent link">&para;</a></h3>
+<p>Good for:</p>
+<ul>
+<li>a playable arena</li>
+<li>a streamed dungeon room</li>
+<li>a mission slice</li>
 </ul>
-</li>
+<h3 id="use-world-payloads-for-complete-runtime-snapshots-or-packs">Use world payloads for complete runtime snapshots or packs<a class="headerlink" href="#use-world-payloads-for-complete-runtime-snapshots-or-packs" title="Permanent link">&para;</a></h3>
+<p>Good for:</p>
+<ul>
+<li>full sample worlds</li>
+<li>benchmark scenes</li>
+<li>end-to-end integration tests</li>
 </ul>
-<h2 id="7-compression-notes">7. Compression Notes<a class="headerlink" href="#7-compression-notes" title="Permanent link">&para;</a></h2>
-<p>Compression behavior is primarily configured in SnAPI.AssetPipeline (writer settings and optional per-entry overrides).
-GameFramework payload integration is compatible with those settings because it only provides payload bytes and factories.</p>
-<p>Next: <a href="../networking/">Networking Replication and RPC</a></p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../networking/">Networking, Replication, and Reflected RPC</a></li>
+<li><a href="../shipyard_save_load/">Shipyard Save/Load</a></li>
+</ul>
 
 
 

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -484,6 +545,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -491,7 +608,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -572,10 +689,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-physics-architecture-in-gameframework" class="md-nav__link">
+  <a href="#1-bootstrap-physics" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Physics Architecture in GameFramework
+        1. Bootstrap Physics
       
     </span>
   </a>
@@ -583,10 +700,77 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-bootstrap-physics-through-gameruntimesettings" class="md-nav__link">
+  <a href="#2-add-a-collider-and-rigid-body" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Bootstrap Physics Through GameRuntimeSettings
+        2. Add A Collider And Rigid Body
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Add A Collider And Rigid Body">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#division-of-responsibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Division of responsibility
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-know-the-sync-direction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Know The Sync Direction
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Know The Sync Direction">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dynamic-bodies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic bodies
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#static-and-kinematic-bodies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Static and kinematic bodies
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-move-a-character-with-charactermovementcontroller" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Move A Character With CharacterMovementController
       
     </span>
   </a>
@@ -594,10 +778,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-tick-policy-fixed-variable-or-manual" class="md-nav__link">
+  <a href="#5-fixed-tick-is-the-right-place-for-movement" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Tick Policy: Fixed, Variable, or Manual
+        5. Fixed Tick Is The Right Place For Movement
       
     </span>
   </a>
@@ -605,10 +789,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-first-scene-ground-falling-box" class="md-nav__link">
+  <a href="#6-teleports-forces-and-velocity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. First Scene: Ground + Falling Box
+        6. Teleports, Forces, and Velocity
       
     </span>
   </a>
@@ -616,10 +800,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-collidercomponentsettings-explained" class="md-nav__link">
+  <a href="#7-sleep-and-activity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. ColliderComponent::Settings Explained
+        7. Sleep And Activity
       
     </span>
   </a>
@@ -627,10 +811,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-rigidbodycomponent-semantics" class="md-nav__link">
+  <a href="#8-floating-origin" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. RigidBodyComponent Semantics
+        8. Floating Origin
       
     </span>
   </a>
@@ -638,54 +822,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-motion-apis-force-vs-impulse-vs-velocity" class="md-nav__link">
+  <a href="#what-to-read-next" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Motion APIs: Force vs Impulse vs Velocity
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#8-character-movement-controller" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        8. Character Movement Controller
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#9-replication-notes-for-physics-components" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        9. Replication Notes for Physics Components
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#10-common-setup-mistakes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        10. Common Setup Mistakes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#11-what-to-read-next" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        11. What to Read Next
+        What To Read Next
       
     </span>
   </a>
@@ -799,7 +939,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -864,6 +1004,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1060,291 +1569,154 @@
 
 
 <h1 id="physics-system-and-components">Physics System and Components<a class="headerlink" href="#physics-system-and-components" title="Permanent link">&para;</a></h1>
-<p>This page is the beginner-to-practical guide for GameFramework physics integration.
-By the end, you should understand:</p>
-<ol>
-<li>how physics is owned and stepped in <code>World</code> / <code>GameRuntime</code></li>
-<li>how built-in physics components map onto runtime behavior</li>
-<li>when to use forces, impulses, or direct velocity control</li>
-<li>how to avoid the most common setup mistakes</li>
-</ol>
-<h2 id="1-physics-architecture-in-gameframework">1. Physics Architecture in GameFramework<a class="headerlink" href="#1-physics-architecture-in-gameframework" title="Permanent link">&para;</a></h2>
-<p>At runtime, physics is world-owned:</p>
+<p>Physics is also world-owned.</p>
+<p>The important pieces are:</p>
 <ul>
-<li><code>World</code> owns one <code>PhysicsSystem</code>.</li>
-<li><code>PhysicsSystem</code> owns one active <code>SnAPI::Physics::IPhysicsScene</code>.</li>
-<li>Nodes/components access physics through <code>Owner()-&gt;World()-&gt;Physics()</code>.</li>
+<li><code>PhysicsSystem</code> owns the scene</li>
+<li><code>ColliderComponent</code> stores passive shape/filter/material data</li>
+<li><code>RigidBodyComponent</code> owns the backend body handle</li>
+<li><code>CharacterMovementController</code> drives movement on top of a sibling rigid body</li>
 </ul>
-<p>This follows the same subsystem pattern as networking and audio:</p>
-<ul>
-<li>no globals</li>
-<li>explicit lifetime</li>
-<li>one clear ownership path</li>
-</ul>
-<h2 id="2-bootstrap-physics-through-gameruntimesettings">2. Bootstrap Physics Through <code>GameRuntimeSettings</code><a class="headerlink" href="#2-bootstrap-physics-through-gameruntimesettings" title="Permanent link">&para;</a></h2>
-<p>If you use <code>GameRuntime</code> (recommended for apps/examples), physics is configured in <code>GameRuntimeSettings::Physics</code>.</p>
-<div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;GameFramework.hpp&quot;</span>
-
-<span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">SnAPI</span><span class="o">::</span><span class="nn">GameFramework</span><span class="p">;</span>
-
-<span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
+<h2 id="1-bootstrap-physics">1. Bootstrap Physics<a class="headerlink" href="#1-bootstrap-physics" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
 <span class="n">GameRuntimeSettings</span><span class="w"> </span><span class="n">Settings</span><span class="p">{};</span>
-<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;PhysicsSandbox&quot;</span><span class="p">;</span>
-<span class="n">Settings</span><span class="p">.</span><span class="n">RegisterBuiltins</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
-
+<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;PhysicsWorld&quot;</span><span class="p">;</span>
 <span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">EnableFixedTick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">FixedDeltaSeconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
-<span class="n">Settings</span><span class="p">.</span><span class="n">Tick</span><span class="p">.</span><span class="n">MaxFixedStepsPerUpdate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">4</span><span class="p">;</span>
 
 <span class="n">GameRuntimePhysicsSettings</span><span class="w"> </span><span class="n">Physics</span><span class="p">{};</span>
 <span class="n">Physics</span><span class="p">.</span><span class="n">TickInFixedTick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="n">Physics</span><span class="p">.</span><span class="n">TickInVariableTick</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
-
-<span class="n">Physics</span><span class="p">.</span><span class="n">Scene</span><span class="p">.</span><span class="n">Gravity</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">-9.81f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Scene</span><span class="p">.</span><span class="n">MaxBodies</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">20000</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Scene</span><span class="p">.</span><span class="n">CollisionSteps</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
-
-<span class="c1">// Current default backend is Jolt for all domains.</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">RigidBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">QueryBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-<span class="n">Physics</span><span class="p">.</span><span class="n">Routing</span><span class="p">.</span><span class="n">CharacterBackend</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EPhysicsBackend</span><span class="o">::</span><span class="n">Jolt</span><span class="p">;</span>
-
+<span class="n">Physics</span><span class="p">.</span><span class="n">EnableFloatingOrigin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="n">Physics</span><span class="p">.</span><span class="n">AutoRebaseFloatingOrigin</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="n">Physics</span><span class="p">.</span><span class="n">FloatingOriginRebaseDistance</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">512.0</span><span class="p">;</span>
 <span class="n">Settings</span><span class="p">.</span><span class="n">Physics</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Physics</span><span class="p">;</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">InitResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">InitResult</span><span class="p">)</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">InitResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span><span class="w"> </span><span class="o">!</span><span class="n">InitResult</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="c1">// handle init error</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Key points:</p>
-<ul>
-<li>if <code>Settings.Physics</code> is <code>std::nullopt</code>, no world physics scene is created.</li>
-<li>if enabled, <code>GameRuntime::Init(...)</code> initializes world physics before networking.</li>
-<li><code>GameRuntime::Shutdown()</code> shuts physics down cleanly.</li>
-</ul>
-<h2 id="3-tick-policy-fixed-variable-or-manual">3. Tick Policy: Fixed, Variable, or Manual<a class="headerlink" href="#3-tick-policy-fixed-variable-or-manual" title="Permanent link">&para;</a></h2>
-<p><code>PhysicsBootstrapSettings</code> gives two tick switches:</p>
-<ul>
-<li><code>TickInFixedTick</code></li>
-<li><code>TickInVariableTick</code></li>
-</ul>
-<p>Recommended defaults:</p>
-<ul>
-<li>gameplay simulation: <code>TickInFixedTick = true</code>, <code>TickInVariableTick = false</code></li>
-<li>quick sandbox/prototyping: variable stepping can be acceptable</li>
-</ul>
-<p>Manual mode is also possible:</p>
-<ol>
-<li>set both flags to <code>false</code></li>
-<li>call <code>World::Physics().Step(DeltaSeconds)</code> yourself</li>
-</ol>
-<p>That is useful when you need custom simulation phases.</p>
-<h2 id="4-first-scene-ground-falling-box">4. First Scene: Ground + Falling Box<a class="headerlink" href="#4-first-scene-ground-falling-box" title="Permanent link">&para;</a></h2>
-<p>This is the minimum complete setup.</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">WorldRef</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">();</span>
-
-<span class="c1">// Ground node</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">GroundNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldRef</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Ground&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Ground</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GroundNodeResult</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">GroundNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">()</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">nullptr</span><span class="p">;</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Ground</span><span class="p">)</span>
+<p>If fixed tick is enabled, physics usually belongs there. That is the default gameplay-safe path.</p>
+<h2 id="2-add-a-collider-and-rigid-body">2. Add A Collider And Rigid Body<a class="headerlink" href="#2-add-a-collider-and-rigid-body" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">BoxHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Crate&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">BoxHandle</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">GroundTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Ground</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">GroundTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">-1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">GroundCollider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Ground</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">ColliderComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">GroundCollider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Shape</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="c1">// box</span>
-<span class="n">GroundCollider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">HalfExtent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">30.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">30.0f</span><span class="p">};</span>
-<span class="n">GroundCollider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Layer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1u</span><span class="p">;</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">GroundBody</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Ground</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">RigidBodyComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">GroundBody</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">BodyType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="c1">// static</span>
-<span class="n">GroundBody</span><span class="o">-&gt;</span><span class="n">RecreateBody</span><span class="p">();</span>
-
-<span class="c1">// Falling box node</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">BoxNodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldRef</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;FallingBox&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BoxNodeResult</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">BoxNodeResult</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">()</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">nullptr</span><span class="p">;</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">BoxHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Box</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">BoxTransform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Box</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">BoxTransform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Transform</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Box</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="n">Transform</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">);</span>
+<span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">BoxCollider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Box</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">ColliderComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">BoxCollider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Shape</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="c1">// box</span>
-<span class="n">BoxCollider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">HalfExtent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">};</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Collider</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Box</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">ColliderComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">ColliderSettings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Collider</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
+<span class="w">    </span><span class="n">ColliderSettings</span><span class="p">.</span><span class="n">Shape</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EShapeType</span><span class="o">::</span><span class="n">Box</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ColliderSettings</span><span class="p">.</span><span class="n">HalfExtent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">(</span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ColliderSettings</span><span class="p">.</span><span class="n">Friction</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.5f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">ColliderSettings</span><span class="p">.</span><span class="n">Restitution</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">0.1f</span><span class="p">;</span>
+<span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">BoxBody</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Box</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">RigidBodyComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">BoxBody</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">BodyType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span><span class="w"> </span><span class="c1">// dynamic</span>
-<span class="n">BoxBody</span><span class="o">-&gt;</span><span class="n">RecreateBody</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Body</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Box</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">RigidBodyComponent</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">BodySettings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Body</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
+<span class="w">    </span><span class="n">BodySettings</span><span class="p">.</span><span class="n">BodyType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EBodyType</span><span class="o">::</span><span class="n">Dynamic</span><span class="p">;</span>
+<span class="w">    </span><span class="n">BodySettings</span><span class="p">.</span><span class="n">Mass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">BodySettings</span><span class="p">.</span><span class="n">EnableCcd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="p">}</span>
 </code></pre></div>
-<p>Why call <code>RecreateBody()</code>?</p>
+<h3 id="division-of-responsibility">Division of responsibility<a class="headerlink" href="#division-of-responsibility" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>OnCreate()</code> creates a body immediately with current settings.</li>
-<li>if you change settings after <code>Add&lt;RigidBodyComponent&gt;()</code>, call <code>RecreateBody()</code> to apply them now.</li>
+<li><code>ColliderComponent</code> does not create a backend body by itself</li>
+<li><code>RigidBodyComponent</code> reads the collider settings and creates the body</li>
+<li>if there is no collider, <code>RigidBodyComponent</code> falls back to a default box shape</li>
 </ul>
-<h2 id="5-collidercomponentsettings-explained">5. <code>ColliderComponent::Settings</code> Explained<a class="headerlink" href="#5-collidercomponentsettings-explained" title="Permanent link">&para;</a></h2>
-<p><code>ColliderComponent</code> is pure data that <code>RigidBodyComponent</code> consumes.</p>
-<p>Core fields:</p>
-<ul>
-<li><code>Shape</code>: <code>0=sphere</code>, <code>1=box</code>, <code>2=capsule</code></li>
-<li><code>HalfExtent</code>, <code>Radius</code>, <code>HalfHeight</code>: shape dimensions</li>
-<li><code>LocalPosition</code>, <code>LocalRotation</code>: collider offset relative to node transform</li>
-<li><code>Density</code>, <code>Friction</code>, <code>Restitution</code>: contact/material behavior</li>
-<li><code>Layer</code>, <code>Mask</code>: broad filtering</li>
-<li><code>IsTrigger</code>: overlap-only sensor behavior</li>
-</ul>
-<p>Practical defaults:</p>
-<ul>
-<li>start with box colliders while gameplay logic is still changing</li>
-<li>keep layers/masks simple early, then tighten filtering later</li>
-<li>only enable trigger mode where needed (interaction volumes, checkpoints, etc.)</li>
-</ul>
-<h2 id="6-rigidbodycomponent-semantics">6. <code>RigidBodyComponent</code> Semantics<a class="headerlink" href="#6-rigidbodycomponent-semantics" title="Permanent link">&para;</a></h2>
-<p><code>RigidBodyComponent</code> maps node state to backend body state.</p>
-<p>Body type mapping:</p>
-<ul>
-<li><code>BodyType = 0</code>: static</li>
-<li><code>BodyType = 1</code>: kinematic</li>
-<li><code>BodyType = 2</code>: dynamic</li>
-</ul>
-<p>Sync behavior in fixed tick:</p>
-<ul>
-<li>dynamic (<code>2</code>): component pulls transform from physics (<code>SyncFromPhysics</code>)</li>
-<li>static/kinematic (<code>0/1</code>): component pushes node transform into physics (<code>SyncToPhysics</code>)</li>
-</ul>
-<p>Important implications:</p>
-<ul>
-<li>for dynamic actors, gameplay should usually read/write transform through physics-aware paths</li>
-<li>for kinematic actors, gameplay can author transform and let the component push it</li>
-</ul>
-<h2 id="7-motion-apis-force-vs-impulse-vs-velocity">7. Motion APIs: Force vs Impulse vs Velocity<a class="headerlink" href="#7-motion-apis-force-vs-impulse-vs-velocity" title="Permanent link">&para;</a></h2>
-<p><code>RigidBodyComponent</code> gives three common control paths:</p>
-<div class="highlight"><pre><span></span><code><span class="c1">// Continuous force (accumulates through simulation integration)</span>
-<span class="n">Body</span><span class="o">-&gt;</span><span class="n">ApplyForce</span><span class="p">(</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">10.0f</span><span class="p">},</span><span class="w"> </span><span class="nb">false</span><span class="p">);</span>
-
-<span class="c1">// Instant impulse</span>
-<span class="n">Body</span><span class="o">-&gt;</span><span class="n">ApplyForce</span><span class="p">(</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">4.5f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">},</span><span class="w"> </span><span class="nb">true</span><span class="p">);</span>
-
-<span class="c1">// Explicit mode</span>
-<span class="n">Body</span><span class="o">-&gt;</span><span class="n">ApplyForce</span><span class="p">(</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">},</span><span class="w"> </span><span class="n">SnAPI</span><span class="o">::</span><span class="n">Physics</span><span class="o">::</span><span class="n">EForceMode</span><span class="o">::</span><span class="n">VelocityChange</span><span class="p">);</span>
-
-<span class="c1">// Direct velocity set</span>
-<span class="n">Body</span><span class="o">-&gt;</span><span class="n">SetVelocity</span><span class="p">(</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">3.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">});</span>
-</code></pre></div>
-<p>When to use what:</p>
-<ul>
-<li>force:<ul>
-<li>physically-plausible acceleration over time</li>
-<li>good for thrusters, wind-like effects</li>
-</ul>
-</li>
-<li>impulse:<ul>
-<li>one-shot kicks (jump, explosion, hit reactions)</li>
-</ul>
-</li>
-<li>velocity set:<ul>
-<li>deterministic controller behavior (character steering, authoritative corrections)</li>
-</ul>
-</li>
-</ul>
-<h2 id="8-character-movement-controller">8. Character Movement Controller<a class="headerlink" href="#8-character-movement-controller" title="Permanent link">&para;</a></h2>
-<p><code>CharacterMovementController</code> is a gameplay convenience component that expects:</p>
-<ul>
-<li>sibling <code>RigidBodyComponent</code></li>
-<li>usually sibling <code>ColliderComponent</code></li>
-<li>usually sibling <code>TransformComponent</code></li>
-</ul>
-<p>Setup:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">Player</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldRef</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">PlayerNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Player</span><span class="w"> </span><span class="o">?</span><span class="w"> </span><span class="n">Player</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">()</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">nullptr</span><span class="p">;</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PlayerNode</span><span class="p">)</span>
+<h2 id="3-know-the-sync-direction">3. Know The Sync Direction<a class="headerlink" href="#3-know-the-sync-direction" title="Permanent link">&para;</a></h2>
+<p>This is one of the most important rules in the physics layer.</p>
+<h3 id="dynamic-bodies">Dynamic bodies<a class="headerlink" href="#dynamic-bodies" title="Permanent link">&para;</a></h3>
+<p>Dynamic bodies usually pull transforms from physics back into the owning node.</p>
+<h3 id="static-and-kinematic-bodies">Static and kinematic bodies<a class="headerlink" href="#static-and-kinematic-bodies" title="Permanent link">&para;</a></h3>
+<p>Static and kinematic bodies usually push the owning node transform into physics.</p>
+<p>That is why <code>RigidBodyComponent</code> is more than a dumb handle wrapper. It owns synchronization policy.</p>
+<h2 id="4-move-a-character-with-charactermovementcontroller">4. Move A Character With <code>CharacterMovementController</code><a class="headerlink" href="#4-move-a-character-with-charactermovementcontroller" title="Permanent link">&para;</a></h2>
+<p><code>CharacterMovementController</code> is a fixed-step locomotion helper that sits on top of a sibling rigid body.</p>
+<p>Example setup:</p>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">PawnHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Runtime</span><span class="p">.</span><span class="n">World</span><span class="p">().</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">PawnBase</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Runner&quot;</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PawnHandle</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="k">auto</span><span class="w"> </span><span class="n">T</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlayerNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">T</span><span class="o">-&gt;</span><span class="n">Position</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">};</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">C</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlayerNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">ColliderComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">C</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Shape</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
-<span class="n">C</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">HalfExtent</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Vec3</span><span class="p">{</span><span class="mf">0.4f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.9f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.4f</span><span class="p">};</span>
-<span class="n">C</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Layer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2u</span><span class="p">;</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">B</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlayerNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">RigidBodyComponent</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">B</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">BodyType</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span>
-<span class="n">B</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">Mass</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">70.0f</span><span class="p">;</span>
-<span class="n">B</span><span class="o">-&gt;</span><span class="n">RecreateBody</span><span class="p">();</span>
-
-<span class="k">auto</span><span class="w"> </span><span class="n">M</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlayerNode</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">CharacterMovementController</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="n">M</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">().</span><span class="n">MoveForce</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">;</span>
-<span class="n">M</span><span class="o">-&gt;</span><span class="n">SetMoveInput</span><span class="p">(</span><span class="n">Vec3</span><span class="p">{</span><span class="mf">1.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">});</span>
-</code></pre></div>
-<p>Runtime control:</p>
-<div class="highlight"><pre><span></span><code><span class="n">M</span><span class="o">-&gt;</span><span class="n">SetMoveInput</span><span class="p">(</span><span class="n">Vec3</span><span class="p">{</span><span class="n">InputX</span><span class="p">,</span><span class="w"> </span><span class="mf">0.0f</span><span class="p">,</span><span class="w"> </span><span class="n">InputZ</span><span class="p">});</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">WantsJump</span><span class="p">)</span>
+<span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Pawn</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PawnHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Pawn</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="n">M</span><span class="o">-&gt;</span><span class="n">Jump</span><span class="p">();</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
+
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Pawn</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">TransformComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Pawn</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">ColliderComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Pawn</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">RigidBodyComponent</span><span class="o">&gt;</span><span class="p">();</span>
+<span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Pawn</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">InputIntentComponent</span><span class="o">&gt;</span><span class="p">();</span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">Movement</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Pawn</span><span class="o">-&gt;</span><span class="n">Add</span><span class="o">&lt;</span><span class="n">CharacterMovementController</span><span class="o">&gt;</span><span class="p">())</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">&amp;</span><span class="w"> </span><span class="n">MoveSettings</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Movement</span><span class="o">-&gt;</span><span class="n">EditSettings</span><span class="p">();</span>
+<span class="w">    </span><span class="n">MoveSettings</span><span class="p">.</span><span class="n">MoveSpeed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">6.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MoveSettings</span><span class="p">.</span><span class="n">JumpImpulse</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mf">5.0f</span><span class="p">;</span>
+<span class="w">    </span><span class="n">MoveSettings</span><span class="p">.</span><span class="n">KeepUpright</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Controller behavior:</p>
+<p>The controller:</p>
 <ul>
-<li>applies horizontal movement through rigid body velocity control</li>
-<li>estimates vertical velocity from transform deltas so steering does not kill falling/rising behavior</li>
-<li>performs a downward ray probe (<code>GroundProbeDistance</code>) to evaluate grounded state</li>
+<li>reads movement input</li>
+<li>resolves grounded state through a downward probe</li>
+<li>applies horizontal velocity directly</li>
+<li>buffers jump input briefly to tolerate frame/tick mismatch</li>
 </ul>
-<h2 id="9-replication-notes-for-physics-components">9. Replication Notes for Physics Components<a class="headerlink" href="#9-replication-notes-for-physics-components" title="Permanent link">&para;</a></h2>
-<p>Physics components are reflected, so they can participate in replication.
-But keep this detail in mind:</p>
+<h2 id="5-fixed-tick-is-the-right-place-for-movement">5. Fixed Tick Is The Right Place For Movement<a class="headerlink" href="#5-fixed-tick-is-the-right-place-for-movement" title="Permanent link">&para;</a></h2>
+<p><code>CharacterMovementController</code> only performs meaningful work in <code>FixedTick()</code>.</p>
+<p>That is by design.</p>
+<p>If you want deterministic-feeling movement, keep:</p>
 <ul>
-<li><code>ColliderComponent</code> and <code>RigidBodyComponent</code> expose <code>Settings</code> as replication-visible fields.</li>
-<li>nested setting members are currently not individually marked with <code>EFieldFlagBits::Replication</code>.</li>
+<li>fixed tick enabled</li>
+<li>physics stepping in fixed tick</li>
+<li>movement control in fixed tick</li>
 </ul>
+<h2 id="6-teleports-forces-and-velocity">6. Teleports, Forces, and Velocity<a class="headerlink" href="#6-teleports-forces-and-velocity" title="Permanent link">&para;</a></h2>
+<p><code>RigidBodyComponent</code> exposes imperative helpers:</p>
+<ul>
+<li><code>ApplyForce(...)</code></li>
+<li><code>SetVelocity(...)</code></li>
+<li><code>Teleport(...)</code></li>
+</ul>
+<p>Use them for game actions that do not belong inside continuous controller logic.</p>
+<h2 id="7-sleep-and-activity">7. Sleep And Activity<a class="headerlink" href="#7-sleep-and-activity" title="Permanent link">&para;</a></h2>
+<p><code>RigidBodyComponent</code> can respond to body sleep and wake events and optionally deactivate the component when the body sleeps.</p>
+<p>That is useful for:</p>
+<ul>
+<li>large scenes full of resting bodies</li>
+<li>keeping tick work down when nothing is moving</li>
+</ul>
+<h2 id="8-floating-origin">8. Floating Origin<a class="headerlink" href="#8-floating-origin" title="Permanent link">&para;</a></h2>
+<p>The physics system owns the world-space to physics-local conversion policy when floating origin is enabled.</p>
 <p>That means:</p>
 <ul>
-<li>if no <code>TValueCodec&lt;Settings&gt;</code> is provided, nested-field replication depends on nested flags.</li>
-<li>if you want full-struct replication, add a <code>TValueCodec&lt;YourSettingsType&gt;</code> or flag nested members explicitly.</li>
+<li>node/gameplay code should stay in world coordinates</li>
+<li>the physics system handles conversion and rebasing</li>
+<li>components like <code>RigidBodyComponent</code> rely on that system so coordinates stay consistent</li>
 </ul>
-<p>Also remember global replication gates still apply:</p>
-<ul>
-<li><code>Node-&gt;Replicated(true)</code></li>
-<li><code>Component-&gt;Replicated(true)</code></li>
-</ul>
-<h2 id="10-common-setup-mistakes">10. Common Setup Mistakes<a class="headerlink" href="#10-common-setup-mistakes" title="Permanent link">&para;</a></h2>
-<ul>
-<li>Physics scene never starts:<ul>
-<li>forgot to set <code>Settings.Physics</code> before <code>Runtime.Init(...)</code></li>
-</ul>
-</li>
-<li>Bodies do not use updated settings:<ul>
-<li>edited settings after add, but forgot <code>RecreateBody()</code></li>
-</ul>
-</li>
-<li>Object never falls:<ul>
-<li>body type is static/kinematic instead of dynamic</li>
-<li>no physics stepping configured</li>
-</ul>
-</li>
-<li>Character cannot jump:<ul>
-<li>grounded probe mask/layer excludes valid ground</li>
-<li>no collider/rigid body present on player</li>
-</ul>
-</li>
-<li>Transform flicker:<ul>
-<li>two systems fighting transform writes</li>
-<li>clarify whether object is physics-driven or script-driven</li>
-</ul>
-</li>
-</ul>
-<h2 id="11-what-to-read-next">11. What to Read Next<a class="headerlink" href="#11-what-to-read-next" title="Permanent link">&para;</a></h2>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../physics_queries_events/">Physics Queries and Events</a></li>
-<li><a href="../reflection_serialization/">Reflection and Serialization</a></li>
+<li><a href="../bouncy_basement/">Bouncy Basement</a></li>
 </ul>
 
 

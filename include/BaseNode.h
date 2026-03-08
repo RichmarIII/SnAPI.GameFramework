@@ -24,23 +24,42 @@ class RelevanceComponent;
 class Variant;
 
 /**
- * @brief Canonical concrete node implementation used by world-owned storage.
- * @remarks
- * `BaseNode` provides:
- * - hierarchy bookkeeping (`Parent` / `Children`)
- * - identity and reflection identity (`Handle` / `TypeKey`)
- * - runtime role helpers (`IsServer` / `IsClient` / `IsListenServer`)
- * - component convenience APIs (`Add<T>`, `Component<T>`, `Has<T>`, `Remove<T>`)
+ * @ingroup SnAPI_GameFramework
+ * @brief Canonical base type for world-owned scene graph nodes.
  *
- * Ownership model:
- * - Node storage and lifetime are owned externally by `IWorld`/`TObjectPool`.
- * - `m_world` is a non-owning pointer updated by world runtime code.
- * - Pointer stability is tied to pool lifetime; handles remain the public identity boundary.
+ * `BaseNode` is the user-visible object that represents one graph element in a `World`.
+ * It carries the durable identity, hierarchy state, reflected type information, and the
+ * convenience API used to query or attach runtime components. Most gameplay-facing node
+ * types should derive from `BaseNode` rather than inventing a parallel ownership model.
  *
- * Tick model:
- * - World-owned ECS runtime storages drive all phase dispatch.
- * - Node/component runtime types expose optional lifecycle hooks checked at compile time.
- * - Absent phases are skipped entirely for that storage.
+ * Why this type exists:
+ * - it gives gameplay code an address-stable object to reason about while the world owns storage
+ * - it keeps hierarchy, identity, and reflected type metadata in one place
+ * - it separates user-facing node semantics from the lower-level ECS/runtime records stored in `WorldEcsRuntime`
+ *
+ * Ownership and lifetime:
+ * - `IWorld` owns node lifetime and backing storage.
+ * - `BaseNode` never owns its parent, children, world, or attached components directly.
+ * - `Handle()` is the canonical public identity. Raw pointers obtained through handles or iteration are borrowed views.
+ * - `OnCreate()` delivery may be deferred by the world during bootstrap until dependent subsystems are ready.
+ *
+ * Threading model:
+ * - Main-thread only for hierarchy mutation, component mutation, and most direct node access.
+ * - Read-only access from other threads is not guaranteed safe unless external synchronization is provided.
+ *
+ * Invariants:
+ * - `TypeKey()` must match the concrete reflected node type.
+ * - `Handle().Id` is the stable node identity used for serialization, replication, and registry lookup.
+ * - `World()` is non-owning and may be null only when the node is detached from a live world.
+ *
+ * Performance notes:
+ * - Child lists and component masks are stored directly on the node for hot-path traversal.
+ * - Use handles across frames; borrowed pointers should be treated as temporary frame-local views.
+ *
+ * @see IWorld
+ * @see World
+ * @see BaseComponent
+ * @see WorldEcsRuntime
  */
 class BaseNode : public NodeCRTP<BaseNode>
 {
@@ -67,17 +86,44 @@ public:
 
     ~BaseNode() = default;
 
+    /**
+     * @brief Node construction lifecycle hook.
+     *
+     * Override in derived types to perform work that requires the node to already be
+     * registered with its world and fully assigned an identity. Worlds may defer this
+     * callback during bootstrap so render/UI-dependent nodes do not run before subsystems are ready.
+     *
+     * Threading:
+     * - Main-thread only.
+     */
     void OnCreate() {}
+    /**
+     * @brief Node destruction lifecycle hook.
+     *
+     * Called before the node is finally removed from world-owned storage. Use this to release
+     * world-facing runtime state that should be torn down while the world and its subsystems are still valid.
+     *
+     * Threading:
+     * - Main-thread only.
+     */
     void OnDestroy() {}
+    /** @brief Early variable-step update hook executed before `Tick`. @param DeltaSeconds Frame delta time in seconds. */
     void PreTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /** @brief Primary variable-step update hook. @param DeltaSeconds Frame delta time in seconds. */
     void Tick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /** @brief Fixed-step update hook used for deterministic simulation. @param DeltaSeconds Fixed simulation step in seconds. */
     void FixedTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /** @brief Late variable-step hook executed after `Tick`. @param DeltaSeconds Frame delta time in seconds. */
     void LateTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /** @brief Post-update hook executed after the regular variable-step phases. @param DeltaSeconds Frame delta time in seconds. */
     void PostTick(float DeltaSeconds) { (void)DeltaSeconds; }
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only update hook used when the world executes in editor mode. @param DeltaSeconds Frame delta time in seconds. */
     void EditorTick(float DeltaSeconds) { (void)DeltaSeconds; }
+    /** @brief Editor-only notification fired after a reflected property changes. @param Name Reflected property name. */
     void EditorOnPropertyChanged(std::string_view Name) { (void)Name; }
 #endif
+    /** @brief End-of-frame hook executed during `World::EndFrame` when enabled by the world execution profile. */
     void EndFrame() {}
 
     /**

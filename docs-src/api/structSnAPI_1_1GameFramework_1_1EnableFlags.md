@@ -1,3 +1,3 @@
 # SnAPI::GameFramework::EnableFlags
 
-Trait to opt enums into flag operators.
+Trait used to opt an enum into free bitwise flag operators.

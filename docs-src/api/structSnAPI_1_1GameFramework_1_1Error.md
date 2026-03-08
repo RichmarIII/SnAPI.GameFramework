@@ -1,6 +1,20 @@
 # SnAPI::GameFramework::Error
 
-Error payload for TExpected results.
+Error payload stored by `TExpected` and `Result`.
+
+`Error` is the standard failure object returned by the framework. It intentionally stays lightweight: one categorical code plus one descriptive message. This keeps API contracts predictable and easy to surface through editor UI, logs, and tests without forcing callers into exception-based handling.
+
+Semantics:
+- A default-constructed `Error` represents success.
+- `operator bool()` returns `true` for failure, not success.
+- `Message` is intended for diagnostics and may change over time; do not parse it for logic.
+
+Ownership and lifetime:
+- `Message` is owned by the `Error` instance.
+- Copies are independent and safe to store.
+
+Threading:
+- Plain value type. Safe to copy across threads.
 
 ## Public Members
 

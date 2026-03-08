@@ -15,13 +15,28 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Global schema-aware path resolver for all filesystem path lookups.
- * @remarks
- * `SPathResolver` translates logical URI-like inputs (for example `asset://...` and `editor://...`)
- * into concrete filesystem paths before consumers pass them to file APIs.
+ * @ingroup SnAPI_GameFramework
+ * @brief Global schema-aware resolver for filesystem-like path strings.
  *
- * Callers should resolve any incoming path text through this singleton before
- * performing filesystem operations.
+ * `SPathResolver` translates logical URI-style inputs such as `asset://...` and `editor://...`
+ * into normalized filesystem paths. It centralizes schema registration so subsystems can exchange
+ * stable logical paths without hard-coding project-relative or install-relative disk layouts.
+ *
+ * Core semantics:
+ * - Known schemas dispatch to registered handlers.
+ * - Plain paths without `scheme://` are normalized and treated as native filesystem paths.
+ * - Built-in `asset://` and `editor://` handlers enforce that resolved paths stay within their
+ *   configured roots.
+ *
+ * Ownership and lifetime:
+ * - This is a process-wide singleton.
+ * - Registered schema handlers are copied into internal storage and remain active until explicitly removed.
+ *
+ * Threading model:
+ * - Concurrent calls are internally synchronized.
+ *
+ * @warning Handlers should avoid calling back into `SPathResolver` in a way that would deadlock on
+ * the resolver mutex.
  */
 struct SNAPI_GAMEFRAMEWORK_API SPathResolver final
 {
@@ -32,15 +47,13 @@ struct SNAPI_GAMEFRAMEWORK_API SPathResolver final
      */
     using SchemaHandler = std::function<TExpected<std::filesystem::path>(std::string_view Remainder)>;
 
-    /**
-     * @brief Access the singleton resolver.
-     */
+    /** @brief Access the process-wide resolver singleton. */
     [[nodiscard]] static SPathResolver& Instance();
 
     /**
      * @brief Resolve path text to a normalized filesystem path.
-     * @param Value Input path or URI (`scheme://...`).
-     * @return Absolute, normalized filesystem path.
+     * @param Value Input path or URI in `scheme://...` form or a native filesystem path.
+     * @return Resolved filesystem path or an error.
      *
      * Resolution behavior:
      * - `scheme://...` => dispatch to registered schema handler
@@ -49,40 +62,52 @@ struct SNAPI_GAMEFRAMEWORK_API SPathResolver final
     [[nodiscard]] TExpected<std::filesystem::path> Resolve(std::string_view Value) const;
 
     /**
-     * @brief Resolve and stringify a path.
+     * @brief Resolve a path and return it as a string.
+     * @param Value Input path or URI.
+     * @return Resolved filesystem path encoded as a string, or an error.
      */
     [[nodiscard]] TExpected<std::string> ResolveToString(std::string_view Value) const;
 
     /**
-     * @brief Register (or replace) a schema handler.
-     * @param Scheme Schema identifier without delimiter (for example `asset`).
-     * @param Handler Handler callback.
+     * @brief Register or replace a custom schema handler.
+     * @param Scheme Schema identifier without the `://` delimiter.
+     * @param Handler Resolution callback.
+     * @return Success or an error.
+     *
+     * Schema names are normalized to lowercase ASCII and must satisfy the resolver's schema-name rules.
      */
     Result RegisterSchemaHandler(std::string_view Scheme, SchemaHandler Handler);
 
     /**
      * @brief Remove a previously registered schema handler.
-     * @return True if removed.
+     * @param Scheme Schema identifier without delimiter.
+     * @return `true` if a handler was removed.
      */
     bool UnregisterSchemaHandler(std::string_view Scheme);
 
     /**
      * @brief Set the root directory used by the built-in `asset://` schema.
+     * @param RootPath Filesystem root.
+     * @return Success or an error.
      */
     Result SetAssetRoot(std::filesystem::path RootPath);
 
     /**
      * @brief Get the current `asset://` root directory.
+     * @return Copy of the configured asset root path.
      */
     [[nodiscard]] std::filesystem::path AssetRoot() const;
 
     /**
      * @brief Set the root directory used by the built-in `editor://` schema.
+     * @param RootPath Filesystem root.
+     * @return Success or an error.
      */
     Result SetEditorRoot(std::filesystem::path RootPath);
 
     /**
      * @brief Get the current `editor://` root directory.
+     * @return Copy of the configured editor root path.
      */
     [[nodiscard]] std::filesystem::path EditorRoot() const;
 

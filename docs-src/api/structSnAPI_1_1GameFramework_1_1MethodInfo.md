@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::MethodInfo
 
-Reflection metadata for a method.
+Reflection metadata for one invokable method.
+
+Invocation is expressed in terms of variant-packed arguments and a variant return value so the same metadata can serve scripting, editor tooling, and RPC dispatch.
 
 ## Public Members
 

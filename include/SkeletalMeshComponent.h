@@ -22,7 +22,32 @@ namespace SnAPI::GameFramework
 class RendererSystem;
 
 /**
- * @brief Component that loads an animated mesh and updates rigid-part animations.
+ * @ingroup SnAPI_GameFramework
+ * @brief Component that owns a skeletal mesh render object and drives rigid-animation playback.
+ *
+ * `SkeletalMeshComponent` is the animated counterpart to `StaticMeshComponent`. It owns one
+ * renderer mesh render-object, registers it into the appropriate renderer passes, synchronizes
+ * its transform from the owning node, and optionally auto-plays rigid animations after load.
+ *
+ * Source semantics:
+ * - `Settings::MeshAsset` is the reliable runtime load path and the preferred way to use this component
+ * - `Settings::MeshPath` is retained for compatibility and participates in change detection, but the
+ *   current implementation is asset-centric and does not guarantee direct source-path loading by itself
+ *
+ * Animation semantics:
+ * - `AutoPlayAnimations` is applied lazily after a mesh exists
+ * - changing animation name or loop mode clears the applied-auto-play state and reapplies on the next update
+ * - `StopAnimations()` stops active rigid animations and clears the auto-play-applied flag
+ *
+ * Ownership and lifetime:
+ * - The component owns the `MeshRenderObject` shared pointer it creates.
+ * - The renderer borrows that object while it is registered in passes.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see RendererSystem
+ * @see TransformComponent
  */
 class SkeletalMeshComponent : public BaseComponent, public ComponentCRTP<SkeletalMeshComponent>
 {
@@ -32,12 +57,17 @@ public:
 
     /**
      * @brief Runtime mesh/render/animation settings.
+     *
+     * Semantics:
+     * - `RegisterWithRenderer` controls pass registration, not object creation
+     * - `Visible` and `CastShadows` affect renderer pass membership
+     * - `AnimationName` empty means "play all available rigid animations" for auto-play and `PlayAllAnimations()`
      */
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalMeshComponent::Settings";
 
-        std::string MeshPath{}; /**< @brief Optional mesh source path token (source-path fallback). */
+        std::string MeshPath{}; /**< @brief Compatibility mesh identifier tracked for change detection; direct source-path loading is not the primary supported path in the current implementation. */
         bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
         bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
@@ -60,28 +90,34 @@ public:
         return m_settings;
     }
 
-    /** @brief Explicitly reload mesh from current settings path. */
+    /** @brief Explicitly clear cached load state and rebuild from current source settings. @return `true` when a render object is available after reload. */
     bool ReloadMesh();
-    /** @brief Clear currently loaded mesh reference. */
+    /** @brief Clear the current render object, stop its registration, and reset animation tracking state. */
     void ClearMesh();
 
-    /** @brief Play one rigid animation by name on loaded mesh. */
+    /** @brief Play one rigid animation by name on the loaded mesh. @param Name Animation name. @param Loop Whether playback should loop. @param StartTime Initial playback time in seconds. @return `true` when a render object exists and the request was applied. */
     bool PlayAnimation(const std::string& Name, bool Loop = true, float StartTime = 0.0f);
-    /** @brief Play all rigid animations on loaded mesh. */
+    /** @brief Play all rigid animations on the loaded mesh. @param Loop Whether playback should loop. @param StartTime Initial playback time in seconds. @return `true` when a render object exists and the request was applied. */
     bool PlayAllAnimations(bool Loop = true, float StartTime = 0.0f);
-    /** @brief Stop all rigid animations on loaded mesh. */
+    /** @brief Stop all rigid animations on the loaded mesh and clear auto-play-applied state. */
     void StopAnimations();
 
+    /** @brief Access the component-owned renderer object handle. @return Borrowed reference to the shared-pointer handle, which may be empty. */
     [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::MeshRenderObject>& RenderObject() const
     {
         return m_renderObject;
     }
 
+    /** @brief Attempt initial skeletal mesh/render-object creation from the current source settings. */
     void OnCreate();
+    /** @brief Remove the render object from renderer passes and clear owned state. */
     void OnDestroy();
+    /** @brief Per-frame transform, pass-state, auto-play, and animation update. @param DeltaSeconds Frame delta in seconds. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only update hook. @param DeltaSeconds Frame delta in seconds. */
     void EditorTick(float DeltaSeconds);
+    /** @brief Editor-only property change hook. @param Name Changed reflected field name. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 

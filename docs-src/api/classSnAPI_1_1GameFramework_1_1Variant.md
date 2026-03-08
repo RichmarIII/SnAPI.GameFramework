@@ -1,6 +1,22 @@
 # SnAPI::GameFramework::Variant
 
-Type-erased value container used by reflection and scripting.
+Type-erased value container used by reflection, scripting, and generic invocation.
+
+`Variant` stores either:
+- an owned heap-allocated value
+- a borrowed mutable reference
+- a borrowed const reference
+- a distinguished `void` marker
+
+Core semantics:
+- Type identity is tracked by deterministic reflected `TypeId`.
+- Owned values use shared heap storage so `Variant` remains cheap to copy.
+- Reference variants do not own the referenced object; callers must guarantee lifetime.
+- Reference constness is enforced by `AsRef()`.
+
+Threading model:
+- Copying and moving the `Variant` object is thread-safe in isolation.
+- Access to referenced payloads follows the thread-safety rules of the referenced object.
 
 ## Private Members
 
@@ -30,68 +46,75 @@ Const-reference qualifier for reference mode payloads.
 <div class="snapi-api-card" markdown="1">
 ### `SnAPI::GameFramework::Variant::Variant()=default`
 
-Construct an empty (void) variant.
+Construct an empty variant.
+
+The default state behaves like a void variant with no payload storage.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `const TypeId & SnAPI::GameFramework::Variant::Type() const`
 
-Get the stored type id.
+Get the stored reflected type id.
 
-**Returns:** TypeId for the stored value.
+**Returns:** Type id for the stored value or the void marker type.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Variant::IsVoid() const`
 
-Check whether this is a void variant.
+Check whether this variant represents `void`.
 
-**Returns:** True if the variant represents void.
+**Returns:** `true` when the stored type id is the void marker type.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Variant::IsRef() const`
 
-Check whether this variant stores a reference.
+Check whether this variant stores a borrowed reference.
 
-**Returns:** True if it stores a reference; false if it owns the value.
+**Returns:** `true` for borrowed reference payloads, `false` for owned values and void.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Variant::IsConst() const`
 
-Check whether a referenced value is const.
+Check whether the stored reference payload is const-qualified.
 
-**Returns:** True if reference is const.
+**Returns:** `true` only for const-reference payloads.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void * SnAPI::GameFramework::Variant::Borrowed()`
 
-Borrow the underlying pointer (mutable).
+Borrow the underlying payload pointer as mutable.
 
-**Returns:** Pointer to stored value or reference.
+**Returns:** Raw payload pointer, or `nullptr` when no payload exists.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `const void * SnAPI::GameFramework::Variant::Borrowed() const`
 
-Borrow the underlying pointer (const).
+Borrow the underlying payload pointer as const.
 
-**Returns:** Pointer to stored value or reference.
+**Returns:** Raw payload pointer, or `nullptr` when no payload exists.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Variant::Is() const`
 
-Type check helper.
+Check whether the stored payload type matches `T`.
 
-**Returns:** True if the stored type matches T.
+**Returns:** `true` when the stored reflected type id equals `T`.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `TExpected< std::reference_wrapper< T > > SnAPI::GameFramework::Variant::AsRef()`
 
-Get a mutable reference to the stored value.
+Extract a mutable reference to the stored payload.
+
+Fails when:
+- the stored type does not match `T`
+- the payload is a const reference
+- no payload storage exists
 
 **Returns:** Reference wrapper on success; error otherwise.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `TExpected< std::reference_wrapper< const T > > SnAPI::GameFramework::Variant::AsConstRef() const`
 
-Get a const reference to the stored value.
+Extract a const reference to the stored payload.
 
 **Returns:** Const reference wrapper on success; error otherwise.
 </div>
@@ -101,7 +124,7 @@ Get a const reference to the stored value.
 <div class="snapi-api-card" markdown="1">
 ### `static Variant SnAPI::GameFramework::Variant::Void()`
 
-Create a void variant.
+Create an explicit void variant.
 
 **Returns:** Variant representing void.
 </div>
@@ -109,6 +132,8 @@ Create a void variant.
 ### `static Variant SnAPI::GameFramework::Variant::FromValue(T Value)`
 
 Create a variant that owns a value.
+
+The value is copied or moved into heap storage owned by the variant.
 
 **Parameters**
 
@@ -126,10 +151,6 @@ Create a variant that references a mutable object.
 - `Value`: Reference to the object.
 
 **Returns:** Variant referencing the object.
-
-**Notes**
-
-- Caller must guarantee lifetime; no ownership is transferred.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `static Variant SnAPI::GameFramework::Variant::FromConstRef(const T &Value)`
@@ -141,10 +162,6 @@ Create a variant that references a const object.
 - `Value`: Const reference to the object.
 
 **Returns:** Variant referencing the object as const.
-
-**Notes**
-
-- Caller must guarantee lifetime; mutable extraction will fail by design.
 </div>
 
 ## Private Static Func

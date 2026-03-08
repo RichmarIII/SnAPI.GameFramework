@@ -10,196 +10,283 @@ extern "C" {
 #endif
 
 /**
- * @brief C ABI representation of a UUID.
- * @remarks Split into high/low 64-bit parts for language interoperability.
+ * @ingroup SnAPI_GameFramework
+ * @brief C ABI representation of a GameFramework UUID.
+ *
+ * The struct is intentionally POD and language-neutral so foreign runtimes can pass type
+ * and object ids across the C boundary without depending on C++ layout rules.
  */
 typedef struct SnGfUuid
 {
-    uint64_t High; /**< @brief High 64 bits. */
-    uint64_t Low;  /**< @brief Low 64 bits. */
+    uint64_t High; /**< @brief High 64 bits of the UUID. */
+    uint64_t Low;  /**< @brief Low 64 bits of the UUID. */
 } SnGfUuid;
 
 /**
- * @brief Opaque handle to a Variant owned by the runtime.
- * @remarks
- * ABI consumers must treat this as move-by-value opaque token and release with
- * `sn_gf_variant_destroy` when done.
+ * @ingroup SnAPI_GameFramework
+ * @brief Owning opaque handle to a heap-allocated `Variant`.
+ *
+ * The handle is a C ABI token for a `Variant` allocated by the runtime. Consumers must
+ * treat the pointer as opaque and must release ownership with `sn_gf_variant_destroy()`.
+ *
+ * Ownership and lifetime:
+ * - The handle owns the pointed-to `Variant`.
+ * - Passing the handle by value does not duplicate ownership.
+ * - `Ptr == NULL` represents an empty handle.
  */
 typedef struct SnGfVariantHandle
 {
-    void* Ptr; /**< @brief Opaque pointer to internal Variant storage. */
+    void* Ptr; /**< @brief Opaque pointer to runtime-owned `Variant` storage. */
 } SnGfVariantHandle;
 
-/** @brief C ABI representation of a 3D vector. */
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief C ABI representation of a 3D vector.
+ *
+ * The values are plain `float`s. Units and coordinate space are defined by the engine API
+ * that consumes the vector; this struct only transports three scalar components.
+ */
 typedef struct SnGfVec3
 {
-    float X;
-    float Y;
-    float Z;
+    float X; /**< @brief X component. */
+    float Y; /**< @brief Y component. */
+    float Z; /**< @brief Z component. */
 } SnGfVec3;
 
-/** @brief Opaque handle to a reflected field. */
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Index-like handle to a reflected field in a collected field list.
+ *
+ * Handles are not globally stable ids. They are indices into the field list returned for
+ * one specific reflected type, including inherited fields.
+ */
 typedef uint64_t SnGfFieldHandle;
-/** @brief Opaque handle to a reflected method. */
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Index-like handle to a reflected method in a collected method list.
+ *
+ * Handles are not globally stable ids. They are indices into the method list returned for
+ * one specific reflected type, including inherited methods subject to name-hiding rules.
+ */
 typedef uint64_t SnGfMethodHandle;
 
 /**
- * @brief Get a TypeId from a fully qualified name.
- * @param name Type name string.
- * @return UUID for the type.
- * @remarks Deterministic UUIDv5 based on the name.
+ * @ingroup SnAPI_GameFramework
+ * @brief Compute a deterministic type id from a fully qualified type name.
+ *
+ * This function hashes the supplied name into the same UUID form used by the reflection
+ * system. The result may identify an unregistered type; registration is a separate
+ * question handled by `sn_gf_type_is_registered()`.
+ *
+ * @param name Null-terminated fully qualified type name.
+ * @return Deterministic UUID for the name, or `{0, 0}` when @p name is null.
+ *
+ * @see sn_gf_type_is_registered()
  */
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_type_id_from_name(const char* name);
 /**
- * @brief Check if a type is registered.
- * @param id TypeId to check.
- * @return Non-zero if the type exists.
+ * @ingroup SnAPI_GameFramework
+ * @brief Check whether reflected metadata is registered for a type id.
+ * @param id Type id to query.
+ * @return Non-zero when the type exists in the reflection registry, zero otherwise.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_type_is_registered(SnGfUuid id);
 /**
- * @brief Get the number of fields on a type.
- * @param id TypeId to query.
- * @return Field count.
- * @remarks Includes inherited fields.
+ * @ingroup SnAPI_GameFramework
+ * @brief Count the reflected fields on a type.
+ * @param id Type id to query.
+ * @return Number of collected reflected fields, including inherited fields.
+ *
+ * @note Unknown types currently report `0`.
  */
 SNAPI_GAMEFRAMEWORK_API size_t sn_gf_type_field_count(SnGfUuid id);
 /**
- * @brief Find a field by name.
- * @param id TypeId to query.
- * @param name Field name.
- * @return Field handle or 0 if not found.
- * @remarks Searches inherited fields as well.
+ * @ingroup SnAPI_GameFramework
+ * @brief Resolve a reflected field handle by name.
+ * @param id Type id to query.
+ * @param name Null-terminated field name to search for.
+ * @return Field handle on success, or the invalid-handle sentinel (`UINT64_MAX`) when the
+ *         type is unknown, @p name is null, or no matching field exists.
+ *
+ * @note The search includes inherited fields.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfFieldHandle sn_gf_type_field_by_name(SnGfUuid id, const char* name);
 /**
- * @brief Get the type of a field.
- * @param id TypeId to query.
- * @param field Field handle.
- * @return Field type id.
+ * @ingroup SnAPI_GameFramework
+ * @brief Query the reflected type of one field.
+ * @param id Type id whose field list produced @p field.
+ * @param field Field handle previously returned for that type.
+ * @return Field type id, or `{0, 0}` when the handle is invalid.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_field_type(SnGfUuid id, SnGfFieldHandle field);
 /**
- * @brief Get the name of a field.
- * @param id TypeId to query.
- * @param field Field handle.
- * @return Null-terminated field name string.
+ * @ingroup SnAPI_GameFramework
+ * @brief Return the name of one reflected field.
+ * @param id Type id whose field list produced @p field.
+ * @param field Field handle previously returned for that type.
+ * @return Borrowed null-terminated field name, or `NULL` when the handle is invalid.
+ *
+ * @note The returned pointer refers to reflection metadata storage. Do not free it.
  */
 SNAPI_GAMEFRAMEWORK_API const char* sn_gf_field_name(SnGfUuid id, SnGfFieldHandle field);
 
 /**
- * @brief Find a method by name.
- * @param id TypeId to query.
- * @param name Method name.
- * @return Method handle or 0 if not found.
- * @remarks
- * Searches inherited methods and applies C++-style name hiding
- * (derived declarations hide base declarations with the same name).
+ * @ingroup SnAPI_GameFramework
+ * @brief Resolve a reflected method handle by name.
+ * @param id Type id to query.
+ * @param name Null-terminated method name to search for.
+ * @return Method handle on success, or the invalid-handle sentinel (`UINT64_MAX`) when
+ *         the type is unknown, @p name is null, or no matching method exists.
+ *
+ * @note The collected method list includes inherited methods and applies C++-style name
+ * hiding: derived declarations with the same name hide base declarations.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfMethodHandle sn_gf_type_method_by_name(SnGfUuid id, const char* name);
 /**
- * @brief Get the return type of a method.
- * @param id TypeId to query.
- * @param method Method handle.
- * @return Return type id.
+ * @ingroup SnAPI_GameFramework
+ * @brief Query the reflected return type of one method.
+ * @param id Type id whose method list produced @p method.
+ * @param method Method handle previously returned for that type.
+ * @return Return type id, or `{0, 0}` when the handle is invalid.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_method_return_type(SnGfUuid id, SnGfMethodHandle method);
 /**
- * @brief Get the number of method parameters.
- * @param id TypeId to query.
- * @param method Method handle.
- * @return Parameter count.
+ * @ingroup SnAPI_GameFramework
+ * @brief Count the reflected parameters of one method.
+ * @param id Type id whose method list produced @p method.
+ * @param method Method handle previously returned for that type.
+ * @return Parameter count, or `0` when the handle is invalid.
  */
 SNAPI_GAMEFRAMEWORK_API size_t sn_gf_method_param_count(SnGfUuid id, SnGfMethodHandle method);
 /**
- * @brief Get the type of a method parameter.
- * @param id TypeId to query.
- * @param method Method handle.
- * @param index Parameter index.
- * @return Parameter type id.
+ * @ingroup SnAPI_GameFramework
+ * @brief Query the reflected type of one method parameter.
+ * @param id Type id whose method list produced @p method.
+ * @param method Method handle previously returned for that type.
+ * @param index Zero-based parameter index.
+ * @return Parameter type id, or `{0, 0}` when the handle or index is invalid.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfUuid sn_gf_method_param_type(SnGfUuid id, SnGfMethodHandle method, size_t index);
 
 /**
- * @brief Create a Variant from an int.
+ * @ingroup SnAPI_GameFramework
+ * @brief Allocate a new `Variant` containing an `int`.
  * @param value Value to store.
- * @return Variant handle.
+ * @return Owning handle to the allocated `Variant`.
+ *
+ * @warning The API does not expose allocation failure through the return value. The
+ * caller must still destroy the returned handle with `sn_gf_variant_destroy()`.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_int(int value);
 /**
- * @brief Create a Variant from a float.
+ * @ingroup SnAPI_GameFramework
+ * @brief Allocate a new `Variant` containing a `float`.
  * @param value Value to store.
- * @return Variant handle.
+ * @return Owning handle to the allocated `Variant`.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_float(float value);
 /**
- * @brief Create a Variant from a bool.
- * @param value Non-zero for true, zero for false.
- * @return Variant handle.
+ * @ingroup SnAPI_GameFramework
+ * @brief Allocate a new `Variant` containing a `bool`.
+ * @param value Zero maps to `false`; any non-zero value maps to `true`.
+ * @return Owning handle to the allocated `Variant`.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_bool(int value);
 /**
- * @brief Create a Variant from a string.
- * @param value Null-terminated string.
- * @return Variant handle.
- * @remarks The string is copied into the Variant.
+ * @ingroup SnAPI_GameFramework
+ * @brief Allocate a new `Variant` containing a string.
+ * @param value Null-terminated string. `NULL` is treated as the empty string.
+ * @return Owning handle to the allocated `Variant`.
+ *
+ * @note The string bytes are copied into the `Variant`.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_string(const char* value);
 /**
- * @brief Create a Variant from a vec3.
- * @param value Vec3 value to store.
- * @return Variant handle.
+ * @ingroup SnAPI_GameFramework
+ * @brief Allocate a new `Variant` containing a `Vec3`.
+ * @param value Vector value to store.
+ * @return Owning handle to the allocated `Variant`.
  */
 SNAPI_GAMEFRAMEWORK_API SnGfVariantHandle sn_gf_variant_from_vec3(SnGfVec3 value);
 /**
- * @brief Destroy a Variant handle.
- * @param handle Variant handle to destroy.
+ * @ingroup SnAPI_GameFramework
+ * @brief Destroy an owning `Variant` handle.
+ * @param handle Handle previously returned by this ABI.
+ *
+ * @note Passing an empty handle (`Ptr == NULL`) is safe and behaves as a no-op.
  */
 SNAPI_GAMEFRAMEWORK_API void sn_gf_variant_destroy(SnGfVariantHandle handle);
 /**
- * @brief Extract vec3 payload from a Variant handle.
+ * @ingroup SnAPI_GameFramework
+ * @brief Extract a `Vec3` payload from a `Variant` handle.
  * @param handle Variant handle to inspect.
- * @param outValue Output vec3.
- * @return Non-zero on success.
+ * @param outValue Destination vector. Must not be `NULL`.
+ * @return Non-zero on success, zero when @p handle is empty, @p outValue is null, or the
+ *         stored `Variant` does not currently hold a `Vec3`.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_variant_to_vec3(SnGfVariantHandle handle, SnGfVec3* outValue);
 
 /**
- * @brief Read a field value from an object.
- * @param instance Pointer to the object instance.
- * @param type TypeId of the instance.
- * @param field Field handle.
- * @param outValue Output Variant handle.
- * @return Non-zero on success.
- * @remarks On success, `outValue` receives ownership of an allocated variant handle.
+ * @ingroup SnAPI_GameFramework
+ * @brief Read a reflected field value from an object instance.
+ * @param instance Pointer to the object instance to read.
+ * @param type Reflected type that owns the field handle.
+ * @param field Field handle previously resolved for @p type.
+ * @param outValue Destination for a newly allocated owning `Variant` handle.
+ * @return Non-zero on success, zero on invalid arguments, invalid handles, unreadable
+ *         fields, or getter failure.
+ *
+ * @post On success, `*outValue` owns a newly allocated `Variant` that the caller must
+ *       destroy with `sn_gf_variant_destroy()`.
+ * @warning This is a raw reflection call. The ABI does not validate that @p instance
+ * actually points to a live object compatible with @p type.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_get_field(void* instance, SnGfUuid type, SnGfFieldHandle field, SnGfVariantHandle* outValue);
 /**
- * @brief Write a field value on an object.
- * @param instance Pointer to the object instance.
- * @param type TypeId of the instance.
- * @param field Field handle.
- * @param value Variant handle containing the new value.
- * @return Non-zero on success.
- * @remarks Respects const fields; will fail if the field is read-only.
+ * @ingroup SnAPI_GameFramework
+ * @brief Write a reflected field value on an object instance.
+ * @param instance Pointer to the object instance to mutate.
+ * @param type Reflected type that owns the field handle.
+ * @param field Field handle previously resolved for @p type.
+ * @param value Owning or borrowed `Variant` handle containing the new value.
+ * @return Non-zero on success, zero on invalid arguments, invalid handles, type mismatch,
+ *         read-only fields, or setter failure.
+ *
+ * @note Ownership of @p value is not transferred. The caller remains responsible for
+ * destroying the handle if it owns one.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_set_field(void* instance, SnGfUuid type, SnGfFieldHandle field, SnGfVariantHandle value);
 /**
- * @brief Invoke a reflected method on an object.
- * @param instance Pointer to the object instance.
- * @param type TypeId of the instance.
- * @param method Method handle.
- * @param args Array of Variant handles for arguments.
- * @param argCount Argument count.
- * @param outResult Output Variant handle for the return value.
- * @return Non-zero on success.
- * @remarks On success, `outResult` owns a variant handle that must be destroyed by caller.
+ * @ingroup SnAPI_GameFramework
+ * @brief Invoke a reflected method on an object instance.
+ * @param instance Pointer to the object instance to call.
+ * @param type Reflected type that owns the method handle.
+ * @param method Method handle previously resolved for @p type.
+ * @param args Array of argument handles. Each handle is borrowed for the duration of the
+ *        call and is not consumed.
+ * @param argCount Number of elements in @p args.
+ * @param outResult Optional destination for a newly allocated owning `Variant` handle
+ *        containing the return value.
+ * @return Non-zero on success, zero on invalid arguments, invalid handles, or method
+ *         invocation failure.
+ *
+ * @post When @p outResult is non-null and the call succeeds, `*outResult` owns a newly
+ *       allocated `Variant` that the caller must destroy with `sn_gf_variant_destroy()`.
+ * @warning The function reports failure only as `0`; it does not expose detailed error
+ * diagnostics across the C boundary.
  */
 SNAPI_GAMEFRAMEWORK_API int sn_gf_object_invoke(void* instance, SnGfUuid type, SnGfMethodHandle method, const SnGfVariantHandle* args, size_t argCount, SnGfVariantHandle* outResult);
 /**
- * @brief Resolve component instance from a node and component type.
- * @param nodeInstance Pointer to node instance.
- * @param componentType Type id of component to resolve.
- * @return Component instance pointer, or nullptr if missing.
+ * @ingroup SnAPI_GameFramework
+ * @brief Resolve a Component pointer from a Node instance and reflected component type.
+ * @param nodeInstance Pointer to a live `BaseNode` instance.
+ * @param componentType Reflected concrete component type to resolve.
+ * @return Borrowed raw Component pointer, or `NULL` when the node has no such component,
+ *         the node is not attached to a World, or @p nodeInstance is null.
+ *
+ * @warning The returned pointer is borrowed from the World. It becomes invalid when the
+ * Component is removed, the Node is destroyed, or the World shuts down.
  */
 SNAPI_GAMEFRAMEWORK_API void* sn_gf_node_get_component(void* nodeInstance, SnGfUuid componentType);
 

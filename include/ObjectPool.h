@@ -18,13 +18,36 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Thread-safe object pool keyed by UUID handles.
+ * @ingroup SnAPI_GameFramework
+ * @brief Generation-safe UUID object pool that keeps object addresses stable while entries are alive.
  * @tparam T Base type stored in the pool.
- * @remarks
- * Slot-based pool with UUID index and free-list reuse.
- * Objects are heap-stable while alive. Standard create paths use `unique_ptr`;
- * shared ownership is used only when inserting pre-owned shared instances.
- * @note Destruction is deferred until EndFrame to keep handles valid within a frame.
+ *
+ * `TObjectPool` is the low-level backing store used for handle-addressable engine
+ * objects whose lifetime is frame-oriented rather than instant-destroy:
+ * - each live object has a stable UUID
+ * - handles also carry a runtime slot key for fast resolution
+ * - slots are generation-checked so stale handles do not alias reused entries
+ * - destruction is normally deferred to `EndFrame()`
+ *
+ * Ownership and lifetime:
+ * - `Create*()` stores pool-owned objects through `std::unique_ptr`.
+ * - `CreateFromShared*()` stores an externally shared object through `std::shared_ptr`.
+ * - Borrowed pointers remain valid until the object is scheduled for destroy and the
+ *   pool reaches `EndFrame()`, or until `Clear()` destroys everything immediately.
+ *
+ * Threading:
+ * - Not generally thread-safe.
+ * - Internal `GameMutex` use validates thread affinity in debug builds but does not
+ *   provide cross-thread mutual exclusion.
+ * - Mutate and query the pool from one owner thread or provide external synchronization.
+ *
+ * Performance:
+ * - Runtime-handle lookups are O(1) direct slot checks.
+ * - UUID lookups are O(1) average hash-map probes.
+ * - Slot reuse avoids vector growth where possible.
+ *
+ * @warning `DestroyLater()` only marks an object for destruction. Code that needs the
+ *          object fully gone must call `EndFrame()`.
  */
 template<typename T>
 class TObjectPool : public std::enable_shared_from_this<TObjectPool<T>>
@@ -35,16 +58,16 @@ public:
      */
     using Handle = THandle<T>;
 
-    /**
-     * @brief Construct an empty pool.
-     */
+    /** @brief Construct an empty pool and acquire a unique runtime-pool token for fast handle resolution. */
     TObjectPool()
         : m_runtimePoolToken(ObjectRegistry::Instance().AcquireRuntimePoolToken())
     {
     }
 
     /**
-     * @brief Destroy the pool and release runtime lookup token.
+     * @brief Destroy the pool and release its runtime-pool token.
+     * @warning Releasing the token only invalidates future fast-path resolution. It does
+     *          not flush UUID registrations on behalf of higher-level systems.
      */
     ~TObjectPool()
     {
@@ -57,11 +80,15 @@ public:
     TObjectPool& operator=(TObjectPool&&) = delete;
 
     /**
-     * @brief Create a new object with a generated UUID.
+     * @brief Construct and insert a new pool-owned object with a generated UUID.
      * @tparam U Derived type to construct.
      * @param args Constructor arguments for U.
-     * @return Handle to the created object or error.
-     * @remarks Uses NewUuid for the handle identity.
+     * @return A generation-safe handle to the new object, or an error when the object
+     *         cannot be created.
+     *
+     * The returned handle usually contains both UUID and runtime-slot identity. If the
+     * pool grows beyond the 32-bit runtime-index range, creation fails instead of
+     * silently producing an unusable fast-path handle.
      */
     template<typename U = T, typename... Args>
     TExpected<Handle> Create(Args&&... args)
@@ -71,12 +98,18 @@ public:
     }
 
     /**
-     * @brief Create a new object with an explicit UUID.
+     * @brief Construct and insert a new pool-owned object under an explicit UUID.
      * @tparam U Derived type to construct.
      * @param Id UUID to assign to the object.
      * @param args Constructor arguments for U.
-     * @return Handle to the created object or error.
-     * @remarks Fails if Id is nil or already present in the pool.
+     * @return Handle to the created object, or an error when insertion fails.
+     *
+     * @pre `Id` must be non-nil.
+     * @post On success, `Borrowed(Result)` returns the constructed object until it is
+     *       destroyed.
+     *
+     * @warning UUID collisions fail with `EErrorCode::AlreadyExists`; this function does
+     *          not overwrite an existing entry.
      */
     template<typename U = T, typename... Args>
     TExpected<Handle> CreateWithId(const Uuid& Id, Args&&... args)
@@ -109,10 +142,13 @@ public:
     }
 
     /**
-     * @brief Insert an existing shared object with a generated UUID.
+     * @brief Insert an already-allocated shared object under a generated UUID.
      * @param Object Shared pointer to insert.
      * @return Handle to the inserted object or error.
-     * @remarks Fails if Object is null.
+     *
+     * Ownership:
+     * - The pool shares ownership with the caller by storing the same `shared_ptr`.
+     * - The object address stays stable for the lifetime of that shared object.
      */
     TExpected<Handle> CreateFromShared(std::shared_ptr<T> Object)
     {
@@ -124,11 +160,13 @@ public:
     }
 
     /**
-     * @brief Insert an existing shared object with an explicit UUID.
+     * @brief Insert an already-allocated shared object under an explicit UUID.
      * @param Object Shared pointer to insert.
      * @param Id UUID to assign to the object.
      * @return Handle to the inserted object or error.
-     * @remarks Fails if Id is nil or already present in the pool.
+     *
+     * @pre `Object != nullptr`
+     * @pre `Id` is non-nil and unused in this pool.
      */
     TExpected<Handle> CreateFromSharedWithId(std::shared_ptr<T> Object, const Uuid& Id)
     {
@@ -205,12 +243,13 @@ public:
     }
 
     /**
-     * @brief Resolve a UUID to a runtime-key handle (slow path).
+     * @brief Rebuild a fast runtime handle from a UUID lookup.
      * @param Id UUID to resolve.
      * @return Runtime-key handle or error if missing/pending destroy.
-     * @remarks
-     * Explicit persistence bridge used to convert UUID identities into fast runtime
-     * handles. Avoid in hot loops.
+     *
+     * Use this when code persisted only the UUID identity and now needs a current,
+     * generation-checked runtime handle again. This is intentionally the slow path and
+     * performs a hash-map lookup.
      */
     TExpected<Handle> HandleByIdSlow(const Uuid& Id) const
     {
@@ -229,10 +268,12 @@ public:
     }
 
     /**
-     * @brief Resolve a handle to a borrowed pointer.
+     * @brief Resolve a runtime handle to a borrowed mutable pointer.
      * @param HandleRef Handle to resolve.
      * @return Pointer to object or nullptr if not found/pending destroy.
-     * @note Borrowed pointers must not be cached.
+     *
+     * Borrowing does not extend lifetime. The returned pointer becomes invalid when the
+     * entry is physically removed by `EndFrame()` or when `Clear()` is called.
      */
     T* Borrowed(const Handle& HandleRef)
     {
@@ -252,10 +293,10 @@ public:
     }
 
     /**
-     * @brief Resolve a UUID to a borrowed pointer.
+     * @brief Resolve a UUID to a borrowed mutable pointer.
      * @param Id UUID to resolve.
      * @return Pointer to object or nullptr if not found/pending destroy.
-     * @note Borrowed pointers must not be cached.
+     * @note This is slower than handle-based lookup because it hashes the UUID.
      */
     T* Borrowed(const Uuid& Id)
     {
@@ -319,10 +360,14 @@ public:
     }
 
     /**
-     * @brief Mark an object for end-of-frame destruction by handle.
+     * @brief Mark an object for deferred destruction by runtime handle.
      * @param HandleRef Handle to destroy.
      * @return Success or error if not found.
-     * @remarks Object remains valid until EndFrame.
+     *
+     * Semantics:
+     * - The object remains borrowable until `EndFrame()`.
+     * - Repeated calls are idempotent.
+     * - `IsValid()` returns `false` immediately once an entry is pending destroy.
      */
     TExpected<void> DestroyLater(const Handle& HandleRef)
     {
@@ -347,10 +392,10 @@ public:
     }
 
     /**
-     * @brief Mark an object for end-of-frame destruction by UUID.
+     * @brief Mark an object for deferred destruction by UUID.
      * @param Id UUID to destroy.
      * @return Success or error if not found.
-     * @remarks Object remains valid until EndFrame.
+     * @remarks Equivalent to the handle overload but uses the UUID map.
      */
     TExpected<void> DestroyLater(const Uuid& Id)
     {
@@ -374,10 +419,15 @@ public:
     }
 
     /**
-     * @brief Destroy all objects that were marked for deletion.
-     * @remarks Frees slots and clears pending lists.
-     * @note Should be called at end of frame to keep handles stable.
-     * @note Destroyed UUID keys are removed from index and may be reused on future creates.
+     * @brief Finalize all deferred destroys and recycle the freed slots.
+     *
+     * `EndFrame()` is the point where pending entries actually disappear:
+     * - UUID lookup entries are removed
+     * - ownership pointers are released
+     * - slot ids are cleared
+     * - slot indices return to the free list
+     *
+     * After this call, all borrowed pointers to destroyed objects are invalid.
      */
     void EndFrame()
     {
@@ -400,9 +450,9 @@ public:
     }
 
     /**
-     * @brief Remove all objects immediately.
-     * @remarks Clears the pool and all indices.
-     * @note Use cautiously; invalidates all handles immediately.
+     * @brief Destroy all entries immediately and reset the pool to empty.
+     * @remarks This bypasses deferred-destroy semantics and invalidates every live handle
+     *          and borrowed pointer immediately.
      */
     void Clear()
     {
@@ -446,10 +496,12 @@ public:
     }
 
     /**
-     * @brief Iterate over all live (non-pending) objects (const).
+     * @brief Visit all currently live, non-pending objects in slot order.
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Skips pending-destroy entries so "already removed this frame" objects are excluded.
+     *
+     * @warning The callback runs while the pool is inside its affinity guard. Do not
+     *          structurally mutate the same pool from the callback.
      */
     template<typename Fn>
     void ForEach(const Fn& Func) const
@@ -468,10 +520,10 @@ public:
     }
 
     /**
-     * @brief Iterate over all objects including pending destroy (const).
+     * @brief Visit all objects including entries already marked for destruction.
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Includes objects marked for deletion but not yet flushed by EndFrame.
+     * @remarks Useful for teardown paths that still need access to pending-destroy entries.
      */
     template<typename Fn>
     void ForEachAll(const Fn& Func) const
@@ -490,10 +542,10 @@ public:
     }
 
     /**
-     * @brief Iterate over all live (non-pending) objects (mutable).
+     * @brief Mutable overload of `ForEach` for live, non-pending objects.
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Skips pending-destroy entries so mutation ignores soon-to-be-destroyed objects.
+     * @remarks Pending-destroy entries are skipped.
      */
     template<typename Fn>
     void ForEach(const Fn& Func)
@@ -512,10 +564,10 @@ public:
     }
 
     /**
-     * @brief Iterate over all objects including pending destroy (mutable).
+     * @brief Mutable overload of `ForEachAll`.
      * @tparam Fn Callable type.
      * @param Func Callback invoked with (Handle, Object).
-     * @remarks Includes objects marked for deletion but not yet flushed by EndFrame.
+     * @remarks Includes objects marked for deletion but not yet flushed by `EndFrame()`.
      */
     template<typename Fn>
     void ForEachAll(const Fn& Func)
@@ -535,8 +587,9 @@ public:
 
 private:
     /**
-     * @brief Internal storage entry.
-     * @remarks Shared ownership keeps object addresses stable for borrowed pointer usage.
+     * @brief Internal slot payload for one object entry.
+     * @remarks Exactly one of `m_uniqueObject` or `m_sharedObject` is expected to hold
+     *          the live instance for a populated slot.
      */
     struct Entry
     {
@@ -610,10 +663,13 @@ private:
     }
 
     /**
-     * @brief Resolve a handle to an entry index with runtime-key fast path.
+     * @brief Resolve a handle to an entry index using only the runtime-key fast path.
      * @param HandleRef Handle to resolve.
      * @param OutIndex Resolved index on success.
-     * @return True when handle resolves to a currently indexed entry.
+     * @return True when the handle matches the current slot generation and UUID.
+     *
+     * This function deliberately does not fall back to UUID lookup. Callers that only
+     * have a UUID must first use `HandleByIdSlow()`.
      */
     bool ResolveIndexLocked(const Handle& HandleRef, size_t& OutIndex) const
     {

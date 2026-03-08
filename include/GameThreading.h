@@ -15,13 +15,14 @@
 
 /**
  * @file GameThreading.h
- * @brief Cross-thread task handoff and thread-affinity validation primitives for GameFramework systems.
- * @remarks
+ * @ingroup SnAPI_GameFramework
+ * @brief Cross-thread task handoff and thread-affinity validation primitives for engine systems.
+ *
  * Design goals:
- * - System internals are thread-owned and generally lock-free by ownership convention.
- * - Cross-thread mutation/interaction is routed through enqueue APIs.
- * - Real synchronization is limited to enqueue/wait state handoff.
- * - Thread-affinity validation is enabled in debug builds and compiled out in release.
+ * - Most systems remain thread-owned rather than generally mutex-protected.
+ * - Cross-thread mutation is routed through enqueue APIs.
+ * - Real blocking synchronization is limited to enqueue and task wait state.
+ * - Affinity validation is aggressive in debug builds and free in release.
  */
 
 #if !defined(NDEBUG)
@@ -62,6 +63,7 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
               "SnAPI.GameFramework requires lock-free std::atomic<std::uint64_t> for GameMutex affinity checks.");
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief Lifecycle state of an enqueued task.
  */
 enum class ETaskStatus : std::uint8_t
@@ -81,30 +83,30 @@ enum class ETaskStatus : std::uint8_t
 class TaskHandle;
 
 /**
- * @brief Dispatcher interface for thread-owned task queues.
- * @remarks
- * A dispatcher represents a thread affinity domain (for example world, physics,
- * renderer, audio, or networking). Callers enqueue closures to run on that owner
- * thread. Implementations are expected to provide the enqueue synchronization and
- * execute queued callbacks from that thread's update loop.
+ * @ingroup SnAPI_GameFramework
+ * @brief Dispatcher interface representing one thread-affinity domain.
+ *
+ * Examples include world, renderer, physics, networking, audio, and UI threads.
  */
 class ITaskDispatcher
 {
 public:
     virtual ~ITaskDispatcher() = default;
     /**
-     * @brief Enqueue callback onto dispatcher's owner thread.
+     * @brief Enqueue a callback onto the dispatcher's owner thread.
      * @param Task Callback to execute on dispatcher thread.
      */
     virtual void EnqueueThreadTask(std::function<void()> Task) = 0;
 };
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief RAII binding of the current thread to a dispatcher context.
- * @remarks
- * `TaskDispatcherScope` stores a thread-local pointer to the active dispatcher so
- * enqueue operations can capture where completion callbacks should be marshaled.
- * Scopes can be nested; previous bindings are restored on destruction.
+ *
+ * `TaskDispatcherScope` stores a thread-local pointer to the active dispatcher so enqueue operations
+ * can capture where completion callbacks should later be marshaled.
+ *
+ * Scopes can be nested; the previous binding is restored on destruction.
  */
 class TaskDispatcherScope final
 {
@@ -261,14 +263,18 @@ private:
 } // namespace detail
 
 /**
- * @brief Copyable handle for observing/control of an enqueued task.
- * @remarks
- * `TaskHandle` is a small shared-state wrapper that allows callers to:
- * - poll current status,
- * - cancel queued work before execution starts,
- * - wait for terminal state (completed/failed/canceled).
+ * @ingroup SnAPI_GameFramework
+ * @brief Copyable handle for observing and canceling enqueued task work.
  *
- * Handles are safe to copy and pass across threads.
+ * `TaskHandle` is a small shared-state wrapper that allows callers to:
+ * - poll current status
+ * - cancel queued work before execution starts
+ * - wait for a terminal state
+ *
+ * Invalid-handle semantics:
+ * - invalid handles report `Completed`
+ * - waiting on an invalid handle succeeds immediately
+ * - canceling an invalid handle fails
  */
 class TaskHandle final
 {
@@ -357,18 +363,17 @@ private:
 };
 
 /**
- * @brief Debug-time thread-affinity guard with mutex-compatible API.
- * @remarks
- * `GameMutex` intentionally does not provide mutual exclusion. It exists to
- * validate that a thread-owned system/object is only touched by its owning
- * thread during development.
+ * @ingroup SnAPI_GameFramework
+ * @brief Debug-time thread-affinity guard with a mutex-compatible API surface.
+ *
+ * `GameMutex` deliberately does not provide mutual exclusion. It exists to validate that a
+ * thread-owned object is only touched by its owning thread during development.
  *
  * Behavior summary:
- * - Debug: verifies/binds thread ownership and asserts on cross-thread access.
- * - Release: all operations compile to no-op.
+ * - Debug: first access binds an owner token, later cross-thread access asserts.
+ * - Release: all operations are compiled to no-ops.
  *
- * This enables lock-free system internals by ownership while retaining runtime
- * misuse detection in development builds.
+ * @warning Do not use `GameMutex` as a real synchronization primitive for shared mutable state.
  */
 class GameMutex final
 {
@@ -508,29 +513,31 @@ private:
 };
 
 /**
- * @brief Lock-guard alias for `GameMutex` affinity validation.
- * @remarks
- * Preserves familiar RAII call-sites (`GameLockGuard Lock(m_mutex);`) while
- * using debug-only ownership checks and release no-op behavior.
+ * @ingroup SnAPI_GameFramework
+ * @brief RAII alias used with `GameMutex`.
+ *
+ * This preserves familiar call sites such as `GameLockGuard Lock(m_mutex);` while still implementing
+ * affinity validation rather than mutual exclusion.
  */
 using GameLockGuard = std::lock_guard<GameMutex>;
 
 /**
- * @brief Generic enqueue-only task queue for a thread-owned system.
+ * @ingroup SnAPI_GameFramework
+ * @brief Generic task queue for a thread-owned system.
  * @tparam TOwner Owning system type executed by this queue.
- * @remarks
- * Threading semantics:
- * - `EnqueueTask` and `EnqueueThreadTask` are cross-thread safe and use a real
- *   mutex only for queue insertion.
- * - `ExecuteQueuedTasks` must be called from owner-thread update loop.
- * - Owner-thread affinity is optionally validated via `GameMutex`.
- * - Completion callbacks are marshaled to the caller's dispatcher (captured from
- *   `TaskDispatcherScope::Current()` at enqueue time).
  *
- * Task semantics:
- * - `Cancel()` succeeds only before task starts.
- * - Canceled tasks are not executed.
- * - Completion callback receives `TaskHandle` with final status.
+ * Threading semantics:
+ * - `EnqueueTask()` and `EnqueueThreadTask()` are cross-thread safe and use a real mutex only for insertion.
+ * - `ExecuteQueuedTasks()` must be called from the owner thread's update loop.
+ * - Completion callbacks are marshaled back to the enqueuer's dispatcher when a `TaskDispatcherScope`
+ *   was active at enqueue time.
+ * - In debug builds, supplying a completion callback without a bound dispatcher asserts.
+ * - When no dispatcher is captured and execution is still allowed, completion runs inline on the owner thread.
+ *
+ * Execution semantics:
+ * - Execution order is FIFO within the drained snapshot for one `ExecuteQueuedTasks()` call.
+ * - New tasks enqueued during execution are deferred until the next drain.
+ * - Cancellation only succeeds while the task is still queued.
  */
 template<typename TOwner>
 class TSystemTaskQueue final : public ITaskDispatcher
@@ -569,8 +576,9 @@ public:
      * @param OnComplete Optional completion callback.
      * @return Handle for wait/cancel/status operations.
      * @remarks
-     * Completion callback runs on the enqueuer's dispatcher thread when available.
-     * If no dispatcher is bound, completion runs inline at execution point.
+     * Completion callbacks are intended to marshal back to the enqueuer's dispatcher thread.
+     * In debug builds, providing `OnComplete` without an active `TaskDispatcherScope` asserts.
+     * When no dispatcher is available and execution is still allowed, completion runs inline at the execution point.
      */
     TaskHandle EnqueueTask(WorkTask Work, CompletionTask OnComplete = {})
     {

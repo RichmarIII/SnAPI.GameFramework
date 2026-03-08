@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#tutorials" class="md-skip">
+        <a href="#start-here" class="md-skip">
           Skip to content
         </a>
       
@@ -358,10 +358,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#before-you-start" class="md-nav__link">
+  <a href="#build-once-before-reading" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Before You Start
+        Build Once Before Reading
       
     </span>
   </a>
@@ -369,10 +369,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#recommended-learning-path" class="md-nav__link">
+  <a href="#suggested-learning-order" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Recommended Learning Path
+        Suggested Learning Order
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Suggested Learning Order">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-framework-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Core framework path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project-style-newcomer-labs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project-style newcomer labs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-five-rules-to-remember" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Five Rules To Remember
       
     </span>
   </a>
@@ -380,21 +419,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#core-ideas-you-should-keep-in-mind" class="md-nav__link">
+  <a href="#which-tutorials-matter-most-for-different-goals" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Core Ideas You Should Keep In Mind
+        Which Tutorials Matter Most For Different Goals
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Which Tutorials Matter Most For Different Goals">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-make-a-single-player-prototype" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to make a single-player prototype
       
     </span>
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#renderer-refactor-context-2026-02-15" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-understand-multiplayersession-flow" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Renderer Refactor Context (2026-02-15)
+        I want to understand multiplayer/session flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-work-on-toolseditor-code" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to work on tools/editor code
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#i-want-to-understand-persistence-and-assets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        I want to understand persistence and assets
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-note-about-older-terminology" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A Note About Older Terminology
       
     </span>
   </a>
@@ -444,22 +533,6 @@
   
     
     
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
       
         
       
@@ -518,6 +591,83 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="worlds_graphs/" class="md-nav__link">
         
@@ -526,7 +676,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -575,6 +725,62 @@
   
   
     <li class="md-nav__item">
+      <a href="input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="renderer/" class="md-nav__link">
         
   
@@ -582,7 +788,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -722,7 +928,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -787,6 +993,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -982,91 +1557,111 @@
 
 
 
-<h1 id="tutorials">Tutorials<a class="headerlink" href="#tutorials" title="Permanent link">&para;</a></h1>
-<p>This guide is written for a complete beginner who wants to understand how SnAPI.GameFramework actually works in code, not just copy snippets.</p>
-<p>You will build a mental model in this order:</p>
-<ol>
-<li>Runtime structure (<code>World -&gt; Level -&gt; NodeGraph -&gt; Node -&gt; Component</code>)</li>
-<li>Renderer ownership and render-object flow</li>
-<li>Physics ownership and simulation flow</li>
-<li>Reflection registration (how types become visible to the engine)</li>
-<li>Serialization and asset packaging</li>
-<li>Networking replication + RPC</li>
-<li>Audio components</li>
-<li>Testing and validation</li>
-</ol>
-<p>If you work through the pages in sequence, you will be able to read the examples in <code>examples/</code> and understand why each system is there.</p>
-<h2 id="before-you-start">Before You Start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
-<p>You should be comfortable with:</p>
+<h1 id="start-here">Start Here<a class="headerlink" href="#start-here" title="Permanent link">&para;</a></h1>
+<p>This guide is for someone new to the framework who wants the current, accurate mental model before building anything serious.</p>
+<p>The docs now assume the modern runtime shape:</p>
 <ul>
-<li>C++ classes, inheritance, and templates</li>
-<li>CMake build basics</li>
-<li>Running binaries from the terminal</li>
+<li><code>GameRuntime</code></li>
+<li><code>World</code></li>
+<li><code>Level</code></li>
+<li><code>BaseNode</code></li>
+<li><code>BaseComponent</code></li>
+<li>optional subsystems owned by the world</li>
+<li>optional <code>GameplayHost</code> for higher-level session logic</li>
 </ul>
-<p>Build once before reading the tutorials so you can run examples as you go:</p>
+<h2 id="build-once-before-reading">Build Once Before Reading<a class="headerlink" href="#build-once-before-reading" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code>cmake<span class="w"> </span>-S<span class="w"> </span>.<span class="w"> </span>-B<span class="w"> </span>build/debug<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>-DSNAPI_GF_BUILD_TESTS<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>-DSNAPI_GF_BUILD_EXAMPLES<span class="o">=</span>ON
+<span class="w">  </span>-DSNAPI_GF_BUILD_EXAMPLES<span class="o">=</span>ON<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-DSNAPI_GF_BUILD_DOCS<span class="o">=</span>ON
 cmake<span class="w"> </span>--build<span class="w"> </span>build/debug
+ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure
 </code></pre></div>
-<p>Run tests:</p>
-<div class="highlight"><pre><span></span><code>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build/debug<span class="w"> </span>--output-on-failure
-</code></pre></div>
-<p>Run examples:</p>
+<p>Useful example binaries:</p>
 <div class="highlight"><pre><span></span><code>./build/debug/examples/FeatureShowcase/FeatureShowcase
 ./build/debug/examples/WorldPerfBenchmark/WorldPerfBenchmark
+./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--local
 ./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--server
 ./build/debug/examples/MultiplayerExample/MultiplayerExample<span class="w"> </span>--client
 </code></pre></div>
-<h2 id="recommended-learning-path">Recommended Learning Path<a class="headerlink" href="#recommended-learning-path" title="Permanent link">&para;</a></h2>
+<h2 id="suggested-learning-order">Suggested Learning Order<a class="headerlink" href="#suggested-learning-order" title="Permanent link">&para;</a></h2>
+<h3 id="core-framework-path">Core framework path<a class="headerlink" href="#core-framework-path" title="Permanent link">&para;</a></h3>
 <ol>
-<li><a href="worlds_graphs/">Worlds and Graphs</a></li>
+<li><a href="worlds_graphs/">Worlds, Levels, and Hierarchies</a></li>
 <li><a href="nodes_components/">Nodes and Components</a></li>
-<li><a href="renderer/">Renderer Integration and Mesh Components</a></li>
+<li><a href="input/">Input System</a></li>
+<li><a href="ui/">UI System</a></li>
+<li><a href="renderer/">Renderer Integration</a></li>
 <li><a href="physics/">Physics System and Components</a></li>
 <li><a href="physics_queries_events/">Physics Queries and Events</a></li>
 <li><a href="reflection_serialization/">Reflection and Serialization</a></li>
 <li><a href="assetpipeline/">AssetPipeline Integration</a></li>
-<li><a href="networking/">Networking Replication and RPC</a></li>
+<li><a href="networking/">Networking, Replication, and Reflected RPC</a></li>
 <li><a href="audio/">Audio Components</a></li>
 <li><a href="testing/">Testing and Validation</a></li>
 </ol>
-<h2 id="core-ideas-you-should-keep-in-mind">Core Ideas You Should Keep In Mind<a class="headerlink" href="#core-ideas-you-should-keep-in-mind" title="Permanent link">&para;</a></h2>
+<h3 id="project-style-newcomer-labs">Project-style newcomer labs<a class="headerlink" href="#project-style-newcomer-labs" title="Permanent link">&para;</a></h3>
+<ol>
+<li><a href="first_play_session/">First Play Session</a></li>
+<li><a href="space_station_partitions/">Space Station Partitions</a></li>
+<li><a href="couch_coop_laser_tag/">Couch Co-op Laser Tag</a></li>
+<li><a href="haunted_radio/">Haunted Radio</a></li>
+<li><a href="bouncy_basement/">Bouncy Basement</a></li>
+<li><a href="shipyard_save_load/">Shipyard Save/Load</a></li>
+<li><a href="postcard_renderer/">Postcard Renderer</a></li>
+<li><a href="net_arena/">Net Arena</a></li>
+<li><a href="tool_world_vs_game_world/">Tool World vs Game World</a></li>
+<li><a href="scripted_gadget_lab/">Scripted Gadget Lab</a></li>
+</ol>
+<h2 id="the-five-rules-to-remember">The Five Rules To Remember<a class="headerlink" href="#the-five-rules-to-remember" title="Permanent link">&para;</a></h2>
+<ol>
+<li>Handles are identity. Borrowed pointers are not ownership.</li>
+<li><code>World</code> owns the content hierarchy and the optional subsystems.</li>
+<li><code>Level</code> is a node. Use child <code>Level</code> nodes instead of looking for an old <code>NodeGraph</code> layer.</li>
+<li><code>GameRuntime</code> is the easiest way to get a correct frame loop.</li>
+<li>Serialization, replication, and reflected RPC all depend on reflection metadata being correct.</li>
+</ol>
+<h2 id="which-tutorials-matter-most-for-different-goals">Which Tutorials Matter Most For Different Goals<a class="headerlink" href="#which-tutorials-matter-most-for-different-goals" title="Permanent link">&para;</a></h2>
+<h3 id="i-want-to-make-a-single-player-prototype">I want to make a single-player prototype<a class="headerlink" href="#i-want-to-make-a-single-player-prototype" title="Permanent link">&para;</a></h3>
+<p>Read:</p>
+<ol>
+<li><a href="worlds_graphs/">Worlds, Levels, and Hierarchies</a></li>
+<li><a href="nodes_components/">Nodes and Components</a></li>
+<li><a href="first_play_session/">First Play Session</a></li>
+<li><a href="physics/">Physics System and Components</a></li>
+<li><a href="renderer/">Renderer Integration</a></li>
+</ol>
+<h3 id="i-want-to-understand-multiplayersession-flow">I want to understand multiplayer/session flow<a class="headerlink" href="#i-want-to-understand-multiplayersession-flow" title="Permanent link">&para;</a></h3>
+<p>Read:</p>
+<ol>
+<li><a href="networking/">Networking, Replication, and Reflected RPC</a></li>
+<li><a href="net_arena/">Net Arena</a></li>
+<li><a href="couch_coop_laser_tag/">Couch Co-op Laser Tag</a></li>
+<li><a href="audio/">Audio Components</a></li>
+</ol>
+<h3 id="i-want-to-work-on-toolseditor-code">I want to work on tools/editor code<a class="headerlink" href="#i-want-to-work-on-toolseditor-code" title="Permanent link">&para;</a></h3>
+<p>Read:</p>
+<ol>
+<li><a href="../architecture/">Architecture</a></li>
+<li><a href="ui/">UI System</a></li>
+<li><a href="renderer/">Renderer Integration</a></li>
+<li><a href="tool_world_vs_game_world/">Tool World vs Game World</a></li>
+</ol>
+<h3 id="i-want-to-understand-persistence-and-assets">I want to understand persistence and assets<a class="headerlink" href="#i-want-to-understand-persistence-and-assets" title="Permanent link">&para;</a></h3>
+<p>Read:</p>
+<ol>
+<li><a href="reflection_serialization/">Reflection and Serialization</a></li>
+<li><a href="assetpipeline/">AssetPipeline Integration</a></li>
+<li><a href="shipyard_save_load/">Shipyard Save/Load</a></li>
+</ol>
+<h2 id="a-note-about-older-terminology">A Note About Older Terminology<a class="headerlink" href="#a-note-about-older-terminology" title="Permanent link">&para;</a></h2>
+<p>If you still see <code>NodeGraph</code> in old notes, blog posts, or stale generated content, translate it like this:</p>
 <ul>
-<li>Handles are identity; pointers are borrowed views.</li>
-<li>Reflection metadata is lazy-registered on first use.</li>
-<li>Serialization and networking both read reflection metadata.</li>
-<li>Gameplay RPC call sites can stay small with <code>INode::CallRPC(...)</code> / <code>IComponent::CallRPC(...)</code>.</li>
-<li>Replication has two gates:<ul>
-<li>The field must have <code>EFieldFlagBits::Replication</code>.</li>
-<li>The owning node/component must have <code>Replicated(true)</code>.</li>
+<li>scene partitioning -&gt; child <code>Level</code> nodes</li>
+<li>standalone graph serialization -&gt; node, level, or world serialization depending on scope</li>
+<li>graph ownership -&gt; world ownership</li>
 </ul>
-</li>
-<li>Nested field replication depends on codec availability:<ul>
-<li>with <code>TValueCodec&lt;T&gt;</code>, the full field value is codec-serialized.</li>
-<li>without a codec, only nested reflected fields marked for replication are serialized.</li>
-</ul>
-</li>
-<li><code>World</code> owns subsystem runtime (networking/audio/physics/renderer), and <code>GameRuntime</code> orchestrates world update phases.</li>
-<li>Renderer follows the same world-owned subsystem pattern (<code>World::Renderer()</code>), and render submit/present is driven by <code>World::EndFrame()</code>.</li>
-<li>Mesh assets are data-only; per-instance render behavior lives on render objects (<code>MeshRenderObject</code> via <code>IRenderObject</code>).</li>
-<li>Physics stepping can be configured:<ul>
-<li>fixed tick (<code>World::FixedTick</code>) for deterministic gameplay behavior.</li>
-<li>variable tick (<code>World::Tick</code>) for simple real-time simulation paths.</li>
-</ul>
-</li>
-<li><code>RigidBodyComponent</code> sync direction depends on body type:<ul>
-<li>dynamic bodies usually pull transforms from physics.</li>
-<li>static/kinematic bodies usually push transforms to physics.</li>
-</ul>
-</li>
-<li>Transport <code>pkt_lost</code> counters can be non-zero while gameplay remains correct; reliable backlog health is tracked with <code>pending_rel</code>.</li>
-<li>Destruction is deferred to <code>EndFrame()</code> to keep handles stable during a frame.</li>
-<li><code>CameraComponent</code>, <code>StaticMeshComponent</code>, and <code>SkeletalMeshComponent</code> are only available when renderer integration is compiled in.</li>
-</ul>
-<p>With that baseline, start with <code>Worlds and Graphs</code>.</p>
-<h2 id="renderer-refactor-context-2026-02-15">Renderer Refactor Context (2026-02-15)<a class="headerlink" href="#renderer-refactor-context-2026-02-15" title="Permanent link">&para;</a></h2>
-<p>Renderer docs/tutorials here track the post-refactor model where <code>Mesh</code> is asset data and runtime instance state is represented by <code>IRenderObject</code>/<code>MeshRenderObject</code>.</p>
+<p>Start with <a href="worlds_graphs/">Worlds, Levels, and Hierarchies</a>.</p>
 
 
 

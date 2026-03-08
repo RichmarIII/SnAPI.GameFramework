@@ -1,6 +1,22 @@
 # SnAPI::GameFramework::TExpectedRef
 
-Lightweight expected wrapper that stores a reference.
+`expected`-style wrapper for non-owning references.
+
+`std::expected` cannot directly store references, so `TExpectedRef<T>` wraps `std::reference_wrapper<T>` while preserving the familiar `has_value` / `value` / `error` access pattern. It is used throughout the framework for APIs that borrow an existing object instead of transferring ownership.
+
+Core semantics:
+- Success means "a borrowed reference is currently available".
+- Failure means "no reference could be produced; inspect `error()` for the reason".
+- The wrapper never owns the referenced object.
+
+Ownership and lifetime:
+- The caller does not own the referenced object.
+- The referenced object must outlive the wrapper and any references obtained from it.
+- Destroying or invalidating the underlying object also invalidates the borrowed reference contract.
+
+Threading:
+- Thread-safety is exactly the same as the referenced object.
+- The wrapper itself performs no synchronization.
 
 ## Private Members
 

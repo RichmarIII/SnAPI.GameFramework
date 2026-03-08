@@ -1,13 +1,9 @@
 # File `Export.h`
 
-## Macros
+Shared-library visibility macro definitions for the GameFramework module.
 
-<div class="snapi-api-card" markdown="1">
-### `SNAPI_GAMEFRAMEWORK_API`
-
-Export/import macro for shared library builds.
-
-**Notes**
-
-- Behavior varies by platform and build defines.
-</div>
+This header centralizes symbol-visibility decoration so public API types and functions can be marked once with `SNAPI_GAMEFRAMEWORK_API` and then compile correctly for:
+- Windows DLL export
+- Windows DLL import
+- ELF/Mach-O default visibility
+- static-library or hidden-visibility builds

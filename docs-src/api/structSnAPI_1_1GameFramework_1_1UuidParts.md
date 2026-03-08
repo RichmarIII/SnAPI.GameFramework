@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::UuidParts
 
-Split UUID representation for hashing or ABI transport.
+Split UUID representation for hashing, scripting ABI transport, or interop.
+
+`High` and `Low` store the UUID bytes in big-endian order.
 
 ## Public Members
 

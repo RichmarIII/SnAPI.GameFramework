@@ -1,275 +1,198 @@
-# Renderer Integration and Mesh Components
+# Renderer Integration
 
-This guide explains how SnAPI.GameFramework integrates with SnAPI.Renderer in the current post-refactor architecture.
+Renderer support is optional, world-owned, and tightly tied to end-of-frame submission.
 
-By the end, you should understand:
+The short version is:
 
-1. when renderer integration is compiled in
-2. how to bootstrap renderer through `GameRuntimeSettings`
-3. how `World` frame lifecycle drives renderer submit/present
-4. how camera/static/skeletal components work together
-5. why mesh assets are now separated from per-instance render state (`MeshRenderObject`)
+- `RendererSystem` is the world-owned renderer adapter
+- camera and mesh components bridge gameplay objects into renderer objects
+- UI viewport binding is explicit
+- some viewport creation is lazy, especially through `UIRenderViewport`
 
-## 1. Build-Time Integration Rules
-
-Renderer support is compile-time gated by `SNAPI_GF_ENABLE_RENDERER`.
-
-In this repository, that define is added when CMake can locate a SnAPI.Renderer source tree and create `SnAPI.Renderer` target.
-
-CMake resolution order:
-
-1. `-DSNAPI_GF_RENDERER_SOURCE_DIR=/path/to/SnAPI.Renderer`
-2. fallback local path `/mnt/Apps/Dev/Repositories/SnAPI.Renderer`
-3. if neither is present, renderer integration is skipped and related components are not compiled
-
-Typical dev configure command:
-
-```bash
-cmake -S . -B build/debug \
-  -DSNAPI_GF_BUILD_EXAMPLES=ON \
-  -DSNAPI_GF_BUILD_TESTS=ON \
-  -DSNAPI_GF_RENDERER_SOURCE_DIR=/mnt/Apps/Dev/Repositories/SnAPI.Renderer
-```
-
-## 2. Bootstrap Renderer from `GameRuntimeSettings`
-
-`GameRuntime` is the simplest way to start renderer-backed worlds.
+## 1. Bootstrap Through `GameRuntime`
 
 ```cpp
-#include "GameFramework.hpp"
-
-using namespace SnAPI::GameFramework;
-
 GameRuntime Runtime;
 GameRuntimeSettings Settings{};
-Settings.WorldName = "RendererWorld";
-Settings.RegisterBuiltins = true;
-
-Settings.Tick.EnableFixedTick = true;
-Settings.Tick.FixedDeltaSeconds = 1.0f / 60.0f;
+Settings.WorldName = "RenderWorld";
 
 GameRuntimeRendererSettings Renderer{};
-Renderer.WindowTitle = "SnAPI.GameFramework Renderer";
-Renderer.WindowWidth = 1600.0f;
-Renderer.WindowHeight = 900.0f;
+Renderer.CreateGraphicsApi = true;
 Renderer.CreateWindow = true;
+Renderer.WindowTitle = "SnAPI.GameFramework";
+Renderer.WindowWidth = 1280.0f;
+Renderer.WindowHeight = 720.0f;
 Renderer.CreateDefaultLighting = true;
 Renderer.RegisterDefaultPassGraph = true;
 Renderer.CreateDefaultMaterials = true;
-Renderer.EnableSsao = true;
-Renderer.EnableSsr = true;
-Renderer.EnableBloom = true;
-Renderer.EnableAtmosphere = true;
-
+Renderer.CreateDefaultEnvironmentProbe = true;
 Settings.Renderer = Renderer;
 
-const auto InitResult = Runtime.Init(Settings);
-if (!InitResult)
+if (auto InitResult = Runtime.Init(Settings); !InitResult)
 {
-    // handle init error
+    return;
 }
 ```
 
-Important behavior:
+Key fact: the renderer subsystem initializes during `GameRuntime::Init()`, before the gameplay host starts.
 
-- if `Settings.Renderer` is `std::nullopt`, the world runs without renderer backend
-- if set, `GameRuntime::Init(...)` initializes world renderer subsystem
-- `GameRuntime::Shutdown()` cleanly shuts renderer down
+## 2. The World Submits Renderer Work In `EndFrame`
 
-## 3. Runtime Lifecycle: Who Calls Present?
+Renderer frame submission does not happen during node constructors or random gameplay callbacks.
 
-`World::EndFrame()` triggers renderer work when renderer is enabled:
+It happens from `World::EndFrame()`.
 
-- `NodeGraph::EndFrame()` runs first
-- then `RendererSystem::EndFrame()` runs
+That is also where the world:
 
-`RendererSystem::EndFrame()` is responsible for:
+- builds bound UI render packets
+- queues them into renderer viewports
+- calls `RendererSystem::EndFrame()`
 
-- optional swapchain resize handling
-- `BeginFrame(...)` / pass execution / `EndFrame(...)` on graphics API
-- camera previous-frame save (`SaveFrameState()`)
-- render-object previous-frame save (`SaveFrameState()`)
+If you hand-roll a world loop and skip `EndFrame()`, renderer work will not behave correctly.
 
-This is why temporal effects and motion vectors stay frame-consistent without manual per-object bookkeeping in gameplay code.
-
-## 4. Camera Setup with `CameraComponent`
-
-`CameraComponent` owns a renderer `CameraBase` and can auto-sync from `TransformComponent`.
+## 3. Add A Camera
 
 ```cpp
-auto CameraNodeResult = Runtime.World().CreateNode<BaseNode>("MainCamera");
-auto* CameraNode = CameraNodeResult ? CameraNodeResult->Borrowed() : nullptr;
+auto CameraHandle = WorldInstance.CreateNode<BaseNode>("MainCamera");
+if (!CameraHandle)
+{
+    return;
+}
+
+auto* CameraNode = CameraHandle->Borrowed();
 if (!CameraNode)
 {
     return;
 }
 
-auto CameraTransform = CameraNode->Add<TransformComponent>();
-CameraTransform->Position = Vec3{0.0f, 2.0f, 8.0f};
+if (auto Transform = CameraNode->Add<TransformComponent>())
+{
+    Transform->Position = Vec3(0.0f, 2.0f, 8.0f);
+}
 
-auto Camera = CameraNode->Add<CameraComponent>();
-Camera->EditSettings().FovDegrees = 60.0f;
-Camera->EditSettings().NearClip = 0.05f;
-Camera->EditSettings().FarClip = 5000.0f;
-Camera->EditSettings().Aspect = 16.0f / 9.0f;
-Camera->EditSettings().SyncFromTransform = true;
-Camera->SetActive(true);
+if (auto Camera = CameraNode->Add<CameraComponent>())
+{
+    auto& Settings = Camera->EditSettings();
+    Settings.FovDegrees = 60.0f;
+    Settings.NearClip = 0.05f;
+    Settings.FarClip = 5000.0f;
+    Settings.Aspect = 16.0f / 9.0f;
+    Settings.SyncFromTransform = true;
+    Settings.Active = true;
+}
 ```
 
-`CameraComponent` resolves world renderer through `Owner()->World()->Renderer()` and updates active camera ownership automatically.
+`CameraComponent` owns one renderer camera instance and can derive its pose from the owner's `TransformComponent`.
 
-## 5. Static Mesh Rendering (`StaticMeshComponent`)
+## 4. Add A Static Mesh
 
 ```cpp
-auto CubeNodeResult = Runtime.World().CreateNode<BaseNode>("Cube");
-auto* CubeNode = CubeNodeResult ? CubeNodeResult->Borrowed() : nullptr;
-if (!CubeNode)
+auto CubeHandle = WorldInstance.CreateNode<BaseNode>("Cube");
+if (!CubeHandle)
 {
     return;
 }
 
-auto CubeTransform = CubeNode->Add<TransformComponent>();
-CubeTransform->Position = Vec3{0.0f, 0.5f, 0.0f};
-CubeTransform->Scale = Vec3{1.0f, 1.0f, 1.0f};
-
-auto CubeMesh = CubeNode->Add<StaticMeshComponent>();
-auto& MeshSettings = CubeMesh->EditSettings();
-MeshSettings.MeshPath = "assets/cube.obj";
-MeshSettings.Visible = true;
-MeshSettings.CastShadows = true;
-MeshSettings.SyncFromTransform = true;
-MeshSettings.RegisterWithRenderer = true;
-
-// Optional if you edited path at runtime and want immediate reload:
-CubeMesh->ReloadMesh();
-```
-
-What happens internally:
-
-- mesh data is loaded once through `MeshManager` cache
-- component creates one per-instance `MeshRenderObject`
-- default GBuffer/Shadow material instances are populated through `RendererSystem`
-- pass visibility (`Visible`) and shadow participation (`CastShadows`) are applied per render object
-- pass routing is applied through `RendererSystem::ConfigureRenderObjectPasses(...)`
-- object teardown removes pass links through `RendererSystem::RemoveRenderObject(...)`
-
-## 6. Skeletal/Rigid Animation Rendering (`SkeletalMeshComponent`)
-
-```cpp
-auto ActorNodeResult = Runtime.World().CreateNode<BaseNode>("AnimatedActor");
-auto* ActorNode = ActorNodeResult ? ActorNodeResult->Borrowed() : nullptr;
-if (!ActorNode)
+auto* Cube = CubeHandle->Borrowed();
+if (!Cube)
 {
     return;
 }
 
-auto ActorTransform = ActorNode->Add<TransformComponent>();
-ActorTransform->Position = Vec3{2.0f, 0.0f, 0.0f};
-
-auto Skeletal = ActorNode->Add<SkeletalMeshComponent>();
-auto& SkeletalSettings = Skeletal->EditSettings();
-SkeletalSettings.MeshPath = "assets/robot.glb";
-SkeletalSettings.Visible = true;
-SkeletalSettings.CastShadows = true;
-SkeletalSettings.AutoPlayAnimations = true;
-SkeletalSettings.LoopAnimations = true;
-SkeletalSettings.AnimationName = "Idle"; // empty string = play all
-
-// Runtime control:
-Skeletal->PlayAnimation("Run", true, 0.0f);
-// Skeletal->StopAnimations();
-```
-
-`SkeletalMeshComponent` advances rigid animation state on its `MeshRenderObject` each tick, then renderer consumes updated transforms in pass execution.
-
-## 7. Post-Refactor Model: Mesh Asset vs Render Object
-
-This is the key architecture update:
-
-- `Mesh` is now asset data holder (vertices, indices, submeshes, materials, rigid parts, animation tracks)
-- runtime instance state lives on `IRenderObject` implementations (currently `MeshRenderObject`)
-
-Per-instance state now includes:
-
-- world transform / previous-frame world transform
-- per-submesh material instances and shadow material instances
-- per-pass visibility flags
-- shadow-cast and triangle-culling toggles
-- animation playback state
-
-Why this matters:
-
-- many game objects can share one mesh asset + one vertex stream set
-- you avoid accidental per-instance mesh duplication
-- material/pass toggles become true instance-level controls
-
-## 8. Material Sharing for High Instance Counts
-
-For large crowds/prop fields, `StaticMeshComponent` supports overriding all submesh materials with shared instances:
-
-```cpp
-auto* Renderer = Runtime.World().Renderer().Graphics();
-(void)Renderer; // acquire/create your own material instances as needed
-
-// After you created shared material instances:
-CubeMesh->SetSharedMaterialInstances(SharedGBufferMaterialInstance,
-                                     SharedShadowMaterialInstance);
-```
-
-This is useful when you want many objects to intentionally share descriptor state and reduce VRAM churn.
-
-## 9. Manual Renderer Access from Gameplay Code
-
-You can interact with renderer subsystem directly:
-
-```cpp
-auto& RendererSystem = Runtime.World().Renderer();
-
-if (RendererSystem.IsInitialized())
+if (auto Transform = Cube->Add<TransformComponent>())
 {
-    RendererSystem.QueueText("Hello Renderer", 20.0f, 20.0f);
+    Transform->Position = Vec3(0.0f, 0.5f, 0.0f);
+}
 
-    if (!RendererSystem.HasOpenWindow())
-    {
-        // headless or window closed
-    }
+if (auto Mesh = Cube->Add<StaticMeshComponent>())
+{
+    auto& MeshSettings = Mesh->EditSettings();
+    MeshSettings.MeshPath = "primitive://box";
+    MeshSettings.Visible = true;
+    MeshSettings.CastShadows = true;
+    MeshSettings.SyncFromTransform = true;
+    MeshSettings.RegisterWithRenderer = true;
 }
 ```
 
-Useful APIs:
+Important detail:
 
-- `SetActiveCamera(...)`
-- `QueueText(...)`
-- `LoadDefaultFont(...)`
-- `RecreateSwapChain()`
-- `DefaultGBufferMaterial()` / `DefaultShadowMaterial()`
+- the current `StaticMeshComponent` path reliably supports built-in primitive tokens like `primitive://box`
+- non-primitive `MeshPath` values are best treated as compatibility/change keys unless you are intentionally using the asset-driven path
 
-## 10. Multiplayer Example Rendering + Profiling Mode
+## 5. Add A Skeletal Mesh
 
-`examples/MultiplayerExample` requires renderer integration and uses renderer-backed scene setup.
+`SkeletalMeshComponent` is more asset-driven than `StaticMeshComponent`.
 
-Profiler mode defaults to raw replay capture in this example. To switch to live stream mode:
+Its settings still expose `MeshPath`, but the current implementation treats asset-driven data as the primary load path and uses `MeshPath` mainly for compatibility and change detection.
 
-```bash
-SNAPI_MULTIPLAYER_PROFILER_MODE=stream ./build/debug/examples/MultiplayerExample/MultiplayerExample --local
-```
+Common settings:
 
-## 11. Common Mistakes
+- `Visible`
+- `CastShadows`
+- `SyncFromTransform`
+- `RegisterWithRenderer`
+- `AutoPlayAnimations`
+- `LoopAnimations`
+- `AnimationName`
 
-- Renderer features not available at compile-time:
-  - forgot to provide `SNAPI_GF_RENDERER_SOURCE_DIR` and local fallback path is absent
-- Mesh never appears:
-  - `MeshPath` invalid
-  - `RegisterWithRenderer=false`
-  - no active camera
-- Object visible but no shadows:
-  - `CastShadows=false`
-  - shadow pass disabled in renderer bootstrap
-- Flickering temporal motion vectors:
-  - custom frame loop skips `World::EndFrame()`
+## 6. Understand The Current Render Object Model
 
-## 12. What to Read Next
+The old docs tended to blur asset data and per-instance renderer state. The current model is clearer.
+
+- mesh assets are shared data
+- per-instance render state lives on renderer objects
+- components bridge node state into those renderer objects
+
+Why that split matters:
+
+- many nodes can share one source mesh
+- each instance can still have unique transform and pass membership
+- visibility and shadow participation are per-instance decisions
+
+## 7. World Render Settings
+
+`WorldRenderSettings` is a node-level convenience container for post-processing and atmospheric settings.
+
+It is world-facing render configuration, not a camera replacement.
+
+Typical responsibilities:
+
+- referencing SSAO/SSR/Bloom/ToneMap parameter nodes
+- applying world-scoped render configuration once the renderer is ready
+
+Because viewport creation can be lazy in editor flows, render-setting nodes should not assume all viewports already exist at constructor time.
+
+## 8. `UIRenderViewport` Is Layout-Driven
+
+When you embed a renderer viewport in UI, the viewport does not exist immediately when the UI element is constructed.
+
+It is created and synchronized from `Arrange()` and `Paint()`.
+
+That means these assumptions are wrong:
+
+- "my node constructor can immediately find every viewport"
+- "a viewport-backed UI element guarantees a swapchain during creation"
+- "editor scene nodes should set viewport-dependent state before layout runs"
+
+The framework now uses deferred bootstrap behavior to avoid exactly those bugs.
+
+## 9. Common Mistakes
+
+### Assuming renderer init implies viewport init
+
+Renderer subsystem initialization and viewport creation are different stages.
+
+### Forgetting `EndFrame()` in a manual loop
+
+That skips renderer submission.
+
+### Treating `WorldRenderSettings` like a camera
+
+They solve different problems.
+
+## What To Read Next
 
 - [Physics System and Components](physics.md)
-- [Networking Replication and RPC](networking.md)
-- [Architecture](../architecture.md)
+- [Postcard Renderer](postcard_renderer.md)
+- [Tool World vs Game World](tool_world_vs_game_world.md)

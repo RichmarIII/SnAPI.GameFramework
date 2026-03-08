@@ -1,84 +1,79 @@
 # UI System
 
-This tutorial explains how `SnAPI.GameFramework` integrates `SnAPI.UI` as a world-owned subsystem.
+`UISystem` gives each world a tree of `UIContext` objects instead of a single process-global UI singleton.
 
-By the end, you will understand:
+That design matters for:
 
-1. How to initialize `UISystem` through `GameRuntime`.
-2. Where UI ticks in world frame flow.
-3. How to feed input events into the UI context.
-4. How to build per-frame UI render packets.
+- normal game HUDs
+- embedded game viewports
+- editor panels and overlays
+- multiple context-to-viewport bindings
 
-## Mental Model
-
-- `World` owns one `UISystem` (`World::UI()`).
-- `UISystem` owns one `SnAPI::UI::UIContext`.
-- `World::Tick(...)` pumps input first, then ticks UI, then runs node/component `Tick(...)`.
-- Renderer-facing code can pull UI packets through `UISystem::BuildRenderPackets(...)`.
-
-## 1) Initialize UI Through GameRuntime
+## 1. Bootstrap UI
 
 ```cpp
-#include "GameFramework.hpp"
+GameRuntime Runtime;
+GameRuntimeSettings Settings{};
+Settings.WorldName = "UiWorld";
 
-using namespace SnAPI::GameFramework;
+GameRuntimeUiSettings Ui{};
+Ui.ViewportWidth = 1600.0f;
+Ui.ViewportHeight = 900.0f;
+Ui.DpiScaleOverride = 1.0f;
+Settings.UI = Ui;
 
-int main()
+if (auto InitResult = Runtime.Init(Settings); !InitResult)
 {
-    GameRuntime Runtime{};
-    GameRuntimeSettings Settings{};
-    Settings.WorldName = "UiWorld";
-
-    GameRuntimeUiSettings Ui{};
-    Ui.ViewportWidth = 1920.0f;
-    Ui.ViewportHeight = 1080.0f;
-    Ui.DpiScaleOverride = 1.0f;
-    Settings.UI = Ui;
-
-    auto InitResult = Runtime.Init(Settings);
-    if (!InitResult)
-    {
-        return 1;
-    }
-
-    while (Runtime.IsInitialized())
-    {
-        Runtime.Update(1.0f / 60.0f);
-    }
+    return;
 }
 ```
 
-Notes:
+The root context is created during `UISystem::Initialize(...)`.
 
-- `Settings.UI = std::nullopt` keeps UI disabled.
-- `ViewportWidth` / `ViewportHeight` must be finite and greater than zero.
-- `DpiScaleOverride = std::nullopt` keeps default/environment DPI behavior from `UIContext::CreateDefault()`.
+## 2. Think In Contexts
 
-## 2) Build UI Content Through `UIContext`
+`UISystem` owns:
+
+- one root context
+- optional child contexts
+- explicit viewport bindings
+
+Important APIs:
+
+- `RootContextId()`
+- `CreateContext(...)`
+- `DestroyContext(...)`
+- `Context(...)`
+- `BindViewportContext(...)`
+- `BuildRenderPackets(...)`
+- `BuildBoundViewportRenderPackets(...)`
+
+## 3. Build UI Through SnAPI.UI
 
 ```cpp
-auto* UiContext = Runtime.World().UI().Context();
-if (!UiContext)
+auto RootContextId = Runtime.World().UI().RootContextId();
+auto* RootContext = Runtime.World().UI().Context(RootContextId);
+if (!RootContext)
 {
     return;
 }
 
-auto Root = UiContext->Root();
+auto Root = RootContext->Root();
 auto Hud = Root.Add(SnAPI::UI::UIPanel("HudRoot"));
-Hud.Element().Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-Hud.Element().Padding().Set(8.0f);
-Hud.Element().Gap().Set(6.0f);
+Hud.Element().Padding().Set(12.0f);
+Hud.Element().Gap().Set(8.0f);
 
-auto StatusText = Hud.Add(SnAPI::UI::UIText("Connected"));
-StatusText.Element().ColorVal(SnAPI::UI::Color{255, 255, 255, 255});
+auto Title = Hud.Add(SnAPI::UI::UIText("SnAPI.GameFramework"));
+Title.Element().ColorVal(SnAPI::UI::Color{255, 255, 255, 255});
 ```
 
-`UISystem` exposes the raw `UIContext` so UI trees, styles, themes, and resources can be managed directly using SnAPI.UI APIs.
+`UISystem` is not a second widget DSL. It is the owner of contexts and routing. Actual widgets still come from `SnAPI.UI`.
 
-## 3) Push Input Into UI
+## 4. Feed Input To The UI System
 
-`UISystem` does not pull platform events itself.
-Your platform/window layer forwards events:
+`UISystem` does not magically pull platform events by itself unless a host like `GameRuntime` forwards them.
+
+Manual routing looks like this:
 
 ```cpp
 SnAPI::UI::PointerEvent Pointer{};
@@ -88,7 +83,7 @@ Runtime.World().UI().PushInput(Pointer);
 
 SnAPI::UI::KeyEvent Key{};
 Key.KeyCode = KeyCode;
-Key.Down = IsDown;
+Key.Down = IsPressed;
 Runtime.World().UI().PushInput(Key);
 
 SnAPI::UI::TextInputEvent Text{};
@@ -96,20 +91,73 @@ Text.Codepoint = Codepoint;
 Runtime.World().UI().PushInput(Text);
 ```
 
-Those events are consumed during `World::Tick(...)` via `UISystem::Tick(...)`.
+If you use `GameRuntime` with both input and UI enabled, it can forward normalized input events into UI automatically.
 
-## 4) Build Frame Render Packets
+## 5. Build Render Packets
+
+For one context:
 
 ```cpp
-SnAPI::UI::RenderPacketList UiPackets{};
-auto BuildResult = Runtime.World().UI().BuildRenderPackets(UiPackets);
-if (BuildResult)
+SnAPI::UI::RenderPacketList Packets{};
+(void)Runtime.World().UI().BuildRenderPackets(RootContextId, Packets);
+```
+
+For every bound viewport/context pair:
+
+```cpp
+std::vector<UISystem::ViewportPacketBatch> Batches{};
+(void)Runtime.World().UI().BuildBoundViewportRenderPackets(Batches);
+```
+
+That second path is the one the world uses during `EndFrame()` when UI and renderer are both enabled.
+
+## 6. UI Viewports Are Explicit
+
+A renderer viewport and a UI context are linked explicitly, not by coincidence.
+
+The important integration points are:
+
+- `GameRuntime::BindViewportWithUI(...)`
+- `UISystem::BindViewportContext(...)`
+- `UIRenderViewport`
+
+`UIRenderViewport` deserves special attention.
+
+### `UIRenderViewport` is lazy
+
+The actual renderer viewport is created lazily from layout and paint through `SyncViewport()`.
+
+That means:
+
+- the UI element can exist before the renderer viewport exists
+- code that assumes the viewport exists during object construction is wrong
+- editor bootstrap must allow layout to happen before render-dependent `OnCreate` work is flushed
+
+That lazy behavior is real, and a lot of the old docs did not describe it correctly.
+
+## 7. Multiple Contexts Are Useful
+
+Common reasons to create child contexts:
+
+- an in-world screen rendered into a panel
+- a modal shell with separate routing
+- an editor overlay or viewport-owned tool surface
+
+Example skeleton:
+
+```cpp
+UISystem::ContextId ChildId = 0;
+if (Runtime.World().UI().CreateContext(Runtime.World().UI().RootContextId(), ChildId))
 {
-    for (const SnAPI::UI::RenderPacket& Packet : UiPackets.Packets())
+    auto* ChildContext = Runtime.World().UI().Context(ChildId);
+    if (ChildContext)
     {
-        // Submit Packet to your renderer bridge.
+        ChildContext->SetViewportSize(640.0f, 360.0f);
     }
 }
 ```
 
-This keeps the UI module backend-agnostic: SnAPI.UI produces packetized draw intent, and your renderer layer decides GPU submission details.
+## What To Read Next
+
+- [Renderer Integration](renderer.md)
+- [Tool World vs Game World](tool_world_vs_game_world.md)

@@ -1,61 +1,67 @@
 # SnAPI::GameFramework::NodePayload
 
-Serialized node data within a graph.
+Recursive serialized representation of one Node subtree.
+
+A `NodePayload` carries everything needed to recreate one Node and its descendants:
+- Node identity and reflected type
+- name and active state
+- optional reflected field bytes for the Node itself
+- serialized attached Components
+- recursive child payloads
+
+Deserialization semantics:
+- The subtree structure is created first.
+- Node field bytes and Component payloads are then applied in a second pass.
+- Deferred node and component `OnCreate` hooks are requested only after field population.
 
 ## Public Members
 
 <div class="snapi-api-card" markdown="1">
 ### `Uuid SnAPI::GameFramework::NodePayload::NodeId`
 
-Node UUID.
+Serialized Node UUID.
+
+May be remapped during deserialization when `RegenerateObjectIds` is enabled.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `TypeId SnAPI::GameFramework::NodePayload::NodeType`
 
-Node type id.
+Reflected concrete Node type id.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::string SnAPI::GameFramework::NodePayload::NodeTypeName`
 
-Type name fallback when TypeId is missing.
+Reflected type name fallback used when `NodeType` is missing or unresolved in the receiving runtime.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::string SnAPI::GameFramework::NodePayload::Name`
 
-Node name.
+Node name to assign after creation.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::NodePayload::Active`
 
-Active state.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `Uuid SnAPI::GameFramework::NodePayload::ParentId`
-
-Parent node UUID (nil if root).
+Serialized active-state flag restored after the Node is created.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::NodePayload::HasNodeData`
 
-True if node fields were serialized.
+Indicates whether `NodeBytes` contains serialized reflected Node fields.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<uint8_t> SnAPI::GameFramework::NodePayload::NodeBytes`
 
-Serialized node field bytes.
+Raw serialized Node field bytes emitted by reflection-based field walking.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `std::vector<NodeComponentPayload> SnAPI::GameFramework::NodePayload::Components`
 
-Component payloads.
+Serialized Components that should be attached to this Node.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `bool SnAPI::GameFramework::NodePayload::HasGraph`
+### `std::vector<NodePayload> SnAPI::GameFramework::NodePayload::Children`
 
-True if node contains a nested graph.
-</div>
-<div class="snapi-api-card" markdown="1">
-### `std::vector<uint8_t> SnAPI::GameFramework::NodePayload::GraphBytes`
+Serialized child subtrees.
 
-Serialized nested graph bytes.
+Editor-transient children are intentionally omitted from serializer output.
 </div>

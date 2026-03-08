@@ -1,0 +1,1915 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
+      
+      
+      
+        <link rel="canonical" href="https://richmarIII.github.io/SnAPI.GameFramework/api/namespaceSnAPI_1_1GameFramework_1_1Editor_1_1anonymous__namespace_02EditorAssetService_8cpp_03/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
+    
+    
+      
+        <title>SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp} - SnAPI.GameFramework</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Space+Grotesk:300,300i,400,400i,700,700i%7CJetBrains+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Space Grotesk";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#snapigameframeworkeditoranonymous_namespaceeditorassetservicecpp" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="SnAPI.GameFramework" class="md-header__button md-logo" aria-label="SnAPI.GameFramework" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            SnAPI.GameFramework
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="teal" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+          <a href="javascript:void(0)" class="md-search__icon md-icon" title="Share" aria-label="Share" data-clipboard data-clipboard-text="" data-md-component="search-share" tabindex="-1">
+            
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9a3 3 0 0 0-3 3 3 3 0 0 0 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.15c-.05.21-.08.43-.08.66 0 1.61 1.31 2.91 2.92 2.91s2.92-1.3 2.92-2.91A2.92 2.92 0 0 0 18 16.08"/></svg>
+          </a>
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/RichmarIII/SnAPI.GameFramework" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    RichmarIII/SnAPI.GameFramework
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="SnAPI.GameFramework" class="md-nav__button md-logo" aria-label="SnAPI.GameFramework" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    SnAPI.GameFramework
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/RichmarIII/SnAPI.GameFramework" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    RichmarIII/SnAPI.GameFramework
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Start Here
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/worlds_graphs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Worlds, Levels, and Hierarchies
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/nodes_components/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Nodes and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Renderer Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/physics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics System and Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/physics_queries_events/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Physics Queries and Events
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/reflection_serialization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reflection and Serialization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/assetpipeline/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AssetPipeline Integration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/networking/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Networking, Replication, and Reflected RPC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/audio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio Components
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/testing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing and Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../namespaces/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Namespaces
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../files/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Files
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="snapigameframeworkeditoranonymous_namespaceeditorassetservicecpp">SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}<a class="headerlink" href="#snapigameframeworkeditoranonymous_namespaceeditorassetservicecpp" title="Permanent link">&para;</a></h1>
+<h2 id="contents">Contents<a class="headerlink" href="#contents" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::AssetImportMetadataEntryDisk</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::AssetImportMetadataDatabaseDisk</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::InlineImportPipelineContext</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::DefaultShapePackSpec</li>
+<li><strong>Type:</strong> SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::RuntimeWorldCounts</li>
+</ul>
+<h2 id="type-aliases">Type Aliases<a class="headerlink" href="#type-aliases" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="using-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppeimportprofile-eassetimportprofile"><code>using SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::EImportProfile = EAssetImportProfile</code><a class="headerlink" href="#using-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppeimportprofile-eassetimportprofile" title="Permanent link">&para;</a></h3>
+</div>
+<h2 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultprojectfilename"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kDefaultProjectFileName</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultprojectfilename" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultprojectassetroot"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kDefaultProjectAssetRoot</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultprojectassetroot" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultprojectstartuplevelpack"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kDefaultProjectStartupLevelPack</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultprojectstartuplevelpack" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkeditorstarterleveltemplatepackfilename"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kEditorStarterLevelTemplatePackFileName</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkeditorstarterleveltemplatepackfilename" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkeditorstarterscriptfilename"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kEditorStarterScriptFileName</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkeditorstarterscriptfilename" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkprojectconfigversion"><code>uint32_t SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kProjectConfigVersion</code><a class="headerlink" href="#uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkprojectconfigversion" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkmaterialpayloadschemaversion"><code>uint32_t SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kMaterialPayloadSchemaVersion</code><a class="headerlink" href="#uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkmaterialpayloadschemaversion" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkmaterialinstancepayloadschemaversion"><code>uint32_t SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kMaterialInstancePayloadSchemaVersion</code><a class="headerlink" href="#uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkmaterialinstancepayloadschemaversion" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultmaterialshadermodule"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kDefaultMaterialShaderModule</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultmaterialshadermodule" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultmaterialshadingmodel"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kDefaultMaterialShadingModel</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkdefaultmaterialshadingmodel" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetimportmetadatadirectoryname"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kAssetImportMetadataDirectoryName</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetimportmetadatadirectoryname" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetimportmetadatafilename"><code>std::string_view SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kAssetImportMetadataFileName</code><a class="headerlink" href="#stdstring_view-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetimportmetadatafilename" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetimportmetadataversion"><code>uint32_t SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kAssetImportMetadataVersion</code><a class="headerlink" href="#uint32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetimportmetadataversion" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiassetpipelineuuid-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetidnamespace"><code>::SnAPI::AssetPipeline::Uuid SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kAssetIdNamespace</code><a class="headerlink" href="#snapiassetpipelineuuid-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassetidnamespace" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdarraystdstring_view-11-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassimpmanagedbuildoptionkeys"><code>std::array&lt;std::string_view, 11&gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kAssimpManagedBuildOptionKeys</code><a class="headerlink" href="#stdarraystdstring_view-11-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppkassimpmanagedbuildoptionkeys" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdarraystdstring_view-6-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppktexturemanagedbuildoptionkeys"><code>std::array&lt;std::string_view, 6&gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::kTextureManagedBuildOptionKeys</code><a class="headerlink" href="#stdarraystdstring_view-6-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppktexturemanagedbuildoptionkeys" title="Permanent link">&para;</a></h3>
+</div>
+<h2 id="functions">Functions<a class="headerlink" href="#functions" title="Permanent link">&para;</a></h2>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptolowercopystdstring_view-text"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ToLowerCopy(std::string_view Text)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptolowercopystdstring_view-text" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Text</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppformatlogmessageconst-char-prefix-const-char-fmt-va_list-args"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::FormatLogMessage(const char *Prefix, const char *Fmt, va_list Args)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppformatlogmessageconst-char-prefix-const-char-fmt-va_list-args" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Prefix</code>: </li>
+<li><code>Fmt</code>: </li>
+<li><code>Args</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="editoretexturecompressiontarget-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptoeditortexturetargetconst-texturecompressorpluginecompressiontarget-target"><code>Editor::ETextureCompressionTarget SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ToEditorTextureTarget(const TextureCompressorPlugin::ECompressionTarget Target)</code><a class="headerlink" href="#editoretexturecompressiontarget-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptoeditortexturetargetconst-texturecompressorpluginecompressiontarget-target" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Target</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="texturecompressorpluginecompressiontarget-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptocookedtexturetargetconst-editoretexturecompressiontarget-target"><code>TextureCompressorPlugin::ECompressionTarget SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ToCookedTextureTarget(const Editor::ETextureCompressionTarget Target)</code><a class="headerlink" href="#texturecompressorpluginecompressiontarget-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptocookedtexturetargetconst-editoretexturecompressiontarget-target" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Target</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="editoretexturecompressionformat-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptoeditortextureformatconst-texturecompressorpluginecompressedformat-format"><code>Editor::ETextureCompressionFormat SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ToEditorTextureFormat(const TextureCompressorPlugin::ECompressedFormat Format)</code><a class="headerlink" href="#editoretexturecompressionformat-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptoeditortextureformatconst-texturecompressorpluginecompressedformat-format" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Format</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="texturecompressorpluginecompressedformat-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptocookedtextureformatconst-editoretexturecompressionformat-format"><code>TextureCompressorPlugin::ECompressedFormat SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ToCookedTextureFormat(const Editor::ETextureCompressionFormat Format)</code><a class="headerlink" href="#texturecompressorpluginecompressedformat-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptocookedtextureformatconst-editoretexturecompressionformat-format" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Format</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="texturecompressorpluginecompressiontarget-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolvecookedcompressiontargetconst-texturecompressorplugintexturecompressorcookedinfo-cooked"><code>TextureCompressorPlugin::ECompressionTarget SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ResolveCookedCompressionTarget(const TextureCompressorPlugin::TextureCompressorCookedInfo &amp;Cooked)</code><a class="headerlink" href="#texturecompressorpluginecompressiontarget-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolvecookedcompressiontargetconst-texturecompressorplugintexturecompressorcookedinfo-cooked" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Cooked</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcompressiontargetnameconst-texturecompressorpluginecompressiontarget-target"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::CompressionTargetName(const TextureCompressorPlugin::ECompressionTarget Target)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcompressiontargetnameconst-texturecompressorpluginecompressiontarget-target" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Target</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stduint64_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcomputetexturegpusizebytesconst-texturecompressorplugintexturecompressorcookedinfo-cooked"><code>std::uint64_t SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ComputeTextureGpuSizeBytes(const TextureCompressorPlugin::TextureCompressorCookedInfo &amp;Cooked)</code><a class="headerlink" href="#stduint64_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcomputetexturegpusizebytesconst-texturecompressorplugintexturecompressorcookedinfo-cooked" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Cooked</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppoptionvalueorconst-stdunordered_map-stdstring-stdstring-options-const-stdstring_view-key-stdstring_view-default"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::OptionValueOr(const std::unordered_map&lt; std::string, std::string &gt; &amp;Options, const std::string_view Key, std::string_view Default={})</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppoptionvalueorconst-stdunordered_map-stdstring-stdstring-options-const-stdstring_view-key-stdstring_view-default" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Options</code>: </li>
+<li><code>Key</code>: </li>
+<li><code>Default</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppparsebooloptionconst-stdstring_view-text-const-bool-defaultvalue"><code>bool SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ParseBoolOption(const std::string_view Text, const bool DefaultValue)</code><a class="headerlink" href="#bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppparsebooloptionconst-stdstring_view-text-const-bool-defaultvalue" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Text</code>: </li>
+<li><code>DefaultValue</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdoptional-int32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppparseintoptionconst-stdstring_view-text"><code>std::optional&lt; int32_t &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ParseIntOption(const std::string_view Text)</code><a class="headerlink" href="#stdoptional-int32_t-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppparseintoptionconst-stdstring_view-text" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Text</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="texturecompressorpluginecompressedformat-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppparsetextureformatoptionstdstring_view-value"><code>TextureCompressorPlugin::ECompressedFormat SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ParseTextureFormatOption(std::string_view Value)</code><a class="headerlink" href="#texturecompressorpluginecompressedformat-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppparsetextureformatoptionstdstring_view-value" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Value</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppimportprofiletostringconst-eimportprofile-profile"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ImportProfileToString(const EImportProfile Profile)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppimportprofiletostringconst-eimportprofile-profile" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Profile</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="eimportprofile-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppimportprofilefromstringstdstring_view-profiletext"><code>EImportProfile SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ImportProfileFromString(std::string_view ProfileText)</code><a class="headerlink" href="#eimportprofile-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppimportprofilefromstringstdstring_view-profiletext" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ProfileText</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="eimportprofile-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppimportprofilefromimporternamestdstring_view-importername"><code>EImportProfile SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ImportProfileFromImporterName(std::string_view ImporterName)</code><a class="headerlink" href="#eimportprofile-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppimportprofilefromimporternamestdstring_view-importername" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ImporterName</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdunordered_map-stdstring-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuildoptionsfromassimpimportsettingsconst-editorassimpimportsettings-settings"><code>std::unordered_map&lt; std::string, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::BuildOptionsFromAssimpImportSettings(const Editor::AssimpImportSettings &amp;Settings)</code><a class="headerlink" href="#stdunordered_map-stdstring-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuildoptionsfromassimpimportsettingsconst-editorassimpimportsettings-settings" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Settings</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdunordered_map-stdstring-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuildoptionsfromtextureimportsettingsconst-editortextureimportsettings-settings"><code>std::unordered_map&lt; std::string, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::BuildOptionsFromTextureImportSettings(const Editor::TextureImportSettings &amp;Settings)</code><a class="headerlink" href="#stdunordered_map-stdstring-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuildoptionsfromtextureimportsettingsconst-editortextureimportsettings-settings" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Settings</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppremovemanagedbuildoptionsstdunordered_map-stdstring-stdstring-buildoptions-const-stdarray-stdstring_view-n-keys"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::RemoveManagedBuildOptions(std::unordered_map&lt; std::string, std::string &gt; &amp;BuildOptions, const std::array&lt; std::string_view, N &gt; &amp;Keys)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppremovemanagedbuildoptionsstdunordered_map-stdstring-stdstring-buildoptions-const-stdarray-stdstring_view-n-keys" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>BuildOptions</code>: </li>
+<li><code>Keys</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfillassimpimportsettingsfromtypedconst-assimpimportersettings-typed-editorassimpimportsettings-out"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::FillAssimpImportSettingsFromTyped(const AssimpImporterSettings &amp;Typed, Editor::AssimpImportSettings &amp;Out)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfillassimpimportsettingsfromtypedconst-assimpimportersettings-typed-editorassimpimportsettings-out" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Typed</code>: </li>
+<li><code>Out</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfilltextureimportsettingsfromtypedconst-texturecompressorplugintexturecompressorimportsettings-typed-editortextureimportsettings-out"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::FillTextureImportSettingsFromTyped(const TextureCompressorPlugin::TextureCompressorImportSettings &amp;Typed, Editor::TextureImportSettings &amp;Out)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfilltextureimportsettingsfromtypedconst-texturecompressorplugintexturecompressorimportsettings-typed-editortextureimportsettings-out" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Typed</code>: </li>
+<li><code>Out</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiassetpipelineassetimportsettingsptr-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuildtypedimportsettingsforimporterconst-snapiassetpipelineiassetimporter-importer-const-stdunordered_map-stdstring-stdstring-buildoptions"><code>::SnAPI::AssetPipeline::AssetImportSettingsPtr SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::BuildTypedImportSettingsForImporter(const ::SnAPI::AssetPipeline::IAssetImporter &amp;Importer, const std::unordered_map&lt; std::string, std::string &gt; &amp;BuildOptions)</code><a class="headerlink" href="#snapiassetpipelineassetimportsettingsptr-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuildtypedimportsettingsforimporterconst-snapiassetpipelineiassetimporter-importer-const-stdunordered_map-stdstring-stdstring-buildoptions" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Importer</code>: </li>
+<li><code>BuildOptions</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpppopulatetextureeditorpayloadfromcookedconst-texturecompressorplugintexturecompressorcookedinfo-cooked-editortextureasseteditorpayload-out"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::PopulateTextureEditorPayloadFromCooked(const TextureCompressorPlugin::TextureCompressorCookedInfo &amp;Cooked, Editor::TextureAssetEditorPayload &amp;Out)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpppopulatetextureeditorpayloadfromcookedconst-texturecompressorplugintexturecompressorcookedinfo-cooked-editortextureasseteditorpayload-out" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Cooked</code>: </li>
+<li><code>Out</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppapplytextureeditorpayloadtocookedconst-editortextureasseteditorpayload-editorpayload-texturecompressorplugintexturecompressorcookedinfo-inoutcooked"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ApplyTextureEditorPayloadToCooked(const Editor::TextureAssetEditorPayload &amp;EditorPayload, TextureCompressorPlugin::TextureCompressorCookedInfo &amp;InOutCooked)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppapplytextureeditorpayloadtocookedconst-editortextureasseteditorpayload-editorpayload-texturecompressorplugintexturecompressorcookedinfo-inoutcooked" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>EditorPayload</code>: </li>
+<li><code>InOutCooked</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpppopulatestaticmesheditorpayloadfromcookedconst-staticmeshpayload-cooked-editorstaticmeshasseteditorpayload-out"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::PopulateStaticMeshEditorPayloadFromCooked(const StaticMeshPayload &amp;Cooked, Editor::StaticMeshAssetEditorPayload &amp;Out)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpppopulatestaticmesheditorpayloadfromcookedconst-staticmeshpayload-cooked-editorstaticmeshasseteditorpayload-out" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Cooked</code>: </li>
+<li><code>Out</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppapplystaticmesheditorpayloadtocookedconst-editorstaticmeshasseteditorpayload-editorpayload-staticmeshpayload-inoutcooked"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ApplyStaticMeshEditorPayloadToCooked(const Editor::StaticMeshAssetEditorPayload &amp;EditorPayload, StaticMeshPayload &amp;InOutCooked)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppapplystaticmesheditorpayloadtocookedconst-editorstaticmeshasseteditorpayload-editorpayload-staticmeshpayload-inoutcooked" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>EditorPayload</code>: </li>
+<li><code>InOutCooked</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptrimcopystdstring-value"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::TrimCopy(std::string Value)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptrimcopystdstring-value" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Value</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpphasurischemeconst-stdstring_view-value"><code>bool SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::HasUriScheme(const std::string_view Value)</code><a class="headerlink" href="#bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpphasurischemeconst-stdstring_view-value" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Value</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveappdatarootpath"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ResolveAppDataRootPath()</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveappdatarootpath" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppeditortemplateassetdirectory"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::EditorTemplateAssetDirectory()</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppeditortemplateassetdirectory" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveeditorassetsourcedirectory"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ResolveEditorAssetSourceDirectory()</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveeditorassetsourcedirectory" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveeditorscripttemplatesource"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ResolveEditorScriptTemplateSource()</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveeditorscripttemplatesource" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdexpected-void-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcopydirectorycontentsrecursiveconst-stdfilesystempath-sourcedirectory-const-stdfilesystempath-destinationdirectory"><code>std::expected&lt; void, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::CopyDirectoryContentsRecursive(const std::filesystem::path &amp;SourceDirectory, const std::filesystem::path &amp;DestinationDirectory)</code><a class="headerlink" href="#stdexpected-void-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcopydirectorycontentsrecursiveconst-stdfilesystempath-sourcedirectory-const-stdfilesystempath-destinationdirectory" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>SourceDirectory</code>: </li>
+<li><code>DestinationDirectory</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolverenderershadersourcedirectory"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ResolveRendererShaderSourceDirectory()</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolverenderershadersourcedirectory" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppeditordefaultshapeassetdirectory"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::EditorDefaultShapeAssetDirectory()</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppeditordefaultshapeassetdirectory" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsonescapestdstring_view-value"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::JsonEscape(std::string_view Value)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsonescapestdstring_view-value" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Value</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdexpected-stdstring-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsonparsestringconst-stdstring-text-stdsize_t-position"><code>std::expected&lt; std::string, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::JsonParseString(const std::string &amp;Text, std::size_t &amp;Position)</code><a class="headerlink" href="#stdexpected-stdstring-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsonparsestringconst-stdstring-text-stdsize_t-position" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Text</code>: </li>
+<li><code>Position</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsontryreadstringfieldconst-stdstring-text-stdstring_view-key-stdstring-outvalue"><code>bool SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::JsonTryReadStringField(const std::string &amp;Text, std::string_view Key, std::string &amp;OutValue)</code><a class="headerlink" href="#bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsontryreadstringfieldconst-stdstring-text-stdstring_view-key-stdstring-outvalue" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Text</code>: </li>
+<li><code>Key</code>: </li>
+<li><code>OutValue</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsontryreadunsignedfieldconst-stdstring-text-stdstring_view-key-uint32_t-outvalue"><code>bool SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::JsonTryReadUnsignedField(const std::string &amp;Text, std::string_view Key, uint32_t &amp;OutValue)</code><a class="headerlink" href="#bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppjsontryreadunsignedfieldconst-stdstring-text-stdstring_view-key-uint32_t-outvalue" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Text</code>: </li>
+<li><code>Key</code>: </li>
+<li><code>OutValue</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppnormalizeprojectpathfieldconst-stdstring_view-rawvalue"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::NormalizeProjectPathField(const std::string_view RawValue)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppnormalizeprojectpathfieldconst-stdstring_view-rawvalue" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>RawValue</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptoprojectrelativepathfieldconst-stdstring_view-rawvalue-const-stdfilesystempath-baseroot"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ToProjectRelativePathField(const std::string_view RawValue, const std::filesystem::path &amp;BaseRoot)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecpptoprojectrelativepathfieldconst-stdstring_view-rawvalue-const-stdfilesystempath-baseroot" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>RawValue</code>: </li>
+<li><code>BaseRoot</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdexpected-void-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppwriteprojectconfigfileconst-stdfilesystempath-projectfilepath-const-stdstring_view-name-const-stdstring_view-assetroot-const-stdstring_view-startuplevelpack-const-stdstring_view-defaultrendersettingsassetid"><code>std::expected&lt; void, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::WriteProjectConfigFile(const std::filesystem::path &amp;ProjectFilePath, const std::string_view Name, const std::string_view AssetRoot, const std::string_view StartupLevelPack, const std::string_view DefaultRenderSettingsAssetId)</code><a class="headerlink" href="#stdexpected-void-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppwriteprojectconfigfileconst-stdfilesystempath-projectfilepath-const-stdstring_view-name-const-stdstring_view-assetroot-const-stdstring_view-startuplevelpack-const-stdstring_view-defaultrendersettingsassetid" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>ProjectFilePath</code>: </li>
+<li><code>Name</code>: </li>
+<li><code>AssetRoot</code>: </li>
+<li><code>StartupLevelPack</code>: </li>
+<li><code>DefaultRenderSettingsAssetId</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdarray-defaultshapepackspec-4-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppdefaultshapepackspecs"><code>std::array&lt; DefaultShapePackSpec, 4 &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::DefaultShapePackSpecs()</code><a class="headerlink" href="#stdarray-defaultshapepackspec-4-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppdefaultshapepackspecs" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdexpectedsnapiassetpipelineassetpackentry-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuilddefaultshapepackentryconst-defaultshapepackspec-spec"><code>std::expected&lt;::SnAPI::AssetPipeline::AssetPackEntry, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::BuildDefaultShapePackEntry(const DefaultShapePackSpec &amp;Spec)</code><a class="headerlink" href="#stdexpectedsnapiassetpipelineassetpackentry-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuilddefaultshapepackentryconst-defaultshapepackspec-spec" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Spec</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdexpectedsnapiassetpipelineassetpackentry-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuilddefaultshapepackentryfromruntimeworldconst-defaultshapepackspec-spec-iworld-runtimeworld"><code>std::expected&lt;::SnAPI::AssetPipeline::AssetPackEntry, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::BuildDefaultShapePackEntryFromRuntimeWorld(const DefaultShapePackSpec &amp;Spec, IWorld &amp;RuntimeWorld)</code><a class="headerlink" href="#stdexpectedsnapiassetpipelineassetpackentry-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppbuilddefaultshapepackentryfromruntimeworldconst-defaultshapepackspec-spec-iworld-runtimeworld" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Spec</code>: </li>
+<li><code>RuntimeWorld</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdexpected-stdsize_t-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppensuredefaultshapepacksconst-stdfilesystempath-packdirectory-iworld-runtimeworld"><code>std::expected&lt; std::size_t, std::string &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::EnsureDefaultShapePacks(const std::filesystem::path &amp;PackDirectory, IWorld *RuntimeWorld)</code><a class="headerlink" href="#stdexpected-stdsize_t-stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppensuredefaultshapepacksconst-stdfilesystempath-packdirectory-iworld-runtimeworld" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>PackDirectory</code>: </li>
+<li><code>RuntimeWorld</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="runtimeworldcounts-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcountruntimeworldobjectsworld-worldref"><code>RuntimeWorldCounts SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::CountRuntimeWorldObjects(World &amp;WorldRef)</code><a class="headerlink" href="#runtimeworldcounts-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcountruntimeworldobjectsworld-worldref" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>WorldRef</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppappenduniquepathstdvector-stdstring-paths-stdunordered_set-stdstring-seenpaths-const-stdfilesystempath-inputpath"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::AppendUniquePath(std::vector&lt; std::string &gt; &amp;Paths, std::unordered_set&lt; std::string &gt; &amp;SeenPaths, const std::filesystem::path &amp;InputPath)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppappenduniquepathstdvector-stdstring-paths-stdunordered_set-stdstring-seenpaths-const-stdfilesystempath-inputpath" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Paths</code>: </li>
+<li><code>SeenPaths</code>: </li>
+<li><code>InputPath</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppnormalizeassetlogicalnamestdstring_view-rawname"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::NormalizeAssetLogicalName(std::string_view RawName)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppnormalizeassetlogicalnamestdstring_view-rawname" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>RawName</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppshorttypenamestdstring_view-qualifiedtypename"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ShortTypeName(std::string_view QualifiedTypeName)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppshorttypenamestdstring_view-qualifiedtypename" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>QualifiedTypeName</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppleaflogicalnamestdstring-value"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::LeafLogicalName(std::string Value)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppleaflogicalnamestdstring-value" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Value</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppinitializecreatednodedefaultsiworld-worldref-basenode-node"><code>void SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::InitializeCreatedNodeDefaults(IWorld &amp;WorldRef, BaseNode &amp;Node)</code><a class="headerlink" href="#void-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppinitializecreatednodedefaultsiworld-worldref-basenode-node" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>WorldRef</code>: </li>
+<li><code>Node</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppmakeuniquelogicalnamesnapiassetpipelineassetmanager-assetmanagerref-const-stdstring-prefix-stdstring-basename"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::MakeUniqueLogicalName(::SnAPI::AssetPipeline::AssetManager &amp;AssetManagerRef, const std::string &amp;Prefix, std::string BaseName)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppmakeuniquelogicalnamesnapiassetpipelineassetmanager-assetmanagerref-const-stdstring-prefix-stdstring-basename" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>AssetManagerRef</code>: </li>
+<li><code>Prefix</code>: </li>
+<li><code>BaseName</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveimportassetrootdirectoryconst-editorassetserviceprojectinfo-project"><code>std::filesystem::path SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::ResolveImportAssetRootDirectory(const EditorAssetService::ProjectInfo &amp;Project)</code><a class="headerlink" href="#stdfilesystempath-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppresolveimportassetrootdirectoryconst-editorassetserviceprojectinfo-project" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Project</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppsanitizepackfilestemstdstring_view-raw"><code>std::string SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::SanitizePackFileStem(std::string_view Raw)</code><a class="headerlink" href="#stdstring-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppsanitizepackfilestemstdstring_view-raw" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Raw</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvector-stdunique_ptrsnapiassetpipelineiassetimporter-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcreateeditorimporters"><code>std::vector&lt; std::unique_ptr&lt;::SnAPI::AssetPipeline::IAssetImporter &gt; &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::CreateEditorImporters()</code><a class="headerlink" href="#stdvector-stdunique_ptrsnapiassetpipelineiassetimporter-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcreateeditorimporters" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="stdvector-stdunique_ptrsnapiassetpipelineiassetcooker-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcreateeditorcookers"><code>std::vector&lt; std::unique_ptr&lt;::SnAPI::AssetPipeline::IAssetCooker &gt; &gt; SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::CreateEditorCookers()</code><a class="headerlink" href="#stdvector-stdunique_ptrsnapiassetpipelineiassetcooker-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppcreateeditorcookers" title="Permanent link">&para;</a></h3>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiassetpipelineiassetimporter-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfindmatchingimporterconst-snapiassetpipelinesourceref-source-const-stdvector-stdunique_ptrsnapiassetpipelineiassetimporter-importers"><code>::SnAPI::AssetPipeline::IAssetImporter * SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::FindMatchingImporter(const ::SnAPI::AssetPipeline::SourceRef &amp;Source, const std::vector&lt; std::unique_ptr&lt;::SnAPI::AssetPipeline::IAssetImporter &gt; &gt; &amp;Importers)</code><a class="headerlink" href="#snapiassetpipelineiassetimporter-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfindmatchingimporterconst-snapiassetpipelinesourceref-source-const-stdvector-stdunique_ptrsnapiassetpipelineiassetimporter-importers" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Source</code>: </li>
+<li><code>Importers</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="snapiassetpipelineiassetcooker-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfindmatchingcookerconst-snapiassetpipelinetypeid-assetkind-const-snapiassetpipelinetypeid-intermediatetype-const-stdvector-stdunique_ptrsnapiassetpipelineiassetcooker-cookers"><code>::SnAPI::AssetPipeline::IAssetCooker * SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::FindMatchingCooker(const ::SnAPI::AssetPipeline::TypeId &amp;AssetKind, const ::SnAPI::AssetPipeline::TypeId &amp;IntermediateType, const std::vector&lt; std::unique_ptr&lt;::SnAPI::AssetPipeline::IAssetCooker &gt; &gt; &amp;Cookers)</code><a class="headerlink" href="#snapiassetpipelineiassetcooker-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppfindmatchingcookerconst-snapiassetpipelinetypeid-assetkind-const-snapiassetpipelinetypeid-intermediatetype-const-stdvector-stdunique_ptrsnapiassetpipelineiassetcooker-cookers" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>AssetKind</code>: </li>
+<li><code>IntermediateType</code>: </li>
+<li><code>Cookers</code>:</li>
+</ul>
+</div>
+<div class="snapi-api-card">
+<h3 id="bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppistextureimporterconst-snapiassetpipelineiassetimporter-importer"><code>bool SnAPI::GameFramework::Editor::anonymous_namespace{EditorAssetService.cpp}::IsTextureImporter(const ::SnAPI::AssetPipeline::IAssetImporter &amp;Importer)</code><a class="headerlink" href="#bool-snapigameframeworkeditoranonymous_namespaceeditorassetservicecppistextureimporterconst-snapiassetpipelineiassetimporter-importer" title="Permanent link">&para;</a></h3>
+<p><strong>Parameters</strong></p>
+<ul>
+<li><code>Importer</code>:</li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.indexes", "toc.integrate", "content.code.copy", "content.tabs.link", "search.highlight", "search.suggest", "search.share"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

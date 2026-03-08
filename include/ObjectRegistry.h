@@ -20,8 +20,12 @@ class BaseNode;
 class BaseComponent;
 
 /**
- * @brief Kind of object stored in the registry.
- * @remarks Node and Component are handled specially for handle resolution.
+ * @ingroup SnAPI_GameFramework
+ * @brief Runtime lookup category stored in `ObjectRegistry`.
+ *
+ * `BaseNode` and `BaseComponent` have dedicated categories because callers often need
+ * to resolve them through their common base type. Arbitrary "other" objects are matched
+ * by exact registered `typeid(T)` rather than by inheritance.
  */
 enum class EObjectKind
 {
@@ -31,10 +35,34 @@ enum class EObjectKind
 };
 
 /**
- * @brief Global registry mapping UUIDs to live object pointers.
- * @remarks Used by `THandle` to resolve runtime handles to live objects.
- * @note Objects must be registered/unregistered by their owning systems.
- * @note Registry stores non-owning pointers; lifetime is managed externally.
+ * @ingroup SnAPI_GameFramework
+ * @brief Process-wide bridge from UUID/runtime-handle identity to live object pointers.
+ *
+ * The registry exists to support two complementary lookup modes:
+ * - fast-path resolution through `(runtime pool token, runtime index, generation)`
+ * - fallback resolution through stable UUID identity
+ *
+ * Higher-level systems such as node pools, component storage, and ECS runtime storages
+ * register objects here so `THandle` can cheaply recover a live pointer without each
+ * subsystem reinventing the same indirection table.
+ *
+ * Ownership and lifetime:
+ * - The registry never owns the objects it points at.
+ * - Stored pointers are borrowed and become invalid as soon as the owning system
+ *   unregisters the UUID.
+ * - Pool tokens are registry-owned identities that outlive the pool instance and are
+ *   intentionally never reused.
+ *
+ * Threading:
+ * - Not generally thread-safe.
+ * - Internal `GameMutex` use performs affinity validation only; it is not a real
+ *   cross-thread lock.
+ * - Register, unregister, and resolve on the owning thread or under external
+ *   synchronization.
+ *
+ * Error semantics:
+ * - Missing entries resolve to `nullptr`.
+ * - Type mismatches also resolve to `nullptr`; no exception or cast failure is thrown.
  */
 class ObjectRegistry
 {
@@ -45,7 +73,10 @@ public:
     static constexpr uint32_t kInvalidRuntimeIndex = std::numeric_limits<uint32_t>::max();
 
     /**
-     * @brief Runtime-key identity tuple used to rehydrate handles after UUID fallback.
+     * @brief Refreshed runtime identity returned after a UUID fallback successfully finds a live object.
+     *
+     * Callers that fall back from runtime-key lookup should copy this data back into the
+     * same handle instance so future resolutions can return to the fast path.
      */
     struct RuntimeIdentity
     {
@@ -54,10 +85,7 @@ public:
         uint32_t RuntimeGeneration = 0;
     };
 
-    /**
-     * @brief Access the singleton registry instance.
-     * @return Reference to the registry.
-     */
+    /** @brief Access the process-wide singleton registry. */
     static ObjectRegistry& Instance()
     {
         static ObjectRegistry Registry;
@@ -65,11 +93,12 @@ public:
     }
 
     /**
-     * @brief Acquire a unique runtime pool token.
+     * @brief Acquire a fresh runtime-pool token for one handle-producing storage instance.
      * @return Token used to bind runtime index lookups for a pool instance.
-     * @remarks
-     * Tokens are never reused to avoid stale-handle aliasing between destroyed and
-     * newly-created pools.
+     *
+     * Tokens are monotonically assigned and never reused. That prevents a stale handle
+     * from accidentally resolving into a different pool that later reused the same slot
+     * index and generation.
      */
     uint32_t AcquireRuntimePoolToken()
     {
@@ -91,11 +120,11 @@ public:
     }
 
     /**
-     * @brief Release a runtime pool token.
+     * @brief Clear all runtime-slot bindings currently associated with a pool token.
      * @param PoolToken Token to release.
-     * @remarks
-     * Release is a cleanup signal only. Tokens are not reused and stale handles
-     * stay invalid forever.
+     *
+     * Release does not recycle the token number. It only clears the fast-path runtime
+     * slots so old handles stop resolving by runtime key.
      */
     void ReleaseRuntimePoolToken(uint32_t PoolToken)
     {
@@ -118,10 +147,11 @@ public:
     }
 
     /**
-     * @brief Register a node with UUID-only lookup.
+     * @brief Register a node for UUID-based lookup only.
      * @param Id UUID of the node.
-     * @param Node Pointer to the node.
-     * @remarks Overwrites any existing entry with the same UUID.
+     * @param Node Borrowed node pointer.
+     *
+     * If an entry already exists for `Id`, the old registration is replaced.
      */
     void RegisterNode(const Uuid& Id, BaseNode* Node)
     {
@@ -137,13 +167,15 @@ public:
     }
 
     /**
-     * @brief Register a node with runtime-key lookup.
+     * @brief Register a node with both UUID fallback identity and runtime-key fast-path identity.
      * @param Id UUID of the node.
-     * @param Node Pointer to the node.
+     * @param Node Borrowed node pointer.
      * @param RuntimePoolToken Runtime pool token from owning pool.
      * @param RuntimeIndex Runtime slot index in owning pool.
      * @param RuntimeGeneration Runtime slot generation in owning pool.
-     * @remarks Enables direct runtime-key resolution without UUID hash lookup.
+     *
+     * @post `ResolveFast<BaseNode>(...)` can resolve the node directly when the runtime
+     *       key still matches a live slot.
      */
     void RegisterNode(const Uuid& Id,
         BaseNode* Node,
@@ -162,11 +194,7 @@ public:
             RuntimeGeneration);
     }
 
-    /**
-     * @brief Register a component with UUID-only lookup.
-     * @param Id UUID of the component.
-     * @param Component Pointer to the component.
-     */
+    /** @brief Register a component for UUID-based lookup only. */
     void RegisterComponent(const Uuid& Id, BaseComponent* Component)
     {
         RegisterInternal(Id,
@@ -181,12 +209,13 @@ public:
     }
 
     /**
-     * @brief Register a component with runtime-key lookup.
+     * @brief Register a component with both UUID fallback identity and runtime-key fast-path identity.
      * @param Id UUID of the component.
-     * @param Component Pointer to the component.
+     * @param Component Borrowed component pointer.
      * @param RuntimePoolToken Runtime pool token from owning pool.
      * @param RuntimeIndex Runtime slot index in owning pool.
      * @param RuntimeGeneration Runtime slot generation in owning pool.
+     * @remarks Existing registrations for the same UUID are overwritten.
      */
     void RegisterComponent(const Uuid& Id,
         BaseComponent* Component,
@@ -206,10 +235,15 @@ public:
     }
 
     /**
-     * @brief Register an arbitrary object with UUID-only lookup.
+     * @brief Register an arbitrary non-node, non-component object.
      * @tparam T Object type.
      * @param Id UUID of the object.
-     * @param Object Pointer to object.
+     * @param Object Borrowed pointer to the object.
+     *
+     * @remarks Existing registrations for the same UUID are overwritten.
+     *
+     * For `EObjectKind::Other`, resolution uses exact `typeid(T)` equality. Registering
+     * a derived object under `TBase` does not make `Resolve<TDerived>()` succeed.
      */
     template<typename T>
     void Register(const Uuid& Id, T* Object)
@@ -226,8 +260,9 @@ public:
     }
 
     /**
-     * @brief Unregister an object by UUID.
+     * @brief Remove an object's UUID and runtime-slot bindings from the registry.
      * @param Id UUID to remove.
+     * @remarks Safe to call for missing entries.
      */
     void Unregister(const Uuid& Id)
     {
@@ -243,10 +278,10 @@ public:
     }
 
     /**
-     * @brief Resolve UUID-only lookup path.
+     * @brief Resolve an object through the UUID fallback map only.
      * @tparam T Expected type.
      * @param Id UUID to resolve.
-     * @return Pointer to object, or nullptr when missing/type mismatch.
+     * @return Borrowed pointer to the object, or `nullptr` when missing or type-mismatched.
      */
     template<typename T>
     T* Resolve(const Uuid& Id) const
@@ -260,15 +295,16 @@ public:
     }
 
     /**
-     * @brief Resolve runtime-key fast path, with UUID fallback.
+     * @brief Resolve an object by runtime key and silently fall back to UUID lookup when needed.
      * @tparam T Expected type.
      * @param Id UUID for safety/fallback.
      * @param RuntimePoolToken Runtime pool token.
      * @param RuntimeIndex Runtime slot index.
      * @param RuntimeGeneration Runtime slot generation.
-     * @return Pointer to object, or nullptr when missing/type mismatch.
-     * @remarks
-     * Fast path avoids UUID hashing entirely when runtime key is valid and hot.
+     * @return Borrowed pointer to the object, or `nullptr` when missing or type-mismatched.
+     *
+     * This overload discards any refreshed runtime identity. Callers that want to
+     * rehydrate the handle cache should use `ResolveFastOrFallback()` instead.
      */
     template<typename T>
     T* ResolveFast(const Uuid& Id,
@@ -291,19 +327,24 @@ public:
     }
 
     /**
-     * @brief Resolve runtime-key fast path with UUID fallback and runtime identity refresh.
+     * @brief Resolve an object by runtime key, then fall back to UUID lookup and report a refreshed runtime identity.
      * @tparam T Expected type.
      * @param Id UUID for fallback path.
      * @param RuntimePoolToken Runtime pool token.
      * @param RuntimeIndex Runtime slot index.
      * @param RuntimeGeneration Runtime slot generation.
      * @param OutIdentity Optional refreshed runtime identity when resolved.
-     * @return Pointer to object, or nullptr when missing/type mismatch.
-     * @remarks
-     * Fallback is intentionally available for runtime migrations/rehydration boundaries.
-     * When fallback is used, a warning is emitted (rate-limited by per-object hit count).
-     * Callers should persist `OutIdentity` back into the same handle instance; passing
-     * handles by value prevents cache refresh and can trigger repeated fallback.
+     * @return Borrowed pointer to the object, or `nullptr` when missing or type-mismatched.
+     *
+     * Semantics:
+     * - First tries the runtime slot table.
+     * - If that misses, falls back to UUID lookup.
+     * - When the fallback succeeds, emits a rate-limited warning to `stderr`.
+     * - When `OutIdentity` is non-null and the entry has a runtime identity, the refreshed
+     *   identity is written back for handle rehydration.
+     *
+     * @warning Passing handles by value and then ignoring `OutIdentity` can leave code on
+     *          the slow UUID-fallback path indefinitely.
      */
     template<typename T>
     T* ResolveFastOrFallback(const Uuid& Id,
@@ -423,27 +464,14 @@ public:
         return Resolved;
     }
 
-    /**
-     * @brief Check whether UUID-only lookup resolves.
-     * @tparam T Expected type.
-     * @param Id UUID to check.
-     * @return True when object resolves.
-     */
+    /** @brief Check whether a UUID resolves to a live object of type `T`. */
     template<typename T>
     bool IsValid(const Uuid& Id) const
     {
         return Resolve<T>(Id) != nullptr;
     }
 
-    /**
-     * @brief Check whether runtime-key lookup resolves.
-     * @tparam T Expected type.
-     * @param Id UUID for safety/fallback.
-     * @param RuntimePoolToken Runtime pool token.
-     * @param RuntimeIndex Runtime slot index.
-     * @param RuntimeGeneration Runtime slot generation.
-     * @return True when object resolves.
-     */
+    /** @brief Check whether runtime-key lookup resolves to a live object of type `T`. */
     template<typename T>
     bool IsValidFast(const Uuid& Id,
         uint32_t RuntimePoolToken,

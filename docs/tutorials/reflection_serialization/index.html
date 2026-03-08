@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -425,6 +409,83 @@
                 
   
   
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
   
   
     <li class="md-nav__item">
@@ -435,7 +496,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -484,6 +545,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -491,7 +608,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -628,10 +745,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-startup-register-builtins" class="md-nav__link">
+  <a href="#1-register-types-deliberately" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Startup: Register Builtins
+        1. Register Types Deliberately
       
     </span>
   </a>
@@ -639,22 +756,44 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-register-on-first-use-model" class="md-nav__link">
+  <a href="#2-reflection-and-replication-flags-share-the-same-metadata" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Register-on-First-Use Model
+        2. Reflection And Replication Flags Share The Same Metadata
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="2. Register-on-First-Use Model">
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-serialize-a-node-level-or-world" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Serialize A Node, Level, Or World
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Serialize A Node, Level, Or World">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#linkerstripping-note" class="md-nav__link">
+  <a href="#node-example" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Linker/stripping note
+        Node example
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#node-deserialize-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Node deserialize example
       
     </span>
   </a>
@@ -667,10 +806,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-defining-reflected-types" class="md-nav__link">
+  <a href="#4-tdeserializeoptions-matters" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Defining Reflected Types
+        4. TDeserializeOptions Matters
       
     </span>
   </a>
@@ -678,10 +817,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-statictypeidt-and-statictypet" class="md-nav__link">
+  <a href="#5-oncreate-during-deserialize" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. StaticTypeId&lt;T&gt;() and StaticType&lt;T&gt;()
+        5. OnCreate During Deserialize
       
     </span>
   </a>
@@ -689,10 +828,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-value-serialization-tvaluecodect" class="md-nav__link">
+  <a href="#6-value-codecs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Value Serialization (TValueCodec&lt;T&gt;)
+        6. Value Codecs
       
     </span>
   </a>
@@ -700,33 +839,22 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-replication-nested-types-value-codecs" class="md-nav__link">
+  <a href="#7-common-mistakes" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. Replication + Nested Types + Value Codecs
+        7. Common Mistakes
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#7-graphlevelworld-serialization" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        7. Graph/Level/World Serialization
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="7. Graph/Level/World Serialization">
+    <nav class="md-nav" aria-label="7. Common Mistakes">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#graph-to-payload-bytes" class="md-nav__link">
+  <a href="#using-old-serializer-names" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Graph to payload bytes
+        Using old serializer names
       
     </span>
   </a>
@@ -734,10 +862,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#payload-bytes-back-to-graph" class="md-nav__link">
+  <a href="#forgetting-default-constructors" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Payload bytes back to graph
+        Forgetting default constructors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#forgetting-reflection-on-handle-carrying-fields" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Forgetting reflection on handle-carrying fields
       
     </span>
   </a>
@@ -750,10 +889,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#8-component-serialization-registration" class="md-nav__link">
+  <a href="#what-to-read-next" class="md-nav__link">
     <span class="md-ellipsis">
       
-        8. Component Serialization Registration
+        What To Read Next
       
     </span>
   </a>
@@ -811,7 +950,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -876,6 +1015,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1072,173 +1580,142 @@
 
 
 <h1 id="reflection-and-serialization">Reflection and Serialization<a class="headerlink" href="#reflection-and-serialization" title="Permanent link">&para;</a></h1>
-<p>This page explains the type system that powers serialization, replication, and reflection-based RPC.</p>
-<h2 id="1-startup-register-builtins">1. Startup: Register Builtins<a class="headerlink" href="#1-startup-register-builtins" title="Permanent link">&para;</a></h2>
-<p>Call this once during startup:</p>
-<div class="highlight"><pre><span></span><code><span class="n">RegisterBuiltinTypes</span><span class="p">();</span>
-</code></pre></div>
-<p>It registers built-in value types and default serialization codecs.</p>
-<h2 id="2-register-on-first-use-model">2. Register-on-First-Use Model<a class="headerlink" href="#2-register-on-first-use-model" title="Permanent link">&para;</a></h2>
-<p>SnAPI.GameFramework uses lazy reflection registration:</p>
+<p>Reflection is one of the core services in the framework. It is not just for editor tooling.</p>
+<p>It drives:</p>
 <ul>
-<li><code>SNAPI_REFLECT_TYPE(...)</code> stores an ensure callback in <code>TypeAutoRegistry</code>.</li>
-<li><code>TypeRegistry::Find(...)</code> can trigger that callback on first miss.</li>
-<li>The heavy registration runs once (<code>std::call_once</code>).</li>
+<li>serialization</li>
+<li>replication metadata</li>
+<li>reflected RPC dispatch</li>
+<li>property panels</li>
+<li>dynamic component creation during load</li>
 </ul>
-<p>Why this model helps:</p>
+<h2 id="1-register-types-deliberately">1. Register Types Deliberately<a class="headerlink" href="#1-register-types-deliberately" title="Permanent link">&para;</a></h2>
+<p>A reflected type needs:</p>
 <ul>
-<li>No giant central type list.</li>
-<li>No cross-translation-unit init ordering dependency for full metadata.</li>
-<li>Pay-for-what-you-use behavior.</li>
+<li>a stable <code>kTypeName</code></li>
+<li>a <code>TTypeBuilder&lt;...&gt;</code> registration block</li>
+<li>a default constructor when the engine needs to create it dynamically</li>
 </ul>
-<h3 id="linkerstripping-note">Linker/stripping note<a class="headerlink" href="#linkerstripping-note" title="Permanent link">&para;</a></h3>
-<p><code>SNAPI_REFLECT_TYPE</code> installs static registration glue in its translation unit.
-To guarantee that translation unit is linked in static library/plugin builds, ensure something in that unit is referenced by the final binary (or explicitly force-link the object/library according to your build system).</p>
-<h2 id="3-defining-reflected-types">3. Defining Reflected Types<a class="headerlink" href="#3-defining-reflected-types" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">EnemyNode</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseNode</span>
+<div class="highlight"><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">CargoNode</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseNode</span>
 <span class="p">{</span>
 <span class="k">public</span><span class="o">:</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::EnemyNode&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::CargoNode&quot;</span><span class="p">;</span>
 
-<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">Health</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">Value</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">100</span><span class="p">;</span>
+<span class="w">    </span><span class="n">NodeHandle</span><span class="w"> </span><span class="n">DockTarget</span><span class="p">{};</span>
+<span class="p">};</span>
 
-<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">ServerSetHealth</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">InValue</span><span class="p">)</span>
+<span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">CargoNode</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">CargoNode</span><span class="o">&gt;</span><span class="p">(</span><span class="n">CargoNode</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Base</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Value&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">CargoNode</span><span class="o">::</span><span class="n">Value</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;DockTarget&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">CargoNode</span><span class="o">::</span><span class="n">DockTarget</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
+</code></pre></div>
+<h2 id="2-reflection-and-replication-flags-share-the-same-metadata">2. Reflection And Replication Flags Share The Same Metadata<a class="headerlink" href="#2-reflection-and-replication-flags-share-the-same-metadata" title="Permanent link">&para;</a></h2>
+<p>Fields can carry flags such as replication.
+Methods can carry flags such as RPC routing.</p>
+<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">DoorState</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::DoorState&quot;</span><span class="p">;</span>
+<span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="n">Open</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<span class="p">};</span>
+
+<span class="k">class</span><span class="w"> </span><span class="nc">DoorNode</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">BaseNode</span>
+<span class="p">{</span>
+<span class="k">public</span><span class="o">:</span>
+<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::DoorNode&quot;</span><span class="p">;</span>
+
+<span class="w">    </span><span class="n">DoorState</span><span class="w"> </span><span class="n">State</span><span class="p">{};</span>
+
+<span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">ServerToggle</span><span class="p">()</span>
 <span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="n">Health</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">InValue</span><span class="p">;</span>
+<span class="w">        </span><span class="n">State</span><span class="p">.</span><span class="n">Open</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">!</span><span class="n">State</span><span class="p">.</span><span class="n">Open</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 <span class="p">};</span>
 
-<span class="k">class</span><span class="w"> </span><span class="nc">InventoryComponent</span><span class="w"> </span><span class="k">final</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="k">public</span><span class="w"> </span><span class="n">IComponent</span>
-<span class="p">{</span>
-<span class="k">public</span><span class="o">:</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::InventoryComponent&quot;</span><span class="p">;</span>
+<span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">DoorState</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">DoorState</span><span class="o">&gt;</span><span class="p">(</span><span class="n">DoorState</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Open&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">DoorState</span><span class="o">::</span><span class="n">Open</span><span class="p">,</span><span class="w"> </span><span class="n">EFieldFlagBits</span><span class="o">::</span><span class="n">Replication</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
 
-<span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">Gold</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="p">};</span>
-
-<span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">EnemyNode</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">EnemyNode</span><span class="o">&gt;</span><span class="p">(</span><span class="n">EnemyNode</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
+<span class="n">SNAPI_REFLECT_TYPE</span><span class="p">(</span><span class="n">DoorNode</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">DoorNode</span><span class="o">&gt;</span><span class="p">(</span><span class="n">DoorNode</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Base</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Health&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">EnemyNode</span><span class="o">::</span><span class="n">Health</span><span class="p">,</span><span class="w"> </span><span class="n">EFieldFlagBits</span><span class="o">::</span><span class="n">Replication</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Method</span><span class="p">(</span><span class="s">&quot;ServerSetHealth&quot;</span><span class="p">,</span>
-<span class="w">            </span><span class="o">&amp;</span><span class="n">EnemyNode</span><span class="o">::</span><span class="n">ServerSetHealth</span><span class="p">,</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;State&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">DoorNode</span><span class="o">::</span><span class="n">State</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">Method</span><span class="p">(</span><span class="s">&quot;ServerToggle&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">DoorNode</span><span class="o">::</span><span class="n">ServerToggle</span><span class="p">,</span>
 <span class="w">            </span><span class="n">EMethodFlagBits</span><span class="o">::</span><span class="n">RpcReliable</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="n">EMethodFlagBits</span><span class="o">::</span><span class="n">RpcNetServer</span><span class="p">)</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
 <span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
-
-<span class="n">SNAPI_REFLECT_COMPONENT</span><span class="p">(</span><span class="n">InventoryComponent</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="n">TTypeBuilder</span><span class="o">&lt;</span><span class="n">InventoryComponent</span><span class="o">&gt;</span><span class="p">(</span><span class="n">InventoryComponent</span><span class="o">::</span><span class="n">kTypeName</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Field</span><span class="p">(</span><span class="s">&quot;Gold&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">InventoryComponent</span><span class="o">::</span><span class="n">Gold</span><span class="p">,</span><span class="w"> </span><span class="n">EFieldFlagBits</span><span class="o">::</span><span class="n">Replication</span><span class="p">)</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Constructor</span><span class="o">&lt;&gt;</span><span class="p">()</span>
-<span class="w">    </span><span class="p">.</span><span class="n">Register</span><span class="p">()));</span>
 </code></pre></div>
-<p>Important points:</p>
+<h2 id="3-serialize-a-node-level-or-world">3. Serialize A Node, Level, Or World<a class="headerlink" href="#3-serialize-a-node-level-or-world" title="Permanent link">&para;</a></h2>
+<p>The current serializer surface is:</p>
 <ul>
-<li>Always register base classes with <code>.Base&lt;...&gt;()</code> to preserve inheritance queries.</li>
-<li>Register a default constructor if the type must be created from type metadata (serialization/network spawn paths).</li>
+<li><code>NodeSerializer</code></li>
+<li><code>LevelSerializer</code></li>
+<li><code>WorldSerializer</code></li>
 </ul>
-<h2 id="4-statictypeidt-and-statictypet">4. <code>StaticTypeId&lt;T&gt;()</code> and <code>StaticType&lt;T&gt;()</code><a class="headerlink" href="#4-statictypeidt-and-statictypet" title="Permanent link">&para;</a></h2>
-<p>Use cached type identity in hot paths:</p>
-<div class="highlight"><pre><span></span><code><span class="k">const</span><span class="w"> </span><span class="n">TypeId</span><span class="o">&amp;</span><span class="w"> </span><span class="n">CachedId</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StaticTypeId</span><span class="o">&lt;</span><span class="n">EnemyNode</span><span class="o">&gt;</span><span class="p">();</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">EnsureResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">StaticType</span><span class="o">&lt;</span><span class="n">EnemyNode</span><span class="o">&gt;</span><span class="p">();</span><span class="w"> </span><span class="c1">// returns TExpected&lt;TypeId*&gt;</span>
-</code></pre></div>
-<ul>
-<li><code>StaticTypeId&lt;T&gt;()</code> is deterministic and cached via function-local static.</li>
-<li><code>StaticType&lt;T&gt;()</code> ensures reflection registration exists before use.</li>
-</ul>
-<p>Hot path guidance:</p>
-<ul>
-<li>prefer <code>StaticTypeId&lt;T&gt;()</code> over repeated <code>TypeIdFromName(...)</code>.</li>
-<li>use <code>StaticType&lt;T&gt;()</code> when you need to force ensure-on-first-use behavior.</li>
-</ul>
-<h2 id="5-value-serialization-tvaluecodect">5. Value Serialization (<code>TValueCodec&lt;T&gt;</code>)<a class="headerlink" href="#5-value-serialization-tvaluecodect" title="Permanent link">&para;</a></h2>
-<p>Most primitive/trivial types already work.
-For custom packed formats, specialize <code>TValueCodec&lt;T&gt;</code>.</p>
-<div class="highlight"><pre><span></span><code><span class="k">struct</span><span class="w"> </span><span class="nc">PackedVec2</span>
+<h3 id="node-example">Node example<a class="headerlink" href="#node-example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Node</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Handle</span><span class="p">.</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Node</span><span class="p">)</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">kTypeName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;MyGame::PackedVec2&quot;</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">X</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="w">    </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">Y</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="p">};</span>
+<span class="w">    </span><span class="k">return</span><span class="p">;</span>
+<span class="p">}</span>
 
-<span class="k">template</span><span class="o">&lt;&gt;</span>
-<span class="k">struct</span><span class="w"> </span><span class="nc">TValueCodec</span><span class="o">&lt;</span><span class="n">PackedVec2</span><span class="o">&gt;</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">TExpected</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Encode</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">PackedVec2</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Value</span><span class="p">,</span>
-<span class="w">                                  </span><span class="n">cereal</span><span class="o">::</span><span class="n">BinaryOutputArchive</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Archive</span><span class="p">,</span>
-<span class="w">                                  </span><span class="k">const</span><span class="w"> </span><span class="n">TSerializationContext</span><span class="o">&amp;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">Packed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Value</span><span class="p">.</span><span class="n">X</span><span class="w"> </span><span class="o">&lt;&lt;</span><span class="w"> </span><span class="mi">16</span><span class="p">)</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="p">(</span><span class="n">Value</span><span class="p">.</span><span class="n">Y</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">);</span>
-<span class="w">        </span><span class="n">Archive</span><span class="p">(</span><span class="n">Packed</span><span class="p">);</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Ok</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">TExpected</span><span class="o">&lt;</span><span class="n">PackedVec2</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Decode</span><span class="p">(</span><span class="n">cereal</span><span class="o">::</span><span class="n">BinaryInputArchive</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Archive</span><span class="p">,</span>
-<span class="w">                                        </span><span class="k">const</span><span class="w"> </span><span class="n">TSerializationContext</span><span class="o">&amp;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">Packed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="w">        </span><span class="n">Archive</span><span class="p">(</span><span class="n">Packed</span><span class="p">);</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PackedVec2</span><span class="p">{(</span><span class="n">Packed</span><span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="mi">16</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="n">Packed</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">)};</span>
-<span class="w">    </span><span class="p">}</span>
-
-<span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">TExpected</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">DecodeInto</span><span class="p">(</span><span class="n">PackedVec2</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Value</span><span class="p">,</span>
-<span class="w">                                      </span><span class="n">cereal</span><span class="o">::</span><span class="n">BinaryInputArchive</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Archive</span><span class="p">,</span>
-<span class="w">                                      </span><span class="k">const</span><span class="w"> </span><span class="n">TSerializationContext</span><span class="o">&amp;</span><span class="p">)</span>
-<span class="w">    </span><span class="p">{</span>
-<span class="w">        </span><span class="kt">int32_t</span><span class="w"> </span><span class="n">Packed</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-<span class="w">        </span><span class="n">Archive</span><span class="p">(</span><span class="n">Packed</span><span class="p">);</span>
-<span class="w">        </span><span class="n">Value</span><span class="p">.</span><span class="n">X</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Packed</span><span class="w"> </span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="mi">16</span><span class="p">);</span>
-<span class="w">        </span><span class="n">Value</span><span class="p">.</span><span class="n">Y</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">Packed</span><span class="w"> </span><span class="o">&amp;</span><span class="w"> </span><span class="mh">0xFFFF</span><span class="p">);</span>
-<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">Ok</span><span class="p">();</span>
-<span class="w">    </span><span class="p">}</span>
-<span class="p">};</span>
-</code></pre></div>
-<h2 id="6-replication-nested-types-value-codecs">6. Replication + Nested Types + Value Codecs<a class="headerlink" href="#6-replication-nested-types-value-codecs" title="Permanent link">&para;</a></h2>
-<p>For a reflected field marked with <code>EFieldFlagBits::Replication</code>:</p>
-<ul>
-<li>if a <code>TValueCodec&lt;FieldType&gt;</code> is registered, replication uses that codec for the field value.</li>
-<li>if no codec is registered, replication recursively visits nested reflected fields and serializes only nested fields that also have replication flags.</li>
-</ul>
-<p>That means field flags are still important for nested structs.
-Example: if <code>Settings</code> is replicated but only <code>Settings.SoundPath</code> is flagged, only <code>SoundPath</code> replicates unless you provide a codec that serializes the whole <code>Settings</code> value.</p>
-<h2 id="7-graphlevelworld-serialization">7. Graph/Level/World Serialization<a class="headerlink" href="#7-graphlevelworld-serialization" title="Permanent link">&para;</a></h2>
-<h3 id="graph-to-payload-bytes">Graph to payload bytes<a class="headerlink" href="#graph-to-payload-bytes" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="n">NodeGraph</span><span class="w"> </span><span class="n">Graph</span><span class="p">(</span><span class="s">&quot;Gameplay&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">PayloadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeGraphSerializer</span><span class="o">::</span><span class="n">Serialize</span><span class="p">(</span><span class="n">Graph</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">PayloadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeSerializer</span><span class="o">::</span><span class="n">Serialize</span><span class="p">(</span><span class="o">*</span><span class="n">Node</span><span class="p">);</span>
 <span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PayloadResult</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
 <span class="n">std</span><span class="o">::</span><span class="n">vector</span><span class="o">&lt;</span><span class="kt">uint8_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">Bytes</span><span class="p">;</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">BytesResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SerializeNodeGraphPayload</span><span class="p">(</span><span class="n">PayloadResult</span><span class="p">.</span><span class="n">value</span><span class="p">(),</span><span class="w"> </span><span class="n">Bytes</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">BytesResult</span><span class="p">)</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">SerializeNodePayload</span><span class="p">(</span><span class="o">*</span><span class="n">PayloadResult</span><span class="p">,</span><span class="w"> </span><span class="n">Bytes</span><span class="p">))</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<h3 id="payload-bytes-back-to-graph">Payload bytes back to graph<a class="headerlink" href="#payload-bytes-back-to-graph" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="w"> </span><span class="n">PayloadRoundTrip</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DeserializeNodeGraphPayload</span><span class="p">(</span><span class="n">Bytes</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">Bytes</span><span class="p">.</span><span class="n">size</span><span class="p">());</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PayloadRoundTrip</span><span class="p">)</span>
+<h3 id="node-deserialize-example">Node deserialize example<a class="headerlink" href="#node-deserialize-example" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="n">World</span><span class="w"> </span><span class="n">LoadedWorld</span><span class="p">(</span><span class="s">&quot;LoadedWorld&quot;</span><span class="p">);</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">PayloadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">DeserializeNodePayload</span><span class="p">(</span><span class="n">Bytes</span><span class="p">.</span><span class="n">data</span><span class="p">(),</span><span class="w"> </span><span class="n">Bytes</span><span class="p">.</span><span class="n">size</span><span class="p">());</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PayloadResult</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 
-<span class="n">NodeGraph</span><span class="w"> </span><span class="n">Loaded</span><span class="p">;</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">LoadResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeGraphSerializer</span><span class="o">::</span><span class="n">Deserialize</span><span class="p">(</span><span class="n">PayloadRoundTrip</span><span class="p">.</span><span class="n">value</span><span class="p">(),</span><span class="w"> </span><span class="n">Loaded</span><span class="p">);</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">LoadResult</span><span class="p">)</span>
+<span class="k">auto</span><span class="w"> </span><span class="n">NodeResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeSerializer</span><span class="o">::</span><span class="n">Deserialize</span><span class="p">(</span><span class="o">*</span><span class="n">PayloadResult</span><span class="p">,</span><span class="w"> </span><span class="n">LoadedWorld</span><span class="p">);</span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">NodeResult</span><span class="p">)</span>
 <span class="p">{</span>
 <span class="w">    </span><span class="k">return</span><span class="p">;</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>The same pattern exists for <code>LevelSerializer</code> + <code>WorldSerializer</code> and their payload byte helpers.</p>
-<h2 id="8-component-serialization-registration">8. Component Serialization Registration<a class="headerlink" href="#8-component-serialization-registration" title="Permanent link">&para;</a></h2>
-<p>Why components are special:</p>
+<p>The same pattern exists for levels and whole worlds.</p>
+<h2 id="4-tdeserializeoptions-matters">4. <code>TDeserializeOptions</code> Matters<a class="headerlink" href="#4-tdeserializeoptions-matters" title="Permanent link">&para;</a></h2>
+<p>The most important option beginners should know is <code>RegenerateObjectIds</code>.</p>
+<p>Use it when you are instantiating the same payload multiple times into one world and need fresh identities.</p>
+<p>That is the correct path for prefab-like repeated instantiation.</p>
+<h2 id="5-oncreate-during-deserialize">5. <code>OnCreate</code> During Deserialize<a class="headerlink" href="#5-oncreate-during-deserialize" title="Permanent link">&para;</a></h2>
+<p>Deserialization is intentionally two-phase enough to avoid partial-state callbacks.</p>
+<p>The important rule is:</p>
 <ul>
-<li>Components are created dynamically by type id during graph/world deserialization.</li>
-<li><code>ComponentSerializationRegistry</code> provides the creation + field-serialization callbacks.</li>
+<li>fields are populated first</li>
+<li><code>OnCreate</code> is not allowed to observe half-deserialized state</li>
 </ul>
-<p>You normally do <strong>not</strong> need to register this manually for normal reflected components.
-<code>TTypeBuilder&lt;ComponentT&gt;::Register()</code> does it automatically when <code>ComponentT</code> derives from <code>IComponent</code>.</p>
-<p>Next: <a href="../assetpipeline/">AssetPipeline Integration</a></p>
+<p>This is covered by tests such as the serialization test that verifies component <code>OnCreate</code> runs once after deserialized fields are populated.</p>
+<h2 id="6-value-codecs">6. Value Codecs<a class="headerlink" href="#6-value-codecs" title="Permanent link">&para;</a></h2>
+<p>When a field type has a <code>TValueCodec&lt;T&gt;</code>, serialization and replication can treat it as a packed value.</p>
+<p>Without a value codec, nested reflection metadata is used instead.</p>
+<p>This is the rule that explains a lot of replication behavior for nested structs.</p>
+<h2 id="7-common-mistakes">7. Common Mistakes<a class="headerlink" href="#7-common-mistakes" title="Permanent link">&para;</a></h2>
+<h3 id="using-old-serializer-names">Using old serializer names<a class="headerlink" href="#using-old-serializer-names" title="Permanent link">&para;</a></h3>
+<p>Use <code>NodeSerializer</code>, <code>LevelSerializer</code>, and <code>WorldSerializer</code>.</p>
+<h3 id="forgetting-default-constructors">Forgetting default constructors<a class="headerlink" href="#forgetting-default-constructors" title="Permanent link">&para;</a></h3>
+<p>Dynamic load paths need a constructor they can invoke.</p>
+<h3 id="forgetting-reflection-on-handle-carrying-fields">Forgetting reflection on handle-carrying fields<a class="headerlink" href="#forgetting-reflection-on-handle-carrying-fields" title="Permanent link">&para;</a></h3>
+<p>If a field stores a <code>NodeHandle</code>, <code>ComponentHandle</code>, <code>TAssetRef&lt;T&gt;</code>, or custom struct and you expect serialization to see it, reflect it.</p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../assetpipeline/">AssetPipeline Integration</a></li>
+<li><a href="../shipyard_save_load/">Shipyard Save/Load</a></li>
+</ul>
 
 
 

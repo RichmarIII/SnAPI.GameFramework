@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::TransparentStringHash
 
-Heterogeneous hash functor for string-key lookups.
+Heterogeneous hash functor for reflected type-name lookup tables.
+
+Supports `std::string` and `std::string_view` without transient allocations.
 
 ## Public Types
 

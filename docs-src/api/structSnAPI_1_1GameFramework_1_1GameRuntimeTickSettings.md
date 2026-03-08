@@ -1,6 +1,12 @@
 # SnAPI::GameFramework::GameRuntimeTickSettings
 
-Tick/lifecycle policy for `GameRuntime::Update`.
+Frame-phase policy used by `GameRuntime::Update`.
+
+`GameRuntimeTickSettings` controls which world phases run every call to `Update` and how fixed-step simulation time is accumulated. This is the primary place where an application chooses between pure variable-step behavior and a mixed fixed/variable loop.
+
+Units:
+- `FixedDeltaSeconds` is measured in seconds.
+- `MaxFpsWhenVSyncOff` is measured in frames per second.
 
 ## Public Members
 
@@ -28,4 +34,9 @@ Execute `World::LateTick` each update.
 ### `bool SnAPI::GameFramework::GameRuntimeTickSettings::EnableEndFrame`
 
 Execute `World::EndFrame` each update.
+</div>
+<div class="snapi-api-card" markdown="1">
+### `float SnAPI::GameFramework::GameRuntimeTickSettings::MaxFpsWhenVSyncOff`
+
+Optional frame cap applied only while renderer VSync mode is `Off`; `<= 0` disables cap.
 </div>

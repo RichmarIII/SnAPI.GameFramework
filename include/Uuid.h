@@ -14,19 +14,25 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief UUID type used throughout the framework.
- * @remarks Provided by the stduuid library.
+ * @ingroup SnAPI_GameFramework
+ * @brief Canonical UUID type used throughout the framework.
+ *
+ * Backed by the `stduuid` library.
  */
 using Uuid = uuids::uuid;
 /**
- * @brief Strong alias for TypeId values.
- * @remarks TypeId is a UUID derived from a stable type name.
+ * @ingroup SnAPI_GameFramework
+ * @brief Alias used for reflected type ids.
+ *
+ * `TypeId` values are deterministic UUIDv5 identifiers derived from stable reflected type names.
  */
 using TypeId = Uuid;
 
 /**
- * @brief Split UUID representation for hashing or ABI transport.
- * @remarks High and Low are big-endian parts of the UUID bytes.
+ * @ingroup SnAPI_GameFramework
+ * @brief Split UUID representation for hashing, scripting ABI transport, or interop.
+ *
+ * `High` and `Low` store the UUID bytes in big-endian order.
  */
 struct UuidParts
 {
@@ -35,10 +41,12 @@ struct UuidParts
 };
 
 /**
- * @brief Namespace UUID for deterministic type id generation.
+ * @ingroup SnAPI_GameFramework
+ * @brief Namespace UUID used for deterministic reflected type-id generation.
  * @return Stable namespace UUID.
- * @remarks Used by TypeIdFromName for UUIDv5 generation.
- * @note Keep this stable across versions for serialized compatibility.
+ *
+ * The value returned here is part of the serialization and reflection ABI. Changing it would change
+ * every derived `TypeId`.
  */
 inline const Uuid& TypeIdNamespace()
 {
@@ -50,10 +58,12 @@ inline const Uuid& TypeIdNamespace()
 }
 
 /**
- * @brief Generate a stable TypeId from a fully qualified name.
- * @param Name Fully qualified type name.
- * @return UUIDv5 derived from the name and TypeIdNamespace.
- * @remarks The name must remain stable to preserve serialization.
+ * @ingroup SnAPI_GameFramework
+ * @brief Generate a deterministic reflected `TypeId` from a stable name.
+ * @param Name Fully qualified reflected type name.
+ * @return UUIDv5 derived from `Name` within `TypeIdNamespace()`.
+ *
+ * The name string is part of the serialization contract and must remain stable once data is persisted.
  */
 inline TypeId TypeIdFromName(std::string_view Name)
 {
@@ -62,9 +72,11 @@ inline TypeId TypeIdFromName(std::string_view Name)
 }
 
 /**
- * @brief Generate a new random UUID (UUIDv4).
+ * @ingroup SnAPI_GameFramework
+ * @brief Generate a new random UUID.
  * @return Newly generated UUID.
- * @remarks Uses a thread-local generator for performance.
+ *
+ * Uses a thread-local random generator so repeated calls avoid global locking.
  */
 inline Uuid NewUuid()
 {
@@ -75,9 +87,8 @@ inline Uuid NewUuid()
 }
 
 /**
- * @brief Convert a UUID to its canonical string form.
- * @param Id UUID to convert.
- * @return Lowercase UUID string.
+ * @ingroup SnAPI_GameFramework
+ * @brief Convert a UUID to its canonical lowercase string form.
  */
 inline std::string ToString(const Uuid& Id)
 {
@@ -85,10 +96,10 @@ inline std::string ToString(const Uuid& Id)
 }
 
 /**
- * @brief Convert a UUID to a split High/Low representation.
+ * @ingroup SnAPI_GameFramework
+ * @brief Convert a UUID to its split high/low representation.
  * @param Id UUID to split.
- * @return UuidParts containing the high/low 64-bit values.
- * @remarks Useful for hashing or C ABI bindings.
+ * @return `UuidParts` containing the high and low 64-bit values.
  */
 inline UuidParts ToParts(const Uuid& Id)
 {
@@ -107,10 +118,12 @@ inline UuidParts ToParts(const Uuid& Id)
 }
 
 /**
- * @brief Reconstruct a UUID from split High/Low parts.
- * @param Parts High/Low representation.
+ * @ingroup SnAPI_GameFramework
+ * @brief Reconstruct a UUID from `UuidParts`.
+ * @param Parts Split representation.
  * @return Reconstructed UUID.
- * @remarks Inverse of ToParts.
+ *
+ * This is the inverse of `ToParts()`.
  */
 inline Uuid FromParts(UuidParts Parts)
 {
@@ -131,8 +144,10 @@ inline Uuid FromParts(UuidParts Parts)
 }
 
 /**
- * @brief Hash functor for UUID.
- * @remarks Enables UUID use in unordered_map/set.
+ * @ingroup SnAPI_GameFramework
+ * @brief Hash functor for `Uuid`.
+ *
+ * Enables `Uuid` and `TypeId` use in unordered containers.
  */
 struct UuidHash
 {

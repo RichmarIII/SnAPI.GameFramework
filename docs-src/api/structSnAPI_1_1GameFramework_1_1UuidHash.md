@@ -1,6 +1,8 @@
 # SnAPI::GameFramework::UuidHash
 
-Hash functor for UUID.
+Hash functor for `Uuid`.
+
+Enables `Uuid` and `TypeId` use in unordered containers.
 
 ## Public Functions
 

@@ -13,8 +13,11 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Function type for reflected method invocation.
- * @remarks Accepts an instance pointer and a Variant argument span.
+ * @ingroup SnAPI_GameFramework
+ * @brief Type-erased reflected method invocation function.
+ *
+ * The callable accepts a raw instance pointer plus a packed `Variant` argument span and returns either
+ * a `Variant` result or an error.
  */
 using MethodInvoker = std::function<TExpected<Variant>(void* Instance, std::span<const Variant> Args)>;
 
@@ -22,9 +25,10 @@ namespace detail
 {
 
 /**
- * @brief Storage selection for reflected arguments.
- * @tparam Arg Argument type.
- * @remarks References are stored as reference_wrapper, values are copied.
+ * @brief Internal storage selection for extracted reflected arguments.
+ * @tparam Arg Requested argument type.
+ *
+ * Lvalue references are stored as `std::reference_wrapper`, while by-value arguments are copied.
  */
 template<typename Arg>
 struct TArgStorage
@@ -33,18 +37,17 @@ struct TArgStorage
     using Type = std::conditional_t<std::is_lvalue_reference_v<Arg>, std::reference_wrapper<Raw>, std::remove_cvref_t<Arg>>;
 };
 
-/**
- * @brief Helper alias for argument storage type.
- */
+/** @brief Helper alias for the extracted storage type of one reflected argument. */
 template<typename Arg>
 using TArgStorageT = typename TArgStorage<Arg>::Type;
 
 /**
- * @brief Extract a typed argument from a Variant.
+ * @brief Extract one typed argument from a `Variant`.
  * @tparam Arg Expected argument type.
  * @param Value Variant to extract from.
  * @return Storage wrapper containing the argument or an error.
- * @remarks Validates constness and type compatibility.
+ *
+ * Mutable lvalue references require a mutable reference payload in `Value`.
  */
 template<typename Arg>
 TExpected<TArgStorageT<Arg>> ExtractArg(const Variant& Value)
@@ -73,10 +76,10 @@ TExpected<TArgStorageT<Arg>> ExtractArg(const Variant& Value)
 }
 
 /**
- * @brief Convert storage wrapper to the actual argument type.
- * @tparam Arg Argument type.
- * @param Storage Storage wrapper.
- * @return Argument value or reference.
+ * @brief Convert extracted storage to the actual invocation argument type.
+ * @tparam Arg Requested argument type.
+ * @param Storage Extracted storage wrapper.
+ * @return Value copy or lvalue reference as required by `Arg`.
  */
 template<typename Arg>
 Arg ConvertArg(TArgStorageT<Arg>& Storage)
@@ -183,13 +186,18 @@ TExpected<Variant> InvokeConstImpl(const T* Instance, R(T::*Method)(Args...) con
 } // namespace detail
 
 /**
- * @brief Create a MethodInvoker for a non-const member function.
+ * @ingroup SnAPI_GameFramework
+ * @brief Create a `MethodInvoker` for a non-const member function.
  * @tparam T Instance type.
  * @tparam R Return type.
  * @tparam Args Argument pack.
  * @param Method Member function pointer.
- * @return Callable MethodInvoker.
- * @remarks Validates argument count and types at runtime.
+ * @return Callable invoker.
+ *
+ * Runtime checks performed by the invoker:
+ * - null instance detection
+ * - exact argument-count validation
+ * - per-argument type and constness validation through `Variant`
  */
 template<typename T, typename R, typename... Args>
 MethodInvoker MakeInvoker(R(T::*Method)(Args...))
@@ -208,13 +216,13 @@ MethodInvoker MakeInvoker(R(T::*Method)(Args...))
 }
 
 /**
- * @brief Create a MethodInvoker for a const member function.
- * @tparam T Instance type.
- * @tparam R Return type.
- * @tparam Args Argument pack.
- * @param Method Const member function pointer.
- * @return Callable MethodInvoker.
- * @remarks Validates argument count and types at runtime.
+ * @ingroup SnAPI_GameFramework
+ * @overload
+ *
+ * Create a `MethodInvoker` for a const member function.
+ *
+ * The returned invoker applies the same runtime validation contract as the non-const overload
+ * while invoking the member through a const-qualified instance view.
  */
 template<typename T, typename R, typename... Args>
 MethodInvoker MakeInvoker(R(T::*Method)(Args...) const)

@@ -9,9 +9,12 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Namespace UUID for AssetPipeline ids.
- * @return Namespace UUID.
- * @remarks Shared namespace for deterministic UUIDv5 generation of asset kinds/payload type ids.
+ * @ingroup SnAPI_GameFramework
+ * @brief Shared UUID namespace for deterministic GameFramework AssetPipeline identifiers.
+ * @return UUID namespace value.
+ *
+ * Every helper in this header derives stable UUIDv5 identifiers from this namespace plus a stable
+ * string literal. Changing the namespace or the input names would invalidate cooked compatibility.
  */
 inline ::SnAPI::AssetPipeline::Uuid AssetPipelineNamespace()
 {
@@ -20,10 +23,13 @@ inline ::SnAPI::AssetPipeline::Uuid AssetPipelineNamespace()
 }
 
 /**
- * @brief Generate a deterministic TypeId from a name.
- * @param Name Name string.
- * @return UUIDv5-based TypeId.
- * @remarks Name stability is required for cooked asset compatibility.
+ * @ingroup SnAPI_GameFramework
+ * @brief Generate a deterministic AssetPipeline `TypeId` from a stable name.
+ * @param Name Stable symbolic name.
+ * @return UUIDv5-derived type id.
+ *
+ * This is used for both asset-kind ids and payload-type ids. The generated value is stable across
+ * processes and machines as long as the name remains unchanged.
  */
 inline ::SnAPI::AssetPipeline::TypeId AssetPipelineTypeIdFromName(std::string_view Name)
 {
@@ -31,10 +37,13 @@ inline ::SnAPI::AssetPipeline::TypeId AssetPipelineTypeIdFromName(std::string_vi
 }
 
 /**
- * @brief Generate a deterministic AssetId from a name.
- * @param Name Name string.
- * @return UUIDv5-based AssetId.
- * @remarks Name stability is required for deterministic asset identity.
+ * @ingroup SnAPI_GameFramework
+ * @brief Generate a deterministic `AssetId` from a stable name.
+ * @param Name Stable symbolic name.
+ * @return UUIDv5-derived asset id.
+ *
+ * This helper is intended for built-in or synthetic assets whose identity is derived from a known
+ * symbolic name rather than editor-generated UUIDs.
  */
 inline ::SnAPI::AssetPipeline::AssetId AssetPipelineAssetIdFromName(std::string_view Name)
 {

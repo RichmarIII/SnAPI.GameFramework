@@ -19,10 +19,21 @@ class IWorld;
 class Variant;
 
 /**
- * @brief Compile-time contract for node types.
- * @remarks
- * The contract captures the required node API surface independent of inheritance.
- * BaseNode provides the canonical implementation.
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time concept describing the API surface expected of node-like types.
+ *
+ * `NodeContractConcept` is used by generic code that wants to interact with node objects through
+ * structure and semantics rather than concrete inheritance. `BaseNode` provides the canonical
+ * implementation, but any compatible type can satisfy this concept.
+ *
+ * Core semantics:
+ * - The concept requires graph identity, parenting, activation, replication, world binding, RPC,
+ *   and tick-phase APIs.
+ * - Satisfaction is checked entirely at compile time.
+ * - This concept verifies shape only; it does not prove the runtime semantics behind those methods.
+ *
+ * @see BaseNode
+ * @see ComponentContractConcept
  */
 template<typename TNode>
 concept NodeContractConcept =
@@ -96,9 +107,18 @@ concept NodeContractConcept =
 };
 
 /**
- * @brief Compile-time contract for component types.
- * @remarks
- * The contract captures required component API independent of inheritance.
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time concept describing the API surface expected of component-like types.
+ *
+ * `ComponentContractConcept` captures the owner binding, activation, replication, identity, world
+ * access, RPC, and tick-phase methods expected by generic component-aware code. `BaseComponent`
+ * provides the canonical implementation.
+ *
+ * @note As with `NodeContractConcept`, this is a structural compile-time check only. It does not
+ * guarantee any stronger runtime invariants than the presence of the required signatures.
+ *
+ * @see BaseComponent
+ * @see NodeContractConcept
  */
 template<typename TComponent>
 concept ComponentContractConcept =
@@ -148,30 +168,50 @@ concept ComponentContractConcept =
 #endif
 };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time probe for the presence of `PreTick(float)`.
+ */
 template<typename TObject>
 concept HasPreTickPhase =
     requires(TObject& Object, float DeltaSeconds) {
         { Object.PreTick(DeltaSeconds) } -> std::same_as<void>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time probe for the presence of `Tick(float)`.
+ */
 template<typename TObject>
 concept HasTickPhase =
     requires(TObject& Object, float DeltaSeconds) {
         { Object.Tick(DeltaSeconds) } -> std::same_as<void>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time probe for the presence of `FixedTick(float)`.
+ */
 template<typename TObject>
 concept HasFixedTickPhase =
     requires(TObject& Object, float DeltaSeconds) {
         { Object.FixedTick(DeltaSeconds) } -> std::same_as<void>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time probe for the presence of `LateTick(float)`.
+ */
 template<typename TObject>
 concept HasLateTickPhase =
     requires(TObject& Object, float DeltaSeconds) {
         { Object.LateTick(DeltaSeconds) } -> std::same_as<void>;
     };
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time probe for the presence of `PostTick(float)`.
+ */
 template<typename TObject>
 concept HasPostTickPhase =
     requires(TObject& Object, float DeltaSeconds) {
@@ -179,6 +219,10 @@ concept HasPostTickPhase =
     };
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time probe for the presence of `EditorTick(float)`.
+ */
 template<typename TObject>
 concept HasEditorTickPhase =
     requires(TObject& Object, float DeltaSeconds) {
@@ -186,6 +230,13 @@ concept HasEditorTickPhase =
     };
 #endif
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Compile-time concept satisfied by types exposing at least one recognized tick phase.
+ *
+ * This concept is useful for generic helpers that only care whether a type participates in any
+ * engine tick phase at all, without requiring the full node/component contract.
+ */
 template<typename TObject>
 concept OptionalTickContractConcept =
     HasPreTickPhase<TObject> ||

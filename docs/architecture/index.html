@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
@@ -385,10 +385,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#runtime-model" class="md-nav__link">
+  <a href="#mental-model" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Runtime Model
+        Mental Model
       
     </span>
   </a>
@@ -396,10 +396,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#reflection-model" class="md-nav__link">
+  <a href="#ownership-and-lifetime" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Reflection Model
+        Ownership And Lifetime
       
     </span>
   </a>
@@ -407,10 +407,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#serialization-model" class="md-nav__link">
+  <a href="#initialization-order" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Serialization Model
+        Initialization Order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#per-frame-execution-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Per-Frame Execution Order
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#editor-bootstrap-and-deferred-oncreate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Editor Bootstrap And Deferred OnCreate
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#runtime-ecs-mirror" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime ECS Mirror
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reflection-serialization-replication" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reflection, Serialization, Replication
       
     </span>
   </a>
@@ -426,13 +470,41 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Networking Model">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#session-level-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Session-level flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-level-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Object-level flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
-  <a href="#physics-model" class="md-nav__link">
+  <a href="#renderer-and-ui-viewports" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Physics Model
+        Renderer And UI Viewports
       
     </span>
   </a>
@@ -440,21 +512,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#rendering-model" class="md-nav__link">
+  <a href="#practical-design-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Rendering Model
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#audio-model" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Audio Model
+        Practical Design Rules
       
     </span>
   </a>
@@ -477,22 +538,6 @@
   
     
     
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
       
         
       
@@ -551,6 +596,83 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
     <li class="md-nav__item">
       <a href="../tutorials/worlds_graphs/" class="md-nav__link">
         
@@ -559,7 +681,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -608,6 +730,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../tutorials/input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../tutorials/renderer/" class="md-nav__link">
         
   
@@ -615,7 +793,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -755,7 +933,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -820,6 +998,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1016,84 +1563,196 @@
 
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>SnAPI.GameFramework is built around four main axes:</p>
+<p>This page describes the framework as it exists now.</p>
+<p>If you remember the older generated docs, reset your mental model first:</p>
+<ul>
+<li>There is no public <code>NodeGraph</code>-centric runtime path in the current beginner-facing architecture.</li>
+<li><code>World</code> owns the hierarchy.</li>
+<li><code>Level</code> is a node that provides level-style creation and attachment helpers on top of world ownership.</li>
+<li><code>GameRuntime</code> is the normal application shell.</li>
+</ul>
+<h2 id="mental-model">Mental Model<a class="headerlink" href="#mental-model" title="Permanent link">&para;</a></h2>
+<p>The shortest accurate description is:</p>
+<div class="highlight"><pre><span></span><code>GameRuntime
+  -&gt; World
+    -&gt; root Level nodes and root BaseNode nodes
+      -&gt; child BaseNode / Level nodes
+        -&gt; BaseComponent attachments
+    -&gt; optional subsystems (input, UI, networking, physics, audio, renderer)
+    -&gt; script runtime
+    -&gt; runtime ECS mirror (WorldEcsRuntime)
+</code></pre></div>
+<p>What each layer means:</p>
+<ul>
+<li><code>GameRuntime</code> is the host for startup, update, shutdown, fixed-step accumulation, optional platform input forwarding, and optional gameplay host lifetime.</li>
+<li><code>World</code> is the authoritative owner of gameplay objects and subsystems.</li>
+<li><code>Level</code> is a convenience grouping node. Creating a child <code>Level</code> is the current way to partition a scene into authored regions or logical chunks.</li>
+<li><code>BaseNode</code> is the stable gameplay object with identity, hierarchy, and component access.</li>
+<li><code>BaseComponent</code> adds behavior or data to a node without changing the node type.</li>
+</ul>
+<h2 id="ownership-and-lifetime">Ownership And Lifetime<a class="headerlink" href="#ownership-and-lifetime" title="Permanent link">&para;</a></h2>
+<p>The rules that matter most are simple:</p>
+<ul>
+<li>The world owns nodes.</li>
+<li>The world also owns classic components and runtime ECS components.</li>
+<li>Handles are stable public identity.</li>
+<li>Borrowed pointers are temporary views. Do not store them across destructive operations or subsystem shutdown.</li>
+<li>Destruction is usually deferred to <code>World::EndFrame()</code>, which is how handle stability is preserved during a frame.</li>
+</ul>
+<p>The practical consequence is that this style is correct:</p>
+<div class="highlight"><pre><span></span><code><span class="n">NodeHandle</span><span class="w"> </span><span class="n">PlayerHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
+<span class="n">BaseNode</span><span class="o">*</span><span class="w"> </span><span class="n">Player</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlayerHandle</span><span class="p">.</span><span class="n">Borrowed</span><span class="p">();</span>
+</code></pre></div>
+<p>This style is not safe as a long-term ownership model:</p>
+<div class="highlight"><pre><span></span><code><span class="n">BaseNode</span><span class="o">*</span><span class="w"> </span><span class="n">CachedPointer</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PlayerHandle</span><span class="p">.</span><span class="n">Borrowed</span><span class="p">();</span>
+<span class="c1">// ... many frames later after destroy/recreate/shutdown assumptions ...</span>
+</code></pre></div>
+<h2 id="initialization-order">Initialization Order<a class="headerlink" href="#initialization-order" title="Permanent link">&para;</a></h2>
+<p><code>GameRuntime::Init()</code> creates and initializes the session in this order:</p>
 <ol>
-<li><strong>Runtime hierarchy</strong>: <code>World -&gt; Level -&gt; NodeGraph -&gt; BaseNode</code></li>
-<li><strong>Type metadata</strong>: <code>TypeRegistry</code>, <code>TTypeBuilder</code>, and cached <code>TypeId</code></li>
-<li><strong>Data transport</strong>: reflection serialization, asset payloads, and network replication</li>
-<li><strong>World-owned simulation systems</strong>: networking, audio, physics, and renderer adapters</li>
+<li>optional builtin type registration</li>
+<li>world creation</li>
+<li>input subsystem</li>
+<li>UI subsystem</li>
+<li>physics subsystem</li>
+<li>networking subsystem</li>
+<li>renderer subsystem</li>
+<li>gameplay host</li>
 </ol>
-<h2 id="runtime-model">Runtime Model<a class="headerlink" href="#runtime-model" title="Permanent link">&para;</a></h2>
+<p>That order matters. The gameplay host starts last during bootstrap so it can rely on the other world-owned subsystems already existing.</p>
+<p>Source of truth: <code>src/GameRuntime.cpp</code>.</p>
+<h2 id="per-frame-execution-order">Per-Frame Execution Order<a class="headerlink" href="#per-frame-execution-order" title="Permanent link">&para;</a></h2>
+<p><code>GameRuntime::Update(DeltaSeconds)</code> currently runs in this order:</p>
+<ol>
+<li>gameplay host tick, if configured and enabled</li>
+<li>fixed-tick accumulator loop (<code>World::FixedTick</code> zero or more times)</li>
+<li>variable tick (<code>World::Tick</code>)</li>
+<li>late tick (<code>World::LateTick</code>) when enabled</li>
+<li>end-of-frame (<code>World::EndFrame</code>) when enabled</li>
+<li>optional platform/UI input forwarding and close-request handling</li>
+<li>optional frame pacing</li>
+</ol>
+<p>Inside <code>World::Tick</code>, the order is:</p>
+<ol>
+<li>queued task execution</li>
+<li>script hot-reload tick</li>
+<li>input pump</li>
+<li>UI tick</li>
+<li>networking session pump</li>
+<li>runtime ECS gameplay tick or editor tick</li>
+<li>physics variable step, when configured</li>
+<li>audio update</li>
+</ol>
+<p>Inside <code>World::EndFrame</code>, the important work is:</p>
+<ol>
+<li>queued task execution</li>
+<li>networking queued-task flush</li>
+<li>deferred node destruction and runtime-node teardown</li>
+<li>UI packet generation for viewport-bound contexts</li>
+<li>renderer end-of-frame submission</li>
+</ol>
+<h2 id="editor-bootstrap-and-deferred-oncreate">Editor Bootstrap And Deferred <code>OnCreate</code><a class="headerlink" href="#editor-bootstrap-and-deferred-oncreate" title="Permanent link">&para;</a></h2>
+<p>One of the major behavioral changes since older docs were generated is editor bootstrap safety.</p>
+<p>The editor no longer assumes node <code>OnCreate()</code> work can run immediately while the UI viewport and render path are still being built. Instead, bootstrap can:</p>
 <ul>
-<li><code>World</code> is the runtime root and owns subsystems (jobs, audio, networking bridges, physics system, renderer system).</li>
-<li><code>World</code> is also responsible for subsystem frame work (networking pump + audio update + optional physics step).</li>
-<li><code>Level</code> and <code>NodeGraph</code> are nodes, so graphs can be nested.</li>
-<li><code>BaseNode</code> owns hierarchy relationships and component type bookkeeping.</li>
-<li><code>IComponent</code> adds behavior and state to nodes without changing node types.</li>
+<li>defer node <code>OnCreate()</code> callbacks</li>
+<li>suppress component <code>OnCreate()</code> delivery</li>
+<li>let editor services construct layout and create <code>UIRenderViewport</code></li>
+<li>let the viewport lazily create its actual render viewport and pass graph during layout/paint</li>
+<li>flush the deferred callbacks after the viewport path is ready</li>
 </ul>
-<h2 id="reflection-model">Reflection Model<a class="headerlink" href="#reflection-model" title="Permanent link">&para;</a></h2>
+<p>This is the reason render-facing nodes such as <code>WorldRenderSettings</code> and similar initialization code are now safer in editor startup than they were under the old docs.</p>
+<h2 id="runtime-ecs-mirror">Runtime ECS Mirror<a class="headerlink" href="#runtime-ecs-mirror" title="Permanent link">&para;</a></h2>
+<p>There are two layers users should know about:</p>
 <ul>
-<li><code>TypeId</code> is deterministic and generated from stable type names.</li>
-<li><code>SNAPI_REFLECT_TYPE(Type, ...)</code> installs lazy registration hooks.</li>
-<li>Metadata includes fields, methods, constructors, and inheritance chain.</li>
-<li><code>TypeRegistry::Find</code> auto-ensures missing reflected types on-demand.</li>
+<li>the user-facing node/component API (<code>BaseNode</code>, <code>BaseComponent</code>)</li>
+<li>the dense runtime ECS mirror (<code>WorldEcsRuntime</code>)</li>
 </ul>
-<h2 id="serialization-model">Serialization Model<a class="headerlink" href="#serialization-model" title="Permanent link">&para;</a></h2>
+<p>You normally work with the first layer.</p>
+<p>The second layer exists for:</p>
 <ul>
-<li><code>ValueCodecRegistry</code> handles primitive/custom value codecs.</li>
-<li><code>ComponentSerializationRegistry</code> creates/serializes components by <code>TypeId</code>.</li>
-<li><code>NodeGraphSerializer</code>, <code>LevelSerializer</code>, and <code>WorldSerializer</code> convert runtime graphs to payloads.</li>
-<li>AssetPipeline serializers wrap these payloads into <code>snpak</code> assets.</li>
+<li>dense storage</li>
+<li>tick-priority ordering</li>
+<li>runtime-only ECS components</li>
+<li>faster hot-path traversal and hierarchy mirroring</li>
 </ul>
+<p>Useful facts:</p>
+<ul>
+<li><code>BaseNode</code> exposes <code>AddRuntimeComponent&lt;T&gt;()</code>, <code>RuntimeComponent&lt;T&gt;()</code>, and related helpers.</li>
+<li>runtime component storages tick in ascending <code>kTickPriority</code></li>
+<li>runtime node hierarchy mirrors the world hierarchy</li>
+<li>world execution profiles can disable gameplay ECS phases entirely, which is how editor worlds avoid running runtime gameplay logic</li>
+</ul>
+<h2 id="reflection-serialization-replication">Reflection, Serialization, Replication<a class="headerlink" href="#reflection-serialization-replication" title="Permanent link">&para;</a></h2>
+<p>These systems all meet in the type registry.</p>
+<ul>
+<li>Reflection metadata is registered lazily or through explicit registration.</li>
+<li>Serialization uses that metadata to walk fields and create components by reflected type.</li>
+<li>Replication uses field flags plus object replication gates.</li>
+<li>Reflected RPC uses method flags plus exact signature matching.</li>
+</ul>
+<p>The current serializer surface is:</p>
+<ul>
+<li><code>NodeSerializer</code></li>
+<li><code>LevelSerializer</code></li>
+<li><code>WorldSerializer</code></li>
+<li><code>SerializeNodePayload</code> / <code>DeserializeNodePayload</code></li>
+<li><code>SerializeLevelPayload</code> / <code>DeserializeLevelPayload</code></li>
+<li><code>SerializeWorldPayload</code> / <code>DeserializeWorldPayload</code></li>
+</ul>
+<p>That replaces the old <code>NodeGraphSerializer</code> framing from the earlier docs.</p>
 <h2 id="networking-model">Networking Model<a class="headerlink" href="#networking-model" title="Permanent link">&para;</a></h2>
+<p>There are two different levels of networking API:</p>
+<h3 id="session-level-flow">Session-level flow<a class="headerlink" href="#session-level-flow" title="Permanent link">&para;</a></h3>
+<p>Use:</p>
 <ul>
-<li>Field replication is driven by reflection flags.</li>
-<li>RPC routing is driven by reflection method metadata.</li>
-<li><code>INode::CallRPC(...)</code> and <code>IComponent::CallRPC(...)</code> provide gameplay-facing routing helpers over reflected RPC endpoints.</li>
-<li><code>NetworkSystem</code> owns session/transport lifecycle (owner-only), then wires replication and RPC services.</li>
-<li><code>NetReplicationBridge</code> and <code>NetRpcBridge</code> coordinate with SnAPI.Networking services.</li>
+<li><code>NetworkSystem</code></li>
+<li><code>GameplayHost</code></li>
+<li><code>LocalPlayer</code></li>
+<li><code>IGame</code>, <code>IGameMode</code>, <code>IGameService</code></li>
 </ul>
-<h2 id="physics-model">Physics Model<a class="headerlink" href="#physics-model" title="Permanent link">&para;</a></h2>
+<p>This covers things like:</p>
 <ul>
-<li><code>World</code> owns <code>PhysicsSystem</code>, which wraps <code>SnAPI::Physics::PhysicsRuntime</code> + one world scene.</li>
-<li>Physics bootstrap is configured through <code>GameRuntimeSettings::Physics</code> (<code>PhysicsBootstrapSettings</code>).</li>
-<li>Tick policy is configurable:<ul>
-<li>fixed stepping in <code>World::FixedTick(...)</code></li>
-<li>variable stepping in <code>World::Tick(...)</code></li>
-<li>or manual stepping by disabling both and calling <code>World::Physics().Step(...)</code>.</li>
+<li>hosting or joining a session</li>
+<li>joining or leaving players</li>
+<li>loading or unloading levels</li>
+<li>possession defaults</li>
+<li>server-authoritative request policy</li>
 </ul>
-</li>
-<li>Component adapters:<ul>
-<li><code>ColliderComponent</code> stores shape/material/filter settings.</li>
-<li><code>RigidBodyComponent</code> creates/synchronizes backend bodies for owner nodes.</li>
-<li><code>CharacterMovementController</code> provides movement + grounded probe behavior using physics queries.</li>
-</ul>
-</li>
-<li>Direct scene access is available (<code>World::Physics().Scene()</code>) for domain APIs:<ul>
-<li>rigid body domain (<code>Rigid()</code>)</li>
-<li>query domain (<code>Query()</code>)</li>
-<li>event draining (<code>DrainEvents(...)</code>).</li>
-</ul>
-</li>
-</ul>
-<h2 id="rendering-model">Rendering Model<a class="headerlink" href="#rendering-model" title="Permanent link">&para;</a></h2>
+<h3 id="object-level-flow">Object-level flow<a class="headerlink" href="#object-level-flow" title="Permanent link">&para;</a></h3>
+<p>Use:</p>
 <ul>
-<li><code>World</code> owns one <code>RendererSystem</code> when renderer integration is compiled in.</li>
-<li><code>World::EndFrame()</code> delegates to <code>RendererSystem::EndFrame()</code> after graph <code>EndFrame()</code>.</li>
-<li><code>RendererSystem</code> owns renderer bootstrap/lifecycle and optional default pass graph creation.</li>
-<li><code>CameraComponent</code> manages world active camera selection and transform sync.</li>
-<li><code>StaticMeshComponent</code> and <code>SkeletalMeshComponent</code> are renderer bridge components for scene nodes.</li>
-<li>Mesh asset data and per-instance runtime render state are intentionally separated:</li>
-<li><code>Mesh</code> is shared asset data.</li>
-<li><code>MeshRenderObject</code> (via <code>IRenderObject</code>) stores per-instance materials, pass flags, transforms, and animation state.</li>
-<li>This split prevents per-instance mesh duplication and allows many nodes to share one mesh/vertex stream set while keeping independent render behavior.</li>
+<li>object replication flags on nodes/components/fields</li>
+<li><code>CallRPC(...)</code> on nodes and components</li>
+<li><code>NetReplicationBridge</code></li>
+<li><code>NetRpcBridge</code></li>
 </ul>
-<h2 id="audio-model">Audio Model<a class="headerlink" href="#audio-model" title="Permanent link">&para;</a></h2>
+<p>This covers things like:</p>
 <ul>
-<li>World-level <code>AudioSystem</code> owns runtime backend state.</li>
-<li><code>World::Tick(...)</code> performs audio system frame update.</li>
-<li><code>AudioSourceComponent</code> and <code>AudioListenerComponent</code> bridge node state to audio playback/listening.</li>
+<li>spawn/update/despawn of reflected state</li>
+<li>node/component reflected RPC methods</li>
+<li>object-scoped gameplay messages</li>
 </ul>
+<h2 id="renderer-and-ui-viewports">Renderer And UI Viewports<a class="headerlink" href="#renderer-and-ui-viewports" title="Permanent link">&para;</a></h2>
+<p>The renderer and UI are intentionally coupled only at explicit points.</p>
+<ul>
+<li><code>RendererSystem</code> owns renderer bootstrap, viewport objects, pass-graph registration, and end-frame submission.</li>
+<li><code>UISystem</code> owns one root <code>UIContext</code> plus optional child contexts.</li>
+<li><code>GameRuntime::BindViewportWithUI()</code> and <code>UISystem::BindViewportContext()</code> create the mapping between a renderer viewport and a UI context.</li>
+<li><code>UIRenderViewport</code> is the special UI element that lazily creates and maintains a renderer viewport from layout.</li>
+</ul>
+<p>This means viewport existence is layout-driven, not guaranteed at constructor time.</p>
+<h2 id="practical-design-rules">Practical Design Rules<a class="headerlink" href="#practical-design-rules" title="Permanent link">&para;</a></h2>
+<p>If you are adding new gameplay code, these rules keep you out of most trouble:</p>
+<ol>
+<li>Put session logic in <code>GameplayHost</code>, <code>IGame</code>, <code>IGameMode</code>, or services. Do not fake session orchestration inside random nodes.</li>
+<li>Put world-owned state on nodes/components. Do not invent parallel ownership trees.</li>
+<li>Use child <code>Level</code> nodes for content partitions.</li>
+<li>Treat borrowed pointers as frame-local.</li>
+<li>Use <code>EndFrame()</code> in manual world loops, or just use <code>GameRuntime</code> so you do not forget it.</li>
+<li>For editor-facing render setup, assume viewport creation is lazy and rely on the framework's deferred bootstrap behavior rather than forcing eager initialization from node constructors.</li>
+</ol>
+<p>Continue to <a href="../tutorials/">Start Here</a> if you want the guided path.</p>
 
 
 

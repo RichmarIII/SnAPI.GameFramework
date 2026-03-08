@@ -1,6 +1,12 @@
 # SnAPI::GameFramework::VariantView
 
-Non-owning view into a Variant-like value.
+Non-owning typed view into external payload storage.
+
+`VariantView` is the zero-allocation counterpart to `Variant` used on hot reflective traversal paths such as serialization and replication.
+
+Ownership and lifetime:
+- `VariantView` never owns storage.
+- The caller must guarantee that the referenced payload remains alive for the lifetime of the view.
 
 ## Private Members
 
@@ -30,7 +36,7 @@ Construct an empty invalid view.
 <div class="snapi-api-card" markdown="1">
 ### `SnAPI::GameFramework::VariantView::VariantView(TypeId Type, const void *Ptr, bool IsConst)`
 
-Construct explicit typed view.
+Construct an explicit typed view.
 
 **Parameters**
 
@@ -41,22 +47,22 @@ Construct explicit typed view.
 <div class="snapi-api-card" markdown="1">
 ### `const TypeId & SnAPI::GameFramework::VariantView::Type() const`
 
-Get reflected payload type id for this view.
+Get the reflected payload type id for this view.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::VariantView::IsConst() const`
 
-Check if mutable access is disallowed.
+Check whether mutable access is disallowed.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `const void * SnAPI::GameFramework::VariantView::Borrowed() const`
 
-Borrow const payload pointer.
+Borrow the payload pointer as const.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void * SnAPI::GameFramework::VariantView::BorrowedMutable()`
 
-Borrow mutable payload pointer.
+Borrow the payload pointer as mutable.
 
-**Returns:** Mutable pointer when view is non-const, otherwise nullptr.
+**Returns:** Mutable pointer when the view is non-const, otherwise `nullptr`.
 </div>

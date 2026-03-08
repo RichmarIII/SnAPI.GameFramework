@@ -16,10 +16,20 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Tick/lifecycle policy for `GameRuntime::Update`.
- * @remarks
- * `Update` always performs variable-step `World::Tick`.
- * Optional phases can be enabled for deterministic and post-frame work.
+ * @ingroup SnAPI_GameFramework
+ * @brief Frame-phase policy used by `GameRuntime::Update`.
+ *
+ * `GameRuntimeTickSettings` controls which world phases run every call to `Update`
+ * and how fixed-step simulation time is accumulated. This is the primary place where
+ * an application chooses between pure variable-step behavior and a mixed fixed/variable loop.
+ *
+ * Units:
+ * - `FixedDeltaSeconds` is measured in seconds.
+ * - `MaxFpsWhenVSyncOff` is measured in frames per second.
+ *
+ * @see GameRuntime
+ * @see World::Tick
+ * @see World::FixedTick
  */
 struct GameRuntimeTickSettings
 {
@@ -48,7 +58,20 @@ using GameRuntimeRendererSettings = RendererBootstrapSettings;
 #endif
 
 /**
- * @brief High-level runtime settings for bootstrap and update policy.
+ * @ingroup SnAPI_GameFramework
+ * @brief Bootstrap and runtime-policy settings consumed by `GameRuntime::Init`.
+ *
+ * `GameRuntimeSettings` describes everything needed to create one runtime session:
+ * world construction, subsystem bootstrap parameters, gameplay host configuration, and
+ * frame-loop policy. The structure is intentionally value-based so apps, tests, and tools
+ * can assemble settings in-place without needing a builder object.
+ *
+ * Ownership:
+ * - `WorldFactory`, when provided, transfers ownership of the returned `World` to `GameRuntime`.
+ * - Optional subsystem settings enable initialization; the subsystem instances themselves are still owned by the world.
+ *
+ * @see GameRuntime
+ * @see World
  */
 struct GameRuntimeSettings
 {
@@ -82,17 +105,31 @@ struct GameRuntimeSettings
 };
 
 /**
- * @brief World runtime host that centralizes bootstrap and per-frame orchestration.
- * @remarks
- * Primary goal: remove boilerplate from apps/examples by providing:
- * - `Init(Settings)` for world + optional network/session setup
- * - `Update(DeltaSeconds)` for frame orchestration + app-loop continuation signal
+ * @ingroup SnAPI_GameFramework
+ * @brief High-level application host for one running GameFramework session.
  *
- * Ownership:
- * - owns `World`
- * - world-owned `InputSystem` owns input runtime/context when enabled
- * - world-owned `UISystem` owns UI context lifecycle when enabled
- * - world-owned `NetworkSystem` owns networking resources when enabled
+ * `GameRuntime` wraps the repetitive application-shell work around a `World`:
+ * creation, subsystem bootstrap, gameplay-host lifetime, per-frame orchestration,
+ * optional input/UI bridging, and shutdown ordering. It exists so examples, tools,
+ * tests, and games can share one consistent startup/update/shutdown contract.
+ *
+ * Core semantics:
+ * - `Init()` creates and configures one world instance.
+ * - `Update()` runs one frame and returns whether the app should continue running.
+ * - `Shutdown()` tears down gameplay first, then world-owned objects while subsystems are still alive.
+ *
+ * Ownership and lifetime:
+ * - `GameRuntime` owns the `World`.
+ * - `GameRuntime` owns the optional `GameplayHost`.
+ * - All pointers returned from `WorldPtr()` or `Gameplay()` are non-owning and become invalid after `Shutdown()`.
+ *
+ * Threading model:
+ * - Main-thread only for `Init()`, `Update()`, and `Shutdown()`.
+ * - The class does not internally synchronize public API access.
+ *
+ * @see World
+ * @see GameplayHost
+ * @see GameRuntimeSettings
  */
 class GameRuntime final
 {

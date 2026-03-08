@@ -20,7 +20,23 @@ namespace SnAPI::GameFramework
 {
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief Bootstrap settings for world-owned physics.
+ *
+ * `PhysicsBootstrapSettings` captures how `PhysicsSystem` creates and advances its
+ * scene, including backend scene descriptors, tick integration policy, and optional
+ * floating-origin behavior used to keep large worlds numerically stable.
+ *
+ * Core semantics:
+ * - `Scene`, `Routing`, and `Couplings` are forwarded into scene creation
+ * - `ThreadCount` and `MaxSubStepping` override fields on the effective scene descriptor
+ * - fixed/variable tick flags only describe when the world should call `Step(...)`; they do not schedule ticks themselves
+ * - floating-origin settings control world/physics coordinate conversion and scene rebasing
+ *
+ * Units:
+ * - `FloatingOriginRebaseDistance` is expressed in world units used by the physics backend
+ *
+ * @see PhysicsSystem
  */
 struct PhysicsBootstrapSettings
 {
@@ -42,7 +58,40 @@ struct PhysicsBootstrapSettings
 };
 
 /**
- * @brief World-owned adapter over SnAPI.Physics runtime/scene.
+ * @ingroup SnAPI_GameFramework
+ * @brief World-owned adapter over SnAPI.Physics runtime and scene.
+ *
+ * `PhysicsSystem` owns one active physics scene for a `World` and is responsible for
+ * stepping simulation, draining physics events, and translating between world space and
+ * physics-local space when floating-origin mode is enabled.
+ *
+ * Why this abstraction exists:
+ * - to bind physics lifetime to world lifetime
+ * - to present a stable scene/event API to gameplay code without exposing backend setup details
+ * - to centralize floating-origin rebasing so components can convert coordinates consistently
+ *
+ * Core semantics:
+ * - `Initialize(...)` replaces any previous scene and resets listener/token state
+ * - `Step(...)` simulates, fetches results, drains scene events, stores a pending event queue, and then notifies listeners
+ * - general event listeners observe all drained events from each step
+ * - body sleep listeners only observe `BodySleep` and `BodyWake` events for their registered body
+ * - `DrainEvents(...)` consumes the subsystem-owned pending queue populated by prior `Step(...)` calls
+ *
+ * Ownership and lifetime:
+ * - Owned by `World`.
+ * - Owns the backend runtime facade and the active scene instance.
+ * - Returned scene pointers are borrowed and invalidated by `Shutdown()` or reinitialization.
+ *
+ * Threading model:
+ * - Main-thread oriented for simulation and listener registration.
+ * - Cross-thread work should be marshaled via `EnqueueTask(...)`.
+ *
+ * Performance notes:
+ * - `Step(...)` may dispatch many callbacks proportional to drained event count.
+ * - `DrainEvents(...)` erases consumed events from an internal vector.
+ *
+ * @see World
+ * @see PhysicsBootstrapSettings
  */
 class PhysicsSystem final : public ITaskDispatcher
 {
@@ -67,13 +116,16 @@ public:
 
     /**
      * @brief Initialize physics runtime and world scene.
-     * @param Settings Physics bootstrap settings.
+     * @param Settings Physics bootstrap settings copied into the subsystem.
      * @return Success or error.
+     * @post On success, a backend scene exists and listener state is reset to empty.
+     * @warning Replaces any previously initialized scene.
      */
     Result Initialize(const PhysicsBootstrapSettings& Settings);
 
     /**
      * @brief Shutdown physics scene/runtime resources.
+     * @remarks Clears pending events, listeners, and floating-origin state.
      */
     void Shutdown();
 
@@ -84,8 +136,10 @@ public:
 
     /**
      * @brief Step simulation and fetch results.
-     * @param DeltaSeconds Simulation step.
+     * @param DeltaSeconds Simulation step in seconds. Must be greater than zero.
      * @return Success or error.
+     * @post On success, pending events and registered listeners reflect the events drained from this step.
+     * @warning Listener callbacks run after the simulation lock is released.
      */
     Result Step(float DeltaSeconds);
 
@@ -109,16 +163,18 @@ public:
     void ExecuteQueuedTasks();
 
     /**
-     * @brief Drain physics events from the active scene.
+     * @brief Drain queued physics events captured by prior `Step(...)` calls.
      * @param OutEvents Destination span.
-     * @return Number of drained events.
+     * @return Number of events copied into @p OutEvents.
+     * @remarks This consumes from the subsystem-owned pending-event queue, not directly from the backend scene.
      */
     std::uint32_t DrainEvents(std::span<SnAPI::Physics::PhysicsEvent> OutEvents);
 
     /**
-     * @brief Register a callback invoked for physics events after each step.
+     * @brief Register a callback invoked for all physics events after each step.
      * @param Listener Callback receiving each drained physics event.
      * @return Listener token used for removal.
+     * @remarks Tokens are monotonic within the lifetime of one initialized system instance.
      */
     PhysicsEventListenerToken AddEventListener(PhysicsEventListener Listener);
 
@@ -133,7 +189,8 @@ public:
      * @brief Register a callback for sleep/wake events affecting a specific body.
      * @param BodyHandle Body to route sleep/wake events for.
      * @param Listener Callback invoked for matching body sleep/wake events.
-     * @return Listener token used for removal, or 0 when registration fails.
+     * @return Listener token used for removal, or `0` when registration fails.
+     * @remarks Only `BodySleep` and `BodyWake` events participate in this routing path.
      */
     BodySleepListenerToken AddBodySleepListener(SnAPI::Physics::BodyHandle BodyHandle, BodySleepListener Listener);
 
@@ -146,13 +203,20 @@ public:
 
     /**
      * @brief Access active scene.
-     * @return Scene pointer or nullptr.
+     * @return Non-owning scene pointer or `nullptr`.
+     * @warning The returned pointer is invalidated by `Shutdown()` or successful reinitialization.
      */
     SnAPI::Physics::IPhysicsScene* Scene();
+    /**
+     * @brief Access active scene (const).
+     * @return Non-owning scene pointer or `nullptr`.
+     * @warning The returned pointer is invalidated by `Shutdown()` or successful reinitialization.
+     */
     const SnAPI::Physics::IPhysicsScene* Scene() const;
 
     /**
      * @brief Access effective bootstrap settings.
+     * @return Borrowed reference to the active settings snapshot.
      */
     const PhysicsBootstrapSettings& Settings() const
     {
@@ -160,7 +224,8 @@ public:
     }
 
     /**
-     * @brief Check if fixed tick should step physics.
+     * @brief Check whether fixed-tick world updates should advance physics.
+     * @return `true` when fixed tick is the configured stepping path.
      */
     bool TickInFixedTick() const
     {
@@ -168,7 +233,8 @@ public:
     }
 
     /**
-     * @brief Check if variable tick should step physics.
+     * @brief Check whether variable-tick world updates should advance physics.
+     * @return `true` when variable tick is the configured stepping path.
      */
     bool TickInVariableTick() const
     {
@@ -178,8 +244,9 @@ public:
     /**
      * @brief Convert world-space position to physics-local space.
      * @param WorldPosition Input world position.
-     * @param AllowInitializeOrigin When true, may initialize floating origin from this point.
+     * @param AllowInitializeOrigin When `true`, the first call may initialize the floating origin from @p WorldPosition.
      * @return Physics-local position.
+     * @remarks Returns @p WorldPosition unchanged when floating origin is disabled.
      */
     SnAPI::Physics::Vec3 WorldToPhysicsPosition(const SnAPI::Physics::Vec3& WorldPosition, bool AllowInitializeOrigin = true);
 
@@ -187,20 +254,25 @@ public:
      * @brief Convert physics-local position back to world space.
      * @param PhysicsPosition Input physics-local position.
      * @return World position.
+     * @remarks Returns @p PhysicsPosition unchanged when floating origin is disabled.
      */
     SnAPI::Physics::Vec3 PhysicsToWorldPosition(const SnAPI::Physics::Vec3& PhysicsPosition) const;
 
     /**
      * @brief Ensure floating origin stays near a world-space anchor.
      * @param WorldAnchor Anchor world position.
-     * @return True when origin was initialized or rebased.
+     * @return `true` when the origin was initialized or rebased.
+     * @remarks No-op when floating origin or automatic rebasing is disabled.
      */
     bool EnsureFloatingOriginNear(const SnAPI::Physics::Vec3& WorldAnchor);
 
     /**
      * @brief Rebase floating origin to a specific world-space origin.
      * @param NewWorldOrigin New world-space origin.
-     * @return True when origin changed and bodies were rebased.
+     * @return `true` when the origin changed.
+     * @remarks
+     * When a scene exists, this attempts to shift backend bodies by the origin delta.
+     * When no scene exists yet, it only updates the stored origin state.
      */
     bool RebaseFloatingOrigin(const SnAPI::Physics::Vec3& NewWorldOrigin);
 

@@ -8,16 +8,28 @@ namespace SnAPI::GameFramework
 {
 
 /**
- * @brief Component that follows another node's transform.
- * @remarks
- * Typical use: attach to a camera node and configure `Target` + `PositionOffset`
- * to keep camera-follow behavior out of application loops.
+ * @ingroup SnAPI_GameFramework
+ * @brief Component that follows another node's world transform.
  *
- * Ownership and replication notes:
- * - `Target` is a regular `NodeHandle`; fast runtime-key resolution is used when
- *   available.
- * - Optional UUID fallback can be enabled for replication/serialization restore
- *   paths where runtime slot keys are not yet populated.
+ * `FollowTargetComponent` is a lightweight spatial constraint. It samples another node's
+ * world transform, blends toward the desired position and/or rotation, and then writes the
+ * owning node's world transform back through `TransformComponent` helpers.
+ *
+ * Typical use:
+ * - attach it to a camera or helper node
+ * - point `Settings::Target` at a player or anchor node
+ * - use smoothing to keep follow behavior out of custom gameplay loops
+ *
+ * Core semantics:
+ * - follow operates in world space
+ * - position and rotation synchronization can be enabled independently
+ * - if the owner lacks a `TransformComponent`, the world-transform write path may create one
+ * - UUID fallback can be enabled for replication/serialization restore paths where runtime slot keys are not yet populated
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see TransformComponent
  */
 class FollowTargetComponent : public BaseComponent, public ComponentCRTP<FollowTargetComponent>
 {
@@ -29,6 +41,10 @@ public:
 
     /**
      * @brief Follow behavior settings.
+     *
+     * Units:
+     * - `PositionOffset` is in world units
+     * - smoothing values are exponential frequencies in hertz
      */
     struct Settings
     {
@@ -56,9 +72,10 @@ public:
         return m_settings;
     }
 
-    /** @brief Variable-step follow update. */
+    /** @brief Variable-step follow update. @param DeltaSeconds Frame delta in seconds used for smoothing. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only property change hook. @param Name Changed reflected field name. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 

@@ -22,23 +22,42 @@ class LocalPlayer;
 using NodeHandle = THandle<BaseNode>;
 
 /**
- * @brief Contract for modular gameplay subsystems.
- * @remarks
- * Services are registered into `GameplayHost`, initialized in dependency order,
- * ticked every frame, and shut down in reverse order.
+ * @ingroup SnAPI_GameFramework
+ * @brief Contract for modular gameplay services owned by `GameplayHost`.
+ *
+ * `IGameService` is the extension point for gameplay features that do not belong inside
+ * one monolithic `IGame` or `IGameMode` implementation. Services are registered into the
+ * host, ordered by declared dependencies and priority, initialized once, ticked every frame,
+ * and shut down in reverse order.
+ *
+ * Use services for:
+ * - modular policy layers
+ * - player/session support systems
+ * - gameplay-side adapters that need lifecycle hooks but are not node/component types
+ *
+ * Ownership and lifetime:
+ * - Services are heap-allocated and transferred to `GameplayHost`.
+ * - The host owns the service instances and controls their lifecycle.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see GameplayHost
+ * @see IGame
+ * @see IGameMode
  */
 class SNAPI_GAMEFRAMEWORK_API IGameService
 {
 public:
     virtual ~IGameService() = default;
 
-    /**
-     * @brief Stable service name for diagnostics/logging.
-     */
+    /** @brief Stable diagnostic name for the concrete service implementation. */
     [[nodiscard]] virtual std::string_view Name() const = 0;
 
     /**
-     * @brief Optional dependency list by concrete service type.
+     * @brief Optional dependency list expressed as concrete service types.
+     * @return Types that must already be initialized before this service may initialize.
+     * @remarks Missing or circular dependencies cause host initialization to fail.
      */
     [[nodiscard]] virtual std::vector<std::type_index> Dependencies() const
     {
@@ -47,7 +66,8 @@ public:
 
     /**
      * @brief Optional ordering priority among dependency-ready services.
-     * @remarks Lower values initialize earlier.
+     * @return Relative priority value.
+     * @remarks Lower values initialize earlier when dependencies are otherwise satisfied.
      */
     [[nodiscard]] virtual int Priority() const
     {
@@ -56,11 +76,15 @@ public:
 
     /**
      * @brief Initialize service state.
+     * @param Host Borrowed gameplay host.
+     * @return Success or an initialization error.
      */
     virtual Result Initialize(GameplayHost& Host) = 0;
 
     /**
-     * @brief Per-frame update hook.
+     * @brief Per-frame service update.
+     * @param Host Borrowed gameplay host.
+     * @param DeltaSeconds Frame delta time in seconds.
      */
     virtual void Tick(GameplayHost& Host, float DeltaSeconds)
     {
@@ -69,8 +93,10 @@ public:
     }
 
     /**
-     * @brief Optional initial possession target resolver for newly joined players.
-     * @remarks Return null handle to defer to host fallback selection.
+     * @brief Optional initial possession-target resolver for a newly joined player.
+     * @param Host Borrowed gameplay host.
+     * @param Player Borrowed player node being initialized.
+     * @return Handle to a possession target, or a null handle to defer to later resolvers.
      */
     virtual NodeHandle SelectInitialPossessionTarget(GameplayHost& Host, LocalPlayer& Player)
     {
@@ -81,7 +107,12 @@ public:
 
     /**
      * @brief Policy hook for connection-authored join requests.
-     * @remarks Return false to deny the request before host mutation occurs.
+     * @param Host Borrowed gameplay host.
+     * @param OwnerConnectionId Requesting connection id.
+     * @param RequestedName Requested player name, possibly empty.
+     * @param PreferredPlayerIndex Requested player index, if any.
+     * @param ReplicatedPlayer Requested replication state for the created player node.
+     * @return `true` to allow the request, `false` to deny it.
      */
     virtual bool AllowPlayerJoinRequest(GameplayHost& Host,
                                         std::uint64_t OwnerConnectionId,
@@ -99,7 +130,10 @@ public:
 
     /**
      * @brief Policy hook for connection-authored leave requests.
-     * @remarks Return false to deny the request before host mutation occurs.
+     * @param Host Borrowed gameplay host.
+     * @param OwnerConnectionId Requesting connection id.
+     * @param PlayerIndex Requested player index, or `std::nullopt` for all caller-owned players.
+     * @return `true` to allow the request, `false` to deny it.
      */
     virtual bool AllowPlayerLeaveRequest(GameplayHost& Host,
                                          std::uint64_t OwnerConnectionId,
@@ -113,7 +147,10 @@ public:
 
     /**
      * @brief Policy hook for connection-authored level-load requests.
-     * @remarks Return false to deny the request before host mutation occurs.
+     * @param Host Borrowed gameplay host.
+     * @param OwnerConnectionId Requesting connection id.
+     * @param RequestedName Requested level name, possibly empty.
+     * @return `true` to allow the request, `false` to deny it.
      */
     virtual bool AllowLevelLoadRequest(GameplayHost& Host,
                                        std::uint64_t OwnerConnectionId,
@@ -127,7 +164,10 @@ public:
 
     /**
      * @brief Policy hook for connection-authored level-unload requests.
-     * @remarks Return false to deny the request before host mutation occurs.
+     * @param Host Borrowed gameplay host.
+     * @param OwnerConnectionId Requesting connection id.
+     * @param LevelId Stable id of the level targeted for unload.
+     * @return `true` to allow the request, `false` to deny it.
      */
     virtual bool AllowLevelUnloadRequest(GameplayHost& Host, std::uint64_t OwnerConnectionId, const Uuid& LevelId)
     {
@@ -137,54 +177,42 @@ public:
         return true;
     }
 
-    /**
-     * @brief Level lifecycle callback.
-     */
+    /** @brief Notification that a level became present in the world. @param Host Borrowed gameplay host. @param LevelHandle Loaded level handle. */
     virtual void OnLevelLoaded(GameplayHost& Host, const NodeHandle& LevelHandle)
     {
         (void)Host;
         (void)LevelHandle;
     }
 
-    /**
-     * @brief Level lifecycle callback.
-     */
+    /** @brief Notification that a level was removed from the world. @param Host Borrowed gameplay host. @param LevelId Stable id of the unloaded level. */
     virtual void OnLevelUnloaded(GameplayHost& Host, const Uuid& LevelId)
     {
         (void)Host;
         (void)LevelId;
     }
 
-    /**
-     * @brief Local-player lifecycle callback.
-     */
+    /** @brief Notification that a local-player node was added. @param Host Borrowed gameplay host. @param PlayerHandle Added player handle. */
     virtual void OnLocalPlayerAdded(GameplayHost& Host, const NodeHandle& PlayerHandle)
     {
         (void)Host;
         (void)PlayerHandle;
     }
 
-    /**
-     * @brief Local-player lifecycle callback.
-     */
+    /** @brief Notification that a local-player node was removed. @param Host Borrowed gameplay host. @param PlayerId Stable id of the removed player. */
     virtual void OnLocalPlayerRemoved(GameplayHost& Host, const Uuid& PlayerId)
     {
         (void)Host;
         (void)PlayerId;
     }
 
-    /**
-     * @brief Connection lifecycle callback.
-     */
+    /** @brief Notification that a connection became visible to the gameplay host. @param Host Borrowed gameplay host. @param OwnerConnectionId Connection id. */
     virtual void OnConnectionAdded(GameplayHost& Host, std::uint64_t OwnerConnectionId)
     {
         (void)Host;
         (void)OwnerConnectionId;
     }
 
-    /**
-     * @brief Connection lifecycle callback.
-     */
+    /** @brief Notification that a connection is no longer visible to the gameplay host. @param Host Borrowed gameplay host. @param OwnerConnectionId Connection id. */
     virtual void OnConnectionRemoved(GameplayHost& Host, std::uint64_t OwnerConnectionId)
     {
         (void)Host;
@@ -193,6 +221,7 @@ public:
 
     /**
      * @brief Shutdown and release service state.
+     * @param Host Borrowed gameplay host.
      */
     virtual void Shutdown(GameplayHost& Host) = 0;
 };

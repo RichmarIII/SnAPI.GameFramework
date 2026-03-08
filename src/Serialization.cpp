@@ -1276,33 +1276,23 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
             return std::unexpected(DeserializeResult.error());
         }
 
-        auto OnCreateResult = ComponentSerializationRegistry::Instance().InvokeOnCreate(
-            ComponentPayload.ComponentType,
-            ComponentPtr);
-        if (!OnCreateResult)
+        if (!IsComponentOnCreateSuppressed())
         {
-            return std::unexpected(OnCreateResult.error());
+            auto OnCreateResult = ComponentSerializationRegistry::Instance().InvokeOnCreate(
+                ComponentPayload.ComponentType,
+                ComponentPtr);
+            if (!OnCreateResult)
+            {
+                return std::unexpected(OnCreateResult.error());
+            }
         }
     }
 
     if (BaseNode* Node = Owner.Borrowed())
     {
-        (void)TypeAutoRegistry::Instance().Ensure(Node->TypeKey());
-        if (const TypeInfo* NodeTypeInfo = TypeRegistry::Instance().Find(Node->TypeKey());
-            NodeTypeInfo && NodeTypeInfo->NodeOnCreate)
+        if (const Result NodeOnCreateResult = WorldRef.RequestNodeOnCreate(Node->Handle()); !NodeOnCreateResult)
         {
-            try
-            {
-                NodeTypeInfo->NodeOnCreate(Node, &WorldRef);
-            }
-            catch (const std::exception& Ex)
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
-            }
-            catch (...)
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError, "Node OnCreate invocation threw"));
-            }
+            return std::unexpected(NodeOnCreateResult.error());
         }
     }
 

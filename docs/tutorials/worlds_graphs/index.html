@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Data-driven C++23 gameplay framework with reflection, serialization, replication, and asset integration">
+        <meta name="description" content="World-owned C++23 gameplay framework with GameRuntime, levels, reflection, serialization, networking, physics, UI, audio, rendering, and scripting">
       
       
       
@@ -23,11 +23,11 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.2">
     
     
       
-        <title>Worlds and Graphs - SnAPI.GameFramework</title>
+        <title>Worlds, Levels, and Hierarchies - SnAPI.GameFramework</title>
       
     
     
@@ -80,7 +80,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#worlds-and-graphs" class="md-skip">
+        <a href="#worlds-levels-and-hierarchies" class="md-skip">
           Skip to content
         </a>
       
@@ -116,7 +116,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Worlds and Graphs
+              Worlds, Levels, and Hierarchies
             
           </span>
         </div>
@@ -360,22 +360,6 @@
       
         
       
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
-        
-      
     
     
     
@@ -429,6 +413,83 @@
   
   
   
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Core Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
     <li class="md-nav__item md-nav__item--active">
       
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
@@ -444,7 +505,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -462,7 +523,7 @@
   <span class="md-ellipsis">
     
   
-    Worlds and Graphs
+    Worlds, Levels, and Hierarchies
   
 
     
@@ -488,10 +549,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-runtime-hierarchy" class="md-nav__link">
+  <a href="#the-current-hierarchy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        1. Runtime Hierarchy
+        The Current Hierarchy
       
     </span>
   </a>
@@ -499,10 +560,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-handles-vs-borrowed-pointers" class="md-nav__link">
+  <a href="#world-is-the-owner" class="md-nav__link">
     <span class="md-ellipsis">
       
-        2. Handles vs Borrowed Pointers
+        World Is The Owner
       
     </span>
   </a>
@@ -510,10 +571,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-create-a-world-level-graph-and-nodes" class="md-nav__link">
+  <a href="#level-is-a-convenience-node" class="md-nav__link">
     <span class="md-ellipsis">
       
-        3. Create a World, Level, Graph, and Nodes
+        Level Is A Convenience Node
       
     </span>
   </a>
@@ -521,10 +582,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-frame-lifecycle" class="md-nav__link">
+  <a href="#build-a-tiny-hierarchy" class="md-nav__link">
     <span class="md-ellipsis">
       
-        4. Frame Lifecycle
+        Build A Tiny Hierarchy
       
     </span>
   </a>
@@ -532,10 +593,49 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-standalone-graphs-prefab-style" class="md-nav__link">
+  <a href="#handles-vs-borrowed-pointers" class="md-nav__link">
     <span class="md-ellipsis">
       
-        5. Standalone Graphs (Prefab-Style)
+        Handles vs Borrowed Pointers
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Handles vs Borrowed Pointers">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#use-handles-for-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use handles for identity
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-borrowed-pointers-for-immediate-work" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Use borrowed pointers for immediate work
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#frame-order-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Frame Order Matters
       
     </span>
   </a>
@@ -543,10 +643,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#6-world-ownership-pointer-inodeworld" class="md-nav__link">
+  <a href="#destruction-is-usually-deferred" class="md-nav__link">
     <span class="md-ellipsis">
       
-        6. World Ownership Pointer (INode::World())
+        Destruction Is Usually Deferred
       
     </span>
   </a>
@@ -554,10 +654,71 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#7-common-mistakes" class="md-nav__link">
+  <a href="#runtime-ecs-mirror" class="md-nav__link">
     <span class="md-ellipsis">
       
-        7. Common Mistakes
+        Runtime ECS Mirror
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#common-mistakes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Mistakes
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Common Mistakes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#looking-for-creategraph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Looking for CreateGraph()
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#treating-level-as-a-separate-storage-root" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Treating Level as a separate storage root
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#forgetting-registerbuiltintypes-in-ad-hoc-toolstests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Forgetting RegisterBuiltinTypes() in ad hoc tools/tests
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-to-read-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What To Read Next
       
     </span>
   </a>
@@ -608,6 +769,62 @@
   
   
     <li class="md-nav__item">
+      <a href="../input/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Input System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../renderer/" class="md-nav__link">
         
   
@@ -615,7 +832,7 @@
   <span class="md-ellipsis">
     
   
-    Renderer Integration and Mesh Components
+    Renderer Integration
   
 
     
@@ -755,7 +972,7 @@
   <span class="md-ellipsis">
     
   
-    Networking Replication and RPC
+    Networking, Replication, and Reflected RPC
   
 
     
@@ -820,6 +1037,375 @@
   
 
       </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Project Labs
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Project Labs
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../first_play_session/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    First Play Session
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../space_station_partitions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Space Station Partitions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../couch_coop_laser_tag/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Couch Co-op Laser Tag
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../haunted_radio/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Haunted Radio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../bouncy_basement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bouncy Basement
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../shipyard_save_load/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Shipyard Save/Load
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcard_renderer/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Postcard Renderer
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../net_arena/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Net Arena
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tool_world_vs_game_world/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tool World vs Game World
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../scripted_gadget_lab/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scripted Gadget Lab
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1015,30 +1601,40 @@
 
 
 
-<h1 id="worlds-and-graphs">Worlds and Graphs<a class="headerlink" href="#worlds-and-graphs" title="Permanent link">&para;</a></h1>
-<p>This page explains the runtime object model. If this is clear, everything else (physics, serialization, replication, audio) becomes much easier.</p>
-<h2 id="1-runtime-hierarchy">1. Runtime Hierarchy<a class="headerlink" href="#1-runtime-hierarchy" title="Permanent link">&para;</a></h2>
-<p>SnAPI.GameFramework is centered around node graphs:</p>
+<h1 id="worlds-levels-and-hierarchies">Worlds, Levels, and Hierarchies<a class="headerlink" href="#worlds-levels-and-hierarchies" title="Permanent link">&para;</a></h1>
+<p>This is the most important tutorial in the docs because it fixes the biggest source of confusion from older material.</p>
+<h2 id="the-current-hierarchy">The Current Hierarchy<a class="headerlink" href="#the-current-hierarchy" title="Permanent link">&para;</a></h2>
+<p>The public beginner-facing hierarchy is:</p>
 <ul>
-<li><code>World</code> is the runtime root.</li>
-<li><code>Level</code> is a node type that also behaves like a graph.</li>
-<li><code>NodeGraph</code> is a node that owns other nodes.</li>
-<li><code>BaseNode</code> is a regular node.</li>
-<li><code>IComponent</code> attaches behavior/state to a node.</li>
+<li><code>GameRuntime</code> owns a <code>World</code></li>
+<li><code>World</code> owns nodes</li>
+<li><code>Level</code> is a node used as a grouping root or partition</li>
+<li><code>BaseNode</code> is the normal gameplay node type</li>
+<li><code>BaseComponent</code> attaches behavior or data to a node</li>
 </ul>
-<p>Because <code>Level</code> and <code>NodeGraph</code> are nodes, graphs can be nested.</p>
-<h2 id="2-handles-vs-borrowed-pointers">2. Handles vs Borrowed Pointers<a class="headerlink" href="#2-handles-vs-borrowed-pointers" title="Permanent link">&para;</a></h2>
-<p>You will use two access patterns constantly:</p>
+<p>There is no separate <code>NodeGraph</code> layer you need to create first.</p>
+<h2 id="world-is-the-owner"><code>World</code> Is The Owner<a class="headerlink" href="#world-is-the-owner" title="Permanent link">&para;</a></h2>
+<p>The world owns:</p>
 <ul>
-<li><code>NodeHandle</code> / <code>ComponentHandle</code>: stable identity (UUID-based)</li>
-<li><code>Borrowed()</code> pointer: quick lookup for immediate use</li>
+<li>node lifetime</li>
+<li>component lifetime</li>
+<li>runtime hierarchy</li>
+<li>subsystem objects</li>
+<li>runtime ECS mirroring</li>
 </ul>
-<p>Important rule:</p>
+<p>That is why almost all creation APIs eventually forward into <code>World</code>, even when you call them through a <code>Level</code>.</p>
+<h2 id="level-is-a-convenience-node"><code>Level</code> Is A Convenience Node<a class="headerlink" href="#level-is-a-convenience-node" title="Permanent link">&para;</a></h2>
+<p><code>Level</code> is not a second storage system. It is a <code>BaseNode</code>-derived type that forwards graph-style helper calls back into the world.</p>
+<p>That gives you level-style authoring without splitting ownership.</p>
+<p>Use it when you want:</p>
 <ul>
-<li>Do not cache borrowed pointers long-term. Resolve from the handle when needed.</li>
+<li>a root level in the world</li>
+<li>nested content partitions</li>
+<li>a clear parent for a group of related nodes</li>
 </ul>
-<h2 id="3-create-a-world-level-graph-and-nodes">3. Create a World, Level, Graph, and Nodes<a class="headerlink" href="#3-create-a-world-level-graph-and-nodes" title="Permanent link">&para;</a></h2>
+<h2 id="build-a-tiny-hierarchy">Build A Tiny Hierarchy<a class="headerlink" href="#build-a-tiny-hierarchy" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;GameFramework.hpp&quot;</span>
+<span class="cp">#include</span><span class="w"> </span><span class="cpf">&quot;NodeCast.h&quot;</span>
 
 <span class="k">using</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">SnAPI</span><span class="o">::</span><span class="nn">GameFramework</span><span class="p">;</span>
 
@@ -1048,98 +1644,135 @@
 
 <span class="w">    </span><span class="n">World</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">(</span><span class="s">&quot;GameWorld&quot;</span><span class="p">);</span>
 
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">LevelHandleResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateLevel</span><span class="p">(</span><span class="s">&quot;MainLevel&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">LevelHandleResult</span><span class="p">)</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">MainLevelHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">CreateLevel</span><span class="p">(</span><span class="s">&quot;MainLevel&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">MainLevelHandle</span><span class="p">)</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">LevelResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">LevelRef</span><span class="p">(</span><span class="n">LevelHandleResult</span><span class="p">.</span><span class="n">value</span><span class="p">());</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">LevelResult</span><span class="p">)</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">MainLevel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeCast</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span><span class="p">(</span><span class="n">MainLevelHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">());</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">MainLevel</span><span class="p">)</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="n">Level</span><span class="o">&amp;</span><span class="w"> </span><span class="n">MainLevel</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="n">LevelResult</span><span class="p">;</span>
-
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">GraphHandleResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MainLevel</span><span class="p">.</span><span class="n">CreateGraph</span><span class="p">(</span><span class="s">&quot;Gameplay&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">GraphHandleResult</span><span class="p">)</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">GameplayPartitionHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MainLevel</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Gameplay&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">PropsPartitionHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MainLevel</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Props&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">GameplayPartitionHandle</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">PropsPartitionHandle</span><span class="p">)</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">GraphResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">MainLevel</span><span class="p">.</span><span class="n">Graph</span><span class="p">(</span><span class="n">GraphHandleResult</span><span class="p">.</span><span class="n">value</span><span class="p">());</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">GraphResult</span><span class="p">)</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Gameplay</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeCast</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span><span class="p">(</span><span class="n">GameplayPartitionHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">());</span>
+<span class="w">    </span><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">Props</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">NodeCast</span><span class="o">&lt;</span><span class="n">Level</span><span class="o">&gt;</span><span class="p">(</span><span class="n">PropsPartitionHandle</span><span class="o">-&gt;</span><span class="n">Borrowed</span><span class="p">());</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">Gameplay</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">Props</span><span class="p">)</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="n">NodeGraph</span><span class="o">&amp;</span><span class="w"> </span><span class="n">Gameplay</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="n">GraphResult</span><span class="p">;</span>
-
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">PlayerResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Gameplay</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">CameraResult</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Gameplay</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;Camera&quot;</span><span class="p">);</span>
-<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PlayerResult</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">CameraResult</span><span class="p">)</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">PlayerHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Gameplay</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Player&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">CameraHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Gameplay</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;CameraBoom&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="n">LampHandle</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Props</span><span class="o">-&gt;</span><span class="n">CreateNode</span><span class="o">&lt;</span><span class="n">BaseNode</span><span class="o">&gt;</span><span class="p">(</span><span class="s">&quot;Lamp&quot;</span><span class="p">);</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">PlayerHandle</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">CameraHandle</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="o">!</span><span class="n">LampHandle</span><span class="p">)</span>
 <span class="w">    </span><span class="p">{</span>
 <span class="w">        </span><span class="k">return</span><span class="p">;</span>
 <span class="w">    </span><span class="p">}</span>
 
-<span class="w">    </span><span class="c1">// Parent-child relation: Camera becomes child of Player.</span>
-<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">Gameplay</span><span class="p">.</span><span class="n">AttachChild</span><span class="p">(</span><span class="n">PlayerResult</span><span class="p">.</span><span class="n">value</span><span class="p">(),</span><span class="w"> </span><span class="n">CameraResult</span><span class="p">.</span><span class="n">value</span><span class="p">());</span>
+<span class="w">    </span><span class="p">(</span><span class="kt">void</span><span class="p">)</span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">AttachChild</span><span class="p">(</span><span class="o">*</span><span class="n">PlayerHandle</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="n">CameraHandle</span><span class="p">);</span>
 <span class="p">}</span>
 </code></pre></div>
-<h2 id="4-frame-lifecycle">4. Frame Lifecycle<a class="headerlink" href="#4-frame-lifecycle" title="Permanent link">&para;</a></h2>
-<p>Tick order is tree-driven from graph roots.
-<code>World</code> also runs subsystem work during frame lifecycle:</p>
+<p>What happened here:</p>
 <ul>
-<li>networking session pumping in <code>Tick</code> + <code>EndFrame</code></li>
-<li>optional physics stepping in <code>Tick</code> and/or <code>FixedTick</code> (based on physics settings)</li>
-<li>audio system update in <code>Tick</code></li>
-<li>renderer submit/present in <code>EndFrame</code> (when renderer integration is enabled)</li>
+<li>the world created the root level</li>
+<li>the root level created two child <code>Level</code> partitions</li>
+<li>those partitions created regular child nodes</li>
+<li>the world remained the actual owner of every created object</li>
 </ul>
-<p>Typical frame loop:</p>
-<div class="highlight"><pre><span></span><code><span class="kt">void</span><span class="w"> </span><span class="nf">RunFrame</span><span class="p">(</span><span class="n">World</span><span class="o">&amp;</span><span class="w"> </span><span class="n">WorldInstance</span><span class="p">,</span><span class="w"> </span><span class="kt">float</span><span class="w"> </span><span class="n">DeltaSeconds</span><span class="p">)</span>
+<h2 id="handles-vs-borrowed-pointers">Handles vs Borrowed Pointers<a class="headerlink" href="#handles-vs-borrowed-pointers" title="Permanent link">&para;</a></h2>
+<p>You will use both constantly.</p>
+<h3 id="use-handles-for-identity">Use handles for identity<a class="headerlink" href="#use-handles-for-identity" title="Permanent link">&para;</a></h3>
+<ul>
+<li>storing references in save data</li>
+<li>replication</li>
+<li>cross-frame references</li>
+<li>parent/child relationships</li>
+</ul>
+<h3 id="use-borrowed-pointers-for-immediate-work">Use borrowed pointers for immediate work<a class="headerlink" href="#use-borrowed-pointers-for-immediate-work" title="Permanent link">&para;</a></h3>
+<ul>
+<li>changing a field right now</li>
+<li>calling <code>Add&lt;T&gt;()</code></li>
+<li>reading state during this scope</li>
+</ul>
+<p>Bad pattern:</p>
+<ul>
+<li>caching a borrowed pointer and assuming it survives destroy, reload, or shutdown</li>
+</ul>
+<p>Good pattern:</p>
+<ul>
+<li>storing a <code>NodeHandle</code></li>
+<li>resolving with <code>Borrowed()</code> when needed</li>
+</ul>
+<h2 id="frame-order-matters">Frame Order Matters<a class="headerlink" href="#frame-order-matters" title="Permanent link">&para;</a></h2>
+<p>If you are manually driving a world, the full loop is:</p>
+<div class="highlight"><pre><span></span><code><span class="n">WorldInstance</span><span class="p">.</span><span class="n">FixedTick</span><span class="p">(</span><span class="n">FixedDeltaSeconds</span><span class="p">);</span><span class="w"> </span><span class="c1">// optional, possibly several times</span>
+<span class="n">WorldInstance</span><span class="p">.</span><span class="n">Tick</span><span class="p">(</span><span class="n">DeltaSeconds</span><span class="p">);</span>
+<span class="n">WorldInstance</span><span class="p">.</span><span class="n">LateTick</span><span class="p">(</span><span class="n">DeltaSeconds</span><span class="p">);</span>
+<span class="n">WorldInstance</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span>
+</code></pre></div>
+<p>Most users should not hand-roll this. Use <code>GameRuntime</code> instead:</p>
+<div class="highlight"><pre><span></span><code><span class="n">GameRuntime</span><span class="w"> </span><span class="n">Runtime</span><span class="p">;</span>
+<span class="n">GameRuntimeSettings</span><span class="w"> </span><span class="n">Settings</span><span class="p">{};</span>
+<span class="n">Settings</span><span class="p">.</span><span class="n">WorldName</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">&quot;GameWorld&quot;</span><span class="p">;</span>
+<span class="n">Runtime</span><span class="p">.</span><span class="n">Init</span><span class="p">(</span><span class="n">Settings</span><span class="p">);</span>
+
+<span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="n">Runtime</span><span class="p">.</span><span class="n">Update</span><span class="p">(</span><span class="mf">1.0f</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mf">60.0f</span><span class="p">))</span>
 <span class="p">{</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">Tick</span><span class="p">(</span><span class="n">DeltaSeconds</span><span class="p">);</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">FixedTick</span><span class="p">(</span><span class="n">DeltaSeconds</span><span class="p">);</span><span class="w"> </span><span class="c1">// optional if you use fixed-step logic</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">LateTick</span><span class="p">(</span><span class="n">DeltaSeconds</span><span class="p">);</span>
-<span class="w">    </span><span class="n">WorldInstance</span><span class="p">.</span><span class="n">EndFrame</span><span class="p">();</span><span class="w"> </span><span class="c1">// processes deferred destruction</span>
 <span class="p">}</span>
 </code></pre></div>
-<p>Why <code>EndFrame()</code> matters:</p>
+<p><code>GameRuntime</code> handles:</p>
 <ul>
-<li><code>DestroyNode()</code> and component <code>Remove&lt;T&gt;()</code> are deferred.</li>
-<li>Handles remain valid until <code>EndFrame()</code>.</li>
-<li>This prevents mid-frame invalidation bugs.</li>
-<li>Renderer frame submission also happens from world <code>EndFrame()</code>, so skipping it can stall visual updates.</li>
+<li>fixed-step accumulation</li>
+<li>late tick</li>
+<li>end-frame</li>
+<li>optional platform/UI event forwarding</li>
+<li>frame pacing</li>
 </ul>
-<p>If you prefer less boilerplate in apps/examples, use <code>GameRuntime</code> and call <code>Runtime.Update(DeltaSeconds)</code>.
-<code>GameRuntime</code> orchestrates world lifecycle phases while <code>World</code> owns subsystem ticking/pumping.</p>
-<h2 id="5-standalone-graphs-prefab-style">5. Standalone Graphs (Prefab-Style)<a class="headerlink" href="#5-standalone-graphs-prefab-style" title="Permanent link">&para;</a></h2>
-<p>Standalone graphs are valid data containers:</p>
-<div class="highlight"><pre><span></span><code><span class="n">NodeGraph</span><span class="w"> </span><span class="n">PrefabGraph</span><span class="p">(</span><span class="s">&quot;EnemyPrefab&quot;</span><span class="p">);</span>
-<span class="k">auto</span><span class="w"> </span><span class="n">EnemyRoot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PrefabGraph</span><span class="p">.</span><span class="n">CreateNode</span><span class="p">(</span><span class="s">&quot;EnemyRoot&quot;</span><span class="p">);</span>
-</code></pre></div>
-<p>They can be serialized and reused, but they are not automatically pumped by a world loop unless you call tick methods yourself.</p>
-<h2 id="6-world-ownership-pointer-inodeworld">6. World Ownership Pointer (<code>INode::World()</code>)<a class="headerlink" href="#6-world-ownership-pointer-inodeworld" title="Permanent link">&para;</a></h2>
-<p>Every node has <code>World()</code> access:</p>
+<h2 id="destruction-is-usually-deferred">Destruction Is Usually Deferred<a class="headerlink" href="#destruction-is-usually-deferred" title="Permanent link">&para;</a></h2>
+<p><code>DestroyNode()</code> schedules destruction. Actual removal typically happens in <code>World::EndFrame()</code>.</p>
+<p>Why that design exists:</p>
 <ul>
-<li>In a world-owned tree, <code>World()</code> points to that <code>World</code>.</li>
-<li>In standalone/prefab graphs, <code>World()</code> may be <code>nullptr</code>.</li>
+<li>traversal can continue safely through the frame</li>
+<li>handles stay meaningful until the flush point</li>
+<li>subsystems can release resources in a predictable phase</li>
 </ul>
-<p>This is how systems are accessed from gameplay code:</p>
-<div class="highlight"><pre><span></span><code><span class="k">auto</span><span class="o">*</span><span class="w"> </span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">SomeComponent</span><span class="p">.</span><span class="n">Owner</span><span class="p">().</span><span class="n">Borrowed</span><span class="p">();</span>
-<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">OwnerNode</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="n">OwnerNode</span><span class="o">-&gt;</span><span class="n">World</span><span class="p">())</span>
-<span class="p">{</span>
-<span class="w">    </span><span class="c1">// OwnerNode-&gt;World()-&gt;Audio(), OwnerNode-&gt;World()-&gt;Physics(), OwnerNode-&gt;World()-&gt;Renderer(), etc.</span>
-<span class="p">}</span>
-</code></pre></div>
-<h2 id="7-common-mistakes">7. Common Mistakes<a class="headerlink" href="#7-common-mistakes" title="Permanent link">&para;</a></h2>
+<p>If you are testing manual world code and forget <code>EndFrame()</code>, destroyed nodes can appear to "stick around" longer than you expect.</p>
+<h2 id="runtime-ecs-mirror">Runtime ECS Mirror<a class="headerlink" href="#runtime-ecs-mirror" title="Permanent link">&para;</a></h2>
+<p>Even if you only use classic nodes and components, the world mirrors hierarchy into <code>WorldEcsRuntime</code>.</p>
+<p>You mostly do not have to care about that until you want:</p>
 <ul>
-<li>Creating logic that assumes <code>World()</code> is always non-null.</li>
-<li>Forgetting <code>EndFrame()</code> and then wondering why removed objects still appear valid.</li>
-<li>Caching borrowed pointers across frame boundaries.</li>
+<li>runtime-only dense components</li>
+<li>explicit runtime tick priority</li>
+<li>ECS-only high-frequency data</li>
 </ul>
-<p>Next: <a href="../nodes_components/">Nodes and Components</a></p>
+<p>When you do, <code>BaseNode</code> exposes helpers like:</p>
+<ul>
+<li><code>AddRuntimeComponent&lt;T&gt;()</code></li>
+<li><code>RuntimeComponent&lt;T&gt;()</code></li>
+<li><code>RemoveRuntimeComponent&lt;T&gt;()</code></li>
+</ul>
+<h2 id="common-mistakes">Common Mistakes<a class="headerlink" href="#common-mistakes" title="Permanent link">&para;</a></h2>
+<h3 id="looking-for-creategraph">Looking for <code>CreateGraph()</code><a class="headerlink" href="#looking-for-creategraph" title="Permanent link">&para;</a></h3>
+<p>That is old documentation. Use <code>CreateLevel()</code> or <code>CreateNode&lt;Level&gt;()</code> for partitions.</p>
+<h3 id="treating-level-as-a-separate-storage-root">Treating <code>Level</code> as a separate storage root<a class="headerlink" href="#treating-level-as-a-separate-storage-root" title="Permanent link">&para;</a></h3>
+<p>It is a convenience node over world ownership, not a second allocator or object registry.</p>
+<h3 id="forgetting-registerbuiltintypes-in-ad-hoc-toolstests">Forgetting <code>RegisterBuiltinTypes()</code> in ad hoc tools/tests<a class="headerlink" href="#forgetting-registerbuiltintypes-in-ad-hoc-toolstests" title="Permanent link">&para;</a></h3>
+<p>If reflection-driven features are involved, register builtins unless your host does it for you.</p>
+<h2 id="what-to-read-next">What To Read Next<a class="headerlink" href="#what-to-read-next" title="Permanent link">&para;</a></h2>
+<ul>
+<li><a href="../nodes_components/">Nodes and Components</a></li>
+<li><a href="../first_play_session/">First Play Session</a></li>
+<li><a href="../../architecture/">Architecture</a></li>
+</ul>
 
 
 

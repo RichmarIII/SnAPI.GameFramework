@@ -1,248 +1,206 @@
 # Nodes and Components
 
-This page shows how to design gameplay types and attach reusable behavior.
+Once the world hierarchy is clear, the next question is how to model gameplay objects.
 
-## 1. Node vs Component
+The answer in this framework is still straightforward:
 
-Use a **node** when the thing needs identity in the hierarchy (name, children, transform owner, etc.).
+- derive a node when the thing needs identity, hierarchy, or a distinct semantic role
+- attach components when you want reusable behavior or state
 
-Use a **component** for modular data/behavior you can attach to many node types.
+## What Belongs On A Node
 
-## 2. Define a Custom Node and Component
+A node is the right place for:
 
-Header (`MyGameplayTypes.h`):
+- a gameplay identity like `PawnBase`, `LocalPlayer`, `PlayerStart`, or `WorldRenderSettings`
+- hierarchy ownership
+- cross-system references that conceptually belong to the whole object
+- high-level callbacks like possession or spawn semantics
+
+## What Belongs On A Component
+
+A component is the right place for:
+
+- transform
+- physics state
+- audio playback
+- camera state
+- input adaptation
+- script binding
+- small reusable behaviors
+
+## A Small Custom Node And Component
 
 ```cpp
-#pragma once
-
 #include "GameFramework.hpp"
 
 using namespace SnAPI::GameFramework;
 
-class PlayerNode final : public BaseNode
+class TreasureNode final : public BaseNode
 {
 public:
-    static constexpr const char* kTypeName = "MyGame::PlayerNode";
+    static constexpr const char* kTypeName = "MyGame::TreasureNode";
 
-    int& EditHealth() { return m_health; }
-    const int& GetHealth() const { return m_health; }
-
-    void Tick(float DeltaSeconds) override
-    {
-        (void)DeltaSeconds;
-        // Player-specific logic
-    }
-
-private:
-    int m_health = 100;
+    int Coins = 10;
+    bool Claimed = false;
 };
 
-class MovementComponent final : public IComponent
+class SpinComponent final : public BaseComponent, public ComponentCRTP<SpinComponent>
 {
 public:
-    static constexpr const char* kTypeName = "MyGame::MovementComponent";
+    static constexpr const char* kTypeName = "MyGame::SpinComponent";
 
-    float& EditMaxSpeed() { return m_maxSpeed; }
-    const float& GetMaxSpeed() const { return m_maxSpeed; }
+    float DegreesPerSecond = 90.0f;
 
-    void Tick(float DeltaSeconds) override
+    void Tick(float DeltaSeconds)
     {
-        (void)DeltaSeconds;
-        // Movement logic using Owner().Borrowed()
-    }
+        BaseNode* OwnerNode = OwnerNode();
+        if (!OwnerNode)
+        {
+            return;
+        }
 
-private:
-    float m_maxSpeed = 5.0f;
+        auto TransformResult = OwnerNode->Component<TransformComponent>();
+        if (!TransformResult)
+        {
+            return;
+        }
+
+        // Replace this with your actual quaternion update logic.
+        (void)DeltaSeconds;
+    }
 };
 ```
 
-## 3. Register Reflection Once in a `.cpp`
+The important part is structural:
 
-Source (`MyGameplayTypes.cpp`):
+- the node carries identity and game meaning
+- the component carries a reusable behavior
+
+## Reflect Them If You Need Engine Features
+
+If a type needs serialization, editor property inspection, replication metadata, or reflected RPC, register it.
 
 ```cpp
-#include "MyGameplayTypes.h"
-
-SNAPI_REFLECT_TYPE(PlayerNode, (TTypeBuilder<PlayerNode>(PlayerNode::kTypeName)
+SNAPI_REFLECT_TYPE(TreasureNode, (TTypeBuilder<TreasureNode>(TreasureNode::kTypeName)
     .Base<BaseNode>()
-    .Field("Health", &PlayerNode::EditHealth, &PlayerNode::GetHealth)
+    .Field("Coins", &TreasureNode::Coins)
+    .Field("Claimed", &TreasureNode::Claimed)
     .Constructor<>()
     .Register()));
 
-SNAPI_REFLECT_COMPONENT(MovementComponent, (TTypeBuilder<MovementComponent>(MovementComponent::kTypeName)
-    .Field("MaxSpeed", &MovementComponent::EditMaxSpeed, &MovementComponent::GetMaxSpeed)
+SNAPI_REFLECT_TYPE(SpinComponent, (TTypeBuilder<SpinComponent>(SpinComponent::kTypeName)
+    .Field("DegreesPerSecond", &SpinComponent::DegreesPerSecond)
     .Constructor<>()
     .Register()));
 ```
 
-Notes:
-
-- `SNAPI_REFLECT_COMPONENT` is an alias of `SNAPI_REFLECT_TYPE`.
-- For components, `TTypeBuilder<>::Register()` auto-registers component serialization support.
-
-## 4. Spawn Nodes and Add Components
+## Attaching Components
 
 ```cpp
-World WorldInstance("GameWorld");
-auto LevelHandle = WorldInstance.CreateLevel("MainLevel");
-auto LevelRef = WorldInstance.LevelRef(LevelHandle.value());
-
-auto PlayerHandle = LevelRef->CreateNode<PlayerNode>("Player");
-auto* Player = static_cast<PlayerNode*>(PlayerHandle->Borrowed());
-if (!Player)
+auto TreasureHandle = WorldInstance.CreateNode<TreasureNode>("Treasure");
+if (!TreasureHandle)
 {
     return;
 }
 
-Player->EditHealth() = 150;
-
-auto MoveResult = Player->Add<MovementComponent>();
-if (MoveResult)
-{
-    MoveResult->EditMaxSpeed() = 8.0f;
-}
-```
-
-## 5. Query and Remove Components
-
-```cpp
-if (Player->Has<MovementComponent>())
-{
-    auto Move = Player->Component<MovementComponent>();
-    if (Move)
-    {
-        float CurrentSpeed = Move->GetMaxSpeed();
-        (void)CurrentSpeed;
-    }
-
-    Player->Remove<MovementComponent>();
-}
-
-// Actual destruction happens at end-of-frame.
-WorldInstance.EndFrame();
-```
-
-## 6. Tick Order for Node + Components
-
-For a node in an active tree:
-
-1. `Node::Tick(...)`
-2. all attached component `Tick(...)`
-3. child nodes recursively
-
-Same pattern exists for `FixedTick` and `LateTick`.
-
-## 7. Replication Gate (Important)
-
-Component/field replication is not automatic just because a field has replication flags.
-
-You also need:
-
-- `Node->Replicated(true)`
-- `Component->Replicated(true)`
-
-Without those runtime flags, replication payloads for that object are skipped.
-
-## 8. Role Helpers and `CallRPC(...)`
-
-Both `INode` and `IComponent` expose:
-
-- `IsServer()`
-- `IsClient()`
-- `IsListenServer()`
-- `CallRPC("ReflectedMethodName", args...)`
-
-Example pattern for a server-authoritative action:
-
-```cpp
-void WeaponComponent::StartFire()
-{
-    if (CallRPC("StartFireServer"))
-    {
-        return;
-    }
-    StartFireClient();
-}
-
-void WeaponComponent::StartFireServer()
-{
-    if (CallRPC("StartFireClient"))
-    {
-        return;
-    }
-    StartFireClient();
-}
-```
-
-This keeps gameplay call sites small while preserving server/client/multicast routing via reflection method flags.
-
-## 9. Built-In Physics Components
-
-GameFramework includes physics-ready components:
-
-- `ColliderComponent`
-    - Shape and material/filter data (box/sphere/capsule, friction, restitution, layer, mask, trigger).
-- `RigidBodyComponent`
-    - Creates backend body from node transform + collider settings and syncs transform each fixed tick.
-- `CharacterMovementController`
-    - Movement/jump helper that drives a sibling `RigidBodyComponent` and performs grounded ray probes.
-
-Minimal setup:
-
-```cpp
-auto ActorResult = Graph.CreateNode("PhysicsActor");
-auto* Actor = ActorResult->Borrowed();
-if (!Actor)
+auto* Treasure = TreasureHandle->Borrowed();
+if (!Treasure)
 {
     return;
 }
 
-auto Transform = Actor->Add<TransformComponent>();
-Transform->Position = Vec3{0.0f, 2.0f, 0.0f};
-
-auto Collider = Actor->Add<ColliderComponent>();
-Collider->EditSettings().Shape = 1; // box
-Collider->EditSettings().HalfExtent = Vec3{0.5f, 0.5f, 0.5f};
-
-auto Body = Actor->Add<RigidBodyComponent>();
-Body->EditSettings().BodyType = 2; // dynamic
-Body->RecreateBody();              // apply edited settings immediately
-```
-
-For full physics flow (world bootstrap, stepping policy, character movement, queries/events), continue to the physics tutorials.
-
-## 10. Built-In Renderer Components
-
-When renderer integration is compiled in (`SNAPI_GF_ENABLE_RENDERER`), GameFramework also provides renderer bridge components:
-
-- `CameraComponent`
-    - Owns a renderer camera and can become world active camera.
-    - Can pull pose from sibling `TransformComponent` each tick.
-- `StaticMeshComponent`
-    - Loads mesh asset data and creates per-instance render-object state.
-    - Supports visibility/shadow toggles and shared material instance overrides.
-- `SkeletalMeshComponent`
-    - Same asset/render-object pattern with rigid animation playback helpers.
-
-Minimal setup:
-
-```cpp
-auto VisualResult = Graph.CreateNode("VisualActor");
-auto* Visual = VisualResult->Borrowed();
-if (!Visual)
+if (auto Transform = Treasure->Add<TransformComponent>())
 {
-    return;
+    Transform->Position = Vec3(0.0f, 1.0f, 0.0f);
 }
 
-auto T = Visual->Add<TransformComponent>();
-T->Position = Vec3{0.0f, 0.0f, 0.0f};
-
-auto Mesh = Visual->Add<StaticMeshComponent>();
-Mesh->EditSettings().MeshPath = "assets/cube.obj";
-Mesh->EditSettings().Visible = true;
-Mesh->EditSettings().CastShadows = true;
+if (auto Spin = Treasure->Add<SpinComponent>())
+{
+    Spin->DegreesPerSecond = 180.0f;
+}
 ```
 
-For renderer bootstrap, camera ownership, and the post-refactor `Mesh` vs `MeshRenderObject` model, read the renderer tutorial next.
+Useful helpers on `BaseNode`:
 
-Next: [Renderer Integration and Mesh Components](renderer.md)
+- `Add<T>()`
+- `Component<T>()`
+- `Has<T>()`
+- `Remove<T>()`
+
+These all route through world-owned storage.
+
+## Lifecycle Hooks
+
+Nodes and components can implement:
+
+- `OnCreate`
+- `OnDestroy`
+- `PreTick`
+- `Tick`
+- `FixedTick`
+- `LateTick`
+- `PostTick`
+- `EndFrame`
+- editor-only hooks when built with editor support
+
+Use them carefully.
+
+### `OnCreate` is not a constructor substitute
+
+`OnCreate` exists because the object needs to be world-owned and registered first.
+
+That matters for:
+
+- looking up the world
+- adding sibling components
+- interacting with networking or renderer state
+- editor bootstrap deferral
+
+### `OnCreate` can be deferred
+
+This is especially important in the editor path.
+
+If your node depends on renderer viewports or editor UI state, do not assume `OnCreate` runs at the instant the C++ object was allocated. The framework can intentionally defer it until the world is actually ready.
+
+## Activity, Replication, and Destroy State
+
+Every node and component has separate concepts for:
+
+- active or inactive execution
+- replicated or local-only behavior
+- pending destroy
+
+Those are not the same thing.
+
+- `Active(false)` stops tick-style execution.
+- `Replicated(true)` only opens the object-level replication gate.
+- `PendingDestroy()` means the object has been scheduled for cleanup.
+
+## Runtime Components
+
+Classic components are not the only option.
+
+If you want very dense runtime-only state, you can attach runtime ECS components through the runtime mirror.
+
+Typical reasons to use runtime components:
+
+- thousands of lightweight simulation records
+- explicit tick-priority ordering
+- data that does not need the full reflected component model
+
+Do not reach for runtime components by default. Start with classic nodes/components first.
+
+## Design Heuristics
+
+Use these rules when deciding between node vs component:
+
+1. If it needs its own handle and hierarchy identity, make it a node.
+2. If it is reusable behavior, make it a component.
+3. If it is world-scoped policy rather than object behavior, consider a world subsystem, gameplay service, or a special node like `WorldRenderSettings`.
+4. If it needs fixed-step, high-density runtime processing, consider a runtime component.
+
+## What To Read Next
+
+- [Input System](input.md)
+- [Physics System and Components](physics.md)
+- [Reflection and Serialization](reflection_serialization.md)

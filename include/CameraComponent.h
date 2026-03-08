@@ -19,10 +19,30 @@ namespace SnAPI::GameFramework
 class RendererSystem;
 
 /**
+ * @ingroup SnAPI_GameFramework
  * @brief Component that owns and drives a renderer camera.
- * @remarks
- * Uses owning node `TransformComponent` as pose source when enabled and can
- * become the world's active renderer camera.
+ *
+ * `CameraComponent` is the bridge between a game-world node and a renderer camera
+ * instance. It owns one `SnAPI::Graphics::CameraBase`, keeps its projection settings
+ * synchronized from `Settings`, and optionally derives camera pose from the owning
+ * node's world transform plus configurable local offsets.
+ *
+ * Core semantics:
+ * - exactly one renderer camera instance is owned per component while the component is alive
+ * - `OnCreate()` lazily creates the renderer camera and applies current settings immediately
+ * - when `Settings::SyncFromTransform` is enabled, pose is pulled from the owning node each update
+ * - when `Settings::Active` is enabled, the component attempts to become the world's active renderer camera
+ *
+ * Ownership and lifetime:
+ * - Owned by the component.
+ * - The renderer does not own the returned camera pointer.
+ * - `Camera()` returns a non-owning pointer that becomes invalid after `OnDestroy()` or component destruction.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @see RendererSystem
+ * @see TransformComponent
  */
 class CameraComponent : public BaseComponent, public ComponentCRTP<CameraComponent>
 {
@@ -32,6 +52,16 @@ public:
 
     /**
      * @brief Configurable camera parameters.
+     *
+     * Units:
+     * - `NearClip` and `FarClip` are world units.
+     * - `FovDegrees` is expressed in degrees.
+     * - `LocalRotationOffsetEuler` is Euler rotation in radians.
+     *
+     * Semantics:
+     * - invalid or degenerate values are clamped to safe renderer defaults before upload
+     * - `Active` affects world-level renderer selection, not just this component's local state
+     * - `AutoActivateForPlayer` is consumed by gameplay code such as `PawnBase` possession flow rather than by this component alone
      */
     struct Settings
     {
@@ -67,9 +97,9 @@ public:
         return m_settings;
     }
 
-    /** @brief Get renderer camera instance (nullable before creation). */
+    /** @brief Get renderer camera instance. @return Non-owning camera pointer, or `nullptr` before creation/after destruction. */
     SnAPI::Graphics::CameraBase* Camera();
-    /** @brief Get renderer camera instance (nullable before creation). */
+    /** @brief Get renderer camera instance (const). @return Non-owning camera pointer, or `nullptr` before creation/after destruction. */
     const SnAPI::Graphics::CameraBase* Camera() const;
 
     /** @brief Runtime active state helper. */
@@ -78,15 +108,25 @@ public:
         return m_settings.Active;
     }
 
-    /** @brief Enable/disable this camera as world active camera. */
+    /**
+     * @brief Enable or disable this camera as the world active camera.
+     * @param Active New active state.
+     * @remarks If disabling the currently active camera, the renderer active camera is cleared.
+     */
     void SetActive(bool Active);
 
+    /** @brief Ensure the renderer camera exists, apply current settings, and optionally activate it. */
     void OnCreate();
+    /** @brief Release the owned renderer camera and clear renderer active-camera binding if needed. */
     void OnDestroy();
+    /** @brief Variable-step camera update. @param DeltaSeconds Frame delta in seconds. */
     void Tick(float DeltaSeconds);
+    /** @brief Late variable-step camera update. @param DeltaSeconds Frame delta in seconds. @remarks Uses the same update path as `Tick()`. */
     void LateTick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only update hook. @param DeltaSeconds Frame delta in seconds. */
     void EditorTick(float DeltaSeconds);
+    /** @brief Editor-only property change hook. @param Name Changed reflected field name. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 

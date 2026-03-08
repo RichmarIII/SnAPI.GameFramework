@@ -1,95 +1,222 @@
 # Architecture
 
-SnAPI.GameFramework is built around four main axes:
+This page describes the framework as it exists now.
 
-1. **Runtime hierarchy**: `World -> Level -> NodeGraph -> BaseNode`
-2. **Type metadata**: `TypeRegistry`, `TTypeBuilder`, and cached `TypeId`
-3. **Data transport**: reflection serialization, asset payloads, and network replication
-4. **World-owned simulation systems**: input, ui, networking, audio, physics, and renderer adapters
+If you remember the older generated docs, reset your mental model first:
 
-## Runtime Model
+- There is no public `NodeGraph`-centric runtime path in the current beginner-facing architecture.
+- `World` owns the hierarchy.
+- `Level` is a node that provides level-style creation and attachment helpers on top of world ownership.
+- `GameRuntime` is the normal application shell.
 
-- `World` is the runtime root and owns subsystems (jobs, input, ui, audio, networking bridges, physics system, renderer system).
-- `World` is also responsible for subsystem frame work (input pump + ui tick + networking pump + audio update + optional physics step).
-- `Level` and `NodeGraph` are nodes, so graphs can be nested.
-- `BaseNode` owns hierarchy relationships and component type bookkeeping.
-- `IComponent` adds behavior and state to nodes without changing node types.
+## Mental Model
 
-## Input Model
+The shortest accurate description is:
 
-- `World` owns one `InputSystem` when input integration is compiled in.
-- `InputSystem` wraps `SnAPI::Input::InputRuntime` + `InputContext` lifecycle.
-- `InputSystem::Initialize(...)` registers configured backend factories (SDL3/HIDAPI/libusb) and creates one active backend context.
-- `World::Tick(...)` pumps `InputSystem` before node tick traversal.
-- Gameplay code can consume normalized frame state through:
-  - `World::Input().Snapshot()`
-  - `World::Input().Events()`
-  - `World::Input().Actions()`
+```text
+GameRuntime
+  -> World
+    -> root Level nodes and root BaseNode nodes
+      -> child BaseNode / Level nodes
+        -> BaseComponent attachments
+    -> optional subsystems (input, UI, networking, physics, audio, renderer)
+    -> script runtime
+    -> runtime ECS mirror (WorldEcsRuntime)
+```
 
-## UI Model
+What each layer means:
 
-- `World` owns one `UISystem` when UI integration is compiled in.
-- `UISystem` wraps one `SnAPI::UI::UIContext` and handles lifecycle/bootstrap for viewport and DPI defaults.
-- `World::Tick(...)` ticks `UISystem` after input pumping and before node/component traversal.
-- Platform/window layers forward UI events through:
-  - `World::UI().PushInput(PointerEvent)`
-  - `World::UI().PushInput(KeyEvent)`
-  - `World::UI().PushInput(TextInputEvent)`
-- Renderer layers pull packetized draw data through `World::UI().BuildRenderPackets(...)`.
+- `GameRuntime` is the host for startup, update, shutdown, fixed-step accumulation, optional platform input forwarding, and optional gameplay host lifetime.
+- `World` is the authoritative owner of gameplay objects and subsystems.
+- `Level` is a convenience grouping node. Creating a child `Level` is the current way to partition a scene into authored regions or logical chunks.
+- `BaseNode` is the stable gameplay object with identity, hierarchy, and component access.
+- `BaseComponent` adds behavior or data to a node without changing the node type.
 
-## Reflection Model
+## Ownership And Lifetime
 
-- `TypeId` is deterministic and generated from stable type names.
-- `SNAPI_REFLECT_TYPE(Type, ...)` installs lazy registration hooks.
-- Metadata includes fields, methods, constructors, and inheritance chain.
-- `TypeRegistry::Find` auto-ensures missing reflected types on-demand.
+The rules that matter most are simple:
 
-## Serialization Model
+- The world owns nodes.
+- The world also owns classic components and runtime ECS components.
+- Handles are stable public identity.
+- Borrowed pointers are temporary views. Do not store them across destructive operations or subsystem shutdown.
+- Destruction is usually deferred to `World::EndFrame()`, which is how handle stability is preserved during a frame.
 
-- `ValueCodecRegistry` handles primitive/custom value codecs.
-- `ComponentSerializationRegistry` creates/serializes components by `TypeId`.
-- `NodeGraphSerializer`, `LevelSerializer`, and `WorldSerializer` convert runtime graphs to payloads.
-- AssetPipeline serializers wrap these payloads into `snpak` assets.
+The practical consequence is that this style is correct:
+
+```cpp
+NodeHandle PlayerHandle = *WorldInstance.CreateNode<BaseNode>("Player");
+BaseNode* Player = PlayerHandle.Borrowed();
+```
+
+This style is not safe as a long-term ownership model:
+
+```cpp
+BaseNode* CachedPointer = PlayerHandle.Borrowed();
+// ... many frames later after destroy/recreate/shutdown assumptions ...
+```
+
+## Initialization Order
+
+`GameRuntime::Init()` creates and initializes the session in this order:
+
+1. optional builtin type registration
+2. world creation
+3. input subsystem
+4. UI subsystem
+5. physics subsystem
+6. networking subsystem
+7. renderer subsystem
+8. gameplay host
+
+That order matters. The gameplay host starts last during bootstrap so it can rely on the other world-owned subsystems already existing.
+
+Source of truth: `src/GameRuntime.cpp`.
+
+## Per-Frame Execution Order
+
+`GameRuntime::Update(DeltaSeconds)` currently runs in this order:
+
+1. gameplay host tick, if configured and enabled
+2. fixed-tick accumulator loop (`World::FixedTick` zero or more times)
+3. variable tick (`World::Tick`)
+4. late tick (`World::LateTick`) when enabled
+5. end-of-frame (`World::EndFrame`) when enabled
+6. optional platform/UI input forwarding and close-request handling
+7. optional frame pacing
+
+Inside `World::Tick`, the order is:
+
+1. queued task execution
+2. script hot-reload tick
+3. input pump
+4. UI tick
+5. networking session pump
+6. runtime ECS gameplay tick or editor tick
+7. physics variable step, when configured
+8. audio update
+
+Inside `World::EndFrame`, the important work is:
+
+1. queued task execution
+2. networking queued-task flush
+3. deferred node destruction and runtime-node teardown
+4. UI packet generation for viewport-bound contexts
+5. renderer end-of-frame submission
+
+## Editor Bootstrap And Deferred `OnCreate`
+
+One of the major behavioral changes since older docs were generated is editor bootstrap safety.
+
+The editor no longer assumes node `OnCreate()` work can run immediately while the UI viewport and render path are still being built. Instead, bootstrap can:
+
+- defer node `OnCreate()` callbacks
+- suppress component `OnCreate()` delivery
+- let editor services construct layout and create `UIRenderViewport`
+- let the viewport lazily create its actual render viewport and pass graph during layout/paint
+- flush the deferred callbacks after the viewport path is ready
+
+This is the reason render-facing nodes such as `WorldRenderSettings` and similar initialization code are now safer in editor startup than they were under the old docs.
+
+## Runtime ECS Mirror
+
+There are two layers users should know about:
+
+- the user-facing node/component API (`BaseNode`, `BaseComponent`)
+- the dense runtime ECS mirror (`WorldEcsRuntime`)
+
+You normally work with the first layer.
+
+The second layer exists for:
+
+- dense storage
+- tick-priority ordering
+- runtime-only ECS components
+- faster hot-path traversal and hierarchy mirroring
+
+Useful facts:
+
+- `BaseNode` exposes `AddRuntimeComponent<T>()`, `RuntimeComponent<T>()`, and related helpers.
+- runtime component storages tick in ascending `kTickPriority`
+- runtime node hierarchy mirrors the world hierarchy
+- world execution profiles can disable gameplay ECS phases entirely, which is how editor worlds avoid running runtime gameplay logic
+
+## Reflection, Serialization, Replication
+
+These systems all meet in the type registry.
+
+- Reflection metadata is registered lazily or through explicit registration.
+- Serialization uses that metadata to walk fields and create components by reflected type.
+- Replication uses field flags plus object replication gates.
+- Reflected RPC uses method flags plus exact signature matching.
+
+The current serializer surface is:
+
+- `NodeSerializer`
+- `LevelSerializer`
+- `WorldSerializer`
+- `SerializeNodePayload` / `DeserializeNodePayload`
+- `SerializeLevelPayload` / `DeserializeLevelPayload`
+- `SerializeWorldPayload` / `DeserializeWorldPayload`
+
+That replaces the old `NodeGraphSerializer` framing from the earlier docs.
 
 ## Networking Model
 
-- Field replication is driven by reflection flags.
-- RPC routing is driven by reflection method metadata.
-- `INode::CallRPC(...)` and `IComponent::CallRPC(...)` provide gameplay-facing routing helpers over reflected RPC endpoints.
-- `NetworkSystem` owns session/transport lifecycle (owner-only), then wires replication and RPC services.
-- `NetReplicationBridge` and `NetRpcBridge` coordinate with SnAPI.Networking services.
+There are two different levels of networking API:
 
-## Physics Model
+### Session-level flow
 
-- `World` owns `PhysicsSystem`, which wraps `SnAPI::Physics::PhysicsRuntime` + one world scene.
-- Physics bootstrap is configured through `GameRuntimeSettings::Physics` (`PhysicsBootstrapSettings`).
-- Tick policy is configurable:
-    - fixed stepping in `World::FixedTick(...)`
-    - variable stepping in `World::Tick(...)`
-    - or manual stepping by disabling both and calling `World::Physics().Step(...)`.
-- Component adapters:
-    - `ColliderComponent` stores shape/material/filter settings.
-    - `RigidBodyComponent` creates/synchronizes backend bodies for owner nodes.
-    - `CharacterMovementController` provides movement + grounded probe behavior using physics queries.
-- Direct scene access is available (`World::Physics().Scene()`) for domain APIs:
-    - rigid body domain (`Rigid()`)
-    - query domain (`Query()`)
-    - event draining (`DrainEvents(...)`).
+Use:
 
-## Rendering Model
+- `NetworkSystem`
+- `GameplayHost`
+- `LocalPlayer`
+- `IGame`, `IGameMode`, `IGameService`
 
-- `World` owns one `RendererSystem` when renderer integration is compiled in.
-- `World::EndFrame()` delegates to `RendererSystem::EndFrame()` after graph `EndFrame()`.
-- `RendererSystem` owns renderer bootstrap/lifecycle and optional default pass graph creation.
-- `CameraComponent` manages world active camera selection and transform sync.
-- `StaticMeshComponent` and `SkeletalMeshComponent` are renderer bridge components for scene nodes.
-- Mesh asset data and per-instance runtime render state are intentionally separated:
-  - `Mesh` is shared asset data.
-  - `MeshRenderObject` (via `IRenderObject`) stores per-instance materials, pass flags, transforms, and animation state.
-- This split prevents per-instance mesh duplication and allows many nodes to share one mesh/vertex stream set while keeping independent render behavior.
+This covers things like:
 
-## Audio Model
+- hosting or joining a session
+- joining or leaving players
+- loading or unloading levels
+- possession defaults
+- server-authoritative request policy
 
-- World-level `AudioSystem` owns runtime backend state.
-- `World::Tick(...)` performs audio system frame update.
-- `AudioSourceComponent` and `AudioListenerComponent` bridge node state to audio playback/listening.
+### Object-level flow
+
+Use:
+
+- object replication flags on nodes/components/fields
+- `CallRPC(...)` on nodes and components
+- `NetReplicationBridge`
+- `NetRpcBridge`
+
+This covers things like:
+
+- spawn/update/despawn of reflected state
+- node/component reflected RPC methods
+- object-scoped gameplay messages
+
+## Renderer And UI Viewports
+
+The renderer and UI are intentionally coupled only at explicit points.
+
+- `RendererSystem` owns renderer bootstrap, viewport objects, pass-graph registration, and end-frame submission.
+- `UISystem` owns one root `UIContext` plus optional child contexts.
+- `GameRuntime::BindViewportWithUI()` and `UISystem::BindViewportContext()` create the mapping between a renderer viewport and a UI context.
+- `UIRenderViewport` is the special UI element that lazily creates and maintains a renderer viewport from layout.
+
+This means viewport existence is layout-driven, not guaranteed at constructor time.
+
+## Practical Design Rules
+
+If you are adding new gameplay code, these rules keep you out of most trouble:
+
+1. Put session logic in `GameplayHost`, `IGame`, `IGameMode`, or services. Do not fake session orchestration inside random nodes.
+2. Put world-owned state on nodes/components. Do not invent parallel ownership trees.
+3. Use child `Level` nodes for content partitions.
+4. Treat borrowed pointers as frame-local.
+5. Use `EndFrame()` in manual world loops, or just use `GameRuntime` so you do not forget it.
+6. For editor-facing render setup, assume viewport creation is lazy and rely on the framework's deferred bootstrap behavior rather than forcing eager initialization from node constructors.
+
+Continue to [Start Here](tutorials.md) if you want the guided path.

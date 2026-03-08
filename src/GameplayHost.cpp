@@ -1929,16 +1929,16 @@ NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& 
         }
     }
 
-    if (auto* Pawn = NodeCast<PawnBase>(PawnNode))
+    if (NodeCast<PawnBase>(PawnNode) != nullptr)
     {
-        Pawn->OnCreate();
+        (void)World().RequestNodeOnCreate(PawnHandle);
     }
 
     if (PlayerStartNode)
     {
-        if (auto* PlayerStartTyped = NodeCast<PlayerStart>(PlayerStartNode))
+        if (NodeCast<PlayerStart>(PlayerStartNode) != nullptr)
         {
-            PlayerStartTyped->OnCreate();
+            (void)World().RequestNodeOnCreate(PlayerStartHandle);
         }
 
         auto StartTransform = PlayerStartNode->Component<TransformComponent>();

@@ -1,8 +1,8 @@
 # Testing and Validation
 
-This page gives a practical test workflow for GameFramework features.
+The tests in this repository are a good map of what the framework currently guarantees.
 
-## 1. Build and Run Unit Tests
+## 1. Build And Run Tests
 
 ```bash
 cmake -S . -B build/debug -DSNAPI_GF_BUILD_TESTS=ON
@@ -10,104 +10,130 @@ cmake --build build/debug
 ctest --test-dir build/debug --output-on-failure
 ```
 
-The main test binary is `GameFrameworkTests` (Catch2).
+## 2. What The Current Test Suite Covers
 
-## 2. What Is Already Covered
+Representative coverage in `tests/` includes:
 
-Current tests include:
+- `HandleTests.cpp`
+  - end-of-frame deletion semantics
+  - UUID-only and runtime-backed handle resolution
+- `EcsOnlyWorldTests.cpp`
+  - ECS-only world ticks
+  - hierarchy mirroring
+  - recursive destroy
+  - level wrapper behavior
+- `GameRuntimeTests.cpp`
+  - `GameRuntime::Update()` world driving
+  - fixed-step backlog behavior
+  - networking subsystem initialization through runtime settings
+- `GameplayHostTests.cpp`
+  - join/leave flow
+  - policy hooks
+  - possession selection
+  - connection lifecycle callbacks
+- `InputSystemTests.cpp`
+  - input bootstrap and world tick pumping
+- `SerializationTests.cpp`
+  - node subtree round-trip
+  - `OnCreate` after fields are populated
+  - legacy vector/quaternion payload compatibility
+  - UUID regeneration/remapping
+  - value codec registry behavior
+- `LevelWorldSerializationTests.cpp`
+  - nested level round-trips
+  - world round-trips
+  - repeated-instantiation UUID regeneration
+- `NetReplicationTests.cpp`
+  - spawn/update ordering
+  - pending parent/component resolution
+  - session-backed snapshot replication
+- `WorldNetworkingTests.cpp`
+  - world role visibility to nodes/components
+  - `CallRPC(...)` routing by role
+- `PhysicsIntegrationTests.cpp`
+  - runtime physics bootstrap
+  - fixed-tick stepping
+  - character movement
+  - floating-origin behavior
+  - sleep/wake activity changes
+- `WorldEcsRuntimeTests.cpp`
+  - storage priority ordering
+  - runtime component attach/remove
+  - runtime hierarchy correctness
+  - execution-profile gating
 
-- `tests/HandleTests.cpp`
-    - handle validity and end-of-frame deletion behavior
-- `tests/NodeGraphTests.cpp`
-    - node + component ticking through graph hierarchy
-- `tests/ReflectionTests.cpp`
-    - type registration, inheritance, field/method flags, audio RPC endpoint metadata, and audio settings replication flags
-- `tests/SerializationTests.cpp`
-    - graph serialization round-trip, cross-graph handle resolution, custom `TValueCodec`
-- `tests/LevelWorldSerializationTests.cpp`
-    - level/world serialization round-trips
-- `tests/RelevanceTests.cpp`
-    - relevance policy gating tick
-- `tests/NetReplicationTests.cpp`
-    - replication spawn/update ordering and session integration
-- `tests/WorldNetworkingTests.cpp`
-    - world-owned networking system wiring, replication/rpc bridge integration
-    - `INode::CallRPC` / `IComponent::CallRPC` role-based routing behavior
-    - component `TypeKey` assignment for reflection RPC dispatch
-- `tests/PhysicsIntegrationTests.cpp`
-    - runtime physics bootstrap through `GameRuntimeSettings::Physics`
-    - rigid body simulation updates transform over fixed ticks
-    - `CharacterMovementController` movement/jump integration with rigid body
+## 3. Use Tests As Documentation Of Contracts
 
-## 3. Run Integration Examples
+If you are unsure whether something is guaranteed, the fastest check is often:
 
-Unit tests are necessary but not sufficient for gameplay systems.
-Also run these binaries:
+```bash
+rg -n "TEST_CASE" tests
+```
+
+This repository's tests are useful because many of them target behavioral contracts rather than just implementation helpers.
+
+## 4. Fast Targeted Commands
+
+```bash
+ctest --test-dir build/debug --output-on-failure -R "Physics|CharacterMovement"
+ctest --test-dir build/debug --output-on-failure -R "Serialization|LevelWorld"
+ctest --test-dir build/debug --output-on-failure -R "Networking|Replication|GameplayHost"
+```
+
+## 5. Example Runs Still Matter
+
+Run the examples after substantial changes:
 
 ```bash
 ./build/debug/examples/FeatureShowcase/FeatureShowcase
 ./build/debug/examples/WorldPerfBenchmark/WorldPerfBenchmark
+./build/debug/examples/MultiplayerExample/MultiplayerExample --local
 ./build/debug/examples/MultiplayerExample/MultiplayerExample --server
 ./build/debug/examples/MultiplayerExample/MultiplayerExample --client
 ```
 
-This validates end-to-end behavior (asset packs, runtime factories, replication bridges, rendering loop).
+Why:
 
-## 4. Suggested Test Matrix For Changes
+- tests validate contracts in isolation
+- examples validate whole-system integration
 
-If you change reflection code:
+## 6. Good Change-Specific Checklists
 
-- run `ReflectionTests` and `SerializationTests`
-- verify lazy auto-registration still resolves types on first use
+### Reflection or serialization changes
 
-If you change serialization code:
+Run:
 
-- run `SerializationTests`, `LevelWorldSerializationTests`
-- run `FeatureShowcase` to confirm real payload load path
+- `ReflectionTests`
+- `SerializationTests`
+- `LevelWorldSerializationTests`
+- `FeatureShowcase`
 
-If you change networking/replication code:
+### Networking or gameplay host changes
 
-- run `NetReplicationTests`
-- run `WorldNetworkingTests`
-- validate `CallRPC(...)` routes correctly for server/client/listen-server roles
-- run multiplayer example across two processes/devices
-- watch connection dumps:
-    - `pending_rel` should not grow forever
-    - non-zero `pkt_lost` alone is not a failure if reliable backlog drains and gameplay state remains correct
+Run:
 
-If you change physics code:
+- `NetReplicationTests`
+- `WorldNetworkingTests`
+- `GameplayHostTests`
+- multiplayer example in at least server/client mode
 
-- run `PhysicsIntegrationTests`
-- verify world physics bootstrap still succeeds in runtime init
-- verify stepping policy (`TickInFixedTick` / `TickInVariableTick`) matches expected update path
-- verify rigid body transform sync behavior:
-    - dynamic bodies pull from physics
-    - static/kinematic bodies push to physics
-- verify grounded probe and jump behavior if character movement logic changed
+### Physics changes
 
-Fast physics-only test command:
+Run:
 
-```bash
-ctest --test-dir build/debug --output-on-failure -R "Physics|CharacterMovementController"
-```
+- `PhysicsIntegrationTests`
+- any example that relies on fixed-step pawn motion or rigid bodies
 
-If you change renderer integration code:
+### Runtime/world execution changes
 
-- build with renderer source configured (`SNAPI_GF_RENDERER_SOURCE_DIR=...`)
-- run `MultiplayerExample --local` and verify:
-    - window/bootstrap succeeds
-    - camera is active and scene is visible
-    - static/skeletal mesh components render with expected pass/shadow behavior
-- verify no visual regression in frame lifecycle:
-    - `World::EndFrame()` still drives renderer submit/present
-    - temporal effects remain stable (no previous-frame state regressions)
+Run:
 
-If you change component lifecycle code:
+- `GameRuntimeTests`
+- `EcsOnlyWorldTests`
+- `WorldEcsRuntimeTests`
+- `HandleTests`
 
-- run `NodeGraphTests` and `HandleTests`
-- verify deferred destruction semantics still hold
-
-## 5. Add a New Test (Template)
+## 7. A Minimal New Test Pattern
 
 ```cpp
 #include <catch2/catch_test_macros.hpp>
@@ -115,35 +141,26 @@ If you change component lifecycle code:
 
 using namespace SnAPI::GameFramework;
 
-TEST_CASE("My feature round-trips")
+TEST_CASE("World creates and destroys a node")
 {
     RegisterBuiltinTypes();
 
-    NodeGraph Graph;
-    auto NodeResult = Graph.CreateNode("Actor");
-    REQUIRE(NodeResult);
+    World WorldInstance("TestWorld");
+    auto HandleResult = WorldInstance.CreateNode<BaseNode>("Actor");
+    REQUIRE(HandleResult);
 
-    auto* Node = NodeResult->Borrowed();
-    REQUIRE(Node != nullptr);
-
-    // setup
-
-    auto Payload = NodeGraphSerializer::Serialize(Graph);
-    REQUIRE(Payload);
-
-    NodeGraph Loaded;
-    REQUIRE(NodeGraphSerializer::Deserialize(Payload.value(), Loaded));
-
-    // assert
+    REQUIRE(WorldInstance.DestroyNode(*HandleResult));
+    WorldInstance.EndFrame();
 }
 ```
 
-## 6. CI-Friendly Command Set
+That pattern is intentionally simple:
 
-```bash
-cmake -S . -B build/ci -DSNAPI_GF_BUILD_TESTS=ON -DSNAPI_GF_BUILD_EXAMPLES=ON
-cmake --build build/ci --config Release
-ctest --test-dir build/ci --output-on-failure
-```
+- set up the minimal world state
+- exercise one contract
+- flush `EndFrame()` when destruction behavior matters
 
-Use this baseline before merging engine-level changes.
+## What To Read Next
+
+- [Architecture](../architecture.md)
+- [First Play Session](first_play_session.md)
