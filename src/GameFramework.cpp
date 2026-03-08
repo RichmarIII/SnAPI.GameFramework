@@ -38,6 +38,7 @@
 #include "HeightFogParamsNode.h"
 #include "RenderAssetRuntime.h"
 #include "SSAOParamsNode.h"
+#include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
 #include "SkeletalMeshComponent.h"
 #include "SprintArmComponent.h"
@@ -184,6 +185,16 @@ SNAPI_REFLECT_TYPE(TAssetRef<SSAOParamsNode>, (TTypeBuilder<TAssetRef<SSAOParams
     .Field("AssetId",
            &TAssetRef<SSAOParamsNode>::EditAssetId,
            &TAssetRef<SSAOParamsNode>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(TAssetRef<SSGIParamsNode>, (TTypeBuilder<TAssetRef<SSGIParamsNode>>(TTypeNameV<TAssetRef<SSGIParamsNode>>)
+    .Field("AssetName",
+           &TAssetRef<SSGIParamsNode>::EditAssetName,
+           &TAssetRef<SSGIParamsNode>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<SSGIParamsNode>::EditAssetId,
+           &TAssetRef<SSGIParamsNode>::GetAssetId)
     .Constructor<>()
     .Register()));
 
@@ -386,6 +397,65 @@ SNAPI_REFLECT_TYPE(SSAOParamsNode, (TTypeBuilder<SSAOParamsNode>(SSAOParamsNode:
     .Constructor<>()
     .Register()));
 
+SNAPI_REFLECT_TYPE(SSGIParamsNode, (TTypeBuilder<SSGIParamsNode>(SSGIParamsNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("ViewportID",
+           &SSGIParamsNode::EditViewportID,
+           &SSGIParamsNode::GetViewportID)
+    .Field("Intensity",
+           &SSGIParamsNode::EditIntensity,
+           &SSGIParamsNode::GetIntensity)
+    .Field("MaxDistance",
+           &SSGIParamsNode::EditMaxDistance,
+           &SSGIParamsNode::GetMaxDistance)
+    .Field("Thickness",
+           &SSGIParamsNode::EditThickness,
+           &SSGIParamsNode::GetThickness)
+    .Field("SurfaceBias",
+           &SSGIParamsNode::EditSurfaceBias,
+           &SSGIParamsNode::GetSurfaceBias)
+    .Field("MaxSteps",
+           &SSGIParamsNode::EditMaxSteps,
+           &SSGIParamsNode::GetMaxSteps)
+    .Field("RayCount",
+           &SSGIParamsNode::EditRayCount,
+           &SSGIParamsNode::GetRayCount)
+    .Field("DepthSigma",
+           &SSGIParamsNode::EditDepthSigma,
+           &SSGIParamsNode::GetDepthSigma)
+    .Field("NormalSigma",
+           &SSGIParamsNode::EditNormalSigma,
+           &SSGIParamsNode::GetNormalSigma)
+    .Field("RadianceClamp",
+           &SSGIParamsNode::EditRadianceClamp,
+           &SSGIParamsNode::GetRadianceClamp)
+    .Field("MaxPixelRadius",
+           &SSGIParamsNode::EditMaxPixelRadius,
+           &SSGIParamsNode::GetMaxPixelRadius)
+    .Field("StepExponent",
+           &SSGIParamsNode::EditStepExponent,
+           &SSGIParamsNode::GetStepExponent)
+    .Field("TemporalBlendFactor",
+           &SSGIParamsNode::EditTemporalBlendFactor,
+           &SSGIParamsNode::GetTemporalBlendFactor)
+    .Field("DisocclusionThreshold",
+           &SSGIParamsNode::EditDisocclusionThreshold,
+           &SSGIParamsNode::GetDisocclusionThreshold)
+    .Field("ClampStrength",
+           &SSGIParamsNode::EditClampStrength,
+           &SSGIParamsNode::GetClampStrength)
+    .Field("VelocityWeight",
+           &SSGIParamsNode::EditVelocityWeight,
+           &SSGIParamsNode::GetVelocityWeight)
+    .Field("LowLumaBoost",
+           &SSGIParamsNode::EditLowLumaBoost,
+           &SSGIParamsNode::GetLowLumaBoost)
+    .Field("TemporalDebugMode",
+           &SSGIParamsNode::EditTemporalDebugMode,
+           &SSGIParamsNode::GetTemporalDebugMode)
+    .Constructor<>()
+    .Register()));
+
 SNAPI_REFLECT_TYPE(SSRParamsNode, (TTypeBuilder<SSRParamsNode>(SSRParamsNode::kTypeName)
     .Base<BaseNode>()
     .Field("ViewportID",
@@ -415,6 +485,21 @@ SNAPI_REFLECT_TYPE(SSRParamsNode, (TTypeBuilder<SSRParamsNode>(SSRParamsNode::kT
     .Field("ReflectionFade",
            &SSRParamsNode::EditReflectionFade,
            &SSRParamsNode::GetReflectionFade)
+    .Field("TemporalBlendFactor",
+           &SSRParamsNode::EditTemporalBlendFactor,
+           &SSRParamsNode::GetTemporalBlendFactor)
+    .Field("DisocclusionThreshold",
+           &SSRParamsNode::EditDisocclusionThreshold,
+           &SSRParamsNode::GetDisocclusionThreshold)
+    .Field("ClampStrength",
+           &SSRParamsNode::EditClampStrength,
+           &SSRParamsNode::GetClampStrength)
+    .Field("VelocityWeight",
+           &SSRParamsNode::EditVelocityWeight,
+           &SSRParamsNode::GetVelocityWeight)
+    .Field("TemporalDebugMode",
+           &SSRParamsNode::EditTemporalDebugMode,
+           &SSRParamsNode::GetTemporalDebugMode)
     .Constructor<>()
     .Register()));
 
@@ -643,6 +728,9 @@ SNAPI_REFLECT_TYPE(WorldRenderSettings, (TTypeBuilder<WorldRenderSettings>(World
     .Field("SSAOParams",
            &WorldRenderSettings::EditSSAOParams,
            &WorldRenderSettings::GetSSAOParams)
+    .Field("SSGIParams",
+           &WorldRenderSettings::EditSSGIParams,
+           &WorldRenderSettings::GetSSGIParams)
     .Field("SSRParams",
            &WorldRenderSettings::EditSSRParams,
            &WorldRenderSettings::GetSSRParams)

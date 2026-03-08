@@ -18,6 +18,7 @@
 #include "BloomParamsNode.h"
 #include "HeightFogParamsNode.h"
 #include "SSAOParamsNode.h"
+#include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
 #include "StaticMeshComponent.h"
 #include "ToneMapParamsNode.h"
@@ -1519,6 +1520,11 @@ void UIPropertyPanel::AddFieldEditor(
                Field.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
       {
         PopulateAssetRefOptions<TAssetRef<SSAOParamsNode>>(options);
+      }
+      else if (editorKind == EEditorKind::AssetRef &&
+               Field.FieldType == StaticTypeId<TAssetRef<SSGIParamsNode>>())
+      {
+        PopulateAssetRefOptions<TAssetRef<SSGIParamsNode>>(options);
       }
       else if (editorKind == EEditorKind::AssetRef &&
                Field.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
@@ -3067,6 +3073,10 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::AssetRef;
   }
+  if (Type == StaticTypeId<TAssetRef<SSGIParamsNode>>())
+  {
+    return EEditorKind::AssetRef;
+  }
   if (Type == StaticTypeId<TAssetRef<SSRParamsNode>>())
   {
     return EEditorKind::AssetRef;
@@ -3413,6 +3423,15 @@ bool UIPropertyPanel::ReadFieldValue(
     if (Binding.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
     {
       if (!TryReadAssetRefSelectionLabel<TAssetRef<SSAOParamsNode>>(constPointer, OutText))
+      {
+        return false;
+      }
+      OutBool = false;
+      return true;
+    }
+    if (Binding.FieldType == StaticTypeId<TAssetRef<SSGIParamsNode>>())
+    {
+      if (!TryReadAssetRefSelectionLabel<TAssetRef<SSGIParamsNode>>(constPointer, OutText))
       {
         return false;
       }
@@ -3998,6 +4017,10 @@ bool UIPropertyPanel::WriteFieldValue(
       if (Binding.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
       {
         return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSAOParamsNode>>(mutablePointer, selected));
+      }
+      if (Binding.FieldType == StaticTypeId<TAssetRef<SSGIParamsNode>>())
+      {
+        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSGIParamsNode>>(mutablePointer, selected));
       }
       if (Binding.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
       {

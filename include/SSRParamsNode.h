@@ -17,45 +17,135 @@ class SSRPass;
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Data-driven node that configures screen-space reflection passes for one or more viewports.
+ *
+ * `SSRParamsNode` exposes serialized reflection settings through the world graph and applies them
+ * to renderer-owned SSR passes when those passes exist. The node is intentionally passive: it does
+ * not create render viewports or add SSR to a pass graph. Its job is to wait for matching passes
+ * and then push sanitized values into them.
+ *
+ * Viewport selection semantics:
+ * - A negative viewport id means "apply to every current renderer viewport".
+ * - A non-negative viewport id targets exactly one renderer viewport with the same numeric id.
+ * - Pass-graph rebuilds are detected automatically through the renderer revision counter, so the
+ *   node reapplies settings after viewport recreation or preset changes.
+ *
+ * Ownership and lifetime:
+ * - The node owns only its stored parameter values.
+ * - SSR passes are owned by the renderer and may disappear when the viewport graph changes.
+ * - No pass pointer is retained across frames.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * Performance notes:
+ * - Successful steady-state ticks are cheap because the node caches the last viewport selection
+ *   and pass-graph revision that accepted the settings.
+ * - Applying to all viewports scales linearly with the number of active render viewports.
+ *
+ * @warning Mutable `Edit*()` accessors only change stored configuration. Renderer state updates
+ * are lazy and happen on the node's normal apply/retry hooks.
+ *
+ * @see RendererSystem
+ * @see WorldRenderSettings
+ */
 class SNAPI_GAMEFRAMEWORK_API SSRParamsNode : public BaseNode
 {
 public:
+    /** @brief Stable reflected type name used for serialization and asset lookup. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::SSRParamsNode";
 
+    /** @brief Construct an unnamed SSR settings node with default renderer tuning values. */
     SSRParamsNode();
+    /**
+     * @brief Construct a named SSR settings node.
+     * @param Name Debug/editor-facing node name stored by the base node.
+     */
     explicit SSRParamsNode(std::string Name);
 
+    /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
     std::int64_t& EditViewportID();
+    /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
+    /** @brief Access the maximum reflection ray distance. @return Mutable distance in renderer-defined scene units. */
     float& EditMaxDistance();
+    /** @brief Read the maximum reflection ray distance. @return Stored ray distance. */
     const float& GetMaxDistance() const;
 
+    /** @brief Access the intersection thickness tolerance. @return Mutable non-negative thickness value. */
     float& EditThickness();
+    /** @brief Read the intersection thickness tolerance. @return Stored thickness value. */
     const float& GetThickness() const;
 
+    /** @brief Access the roughness ceiling accepted by SSR. @return Mutable roughness limit, typically interpreted in [0, 1]. */
     float& EditMaxRoughness();
+    /** @brief Read the roughness ceiling accepted by SSR. @return Stored roughness limit. */
     const float& GetMaxRoughness() const;
 
+    /** @brief Access the roughness threshold used by the pass. @return Mutable roughness threshold, clamped non-negative on upload. */
     float& EditRoughnessThreshold();
+    /** @brief Read the roughness threshold used by the pass. @return Stored roughness threshold. */
     const float& GetRoughnessThreshold() const;
 
+    /** @brief Access the maximum number of forward march steps. @return Mutable step count; values below 1 are clamped to 1. */
     std::uint32_t& EditMaxSteps();
+    /** @brief Read the maximum number of forward march steps. @return Stored step count. */
     const std::uint32_t& GetMaxSteps() const;
 
+    /** @brief Access the maximum number of binary-search refinement steps. @return Mutable step count; values below 1 are clamped to 1. */
     std::uint32_t& EditMaxBinarySteps();
+    /** @brief Read the maximum number of binary-search refinement steps. @return Stored step count. */
     const std::uint32_t& GetMaxBinarySteps() const;
 
+    /** @brief Access the fade applied near screen borders. @return Mutable non-negative fade scalar. */
     float& EditScreenEdgeFade();
+    /** @brief Read the fade applied near screen borders. @return Stored fade scalar. */
     const float& GetScreenEdgeFade() const;
 
+    /** @brief Access the global reflection fade multiplier. @return Mutable non-negative fade scalar. */
     float& EditReflectionFade();
+    /** @brief Read the global reflection fade multiplier. @return Stored fade scalar. */
     const float& GetReflectionFade() const;
 
+    /** @brief Access the temporal accumulation blend factor. @return Mutable blend scalar clamped to [0, 1] on upload. */
+    float& EditTemporalBlendFactor();
+    /** @brief Read the temporal accumulation blend factor. @return Stored blend scalar. */
+    const float& GetTemporalBlendFactor() const;
+
+    /** @brief Access the temporal disocclusion rejection threshold. @return Mutable non-negative threshold value. */
+    float& EditDisocclusionThreshold();
+    /** @brief Read the temporal disocclusion rejection threshold. @return Stored threshold value. */
+    const float& GetDisocclusionThreshold() const;
+
+    /** @brief Access the history clamp expansion strength. @return Mutable non-negative clamp scalar. */
+    float& EditClampStrength();
+    /** @brief Read the history clamp expansion strength. @return Stored clamp scalar. */
+    const float& GetClampStrength() const;
+
+    /** @brief Access the motion-vector weighting for temporal rejection. @return Mutable non-negative velocity weight. */
+    float& EditVelocityWeight();
+    /** @brief Read the motion-vector weighting for temporal rejection. @return Stored velocity weight. */
+    const float& GetVelocityWeight() const;
+
+    /** @brief Access the temporal debug visualization mode. @return Mutable debug selector where 0 = final result. */
+    std::uint32_t& EditTemporalDebugMode();
+    /** @brief Read the temporal debug visualization mode. @return Stored debug selector. */
+    const std::uint32_t& GetTemporalDebugMode() const;
+
+    /**
+     * @brief Mark the node dirty and attempt an immediate apply.
+     * @remarks Missing renderer/pass state is treated as deferred readiness, not an error.
+     */
     void OnCreate();
+    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
     void EditorTick(float DeltaSeconds);
+    /** @brief Mark the node dirty after reflected editor edits. @param Name Name of the changed property. Currently unused. */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 
@@ -74,6 +164,11 @@ private:
     std::uint32_t m_maxBinarySteps = 8;
     float m_screenEdgeFade = 0.1f;
     float m_reflectionFade = 0.8f;
+    float m_temporalBlendFactor = 0.10f;
+    float m_disocclusionThreshold = 0.02f;
+    float m_clampStrength = 0.10f;
+    float m_velocityWeight = 12.0f;
+    std::uint32_t m_temporalDebugMode = 0;
 
     bool m_applyPending = true;
     std::uint64_t m_lastAppliedPassGraphRevision = 0;

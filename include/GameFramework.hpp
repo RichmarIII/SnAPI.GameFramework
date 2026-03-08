@@ -1,8 +1,30 @@
 #pragma once
 
 /**
- * @brief Umbrella header for SnAPI.GameFramework.
- * @remarks Include this to access the full public API surface.
+ * @file GameFramework.hpp
+ * @brief Umbrella include and Doxygen entry point for the SnAPI.GameFramework module.
+ *
+ * @defgroup SnAPI_GameFramework SnAPI.GameFramework
+ * @brief World/node/component gameplay framework with optional subsystem and editor integration.
+ *
+ * `SnAPI.GameFramework` is the high-level runtime layer used to assemble games from:
+ * - a `GameRuntime` application host
+ * - one `World` that owns graph storage and subsystem state
+ * - `BaseNode`-derived objects that define hierarchy and identity
+ * - `BaseComponent`-derived objects that attach behavior and data to nodes
+ * - optional subsystem adapters for input, UI, audio, networking, physics, rendering, and scripting
+ *
+ * Mental model:
+ * - `GameRuntime` owns startup/shutdown and per-frame orchestration.
+ * - `World` is the authoritative owner of node/component storage and subsystem lifetimes.
+ * - `NodeHandle` / `ComponentHandle` are the stable public identity boundary.
+ * - Borrowed pointers are transient convenience views, not ownership.
+ *
+ * Threading:
+ * - Most graph mutation APIs are main-thread only unless a specific type states otherwise.
+ * - Handle copies are cheap value types, but borrowed pointers returned from handles or world lookups must not be cached.
+ *
+ * Include this header when you want the complete public API surface instead of selecting individual headers.
  */
 #include "Assert.h"
 #include "AssetRef.h"
@@ -54,6 +76,7 @@
 #include "Reflection.h"
 #include "RigidBodyComponent.h"
 #include "SSAOParamsNode.h"
+#include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
 #include "BloomParamsNode.h"
 #include "AtmosphereParamsNode.h"

@@ -22,9 +22,19 @@ float ClampNonNegative(const float Value)
     return std::max(0.0f, Value);
 }
 
+float ClampUnit(const float Value)
+{
+    return std::clamp(Value, 0.0f, 1.0f);
+}
+
 std::uint32_t ClampMinOne(const std::uint32_t Value)
 {
     return std::max<std::uint32_t>(1u, Value);
+}
+
+std::uint32_t ClampDebugMode(const std::uint32_t Value)
+{
+    return std::min<std::uint32_t>(Value, 5u);
 }
 
 std::uint64_t ViewportSelectionKey(const std::int64_t ViewportID)
@@ -83,6 +93,21 @@ const float& SSRParamsNode::GetScreenEdgeFade() const { return m_screenEdgeFade;
 
 float& SSRParamsNode::EditReflectionFade() { return m_reflectionFade; }
 const float& SSRParamsNode::GetReflectionFade() const { return m_reflectionFade; }
+
+float& SSRParamsNode::EditTemporalBlendFactor() { return m_temporalBlendFactor; }
+const float& SSRParamsNode::GetTemporalBlendFactor() const { return m_temporalBlendFactor; }
+
+float& SSRParamsNode::EditDisocclusionThreshold() { return m_disocclusionThreshold; }
+const float& SSRParamsNode::GetDisocclusionThreshold() const { return m_disocclusionThreshold; }
+
+float& SSRParamsNode::EditClampStrength() { return m_clampStrength; }
+const float& SSRParamsNode::GetClampStrength() const { return m_clampStrength; }
+
+float& SSRParamsNode::EditVelocityWeight() { return m_velocityWeight; }
+const float& SSRParamsNode::GetVelocityWeight() const { return m_velocityWeight; }
+
+std::uint32_t& SSRParamsNode::EditTemporalDebugMode() { return m_temporalDebugMode; }
+const std::uint32_t& SSRParamsNode::GetTemporalDebugMode() const { return m_temporalDebugMode; }
 
 void SSRParamsNode::OnCreate()
 {
@@ -188,6 +213,11 @@ bool SSRParamsNode::ApplyToPass()
         SSR->SetMaxBinarySteps(ClampMinOne(m_maxBinarySteps));
         SSR->SetScreenEdgeFade(ClampNonNegative(m_screenEdgeFade));
         SSR->SetReflectionFade(ClampNonNegative(m_reflectionFade));
+        SSR->SetTemporalBlendFactor(ClampUnit(m_temporalBlendFactor));
+        SSR->SetDisocclusionThreshold(ClampNonNegative(m_disocclusionThreshold));
+        SSR->SetClampStrength(ClampNonNegative(m_clampStrength));
+        SSR->SetVelocityWeight(ClampNonNegative(m_velocityWeight));
+        SSR->SetTemporalDebugMode(ClampDebugMode(m_temporalDebugMode));
         AppliedAny = true;
     }
 

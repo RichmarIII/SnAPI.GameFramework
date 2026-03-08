@@ -32,6 +32,7 @@ struct SkeletalMeshAssetRuntime;
 struct MaterialInstanceAssetRuntime;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 class SSAOParamsNode;
+class SSGIParamsNode;
 class SSRParamsNode;
 class BloomParamsNode;
 class AtmosphereParamsNode;
@@ -40,24 +41,87 @@ class HeightFogParamsNode;
 class ToneMapParamsNode;
 class WorldRenderSettings;
 #endif
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for pawn-class gameplay assets.
+ */
 using PawnBaseAssetRef = TAssetRef<PawnBase, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for runtime static-mesh assets.
+ */
 using StaticMeshAssetRef = TAssetRef<StaticMeshAssetRuntime, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for runtime skeletal-mesh assets.
+ */
 using SkeletalMeshAssetRef = TAssetRef<SkeletalMeshAssetRuntime, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for runtime material-instance assets.
+ */
 using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAssetRuntime, void>;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for SSAO parameter nodes.
+ */
 using SSAOParamsNodeAssetRef = TAssetRef<SSAOParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for SSGI parameter nodes.
+ */
+using SSGIParamsNodeAssetRef = TAssetRef<SSGIParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for SSR parameter nodes.
+ */
 using SSRParamsNodeAssetRef = TAssetRef<SSRParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for bloom parameter nodes.
+ */
 using BloomParamsNodeAssetRef = TAssetRef<BloomParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for atmosphere parameter nodes.
+ */
 using AtmosphereParamsNodeAssetRef = TAssetRef<AtmosphereParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for atmosphere-composite parameter nodes.
+ */
 using AtmosphereCompositeParamsNodeAssetRef = TAssetRef<AtmosphereCompositeParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for height-fog parameter nodes.
+ */
 using HeightFogParamsNodeAssetRef = TAssetRef<HeightFogParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for tone-map parameter nodes.
+ */
 using ToneMapParamsNodeAssetRef = TAssetRef<ToneMapParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for world render-settings assets.
+ */
 using WorldRenderSettingsAssetRef = TAssetRef<WorldRenderSettings, void>;
 #endif
 
 /**
- * @brief Built-in type name registrations for reflection.
- * @remarks These are used by TypeIdFromName and Variant conversions.
+ * @ingroup SnAPI_GameFramework
+ * @brief Built-in reflection type-name registrations.
+ *
+ * The `SNAPI_DEFINE_TYPE_NAME(...)` entries below provide stable textual names for the engine's
+ * built-in primitive, math, handle, asset-reference, and optional subsystem-specific types.
+ *
+ * These names participate in:
+ * - reflected `TypeId` lookup
+ * - `Variant` conversions and diagnostics
+ * - serialized or UI-facing type presentation
+ *
+ * The literal strings are part of the public reflection contract and should be treated as stable.
  */
 SNAPI_DEFINE_TYPE_NAME(void, "void")
 SNAPI_DEFINE_TYPE_NAME(bool, "bool")
@@ -82,6 +146,7 @@ SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRe
 SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>>")
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 SNAPI_DEFINE_TYPE_NAME(SSAOParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSAOParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(SSGIParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSGIParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSRParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSRParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(BloomParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::BloomParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(AtmosphereParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::AtmosphereParamsNode>")

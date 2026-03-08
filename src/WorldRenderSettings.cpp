@@ -27,12 +27,9 @@ void EnsureReferencedNode(IWorld& WorldRef,
 
     if (!InOutSpawned.IsNull() && InOutSpawned.Borrowed() != nullptr)
     {
-        if (auto* ExistingNode = InOutSpawned.Borrowed())
+        if (auto* ExistingNode = InOutSpawned.Borrowed(); NodeCast<TNodeType>(ExistingNode) != nullptr)
         {
-            if (auto* TypedNode = NodeCast<TNodeType>(ExistingNode))
-            {
-                TypedNode->OnCreate();
-            }
+            (void)WorldRef.RequestNodeOnCreate(InOutSpawned);
         }
         return;
     }
@@ -58,6 +55,9 @@ WorldRenderSettings::WorldRenderSettings(std::string Name)
 
 TAssetRef<SSAOParamsNode>& WorldRenderSettings::EditSSAOParams() { return m_ssaoParams; }
 const TAssetRef<SSAOParamsNode>& WorldRenderSettings::GetSSAOParams() const { return m_ssaoParams; }
+
+TAssetRef<SSGIParamsNode>& WorldRenderSettings::EditSSGIParams() { return m_ssgiParams; }
+const TAssetRef<SSGIParamsNode>& WorldRenderSettings::GetSSGIParams() const { return m_ssgiParams; }
 
 TAssetRef<SSRParamsNode>& WorldRenderSettings::EditSSRParams() { return m_ssrParams; }
 const TAssetRef<SSRParamsNode>& WorldRenderSettings::GetSSRParams() const { return m_ssrParams; }
@@ -116,6 +116,7 @@ void WorldRenderSettings::ApplyReferencedSettings()
 
     const NodeHandle ParentHandle = Handle();
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssaoParams, m_spawnedSSAO);
+    EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssgiParams, m_spawnedSSGI);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssrParams, m_spawnedSSR);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_bloomParams, m_spawnedBloom);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_atmosphereParams, m_spawnedAtmosphere);

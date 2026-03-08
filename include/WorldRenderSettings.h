@@ -13,12 +13,47 @@
 #include "Export.h"
 #include "HeightFogParamsNode.h"
 #include "SSAOParamsNode.h"
+#include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
 #include "ToneMapParamsNode.h"
 
 namespace SnAPI::GameFramework
 {
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Data-driven node that materializes referenced render-parameter nodes under itself.
+ *
+ * `WorldRenderSettings` is a convenience container for world-scoped post-processing and
+ * atmosphere configuration. Instead of requiring authors to place every parameter node
+ * manually, this node stores asset references and ensures matching parameter nodes exist
+ * as children when the settings node is created or edited.
+ *
+ * Core semantics:
+ * - each asset reference corresponds to at most one spawned child node owned by the world
+ * - null asset references destroy any previously spawned child for that slot
+ * - existing spawned nodes are reused when still alive and of the expected type
+ * - reused nodes have `OnCreate` requested again so they can reapply their settings safely
+ *
+ * Ownership and lifetime:
+ * - The asset references are data only; the referenced assets are not owned by this node.
+ * - Spawned child nodes are owned by the world graph under this node.
+ * - Spawned handles are internal implementation state and may be recreated as references change.
+ *
+ * Threading model:
+ * - Main-thread only.
+ *
+ * @warning
+ * Applying referenced settings depends on world/renderer readiness. This node should be
+ * created only after the relevant renderer/viewports exist, or its `OnCreate` work must
+ * be deferred by the caller/bootstrap sequence.
+ *
+ * @see RendererSystem
+ * @see SSAOParamsNode
+ * @see SSGIParamsNode
+ * @see SSRParamsNode
+ * @see BloomParamsNode
+ */
 class SNAPI_GAMEFRAMEWORK_API WorldRenderSettings : public BaseNode
 {
 public:
@@ -27,31 +62,69 @@ public:
     WorldRenderSettings();
     explicit WorldRenderSettings(std::string Name);
 
+    /** @brief Access the referenced SSAO parameter asset. @return Mutable asset reference. */
     TAssetRef<SSAOParamsNode>& EditSSAOParams();
+    /** @brief Access the referenced SSAO parameter asset. @return Const asset reference. */
     const TAssetRef<SSAOParamsNode>& GetSSAOParams() const;
 
+    /** @brief Access the referenced SSGI parameter asset. @return Mutable asset reference. */
+    TAssetRef<SSGIParamsNode>& EditSSGIParams();
+    /** @brief Access the referenced SSGI parameter asset. @return Const asset reference. */
+    const TAssetRef<SSGIParamsNode>& GetSSGIParams() const;
+
+    /** @brief Access the referenced SSR parameter asset. @return Mutable asset reference. */
     TAssetRef<SSRParamsNode>& EditSSRParams();
+    /** @brief Access the referenced SSR parameter asset. @return Const asset reference. */
     const TAssetRef<SSRParamsNode>& GetSSRParams() const;
 
+    /** @brief Access the referenced bloom parameter asset. @return Mutable asset reference. */
     TAssetRef<BloomParamsNode>& EditBloomParams();
+    /** @brief Access the referenced bloom parameter asset. @return Const asset reference. */
     const TAssetRef<BloomParamsNode>& GetBloomParams() const;
 
+    /** @brief Access the referenced atmosphere parameter asset. @return Mutable asset reference. */
     TAssetRef<AtmosphereParamsNode>& EditAtmosphereParams();
+    /** @brief Access the referenced atmosphere parameter asset. @return Const asset reference. */
     const TAssetRef<AtmosphereParamsNode>& GetAtmosphereParams() const;
 
+    /** @brief Access the referenced atmosphere-composite parameter asset. @return Mutable asset reference. */
     TAssetRef<AtmosphereCompositeParamsNode>& EditAtmosphereCompositeParams();
+    /** @brief Access the referenced atmosphere-composite parameter asset. @return Const asset reference. */
     const TAssetRef<AtmosphereCompositeParamsNode>& GetAtmosphereCompositeParams() const;
 
+    /** @brief Access the referenced height-fog parameter asset. @return Mutable asset reference. */
     TAssetRef<HeightFogParamsNode>& EditHeightFogParams();
+    /** @brief Access the referenced height-fog parameter asset. @return Const asset reference. */
     const TAssetRef<HeightFogParamsNode>& GetHeightFogParams() const;
 
+    /** @brief Access the referenced tone-map parameter asset. @return Mutable asset reference. */
     TAssetRef<ToneMapParamsNode>& EditToneMapParams();
+    /** @brief Access the referenced tone-map parameter asset. @return Const asset reference. */
     const TAssetRef<ToneMapParamsNode>& GetToneMapParams() const;
 
+    /**
+     * @brief Materialize or refresh referenced settings nodes.
+     * @remarks Called by normal node-creation flow and safe to invoke repeatedly.
+     */
     void OnCreate();
+    /**
+     * @brief Per-frame tick hook.
+     * @param DeltaSeconds Frame delta time in seconds.
+     * @remarks Currently a no-op placeholder kept for node contract symmetry.
+     */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
+    /**
+     * @brief Editor-only per-frame tick hook.
+     * @param DeltaSeconds Frame delta time in seconds.
+     * @remarks Currently a no-op placeholder.
+     */
     void EditorTick(float DeltaSeconds);
+    /**
+     * @brief Editor-only callback invoked after a reflected property changes.
+     * @param Name Name of the changed property.
+     * @remarks Reapplies referenced settings immediately.
+     */
     void EditorOnPropertyChanged(std::string_view Name);
 #endif
 
@@ -59,6 +132,7 @@ private:
     void ApplyReferencedSettings();
 
     TAssetRef<SSAOParamsNode> m_ssaoParams{};
+    TAssetRef<SSGIParamsNode> m_ssgiParams{};
     TAssetRef<SSRParamsNode> m_ssrParams{};
     TAssetRef<BloomParamsNode> m_bloomParams{};
     TAssetRef<AtmosphereParamsNode> m_atmosphereParams{};
@@ -67,6 +141,7 @@ private:
     TAssetRef<ToneMapParamsNode> m_toneMapParams{};
 
     NodeHandle m_spawnedSSAO{};
+    NodeHandle m_spawnedSSGI{};
     NodeHandle m_spawnedSSR{};
     NodeHandle m_spawnedBloom{};
     NodeHandle m_spawnedAtmosphere{};

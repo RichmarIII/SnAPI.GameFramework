@@ -274,7 +274,7 @@ void GFEditorIDPass::RenderScene(
 
     auto* GraphicsAPI = static_cast<SnAPI::Graphics::VulkanGraphicsAPI*>(SnAPI::Graphics::IGraphicsAPI::Instance());
     SNAPI_RENDERER_DEBUG_ASSERT_MSG(GraphicsAPI, "Graphics API is null");
-    if (!m_CameraPerFrameUBO)
+    if (!CurrentCameraPerFrameUBO())
     {
         SNAPI_RENDERER_LOG_WARNING("GFEditorIDPass: camera per-frame UBO is null, skipping draw");
         return;
@@ -380,7 +380,7 @@ void GFEditorIDPass::RenderScene(
                 ? static_cast<std::uint32_t>(EEditorIDObjectFlags::Gizmo)
                 : static_cast<std::uint32_t>(EEditorIDObjectFlags::None);
 
-            m_editorIDMaterialInstance->Buffer("GFEditorID_CameraData", m_CameraPerFrameUBO.get());
+            m_editorIDMaterialInstance->Buffer("GFEditorID_CameraData", CurrentCameraPerFrameUBO());
             m_editorIDMaterialInstance->PushConstant(&PushConstantData, sizeof(GFEditorIDCameraPerObject), 0);
             m_editorIDMaterialInstance->Commit();
             m_editorIDMaterialInstance->Bind(pCommandBuffer, Variant->PipelineLayout());
@@ -485,7 +485,7 @@ void GFEditorOverlayPass::RenderScene(
 
     const auto ViewNoRotation = ActiveCamera->ViewNoRotation();
     const auto PrevViewNoRotation = ActiveCamera->PreviousViewNoRotation();
-    if (!m_CameraPerFrameUBO)
+    if (!CurrentCameraPerFrameUBO())
     {
         SNAPI_RENDERER_LOG_WARNING("GFEditorOverlayPass: camera per-frame UBO is null, skipping draw");
         return;
@@ -585,7 +585,7 @@ void GFEditorOverlayPass::RenderScene(
             PushConstantData.AxisTag =
                 EditorImmediateAxisTag(RenderObject.get(), SnAPI::Graphics::ERenderPassType::EditorOverlay);
 
-            m_editorOverlayMaterialInstance->Buffer("GFEditorOverlay_CameraData", m_CameraPerFrameUBO.get());
+            m_editorOverlayMaterialInstance->Buffer("GFEditorOverlay_CameraData", CurrentCameraPerFrameUBO());
             m_editorOverlayMaterialInstance->PushConstant(&PushConstantData, sizeof(GFEditorOverlayCameraPerObject), 0);
             m_editorOverlayMaterialInstance->Commit();
             m_editorOverlayMaterialInstance->Bind(pCommandBuffer, Variant->PipelineLayout());

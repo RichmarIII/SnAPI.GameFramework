@@ -32,13 +32,63 @@ template<typename TBase, typename TNameTag>
 class TAssetRef;
 struct MaterialInstanceAssetRuntime;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Reflection-driven inspector panel for nodes, components, and other reflected objects.
+ *
+ * `UIPropertyPanel` builds editor widgets from `TypeRegistry` field metadata at runtime.
+ * It is the editor-facing bridge between reflected object models and a live UI tree.
+ * Typical usage binds either:
+ * - a plain reflected object via `BindObject()`
+ * - a node via `BindNode()`, which also enumerates currently attached components
+ *
+ * Core semantics:
+ * - Binding is borrowed; the panel never owns the inspected object.
+ * - Binding the same object again avoids a full rebuild and only re-syncs widget values.
+ * - `RefreshFromModel()` pushes current model state into existing widgets but does not
+ *   rediscover a changed component list.
+ * - Unsupported reflected field types remain visible as informational rows instead of
+ *   being silently dropped.
+ *
+ * Ownership and lifetime:
+ * - The caller owns the bound object and must keep it alive while the panel is bound.
+ * - UI element lifetime is owned by the attached `UIContext`.
+ * - Component pointers discovered through `BindNode()` are borrowed from the world and
+ *   are only valid while those components remain attached.
+ *
+ * Threading:
+ * - Main-thread only.
+ * - UI events, model writes, and synchronization all assume the owning `UIContext`
+ *   thread.
+ *
+ * @warning Binding a node does not make the component list self-updating. If components
+ *          are added or removed, call `BindNode()` again to rebuild the sections.
+ */
 class SNAPI_GAMEFRAMEWORK_API UIPropertyPanel final : public SnAPI::UI::UIScrollContainer
 {
 public:
+  /** @brief Construct an empty scroll-based property panel with editor-oriented default styling. */
   UIPropertyPanel();
 
+  /**
+   * @brief Initialize the panel as a UI element inside a context.
+   * @param Context Owning UI context.
+   * @param Id Element id assigned by the context.
+   *
+   * The panel does not build any inspector UI here; it only binds itself to the
+   * framework UI runtime. A subsequent `BindObject()` or `BindNode()` call is required
+   * to populate content.
+   */
   void Initialize(SnAPI::UI::UIContext* Context, SnAPI::UI::ElementId Id);
 
+  /**
+   * @brief Bind a reflected object instance using its static reflected type id.
+   * @tparam TObject Reflected object type.
+   * @param Instance Borrowed pointer to inspect.
+   * @return `true` when the binding is accepted, otherwise `false`.
+   *
+   * Passing `nullptr` clears the panel.
+   */
   template<typename TObject>
   bool BindObject(TObject* Instance)
   {
@@ -51,14 +101,58 @@ public:
     return BindObject(StaticTypeId<TObjectNoCv>(), const_cast<TObjectNoCv*>(Instance));
   }
 
+  /**
+   * @brief Bind an arbitrary reflected object instance by explicit type id.
+   * @param Type Reflected type to inspect.
+   * @param Instance Borrowed object pointer.
+   * @return `true` when the object is bound and the UI is available, otherwise `false`.
+   *
+   * If the same `Type` and `Instance` are already bound and the panel has already been
+   * built, this call skips the rebuild and only re-synchronizes model values into the
+   * existing editors.
+   */
   bool BindObject(const TypeId& Type, void* Instance);
+
+  /**
+   * @brief Bind a node and build one inspector section for the node plus one per currently attached component.
+   * @param Node Borrowed node pointer to inspect.
+   * @return `true` when the inspector UI was rebuilt successfully, otherwise `false`.
+   *
+   * Component discovery uses the node's world and owner handle. When the stored runtime
+   * identity on that handle has drifted, the implementation falls back to UUID-based
+   * component lookup so the inspector remains usable.
+   */
   bool BindNode(BaseNode* Node);
+
+  /**
+   * @brief Clear the current binding and destroy the generated inspector subtree.
+   *
+   * Any active pointer capture inside the property-panel subtree is released before the
+   * content elements are destroyed.
+   */
   void ClearObject();
+
+  /**
+   * @brief Push current model values into the existing editor widgets.
+   *
+   * This does not rebuild the UI tree. Use it when the underlying object changed but the
+   * reflected shape of the inspected type did not.
+   */
   void RefreshFromModel();
+
+  /**
+   * @brief Set the callback invoked when a component section requests a context menu.
+   * @param Handler Delegate receiving the owner node handle, component type id, and the
+   *        originating pointer event.
+   *
+   * The handler is stored by value. Replacing it overwrites the previous callback.
+   */
   void SetComponentContextMenuHandler(
     SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)> Handler);
 
+  /** @brief Forward routed UI events to the scroll container base implementation. */
   void OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context) override;
+  /** @brief Paint the panel through the scroll container base implementation. */
   void Paint(SnAPI::UI::UIPaintContext& Context) const override;
 
 private:
