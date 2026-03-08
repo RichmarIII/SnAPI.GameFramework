@@ -34,6 +34,7 @@ struct MaterialInstanceAssetRuntime;
 class SSAOParamsNode;
 class SSGIParamsNode;
 class SSRParamsNode;
+class TAAParamsNode;
 class BloomParamsNode;
 class AtmosphereParamsNode;
 class AtmosphereCompositeParamsNode;
@@ -77,6 +78,11 @@ using SSGIParamsNodeAssetRef = TAssetRef<SSGIParamsNode, void>;
  * @brief Asset-reference alias for SSR parameter nodes.
  */
 using SSRParamsNodeAssetRef = TAssetRef<SSRParamsNode, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for TAA parameter nodes.
+ */
+using TAAParamsNodeAssetRef = TAssetRef<TAAParamsNode, void>;
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Asset-reference alias for bloom parameter nodes.
@@ -148,6 +154,7 @@ SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI
 SNAPI_DEFINE_TYPE_NAME(SSAOParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSAOParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSGIParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSGIParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSRParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSRParamsNode>")
+SNAPI_DEFINE_TYPE_NAME(TAAParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::TAAParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(BloomParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::BloomParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(AtmosphereParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::AtmosphereParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(AtmosphereCompositeParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::AtmosphereCompositeParamsNode>")

@@ -95,6 +95,7 @@ struct RendererBootstrapSettings
     bool EnableSsao = true; /**< @brief Register SSAO pass chain in default pass graph. */
     bool EnableSsgi = true; /**< @brief Register SSGI trace/filter/composite passes in default pass graph. */
     bool EnableSsr = true; /**< @brief Register SSR + composite passes in default pass graph. */
+    bool EnableTaa = true; /**< @brief Register full-resolution temporal anti-aliasing in default pass graph. */
     bool EnableBloom = true; /**< @brief Register bloom pass in default pass graph. */
     bool EnableAtmosphere = true; /**< @brief Register atmosphere + composite passes in default pass graph. */
     bool EnableHeightFog = true; /**< @brief Register analytic height fog pass in default pass graph. */
@@ -1057,6 +1058,7 @@ private:
 #endif
     std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset> m_registeredViewportPassGraphs{}; /**< @brief Tracks preset assignment per viewport to prevent duplicate pass registration. */
     std::uint64_t m_renderViewportPassGraphRevision = 1; /**< @brief Monotonic revision incremented when viewport pass-graph topology changes. */
+    std::uint64_t m_taaFrameIndex = 0; /**< @brief Monotonic TAA jitter sample index advanced on rendered frames. */
     bool m_initialized = false; /**< @brief True when backend lifecycle is active through this subsystem. */
 };
 

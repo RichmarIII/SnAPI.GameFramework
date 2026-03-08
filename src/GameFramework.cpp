@@ -40,6 +40,7 @@
 #include "SSAOParamsNode.h"
 #include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
+#include "TAAParamsNode.h"
 #include "SkeletalMeshComponent.h"
 #include "SprintArmComponent.h"
 #include "StaticMeshComponent.h"
@@ -205,6 +206,16 @@ SNAPI_REFLECT_TYPE(TAssetRef<SSRParamsNode>, (TTypeBuilder<TAssetRef<SSRParamsNo
     .Field("AssetId",
            &TAssetRef<SSRParamsNode>::EditAssetId,
            &TAssetRef<SSRParamsNode>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(TAssetRef<TAAParamsNode>, (TTypeBuilder<TAssetRef<TAAParamsNode>>(TTypeNameV<TAssetRef<TAAParamsNode>>)
+    .Field("AssetName",
+           &TAssetRef<TAAParamsNode>::EditAssetName,
+           &TAssetRef<TAAParamsNode>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<TAAParamsNode>::EditAssetId,
+           &TAssetRef<TAAParamsNode>::GetAssetId)
     .Constructor<>()
     .Register()));
 
@@ -503,6 +514,26 @@ SNAPI_REFLECT_TYPE(SSRParamsNode, (TTypeBuilder<SSRParamsNode>(SSRParamsNode::kT
     .Constructor<>()
     .Register()));
 
+SNAPI_REFLECT_TYPE(TAAParamsNode, (TTypeBuilder<TAAParamsNode>(TAAParamsNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("ViewportID",
+           &TAAParamsNode::EditViewportID,
+           &TAAParamsNode::GetViewportID)
+    .Field("BlendFactor",
+           &TAAParamsNode::EditBlendFactor,
+           &TAAParamsNode::GetBlendFactor)
+    .Field("MotionBlendFactor",
+           &TAAParamsNode::EditMotionBlendFactor,
+           &TAAParamsNode::GetMotionBlendFactor)
+    .Field("ClampStrength",
+           &TAAParamsNode::EditClampStrength,
+           &TAAParamsNode::GetClampStrength)
+    .Field("Sharpen",
+           &TAAParamsNode::EditSharpen,
+           &TAAParamsNode::GetSharpen)
+    .Constructor<>()
+    .Register()));
+
 SNAPI_REFLECT_TYPE(BloomParamsNode, (TTypeBuilder<BloomParamsNode>(BloomParamsNode::kTypeName)
     .Base<BaseNode>()
     .Field("ViewportID",
@@ -734,6 +765,9 @@ SNAPI_REFLECT_TYPE(WorldRenderSettings, (TTypeBuilder<WorldRenderSettings>(World
     .Field("SSRParams",
            &WorldRenderSettings::EditSSRParams,
            &WorldRenderSettings::GetSSRParams)
+    .Field("TAAParams",
+           &WorldRenderSettings::EditTAAParams,
+           &WorldRenderSettings::GetTAAParams)
     .Field("BloomParams",
            &WorldRenderSettings::EditBloomParams,
            &WorldRenderSettings::GetBloomParams)
