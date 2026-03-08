@@ -531,6 +531,9 @@ SNAPI_REFLECT_TYPE(TAAParamsNode, (TTypeBuilder<TAAParamsNode>(TAAParamsNode::kT
     .Field("Sharpen",
            &TAAParamsNode::EditSharpen,
            &TAAParamsNode::GetSharpen)
+    .Field("JitterScale",
+           &TAAParamsNode::EditJitterScale,
+           &TAAParamsNode::GetJitterScale)
     .Constructor<>()
     .Register()));
 

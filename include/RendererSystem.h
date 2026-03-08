@@ -677,6 +677,9 @@ public:
      */
     std::uint64_t RenderViewportPassGraphRevision() const;
 
+    void SetDefaultTaaJitterScale(float Value);
+    void SetViewportTaaJitterScale(std::uint64_t ViewportID, float Value);
+
     /**
      * @brief Force swapchain recreation for the owned window.
      * @return `true` when recreation succeeded.
@@ -1058,6 +1061,8 @@ private:
 #endif
     std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset> m_registeredViewportPassGraphs{}; /**< @brief Tracks preset assignment per viewport to prevent duplicate pass registration. */
     std::uint64_t m_renderViewportPassGraphRevision = 1; /**< @brief Monotonic revision incremented when viewport pass-graph topology changes. */
+    float m_defaultTaaJitterScale = 1.0f; /**< @brief Default projection jitter amplitude scale applied to TAA-enabled world viewports. */
+    std::unordered_map<std::uint64_t, float> m_viewportTaaJitterScales{}; /**< @brief Optional per-viewport TAA jitter-scale overrides keyed by viewport id. */
     std::uint64_t m_taaFrameIndex = 0; /**< @brief Monotonic TAA jitter sample index advanced on rendered frames. */
     bool m_initialized = false; /**< @brief True when backend lifecycle is active through this subsystem. */
 };

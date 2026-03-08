@@ -232,6 +232,9 @@ struct TaaCameraJitterState
     SnAPI::Size2DU RenderExtent{};
     bool HasExtent{false};
     bool HasConflictingExtent{false};
+    float JitterScale{1.0f};
+    bool HasJitterScale{false};
+    bool HasConflictingJitterScale{false};
 };
 
 [[nodiscard]] static bool UsesWorldRenderingPreset(const ERenderViewportPassGraphPreset Preset)
@@ -281,10 +284,25 @@ struct TaaCameraJitterState
         (-2.0f * PixelOffsetY) / static_cast<float>(RenderExtent.y()));
 }
 
+[[nodiscard]] static float ResolveTaaJitterScale(
+    const std::unordered_map<std::uint64_t, float>& ViewportJitterScales,
+    const float DefaultJitterScale,
+    const std::uint64_t ViewportID)
+{
+    if (const auto It = ViewportJitterScales.find(ViewportID); It != ViewportJitterScales.end())
+    {
+        return It->second;
+    }
+
+    return DefaultJitterScale;
+}
+
 static void ApplyTaaProjectionJitter(SnAPI::Graphics::IGraphicsAPI* GraphicsApi,
                                      const bool bEnableTaa,
                                      const std::uint64_t FrameIndex,
-                                     const std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset>& RegisteredViewportPassGraphs)
+                                     const std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset>& RegisteredViewportPassGraphs,
+                                     const float DefaultJitterScale,
+                                     const std::unordered_map<std::uint64_t, float>& ViewportJitterScales)
 {
     if (!GraphicsApi)
     {
@@ -331,17 +349,27 @@ static void ApplyTaaProjectionJitter(SnAPI::Graphics::IGraphicsAPI* GraphicsApi,
         }
 
         auto& State = CameraStates[Camera];
+        const float ViewportJitterScale =
+            ResolveTaaJitterScale(ViewportJitterScales, DefaultJitterScale, static_cast<std::uint64_t>(ViewportID));
         if (!State.HasExtent)
         {
             State.RenderExtent = Config->RenderExtent;
             State.HasExtent = true;
-            continue;
         }
-
-        if (State.RenderExtent.x() != Config->RenderExtent.x() ||
-            State.RenderExtent.y() != Config->RenderExtent.y())
+        else if (State.RenderExtent.x() != Config->RenderExtent.x() ||
+                 State.RenderExtent.y() != Config->RenderExtent.y())
         {
             State.HasConflictingExtent = true;
+        }
+
+        if (!State.HasJitterScale)
+        {
+            State.JitterScale = ViewportJitterScale;
+            State.HasJitterScale = true;
+        }
+        else if (std::abs(State.JitterScale - ViewportJitterScale) > std::numeric_limits<float>::epsilon())
+        {
+            State.HasConflictingJitterScale = true;
         }
     }
 
@@ -353,12 +381,16 @@ static void ApplyTaaProjectionJitter(SnAPI::Graphics::IGraphicsAPI* GraphicsApi,
         }
 
         const auto CameraStateIt = CameraStates.find(Camera);
-        const SnAPI::Vector2DF Jitter = (bEnableTaa
-                                         && CameraStateIt != CameraStates.end()
-                                         && CameraStateIt->second.HasExtent
-                                         && !CameraStateIt->second.HasConflictingExtent)
-                                            ? ComputeTaaProjectionJitterNdc(FrameIndex, CameraStateIt->second.RenderExtent)
-                                            : SnAPI::Vector2DF::Zero();
+        SnAPI::Vector2DF Jitter = SnAPI::Vector2DF::Zero();
+        if (bEnableTaa
+            && CameraStateIt != CameraStates.end()
+            && CameraStateIt->second.HasExtent
+            && !CameraStateIt->second.HasConflictingExtent
+            && !CameraStateIt->second.HasConflictingJitterScale)
+        {
+            Jitter = ComputeTaaProjectionJitterNdc(FrameIndex, CameraStateIt->second.RenderExtent);
+            Jitter *= std::max(0.0f, CameraStateIt->second.JitterScale);
+        }
         Camera->ProjectionJitter(Jitter);
     }
 }
@@ -443,6 +475,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
 #endif
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
+    m_defaultTaaJitterScale = Other.m_defaultTaaJitterScale;
+    m_viewportTaaJitterScales = std::move(Other.m_viewportTaaJitterScales);
     m_taaFrameIndex = Other.m_taaFrameIndex;
     m_initialized = Other.m_initialized;
 
@@ -492,6 +526,8 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
 #endif
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
+    Other.m_defaultTaaJitterScale = 1.0f;
+    Other.m_viewportTaaJitterScales.clear();
     Other.m_taaFrameIndex = 0;
     Other.m_initialized = false;
 }
@@ -567,6 +603,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
 #endif
     m_registeredViewportPassGraphs = std::move(Other.m_registeredViewportPassGraphs);
     m_renderViewportPassGraphRevision = Other.m_renderViewportPassGraphRevision;
+    m_defaultTaaJitterScale = Other.m_defaultTaaJitterScale;
+    m_viewportTaaJitterScales = std::move(Other.m_viewportTaaJitterScales);
     m_taaFrameIndex = Other.m_taaFrameIndex;
     m_initialized = Other.m_initialized;
 
@@ -615,6 +653,8 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
 #endif
     Other.m_registeredViewportPassGraphs.clear();
     Other.m_renderViewportPassGraphRevision = 1;
+    Other.m_defaultTaaJitterScale = 1.0f;
+    Other.m_viewportTaaJitterScales.clear();
     Other.m_taaFrameIndex = 0;
     Other.m_initialized = false;
     return *this;
@@ -705,6 +745,8 @@ bool RendererSystem::Initialize(const RendererBootstrapSettings& Settings)
 #endif
         m_registeredViewportPassGraphs.clear();
         m_renderViewportPassGraphRevision = 1;
+        m_defaultTaaJitterScale = 1.0f;
+        m_viewportTaaJitterScales.clear();
         m_taaFrameIndex = 0;
     };
 
@@ -1181,6 +1223,7 @@ bool RendererSystem::DestroyRenderViewport(const std::uint64_t ViewportID)
     if (Destroyed || !m_graphics->GetRenderViewportConfig(RendererViewportID).has_value())
     {
         m_registeredViewportPassGraphs.erase(ViewportID);
+        m_viewportTaaJitterScales.erase(ViewportID);
     }
     return Destroyed;
 }
@@ -1878,6 +1921,20 @@ std::uint64_t RendererSystem::RenderViewportPassGraphRevision() const
     return m_renderViewportPassGraphRevision;
 }
 
+void RendererSystem::SetDefaultTaaJitterScale(const float Value)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    m_defaultTaaJitterScale = std::max(0.0f, Value);
+}
+
+void RendererSystem::SetViewportTaaJitterScale(const std::uint64_t ViewportID, const float Value)
+{
+    SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    GameLockGuard Lock(m_mutex);
+    m_viewportTaaJitterScales[ViewportID] = std::max(0.0f, Value);
+}
+
 bool RendererSystem::RecreateSwapChain()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
@@ -2551,7 +2608,12 @@ void RendererSystem::EndFrame()
         {
             {
                 SNAPI_GF_PROFILE_SCOPE("Renderer.ApplyTaaJitter", "Rendering");
-                ApplyTaaProjectionJitter(m_graphics, m_settings.EnableTaa, m_taaFrameIndex, m_registeredViewportPassGraphs);
+                ApplyTaaProjectionJitter(m_graphics,
+                                         m_settings.EnableTaa,
+                                         m_taaFrameIndex,
+                                         m_registeredViewportPassGraphs,
+                                         m_defaultTaaJitterScale,
+                                         m_viewportTaaJitterScales);
             }
 #if defined(SNAPI_GF_ENABLE_UI)
             {
@@ -2713,6 +2775,8 @@ void RendererSystem::ShutdownUnlocked()
     m_window.reset();
     m_registeredViewportPassGraphs.clear();
     m_renderViewportPassGraphRevision = 1;
+    m_defaultTaaJitterScale = 1.0f;
+    m_viewportTaaJitterScales.clear();
     m_taaFrameIndex = 0;
     m_initialized = false;
 }

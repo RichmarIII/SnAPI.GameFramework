@@ -72,6 +72,9 @@ const float& TAAParamsNode::GetClampStrength() const { return m_clampStrength; }
 float& TAAParamsNode::EditSharpen() { return m_sharpen; }
 const float& TAAParamsNode::GetSharpen() const { return m_sharpen; }
 
+float& TAAParamsNode::EditJitterScale() { return m_jitterScale; }
+const float& TAAParamsNode::GetJitterScale() const { return m_jitterScale; }
+
 void TAAParamsNode::OnCreate()
 {
     m_applyPending = true;
@@ -158,9 +161,22 @@ bool TAAParamsNode::ApplyToPass()
     }
 
     bool AppliedAny = false;
+    const float JitterScale = ClampNonNegative(m_jitterScale);
+    if (m_viewportID < 0)
+    {
+        Renderer.SetDefaultTaaJitterScale(JitterScale);
+        AppliedAny = true;
+    }
+
     const auto TargetViewports = ResolveTargetViewports(*Graphics, m_viewportID);
     for (const auto ViewportId : TargetViewports)
     {
+        if (m_viewportID >= 0)
+        {
+            Renderer.SetViewportTaaJitterScale(static_cast<std::uint64_t>(ViewportId), JitterScale);
+            AppliedAny = true;
+        }
+
         auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::TAA);
         auto* TAA = dynamic_cast<SnAPI::Graphics::TAAPass*>(Pass);
         if (!TAA)

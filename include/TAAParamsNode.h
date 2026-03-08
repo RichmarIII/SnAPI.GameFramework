@@ -39,6 +39,9 @@ public:
     float& EditSharpen();
     const float& GetSharpen() const;
 
+    float& EditJitterScale();
+    const float& GetJitterScale() const;
+
     void OnCreate();
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
@@ -56,6 +59,7 @@ private:
     float m_motionBlendFactor = 0.18f;
     float m_clampStrength = 0.10f;
     float m_sharpen = 0.0f;
+    float m_jitterScale = 1.0f;
 
     bool m_applyPending = true;
     std::uint64_t m_lastAppliedPassGraphRevision = 0;
