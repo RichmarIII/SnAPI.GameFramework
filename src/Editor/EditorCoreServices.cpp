@@ -2737,8 +2737,8 @@ bool EditorGameViewportOverlayService::EnsureOverlayElements(SnAPI::UI::UIContex
     auto HudPanelBuilder = OverlayContext.Root().Add(SnAPI::UI::UIPanel("Editor.GameViewportOverlay.HUD"));
     auto& HudPanel = HudPanelBuilder.Element();
     HudPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    HudPanel.Width().Set(SnAPI::UI::Sizing::Fixed(252.0f));
-    HudPanel.Height().Set(SnAPI::UI::Sizing::Fixed(126.0f));
+    HudPanel.Width().Set(SnAPI::UI::Sizing::Auto());
+    HudPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     HudPanel.HAlign().Set(SnAPI::UI::EAlignment::End);
     HudPanel.VAlign().Set(SnAPI::UI::EAlignment::End);
     HudPanel.ElementMargin().Set(SnAPI::UI::Margin{12.0f, 12.0f, 12.0f, 12.0f});
@@ -2753,7 +2753,7 @@ bool EditorGameViewportOverlayService::EnsureOverlayElements(SnAPI::UI::UIContex
     auto HudStatsBuilder = HudPanelBuilder.Add(SnAPI::UI::UIPanel("Editor.GameViewportOverlay.HUD.Stats"));
     auto& HudStats = HudStatsBuilder.Element();
     HudStats.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    HudStats.Width().Set(SnAPI::UI::Sizing::Fill());
+    HudStats.Width().Set(SnAPI::UI::Sizing::Auto());
     HudStats.Height().Set(SnAPI::UI::Sizing::Auto());
     HudStats.Gap().Set(12.0f);
     HudStats.Background().Set(SnAPI::UI::Color::Transparent());
@@ -2761,7 +2761,7 @@ bool EditorGameViewportOverlayService::EnsureOverlayElements(SnAPI::UI::UIContex
 
     auto HudFrameLabelBuilder = HudStatsBuilder.Add(SnAPI::UI::UIText("Frame: -- ms"));
     auto& HudFrameLabel = HudFrameLabelBuilder.Element();
-    HudFrameLabel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HudFrameLabel.Width().Set(SnAPI::UI::Sizing::Auto());
     HudFrameLabel.TextColor().Set(SnAPI::UI::Color{206, 212, 221, 255});
     HudFrameLabel.HAlign().Set(SnAPI::UI::EAlignment::Start);
     HudFrameLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
@@ -2769,7 +2769,7 @@ bool EditorGameViewportOverlayService::EnsureOverlayElements(SnAPI::UI::UIContex
 
     auto HudFpsLabelBuilder = HudStatsBuilder.Add(SnAPI::UI::UIText("FPS: --"));
     auto& HudFpsLabel = HudFpsLabelBuilder.Element();
-    HudFpsLabel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HudFpsLabel.Width().Set(SnAPI::UI::Sizing::Auto());
     HudFpsLabel.TextColor().Set(SnAPI::UI::Color{223, 227, 234, 255});
     HudFpsLabel.HAlign().Set(SnAPI::UI::EAlignment::Start);
     HudFpsLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Truncate);
@@ -2777,7 +2777,7 @@ bool EditorGameViewportOverlayService::EnsureOverlayElements(SnAPI::UI::UIContex
 
     auto HudGraphBuilder = HudPanelBuilder.Add(SnAPI::UI::UIRealtimeGraph("Frame Time / FPS"));
     auto& HudGraph = HudGraphBuilder.Element();
-    HudGraph.Width().Set(SnAPI::UI::Sizing::Fill());
+    HudGraph.Width().Set(SnAPI::UI::Sizing::Auto());
     HudGraph.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     HudGraph.SampleCapacity().Set(220u);
     HudGraph.AutoRange().Set(true);
