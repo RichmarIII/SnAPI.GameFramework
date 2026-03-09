@@ -1673,11 +1673,11 @@ void ApplyDefaultMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject,
 
     for (uint32_t SubMeshIndex = 0; SubMeshIndex < Source->SubMeshCount(); ++SubMeshIndex)
     {
-        if (SharedGBuffer)
+        if (SharedGBuffer && SharedGBuffer->Material())
         {
             RenderObject.SetMaterialInstance(SubMeshIndex, SharedGBuffer);
         }
-        if (SharedShadow)
+        if (SharedShadow && SharedShadow->Material())
         {
             RenderObject.SetShadowMaterialInstance(SubMeshIndex, SharedShadow);
         }

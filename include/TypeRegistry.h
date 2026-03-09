@@ -105,6 +105,7 @@ enum class EMethodFlagBits : uint32_t
     RpcNetServer = 1u << 2, /**< @brief Method is intended as server-target endpoint. */
     RpcNetClient = 1u << 3, /**< @brief Method is intended as client-target endpoint. */
     RpcNetMulticast = 1u << 4, /**< @brief Method is intended for server-initiated multicast dispatch. */
+    EditorAction = 1u << 5, /**< @brief Expose the method as an editor action button when inspector tooling supports it. */
 };
 
 /**

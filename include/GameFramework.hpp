@@ -38,6 +38,8 @@
 #include "ColliderComponent.h"
 #include "ComponentStorage.h"
 #include "DirectionalLightComponent.h"
+#include "EnvironmentCaptureComponent.h"
+#include "EnvironmentProbeNode.h"
 #include "SprintArmComponent.h"
 #include "Expected.h"
 #include "FollowTargetComponent.h"

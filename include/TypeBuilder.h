@@ -412,6 +412,7 @@ public:
      * fail at runtime.
      */
     template<typename FieldT>
+    requires (!std::is_function_v<FieldT>)
     TTypeBuilder& Field(const char* Name, FieldT T::*Member, FieldFlags Flags = {})
     {
         using Raw = std::remove_cv_t<FieldT>;

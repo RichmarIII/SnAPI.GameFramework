@@ -35,6 +35,8 @@
 #include "BloomParamsNode.h"
 #include "CameraComponent.h"
 #include "DirectionalLightComponent.h"
+#include "EnvironmentCaptureComponent.h"
+#include "EnvironmentProbeNode.h"
 #include "HeightFogParamsNode.h"
 #include "RenderAssetRuntime.h"
 #include "SSAOParamsNode.h"
@@ -82,6 +84,7 @@ static_assert(!std::is_polymorphic_v<InputComponent>, "InputComponent must be no
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 static_assert(!std::is_polymorphic_v<CameraComponent>, "CameraComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<DirectionalLightComponent>, "DirectionalLightComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<EnvironmentCaptureComponent>, "EnvironmentCaptureComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<SprintArmComponent>, "SprintArmComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<StaticMeshComponent>, "StaticMeshComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshComponent must be non-polymorphic runtime type");
@@ -321,6 +324,13 @@ SNAPI_REFLECT_TYPE(PlayerStart, (TTypeBuilder<PlayerStart>(PlayerStart::kTypeNam
            EFieldFlagBits::Replication)
     .Constructor<>()
     .Register()));
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+SNAPI_REFLECT_TYPE(EnvironmentProbeNode, (TTypeBuilder<EnvironmentProbeNode>(EnvironmentProbeNode::kTypeName)
+    .Base<BaseNode>()
+    .Constructor<>()
+    .Register()));
+#endif
 
 SNAPI_REFLECT_TYPE(MultiplayerConfigNode, (TTypeBuilder<MultiplayerConfigNode>(MultiplayerConfigNode::kTypeName)
     .Base<BaseNode>()
@@ -1064,6 +1074,29 @@ SNAPI_REFLECT_TYPE(DirectionalLightComponent, (TTypeBuilder<DirectionalLightComp
            &DirectionalLightComponent::EditSettings,
            &DirectionalLightComponent::GetSettings,
            EFieldFlagBits::Replication)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(EnvironmentCaptureComponent::Settings, (TTypeBuilder<EnvironmentCaptureComponent::Settings>(EnvironmentCaptureComponent::Settings::kTypeName)
+    .Field("ViewportID", &EnvironmentCaptureComponent::Settings::ViewportID)
+    .Field("FaceSize", &EnvironmentCaptureComponent::Settings::FaceSize)
+    .Field("FacesPerFrame", &EnvironmentCaptureComponent::Settings::FacesPerFrame)
+    .Field("Realtime", &EnvironmentCaptureComponent::Settings::Realtime)
+    .Field("CaptureResourceNameOverride", &EnvironmentCaptureComponent::Settings::CaptureResourceNameOverride)
+    .Field("ProjectionExtents", &EnvironmentCaptureComponent::Settings::ProjectionExtents)
+    .Field("InfluenceExtents", &EnvironmentCaptureComponent::Settings::InfluenceExtents)
+    .Field("Priority", &EnvironmentCaptureComponent::Settings::Priority)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(EnvironmentCaptureComponent, (TTypeBuilder<EnvironmentCaptureComponent>(EnvironmentCaptureComponent::kTypeName)
+    .Field("Settings",
+           &EnvironmentCaptureComponent::EditSettings,
+           &EnvironmentCaptureComponent::GetSettings)
+    .Field("CaptureState", &EnvironmentCaptureComponent::GetCaptureStateText)
+    .Field("CapturedFaces", &EnvironmentCaptureComponent::GetCapturedFaces)
+    .Method("Bake", &EnvironmentCaptureComponent::Bake, EMethodFlagBits::EditorAction)
+    .Method("CancelCapture", &EnvironmentCaptureComponent::CancelCapture, EMethodFlagBits::EditorAction)
     .Constructor<>()
     .Register()));
 

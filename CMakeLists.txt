@@ -103,6 +103,8 @@ set(SNAPI_GF_SOURCES
     src/CameraComponent.cpp
     src/ColliderComponent.cpp
     src/DirectionalLightComponent.cpp
+    src/EnvironmentCaptureComponent.cpp
+    src/EnvironmentProbeNode.cpp
     src/FollowTargetComponent.cpp
     src/GameplayHost.cpp
     src/GameplayRpcGateway.cpp

@@ -254,6 +254,10 @@ private:
     SnAPI::UI::ElementId Parent,
     std::string_view Label,
     std::string_view Reason);
+  void AddMethodActionEditors(
+    SnAPI::UI::ElementId Parent,
+    const TypeId& Type,
+    void* RootInstance);
 
   [[nodiscard]] EEditorKind ResolveEditorKind(const TypeId& Type) const;
   [[nodiscard]] bool IsNestedStructType(const TypeId& Type) const;

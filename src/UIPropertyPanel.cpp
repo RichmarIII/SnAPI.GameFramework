@@ -1203,7 +1203,14 @@ void UIPropertyPanel::BuildTypeIntoContainer(
 #endif
 
   const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
-  if (reflectedFields.empty())
+  const auto reflectedMethods = TypeRegistry::Instance().CollectMethods(Type);
+  const bool hasEditorActions = std::ranges::any_of(reflectedMethods, [](const ReflectedMethodRef& methodRef) {
+    return methodRef.Method
+        && methodRef.Method->ParamTypes.empty()
+        && methodRef.Method->Flags.Has(EMethodFlagBits::EditorAction);
+  });
+
+  if (reflectedFields.empty() && !hasEditorActions)
   {
     AddUnsupportedRow(Parent, PrettyTypeName(Type), "No reflected fields");
     return;
@@ -1219,6 +1226,135 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     auto path = PathPrefix;
     path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
     AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
+  }
+
+  AddMethodActionEditors(Parent, Type, RootInstance);
+}
+
+void UIPropertyPanel::AddMethodActionEditors(
+  const SnAPI::UI::ElementId Parent,
+  const TypeId& Type,
+  void* RootInstance)
+{
+  if (!m_Context || !RootInstance)
+  {
+    return;
+  }
+
+  const auto reflectedMethods = TypeRegistry::Instance().CollectMethods(Type);
+  std::vector<ReflectedMethodRef> actionMethods{};
+  actionMethods.reserve(reflectedMethods.size());
+  for (const ReflectedMethodRef& methodRef : reflectedMethods)
+  {
+    if (!methodRef.Method
+        || !methodRef.Method->ParamTypes.empty()
+        || !methodRef.Method->Flags.Has(EMethodFlagBits::EditorAction))
+    {
+      continue;
+    }
+
+    actionMethods.push_back(methodRef);
+  }
+
+  if (actionMethods.empty())
+  {
+    return;
+  }
+
+  const auto rowHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.ActionRow");
+  if (rowHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(Parent, rowHandle.Id);
+
+  if (auto* row = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(rowHandle.Id)))
+  {
+    row->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    row->Padding().Set(kRowPadding);
+    row->Gap().Set(8.0f);
+    row->Width().Set(SnAPI::UI::Sizing::Fill());
+    row->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    row->Background().Set(kRowBackground);
+    row->BorderColor().Set(kRowBorder);
+    row->BorderThickness().Set(1.0f);
+    row->CornerRadius().Set(4.0f);
+  }
+
+  const auto labelHandle = m_Context->CreateElement<SnAPI::UI::UIText>("Actions");
+  if (labelHandle.Id.Value != 0)
+  {
+    m_Context->AddChild(rowHandle.Id, labelHandle.Id);
+    if (auto* label = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(labelHandle.Id)))
+    {
+      label->Width().Set(SnAPI::UI::Sizing::Ratio(kLabelLaneRatio));
+      label->HAlign().Set(SnAPI::UI::EAlignment::Start);
+      label->VAlign().Set(SnAPI::UI::EAlignment::Center);
+      label->TextColor().Set(kLabelColor);
+    }
+  }
+
+  const auto actionsHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.ActionButtons");
+  if (actionsHandle.Id.Value == 0)
+  {
+    return;
+  }
+  m_Context->AddChild(rowHandle.Id, actionsHandle.Id);
+  if (auto* actions = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(actionsHandle.Id)))
+  {
+    actions->Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    actions->Width().Set(SnAPI::UI::Sizing::Ratio(kValueLaneRatio));
+    actions->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+    actions->VAlign().Set(SnAPI::UI::EAlignment::Center);
+    actions->Gap().Set(6.0f);
+    actions->Background().Set(Color::Transparent());
+    actions->BorderColor().Set(Color::Transparent());
+    actions->BorderThickness().Set(0.0f);
+  }
+
+  for (const ReflectedMethodRef& methodRef : actionMethods)
+  {
+    const MethodInfo* method = methodRef.Method;
+    const auto buttonHandle = m_Context->CreateElement<SnAPI::UI::UIButton>();
+    if (buttonHandle.Id.Value == 0)
+    {
+      continue;
+    }
+
+    m_Context->AddChild(actionsHandle.Id, buttonHandle.Id);
+    if (auto* button = dynamic_cast<SnAPI::UI::UIButton*>(&m_Context->GetElement(buttonHandle.Id)))
+    {
+      button->Width().Set(SnAPI::UI::Sizing::Auto());
+      button->Height().Set(SnAPI::UI::Sizing::Auto());
+      button->ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+      button->Background().Set(kValueBg);
+      button->BorderColor().Set(kValueBorder);
+      button->BorderThickness().Set(1.0f);
+      button->CornerRadius().Set(4.0f);
+
+      button->OnClick([this, method, RootInstance]() {
+        const auto Result = method->Invoke(RootInstance, {});
+        if (!Result)
+        {
+          return;
+        }
+        RefreshFromModel();
+      });
+    }
+
+    const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>(PrettyFieldName(method->Name));
+    if (textHandle.Id.Value == 0)
+    {
+      continue;
+    }
+
+    m_Context->AddChild(buttonHandle.Id, textHandle.Id);
+    if (auto* text = dynamic_cast<SnAPI::UI::UIText*>(&m_Context->GetElement(textHandle.Id)))
+    {
+      text->Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+      text->TextColor().Set(Color{210, 216, 226, 255});
+      text->TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+    }
   }
 }
 

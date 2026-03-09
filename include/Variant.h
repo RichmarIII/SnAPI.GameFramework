@@ -60,17 +60,16 @@ public:
      * The value is copied or moved into heap storage owned by the variant.
      */
     template<typename T>
-    static Variant FromValue(T Value)
+    static Variant FromValue(T&& Value)
     {
         using Decayed = std::decay_t<T>;
         Variant Result;
         Result.m_type = CachedTypeId<Decayed>();
-        Result.m_storage = std::make_shared<Decayed>(std::move(Value));
+        Result.m_storage = std::make_shared<Decayed>(std::forward<T>(Value));
         Result.m_isRef = false;
         Result.m_isConst = false;
         return Result;
     }
-
     /**
      * @brief Create a variant that references a mutable object.
      * @tparam T Referenced type.
@@ -239,7 +238,7 @@ private:
         return Type;
     }
 
-    TypeId m_type{}; /**< @brief Reflected type id of stored payload. */
+    TypeId m_type{VoidTypeId()}; /**< @brief Reflected type id of stored payload. */
     std::shared_ptr<void> m_storage{}; /**< @brief Owned object storage or non-owning reference wrapper pointer. */
     bool m_isRef = false; /**< @brief Reference mode flag (`true` for non-owning reference payload). */
     bool m_isConst = false; /**< @brief Const-reference qualifier for reference mode payloads. */
