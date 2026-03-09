@@ -97,14 +97,11 @@ const float& SSRParamsNode::GetReflectionFade() const { return m_reflectionFade;
 float& SSRParamsNode::EditTemporalBlendFactor() { return m_temporalBlendFactor; }
 const float& SSRParamsNode::GetTemporalBlendFactor() const { return m_temporalBlendFactor; }
 
-float& SSRParamsNode::EditDisocclusionThreshold() { return m_disocclusionThreshold; }
-const float& SSRParamsNode::GetDisocclusionThreshold() const { return m_disocclusionThreshold; }
-
 float& SSRParamsNode::EditClampStrength() { return m_clampStrength; }
 const float& SSRParamsNode::GetClampStrength() const { return m_clampStrength; }
 
-float& SSRParamsNode::EditVelocityWeight() { return m_velocityWeight; }
-const float& SSRParamsNode::GetVelocityWeight() const { return m_velocityWeight; }
+float& SSRParamsNode::EditMotionHistoryReset() { return m_motionHistoryReset; }
+const float& SSRParamsNode::GetMotionHistoryReset() const { return m_motionHistoryReset; }
 
 std::uint32_t& SSRParamsNode::EditTemporalDebugMode() { return m_temporalDebugMode; }
 const std::uint32_t& SSRParamsNode::GetTemporalDebugMode() const { return m_temporalDebugMode; }
@@ -214,9 +211,8 @@ bool SSRParamsNode::ApplyToPass()
         SSR->SetScreenEdgeFade(ClampNonNegative(m_screenEdgeFade));
         SSR->SetReflectionFade(ClampNonNegative(m_reflectionFade));
         SSR->SetTemporalBlendFactor(ClampUnit(m_temporalBlendFactor));
-        SSR->SetDisocclusionThreshold(ClampNonNegative(m_disocclusionThreshold));
         SSR->SetClampStrength(ClampNonNegative(m_clampStrength));
-        SSR->SetVelocityWeight(ClampNonNegative(m_velocityWeight));
+        SSR->SetMotionHistoryReset(ClampUnit(m_motionHistoryReset));
         SSR->SetTemporalDebugMode(ClampDebugMode(m_temporalDebugMode));
         AppliedAny = true;
     }

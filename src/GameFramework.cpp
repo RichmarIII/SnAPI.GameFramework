@@ -499,15 +499,12 @@ SNAPI_REFLECT_TYPE(SSRParamsNode, (TTypeBuilder<SSRParamsNode>(SSRParamsNode::kT
     .Field("TemporalBlendFactor",
            &SSRParamsNode::EditTemporalBlendFactor,
            &SSRParamsNode::GetTemporalBlendFactor)
-    .Field("DisocclusionThreshold",
-           &SSRParamsNode::EditDisocclusionThreshold,
-           &SSRParamsNode::GetDisocclusionThreshold)
     .Field("ClampStrength",
            &SSRParamsNode::EditClampStrength,
            &SSRParamsNode::GetClampStrength)
-    .Field("VelocityWeight",
-           &SSRParamsNode::EditVelocityWeight,
-           &SSRParamsNode::GetVelocityWeight)
+    .Field("MotionHistoryReset",
+           &SSRParamsNode::EditMotionHistoryReset,
+           &SSRParamsNode::GetMotionHistoryReset)
     .Field("TemporalDebugMode",
            &SSRParamsNode::EditTemporalDebugMode,
            &SSRParamsNode::GetTemporalDebugMode)

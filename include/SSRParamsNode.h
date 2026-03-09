@@ -115,20 +115,19 @@ public:
     /** @brief Read the temporal accumulation blend factor. @return Stored blend scalar. */
     const float& GetTemporalBlendFactor() const;
 
-    /** @brief Access the temporal disocclusion rejection threshold. @return Mutable non-negative threshold value. */
-    float& EditDisocclusionThreshold();
-    /** @brief Read the temporal disocclusion rejection threshold. @return Stored threshold value. */
-    const float& GetDisocclusionThreshold() const;
-
     /** @brief Access the history clamp expansion strength. @return Mutable non-negative clamp scalar. */
     float& EditClampStrength();
     /** @brief Read the history clamp expansion strength. @return Stored clamp scalar. */
     const float& GetClampStrength() const;
 
-    /** @brief Access the motion-vector weighting for temporal rejection. @return Mutable non-negative velocity weight. */
-    float& EditVelocityWeight();
-    /** @brief Read the motion-vector weighting for temporal rejection. @return Stored velocity weight. */
-    const float& GetVelocityWeight() const;
+    /**
+     * @brief Access the motion-driven history reset strength.
+     * @return Mutable scalar clamped to [0, 1] on upload.
+     * @remarks `0` ignores motion for history reset. `1` fully resets SSR history on detected motion.
+     */
+    float& EditMotionHistoryReset();
+    /** @brief Read the motion-driven history reset strength. @return Stored reset scalar in [0, 1]. */
+    const float& GetMotionHistoryReset() const;
 
     /** @brief Access the temporal debug visualization mode. @return Mutable debug selector where 0 = final result. */
     std::uint32_t& EditTemporalDebugMode();
@@ -165,9 +164,8 @@ private:
     float m_screenEdgeFade = 0.1f;
     float m_reflectionFade = 0.8f;
     float m_temporalBlendFactor = 0.10f;
-    float m_disocclusionThreshold = 0.02f;
     float m_clampStrength = 0.10f;
-    float m_velocityWeight = 12.0f;
+    float m_motionHistoryReset = 0.25f;
     std::uint32_t m_temporalDebugMode = 0;
 
     bool m_applyPending = true;

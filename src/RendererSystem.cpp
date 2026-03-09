@@ -4289,9 +4289,8 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
         SSR->SetThickness(0.015f);
         SSR->SetMaxDistance(0.25);
         SSR->SetTemporalBlendFactor(0.10f);
-        SSR->SetDisocclusionThreshold(0.02f);
         SSR->SetClampStrength(0.10f);
-        SSR->SetVelocityWeight(12.0f);
+        SSR->SetMotionHistoryReset(0.25f);
         SSR->SetTemporalDebugMode(0u);
         auto* RegisteredSSRPass = static_cast<SSRPass*>(m_graphics->RegisterPass(RendererViewportID, std::move(SSR)));
         if (TrackDefaultPassPointers)
@@ -4325,6 +4324,7 @@ bool RendererSystem::RegisterRenderViewportPassGraphUnlocked(const std::uint64_t
     {
         auto Atmosphere = std::make_unique<AtmospherePass>(std::move(AtmospherePassProperties));
         Atmosphere->SetFeature(AtmospherePass::Feature::World, m_settings.AtmosphereWorldMode);
+        Atmosphere->SetSunDirection(15,0,0);
         m_graphics->RegisterPass(RendererViewportID, std::move(Atmosphere));
         m_graphics->RegisterPass(RendererViewportID, std::make_unique<AtmosphereCompositePass>(std::move(AtmosphereCompositePassProperties)));
     }
