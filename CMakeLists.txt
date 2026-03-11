@@ -252,14 +252,24 @@ if (SNAPI_GF_BUILD_EDITOR)
         src/Editor/main.cpp
         src/Editor/EditorCameraComponent.cpp
         src/Editor/EditorAssetService.cpp
+        src/Editor/EditorAssetIconService.cpp
         src/Editor/ConduitEditor.cpp
         src/Editor/ConduitGraphCanvas.cpp
-        src/Editor/EditorCoreServices.cpp
+        src/Editor/EditorCommandService.cpp
+        src/Editor/EditorGameViewportOverlayService.cpp
         src/Editor/EditorLayout.cpp
+        src/Editor/EditorLayoutService.cpp
+        src/Editor/EditorPieService.cpp
+        src/Editor/EditorRootViewportService.cpp
+        src/Editor/EditorSceneService.cpp
+        src/Editor/EditorSelectionInteractionService.cpp
         src/Editor/EditorSelectionModel.cpp
+        src/Editor/EditorSelectionService.cpp
         src/Editor/EditorSceneBootstrap.cpp
         src/Editor/EditorTheme.cpp
+        src/Editor/EditorThemeService.cpp
         src/Editor/EditorTypeRegistration.cpp
+        src/Editor/EditorTransformInteractionService.cpp
         src/Editor/EditorViewportBinding.cpp
         src/Editor/EditorWorld.cpp
         src/Editor/GameEditor.cpp
