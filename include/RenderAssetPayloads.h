@@ -7,9 +7,13 @@
 #include <vector>
 
 #include "Expected.h"
+#include "IAsset.h"
+#include "TypeName.h"
 
 namespace SnAPI::GameFramework
 {
+
+using Float4Value = std::array<float, 4>;
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -153,7 +157,7 @@ struct SkeletalMeshPayload
  * @ingroup SnAPI_GameFramework
  * @brief Cooked payload describing a base material contract.
  */
-struct MaterialPayload
+struct MaterialPayload : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialPayload";
 
@@ -170,6 +174,13 @@ struct MaterialPayload
     bool FeatureInstancing = false; /**< @brief Enables per-instance data support. */
 
     bool operator==(const MaterialPayload&) const = default;
+
+    [[nodiscard]] std::string_view DisplayName() const override { return "Material"; }
+    [[nodiscard]] std::string_view FileExtension() const override { return ".material"; }
+    [[nodiscard]] std::string_view Category() const override { return "Rendering"; }
+    [[nodiscard]] Result Save(std::ostream& Output) const override;
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourceAssetKind() const override { return AssetKindMaterial(); }
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourcePayloadType() const override { return PayloadMaterial(); }
 };
 
 /**
@@ -178,6 +189,7 @@ struct MaterialPayload
  */
 struct MaterialScalarParamPayload
 {
+    static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialScalarParamPayload";
     std::string Name{}; /**< @brief Runtime parameter name. */
     float Value = 0.0f; /**< @brief Scalar override value. */
 
@@ -190,8 +202,9 @@ struct MaterialScalarParamPayload
  */
 struct MaterialVectorParamPayload
 {
+    static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialVectorParamPayload";
     std::string Name{}; /**< @brief Runtime parameter name. */
-    std::array<float, 4> Value{0.0f, 0.0f, 0.0f, 0.0f}; /**< @brief Four-component override value. */
+    Float4Value Value{0.0f, 0.0f, 0.0f, 0.0f}; /**< @brief Four-component override value. */
 
     bool operator==(const MaterialVectorParamPayload&) const = default;
 };
@@ -202,6 +215,7 @@ struct MaterialVectorParamPayload
  */
 struct MaterialTextureParamPayload
 {
+    static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialTextureParamPayload";
     std::string SlotName{}; /**< @brief Runtime texture-slot or resource name. */
     AssetRefPayload Texture{}; /**< @brief Referenced texture asset. */
     bool SRGB = true; /**< @brief `true` when the texture should be sampled as sRGB data. */
@@ -213,7 +227,7 @@ struct MaterialTextureParamPayload
  * @ingroup SnAPI_GameFramework
  * @brief Cooked payload for a material-instance asset.
  */
-struct MaterialInstancePayload
+struct MaterialInstancePayload : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI.GameFramework.MaterialInstancePayload";
 
@@ -223,6 +237,13 @@ struct MaterialInstancePayload
     std::vector<MaterialTextureParamPayload> Textures{}; /**< @brief Texture parameter overrides. */
 
     bool operator==(const MaterialInstancePayload&) const = default;
+
+    [[nodiscard]] std::string_view DisplayName() const override { return "Material Instance"; }
+    [[nodiscard]] std::string_view FileExtension() const override { return ".materialinstance"; }
+    [[nodiscard]] std::string_view Category() const override { return "Rendering"; }
+    [[nodiscard]] Result Save(std::ostream& Output) const override;
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourceAssetKind() const override { return AssetKindMaterialInstance(); }
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourcePayloadType() const override { return PayloadMaterialInstance(); }
 };
 
 /**
@@ -292,5 +313,15 @@ TExpected<void> SerializeMaterialInstancePayload(const MaterialInstancePayload& 
  * @brief Deserialize a `MaterialInstancePayload` from binary bytes.
  */
 TExpected<MaterialInstancePayload> DeserializeMaterialInstancePayload(const uint8_t* Bytes, size_t Size);
+
+} // namespace SnAPI::GameFramework
+
+namespace SnAPI::GameFramework
+{
+
+SNAPI_DEFINE_TYPE_NAME(Float4Value, "std::array<float,4>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialScalarParamPayload>, "std::vector<SnAPI::GameFramework::MaterialScalarParamPayload>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialVectorParamPayload>, "std::vector<SnAPI::GameFramework::MaterialVectorParamPayload>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialTextureParamPayload>, "std::vector<SnAPI::GameFramework::MaterialTextureParamPayload>")
 
 } // namespace SnAPI::GameFramework

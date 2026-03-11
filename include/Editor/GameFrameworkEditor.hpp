@@ -31,3 +31,4 @@
 #include "Editor/EditorWorld.h"
 #include "Editor/GameEditor.h"
 #include "Editor/IEditorService.h"
+#include "Conduit/Editor.h"

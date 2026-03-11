@@ -337,7 +337,7 @@ TExpected<void> SerializeReplicatedFieldsRecursive(
             {
                 return std::unexpected(ViewResult.error());
             }
-            FieldPtr = ViewResult->Borrowed();
+            FieldPtr = ViewResult->UnsafeBorrowed();
         }
         if (!FieldPtr && Field->Getter)
         {
@@ -346,7 +346,7 @@ TExpected<void> SerializeReplicatedFieldsRecursive(
             {
                 return std::unexpected(FieldResult.error());
             }
-            FieldPtr = FieldResult->Borrowed();
+            FieldPtr = FieldResult->UnsafeBorrowed();
         }
         if (!FieldPtr)
         {
@@ -420,7 +420,7 @@ TExpected<void> DeserializeReplicatedFieldsRecursive(
             {
                 return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
             }
-            FieldPtr = ViewResult->BorrowedMutable();
+            FieldPtr = ViewResult->UnsafeBorrowedMutable();
         }
         if (!FieldPtr && Field->Setter && Entry.Codec)
         {
@@ -445,16 +445,16 @@ TExpected<void> DeserializeReplicatedFieldsRecursive(
             {
                 return std::unexpected(FieldResult.error());
             }
-            if (!FieldResult->IsRef())
+            if (FieldResult->StorageKind() != Variant::EStorageKind::BorrowedMutable)
             {
+                if (FieldResult->StorageKind() == Variant::EStorageKind::BorrowedConst)
+                {
+                    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
+                }
                 return std::unexpected(
                     MakeError(EErrorCode::InvalidArgument, "Getter does not expose mutable storage"));
             }
-            if (FieldResult->IsConst())
-            {
-                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
-            }
-            FieldPtr = const_cast<void*>(FieldResult->Borrowed());
+            FieldPtr = FieldResult->UnsafeBorrowedMutable();
         }
         if (Field->IsConst)
         {

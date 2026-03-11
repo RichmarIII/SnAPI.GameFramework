@@ -1,12 +1,16 @@
 #include "TypeRegistration.h"
 
+#include "IAsset.h"
 #include "AssetRef.h"
 #include "BaseNode.h"
 #include "BuiltinTypes.h"
+#include "Conduit/Asset.h"
+#include "Conduit/ClassComponent.h"
 #include "GameplayRpcGateway.h"
 #include "Level.h"
 #include "LocalPlayer.h"
 #include "MultiplayerConfigNode.h"
+#include "NodeAsset.h"
 #include "PawnBase.h"
 #include "PlayerStart.h"
 #include "FollowTargetComponent.h"
@@ -55,6 +59,7 @@
 #include "TypeRegistry.h"
 #include "World.h"
 
+#include <array>
 #include <initializer_list>
 #include <type_traits>
 
@@ -68,6 +73,7 @@ static_assert(!std::is_polymorphic_v<InputIntentComponent>, "InputIntentComponen
 static_assert(!std::is_polymorphic_v<FollowTargetComponent>, "FollowTargetComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<RelevanceComponent>, "RelevanceComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<ScriptComponent>, "ScriptComponent must be non-polymorphic runtime type");
+static_assert(!std::is_polymorphic_v<Conduit::ClassComponent>, "Conduit::ClassComponent must be non-polymorphic runtime type");
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 static_assert(!std::is_polymorphic_v<AudioSourceComponent>, "AudioSourceComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<AudioListenerComponent>, "AudioListenerComponent must be non-polymorphic runtime type");
@@ -89,6 +95,10 @@ static_assert(!std::is_polymorphic_v<SprintArmComponent>, "SprintArmComponent mu
 static_assert(!std::is_polymorphic_v<StaticMeshComponent>, "StaticMeshComponent must be non-polymorphic runtime type");
 static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshComponent must be non-polymorphic runtime type");
 #endif
+
+SNAPI_REFLECT_TYPE(IAsset, (TTypeBuilder<IAsset>(IAsset::kTypeName)
+    .AsInterface()
+    .Register()));
 
 SNAPI_REFLECT_TYPE(BaseNode, (TTypeBuilder<BaseNode>(BaseNode::kTypeName)
     .Field("Name", &BaseNode::Name, &BaseNode::Name)
@@ -158,6 +168,185 @@ SNAPI_REFLECT_TYPE(TAssetRef<PawnBase>, (TTypeBuilder<TAssetRef<PawnBase>>(TType
     .Field("AssetId",
            &TAssetRef<PawnBase>::EditAssetId,
            &TAssetRef<PawnBase>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::SlotId, (TTypeBuilder<Conduit::SlotId>(TTypeNameV<Conduit::SlotId>)
+    .Field("Value", &Conduit::SlotId::Value)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::SerializedValue, (TTypeBuilder<Conduit::SerializedValue>(TTypeNameV<Conduit::SerializedValue>)
+    .Field("Type", &Conduit::SerializedValue::Type)
+    .Field("Bytes", &Conduit::SerializedValue::Bytes)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphViewportAsset, (TTypeBuilder<Conduit::GraphViewportAsset>(TTypeNameV<Conduit::GraphViewportAsset>)
+    .Field("PanX", &Conduit::GraphViewportAsset::PanX)
+    .Field("PanY", &Conduit::GraphViewportAsset::PanY)
+    .Field("Zoom", &Conduit::GraphViewportAsset::Zoom)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphNodeEditorAsset, (TTypeBuilder<Conduit::GraphNodeEditorAsset>(TTypeNameV<Conduit::GraphNodeEditorAsset>)
+    .Field("NodeId", &Conduit::GraphNodeEditorAsset::NodeId)
+    .Field("X", &Conduit::GraphNodeEditorAsset::X)
+    .Field("Y", &Conduit::GraphNodeEditorAsset::Y)
+    .Field("Width", &Conduit::GraphNodeEditorAsset::Width)
+    .Field("IsCollapsed", &Conduit::GraphNodeEditorAsset::IsCollapsed)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphCommentAsset, (TTypeBuilder<Conduit::GraphCommentAsset>(TTypeNameV<Conduit::GraphCommentAsset>)
+    .Field("Id", &Conduit::GraphCommentAsset::Id)
+    .Field("Title", &Conduit::GraphCommentAsset::Title)
+    .Field("X", &Conduit::GraphCommentAsset::X)
+    .Field("Y", &Conduit::GraphCommentAsset::Y)
+    .Field("Width", &Conduit::GraphCommentAsset::Width)
+    .Field("Height", &Conduit::GraphCommentAsset::Height)
+    .Field("ColorRgba", &Conduit::GraphCommentAsset::ColorRgba)
+    .Field("NodeIds", &Conduit::GraphCommentAsset::NodeIds)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphBookmarkAsset, (TTypeBuilder<Conduit::GraphBookmarkAsset>(TTypeNameV<Conduit::GraphBookmarkAsset>)
+    .Field("Id", &Conduit::GraphBookmarkAsset::Id)
+    .Field("Name", &Conduit::GraphBookmarkAsset::Name)
+    .Field("PanX", &Conduit::GraphBookmarkAsset::PanX)
+    .Field("PanY", &Conduit::GraphBookmarkAsset::PanY)
+    .Field("Zoom", &Conduit::GraphBookmarkAsset::Zoom)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphEditorAssetState, (TTypeBuilder<Conduit::GraphEditorAssetState>(TTypeNameV<Conduit::GraphEditorAssetState>)
+    .Field("Viewport", &Conduit::GraphEditorAssetState::Viewport)
+    .Field("Nodes", &Conduit::GraphEditorAssetState::Nodes)
+    .Field("Comments", &Conduit::GraphEditorAssetState::Comments)
+    .Field("Bookmarks", &Conduit::GraphEditorAssetState::Bookmarks)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphSlotAsset, (TTypeBuilder<Conduit::GraphSlotAsset>(TTypeNameV<Conduit::GraphSlotAsset>)
+    .Field("Name", &Conduit::GraphSlotAsset::Name)
+    .Field("Type", &Conduit::GraphSlotAsset::Type)
+    .Field("Kind", &Conduit::GraphSlotAsset::Kind)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphVariableAsset, (TTypeBuilder<Conduit::GraphVariableAsset>(TTypeNameV<Conduit::GraphVariableAsset>)
+    .Field("Id", &Conduit::GraphVariableAsset::Id)
+    .Field("Name", &Conduit::GraphVariableAsset::Name)
+    .Field("Type", &Conduit::GraphVariableAsset::Type)
+    .Field("DefaultValue", &Conduit::GraphVariableAsset::DefaultValue)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphNodeAsset, (TTypeBuilder<Conduit::GraphNodeAsset>(TTypeNameV<Conduit::GraphNodeAsset>)
+    .Field("Id", &Conduit::GraphNodeAsset::Id)
+    .Field("Kind", &Conduit::GraphNodeAsset::Kind)
+    .Field("BuiltinEntryPoint", &Conduit::GraphNodeAsset::BuiltinEntryPoint)
+    .Field("EntryPointName", &Conduit::GraphNodeAsset::EntryPointName)
+    .Field("VariableId", &Conduit::GraphNodeAsset::VariableId)
+    .Field("LabelName", &Conduit::GraphNodeAsset::LabelName)
+    .Field("FalseLabelName", &Conduit::GraphNodeAsset::FalseLabelName)
+    .Field("MemberName", &Conduit::GraphNodeAsset::MemberName)
+    .Field("ConstantValue", &Conduit::GraphNodeAsset::ConstantValue)
+    .Field("UnaryOp", &Conduit::GraphNodeAsset::UnaryOp)
+    .Field("BinaryOp", &Conduit::GraphNodeAsset::BinaryOp)
+    .Field("Input", &Conduit::GraphNodeAsset::Input)
+    .Field("Left", &Conduit::GraphNodeAsset::Left)
+    .Field("Right", &Conduit::GraphNodeAsset::Right)
+    .Field("Output", &Conduit::GraphNodeAsset::Output)
+    .Field("Condition", &Conduit::GraphNodeAsset::Condition)
+    .Field("Instance", &Conduit::GraphNodeAsset::Instance)
+    .Field("ReturnSlot", &Conduit::GraphNodeAsset::ReturnSlot)
+    .Field("OwnerType", &Conduit::GraphNodeAsset::OwnerType)
+    .Field("Inputs", &Conduit::GraphNodeAsset::Inputs)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::GraphAsset, (TTypeBuilder<Conduit::GraphAsset>(TTypeNameV<Conduit::GraphAsset>)
+    .Interface<IAsset>()
+    .Field("Name", &Conduit::GraphAsset::Name)
+    .Field("SelfType", &Conduit::GraphAsset::SelfType)
+    .Field("Slots", &Conduit::GraphAsset::Slots)
+    .Field("Variables", &Conduit::GraphAsset::Variables)
+    .Field("Nodes", &Conduit::GraphAsset::Nodes)
+    .Field("EditorState", &Conduit::GraphAsset::EditorState)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(Conduit::ClassAsset, (TTypeBuilder<Conduit::ClassAsset>(TTypeNameV<Conduit::ClassAsset>)
+    .Interface<IAsset>()
+    .Field("Name", &Conduit::ClassAsset::Name)
+    .Field("HostType", &Conduit::ClassAsset::HostType)
+    .Field("Graph", &Conduit::ClassAsset::Graph)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(NodeFieldAsset, (TTypeBuilder<NodeFieldAsset>(TTypeNameV<NodeFieldAsset>)
+    .Field("Name", &NodeFieldAsset::Name)
+    .Field("Value", &NodeFieldAsset::Value)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(NodeComponentAsset, (TTypeBuilder<NodeComponentAsset>(TTypeNameV<NodeComponentAsset>)
+    .Field("Id", &NodeComponentAsset::Id)
+    .Field("Type", &NodeComponentAsset::Type)
+    .Field("Fields", &NodeComponentAsset::Fields)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(NodeObjectAsset, (TTypeBuilder<NodeObjectAsset>(TTypeNameV<NodeObjectAsset>)
+    .Field("Id", &NodeObjectAsset::Id)
+    .Field("Type", &NodeObjectAsset::Type)
+    .Field("Name", &NodeObjectAsset::Name)
+    .Field("Active", &NodeObjectAsset::Active)
+    .Field("Fields", &NodeObjectAsset::Fields)
+    .Field("Components", &NodeObjectAsset::Components)
+    .Field("Children", &NodeObjectAsset::Children)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(NodeAsset, (TTypeBuilder<NodeAsset>(TTypeNameV<NodeAsset>)
+    .Interface<IAsset>()
+    .Field("Name", &NodeAsset::Name)
+    .Field("Nodes", &NodeAsset::Nodes)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(LevelAsset, (TTypeBuilder<LevelAsset>(TTypeNameV<LevelAsset>)
+    .Base<NodeAsset>()
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(WorldAsset, (TTypeBuilder<WorldAsset>(TTypeNameV<WorldAsset>)
+    .Base<NodeAsset>()
+    .Constructor<>()
+    .Register()));
+
+SNAPI_DEFINE_TYPE_NAME(TAssetRef<Conduit::GraphAsset>,
+                       "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::Conduit::GraphAsset>")
+SNAPI_REFLECT_TYPE(TAssetRef<Conduit::GraphAsset>, (TTypeBuilder<TAssetRef<Conduit::GraphAsset>>(TTypeNameV<TAssetRef<Conduit::GraphAsset>>)
+    .Field("AssetName",
+           &TAssetRef<Conduit::GraphAsset>::EditAssetName,
+           &TAssetRef<Conduit::GraphAsset>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<Conduit::GraphAsset>::EditAssetId,
+           &TAssetRef<Conduit::GraphAsset>::GetAssetId)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_DEFINE_TYPE_NAME(TAssetRef<Conduit::ClassAsset>,
+                       "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::Conduit::ClassAsset>")
+SNAPI_REFLECT_TYPE(TAssetRef<Conduit::ClassAsset>, (TTypeBuilder<TAssetRef<Conduit::ClassAsset>>(TTypeNameV<TAssetRef<Conduit::ClassAsset>>)
+    .Field("AssetName",
+           &TAssetRef<Conduit::ClassAsset>::EditAssetName,
+           &TAssetRef<Conduit::ClassAsset>::GetAssetName)
+    .Field("AssetId",
+           &TAssetRef<Conduit::ClassAsset>::EditAssetId,
+           &TAssetRef<Conduit::ClassAsset>::GetAssetId)
     .Constructor<>()
     .Register()));
 
@@ -288,7 +477,27 @@ SNAPI_REFLECT_TYPE(AssetRefPayload, (TTypeBuilder<AssetRefPayload>(TTypeNameV<As
     .Constructor<>()
     .Register()));
 
+SNAPI_REFLECT_TYPE(MaterialScalarParamPayload, (TTypeBuilder<MaterialScalarParamPayload>(TTypeNameV<MaterialScalarParamPayload>)
+    .Field("Name", &MaterialScalarParamPayload::Name)
+    .Field("Value", &MaterialScalarParamPayload::Value)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(MaterialVectorParamPayload, (TTypeBuilder<MaterialVectorParamPayload>(TTypeNameV<MaterialVectorParamPayload>)
+    .Field("Name", &MaterialVectorParamPayload::Name)
+    .Field("Value", &MaterialVectorParamPayload::Value)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(MaterialTextureParamPayload, (TTypeBuilder<MaterialTextureParamPayload>(TTypeNameV<MaterialTextureParamPayload>)
+    .Field("SlotName", &MaterialTextureParamPayload::SlotName)
+    .Field("Texture", &MaterialTextureParamPayload::Texture)
+    .Field("SRGB", &MaterialTextureParamPayload::SRGB)
+    .Constructor<>()
+    .Register()));
+
 SNAPI_REFLECT_TYPE(MaterialPayload, (TTypeBuilder<MaterialPayload>(TTypeNameV<MaterialPayload>)
+    .Interface<IAsset>()
     .Field("ShaderModule", &MaterialPayload::ShaderModule)
     .Field("ShadingModel", &MaterialPayload::ShadingModel)
     .Field("FeatureAlbedoMap", &MaterialPayload::FeatureAlbedoMap)
@@ -304,7 +513,11 @@ SNAPI_REFLECT_TYPE(MaterialPayload, (TTypeBuilder<MaterialPayload>(TTypeNameV<Ma
     .Register()));
 
 SNAPI_REFLECT_TYPE(MaterialInstancePayload, (TTypeBuilder<MaterialInstancePayload>(TTypeNameV<MaterialInstancePayload>)
+    .Interface<IAsset>()
     .Field("ParentMaterial", &MaterialInstancePayload::ParentMaterial)
+    .Field("Scalars", &MaterialInstancePayload::Scalars)
+    .Field("Vectors", &MaterialInstancePayload::Vectors)
+    .Field("Textures", &MaterialInstancePayload::Textures)
     .Constructor<>()
     .Register()));
 #endif
@@ -840,6 +1053,13 @@ SNAPI_REFLECT_TYPE(ScriptComponent, (TTypeBuilder<ScriptComponent>(ScriptCompone
     .Constructor<>()
     .Register()));
 
+SNAPI_REFLECT_TYPE(Conduit::ClassComponent, (TTypeBuilder<Conduit::ClassComponent>(Conduit::ClassComponent::kTypeName)
+    .Field("Class", &Conduit::ClassComponent::Class)
+    .Field("Bound", &Conduit::ClassComponent::IsBound)
+    .Field("LastError", &Conduit::ClassComponent::LastError)
+    .Constructor<>()
+    .Register()));
+
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 
 SNAPI_REFLECT_TYPE(AudioSourceComponent::Settings, (TTypeBuilder<AudioSourceComponent::Settings>(AudioSourceComponent::Settings::kTypeName)
@@ -1156,69 +1376,131 @@ void RegisterBuiltinTypes()
     VoidInfo.Align = 0;
     TypeRegistry::Instance().Register(std::move(VoidInfo));
 
-    auto RegisterPlain = [](const char* Name, size_t Size, size_t Align) {
+    auto RegisterPlain = []<typename T>(const char* Name) {
         TypeInfo Info;
         Info.Id = TypeIdFromName(Name);
         Info.Name = Name;
-        Info.Size = Size;
-        Info.Align = Align;
+        Info.Size = sizeof(T);
+        Info.Align = alignof(T);
+        Info.RuntimeOps = &GetTypeRuntimeOps<T>();
         (void)TypeRegistry::Instance().Register(std::move(Info));
     };
-    auto RegisterEnum = [](const char* Name,
-                           const size_t Size,
-                           const size_t Align,
+    auto RegisterEnum = []<typename T>(const char* Name,
                            const bool IsSigned,
                            const std::initializer_list<EnumValueInfo> Values) {
         TypeInfo Info;
         Info.Id = TypeIdFromName(Name);
         Info.Name = Name;
-        Info.Size = Size;
-        Info.Align = Align;
+        Info.Size = sizeof(T);
+        Info.Align = alignof(T);
+        Info.RuntimeOps = &GetTypeRuntimeOps<T>();
         Info.IsEnum = true;
         Info.EnumIsSigned = IsSigned;
         Info.EnumValues.assign(Values.begin(), Values.end());
         (void)TypeRegistry::Instance().Register(std::move(Info));
     };
 
-    RegisterPlain(TTypeNameV<bool>, sizeof(bool), alignof(bool));
-    RegisterPlain(TTypeNameV<int>, sizeof(int), alignof(int));
-    RegisterPlain(TTypeNameV<std::int64_t>, sizeof(std::int64_t), alignof(std::int64_t));
-    RegisterPlain(TTypeNameV<unsigned int>, sizeof(unsigned int), alignof(unsigned int));
-    RegisterPlain(TTypeNameV<std::uint64_t>, sizeof(std::uint64_t), alignof(std::uint64_t));
-    RegisterPlain(TTypeNameV<float>, sizeof(float), alignof(float));
-    RegisterPlain(TTypeNameV<double>, sizeof(double), alignof(double));
-    RegisterPlain(TTypeNameV<std::string>, sizeof(std::string), alignof(std::string));
-    RegisterPlain(TTypeNameV<std::vector<uint8_t>>, sizeof(std::vector<uint8_t>), alignof(std::vector<uint8_t>));
-    RegisterPlain(TTypeNameV<Uuid>, sizeof(Uuid), alignof(Uuid));
-    RegisterPlain(TTypeNameV<Vec2>, sizeof(Vec2), alignof(Vec2));
-    RegisterPlain(TTypeNameV<Vec3>, sizeof(Vec3), alignof(Vec3));
-    RegisterPlain(TTypeNameV<Vec4>, sizeof(Vec4), alignof(Vec4));
-    RegisterPlain(TTypeNameV<Quat>, sizeof(Quat), alignof(Quat));
-    RegisterPlain(TTypeNameV<NodeHandle>, sizeof(NodeHandle), alignof(NodeHandle));
-    RegisterPlain(TTypeNameV<ComponentHandle>, sizeof(ComponentHandle), alignof(ComponentHandle));
+    RegisterPlain.operator()<bool>(TTypeNameV<bool>);
+    RegisterPlain.operator()<int>(TTypeNameV<int>);
+    RegisterPlain.operator()<std::int64_t>(TTypeNameV<std::int64_t>);
+    RegisterPlain.operator()<unsigned int>(TTypeNameV<unsigned int>);
+    RegisterPlain.operator()<std::uint64_t>(TTypeNameV<std::uint64_t>);
+    RegisterPlain.operator()<float>(TTypeNameV<float>);
+    RegisterPlain.operator()<double>(TTypeNameV<double>);
+    RegisterPlain.operator()<std::string>(TTypeNameV<std::string>);
+    RegisterPlain.operator()<std::vector<uint8_t>>(TTypeNameV<std::vector<uint8_t>>);
+    RegisterPlain.operator()<Uuid>(TTypeNameV<Uuid>);
+    RegisterPlain.operator()<Vec2>(TTypeNameV<Vec2>);
+    RegisterPlain.operator()<Vec3>(TTypeNameV<Vec3>);
+    RegisterPlain.operator()<Vec4>(TTypeNameV<Vec4>);
+    RegisterPlain.operator()<Quat>(TTypeNameV<Quat>);
+    RegisterPlain.operator()<NodeHandle>(TTypeNameV<NodeHandle>);
+    RegisterPlain.operator()<ComponentHandle>(TTypeNameV<ComponentHandle>);
+    RegisterEnum.operator()<Conduit::EBuiltinEntryPoint>(
+        TTypeNameV<Conduit::EBuiltinEntryPoint>,
+        false,
+        {
+            EnumValueInfo{"None", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::None)},
+            EnumValueInfo{"OnCreate", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::OnCreate)},
+            EnumValueInfo{"PreTick", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::PreTick)},
+            EnumValueInfo{"Tick", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::Tick)},
+            EnumValueInfo{"FixedTick", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::FixedTick)},
+            EnumValueInfo{"LateTick", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::LateTick)},
+            EnumValueInfo{"PostTick", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::PostTick)},
+            EnumValueInfo{"OnDestroy", static_cast<std::uint64_t>(Conduit::EBuiltinEntryPoint::OnDestroy)},
+        });
+    RegisterEnum.operator()<Conduit::ESlotKind>(
+        TTypeNameV<Conduit::ESlotKind>,
+        false,
+        {
+            EnumValueInfo{"Value", static_cast<std::uint64_t>(Conduit::ESlotKind::Value)},
+            EnumValueInfo{"Handle", static_cast<std::uint64_t>(Conduit::ESlotKind::Handle)},
+        });
+    RegisterEnum.operator()<Conduit::EGraphAssetNodeKind>(
+        TTypeNameV<Conduit::EGraphAssetNodeKind>,
+        false,
+        {
+            EnumValueInfo{"EntryPoint", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::EntryPoint)},
+            EnumValueInfo{"Label", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::Label)},
+            EnumValueInfo{"Constant", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::Constant)},
+            EnumValueInfo{"VariableGet", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::VariableGet)},
+            EnumValueInfo{"VariableSet", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::VariableSet)},
+            EnumValueInfo{"UnaryIntrinsic", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::UnaryIntrinsic)},
+            EnumValueInfo{"BinaryIntrinsic", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::BinaryIntrinsic)},
+            EnumValueInfo{"Jump", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::Jump)},
+            EnumValueInfo{"Branch", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::Branch)},
+            EnumValueInfo{"SelfFieldRead", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::SelfFieldRead)},
+            EnumValueInfo{"SelfFieldWrite", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::SelfFieldWrite)},
+            EnumValueInfo{"SelfMethodCall", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::SelfMethodCall)},
+            EnumValueInfo{"InstanceFieldRead", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::InstanceFieldRead)},
+            EnumValueInfo{"InstanceFieldWrite", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::InstanceFieldWrite)},
+            EnumValueInfo{"InstanceMethodCall", static_cast<std::uint64_t>(Conduit::EGraphAssetNodeKind::InstanceMethodCall)},
+        });
+    RegisterEnum.operator()<Conduit::EUnaryIntrinsicOp>(
+        TTypeNameV<Conduit::EUnaryIntrinsicOp>,
+        false,
+        {
+            EnumValueInfo{"LogicalNot", static_cast<std::uint64_t>(Conduit::EUnaryIntrinsicOp::LogicalNot)},
+            EnumValueInfo{"Negate", static_cast<std::uint64_t>(Conduit::EUnaryIntrinsicOp::Negate)},
+        });
+    RegisterEnum.operator()<Conduit::EBinaryIntrinsicOp>(
+        TTypeNameV<Conduit::EBinaryIntrinsicOp>,
+        false,
+        {
+            EnumValueInfo{"Add", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Add)},
+            EnumValueInfo{"Subtract", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Subtract)},
+            EnumValueInfo{"Multiply", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Multiply)},
+            EnumValueInfo{"Divide", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Divide)},
+            EnumValueInfo{"Equal", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Equal)},
+            EnumValueInfo{"NotEqual", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::NotEqual)},
+            EnumValueInfo{"Less", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Less)},
+            EnumValueInfo{"LessEqual", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::LessEqual)},
+            EnumValueInfo{"Greater", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::Greater)},
+            EnumValueInfo{"GreaterEqual", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::GreaterEqual)},
+            EnumValueInfo{"LogicalAnd", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::LogicalAnd)},
+            EnumValueInfo{"LogicalOr", static_cast<std::uint64_t>(Conduit::EBinaryIntrinsicOp::LogicalOr)},
+        });
 #if defined(SNAPI_GF_ENABLE_UI)
-    RegisterPlain(TTypeNameV<SnAPI::UI::Color>, sizeof(SnAPI::UI::Color), alignof(SnAPI::UI::Color));
+    RegisterPlain.operator()<SnAPI::UI::Color>(TTypeNameV<SnAPI::UI::Color>);
 #endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
-    RegisterPlain(TTypeNameV<ECollisionFilterBits>, sizeof(ECollisionFilterBits), alignof(ECollisionFilterBits));
-    RegisterPlain(TTypeNameV<CollisionFilterFlags>, sizeof(CollisionFilterFlags), alignof(CollisionFilterFlags));
-    RegisterEnum(
+    RegisterPlain.operator()<ECollisionFilterBits>(TTypeNameV<ECollisionFilterBits>);
+    RegisterPlain.operator()<CollisionFilterFlags>(TTypeNameV<CollisionFilterFlags>);
+    RegisterEnum.operator()<SnAPI::Physics::EBodyType>(
         TTypeNameV<SnAPI::Physics::EBodyType>,
-        sizeof(SnAPI::Physics::EBodyType),
-        alignof(SnAPI::Physics::EBodyType),
         false,
         {
             EnumValueInfo{"Static", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Static)},
             EnumValueInfo{"Kinematic", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Kinematic)},
             EnumValueInfo{"Dynamic", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Dynamic)},
         });
-    RegisterPlain(TTypeNameV<SnAPI::Physics::EShapeType>, sizeof(SnAPI::Physics::EShapeType), alignof(SnAPI::Physics::EShapeType));
+    RegisterPlain.operator()<SnAPI::Physics::EShapeType>(TTypeNameV<SnAPI::Physics::EShapeType>);
 #endif
 #if defined(SNAPI_GF_ENABLE_INPUT)
-    RegisterPlain(TTypeNameV<SnAPI::Input::EKey>, sizeof(SnAPI::Input::EKey), alignof(SnAPI::Input::EKey));
-    RegisterPlain(TTypeNameV<SnAPI::Input::EGamepadAxis>, sizeof(SnAPI::Input::EGamepadAxis), alignof(SnAPI::Input::EGamepadAxis));
-    RegisterPlain(TTypeNameV<SnAPI::Input::EGamepadButton>, sizeof(SnAPI::Input::EGamepadButton), alignof(SnAPI::Input::EGamepadButton));
-    RegisterPlain(TTypeNameV<SnAPI::Input::DeviceId>, sizeof(SnAPI::Input::DeviceId), alignof(SnAPI::Input::DeviceId));
+    RegisterPlain.operator()<SnAPI::Input::EKey>(TTypeNameV<SnAPI::Input::EKey>);
+    RegisterPlain.operator()<SnAPI::Input::EGamepadAxis>(TTypeNameV<SnAPI::Input::EGamepadAxis>);
+    RegisterPlain.operator()<SnAPI::Input::EGamepadButton>(TTypeNameV<SnAPI::Input::EGamepadButton>);
+    RegisterPlain.operator()<SnAPI::Input::DeviceId>(TTypeNameV<SnAPI::Input::DeviceId>);
 #endif
 
     RegisterSerializationDefaults();

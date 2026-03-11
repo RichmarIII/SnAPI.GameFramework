@@ -10,6 +10,7 @@
 #include "AssetPipelineIds.h"
 #include "AssetPipelineSerializers.h"
 #include "BaseNode.h"
+#include "Conduit/Asset.h"
 #include "IAssetCooker.h"
 #include "IAssetImporter.h"
 #include "Level.h"
@@ -36,6 +37,11 @@ std::unique_ptr<SnAPI::AssetPipeline::IAssetCooker> CreateTextureCompressorCooke
 
 namespace SnAPI::GameFramework
 {
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateAuthoredAssetJsonImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateAuthoredAssetPassThroughCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateNodeSourceCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateLevelSourceCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateWorldSourceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImporter();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetAssimpImporter();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker();
@@ -320,6 +326,54 @@ public:
         return ::SnAPI::AssetPipeline::UniqueVoidPtr(LoadedWorld, [](void* Ptr) {
             delete static_cast<World*>(Ptr);
         });
+    }
+};
+
+/**
+ * @brief AssetFactory for authored Conduit graph assets.
+ */
+class TConduitGraphFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<Conduit::GraphAsset>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadConduitGraph();
+    }
+
+protected:
+    std::expected<Conduit::GraphAsset, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<Conduit::GraphAsset>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        return std::move(*PayloadResult);
+    }
+};
+
+/**
+ * @brief AssetFactory for authored Conduit class assets.
+ */
+class TConduitClassFactory final : public ::SnAPI::AssetPipeline::TAssetFactory<Conduit::ClassAsset>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadConduitClass();
+    }
+
+protected:
+    std::expected<Conduit::ClassAsset, std::string> DoLoad(const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<Conduit::ClassAsset>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        return std::move(*PayloadResult);
     }
 };
 
@@ -685,6 +739,11 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
     Registry.Register(CreateNodePayloadSerializer());
     Registry.Register(CreateLevelPayloadSerializer());
     Registry.Register(CreateWorldPayloadSerializer());
+    Registry.Register(CreateNodeSourcePayloadSerializer());
+    Registry.Register(CreateLevelSourcePayloadSerializer());
+    Registry.Register(CreateWorldSourcePayloadSerializer());
+    Registry.Register(CreateConduitGraphPayloadSerializer());
+    Registry.Register(CreateConduitClassPayloadSerializer());
     Registry.Register(CreateStaticMeshPayloadSerializer());
     Registry.Register(CreateSkeletalMeshPayloadSerializer());
     Registry.Register(CreateMaterialPayloadSerializer());
@@ -704,6 +763,8 @@ void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manage
     Manager.RegisterFactory<BaseNode>(std::make_unique<TNodeFactory>());
     Manager.RegisterFactory<Level>(std::make_unique<TLevelFactory>());
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
+    Manager.RegisterFactory<Conduit::GraphAsset>(std::make_unique<TConduitGraphFactory>());
+    Manager.RegisterFactory<Conduit::ClassAsset>(std::make_unique<TConduitClassFactory>());
     Manager.RegisterFactory<MaterialAssetRuntime>(std::make_unique<TMaterialFactory>());
     Manager.RegisterFactory<MaterialInstanceAssetRuntime>(std::make_unique<TMaterialInstanceFactory>());
 #if defined(SNAPI_GF_ENABLE_RENDERER)
@@ -722,6 +783,12 @@ void RegisterAssetPipelineSourceStages(::SnAPI::AssetPipeline::AssetManager& Man
 
     Manager.RegisterImporter(TextureCompressorPlugin::CreateTextureCompressorImporter());
     Manager.RegisterCooker(TextureCompressorPlugin::CreateTextureCompressorCooker());
+
+    Manager.RegisterImporter(CreateAuthoredAssetJsonImporter());
+    Manager.RegisterCooker(CreateAuthoredAssetPassThroughCooker());
+    Manager.RegisterCooker(CreateNodeSourceCooker());
+    Manager.RegisterCooker(CreateLevelSourceCooker());
+    Manager.RegisterCooker(CreateWorldSourceCooker());
 
     Manager.RegisterImporter(CreateRenderAssetAssimpImporter());
     Manager.RegisterImporter(CreateRenderAssetJsonImporter());

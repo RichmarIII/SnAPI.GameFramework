@@ -352,6 +352,43 @@ private:
         }
     }
 
+    template<typename SetterMethod, typename Raw>
+    static Result ApplyRawSetter(T* Typed, SetterMethod Setter, const void* ValuePtr)
+    {
+        using SetterArg = typename TSetterTraits<SetterMethod>::ArgType;
+        using SetterReturn = typename TSetterTraits<SetterMethod>::ReturnType;
+        using SetterRaw = std::remove_cvref_t<SetterArg>;
+        using SetterRet = std::remove_cvref_t<SetterReturn>;
+
+        static_assert(std::is_same_v<SetterRaw, Raw>, "Setter parameter type must match reflected field type");
+        static_assert(IsSupportedSetterReturnV<SetterReturn>, "Setter must return void, bool, or Result");
+
+        if (!ValuePtr)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null setter value"));
+        }
+
+        const SetterRaw& TypedValue = *static_cast<const SetterRaw*>(ValuePtr);
+        SetterRaw SetterValue = TypedValue;
+        if constexpr (std::is_same_v<SetterRet, void>)
+        {
+            (Typed->*Setter)(static_cast<SetterArg>(SetterValue));
+            return Ok();
+        }
+        else if constexpr (std::is_same_v<SetterRet, bool>)
+        {
+            if (!(Typed->*Setter)(static_cast<SetterArg>(SetterValue)))
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Setter rejected value"));
+            }
+            return Ok();
+        }
+        else
+        {
+            return (Typed->*Setter)(static_cast<SetterArg>(SetterValue));
+        }
+    }
+
 public:
     /**
      * @brief Construct a builder for a reflected type name.
@@ -366,6 +403,8 @@ public:
         m_info.Id = TypeIdFromName(Name);
         m_info.Size = sizeof(T);
         m_info.Align = alignof(T);
+        m_info.RuntimeOps = &GetTypeRuntimeOps<T>();
+        m_info.IsAbstract = std::is_abstract_v<T>;
         m_info.NodeOnCreate = NodeOnCreateInvokerForType();
 #if defined(WITH_EDITOR) && WITH_EDITOR
         m_info.EditorPropertyChanged = EditorOnPropertyChangedInvokerForType();
@@ -389,6 +428,55 @@ public:
         const TypeId BaseId = StaticTypeId<BaseT>();
         (void)TypeRegistry::Instance().Find(BaseId); // triggers lazy ensure on miss
         m_info.BaseTypes.push_back(BaseId);
+        m_info.DirectCasts.push_back(TypeCastInfo{
+            .TargetType = BaseId,
+            .CastMutable = [] (void* Instance) -> void* {
+                return static_cast<BaseT*>(static_cast<T*>(Instance));
+            },
+            .CastConst = [] (const void* Instance) -> const void* {
+                return static_cast<const BaseT*>(static_cast<const T*>(Instance));
+            },
+        });
+        return *this;
+    }
+
+    /**
+     * @brief Register one direct reflected interface/abstract relationship.
+     * @tparam InterfaceT Reflected interface type.
+     * @return Builder reference for chaining.
+     *
+     * Interfaces participate in `TypeRegistry::IsA()` and `Derived()` but are stored separately
+     * from concrete base inheritance so tooling can distinguish them when needed.
+     */
+    template<typename InterfaceT>
+    TTypeBuilder& Interface()
+    {
+        static_assert(std::is_abstract_v<InterfaceT>,
+                      "Interface<> expects an abstract/interface reflected type");
+
+        const TypeId InterfaceId = StaticTypeId<InterfaceT>();
+        (void)TypeRegistry::Instance().Find(InterfaceId); // triggers lazy ensure on miss
+        m_info.InterfaceTypes.push_back(InterfaceId);
+        m_info.DirectCasts.push_back(TypeCastInfo{
+            .TargetType = InterfaceId,
+            .CastMutable = [] (void* Instance) -> void* {
+                return static_cast<InterfaceT*>(static_cast<T*>(Instance));
+            },
+            .CastConst = [] (const void* Instance) -> const void* {
+                return static_cast<const InterfaceT*>(static_cast<const T*>(Instance));
+            },
+        });
+        return *this;
+    }
+
+    /**
+     * @brief Mark the reflected type itself as an interface contract.
+     * @return Builder reference for chaining.
+     */
+    TTypeBuilder& AsInterface()
+    {
+        m_info.IsInterface = true;
+        m_info.IsAbstract = true;
         return *this;
     }
 
@@ -454,6 +542,33 @@ public:
             else
             {
                 const Raw& NewValue = Ref->get();
+                const bool Changed = !ValuesEqual<Raw>(Typed->*Member, NewValue);
+                if (Changed)
+                {
+                    Typed->*Member = NewValue;
+                }
+                NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
+                return Ok();
+            }
+        };
+        Info.RawSetter = [Member, Name](void* Instance, const void* ValuePtr) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            if (!ValuePtr)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null value"));
+            }
+
+            auto* Typed = static_cast<T*>(Instance);
+            if constexpr (std::is_const_v<FieldT>)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot assign to const field"));
+            }
+            else
+            {
+                const Raw& NewValue = *static_cast<const Raw*>(ValuePtr);
                 const bool Changed = !ValuesEqual<Raw>(Typed->*Member, NewValue);
                 if (Changed)
                 {
@@ -604,6 +719,14 @@ public:
             auto* Typed = static_cast<T*>(Instance);
             return ApplySetter<SetterMethod, Raw>(Typed, Setter, Value);
         };
+        Info.RawSetter = [Setter](void* Instance, const void* ValuePtr) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            auto* Typed = static_cast<T*>(Instance);
+            return ApplyRawSetter<SetterMethod, Raw>(Typed, Setter, ValuePtr);
+        };
         Info.IsConst = false;
         m_info.Fields.push_back(std::move(Info));
         return *this;
@@ -664,6 +787,42 @@ public:
             }
 
             auto SetResult = ApplySetter<SetterMethod, Raw>(Typed, Setter, Value);
+            if (!SetResult)
+            {
+                return std::unexpected(SetResult.error());
+            }
+
+            bool Changed = true;
+            if constexpr (std::copy_constructible<Raw>)
+            {
+                if constexpr (IsEqualityComparableV<Raw>)
+                {
+                    const Raw AfterValue = static_cast<Raw>((Typed->*Getter)());
+                    Changed = !BeforeValue.has_value() || !ValuesEqual(*BeforeValue, AfterValue);
+                }
+            }
+
+            NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
+            return Ok();
+        };
+        Info.RawSetter = [Getter, Setter, Name](void* Instance, const void* ValuePtr) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            if (!ValuePtr)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null value"));
+            }
+
+            auto* Typed = static_cast<T*>(Instance);
+            std::optional<Raw> BeforeValue{};
+            if constexpr (std::copy_constructible<Raw>)
+            {
+                BeforeValue.emplace(static_cast<Raw>((Typed->*Getter)()));
+            }
+
+            auto SetResult = ApplyRawSetter<SetterMethod, Raw>(Typed, Setter, ValuePtr);
             if (!SetResult)
             {
                 return std::unexpected(SetResult.error());
@@ -819,6 +978,27 @@ public:
             NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
             return Ok();
         };
+        Info.RawSetter = [Getter, Name](void* Instance, const void* ValuePtr) -> Result {
+            if (!Instance)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+            }
+            if (!ValuePtr)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null value"));
+            }
+
+            auto* Typed = static_cast<T*>(Instance);
+            Raw& FieldRef = (Typed->*Getter)();
+            const Raw& NewValue = *static_cast<const Raw*>(ValuePtr);
+            const bool Changed = !ValuesEqual<Raw>(FieldRef, NewValue);
+            if (Changed)
+            {
+                FieldRef = NewValue;
+            }
+            NotifyEditorPropertyChangedIfNeeded(*Typed, Name, Changed);
+            return Ok();
+        };
         Info.ViewGetter = [Getter, FieldType](void* Instance) -> TExpected<VariantView> {
             if (!Instance)
             {
@@ -874,7 +1054,11 @@ public:
             Info.ReturnType = StaticTypeId<std::remove_cvref_t<R>>();
         }
         Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
+        Info.ParamPassKinds = {detail::MethodParamPassKindV<Args> ...};
         Info.Invoke = MakeInvoker(Method);
+        const auto RawBinding = MakeRawInvoker(Method);
+        Info.RawInvoke = RawBinding.Invoke;
+        Info.RawInvokeUserData = RawBinding.UserData;
         Info.IsConst = false;
         Info.Flags = Flags;
         m_info.Methods.push_back(std::move(Info));
@@ -906,7 +1090,11 @@ public:
             Info.ReturnType = StaticTypeId<std::remove_cvref_t<R>>();
         }
         Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
+        Info.ParamPassKinds = {detail::MethodParamPassKindV<Args> ...};
         Info.Invoke = MakeInvoker(Method);
+        const auto RawBinding = MakeRawInvoker(Method);
+        Info.RawInvoke = RawBinding.Invoke;
+        Info.RawInvokeUserData = RawBinding.UserData;
         Info.IsConst = true;
         Info.Flags = Flags;
         m_info.Methods.push_back(std::move(Info));
@@ -924,6 +1112,9 @@ public:
     template<typename... Args>
     TTypeBuilder& Constructor()
     {
+        static_assert(!std::is_abstract_v<T>, "Cannot register constructors for abstract/interface reflected types");
+        static_assert(std::is_constructible_v<T, Args...>, "Requested reflected constructor is not constructible");
+
         ConstructorInfo Info;
         Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
         Info.Construct = [](std::span<const Variant> ArgsPack) -> TExpected<std::shared_ptr<void>> {

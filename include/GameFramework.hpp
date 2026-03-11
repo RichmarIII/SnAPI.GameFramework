@@ -27,6 +27,7 @@
  * Include this header when you want the complete public API surface instead of selecting individual headers.
  */
 #include "Assert.h"
+#include "AuthoredAssetRegistry.h"
 #include "AssetRef.h"
 #include "BuiltinTypes.h"
 #include "AudioListenerComponent.h"
@@ -37,6 +38,7 @@
 #include "CollisionFilters.h"
 #include "ColliderComponent.h"
 #include "ComponentStorage.h"
+#include "Conduit.h"
 #include "DirectionalLightComponent.h"
 #include "EnvironmentCaptureComponent.h"
 #include "EnvironmentProbeNode.h"
@@ -46,6 +48,7 @@
 #include "GameplayHost.h"
 #include "GameplayRpcGateway.h"
 #include "GameRuntime.h"
+#include "IAsset.h"
 #include "Handle.h"
 #include "BaseComponent.h"
 #include "IGame.h"
@@ -65,6 +68,7 @@
 #include "Math.h"
 #include "Level.h"
 #include "MultiplayerConfigNode.h"
+#include "NodeAsset.h"
 #include "ObjectPool.h"
 #include "PawnBase.h"
 #include "PathResolver.h"

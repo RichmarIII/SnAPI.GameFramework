@@ -9,6 +9,11 @@
 
 namespace SnAPI::GameFramework
 {
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateAuthoredAssetJsonImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateAuthoredAssetPassThroughCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateNodeSourceCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateLevelSourceCooker();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateWorldSourceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImporter();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetAssimpImporter();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker();
@@ -29,6 +34,9 @@ static void RegisterAssetPipelinePlugin(::SnAPI::AssetPipeline::IPluginRegistrar
     Registrar.RegisterPayloadSerializer(CreateNodePayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateLevelPayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateWorldPayloadSerializer());
+    Registrar.RegisterPayloadSerializer(CreateNodeSourcePayloadSerializer());
+    Registrar.RegisterPayloadSerializer(CreateLevelSourcePayloadSerializer());
+    Registrar.RegisterPayloadSerializer(CreateWorldSourcePayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateStaticMeshPayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateSkeletalMeshPayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateMaterialPayloadSerializer());
@@ -40,7 +48,12 @@ static void RegisterAssetPipelinePlugin(::SnAPI::AssetPipeline::IPluginRegistrar
 
     Registrar.RegisterImporter(CreateRenderAssetAssimpImporter());
     Registrar.RegisterImporter(CreateRenderAssetJsonImporter());
+    Registrar.RegisterImporter(CreateAuthoredAssetJsonImporter());
 
+    Registrar.RegisterCooker(CreateAuthoredAssetPassThroughCooker());
+    Registrar.RegisterCooker(CreateNodeSourceCooker());
+    Registrar.RegisterCooker(CreateLevelSourceCooker());
+    Registrar.RegisterCooker(CreateWorldSourceCooker());
     Registrar.RegisterCooker(CreateRenderMaterialCooker());
     Registrar.RegisterCooker(CreateRenderMaterialInstanceCooker());
     Registrar.RegisterCooker(CreateRenderSkeletonCooker());

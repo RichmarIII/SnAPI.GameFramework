@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <tuple>
@@ -21,6 +22,47 @@ namespace SnAPI::GameFramework
  */
 using MethodInvoker = std::function<TExpected<Variant>(void* Instance, std::span<const Variant> Args)>;
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Argument passing mode used by Conduit and other raw reflection fast paths.
+ */
+enum class EMethodParamPassKind : std::uint8_t
+{
+    Value,
+    ConstRef,
+    MutableRef
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Function pointer used by raw reflection fast paths.
+ *
+ * The caller supplies:
+ * - `UserData`: opaque payload captured during registration
+ * - `Instance`: target object instance
+ * - `Args`: pointers to already-validated argument storage
+ * - `ReturnStorage`: uninitialized output storage for non-void returns
+ */
+using RawMethodInvoker = Result (*)(const void* UserData,
+                                    void* Instance,
+                                    std::span<void* const> Args,
+                                    void* ReturnStorage);
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Binding record for a raw reflection fast-path invoker.
+ */
+struct RawMethodBinding
+{
+    RawMethodInvoker Invoke = nullptr;
+    std::shared_ptr<const void> UserData{};
+
+    explicit operator bool() const
+    {
+        return Invoke != nullptr;
+    }
+};
+
 namespace detail
 {
 
@@ -40,6 +82,26 @@ struct TArgStorage
 /** @brief Helper alias for the extracted storage type of one reflected argument. */
 template<typename Arg>
 using TArgStorageT = typename TArgStorage<Arg>::Type;
+
+template<typename Arg>
+inline constexpr EMethodParamPassKind MethodParamPassKindV = [] {
+    using Raw = std::remove_reference_t<Arg>;
+    if constexpr (std::is_lvalue_reference_v<Arg>)
+    {
+        if constexpr (std::is_const_v<Raw>)
+        {
+            return EMethodParamPassKind::ConstRef;
+        }
+        else
+        {
+            return EMethodParamPassKind::MutableRef;
+        }
+    }
+    else
+    {
+        return EMethodParamPassKind::Value;
+    }
+}();
 
 /**
  * @brief Extract one typed argument from a `Variant`.
@@ -92,6 +154,172 @@ Arg ConvertArg(TArgStorageT<Arg>& Storage)
     {
         return Storage;
     }
+}
+
+template<typename Arg>
+constexpr bool SupportsRawArgFastPath()
+{
+    using Raw = std::remove_cvref_t<Arg>;
+    if constexpr (std::is_rvalue_reference_v<Arg>)
+    {
+        return false;
+    }
+    else if constexpr (std::is_lvalue_reference_v<Arg>)
+    {
+        return true;
+    }
+    else
+    {
+        return std::is_copy_constructible_v<Raw>;
+    }
+}
+
+template<typename R>
+constexpr bool SupportsRawReturnFastPath()
+{
+    using Raw = std::remove_cvref_t<R>;
+    if constexpr (std::is_void_v<R>)
+    {
+        return true;
+    }
+    else if constexpr (std::is_reference_v<R>)
+    {
+        return std::is_copy_constructible_v<Raw>;
+    }
+    else
+    {
+        return std::is_move_constructible_v<Raw>;
+    }
+}
+
+template<typename Arg>
+decltype(auto) ConvertRawArg(void* Ptr)
+{
+    using Raw = std::remove_reference_t<Arg>;
+    using Plain = std::remove_cvref_t<Arg>;
+
+    if constexpr (std::is_lvalue_reference_v<Arg>)
+    {
+        if constexpr (std::is_const_v<Raw>)
+        {
+            return *static_cast<const Plain*>(Ptr);
+        }
+        else
+        {
+            return *static_cast<Plain*>(Ptr);
+        }
+    }
+    else
+    {
+        return Plain(*static_cast<const Plain*>(Ptr));
+    }
+}
+
+template<typename MethodPtr>
+struct TRawMethodPayload;
+
+template<typename T, typename R, typename... Args>
+struct TRawMethodPayload<R(T::*)(Args...)>
+{
+    R(T::*Method)(Args...) = nullptr;
+};
+
+template<typename T, typename R, typename... Args>
+struct TRawMethodPayload<R(T::*)(Args...) const>
+{
+    R(T::*Method)(Args...) const = nullptr;
+};
+
+template<typename T, typename R, typename... Args, size_t... I>
+Result RawInvokeImpl(const TRawMethodPayload<R(T::*)(Args...)>& Payload,
+                     void* Instance,
+                     std::span<void* const> ArgsPack,
+                     void* ReturnStorage,
+                     std::index_sequence<I...>)
+{
+    if (!Instance)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+    }
+    if (ArgsPack.size() != sizeof...(Args))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Argument count mismatch"));
+    }
+
+    auto* Typed = static_cast<T*>(Instance);
+    if constexpr (std::is_void_v<R>)
+    {
+        (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...);
+        return Ok();
+    }
+    else
+    {
+        using ReturnStorageT = std::remove_cvref_t<R>;
+        if (!ReturnStorage)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null return storage"));
+        }
+        std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage),
+                          (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...));
+        return Ok();
+    }
+}
+
+template<typename T, typename R, typename... Args, size_t... I>
+Result RawInvokeConstImpl(const TRawMethodPayload<R(T::*)(Args...) const>& Payload,
+                          void* Instance,
+                          std::span<void* const> ArgsPack,
+                          void* ReturnStorage,
+                          std::index_sequence<I...>)
+{
+    if (!Instance)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null instance"));
+    }
+    if (ArgsPack.size() != sizeof...(Args))
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Argument count mismatch"));
+    }
+
+    const auto* Typed = static_cast<const T*>(Instance);
+    if constexpr (std::is_void_v<R>)
+    {
+        (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...);
+        return Ok();
+    }
+    else
+    {
+        using ReturnStorageT = std::remove_cvref_t<R>;
+        if (!ReturnStorage)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null return storage"));
+        }
+        std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage),
+                          (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...));
+        return Ok();
+    }
+}
+
+template<typename T, typename R, typename... Args>
+Result RawInvokeEntry(const void* UserData, void* Instance, std::span<void* const> ArgsPack, void* ReturnStorage)
+{
+    const auto* Payload = static_cast<const TRawMethodPayload<R(T::*)(Args...)>*>(UserData);
+    if (!Payload || !Payload->Method)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Missing raw method binding"));
+    }
+    return RawInvokeImpl(*Payload, Instance, ArgsPack, ReturnStorage, std::index_sequence_for<Args...>{});
+}
+
+template<typename T, typename R, typename... Args>
+Result RawInvokeConstEntry(const void* UserData, void* Instance, std::span<void* const> ArgsPack, void* ReturnStorage)
+{
+    const auto* Payload = static_cast<const TRawMethodPayload<R(T::*)(Args...) const>*>(UserData);
+    if (!Payload || !Payload->Method)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Missing raw method binding"));
+    }
+    return RawInvokeConstImpl(*Payload, Instance, ArgsPack, ReturnStorage, std::index_sequence_for<Args...>{});
 }
 
 /**
@@ -215,6 +443,22 @@ MethodInvoker MakeInvoker(R(T::*Method)(Args...))
     };
 }
 
+template<typename T, typename R, typename... Args>
+RawMethodBinding MakeRawInvoker(R(T::*Method)(Args...))
+{
+    if constexpr ((detail::SupportsRawArgFastPath<Args>() && ...) && detail::SupportsRawReturnFastPath<R>())
+    {
+        using Payload = detail::TRawMethodPayload<R(T::*)(Args...)>;
+        auto Binding = std::make_shared<Payload>();
+        Binding->Method = Method;
+        return RawMethodBinding{&detail::RawInvokeEntry<T, R, Args...>, std::move(Binding)};
+    }
+    else
+    {
+        return {};
+    }
+}
+
 /**
  * @ingroup SnAPI_GameFramework
  * @overload
@@ -238,6 +482,22 @@ MethodInvoker MakeInvoker(R(T::*Method)(Args...) const)
         }
         return detail::InvokeConstImpl(static_cast<const T*>(Instance), Method, ArgsPack, std::index_sequence_for<Args...>{});
     };
+}
+
+template<typename T, typename R, typename... Args>
+RawMethodBinding MakeRawInvoker(R(T::*Method)(Args...) const)
+{
+    if constexpr ((detail::SupportsRawArgFastPath<Args>() && ...) && detail::SupportsRawReturnFastPath<R>())
+    {
+        using Payload = detail::TRawMethodPayload<R(T::*)(Args...) const>;
+        auto Binding = std::make_shared<Payload>();
+        Binding->Method = Method;
+        return RawMethodBinding{&detail::RawInvokeConstEntry<T, R, Args...>, std::move(Binding)};
+    }
+    else
+    {
+        return {};
+    }
 }
 
 } // namespace SnAPI::GameFramework

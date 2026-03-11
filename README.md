@@ -7,6 +7,7 @@ The framework uses:
 - **Component‑based composition** (Unity‑style behaviors).
 - **Stable UUID handles** for cross‑graph/cross‑asset references.
 - **Reflection‑driven serialization** (C++23, template‑centric).
+- **Conduit visual scripting runtime** built on compiled slots, intrinsics, and control flow.
 - **World-owned subsystem adapters** (input, ui, networking, audio, physics, renderer).
 - **End‑of‑frame deletion** to avoid dangling handles during a frame.
 - **Relevance system** to cull work for inactive/out‑of‑budget nodes.
@@ -27,6 +28,8 @@ This repository targets C++23 and is intended to be multi‑platform.
 - [Renderer Integration (optional module)](#renderer-integration-optional-module)
 - [Handles (UUID‑based)](#handles-uuid-based)
 - [Reflection System](#reflection-system)
+- [Conduit Visual Scripting](#conduit-visual-scripting)
+- [Authored Assets](#authored-assets)
 - [Serialization](#serialization)
 - [AssetPipeline Integration](#assetpipeline-integration)
 - [Scripting Interface](#scripting-interface)
@@ -51,6 +54,12 @@ This repository targets C++23 and is intended to be multi‑platform.
 - Reflection registers fields, methods, constructors, and base types.
 - Serialization uses reflection to traverse fields and rebuild objects.
 
+**Conduit** is the visual scripting runtime layer:
+- graphs are compiled into slot-based runtime plans
+- control flow is expressed through branches, jumps, and labels
+- basic logic uses builtin intrinsics instead of reflected helper methods everywhere
+- reflected fields/methods are bound once and executed through cached metadata
+
 **Handles** are UUID‑only:
 - Any reference to another object is a handle (not a raw pointer).
 - Handles resolve via a **global registry** and remain valid across assets.
@@ -73,6 +82,39 @@ This repository targets C++23 and is intended to be multi‑platform.
 - **Safety over raw pointers**:
   - No raw pointers are stored; handles resolve on demand.
   - Borrowed pointers are **transient** and must not be cached.
+
+---
+
+## Conduit Visual Scripting
+
+Conduit is the framework's reflection-driven visual scripting runtime.
+
+Its runtime model is based on:
+
+- compiled frame slots
+- authored graph assets that compile into runtime plans
+- authored class assets that bind graphs to reflected host node types
+- cached reflected field and method bindings
+- builtin arithmetic/comparison/logical intrinsics
+- explicit control-flow primitives
+- handle-family based instance resolution
+
+The detailed Conduit design notes live in [Docs/GameFramework/Conduit.md](Docs/GameFramework/Conduit.md).
+
+---
+
+## Authored Assets
+
+The authored asset direction for `SnAPI.GameFramework` is:
+
+- editor-authored documents derive from `IAsset`
+- authored assets are source assets, not cooked runtime assets
+- source assets are stored as JSON
+- import/cook produces final runtime payloads for `Load<>` / `Get<>`
+- prefabs should be authored source assets too
+
+The detailed authored-source-asset design notes live in [Docs/GameFramework/AuthoredAssets.md](Docs/GameFramework/AuthoredAssets.md).
+The active refactor work order lives in [Docs/GameFramework/AuthoredAssetRefactorPlan.md](Docs/GameFramework/AuthoredAssetRefactorPlan.md).
 
 ---
 

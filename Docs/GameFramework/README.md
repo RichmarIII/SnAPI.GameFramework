@@ -19,6 +19,35 @@ The framework is built around explicit ownership and stable identities:
 - `NodeHandle` / `ComponentHandle` are the stable public identity boundary
 - raw pointers are borrowed views, not ownership
 
+## Conduit
+
+`Conduit` is the reflection-driven visual scripting runtime for `SnAPI.GameFramework`.
+
+It is built around:
+
+- authored graph assets that compile into runtime plans
+- authored class assets that bind graphs to reflected host node types
+- compiled frame slots
+- cached reflected field/method bindings
+- control-flow primitives
+- builtin logic/math intrinsics
+- handle-family based instance resolution
+
+Read [Conduit.md](/mnt/Dev/CodeProjects/SnAPI.GameFramework/Docs/GameFramework/Conduit.md) for the detailed runtime architecture and API model.
+Read [ConduitEditor.md](/mnt/Dev/CodeProjects/SnAPI.GameFramework/Docs/GameFramework/ConduitEditor.md) for the authored graph editor architecture and document model.
+
+## Authored Assets
+
+`SnAPI.GameFramework` is moving toward a clear source-asset model:
+
+- editor-authored assets derive from `IAsset`
+- authored assets are saved as JSON source files
+- authored assets are imported and cooked into final runtime payloads
+- runtime `Load<>` and `Get<>` stay focused on cooked game-ready types
+
+Read [AuthoredAssets.md](/mnt/Dev/CodeProjects/SnAPI.GameFramework/Docs/GameFramework/AuthoredAssets.md) for the authored source-asset architecture and pipeline model.
+Read [AuthoredAssetRefactorPlan.md](/mnt/Dev/CodeProjects/SnAPI.GameFramework/Docs/GameFramework/AuthoredAssetRefactorPlan.md) for the execution plan and work order.
+
 ## Mental Model
 
 ### What is a `World`?
@@ -230,6 +259,8 @@ Play-In-Editor. A world mode that uses runtime-like simulation behavior while st
   Common aliases such as `NodeHandle` and `ComponentHandle`.
 - `include/GameplayHost.h`
   High-level gameplay/session orchestration.
+- `include/Conduit.h`
+  Umbrella include for the Conduit visual scripting runtime.
 - `include/Serialization.h`
   Reflection-driven serialization and reconstruction paths.
 

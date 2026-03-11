@@ -1392,6 +1392,59 @@ public:
 
 /**
  * @ingroup SnAPI_GameFramework
+ * @brief Serialize one arbitrary reflected value into raw bytes.
+ * @param Type Reflected type id of the value.
+ * @param Value Pointer to the source value.
+ * @param OutBytes Destination byte vector. Existing contents are replaced.
+ * @param Context Borrowed serialization context.
+ * @return `Ok()` on success or an error when the type is unknown or has no available
+ *         codec/reflection serialization path.
+ *
+ * This helper first prefers a registered `ValueCodecRegistry` entry. When no direct value
+ * codec exists, it falls back to recursive reflection-field serialization for the type.
+ */
+TExpected<void> SerializeReflectedValue(const TypeId& Type,
+                                        const void* Value,
+                                        std::vector<uint8_t>& OutBytes,
+                                        const TSerializationContext& Context = {});
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Deserialize bytes into one already-constructed reflected value.
+ * @param Type Reflected type id of the destination value.
+ * @param Value Pointer to an existing destination object.
+ * @param Bytes Source byte buffer. Must not be null when @p Size is non-zero.
+ * @param Size Byte count.
+ * @param Context Borrowed serialization context.
+ * @return `Ok()` on success or an error when the type is unknown or has no available
+ *         codec/reflection deserialization path.
+ */
+TExpected<void> DeserializeReflectedValueInto(const TypeId& Type,
+                                              void* Value,
+                                              const uint8_t* Bytes,
+                                              size_t Size,
+                                              const TSerializationContext& Context = {});
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Construct one reflected value into uninitialized storage from serialized bytes.
+ * @param Type Reflected type id of the value to construct.
+ * @param Storage Pointer to uninitialized storage large enough for @p Type.
+ * @param Bytes Source byte buffer. Must not be null when @p Size is non-zero.
+ * @param Size Byte count.
+ * @param Context Borrowed serialization context.
+ * @return `Ok()` on success or an error when the type cannot be materialized.
+ *
+ * Codec-backed types are decoded into a temporary value and copy-constructed into
+ * @p Storage. Reflection-recursive types are default-constructed in @p Storage and then
+ * populated field-by-field.
+ */
+TExpected<void> ConstructReflectedValue(const TypeId& Type,
+                                        void* Storage,
+                                        const uint8_t* Bytes,
+                                        size_t Size,
+                                        const TSerializationContext& Context = {});
+
+/**
+ * @ingroup SnAPI_GameFramework
  * @brief Encode a `NodePayload` envelope into raw bytes.
  * @param Payload Payload to serialize.
  * @param OutBytes Destination byte vector. Existing contents are replaced.

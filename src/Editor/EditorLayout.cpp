@@ -1,9 +1,11 @@
 #include "Editor/EditorLayout.h"
 
+#include "AuthoredAssetRegistry.h"
 #include "AssetPipelineIds.h"
 #include "BaseNode.h"
 #include "CameraComponent.h"
 #include "Editor/EditorSelectionModel.h"
+#include "Conduit/Editor/GraphCanvas.h"
 #include "GameRuntime.h"
 #include "BaseComponent.h"
 #include "Level.h"
@@ -24,6 +26,7 @@
 #include "World.h"
 
 #include <UIContext.h>
+#include <UICheckbox.h>
 #include <UIComboBox.h>
 #include <UIColorPicker.h>
 #include <UIDatePicker.h>
@@ -126,6 +129,10 @@ constexpr float kEditorIconScale = 2.0f;
 constexpr SnAPI::UI::Color kIconWhite = SnAPI::UI::Color::RGB(255, 255, 255);
 constexpr SnAPI::UI::Color kIconPlayGreen = SnAPI::UI::Color::RGB(73, 199, 112);
 constexpr std::size_t kMaxRecentProjects = 8;
+constexpr float kConduitSidebarSplitRatio = 0.29f;
+constexpr float kConduitSidebarUpperSplitRatio = 0.48f;
+constexpr float kConduitCanvasSplitRatio = 0.68f;
+constexpr float kConduitClassSplitRatio = 0.46f;
 
 struct ToolbarActionSpec
 {
@@ -415,6 +422,18 @@ void ConfigureSplitZone(SnAPI::UI::UIDockZone& Zone,
     Zone.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
 }
 
+void ConfigureConduitSplitZone(SnAPI::UI::UIDockZone& Zone,
+                               const SnAPI::UI::EDockSplit Direction,
+                               const float SplitRatio,
+                               const float MinPrimarySize,
+                               const float MinSecondarySize)
+{
+    ConfigureSplitZone(Zone, Direction, SplitRatio, MinPrimarySize, MinSecondarySize);
+    Zone.SplitterThickness().Set(10.0f);
+    Zone.SplitterColor().Set(SnAPI::UI::Color{60, 76, 96, 224});
+    Zone.SplitterHoverColor().Set(SnAPI::UI::Color{118, 150, 186, 255});
+}
+
 void ConfigureHostPanel(SnAPI::UI::UIPanel& Panel)
 {
     Panel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
@@ -694,168 +713,40 @@ struct CreateNodeTypeEntry
 
 [[nodiscard]] std::vector<CreateNodeTypeEntry> BuildCreateNodeTypeEntries(const std::string& FilterLower)
 {
-    (void)TypeAutoRegistry::Instance().EnsureAll();
-
+    AuthoredAssetRegistry::Instance().EnsureBuilt();
     std::vector<CreateNodeTypeEntry> Entries{};
-    const auto AppendBuiltInAssetType =
-        [&Entries, &FilterLower](const TypeId& Type, const std::string_view Label, const std::string_view QualifiedName) {
-            if (Type == TypeId{})
-            {
-                return;
-            }
-
-            if (!FilterLower.empty() &&
-                !LabelMatchesFilter(Label, FilterLower) &&
-                !LabelMatchesFilter(QualifiedName, FilterLower))
-            {
-                return;
-            }
-
-            Entries.push_back(CreateNodeTypeEntry{
-                .Type = Type,
-                .Label = std::string(Label),
-                .QualifiedName = std::string(QualifiedName),
-                .Depth = 0,
-                .HasChildren = false,
-            });
-        };
-
-    const TypeId BaseNodeType = StaticTypeId<BaseNode>();
-    const TypeInfo* BaseNodeInfo = TypeRegistry::Instance().Find(BaseNodeType);
-    if (!BaseNodeInfo)
+    for (const AuthoredAssetDescriptor& Descriptor : AuthoredAssetRegistry::Instance().All())
     {
-        AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialName), "Material", "Material");
-        AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialInstanceName), "Material Instance", "MaterialInstance");
-        return Entries;
-    }
-
-    std::vector<const TypeInfo*> CandidateTypes = TypeRegistry::Instance().Derived(BaseNodeType);
-    const bool HasBaseNode = std::ranges::any_of(CandidateTypes, [BaseNodeInfo](const TypeInfo* Type) {
-        return Type && Type->Id == BaseNodeInfo->Id;
-    });
-    if (!HasBaseNode)
-    {
-        CandidateTypes.push_back(BaseNodeInfo);
-    }
-
-    CandidateTypes.erase(
-        std::remove_if(CandidateTypes.begin(), CandidateTypes.end(), [](const TypeInfo* Type) {
-            return !Type || !HasDefaultConstructor(*Type) || !TypeRegistry::Instance().IsA(Type->Id, StaticTypeId<BaseNode>());
-        }),
-        CandidateTypes.end());
-
-    std::unordered_map<TypeId, const TypeInfo*, UuidHash> TypeById{};
-    TypeById.reserve(CandidateTypes.size());
-    for (const TypeInfo* Type : CandidateTypes)
-    {
-        TypeById[Type->Id] = Type;
-    }
-
-    std::unordered_map<TypeId, std::vector<const TypeInfo*>, UuidHash> ChildrenByType{};
-    ChildrenByType.reserve(TypeById.size());
-    for (const TypeInfo* Type : CandidateTypes)
-    {
-        if (!Type || Type->Id == BaseNodeType)
+        if (!Descriptor.CanCreate || Descriptor.AssetType == TypeId{})
         {
             continue;
         }
 
-        TypeId ParentType = BaseNodeType;
-        for (const TypeId& BaseType : Type->BaseTypes)
+        const std::string QualifiedName = Descriptor.Type ? Descriptor.Type->Name : Descriptor.DisplayName;
+        if (!FilterLower.empty() &&
+            !LabelMatchesFilter(Descriptor.DisplayName, FilterLower) &&
+            !LabelMatchesFilter(Descriptor.Category, FilterLower) &&
+            !LabelMatchesFilter(QualifiedName, FilterLower))
         {
-            if (TypeById.contains(BaseType) && TypeRegistry::Instance().IsA(BaseType, BaseNodeType))
-            {
-                ParentType = BaseType;
-                break;
-            }
-        }
-
-        ChildrenByType[ParentType].push_back(Type);
-    }
-
-    for (auto& [ParentType, Children] : ChildrenByType)
-    {
-        (void)ParentType;
-        std::sort(Children.begin(), Children.end(), [](const TypeInfo* Left, const TypeInfo* Right) {
-            if (!Left || !Right)
-            {
-                return Left < Right;
-            }
-            const std::string LeftLabel = ShortTypeLabel(Left->Name);
-            const std::string RightLabel = ShortTypeLabel(Right->Name);
-            return LeftLabel < RightLabel;
-        });
-    }
-
-    std::unordered_map<TypeId, bool, UuidHash> VisibleCache{};
-    const std::function<bool(const TypeInfo*)> IsVisible = [&](const TypeInfo* Type) -> bool {
-        if (!Type)
-        {
-            return false;
-        }
-
-        if (const auto Cached = VisibleCache.find(Type->Id); Cached != VisibleCache.end())
-        {
-            return Cached->second;
-        }
-
-        const bool LabelMatch = FilterLower.empty() ||
-                                LabelMatchesFilter(ShortTypeLabel(Type->Name), FilterLower) ||
-                                LabelMatchesFilter(Type->Name, FilterLower);
-
-        bool ChildVisible = false;
-        if (const auto ChildrenIt = ChildrenByType.find(Type->Id); ChildrenIt != ChildrenByType.end())
-        {
-            for (const TypeInfo* Child : ChildrenIt->second)
-            {
-                if (IsVisible(Child))
-                {
-                    ChildVisible = true;
-                    break;
-                }
-            }
-        }
-
-        const bool Visible = LabelMatch || ChildVisible;
-        VisibleCache[Type->Id] = Visible;
-        return Visible;
-    };
-
-    const std::function<void(const TypeInfo*, int)> Append = [&](const TypeInfo* Type, const int Depth) {
-        if (!Type || !IsVisible(Type))
-        {
-            return;
-        }
-
-        std::vector<const TypeInfo*> VisibleChildren{};
-        if (const auto ChildrenIt = ChildrenByType.find(Type->Id); ChildrenIt != ChildrenByType.end())
-        {
-            for (const TypeInfo* Child : ChildrenIt->second)
-            {
-                if (IsVisible(Child))
-                {
-                    VisibleChildren.push_back(Child);
-                }
-            }
+            continue;
         }
 
         Entries.push_back(CreateNodeTypeEntry{
-            .Type = Type->Id,
-            .Label = ShortTypeLabel(Type->Name),
-            .QualifiedName = Type->Name,
-            .Depth = Depth,
-            .HasChildren = !VisibleChildren.empty(),
+            .Type = Descriptor.AssetType,
+            .Label = Descriptor.DisplayName,
+            .QualifiedName = QualifiedName,
+            .Depth = 0,
+            .HasChildren = false,
         });
+    }
 
-        for (const TypeInfo* Child : VisibleChildren)
+    std::sort(Entries.begin(), Entries.end(), [](const CreateNodeTypeEntry& Left, const CreateNodeTypeEntry& Right) {
+        if (Left.Label != Right.Label)
         {
-            Append(Child, Depth + 1);
+            return Left.Label < Right.Label;
         }
-    };
-
-    Append(BaseNodeInfo, 0);
-    AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialName), "Material", "Material");
-    AppendBuiltInAssetType(TypeIdFromName(kAssetKindMaterialInstanceName), "Material Instance", "MaterialInstance");
+        return Left.QualifiedName < Right.QualifiedName;
+    });
     return Entries;
 }
 
@@ -1035,12 +926,53 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentInspectorImportSettingsPanel = {};
     m_contentInspectorSaveButton = {};
     m_contentInspectorReimportButton = {};
+    m_conduitWorkspaceTitleText = {};
+    m_conduitWorkspaceStatusText = {};
+    m_conduitWorkspaceSummaryText = {};
+    m_conduitVariablesTree = {};
+    m_conduitPaletteSearchInput = {};
+    m_conduitPaletteTree = {};
+    m_conduitPaletteAddNodeButton = {};
+    m_conduitGraphCanvas = {};
+    m_conduitNodesTree = {};
+    m_conduitNodeRemoveButton = {};
+    m_conduitVariableInspectorPanel = {};
+    m_conduitNodeInspectorPanel = {};
+    m_conduitGraphWorkspaceHost = {};
+    m_conduitClassWorkspaceHost = {};
+    m_conduitInspectorTitleText = {};
+    m_conduitVariableCreateNameInput = {};
+    m_conduitVariableCreateTypeCombo = {};
+    m_conduitVariableCreateButton = {};
+    m_conduitVariableNameInput = {};
+    m_conduitVariableTypeCombo = {};
+    m_conduitVariableRemoveButton = {};
+    m_conduitVariableDefaultHintText = {};
+    m_conduitVariableDefaultBoolCheckbox = {};
+    m_conduitVariableDefaultTextInput = {};
+    m_conduitVariableDefaultEnumCombo = {};
+    m_conduitVariableDefaultPropertyPanel = {};
+    m_conduitVariableDefaultClearButton = {};
+    m_conduitVariableDefaultApplyButton = {};
+    m_conduitVariableDefaultResetButton = {};
+    m_conduitNodeSummaryText = {};
+    m_conduitNodePrimaryLabelText = {};
+    m_conduitNodePrimaryTextInput = {};
+    m_conduitNodeSecondaryLabelText = {};
+    m_conduitNodeSecondaryTextInput = {};
+    m_conduitClassOverviewSummaryText = {};
+    m_conduitClassOverviewHostText = {};
+    m_conduitClassOverviewGraphText = {};
     m_contentAssetCards.clear();
     m_contentAssetCardButtons.clear();
     m_contentAssetCardIndices.clear();
     m_contentBrowserEntries.clear();
     m_contentAssets.clear();
     m_contentAssetFilterText.clear();
+    m_conduitVisibleNodeIds.clear();
+    m_conduitVisiblePaletteStableIds.clear();
+    m_conduitPaletteFilterText.clear();
+    m_conduitSelectedPaletteStableId.clear();
     m_contentCurrentFolder.clear();
     m_selectedContentAssetKey.clear();
     m_selectedContentFolderPath.clear();
@@ -1057,6 +989,13 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentImportProfile = EImportProfile::Unknown;
     m_contentImportAssimpSettings = {};
     m_contentImportTextureSettings = {};
+    m_conduitWorkspaceState = {};
+    m_conduitVisibleVariableIds.clear();
+    m_conduitCreateVariableNameText.clear();
+    m_conduitCreateSelectedVariableType = {};
+    m_conduitVariableDefaultPanelBound = false;
+    m_conduitVariableDefaultBoundObject = nullptr;
+    m_conduitVariableDefaultBoundType = {};
     m_projectModalOpen = false;
     m_projectModalRequired = false;
     m_projectModalShowWelcome = false;
@@ -1066,7 +1005,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectDirectoryText.clear();
     m_projectFilePathText.clear();
     m_projectSettingsNameText.clear();
-    m_projectSettingsStartupPackText.clear();
+    m_projectSettingsStartupAssetText.clear();
     m_projectSettingsDefaultRenderSettingsAssetId.clear();
     m_projectSettingsRenderSettingsOptions.clear();
     m_projectState = {};
@@ -1129,7 +1068,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectModalOkButton = {};
     m_projectSettingsModalOverlay = {};
     m_projectSettingsNameInput = {};
-    m_projectSettingsStartupPackInput = {};
+    m_projectSettingsStartupAssetInput = {};
     m_projectSettingsDefaultRenderSettingsCombo = {};
     m_projectSettingsSaveButton = {};
     m_viewModel = SnAPI::UI::PropertyMap{};
@@ -1187,7 +1126,11 @@ bool EditorLayout::RegisterExternalElements(GameRuntime& Runtime)
     const Result RegisterViewport = UI.RegisterElementType<UIRenderViewport>(SnAPI::UI::TypeHash<SnAPI::UI::UIPanel>());
     const Result RegisterPropertyPanel =
         UI.RegisterElementType<UIPropertyPanel>(SnAPI::UI::TypeHash<SnAPI::UI::UIScrollContainer>());
-    return static_cast<bool>(RegisterViewport) && static_cast<bool>(RegisterPropertyPanel);
+    const Result RegisterConduitCanvas =
+        UI.RegisterElementType<Conduit::Editor::UIConduitGraphCanvas>(SnAPI::UI::TypeHash<SnAPI::UI::UIPanel>());
+    return static_cast<bool>(RegisterViewport) &&
+           static_cast<bool>(RegisterPropertyPanel) &&
+           static_cast<bool>(RegisterConduitCanvas);
 #endif
 }
 
@@ -1712,7 +1655,7 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
             }));
     m_contentAssetsList = AssetsList.Handle();
 
-    auto EmptyHint = AssetsTab.Add(SnAPI::UI::UIText("No assets discovered. Click Rescan to search for .snpak packs."));
+    auto EmptyHint = AssetsTab.Add(SnAPI::UI::UIText("No assets discovered. Click Rescan to search for source assets."));
     EmptyHint.Element().ElementStyle().Apply("editor.panel_subtitle");
     EmptyHint.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
     m_contentAssetsEmptyHint = EmptyHint.Handle();
@@ -3197,7 +3140,7 @@ void EditorLayout::SetProjectState(ProjectState State)
     if (!m_projectSettingsModalOpen)
     {
         m_projectSettingsNameText = m_projectState.Name;
-        m_projectSettingsStartupPackText = m_projectState.StartupLevelPack;
+        m_projectSettingsStartupAssetText = m_projectState.StartupLevelAsset;
         m_projectSettingsDefaultRenderSettingsAssetId = m_projectState.DefaultRenderSettingsAssetId;
     }
 }
@@ -3440,6 +3383,737 @@ void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState Stat
     {
         m_context->MarkLayoutDirty();
     }
+}
+
+void EditorLayout::SetConduitWorkspaceState(ConduitWorkspaceState State)
+{
+    const bool Changed =
+        (m_conduitWorkspaceState.Open != State.Open) ||
+        (m_conduitWorkspaceState.AssetKey != State.AssetKey) ||
+        (m_conduitWorkspaceState.Title != State.Title) ||
+        (m_conduitWorkspaceState.Status != State.Status) ||
+        (m_conduitWorkspaceState.SelfTypeLabel != State.SelfTypeLabel) ||
+        (m_conduitWorkspaceState.SlotCount != State.SlotCount) ||
+        (m_conduitWorkspaceState.VariableCount != State.VariableCount) ||
+        (m_conduitWorkspaceState.NodeCount != State.NodeCount) ||
+        (m_conduitWorkspaceState.IsDirty != State.IsDirty) ||
+        (m_conduitWorkspaceState.CompileSucceeded != State.CompileSucceeded) ||
+        (m_conduitWorkspaceState.WarningCount != State.WarningCount) ||
+        (m_conduitWorkspaceState.ErrorCount != State.ErrorCount) ||
+        (m_conduitWorkspaceState.Revision != State.Revision);
+    if (!Changed)
+    {
+        return;
+    }
+
+    m_conduitWorkspaceState = std::move(State);
+    RefreshConduitWorkspaceView();
+}
+
+void EditorLayout::SetConduitVariableSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)> Handler)
+{
+    m_onConduitVariableSelected = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableCreateHandler(SnAPI::UI::TDelegate<void(const std::string&, const TypeId&)> Handler)
+{
+    m_onConduitVariableCreateRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableRemoveHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onConduitVariableRemoveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableRenameHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitVariableRenameRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler)
+{
+    m_onConduitVariableTypeRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)> Handler)
+{
+    m_onConduitVariableDefaultBoolRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableDefaultTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitVariableDefaultTextRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableDefaultEnumHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitVariableDefaultEnumRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableClearDefaultHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onConduitVariableClearDefaultRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableCommitDefaultHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onConduitVariableCommitDefaultRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitVariableResetDefaultHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onConduitVariableResetDefaultRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)> Handler)
+{
+    m_onConduitNodeSelected = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeCreateHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitNodeCreateRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onConduitNodeRemoveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)> Handler)
+{
+    m_onConduitNodeMoveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodePrimaryTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitNodePrimaryTextRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeSecondaryTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitNodeSecondaryTextRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitViewportHandler(SnAPI::UI::TDelegate<void(float, float, float)> Handler)
+{
+    m_onConduitViewportRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitClassNameHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitClassNameRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitClassHostTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler)
+{
+    m_onConduitClassHostTypeRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitClassGraphHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitClassGraphRequested = std::move(Handler);
+}
+
+void EditorLayout::RefreshConduitWorkspaceView()
+{
+    if (auto* Tabs = ResolveGameViewTabs())
+    {
+        Tabs->SetTabLabel(2, m_conduitWorkspaceState.Open && m_conduitWorkspaceState.IsDirty
+                                 ? std::string("Conduit*")
+                                 : std::string("Conduit"));
+
+        if (m_conduitWorkspaceState.Open)
+        {
+            Tabs->ActiveIndex().Set(2);
+        }
+        else if (Tabs->ActiveIndex().Get() == 2)
+        {
+            Tabs->ActiveIndex().Set(0);
+        }
+    }
+
+    if (!m_context)
+    {
+        return;
+    }
+
+    const auto SetText = [this](const SnAPI::UI::ElementHandle<SnAPI::UI::UIText>& Handle, const std::string& Value) {
+        if (Handle.Id.Value == 0)
+        {
+            return;
+        }
+        if (auto* Text = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(Handle.Id)))
+        {
+            Text->Text().Set(Value);
+        }
+    };
+    const auto SetVisibility = [this](const auto& Handle, const SnAPI::UI::EVisibility Visibility) {
+        if (Handle.Id.Value == 0)
+        {
+            return;
+        }
+        m_context->GetElement(Handle.Id).Properties().SetProperty(SnAPI::UI::UIElementBase::VisibilityKey, Visibility);
+    };
+    const auto SetSizeForVisibility = [this](const auto& Handle,
+                                             const bool Visible,
+                                             const SnAPI::UI::Sizing& VisibleWidth,
+                                             const SnAPI::UI::Sizing& VisibleHeight) {
+        if (Handle.Id.Value == 0)
+        {
+            return;
+        }
+        auto& Properties = m_context->GetElement(Handle.Id).Properties();
+        Properties.SetProperty(SnAPI::UI::UIElementBase::WidthKey,
+                               Visible ? VisibleWidth : SnAPI::UI::Sizing::Fixed(0.0f));
+        Properties.SetProperty(SnAPI::UI::UIElementBase::HeightKey,
+                               Visible ? VisibleHeight : SnAPI::UI::Sizing::Fixed(0.0f));
+    };
+
+    if (!m_conduitWorkspaceState.Open)
+    {
+        SetText(m_conduitWorkspaceTitleText, "Conduit Workspace");
+        SetText(m_conduitWorkspaceStatusText, "No Conduit document open.");
+        SetText(m_conduitWorkspaceSummaryText,
+                "Double-click a Conduit Graph or Conduit Class asset in the Content Browser to open it here.");
+        SetText(m_conduitClassOverviewSummaryText,
+                "Conduit classes resolve one concrete host node type and one graph asset. Built-in and custom entrypoints run against that host instance as self.");
+        SetText(m_conduitClassOverviewHostText, "Host: None");
+        SetText(m_conduitClassOverviewGraphText, "Graph: None");
+        m_conduitVisibleVariableIds.clear();
+        m_conduitVisibleNodeIds.clear();
+        m_conduitVisiblePaletteStableIds.clear();
+        m_conduitSelectedPaletteStableId.clear();
+    }
+    else if (m_conduitWorkspaceState.Kind == ConduitWorkspaceState::EDocumentKind::Class)
+    {
+        std::string Title = m_conduitWorkspaceState.Title.empty()
+            ? std::string("Conduit Class")
+            : m_conduitWorkspaceState.Title;
+        if (m_conduitWorkspaceState.IsDirty)
+        {
+            Title += " *";
+        }
+
+        std::ostringstream Summary{};
+        Summary << "Host: "
+                << (m_conduitWorkspaceState.HostTypeLabel.empty()
+                    ? std::string("None")
+                    : m_conduitWorkspaceState.HostTypeLabel)
+                << " | Graph: "
+                << (m_conduitWorkspaceState.GraphAssetLabel.empty()
+                    ? std::string("None")
+                    : m_conduitWorkspaceState.GraphAssetLabel);
+
+        SetText(m_conduitWorkspaceTitleText, Title);
+        SetText(m_conduitWorkspaceStatusText,
+                m_conduitWorkspaceState.Status.empty() ? std::string("Conduit class ready.") : m_conduitWorkspaceState.Status);
+        SetText(m_conduitWorkspaceSummaryText, Summary.str());
+        SetText(m_conduitClassOverviewSummaryText,
+                "Conduit classes resolve one concrete host node type and one graph asset. Built-in and custom entrypoints run against that host instance as self.");
+        SetText(m_conduitClassOverviewHostText,
+                "Host: " + (m_conduitWorkspaceState.HostTypeLabel.empty() ? std::string("None") : m_conduitWorkspaceState.HostTypeLabel));
+        SetText(m_conduitClassOverviewGraphText,
+                "Graph: " + (m_conduitWorkspaceState.GraphAssetLabel.empty() ? std::string("None") : m_conduitWorkspaceState.GraphAssetLabel));
+    }
+    else
+    {
+        std::string Title = m_conduitWorkspaceState.Title.empty()
+            ? std::string("Conduit Graph")
+            : m_conduitWorkspaceState.Title;
+        if (m_conduitWorkspaceState.IsDirty)
+        {
+            Title += " *";
+        }
+
+        std::ostringstream Summary{};
+        Summary << "Self: "
+                << (m_conduitWorkspaceState.SelfTypeLabel.empty()
+                    ? std::string("None")
+                    : m_conduitWorkspaceState.SelfTypeLabel)
+                << " | Slots: " << m_conduitWorkspaceState.SlotCount
+                << " | Variables: " << m_conduitWorkspaceState.VariableCount
+                << " | Nodes: " << m_conduitWorkspaceState.NodeCount
+                << " | Warnings: " << m_conduitWorkspaceState.WarningCount
+                << " | Errors: " << m_conduitWorkspaceState.ErrorCount;
+
+        SetText(m_conduitWorkspaceTitleText, Title);
+        SetText(m_conduitWorkspaceStatusText,
+                m_conduitWorkspaceState.Status.empty() ? std::string("Ready") : m_conduitWorkspaceState.Status);
+        SetText(m_conduitWorkspaceSummaryText, Summary.str());
+        SetText(m_conduitClassOverviewSummaryText,
+                "Conduit classes resolve one concrete host node type and one graph asset. Built-in and custom entrypoints run against that host instance as self.");
+        SetText(m_conduitClassOverviewHostText, "Host: None");
+        SetText(m_conduitClassOverviewGraphText, "Graph: None");
+    }
+
+    const bool IsClassMode = m_conduitWorkspaceState.Open &&
+                             m_conduitWorkspaceState.Kind == ConduitWorkspaceState::EDocumentKind::Class;
+    const bool ShowNodeInspector = m_conduitWorkspaceState.SelectedNode.HasSelection;
+    const bool ShowVariableInspector = !ShowNodeInspector && m_conduitWorkspaceState.SelectedVariable.HasSelection;
+    SetVisibility(m_conduitGraphWorkspaceHost,
+                  IsClassMode ? SnAPI::UI::EVisibility::Collapsed : SnAPI::UI::EVisibility::Visible);
+    SetVisibility(m_conduitClassWorkspaceHost,
+                  IsClassMode ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    SetSizeForVisibility(m_conduitGraphWorkspaceHost,
+                         !IsClassMode,
+                         SnAPI::UI::Sizing::Fill(),
+                         SnAPI::UI::Sizing::Ratio(1.0f));
+    SetSizeForVisibility(m_conduitClassWorkspaceHost,
+                         IsClassMode,
+                         SnAPI::UI::Sizing::Fill(),
+                         SnAPI::UI::Sizing::Ratio(1.0f));
+    SetVisibility(m_conduitVariablesCard, IsClassMode ? SnAPI::UI::EVisibility::Collapsed : SnAPI::UI::EVisibility::Visible);
+    SetVisibility(m_conduitNodesCard, IsClassMode ? SnAPI::UI::EVisibility::Collapsed : SnAPI::UI::EVisibility::Visible);
+    SetVisibility(m_conduitInspectorCard, IsClassMode ? SnAPI::UI::EVisibility::Collapsed : SnAPI::UI::EVisibility::Visible);
+    SetVisibility(m_conduitClassCard, IsClassMode ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    SetVisibility(m_conduitVariableInspectorPanel,
+                  ShowVariableInspector ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    SetVisibility(m_conduitNodeInspectorPanel,
+                  ShowNodeInspector ? SnAPI::UI::EVisibility::Visible : SnAPI::UI::EVisibility::Collapsed);
+    SetSizeForVisibility(m_conduitVariableInspectorPanel,
+                         ShowVariableInspector,
+                         SnAPI::UI::Sizing::Fill(),
+                         SnAPI::UI::Sizing::Auto());
+    SetSizeForVisibility(m_conduitNodeInspectorPanel,
+                         ShowNodeInspector,
+                         SnAPI::UI::Sizing::Fill(),
+                         SnAPI::UI::Sizing::Auto());
+    SetText(m_conduitInspectorTitleText,
+            ShowVariableInspector ? std::string("Selected Variable")
+                                  : (ShowNodeInspector ? std::string("Selected Node")
+                                                       : std::string("Selection Inspector")));
+
+    if (m_conduitVariablesTree.Id.Value != 0)
+    {
+        if (auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_conduitVariablesTree.Id)))
+        {
+            std::vector<SnAPI::UI::UITreeItem> Items{};
+            Items.reserve(m_conduitWorkspaceState.VariableEntries.size());
+            m_conduitVisibleVariableIds.clear();
+
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.VariableEntries.size(); ++Index)
+            {
+                const auto& Entry = m_conduitWorkspaceState.VariableEntries[Index];
+                SnAPI::UI::UITreeItem Item{};
+                Item.Label = Entry.Name + " : " + Entry.TypeLabel + (Entry.HasDefault ? " [default]" : "");
+                Items.push_back(std::move(Item));
+                m_conduitVisibleVariableIds.push_back(Entry.Id);
+                if (Entry.Selected)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+
+            Tree->SetItems(std::move(Items));
+            Tree->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
+    if (m_conduitPaletteSearchInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitPaletteSearchInput.Id)))
+        {
+            Input->Text().Set(m_conduitPaletteFilterText);
+        }
+    }
+
+    if (m_conduitPaletteTree.Id.Value != 0)
+    {
+        if (auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_conduitPaletteTree.Id)))
+        {
+            std::vector<SnAPI::UI::UITreeItem> Items{};
+            m_conduitVisiblePaletteStableIds.clear();
+
+            std::string FilterLower = m_conduitPaletteFilterText;
+            std::transform(FilterLower.begin(), FilterLower.end(), FilterLower.begin(), [](const unsigned char Character) {
+                return static_cast<char>(std::tolower(Character));
+            });
+
+            int32_t SelectedIndex = -1;
+            for (const auto& Entry : m_conduitWorkspaceState.PaletteEntries)
+            {
+                std::string SearchText = Entry.DisplayName + " " + Entry.Category + " " + Entry.Tooltip;
+                std::transform(SearchText.begin(), SearchText.end(), SearchText.begin(), [](const unsigned char Character) {
+                    return static_cast<char>(std::tolower(Character));
+                });
+
+                if (!FilterLower.empty() && SearchText.find(FilterLower) == std::string::npos)
+                {
+                    continue;
+                }
+
+                SnAPI::UI::UITreeItem Item{};
+                Item.Label = Entry.Category.empty()
+                    ? Entry.DisplayName
+                    : Entry.Category + " :: " + Entry.DisplayName + (Entry.RequiresSpecialization ? " *" : "");
+                Items.push_back(std::move(Item));
+                m_conduitVisiblePaletteStableIds.push_back(Entry.StableId);
+                if (Entry.StableId == m_conduitSelectedPaletteStableId)
+                {
+                    SelectedIndex = static_cast<int32_t>(m_conduitVisiblePaletteStableIds.size() - 1);
+                }
+            }
+
+            if (SelectedIndex < 0 && !m_conduitVisiblePaletteStableIds.empty())
+            {
+                SelectedIndex = 0;
+                m_conduitSelectedPaletteStableId = m_conduitVisiblePaletteStableIds.front();
+            }
+
+            Tree->SetItems(std::move(Items));
+            Tree->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
+    if (m_conduitGraphCanvas.Id.Value != 0)
+    {
+        if (auto* Canvas =
+                dynamic_cast<Conduit::Editor::UIConduitGraphCanvas*>(&m_context->GetElement(m_conduitGraphCanvas.Id)))
+        {
+            Conduit::Editor::GraphCanvasView CanvasView{};
+            CanvasView.Viewport.PanX = m_conduitWorkspaceState.CanvasPanX;
+            CanvasView.Viewport.PanY = m_conduitWorkspaceState.CanvasPanY;
+            CanvasView.Viewport.Zoom = m_conduitWorkspaceState.CanvasZoom;
+            CanvasView.Nodes.reserve(m_conduitWorkspaceState.CanvasNodes.size());
+            for (const auto& Node : m_conduitWorkspaceState.CanvasNodes)
+            {
+                std::vector<Conduit::Editor::CanvasPinView> InputPins{};
+                InputPins.reserve(Node.InputPins.size());
+                for (const auto& Pin : Node.InputPins)
+                {
+                    InputPins.push_back(Conduit::Editor::CanvasPinView{
+                        .Name = Pin.Name,
+                        .TypeLabel = Pin.TypeLabel,
+                        .Kind = Pin.Kind,
+                        .IsInput = Pin.IsInput,
+                        .IsExec = Pin.IsExec,
+                    });
+                }
+
+                std::vector<Conduit::Editor::CanvasPinView> OutputPins{};
+                OutputPins.reserve(Node.OutputPins.size());
+                for (const auto& Pin : Node.OutputPins)
+                {
+                    OutputPins.push_back(Conduit::Editor::CanvasPinView{
+                        .Name = Pin.Name,
+                        .TypeLabel = Pin.TypeLabel,
+                        .Kind = Pin.Kind,
+                        .IsInput = Pin.IsInput,
+                        .IsExec = Pin.IsExec,
+                    });
+                }
+
+                CanvasView.Nodes.push_back(Conduit::Editor::CanvasNodeView{
+                    .Id = Node.Id,
+                    .Title = Node.Title,
+                    .Detail = Node.Detail,
+                    .X = Node.X,
+                    .Y = Node.Y,
+                    .Width = Node.Width,
+                    .IsCollapsed = Node.IsCollapsed,
+                    .Selected = Node.Selected,
+                    .InputPins = std::move(InputPins),
+                    .OutputPins = std::move(OutputPins),
+                });
+            }
+            CanvasView.Comments.reserve(m_conduitWorkspaceState.CanvasComments.size());
+            for (const auto& Comment : m_conduitWorkspaceState.CanvasComments)
+            {
+                CanvasView.Comments.push_back(Conduit::Editor::CanvasCommentView{
+                    .Id = Comment.Id,
+                    .Title = Comment.Title,
+                    .X = Comment.X,
+                    .Y = Comment.Y,
+                    .Width = Comment.Width,
+                    .Height = Comment.Height,
+                    .ColorRgba = Comment.ColorRgba,
+                    .Selected = Comment.Selected,
+                });
+            }
+            CanvasView.Wires.reserve(m_conduitWorkspaceState.CanvasWires.size());
+            for (const auto& Wire : m_conduitWorkspaceState.CanvasWires)
+            {
+                CanvasView.Wires.push_back(Conduit::Editor::CanvasWireView{
+                    .SourceNodeId = Wire.SourceNodeId,
+                    .SourcePin = Wire.SourcePin,
+                    .TargetNodeId = Wire.TargetNodeId,
+                    .TargetPin = Wire.TargetPin,
+                    .Kind = Wire.Kind,
+                    .IsExec = Wire.IsExec,
+                });
+            }
+            Canvas->SetViewState(std::move(CanvasView));
+        }
+    }
+
+    if (m_conduitNodesTree.Id.Value != 0)
+    {
+        if (auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_conduitNodesTree.Id)))
+        {
+            std::vector<SnAPI::UI::UITreeItem> Items{};
+            Items.reserve(m_conduitWorkspaceState.NodeEntries.size());
+            m_conduitVisibleNodeIds.clear();
+
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.NodeEntries.size(); ++Index)
+            {
+                const auto& Entry = m_conduitWorkspaceState.NodeEntries[Index];
+                SnAPI::UI::UITreeItem Item{};
+                Item.Label = Entry.Detail.empty() ? Entry.Title : Entry.Title + " :: " + Entry.Detail;
+                Items.push_back(std::move(Item));
+                m_conduitVisibleNodeIds.push_back(Entry.Id);
+                if (Entry.Selected)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+
+            Tree->SetItems(std::move(Items));
+            Tree->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
+    if (m_conduitVariableCreateTypeCombo.Id.Value != 0)
+    {
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(m_conduitVariableCreateTypeCombo.Id)))
+        {
+            std::vector<std::string> Labels{};
+            Labels.reserve(m_conduitWorkspaceState.VariableTypeOptions.size());
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.VariableTypeOptions.size(); ++Index)
+            {
+                Labels.push_back(m_conduitWorkspaceState.VariableTypeOptions[Index].Label);
+                if (m_conduitWorkspaceState.VariableTypeOptions[Index].Type == m_conduitCreateSelectedVariableType)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+            if (SelectedIndex < 0 && !m_conduitWorkspaceState.VariableTypeOptions.empty())
+            {
+                m_conduitCreateSelectedVariableType = m_conduitWorkspaceState.VariableTypeOptions.front().Type;
+                SelectedIndex = 0;
+            }
+            Combo->SetItems(std::move(Labels));
+            (void)Combo->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
+    if (m_conduitVariableCreateNameInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitVariableCreateNameInput.Id)))
+        {
+            Input->Text().Set(m_conduitCreateVariableNameText);
+        }
+    }
+
+    const auto& Inspector = m_conduitWorkspaceState.SelectedVariable;
+    const auto& NodeInspector = m_conduitWorkspaceState.SelectedNode;
+    if (m_conduitVariableNameInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitVariableNameInput.Id)))
+        {
+            if (!Input->IsFocused())
+            {
+                Input->Text().Set(Inspector.HasSelection ? Inspector.Name : std::string{});
+            }
+        }
+    }
+    if (m_conduitVariableTypeCombo.Id.Value != 0)
+    {
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(m_conduitVariableTypeCombo.Id)))
+        {
+            std::vector<std::string> Labels{};
+            Labels.reserve(m_conduitWorkspaceState.VariableTypeOptions.size());
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.VariableTypeOptions.size(); ++Index)
+            {
+                Labels.push_back(m_conduitWorkspaceState.VariableTypeOptions[Index].Label);
+                if (Inspector.HasSelection && m_conduitWorkspaceState.VariableTypeOptions[Index].Type == Inspector.Type)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+            Combo->SetItems(std::move(Labels));
+            (void)Combo->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
+    std::string DefaultHint = "Select a graph variable to edit its default value.";
+    if (Inspector.HasSelection)
+    {
+        switch (Inspector.DefaultEditorKind)
+        {
+        case ConduitWorkspaceState::EVariableDefaultEditorKind::Bool:
+            DefaultHint = "Bool default applies immediately.";
+            break;
+        case ConduitWorkspaceState::EVariableDefaultEditorKind::Text:
+            DefaultHint = "Press Enter in the text field to apply the default.";
+            break;
+        case ConduitWorkspaceState::EVariableDefaultEditorKind::Enum:
+            DefaultHint = "Selecting an enum entry applies the default immediately.";
+            break;
+        case ConduitWorkspaceState::EVariableDefaultEditorKind::Complex:
+            DefaultHint = "Edit reflected fields below, then click Apply Default.";
+            break;
+        case ConduitWorkspaceState::EVariableDefaultEditorKind::None:
+        default:
+            DefaultHint = "Selected type has no inline default editor yet.";
+            break;
+        }
+    }
+    SetText(m_conduitVariableDefaultHintText, DefaultHint);
+    SetText(m_conduitNodeSummaryText,
+            ShowNodeInspector ? (NodeInspector.Detail.empty() ? NodeInspector.Title : NodeInspector.Detail)
+                              : std::string("Select an authored Conduit node to edit entry names and control-flow labels."));
+    SetText(m_conduitNodePrimaryLabelText, NodeInspector.PrimaryTextLabel);
+    SetText(m_conduitNodeSecondaryLabelText, NodeInspector.SecondaryTextLabel);
+    SetVisibility(m_conduitNodePrimaryLabelText,
+                  ShowNodeInspector && NodeInspector.CanEditPrimaryText
+                      ? SnAPI::UI::EVisibility::Visible
+                      : SnAPI::UI::EVisibility::Collapsed);
+    SetVisibility(m_conduitNodePrimaryTextInput,
+                  ShowNodeInspector && NodeInspector.CanEditPrimaryText
+                      ? SnAPI::UI::EVisibility::Visible
+                      : SnAPI::UI::EVisibility::Collapsed);
+    SetVisibility(m_conduitNodeSecondaryLabelText,
+                  ShowNodeInspector && NodeInspector.CanEditSecondaryText
+                      ? SnAPI::UI::EVisibility::Visible
+                      : SnAPI::UI::EVisibility::Collapsed);
+    SetVisibility(m_conduitNodeSecondaryTextInput,
+                  ShowNodeInspector && NodeInspector.CanEditSecondaryText
+                      ? SnAPI::UI::EVisibility::Visible
+                      : SnAPI::UI::EVisibility::Collapsed);
+    if (m_conduitNodePrimaryTextInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitNodePrimaryTextInput.Id)))
+        {
+            if (!Input->IsFocused())
+            {
+                Input->Text().Set(NodeInspector.CanEditPrimaryText ? NodeInspector.PrimaryTextValue : std::string{});
+            }
+        }
+    }
+    if (m_conduitNodeSecondaryTextInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitNodeSecondaryTextInput.Id)))
+        {
+            if (!Input->IsFocused())
+            {
+                Input->Text().Set(NodeInspector.CanEditSecondaryText ? NodeInspector.SecondaryTextValue : std::string{});
+            }
+        }
+    }
+
+    if (m_conduitVariableDefaultBoolCheckbox.Id.Value != 0)
+    {
+        if (auto* Checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_context->GetElement(m_conduitVariableDefaultBoolCheckbox.Id)))
+        {
+            Checkbox->Checked().Set(Inspector.BoolValue);
+        }
+    }
+    if (m_conduitVariableDefaultTextInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitVariableDefaultTextInput.Id)))
+        {
+            if (!Input->IsFocused())
+            {
+                Input->Text().Set(Inspector.TextValue);
+            }
+        }
+    }
+    if (m_conduitVariableDefaultEnumCombo.Id.Value != 0)
+    {
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(m_conduitVariableDefaultEnumCombo.Id)))
+        {
+            Combo->SetItems(Inspector.EnumOptions);
+            (void)Combo->SetSelectedIndex(Inspector.SelectedEnumIndex, false);
+        }
+    }
+
+    const auto& ClassInspector = m_conduitWorkspaceState.SelectedClass;
+    if (m_conduitClassNameInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitClassNameInput.Id)))
+        {
+            if (!Input->IsFocused())
+            {
+                Input->Text().Set(ClassInspector.HasSelection ? ClassInspector.Name : std::string{});
+            }
+        }
+    }
+    if (m_conduitClassHostTypeCombo.Id.Value != 0)
+    {
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(m_conduitClassHostTypeCombo.Id)))
+        {
+            std::vector<std::string> Labels{};
+            Labels.reserve(m_conduitWorkspaceState.ClassHostTypeOptions.size());
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.ClassHostTypeOptions.size(); ++Index)
+            {
+                Labels.push_back(m_conduitWorkspaceState.ClassHostTypeOptions[Index].Label);
+                if (ClassInspector.HasSelection &&
+                    m_conduitWorkspaceState.ClassHostTypeOptions[Index].Type == ClassInspector.HostType)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+            Combo->SetItems(std::move(Labels));
+            (void)Combo->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+    if (m_conduitClassGraphCombo.Id.Value != 0)
+    {
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(m_conduitClassGraphCombo.Id)))
+        {
+            std::vector<std::string> Labels{};
+            Labels.reserve(m_conduitWorkspaceState.ClassGraphOptions.size());
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.ClassGraphOptions.size(); ++Index)
+            {
+                Labels.push_back(m_conduitWorkspaceState.ClassGraphOptions[Index].Label);
+                if (ClassInspector.HasSelection &&
+                    m_conduitWorkspaceState.ClassGraphOptions[Index].AssetKey == ClassInspector.GraphAssetKey)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+            Combo->SetItems(std::move(Labels));
+            (void)Combo->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
+    if (UIPropertyPanel* Panel = ResolveConduitVariableDefaultPanel())
+    {
+        if (Inspector.DefaultEditorKind == ConduitWorkspaceState::EVariableDefaultEditorKind::Complex &&
+            Inspector.ComplexObject != nullptr &&
+            Inspector.ComplexType != TypeId{})
+        {
+            m_conduitVariableDefaultPanelBound = Panel->BindObject(Inspector.ComplexType, Inspector.ComplexObject);
+            m_conduitVariableDefaultBoundObject = Inspector.ComplexObject;
+            m_conduitVariableDefaultBoundType = Inspector.ComplexType;
+        }
+        else
+        {
+            Panel->ClearObject();
+            m_conduitVariableDefaultPanelBound = false;
+            m_conduitVariableDefaultBoundObject = nullptr;
+            m_conduitVariableDefaultBoundType = {};
+        }
+    }
+
+    m_context->MarkLayoutDirty();
+}
+
+UIPropertyPanel* EditorLayout::ResolveConduitVariableDefaultPanel() const
+{
+    if (!m_context || m_conduitVariableDefaultPropertyPanel.Id.Value == 0)
+    {
+        return nullptr;
+    }
+
+    return dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_conduitVariableDefaultPropertyPanel.Id));
 }
 
 void EditorLayout::HandleContentAssetCardClicked(const std::size_t CardIndex)
@@ -4878,7 +5552,7 @@ void EditorLayout::UpdateContentAssetCardWidgets()
         {
             if (m_contentAssets.empty())
             {
-                EmptyHint->Text().Set("No assets discovered. Click Rescan to search for .snpak packs.");
+                EmptyHint->Text().Set("No assets discovered. Click Rescan to search for source assets.");
             }
             else
             {
@@ -5801,7 +6475,7 @@ void EditorLayout::EnsureProjectSettingsModalOverlay()
     }));
     m_projectSettingsNameInput = NameInput.Handle();
 
-    auto StartupLabel = FormPanel.Add(SnAPI::UI::UIText("Startup Level Pack"));
+    auto StartupLabel = FormPanel.Add(SnAPI::UI::UIText("Startup Level Asset"));
     StartupLabel.Element().ElementStyle().Apply("editor.menu_item");
 
     auto StartupInput = FormPanel.Add(SnAPI::UI::UIFilesystemPicker{});
@@ -5815,10 +6489,10 @@ void EditorLayout::EnsureProjectSettingsModalOverlay()
     StartupInputElement.ShowDirectories().Set(true);
     StartupInputElement.ShowFiles().Set(true);
     StartupInputElement.RestrictToRoot().Set(false);
-    StartupInputElement.Placeholder().Set(std::string("Path to startup level pack"));
-    StartupInputElement.SetAllowedExtensions({".snpak"});
+    StartupInputElement.Placeholder().Set(std::string("Path to startup level asset"));
+    StartupInputElement.SetAllowedExtensions({".level"});
 
-    std::string StartupPickerValue = m_projectSettingsStartupPackText;
+    std::string StartupPickerValue = m_projectSettingsStartupAssetText;
     if (!StartupPickerValue.empty() && StartupPickerValue.find("://") == std::string::npos)
     {
         std::filesystem::path StartupPath = std::filesystem::path(StartupPickerValue);
@@ -5841,11 +6515,11 @@ void EditorLayout::EnsureProjectSettingsModalOverlay()
         SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind([this](const std::vector<std::string>& Values) {
             if (!Values.empty())
             {
-                m_projectSettingsStartupPackText = Values.front();
+                m_projectSettingsStartupAssetText = Values.front();
                 RefreshProjectSettingsModalSaveButtonState();
             }
         }));
-    m_projectSettingsStartupPackInput = StartupInput.Handle();
+    m_projectSettingsStartupAssetInput = StartupInput.Handle();
 
     auto DefaultRenderSettingsLabel = FormPanel.Add(SnAPI::UI::UIText("Default Render Settings"));
     DefaultRenderSettingsLabel.Element().ElementStyle().Apply("editor.menu_item");
@@ -5962,7 +6636,7 @@ void EditorLayout::DestroyProjectSettingsModalOverlay()
 
     m_projectSettingsModalOverlay = {};
     m_projectSettingsNameInput = {};
-    m_projectSettingsStartupPackInput = {};
+    m_projectSettingsStartupAssetInput = {};
     m_projectSettingsDefaultRenderSettingsCombo = {};
     m_projectSettingsSaveButton = {};
 }
@@ -6591,7 +7265,7 @@ void EditorLayout::OpenProjectSettingsModal()
     CloseContextMenu();
     m_projectSettingsModalOpen = true;
     m_projectSettingsNameText = m_projectState.Name;
-    m_projectSettingsStartupPackText = m_projectState.StartupLevelPack;
+    m_projectSettingsStartupAssetText = m_projectState.StartupLevelAsset;
     m_projectSettingsDefaultRenderSettingsAssetId = m_projectState.DefaultRenderSettingsAssetId;
     DestroyProjectSettingsModalOverlay();
     RefreshProjectSettingsModalVisibility();
@@ -6629,18 +7303,18 @@ void EditorLayout::ConfirmProjectSettingsModal()
         }
     }
 
-    if (m_context && m_projectSettingsStartupPackInput.Id.Value != 0)
+    if (m_context && m_projectSettingsStartupAssetInput.Id.Value != 0)
     {
-        if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectSettingsStartupPackInput.Id)))
+        if (auto* Picker = dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_projectSettingsStartupAssetInput.Id)))
         {
-            m_projectSettingsStartupPackText = TrimCopy(
+            m_projectSettingsStartupAssetText = TrimCopy(
                 Picker->Properties().GetPropertyOr(SnAPI::UI::UIFilesystemPicker::ValueKey, std::string{}));
-            if (m_projectSettingsStartupPackText.empty())
+            if (m_projectSettingsStartupAssetText.empty())
             {
                 const auto Selected = Picker->SelectedFilesystemPaths();
                 if (!Selected.empty())
                 {
-                    m_projectSettingsStartupPackText = Selected.front().string();
+                    m_projectSettingsStartupAssetText = Selected.front().string();
                 }
             }
         }
@@ -6650,7 +7324,7 @@ void EditorLayout::ConfirmProjectSettingsModal()
     Request.Action = EProjectAction::SaveSettings;
     Request.ProjectName = TrimCopy(m_projectSettingsNameText);
     Request.ProjectFilePath = m_projectState.ProjectFilePath;
-    Request.StartupLevelPack = TrimCopy(m_projectSettingsStartupPackText);
+    Request.StartupLevelAsset = TrimCopy(m_projectSettingsStartupAssetText);
     Request.DefaultRenderSettingsAssetId = TrimCopy(m_projectSettingsDefaultRenderSettingsAssetId);
     if (Request.ProjectName.empty())
     {
@@ -7828,8 +8502,708 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     auto ProfilerHint = ProfilerTab.Add(SnAPI::UI::UIText("Profiler is rendered as a game-viewport overlay."));
     ProfilerHint.Element().ElementStyle().Apply("editor.menu_item");
 
+    auto ConduitTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameConduitTab"));
+    auto& ConduitTabPanel = ConduitTab.Element();
+    ConduitTabPanel.ElementStyle().Apply("editor.section_card");
+    ConduitTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitTabPanel.Padding().Set(12.0f);
+    ConduitTabPanel.Gap().Set(8.0f);
+
+    auto ConduitTitle = ConduitTab.Add(SnAPI::UI::UIText("Conduit Workspace"));
+    auto& ConduitTitleText = ConduitTitle.Element();
+    ConduitTitleText.ElementStyle().Apply("editor.panel_title");
+    ConduitTitleText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    m_conduitWorkspaceTitleText = ConduitTitle.Handle();
+
+    auto ConduitStatus = ConduitTab.Add(SnAPI::UI::UIText("No Conduit graph open."));
+    auto& ConduitStatusText = ConduitStatus.Element();
+    ConduitStatusText.ElementStyle().Apply("editor.panel_subtitle");
+    ConduitStatusText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    m_conduitWorkspaceStatusText = ConduitStatus.Handle();
+
+    auto ConduitSummary = ConduitTab.Add(
+        SnAPI::UI::UIText("Double-click a Conduit Graph asset in the Content Browser to open it here."));
+    auto& ConduitSummaryText = ConduitSummary.Element();
+    ConduitSummaryText.ElementStyle().Apply("editor.menu_item");
+    ConduitSummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    ConduitSummaryText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
+    m_conduitWorkspaceSummaryText = ConduitSummary.Handle();
+
+    auto ConduitBody = ConduitTab.Add(SnAPI::UI::UIPanel("Editor.ConduitWorkspaceBody"));
+    auto& ConduitBodyPanel = ConduitBody.Element();
+    ConduitBodyPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitBodyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitBodyPanel.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitBodyPanel.Gap().Set(0.0f);
+    ConduitBodyPanel.Padding().Set(0.0f);
+    ConduitBodyPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ConduitBodyPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ConduitBodyPanel.BorderThickness().Set(0.0f);
+    ConduitBodyPanel.CornerRadius().Set(0.0f);
+
+    auto ConduitGraphWorkspaceHost = ConduitBody.Add(SnAPI::UI::UIPanel("Editor.ConduitGraphWorkspaceHost"));
+    ConfigureHostPanel(ConduitGraphWorkspaceHost.Element());
+    m_conduitGraphWorkspaceHost = ConduitGraphWorkspaceHost.Handle();
+
+    auto ConduitGraphSplit = ConduitGraphWorkspaceHost.Add(SnAPI::UI::UIDockZone{});
+    auto& ConduitGraphSplitElement = ConduitGraphSplit.Element();
+    ConfigureConduitSplitZone(ConduitGraphSplitElement,
+                              SnAPI::UI::EDockSplit::Horizontal,
+                              kConduitSidebarSplitRatio,
+                              250.0f,
+                              420.0f);
+
+    auto ConduitSidebarHost = ConduitGraphSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitSidebarHost"));
+    ConfigureHostPanel(ConduitSidebarHost.Element());
+
+    auto ConduitSidebarSplit = ConduitSidebarHost.Add(SnAPI::UI::UIDockZone{});
+    auto& ConduitSidebarSplitElement = ConduitSidebarSplit.Element();
+    ConfigureConduitSplitZone(ConduitSidebarSplitElement,
+                              SnAPI::UI::EDockSplit::Vertical,
+                              kConduitSidebarUpperSplitRatio,
+                              220.0f,
+                              220.0f);
+
+    auto ConduitVariablesHost = ConduitSidebarSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitVariablesHost"));
+    ConfigureHostPanel(ConduitVariablesHost.Element());
+
+    auto ConduitVariablesCard = ConduitVariablesHost.Add(SnAPI::UI::UIPanel("Editor.ConduitVariablesCard"));
+    auto& ConduitVariablesCardPanel = ConduitVariablesCard.Element();
+    ConduitVariablesCardPanel.ElementStyle().Apply("editor.section_card");
+    ConduitVariablesCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitVariablesCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitVariablesCardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitVariablesCardPanel.Padding().Set(8.0f);
+    ConduitVariablesCardPanel.Gap().Set(6.0f);
+    m_conduitVariablesCard = ConduitVariablesCard.Handle();
+
+    auto ConduitVariablesTitle = ConduitVariablesCard.Add(SnAPI::UI::UIText("Variables"));
+    ConduitVariablesTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto ConduitVariablesTreeBuilder = ConduitVariablesCard.Add(SnAPI::UI::UITreeView{});
+    auto& ConduitVariablesTree = ConduitVariablesTreeBuilder.Element();
+    ConduitVariablesTree.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitVariablesTree.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitVariablesTree.OnSelectionChanged([this](const int32_t Index) {
+        if (!m_onConduitVariableSelected || Index < 0 || static_cast<std::size_t>(Index) >= m_conduitVisibleVariableIds.size())
+        {
+            return;
+        }
+        m_onConduitVariableSelected(m_conduitVisibleVariableIds[static_cast<std::size_t>(Index)]);
+    });
+    m_conduitVariablesTree = ConduitVariablesTreeBuilder.Handle();
+
+    auto CreateNameInputBuilder = ConduitVariablesCard.Add(SnAPI::UI::UITextInput{});
+    auto& CreateNameInput = CreateNameInputBuilder.Element();
+    CreateNameInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    CreateNameInput.Placeholder().Set(std::string("New variable name"));
+    CreateNameInput.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        m_conduitCreateVariableNameText = Text;
+    }));
+    CreateNameInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        m_conduitCreateVariableNameText = Text;
+        if (m_onConduitVariableCreateRequested && !Text.empty() && m_conduitCreateSelectedVariableType != TypeId{})
+        {
+            m_onConduitVariableCreateRequested(Text, m_conduitCreateSelectedVariableType);
+            m_conduitCreateVariableNameText.clear();
+            RefreshConduitWorkspaceView();
+        }
+    }));
+    m_conduitVariableCreateNameInput = CreateNameInputBuilder.Handle();
+
+    auto CreateTypeComboBuilder = ConduitVariablesCard.Add(SnAPI::UI::UIComboBox{});
+    auto& CreateTypeCombo = CreateTypeComboBuilder.Element();
+    CreateTypeCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    CreateTypeCombo.Placeholder().Set(std::string("Variable type"));
+    CreateTypeCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (Index < 0 || static_cast<std::size_t>(Index) >= m_conduitWorkspaceState.VariableTypeOptions.size())
+        {
+            m_conduitCreateSelectedVariableType = {};
+            return;
+        }
+        m_conduitCreateSelectedVariableType = m_conduitWorkspaceState.VariableTypeOptions[static_cast<std::size_t>(Index)].Type;
+    });
+    m_conduitVariableCreateTypeCombo = CreateTypeComboBuilder.Handle();
+
+    auto CreateButtonBuilder = ConduitVariablesCard.Add(SnAPI::UI::UIButton{});
+    auto& CreateButton = CreateButtonBuilder.Element();
+    CreateButton.ElementStyle().Apply("editor.toolbar_button");
+    CreateButton.Width().Set(SnAPI::UI::Sizing::Fill());
+    CreateButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+    CreateButton.OnClick([this]() {
+        if (m_onConduitVariableCreateRequested &&
+            !m_conduitCreateVariableNameText.empty() &&
+            m_conduitCreateSelectedVariableType != TypeId{})
+        {
+            m_onConduitVariableCreateRequested(m_conduitCreateVariableNameText, m_conduitCreateSelectedVariableType);
+            m_conduitCreateVariableNameText.clear();
+            RefreshConduitWorkspaceView();
+        }
+    });
+    auto CreateButtonText = CreateButtonBuilder.Add(SnAPI::UI::UIText("Add Variable"));
+    CreateButtonText.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitVariableCreateButton = CreateButtonBuilder.Handle();
+
+    auto ConduitPaletteHost = ConduitSidebarSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitPaletteHost"));
+    ConfigureHostPanel(ConduitPaletteHost.Element());
+
+    auto ConduitPaletteCard = ConduitPaletteHost.Add(SnAPI::UI::UIPanel("Editor.ConduitPaletteCard"));
+    auto& ConduitPaletteCardPanel = ConduitPaletteCard.Element();
+    ConduitPaletteCardPanel.ElementStyle().Apply("editor.section_card");
+    ConduitPaletteCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitPaletteCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitPaletteCardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitPaletteCardPanel.Padding().Set(8.0f);
+    ConduitPaletteCardPanel.Gap().Set(6.0f);
+
+    auto ConduitPaletteTitle = ConduitPaletteCard.Add(SnAPI::UI::UIText("Node Palette"));
+    ConduitPaletteTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto ConduitPaletteSearchBuilder = ConduitPaletteCard.Add(SnAPI::UI::UITextInput{});
+    auto& ConduitPaletteSearch = ConduitPaletteSearchBuilder.Element();
+    ConduitPaletteSearch.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitPaletteSearch.Placeholder().Set(std::string("Search nodes"));
+    ConduitPaletteSearch.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        m_conduitPaletteFilterText = Text;
+        RefreshConduitWorkspaceView();
+    }));
+    m_conduitPaletteSearchInput = ConduitPaletteSearchBuilder.Handle();
+
+    auto ConduitPaletteTreeBuilder = ConduitPaletteCard.Add(SnAPI::UI::UITreeView{});
+    auto& ConduitPaletteTree = ConduitPaletteTreeBuilder.Element();
+    ConduitPaletteTree.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitPaletteTree.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitPaletteTree.OnSelectionChanged([this](const int32_t Index) {
+        if (Index < 0 || static_cast<std::size_t>(Index) >= m_conduitVisiblePaletteStableIds.size())
+        {
+            m_conduitSelectedPaletteStableId.clear();
+            return;
+        }
+        m_conduitSelectedPaletteStableId = m_conduitVisiblePaletteStableIds[static_cast<std::size_t>(Index)];
+    });
+    m_conduitPaletteTree = ConduitPaletteTreeBuilder.Handle();
+
+    auto PaletteAddButtonBuilder = ConduitPaletteCard.Add(SnAPI::UI::UIButton{});
+    auto& PaletteAddButton = PaletteAddButtonBuilder.Element();
+    PaletteAddButton.ElementStyle().Apply("editor.toolbar_button");
+    PaletteAddButton.Width().Set(SnAPI::UI::Sizing::Fill());
+    PaletteAddButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+    PaletteAddButton.OnClick([this]() {
+        if (m_onConduitNodeCreateRequested && !m_conduitSelectedPaletteStableId.empty())
+        {
+            m_onConduitNodeCreateRequested(m_conduitSelectedPaletteStableId);
+        }
+    });
+    auto PaletteAddButtonText = PaletteAddButtonBuilder.Add(SnAPI::UI::UIText("Add Selected Node"));
+    PaletteAddButtonText.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitPaletteAddNodeButton = PaletteAddButtonBuilder.Handle();
+
+    auto ConduitGraphMainHost = ConduitGraphSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitGraphMainHost"));
+    ConfigureHostPanel(ConduitGraphMainHost.Element());
+
+    auto ConduitGraphContentSplit = ConduitGraphMainHost.Add(SnAPI::UI::UIDockZone{});
+    auto& ConduitGraphContentSplitElement = ConduitGraphContentSplit.Element();
+    ConfigureConduitSplitZone(ConduitGraphContentSplitElement,
+                              SnAPI::UI::EDockSplit::Horizontal,
+                              kConduitCanvasSplitRatio,
+                              380.0f,
+                              280.0f);
+
+    auto ConduitCanvasHost = ConduitGraphContentSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitCanvasHost"));
+    ConfigureHostPanel(ConduitCanvasHost.Element());
+
+    auto ConduitNodesCard = ConduitCanvasHost.Add(SnAPI::UI::UIPanel("Editor.ConduitNodesCard"));
+    auto& ConduitNodesCardPanel = ConduitNodesCard.Element();
+    ConduitNodesCardPanel.ElementStyle().Apply("editor.section_card");
+    ConduitNodesCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitNodesCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitNodesCardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitNodesCardPanel.Padding().Set(8.0f);
+    ConduitNodesCardPanel.Gap().Set(6.0f);
+    m_conduitNodesCard = ConduitNodesCard.Handle();
+
+    auto ConduitNodesTitle = ConduitNodesCard.Add(SnAPI::UI::UIText("Graph Canvas"));
+    ConduitNodesTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto ConduitNodesSummary = ConduitNodesCard.Add(
+        SnAPI::UI::UIText("Left drag nodes. Right or middle drag pans. Mouse wheel zooms. Palette nodes spawn into this authored graph."));
+    auto& ConduitNodesSummaryText = ConduitNodesSummary.Element();
+    ConduitNodesSummaryText.ElementStyle().Apply("editor.panel_subtitle");
+    ConduitNodesSummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto ConduitCanvasBuilder = ConduitNodesCard.Add(::SnAPI::GameFramework::Conduit::Editor::UIConduitGraphCanvas{});
+    auto& ConduitCanvas = ConduitCanvasBuilder.Element();
+    ConduitCanvas.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitCanvas.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitCanvas.SetNodeSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)>::Bind([this](const Uuid& NodeId) {
+        if (m_onConduitNodeSelected)
+        {
+            m_onConduitNodeSelected(NodeId);
+        }
+    }));
+    ConduitCanvas.SetNodeMovedHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)>::Bind(
+        [this](const Uuid& NodeId, const float X, const float Y) {
+            if (m_onConduitNodeMoveRequested)
+            {
+                m_onConduitNodeMoveRequested(NodeId, X, Y);
+            }
+        }));
+    ConduitCanvas.SetViewportChangedHandler(SnAPI::UI::TDelegate<void(float, float, float)>::Bind(
+        [this](const float PanX, const float PanY, const float Zoom) {
+            if (m_onConduitViewportRequested)
+            {
+                m_onConduitViewportRequested(PanX, PanY, Zoom);
+            }
+        }));
+    m_conduitGraphCanvas = ConduitCanvasBuilder.Handle();
+
+    auto ConduitNodeFooter = ConduitNodesCard.Add(SnAPI::UI::UIPanel("Editor.ConduitCanvasFooter"));
+    auto& ConduitNodeFooterPanel = ConduitNodeFooter.Element();
+    ConduitNodeFooterPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ConduitNodeFooterPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitNodeFooterPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ConduitNodeFooterPanel.Gap().Set(6.0f);
+    ConduitNodeFooterPanel.Padding().Set(0.0f);
+    ConduitNodeFooterPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ConduitNodeFooterPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ConduitNodeFooterPanel.BorderThickness().Set(0.0f);
+    ConduitNodeFooterPanel.CornerRadius().Set(0.0f);
+
+    auto ConduitNodeHint = ConduitNodeFooter.Add(SnAPI::UI::UIText("Node removal currently acts on the selected canvas node."));
+    auto& ConduitNodeHintText = ConduitNodeHint.Element();
+    ConduitNodeHintText.ElementStyle().Apply("editor.menu_item");
+    ConduitNodeHintText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    ConduitNodeHintText.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto ConduitNodeRemoveButtonBuilder = ConduitNodeFooter.Add(SnAPI::UI::UIButton{});
+    auto& ConduitNodeRemoveButton = ConduitNodeRemoveButtonBuilder.Element();
+    ConduitNodeRemoveButton.ElementStyle().Apply("editor.toolbar_button");
+    ConduitNodeRemoveButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    ConduitNodeRemoveButton.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    ConduitNodeRemoveButton.OnClick([this]() {
+        if (m_onConduitNodeRemoveRequested)
+        {
+            m_onConduitNodeRemoveRequested();
+        }
+    });
+    auto ConduitNodeRemoveLabel = ConduitNodeRemoveButtonBuilder.Add(SnAPI::UI::UIText("Remove Selected Node"));
+    ConduitNodeRemoveLabel.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitNodeRemoveButton = ConduitNodeRemoveButtonBuilder.Handle();
+
+    auto ConduitDetailsHost = ConduitGraphContentSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitDetailsHost"));
+    ConfigureHostPanel(ConduitDetailsHost.Element());
+
+    auto ConduitInspectorCard = ConduitDetailsHost.Add(SnAPI::UI::UIPanel("Editor.ConduitVariableInspectorCard"));
+    auto& ConduitInspectorCardPanel = ConduitInspectorCard.Element();
+    ConduitInspectorCardPanel.ElementStyle().Apply("editor.section_card");
+    ConduitInspectorCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitInspectorCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitInspectorCardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitInspectorCardPanel.Padding().Set(8.0f);
+    ConduitInspectorCardPanel.Gap().Set(6.0f);
+    m_conduitInspectorCard = ConduitInspectorCard.Handle();
+
+    auto ConduitInspectorTitle = ConduitInspectorCard.Add(SnAPI::UI::UIText("Selection Inspector"));
+    ConduitInspectorTitle.Element().ElementStyle().Apply("editor.panel_title");
+    m_conduitInspectorTitleText = ConduitInspectorTitle.Handle();
+
+    auto ConduitInspectorScroll = ConduitInspectorCard.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ConduitInspectorScrollElement = ConduitInspectorScroll.Element();
+    ConduitInspectorScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitInspectorScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitInspectorScrollElement.Padding().Set(0.0f);
+    ConduitInspectorScrollElement.Gap().Set(10.0f);
+    ConduitInspectorScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+
+    auto VariableInspectorPanelBuilder = ConduitInspectorScroll.Add(SnAPI::UI::UIPanel("Editor.ConduitVariableInspectorPanel"));
+    auto& VariableInspectorPanel = VariableInspectorPanelBuilder.Element();
+    VariableInspectorPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    VariableInspectorPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    VariableInspectorPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    VariableInspectorPanel.Gap().Set(6.0f);
+    VariableInspectorPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    VariableInspectorPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    VariableInspectorPanel.BorderThickness().Set(0.0f);
+    VariableInspectorPanel.CornerRadius().Set(0.0f);
+    m_conduitVariableInspectorPanel = VariableInspectorPanelBuilder.Handle();
+
+    auto VariableNameInputBuilder = VariableInspectorPanelBuilder.Add(SnAPI::UI::UITextInput{});
+    auto& VariableNameInput = VariableNameInputBuilder.Element();
+    VariableNameInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    VariableNameInput.Placeholder().Set(std::string("Variable name"));
+    VariableNameInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        if (m_onConduitVariableRenameRequested)
+        {
+            m_onConduitVariableRenameRequested(Text);
+        }
+    }));
+    VariableNameInput.OnFocusStateChanged(SnAPI::UI::TDelegate<void(bool)>::Bind([this, Handle = VariableNameInputBuilder.Handle()](const bool Focused) {
+        if (Focused || !m_onConduitVariableRenameRequested || !m_context)
+        {
+            return;
+        }
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(Handle.Id)))
+        {
+            m_onConduitVariableRenameRequested(Input->Text().Get());
+        }
+    }));
+    m_conduitVariableNameInput = VariableNameInputBuilder.Handle();
+
+    auto VariableTypeComboBuilder = VariableInspectorPanelBuilder.Add(SnAPI::UI::UIComboBox{});
+    auto& VariableTypeCombo = VariableTypeComboBuilder.Element();
+    VariableTypeCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    VariableTypeCombo.Placeholder().Set(std::string("Selected variable type"));
+    VariableTypeCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (!m_onConduitVariableTypeRequested ||
+            Index < 0 ||
+            static_cast<std::size_t>(Index) >= m_conduitWorkspaceState.VariableTypeOptions.size())
+        {
+            return;
+        }
+        m_onConduitVariableTypeRequested(m_conduitWorkspaceState.VariableTypeOptions[static_cast<std::size_t>(Index)].Type);
+    });
+    m_conduitVariableTypeCombo = VariableTypeComboBuilder.Handle();
+
+    auto RemoveButtonBuilder = VariableInspectorPanelBuilder.Add(SnAPI::UI::UIButton{});
+    auto& RemoveButton = RemoveButtonBuilder.Element();
+    RemoveButton.ElementStyle().Apply("editor.toolbar_button");
+    RemoveButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    RemoveButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+    RemoveButton.OnClick([this]() {
+        if (m_onConduitVariableRemoveRequested)
+        {
+            m_onConduitVariableRemoveRequested();
+        }
+    });
+    auto RemoveButtonText = RemoveButtonBuilder.Add(SnAPI::UI::UIText("Remove Variable"));
+    RemoveButtonText.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitVariableRemoveButton = RemoveButtonBuilder.Handle();
+
+    auto DefaultHint = VariableInspectorPanelBuilder.Add(SnAPI::UI::UIText("Select a graph variable to edit its default value."));
+    auto& DefaultHintText = DefaultHint.Element();
+    DefaultHintText.ElementStyle().Apply("editor.panel_subtitle");
+    DefaultHintText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_conduitVariableDefaultHintText = DefaultHint.Handle();
+
+    auto DefaultBoolBuilder = VariableInspectorPanelBuilder.Add(SnAPI::UI::UICheckbox("Bool Default"));
+    auto& DefaultBool = DefaultBoolBuilder.Element();
+    DefaultBool.OnChanged([this](const bool Checked) {
+        if (m_onConduitVariableDefaultBoolRequested)
+        {
+            m_onConduitVariableDefaultBoolRequested(Checked);
+        }
+    });
+    m_conduitVariableDefaultBoolCheckbox = DefaultBoolBuilder.Handle();
+
+    auto DefaultTextBuilder = VariableInspectorPanelBuilder.Add(SnAPI::UI::UITextInput{});
+    auto& DefaultText = DefaultTextBuilder.Element();
+    DefaultText.Width().Set(SnAPI::UI::Sizing::Fill());
+    DefaultText.Placeholder().Set(std::string("Press Enter to apply text/numeric default"));
+    DefaultText.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        if (m_onConduitVariableDefaultTextRequested)
+        {
+            m_onConduitVariableDefaultTextRequested(Text);
+        }
+    }));
+    DefaultText.OnFocusStateChanged(SnAPI::UI::TDelegate<void(bool)>::Bind([this, Handle = DefaultTextBuilder.Handle()](const bool Focused) {
+        if (Focused || !m_onConduitVariableDefaultTextRequested || !m_context)
+        {
+            return;
+        }
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(Handle.Id)))
+        {
+            m_onConduitVariableDefaultTextRequested(Input->Text().Get());
+        }
+    }));
+    m_conduitVariableDefaultTextInput = DefaultTextBuilder.Handle();
+
+    auto DefaultEnumComboBuilder = VariableInspectorPanelBuilder.Add(SnAPI::UI::UIComboBox{});
+    auto& DefaultEnumCombo = DefaultEnumComboBuilder.Element();
+    DefaultEnumCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    DefaultEnumCombo.Placeholder().Set(std::string("Enum default"));
+    DefaultEnumCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        if (m_onConduitVariableDefaultEnumRequested && Index >= 0)
+        {
+            m_onConduitVariableDefaultEnumRequested(Text);
+        }
+    });
+    m_conduitVariableDefaultEnumCombo = DefaultEnumComboBuilder.Handle();
+
+    auto DefaultButtonsRow = VariableInspectorPanelBuilder.Add(SnAPI::UI::UIPanel("Editor.ConduitDefaultButtonsRow"));
+    auto& DefaultButtonsRowPanel = DefaultButtonsRow.Element();
+    DefaultButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    DefaultButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    DefaultButtonsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    DefaultButtonsRowPanel.Gap().Set(6.0f);
+    DefaultButtonsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    DefaultButtonsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    DefaultButtonsRowPanel.BorderThickness().Set(0.0f);
+    DefaultButtonsRowPanel.CornerRadius().Set(0.0f);
+
+    auto ClearDefaultButtonBuilder = DefaultButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& ClearDefaultButton = ClearDefaultButtonBuilder.Element();
+    ClearDefaultButton.ElementStyle().Apply("editor.toolbar_button");
+    ClearDefaultButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    ClearDefaultButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+    ClearDefaultButton.OnClick([this]() {
+        if (m_onConduitVariableClearDefaultRequested)
+        {
+            m_onConduitVariableClearDefaultRequested();
+        }
+    });
+    auto ClearDefaultLabel = ClearDefaultButtonBuilder.Add(SnAPI::UI::UIText("Clear Default"));
+    ClearDefaultLabel.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitVariableDefaultClearButton = ClearDefaultButtonBuilder.Handle();
+
+    auto ApplyDefaultButtonBuilder = DefaultButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& ApplyDefaultButton = ApplyDefaultButtonBuilder.Element();
+    ApplyDefaultButton.ElementStyle().Apply("editor.toolbar_button");
+    ApplyDefaultButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    ApplyDefaultButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+    ApplyDefaultButton.OnClick([this]() {
+        if (m_onConduitVariableCommitDefaultRequested)
+        {
+            m_onConduitVariableCommitDefaultRequested();
+        }
+    });
+    auto ApplyDefaultLabel = ApplyDefaultButtonBuilder.Add(SnAPI::UI::UIText("Apply Default"));
+    ApplyDefaultLabel.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitVariableDefaultApplyButton = ApplyDefaultButtonBuilder.Handle();
+
+    auto ResetDefaultButtonBuilder = DefaultButtonsRow.Add(SnAPI::UI::UIButton{});
+    auto& ResetDefaultButton = ResetDefaultButtonBuilder.Element();
+    ResetDefaultButton.ElementStyle().Apply("editor.toolbar_button");
+    ResetDefaultButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    ResetDefaultButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+    ResetDefaultButton.OnClick([this]() {
+        if (m_onConduitVariableResetDefaultRequested)
+        {
+            m_onConduitVariableResetDefaultRequested();
+        }
+    });
+    auto ResetDefaultLabel = ResetDefaultButtonBuilder.Add(SnAPI::UI::UIText("Reset Scratch"));
+    ResetDefaultLabel.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitVariableDefaultResetButton = ResetDefaultButtonBuilder.Handle();
+
+    auto DefaultPropertyPanelBuilder = VariableInspectorPanelBuilder.Add(UIPropertyPanel{});
+    auto& DefaultPropertyPanel = DefaultPropertyPanelBuilder.Element();
+    DefaultPropertyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    DefaultPropertyPanel.Height().Set(SnAPI::UI::Sizing::Fixed(320.0f));
+    m_conduitVariableDefaultPropertyPanel = DefaultPropertyPanelBuilder.Handle();
+
+    auto NodeInspectorPanelBuilder = ConduitInspectorScroll.Add(SnAPI::UI::UIPanel("Editor.ConduitNodeInspectorPanel"));
+    auto& NodeInspectorPanel = NodeInspectorPanelBuilder.Element();
+    NodeInspectorPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    NodeInspectorPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    NodeInspectorPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    NodeInspectorPanel.Gap().Set(6.0f);
+    NodeInspectorPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    NodeInspectorPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    NodeInspectorPanel.BorderThickness().Set(0.0f);
+    NodeInspectorPanel.CornerRadius().Set(0.0f);
+    m_conduitNodeInspectorPanel = NodeInspectorPanelBuilder.Handle();
+
+    auto NodeSummaryBuilder = NodeInspectorPanelBuilder.Add(
+        SnAPI::UI::UIText("Select an authored Conduit node to edit entry names and control-flow labels."));
+    auto& NodeSummaryText = NodeSummaryBuilder.Element();
+    NodeSummaryText.ElementStyle().Apply("editor.panel_subtitle");
+    NodeSummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_conduitNodeSummaryText = NodeSummaryBuilder.Handle();
+
+    auto NodePrimaryLabelBuilder = NodeInspectorPanelBuilder.Add(SnAPI::UI::UIText("Primary"));
+    NodePrimaryLabelBuilder.Element().ElementStyle().Apply("editor.panel_subtitle");
+    m_conduitNodePrimaryLabelText = NodePrimaryLabelBuilder.Handle();
+
+    auto NodePrimaryInputBuilder = NodeInspectorPanelBuilder.Add(SnAPI::UI::UITextInput{});
+    auto& NodePrimaryInput = NodePrimaryInputBuilder.Element();
+    NodePrimaryInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    NodePrimaryInput.Placeholder().Set(std::string("Press Enter to apply"));
+    NodePrimaryInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        if (m_onConduitNodePrimaryTextRequested)
+        {
+            m_onConduitNodePrimaryTextRequested(Text);
+        }
+    }));
+    NodePrimaryInput.OnFocusStateChanged(SnAPI::UI::TDelegate<void(bool)>::Bind([this, Handle = NodePrimaryInputBuilder.Handle()](const bool Focused) {
+        if (Focused || !m_onConduitNodePrimaryTextRequested || !m_context)
+        {
+            return;
+        }
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(Handle.Id)))
+        {
+            m_onConduitNodePrimaryTextRequested(Input->Text().Get());
+        }
+    }));
+    m_conduitNodePrimaryTextInput = NodePrimaryInputBuilder.Handle();
+
+    auto NodeSecondaryLabelBuilder = NodeInspectorPanelBuilder.Add(SnAPI::UI::UIText("Secondary"));
+    NodeSecondaryLabelBuilder.Element().ElementStyle().Apply("editor.panel_subtitle");
+    m_conduitNodeSecondaryLabelText = NodeSecondaryLabelBuilder.Handle();
+
+    auto NodeSecondaryInputBuilder = NodeInspectorPanelBuilder.Add(SnAPI::UI::UITextInput{});
+    auto& NodeSecondaryInput = NodeSecondaryInputBuilder.Element();
+    NodeSecondaryInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    NodeSecondaryInput.Placeholder().Set(std::string("Press Enter to apply"));
+    NodeSecondaryInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        if (m_onConduitNodeSecondaryTextRequested)
+        {
+            m_onConduitNodeSecondaryTextRequested(Text);
+        }
+    }));
+    NodeSecondaryInput.OnFocusStateChanged(SnAPI::UI::TDelegate<void(bool)>::Bind([this, Handle = NodeSecondaryInputBuilder.Handle()](const bool Focused) {
+        if (Focused || !m_onConduitNodeSecondaryTextRequested || !m_context)
+        {
+            return;
+        }
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(Handle.Id)))
+        {
+            m_onConduitNodeSecondaryTextRequested(Input->Text().Get());
+        }
+    }));
+    m_conduitNodeSecondaryTextInput = NodeSecondaryInputBuilder.Handle();
+
+    auto ConduitClassWorkspaceHost = ConduitBody.Add(SnAPI::UI::UIPanel("Editor.ConduitClassWorkspaceHost"));
+    ConfigureHostPanel(ConduitClassWorkspaceHost.Element());
+    m_conduitClassWorkspaceHost = ConduitClassWorkspaceHost.Handle();
+
+    auto ConduitClassSplit = ConduitClassWorkspaceHost.Add(SnAPI::UI::UIDockZone{});
+    auto& ConduitClassSplitElement = ConduitClassSplit.Element();
+    ConfigureConduitSplitZone(ConduitClassSplitElement,
+                              SnAPI::UI::EDockSplit::Horizontal,
+                              kConduitClassSplitRatio,
+                              320.0f,
+                              260.0f);
+
+    auto ConduitClassSettingsHost = ConduitClassSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitClassSettingsHost"));
+    ConfigureHostPanel(ConduitClassSettingsHost.Element());
+
+    auto ConduitClassCard = ConduitClassSettingsHost.Add(SnAPI::UI::UIPanel("Editor.ConduitClassCard"));
+    auto& ConduitClassCardPanel = ConduitClassCard.Element();
+    ConduitClassCardPanel.ElementStyle().Apply("editor.section_card");
+    ConduitClassCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitClassCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassCardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassCardPanel.Padding().Set(8.0f);
+    ConduitClassCardPanel.Gap().Set(6.0f);
+    m_conduitClassCard = ConduitClassCard.Handle();
+
+    auto ConduitClassTitle = ConduitClassCard.Add(SnAPI::UI::UIText("Class Settings"));
+    ConduitClassTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto ConduitClassScroll = ConduitClassCard.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ConduitClassScrollElement = ConduitClassScroll.Element();
+    ConduitClassScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitClassScrollElement.Padding().Set(0.0f);
+    ConduitClassScrollElement.Gap().Set(8.0f);
+    ConduitClassScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+
+    auto ConduitClassSummary = ConduitClassScroll.Add(
+        SnAPI::UI::UIText("Bind one concrete host node type to one Conduit graph asset. The referenced graph's entry nodes drive runtime execution."));
+    auto& ConduitClassSummaryText = ConduitClassSummary.Element();
+    ConduitClassSummaryText.ElementStyle().Apply("editor.panel_subtitle");
+    ConduitClassSummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto ConduitClassNameInputBuilder = ConduitClassScroll.Add(SnAPI::UI::UITextInput{});
+    auto& ConduitClassNameInput = ConduitClassNameInputBuilder.Element();
+    ConduitClassNameInput.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassNameInput.Placeholder().Set(std::string("Class name"));
+    ConduitClassNameInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Text) {
+        if (m_onConduitClassNameRequested)
+        {
+            m_onConduitClassNameRequested(Text);
+        }
+    }));
+    ConduitClassNameInput.OnFocusStateChanged(SnAPI::UI::TDelegate<void(bool)>::Bind([this, Handle = ConduitClassNameInputBuilder.Handle()](const bool Focused) {
+        if (Focused || !m_onConduitClassNameRequested || !m_context)
+        {
+            return;
+        }
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(Handle.Id)))
+        {
+            m_onConduitClassNameRequested(Input->Text().Get());
+        }
+    }));
+    m_conduitClassNameInput = ConduitClassNameInputBuilder.Handle();
+
+    auto ConduitClassHostComboBuilder = ConduitClassScroll.Add(SnAPI::UI::UIComboBox{});
+    auto& ConduitClassHostCombo = ConduitClassHostComboBuilder.Element();
+    ConduitClassHostCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassHostCombo.Placeholder().Set(std::string("Host node type"));
+    ConduitClassHostCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (!m_onConduitClassHostTypeRequested ||
+            Index < 0 ||
+            static_cast<std::size_t>(Index) >= m_conduitWorkspaceState.ClassHostTypeOptions.size())
+        {
+            return;
+        }
+        m_onConduitClassHostTypeRequested(
+            m_conduitWorkspaceState.ClassHostTypeOptions[static_cast<std::size_t>(Index)].Type);
+    });
+    m_conduitClassHostTypeCombo = ConduitClassHostComboBuilder.Handle();
+
+    auto ConduitClassGraphComboBuilder = ConduitClassScroll.Add(SnAPI::UI::UIComboBox{});
+    auto& ConduitClassGraphCombo = ConduitClassGraphComboBuilder.Element();
+    ConduitClassGraphCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassGraphCombo.Placeholder().Set(std::string("Referenced Conduit graph"));
+    ConduitClassGraphCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (!m_onConduitClassGraphRequested)
+        {
+            return;
+        }
+        if (Index < 0 || static_cast<std::size_t>(Index) >= m_conduitWorkspaceState.ClassGraphOptions.size())
+        {
+            m_onConduitClassGraphRequested(std::string{});
+            return;
+        }
+        m_onConduitClassGraphRequested(
+            m_conduitWorkspaceState.ClassGraphOptions[static_cast<std::size_t>(Index)].AssetKey);
+    });
+    m_conduitClassGraphCombo = ConduitClassGraphComboBuilder.Handle();
+
+    auto ConduitClassOverviewHost = ConduitClassSplit.Add(SnAPI::UI::UIPanel("Editor.ConduitClassOverviewHost"));
+    ConfigureHostPanel(ConduitClassOverviewHost.Element());
+
+    auto ConduitClassOverviewCard = ConduitClassOverviewHost.Add(SnAPI::UI::UIPanel("Editor.ConduitClassOverviewCard"));
+    auto& ConduitClassOverviewCardPanel = ConduitClassOverviewCard.Element();
+    ConduitClassOverviewCardPanel.ElementStyle().Apply("editor.section_card");
+    ConduitClassOverviewCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitClassOverviewCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassOverviewCardPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConduitClassOverviewCardPanel.Padding().Set(8.0f);
+    ConduitClassOverviewCardPanel.Gap().Set(8.0f);
+
+    auto ConduitClassOverviewTitle = ConduitClassOverviewCard.Add(SnAPI::UI::UIText("Overview"));
+    ConduitClassOverviewTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto ConduitClassOverviewSummary = ConduitClassOverviewCard.Add(
+        SnAPI::UI::UIText("Conduit classes bind a concrete host node type to one authored graph. Resize this split to give the settings pane or overview pane more room."));
+    auto& ConduitClassOverviewSummaryElement = ConduitClassOverviewSummary.Element();
+    ConduitClassOverviewSummaryElement.ElementStyle().Apply("editor.panel_subtitle");
+    ConduitClassOverviewSummaryElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_conduitClassOverviewSummaryText = ConduitClassOverviewSummary.Handle();
+
+    auto ConduitClassOverviewHostText = ConduitClassOverviewCard.Add(SnAPI::UI::UIText("Host: None"));
+    auto& ConduitClassOverviewHostElement = ConduitClassOverviewHostText.Element();
+    ConduitClassOverviewHostElement.ElementStyle().Apply("editor.menu_item");
+    ConduitClassOverviewHostElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_conduitClassOverviewHostText = ConduitClassOverviewHostText.Handle();
+
+    auto ConduitClassOverviewGraphText = ConduitClassOverviewCard.Add(SnAPI::UI::UIText("Graph: None"));
+    auto& ConduitClassOverviewGraphElement = ConduitClassOverviewGraphText.Element();
+    ConduitClassOverviewGraphElement.ElementStyle().Apply("editor.menu_item");
+    ConduitClassOverviewGraphElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_conduitClassOverviewGraphText = ConduitClassOverviewGraphText.Handle();
+
     ViewTabsElement.SetTabLabel(0, "Game View");
     ViewTabsElement.SetTabLabel(1, "Profiler");
+    ViewTabsElement.SetTabLabel(2, "Conduit");
 
     m_gameViewport = Viewport.Handle();
 }

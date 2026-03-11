@@ -35,8 +35,19 @@ namespace SnAPI::GameFramework
 class Variant
 {
 public:
+    /** @brief Concrete storage mode for the current payload. */
+    enum class EStorageKind
+    {
+        Void,
+        Owned,
+        BorrowedMutable,
+        BorrowedConst
+    };
+
     /** @brief Construct an empty variant. The default state behaves like a void variant with no payload storage. */
-    Variant() = default;
+    Variant()
+        : m_type(VoidTypeId()) {
+    }
 
     /**
      * @brief Create an explicit void variant.
@@ -44,11 +55,7 @@ public:
      */
     static Variant Void()
     {
-        Variant Result;
-        Result.m_type = VoidTypeId();
-        Result.m_isRef = false;
-        Result.m_isConst = false;
-        return Result;
+        return {};
     }
 
     /**
@@ -66,8 +73,8 @@ public:
         Variant Result;
         Result.m_type = CachedTypeId<Decayed>();
         Result.m_storage = std::make_shared<Decayed>(std::forward<T>(Value));
-        Result.m_isRef = false;
-        Result.m_isConst = false;
+        Result.m_storageKind = EStorageKind::Owned;
+        Result.m_cloneOwnedStorage = CloneOwnedStorageFnFor<Decayed>();
         return Result;
     }
     /**
@@ -84,8 +91,7 @@ public:
         Variant Result;
         Result.m_type = CachedTypeId<std::decay_t<T>>();
         Result.m_storage = std::shared_ptr<void>(&Value, [](void*) {});
-        Result.m_isRef = true;
-        Result.m_isConst = false;
+        Result.m_storageKind = EStorageKind::BorrowedMutable;
         return Result;
     }
 
@@ -103,8 +109,7 @@ public:
         Variant Result;
         Result.m_type = CachedTypeId<std::decay_t<T>>();
         Result.m_storage = std::shared_ptr<void>(const_cast<T*>(&Value), [](void*) {});
-        Result.m_isRef = true;
-        Result.m_isConst = true;
+        Result.m_storageKind = EStorageKind::BorrowedConst;
         return Result;
     }
 
@@ -112,7 +117,7 @@ public:
      * @brief Get the stored reflected type id.
      * @return Type id for the stored value or the void marker type.
      */
-    const TypeId& Type() const
+    [[nodiscard]] const TypeId& Type() const
     {
         return m_type;
     }
@@ -121,27 +126,37 @@ public:
      * @brief Check whether this variant represents `void`.
      * @return `true` when the stored type id is the void marker type.
      */
-    bool IsVoid() const
+    [[nodiscard]] bool IsVoid() const
     {
-        return m_type == VoidTypeId();
+        return m_storageKind == EStorageKind::Void;
+    }
+
+    /**
+     * @brief Get the current storage mode.
+     * @return Storage classification for the payload.
+     */
+    [[nodiscard]] EStorageKind StorageKind() const
+    {
+        return m_storageKind;
     }
 
     /**
      * @brief Check whether this variant stores a borrowed reference.
      * @return `true` for borrowed reference payloads, `false` for owned values and void.
      */
-    bool IsRef() const
+    [[nodiscard]] bool IsBorrowed() const
     {
-        return m_isRef;
+        return m_storageKind == EStorageKind::BorrowedMutable
+            || m_storageKind == EStorageKind::BorrowedConst;
     }
 
     /**
-     * @brief Check whether the stored reference payload is const-qualified.
+     * @brief Check whether the stored borrowed payload is const-qualified.
      * @return `true` only for const-reference payloads.
      */
-    bool IsConst() const
+    [[nodiscard]] bool IsConstBorrowed() const
     {
-        return m_isConst;
+        return m_storageKind == EStorageKind::BorrowedConst;
     }
 
     /**
@@ -150,8 +165,16 @@ public:
      *
      * @warning This bypasses type and constness checks. Callers are responsible for correctness.
      */
-    void* Borrowed()
+    void* UnsafeBorrowedMutable()
     {
+        if (m_storageKind == EStorageKind::Void || m_storageKind == EStorageKind::BorrowedConst)
+        {
+            return nullptr;
+        }
+        if (const auto DetachResult = EnsureUniqueOwnedStorage(); !DetachResult)
+        {
+            return nullptr;
+        }
         return m_storage.get();
     }
 
@@ -159,7 +182,7 @@ public:
      * @brief Borrow the underlying payload pointer as const.
      * @return Raw payload pointer, or `nullptr` when no payload exists.
      */
-    const void* Borrowed() const
+    [[nodiscard]] const void* UnsafeBorrowed() const
     {
         return m_storage.get();
     }
@@ -170,7 +193,7 @@ public:
      * @return `true` when the stored reflected type id equals `T`.
      */
     template<typename T>
-    bool Is() const
+    [[nodiscard]] bool Is() const
     {
         return m_type == CachedTypeId<std::decay_t<T>>();
     }
@@ -193,13 +216,17 @@ public:
         {
             return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Variant type mismatch"));
         }
-        if (m_isRef && m_isConst)
+        if (m_storageKind == EStorageKind::BorrowedConst)
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Variant holds const ref"));
         }
         if (!m_storage)
         {
             return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Variant value missing"));
+        }
+        if (auto DetachResult = EnsureUniqueOwnedStorage(); !DetachResult)
+        {
+            return std::unexpected(DetachResult.error());
         }
         return std::ref(*static_cast<Decayed*>(m_storage.get()));
     }
@@ -225,6 +252,8 @@ public:
     }
 
 private:
+    using CloneOwnedStorageFn = std::shared_ptr<void> (*)(const std::shared_ptr<void>&);
+
     static const TypeId& VoidTypeId()
     {
         static const TypeId Type = TypeIdFromName("void");
@@ -238,10 +267,57 @@ private:
         return Type;
     }
 
-    TypeId m_type{VoidTypeId()}; /**< @brief Reflected type id of stored payload. */
-    std::shared_ptr<void> m_storage{}; /**< @brief Owned object storage or non-owning reference wrapper pointer. */
-    bool m_isRef = false; /**< @brief Reference mode flag (`true` for non-owning reference payload). */
-    bool m_isConst = false; /**< @brief Const-reference qualifier for reference mode payloads. */
+    template<typename T>
+    static std::shared_ptr<void> CloneOwnedStorage(const std::shared_ptr<void>& Storage)
+    {
+        static_assert(std::is_copy_constructible_v<T>, "Owned variant cloning requires a copyable payload");
+        if (!Storage)
+        {
+            return {};
+        }
+        return std::make_shared<T>(*static_cast<const T*>(Storage.get()));
+    }
+
+    template<typename T>
+    static CloneOwnedStorageFn CloneOwnedStorageFnFor()
+    {
+        if constexpr (std::is_copy_constructible_v<T>)
+        {
+            return &CloneOwnedStorage<T>;
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
+    Result EnsureUniqueOwnedStorage()
+    {
+        if (m_storageKind != EStorageKind::Owned || !m_storage || m_storage.use_count() == 1)
+        {
+            return Ok();
+        }
+        if (!m_cloneOwnedStorage)
+        {
+            return std::unexpected(
+                MakeError(EErrorCode::InvalidArgument,
+                          "Variant owns a non-copyable value and cannot detach shared storage"));
+        }
+
+        auto UniqueStorage = m_cloneOwnedStorage(m_storage);
+        if (!UniqueStorage)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Variant storage detach failed"));
+        }
+
+        m_storage = std::move(UniqueStorage);
+        return Ok();
+    }
+
+    TypeId m_type; /**< @brief Reflected type id of stored payload. */
+    std::shared_ptr<void> m_storage{}; /**< @brief Owned payload storage or non-owning reference wrapper pointer. */
+    EStorageKind m_storageKind = EStorageKind::Void; /**< @brief Active storage classification for the payload. */
+    CloneOwnedStorageFn m_cloneOwnedStorage = nullptr; /**< @brief Optional detach callback used when owned storage is shared. */
 };
 
 /**
@@ -266,27 +342,27 @@ public:
      * @param Ptr Raw payload pointer.
      * @param IsConst Whether mutable borrowing is disallowed.
      */
-    VariantView(TypeId Type, const void* Ptr, bool IsConst)
-        : m_type(std::move(Type))
+    VariantView(const TypeId Type, const void* Ptr, const bool IsConst)
+        : m_type(Type)
         , m_ptr(Ptr)
         , m_isConst(IsConst)
     {
     }
 
     /** @brief Get the reflected payload type id for this view. */
-    const TypeId& Type() const
+    [[nodiscard]] const TypeId& Type() const
     {
         return m_type;
     }
 
     /** @brief Check whether mutable access is disallowed. */
-    bool IsConst() const
+    [[nodiscard]] bool IsConst() const
     {
         return m_isConst;
     }
 
     /** @brief Borrow the payload pointer as const. */
-    const void* Borrowed() const
+    [[nodiscard]] const void* UnsafeBorrowed() const
     {
         return m_ptr;
     }
@@ -295,8 +371,7 @@ public:
      * @brief Borrow the payload pointer as mutable.
      * @return Mutable pointer when the view is non-const, otherwise `nullptr`.
      */
-    void* BorrowedMutable()
-    {
+    [[nodiscard]] void* UnsafeBorrowedMutable() const {
         return m_isConst ? nullptr : const_cast<void*>(m_ptr);
     }
 

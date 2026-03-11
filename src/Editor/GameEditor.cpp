@@ -1,5 +1,6 @@
 #include "Editor/GameEditor.h"
 
+#include "Conduit/Editor/Service.h"
 #include "Editor/EditorCoreServices.h"
 #include "Editor/EditorWorld.h"
 
@@ -302,6 +303,7 @@ void GameEditor::EnsureDefaultServicesRegistered()
     (void)RegisterService<EditorSelectionService>();
     (void)RegisterService<EditorPieService>();
     (void)RegisterService<EditorAssetService>();
+    (void)RegisterService<Conduit::Editor::ConduitEditorService>();
     (void)RegisterService<EditorAssetIconService>();
     (void)RegisterService<EditorLayoutService>();
     (void)RegisterService<EditorGameViewportOverlayService>();

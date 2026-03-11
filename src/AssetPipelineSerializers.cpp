@@ -1,6 +1,8 @@
 #include "AssetPipelineSerializers.h"
 
 #include "AssetPipelineIds.h"
+#include "Conduit/Asset.h"
+#include "NodeAsset.h"
 #include "RenderAssetPayloads.h"
 #include "RenderAssetSourcePayloads.h"
 #include "Serialization.h"
@@ -215,6 +217,271 @@ public:
             return false;
         }
         auto Result = DeserializeWorldPayload(Bytes, Size);
+        if (!Result)
+        {
+            return false;
+        }
+        *Payload = std::move(Result.value());
+        return true;
+    }
+};
+
+/**
+ * @brief AssetPipeline serializer for authored NodeAsset source payloads.
+ */
+class NodeSourcePayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
+    {
+        return PayloadNodeSource();
+    }
+
+    const char* GetTypeName() const override
+    {
+        return kPayloadNodeSourceName;
+    }
+
+    uint32_t GetSchemaVersion() const override
+    {
+        return NodeAsset::kSchemaVersion;
+    }
+
+    void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
+    {
+        const auto* Payload = static_cast<const NodeAsset*>(Object);
+        if (!Payload)
+        {
+            OutBytes.clear();
+            return;
+        }
+        auto Result = SerializeNodeAsset(*Payload, OutBytes);
+        if (!Result)
+        {
+            OutBytes.clear();
+        }
+    }
+
+    bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
+    {
+        auto* Payload = static_cast<NodeAsset*>(Object);
+        if (!Payload)
+        {
+            return false;
+        }
+        auto Result = DeserializeNodeAsset(Bytes, Size);
+        if (!Result)
+        {
+            return false;
+        }
+        *Payload = std::move(Result.value());
+        return true;
+    }
+};
+
+/**
+ * @brief AssetPipeline serializer for authored LevelAsset source payloads.
+ */
+class LevelSourcePayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
+    {
+        return PayloadLevelSource();
+    }
+
+    const char* GetTypeName() const override
+    {
+        return kPayloadLevelSourceName;
+    }
+
+    uint32_t GetSchemaVersion() const override
+    {
+        return LevelAsset::kSchemaVersion;
+    }
+
+    void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
+    {
+        const auto* Payload = static_cast<const LevelAsset*>(Object);
+        if (!Payload)
+        {
+            OutBytes.clear();
+            return;
+        }
+        auto Result = SerializeLevelAsset(*Payload, OutBytes);
+        if (!Result)
+        {
+            OutBytes.clear();
+        }
+    }
+
+    bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
+    {
+        auto* Payload = static_cast<LevelAsset*>(Object);
+        if (!Payload)
+        {
+            return false;
+        }
+        auto Result = DeserializeLevelAsset(Bytes, Size);
+        if (!Result)
+        {
+            return false;
+        }
+        *Payload = std::move(Result.value());
+        return true;
+    }
+};
+
+/**
+ * @brief AssetPipeline serializer for authored WorldAsset source payloads.
+ */
+class WorldSourcePayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
+    {
+        return PayloadWorldSource();
+    }
+
+    const char* GetTypeName() const override
+    {
+        return kPayloadWorldSourceName;
+    }
+
+    uint32_t GetSchemaVersion() const override
+    {
+        return WorldAsset::kSchemaVersion;
+    }
+
+    void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
+    {
+        const auto* Payload = static_cast<const WorldAsset*>(Object);
+        if (!Payload)
+        {
+            OutBytes.clear();
+            return;
+        }
+        auto Result = SerializeWorldAsset(*Payload, OutBytes);
+        if (!Result)
+        {
+            OutBytes.clear();
+        }
+    }
+
+    bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
+    {
+        auto* Payload = static_cast<WorldAsset*>(Object);
+        if (!Payload)
+        {
+            return false;
+        }
+        auto Result = DeserializeWorldAsset(Bytes, Size);
+        if (!Result)
+        {
+            return false;
+        }
+        *Payload = std::move(Result.value());
+        return true;
+    }
+};
+
+/**
+ * @brief AssetPipeline serializer for authored Conduit graph assets.
+ */
+class ConduitGraphPayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
+    {
+        return PayloadConduitGraph();
+    }
+
+    const char* GetTypeName() const override
+    {
+        return kPayloadConduitGraphName;
+    }
+
+    uint32_t GetSchemaVersion() const override
+    {
+        return Conduit::GraphAsset::kSchemaVersion;
+    }
+
+    void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
+    {
+        const auto* Payload = static_cast<const Conduit::GraphAsset*>(Object);
+        if (!Payload)
+        {
+            OutBytes.clear();
+            return;
+        }
+        auto Result = Conduit::SerializeGraphAsset(*Payload, OutBytes);
+        if (!Result)
+        {
+            OutBytes.clear();
+        }
+    }
+
+    bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
+    {
+        auto* Payload = static_cast<Conduit::GraphAsset*>(Object);
+        if (!Payload)
+        {
+            return false;
+        }
+        auto Result = Conduit::DeserializeGraphAsset(Bytes, Size);
+        if (!Result)
+        {
+            return false;
+        }
+        *Payload = std::move(Result.value());
+        return true;
+    }
+};
+
+/**
+ * @brief AssetPipeline serializer for authored Conduit class assets.
+ */
+class ConduitClassPayloadSerializer final : public ::SnAPI::AssetPipeline::IPayloadSerializer
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetTypeId() const override
+    {
+        return PayloadConduitClass();
+    }
+
+    const char* GetTypeName() const override
+    {
+        return kPayloadConduitClassName;
+    }
+
+    uint32_t GetSchemaVersion() const override
+    {
+        return Conduit::ClassAsset::kSchemaVersion;
+    }
+
+    void SerializeToBytes(const void* Object, std::vector<uint8_t>& OutBytes) const override
+    {
+        const auto* Payload = static_cast<const Conduit::ClassAsset*>(Object);
+        if (!Payload)
+        {
+            OutBytes.clear();
+            return;
+        }
+        auto Result = Conduit::SerializeClassAsset(*Payload, OutBytes);
+        if (!Result)
+        {
+            OutBytes.clear();
+        }
+    }
+
+    bool DeserializeFromBytes(void* Object, const uint8_t* Bytes, std::size_t Size) const override
+    {
+        auto* Payload = static_cast<Conduit::ClassAsset*>(Object);
+        if (!Payload)
+        {
+            return false;
+        }
+        auto Result = Conduit::DeserializeClassAsset(Bytes, Size);
         if (!Result)
         {
             return false;
@@ -720,6 +987,31 @@ std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelPayloadSe
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateWorldPayloadSerializer()
 {
     return std::make_unique<WorldPayloadSerializer>();
+}
+
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateNodeSourcePayloadSerializer()
+{
+    return std::make_unique<NodeSourcePayloadSerializer>();
+}
+
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelSourcePayloadSerializer()
+{
+    return std::make_unique<LevelSourcePayloadSerializer>();
+}
+
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateWorldSourcePayloadSerializer()
+{
+    return std::make_unique<WorldSourcePayloadSerializer>();
+}
+
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateConduitGraphPayloadSerializer()
+{
+    return std::make_unique<ConduitGraphPayloadSerializer>();
+}
+
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateConduitClassPayloadSerializer()
+{
+    return std::make_unique<ConduitClassPayloadSerializer>();
 }
 
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateStaticMeshPayloadSerializer()

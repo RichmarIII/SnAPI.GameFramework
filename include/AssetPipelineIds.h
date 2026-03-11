@@ -68,13 +68,23 @@ constexpr const char* kAssetKindMaterialInstanceName = "SnAPI.GameFramework.Asse
 constexpr const char* kAssetKindSkeletonName = "SnAPI.GameFramework.AssetKind.Skeleton";
 /** @brief Asset kind name for Animation assets. */
 constexpr const char* kAssetKindAnimationName = "SnAPI.GameFramework.AssetKind.Animation";
+/** @brief Asset kind name for Conduit graph assets. */
+constexpr const char* kAssetKindConduitGraphName = "SnAPI.GameFramework.AssetKind.ConduitGraph";
+/** @brief Asset kind name for Conduit class assets. */
+constexpr const char* kAssetKindConduitClassName = "SnAPI.GameFramework.AssetKind.ConduitClass";
 
 /** @brief Payload type name for Node cooked data. */
 constexpr const char* kPayloadNodeName = "SnAPI.GameFramework.NodePayload";
+/** @brief Payload type name for authored Node source data. */
+constexpr const char* kPayloadNodeSourceName = "SnAPI.GameFramework.NodeAssetSourcePayload";
 /** @brief Payload type name for Level cooked data. */
 constexpr const char* kPayloadLevelName = "SnAPI.GameFramework.LevelPayload";
+/** @brief Payload type name for authored Level source data. */
+constexpr const char* kPayloadLevelSourceName = "SnAPI.GameFramework.LevelAssetSourcePayload";
 /** @brief Payload type name for World cooked data. */
 constexpr const char* kPayloadWorldName = "SnAPI.GameFramework.WorldPayload";
+/** @brief Payload type name for authored World source data. */
+constexpr const char* kPayloadWorldSourceName = "SnAPI.GameFramework.WorldAssetSourcePayload";
 /** @brief Payload type name for StaticMesh cooked data. */
 constexpr const char* kPayloadStaticMeshName = "SnAPI.GameFramework.StaticMeshPayload";
 /** @brief Payload type name for SkeletalMesh cooked data. */
@@ -91,6 +101,10 @@ constexpr const char* kPayloadAnimationName = "SnAPI.GameFramework.AnimationPayl
 constexpr const char* kPayloadStaticMeshSourceName = "SnAPI.GameFramework.StaticMeshSourcePayload";
 /** @brief Payload type name for SkeletalMesh source-intermediate data. */
 constexpr const char* kPayloadSkeletalMeshSourceName = "SnAPI.GameFramework.SkeletalMeshSourcePayload";
+/** @brief Payload type name for authored Conduit graph data. */
+constexpr const char* kPayloadConduitGraphName = "SnAPI.GameFramework.ConduitGraphPayload";
+/** @brief Payload type name for authored Conduit class data. */
+constexpr const char* kPayloadConduitClassName = "SnAPI.GameFramework.ConduitClassPayload";
 
 /**
  * @brief Get the AssetPipeline TypeId for Level assets.
@@ -174,12 +188,39 @@ inline ::SnAPI::AssetPipeline::TypeId AssetKindAnimation()
 }
 
 /**
+ * @brief Get the AssetPipeline TypeId for Conduit class assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindConduitClass()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindConduitClassName);
+}
+
+/**
+ * @brief Get the AssetPipeline TypeId for Conduit graph assets.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId AssetKindConduitGraph()
+{
+    return AssetPipelineTypeIdFromName(kAssetKindConduitGraphName);
+}
+
+/**
  * @brief Get the payload TypeId for Node payloads.
  * @return TypeId value.
  */
 inline ::SnAPI::AssetPipeline::TypeId PayloadNode()
 {
     return AssetPipelineTypeIdFromName(kPayloadNodeName);
+}
+
+/**
+ * @brief Get the payload TypeId for authored Node source payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadNodeSource()
+{
+    return AssetPipelineTypeIdFromName(kPayloadNodeSourceName);
 }
 
 /**
@@ -192,12 +233,30 @@ inline ::SnAPI::AssetPipeline::TypeId PayloadLevel()
 }
 
 /**
+ * @brief Get the payload TypeId for authored Level source payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadLevelSource()
+{
+    return AssetPipelineTypeIdFromName(kPayloadLevelSourceName);
+}
+
+/**
  * @brief Get the payload TypeId for World payloads.
  * @return TypeId value.
  */
 inline ::SnAPI::AssetPipeline::TypeId PayloadWorld()
 {
     return AssetPipelineTypeIdFromName(kPayloadWorldName);
+}
+
+/**
+ * @brief Get the payload TypeId for authored World source payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadWorldSource()
+{
+    return AssetPipelineTypeIdFromName(kPayloadWorldSourceName);
 }
 
 /**
@@ -252,6 +311,24 @@ inline ::SnAPI::AssetPipeline::TypeId PayloadSkeleton()
 inline ::SnAPI::AssetPipeline::TypeId PayloadAnimation()
 {
     return AssetPipelineTypeIdFromName(kPayloadAnimationName);
+}
+
+/**
+ * @brief Get the payload TypeId for authored Conduit graph payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadConduitGraph()
+{
+    return AssetPipelineTypeIdFromName(kPayloadConduitGraphName);
+}
+
+/**
+ * @brief Get the payload TypeId for authored Conduit class payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadConduitClass()
+{
+    return AssetPipelineTypeIdFromName(kPayloadConduitClassName);
 }
 
 /**

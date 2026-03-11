@@ -30,6 +30,36 @@ std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelPayloadSe
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateWorldPayloadSerializer();
 /**
  * @ingroup SnAPI_GameFramework
+ * @brief Create the AssetPipeline serializer for authored `NodeAsset` source data.
+ * @return Owning serializer instance.
+ */
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateNodeSourcePayloadSerializer();
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Create the AssetPipeline serializer for authored `LevelAsset` source data.
+ * @return Owning serializer instance.
+ */
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateLevelSourcePayloadSerializer();
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Create the AssetPipeline serializer for authored `WorldAsset` source data.
+ * @return Owning serializer instance.
+ */
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateWorldSourcePayloadSerializer();
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Create the AssetPipeline serializer for authored `Conduit::GraphAsset` data.
+ * @return Owning serializer instance.
+ */
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateConduitGraphPayloadSerializer();
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Create the AssetPipeline serializer for authored `Conduit::ClassAsset` data.
+ * @return Owning serializer instance.
+ */
+std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateConduitClassPayloadSerializer();
+/**
+ * @ingroup SnAPI_GameFramework
  * @brief Create the serializer for cooked `StaticMeshPayload` data.
  * @return Owning serializer instance.
  */

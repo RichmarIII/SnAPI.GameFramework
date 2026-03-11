@@ -7,11 +7,12 @@
 #include "IWorld.h"
 #include "InputSystem.h"
 #include "TransformComponent.h"
+#include "UIRenderViewport.h"
+#include "UISystem.h"
 
 #include <IGraphicsAPI.hpp>
 #include <Input.h>
 #include <SnAPI/Math/LinearAlgebra.h>
-
 #include <algorithm>
 #include <cmath>
 
@@ -154,6 +155,53 @@ constexpr float kSmallNumber = 1.0e-6f;
     // If this camera is not bound to any viewport, do not hard-block navigation.
     return !HasMatchedViewport;
 }
+
+[[nodiscard]] bool IsPointerOverCameraViewportUi(const IWorld& WorldRef,
+                                                 const SnAPI::Input::InputSnapshot& Snapshot)
+{
+    if (!WorldRef.UI().IsInitialized())
+    {
+        return true;
+    }
+
+    const auto RootContextId = WorldRef.UI().RootContextId();
+    if (RootContextId == 0)
+    {
+        return true;
+    }
+
+    const SnAPI::UI::UIContext* RootContext = WorldRef.UI().Context(RootContextId);
+    if (!RootContext)
+    {
+        return true;
+    }
+
+    const float MouseX = Snapshot.Mouse().X;
+    const float MouseY = Snapshot.Mouse().Y;
+    if (!std::isfinite(MouseX) || !std::isfinite(MouseY))
+    {
+        return false;
+    }
+
+    const auto Hit = RootContext->HitTestElement(SnAPI::UI::UIPoint{MouseX, MouseY});
+    if (Hit.Value == 0)
+    {
+        return false;
+    }
+
+    SnAPI::UI::ElementId Current = Hit;
+    while (Current.Value != 0)
+    {
+        const auto& Element = RootContext->GetElement(Current);
+        if (dynamic_cast<const UIRenderViewport*>(&Element) != nullptr)
+        {
+            return true;
+        }
+        Current = RootContext->GetParent(Current);
+    }
+
+    return false;
+}
 } // namespace
 
 void EditorCameraComponent::Tick(const float DeltaSeconds)
@@ -215,8 +263,11 @@ void EditorCameraComponent::Tick(const float DeltaSeconds)
 
     const bool PointerInsideViewport = !m_settings.RequirePointerInsideViewport
                                     || IsPointerInsideCameraViewport(*WorldPtr, *Snapshot, OwnerCamera);
+    const bool PointerOverViewportUi = !m_settings.RequirePointerInsideViewport
+                                    || IsPointerOverCameraViewportUi(*WorldPtr, *Snapshot);
 
     const bool NavigationEnabled = PointerInsideViewport &&
+                                PointerOverViewportUi &&
                                 (!m_settings.RequireRightMouseButton
                                  || Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Right));
 

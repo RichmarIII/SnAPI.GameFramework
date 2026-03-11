@@ -4,6 +4,7 @@
 #include "BaseNode.h"
 #include "AssetPipelineIds.h"
 #include "CameraComponent.h"
+#include "Conduit/Editor/Service.h"
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
 #include "Editor/EditorCameraComponent.h"
 #endif
@@ -1727,7 +1728,8 @@ std::vector<std::type_index> EditorLayoutService::Dependencies() const
             std::type_index(typeid(EditorRootViewportService)),
             std::type_index(typeid(EditorCommandService)),
             std::type_index(typeid(EditorAssetService)),
-            std::type_index(typeid(EditorAssetIconService))};
+            std::type_index(typeid(EditorAssetIconService)),
+            std::type_index(typeid(Conduit::Editor::ConduitEditorService))};
 }
 
 Result EditorLayoutService::Initialize(EditorServiceContext& Context)
@@ -1738,7 +1740,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     auto* PieService = Context.GetService<EditorPieService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
     auto* IconService = Context.GetService<EditorAssetIconService>();
-    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService || !IconService)
+    auto* ConduitService = Context.GetService<Conduit::Editor::ConduitEditorService>();
+    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService || !IconService || !ConduitService)
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Missing required editor services for layout"));
     }
@@ -1771,11 +1774,72 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_hasPendingAssetInspectorSaveRequest = false;
     m_hasPendingAssetInspectorReimportRequest = false;
     m_hasPendingAssetInspectorCloseRequest = false;
+    m_hasPendingConduitVariableSelectionRequest = false;
+    m_pendingConduitVariableSelection = {};
+    m_hasPendingConduitVariableCreateRequest = false;
+    m_pendingConduitVariableCreateName.clear();
+    m_pendingConduitVariableCreateType = {};
+    m_hasPendingConduitVariableRemoveRequest = false;
+    m_hasPendingConduitVariableRenameRequest = false;
+    m_pendingConduitVariableRenameValue.clear();
+    m_hasPendingConduitVariableTypeRequest = false;
+    m_pendingConduitVariableType = {};
+    m_hasPendingConduitVariableDefaultBoolRequest = false;
+    m_pendingConduitVariableDefaultBool = false;
+    m_hasPendingConduitVariableDefaultTextRequest = false;
+    m_pendingConduitVariableDefaultText.clear();
+    m_hasPendingConduitVariableDefaultEnumRequest = false;
+    m_pendingConduitVariableDefaultEnum.clear();
+    m_hasPendingConduitVariableClearDefaultRequest = false;
+    m_hasPendingConduitVariableCommitDefaultRequest = false;
+    m_hasPendingConduitVariableResetDefaultRequest = false;
+    m_hasPendingConduitNodeSelectionRequest = false;
+    m_pendingConduitNodeSelection = {};
+    m_hasPendingConduitNodeCreateRequest = false;
+    m_pendingConduitNodeCreateStableId.clear();
+    m_hasPendingConduitNodeRemoveRequest = false;
+    m_hasPendingConduitNodeMoveRequest = false;
+    m_pendingConduitNodeMoveId = {};
+    m_pendingConduitNodeMoveX = 0.0f;
+    m_pendingConduitNodeMoveY = 0.0f;
+    m_hasPendingConduitNodePrimaryTextRequest = false;
+    m_pendingConduitNodePrimaryText.clear();
+    m_hasPendingConduitNodeSecondaryTextRequest = false;
+    m_pendingConduitNodeSecondaryText.clear();
+    m_hasPendingConduitViewportRequest = false;
+    m_pendingConduitViewportPanX = 0.0f;
+    m_pendingConduitViewportPanY = 0.0f;
+    m_pendingConduitViewportZoom = 1.0f;
+    m_hasPendingConduitClassNameRequest = false;
+    m_pendingConduitClassName.clear();
+    m_hasPendingConduitClassHostTypeRequest = false;
+    m_pendingConduitClassHostType = {};
+    m_hasPendingConduitClassGraphRequest = false;
+    m_pendingConduitClassGraph.clear();
+    m_hasPendingConduitNodeMoveRequest = false;
+    m_pendingConduitNodeMoveId = {};
+    m_pendingConduitNodeMoveX = 0.0f;
+    m_pendingConduitNodeMoveY = 0.0f;
+    m_hasPendingConduitNodePrimaryTextRequest = false;
+    m_pendingConduitNodePrimaryText.clear();
+    m_hasPendingConduitNodeSecondaryTextRequest = false;
+    m_pendingConduitNodeSecondaryText.clear();
+    m_hasPendingConduitViewportRequest = false;
+    m_pendingConduitViewportPanX = 0.0f;
+    m_pendingConduitViewportPanY = 0.0f;
+    m_pendingConduitViewportZoom = 1.0f;
+    m_hasPendingConduitClassNameRequest = false;
+    m_pendingConduitClassName.clear();
+    m_hasPendingConduitClassHostTypeRequest = false;
+    m_pendingConduitClassHostType = {};
+    m_hasPendingConduitClassGraphRequest = false;
+    m_pendingConduitClassGraph.clear();
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
+    m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
@@ -1869,6 +1933,98 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
                 m_pendingAssetInspectorHierarchyActionRequest = Request;
                 m_hasPendingAssetInspectorHierarchyActionRequest = true;
             }));
+    m_layout.SetConduitVariableSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)>::Bind([this](const Uuid& VariableId) {
+        m_pendingConduitVariableSelection = VariableId;
+        m_hasPendingConduitVariableSelectionRequest = true;
+    }));
+    m_layout.SetConduitVariableCreateHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const TypeId&)>::Bind(
+            [this](const std::string& Name, const TypeId& Type) {
+                m_pendingConduitVariableCreateName = Name;
+                m_pendingConduitVariableCreateType = Type;
+                m_hasPendingConduitVariableCreateRequest = true;
+            }));
+    m_layout.SetConduitVariableRemoveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableRemoveRequest = true;
+    }));
+    m_layout.SetConduitVariableRenameHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Name) {
+        m_pendingConduitVariableRenameValue = Name;
+        m_hasPendingConduitVariableRenameRequest = true;
+    }));
+    m_layout.SetConduitVariableTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)>::Bind([this](const TypeId& Type) {
+        m_pendingConduitVariableType = Type;
+        m_hasPendingConduitVariableTypeRequest = true;
+    }));
+    m_layout.SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)>::Bind([this](const bool Value) {
+        m_pendingConduitVariableDefaultBool = Value;
+        m_hasPendingConduitVariableDefaultBoolRequest = true;
+    }));
+    m_layout.SetConduitVariableDefaultTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitVariableDefaultText = Value;
+            m_hasPendingConduitVariableDefaultTextRequest = true;
+        }));
+    m_layout.SetConduitVariableDefaultEnumHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitVariableDefaultEnum = Value;
+            m_hasPendingConduitVariableDefaultEnumRequest = true;
+        }));
+    m_layout.SetConduitVariableClearDefaultHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableClearDefaultRequest = true;
+    }));
+    m_layout.SetConduitVariableCommitDefaultHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableCommitDefaultRequest = true;
+    }));
+    m_layout.SetConduitVariableResetDefaultHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableResetDefaultRequest = true;
+    }));
+    m_layout.SetConduitNodeSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)>::Bind([this](const Uuid& NodeId) {
+        m_pendingConduitNodeSelection = NodeId;
+        m_hasPendingConduitNodeSelectionRequest = true;
+    }));
+    m_layout.SetConduitNodeCreateHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& StableId) {
+        m_pendingConduitNodeCreateStableId = StableId;
+        m_hasPendingConduitNodeCreateRequest = true;
+    }));
+    m_layout.SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitNodeRemoveRequest = true;
+    }));
+    m_layout.SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)>::Bind(
+        [this](const Uuid& NodeId, const float X, const float Y) {
+            m_pendingConduitNodeMoveId = NodeId;
+            m_pendingConduitNodeMoveX = X;
+            m_pendingConduitNodeMoveY = Y;
+            m_hasPendingConduitNodeMoveRequest = true;
+        }));
+    m_layout.SetConduitNodePrimaryTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitNodePrimaryText = Value;
+            m_hasPendingConduitNodePrimaryTextRequest = true;
+        }));
+    m_layout.SetConduitNodeSecondaryTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitNodeSecondaryText = Value;
+            m_hasPendingConduitNodeSecondaryTextRequest = true;
+        }));
+    m_layout.SetConduitViewportHandler(SnAPI::UI::TDelegate<void(float, float, float)>::Bind(
+        [this](const float PanX, const float PanY, const float Zoom) {
+            m_pendingConduitViewportPanX = PanX;
+            m_pendingConduitViewportPanY = PanY;
+            m_pendingConduitViewportZoom = Zoom;
+            m_hasPendingConduitViewportRequest = true;
+        }));
+    m_layout.SetConduitClassNameHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Name) {
+        m_pendingConduitClassName = Name;
+        m_hasPendingConduitClassNameRequest = true;
+    }));
+    m_layout.SetConduitClassHostTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)>::Bind([this](const TypeId& Type) {
+        m_pendingConduitClassHostType = Type;
+        m_hasPendingConduitClassHostTypeRequest = true;
+    }));
+    m_layout.SetConduitClassGraphHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingConduitClassGraph = AssetKey;
+        m_hasPendingConduitClassGraphRequest = true;
+    }));
 
     m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
     ApplyAssetBrowserState(Context);
@@ -1882,7 +2038,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     auto* PieService = Context.GetService<EditorPieService>();
     auto* CommandService = Context.GetService<EditorCommandService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
-    if (!SceneService || !SelectionService || !PieService || !AssetService)
+    auto* ConduitService = Context.GetService<Conduit::Editor::ConduitEditorService>();
+    if (!SceneService || !SelectionService || !PieService || !AssetService || !ConduitService)
     {
         return;
     }
@@ -1922,7 +2079,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
             ProjectResult = AssetService->SaveProjectSettings(
                 Context,
                 Request.ProjectName,
-                Request.StartupLevelPack,
+                Request.StartupLevelAsset,
                 Request.DefaultRenderSettingsAssetId);
         }
 
@@ -1960,7 +2117,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         {
             if (AssetService->SelectAssetByKey(m_pendingAssetSelectionKey) && m_pendingAssetSelectionDoubleClick)
             {
-                auto OpenEditorResult = AssetService->OpenAssetEditorByKey(m_pendingAssetSelectionKey);
+                auto OpenEditorResult = AssetService->OpenAssetEditorByKey(Context, m_pendingAssetSelectionKey);
                 if (!OpenEditorResult)
                 {
                     (void)AssetService->OpenSelectedAssetPreview();
@@ -1990,7 +2147,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
         if (!m_pendingAssetSaveKey.empty())
         {
-            (void)AssetService->SaveAssetByKey(m_pendingAssetSaveKey);
+            (void)AssetService->SaveAssetByKey(Context, m_pendingAssetSaveKey);
         }
 
         m_pendingAssetSaveKey.clear();
@@ -2026,10 +2183,10 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_hasPendingAssetCreateRequest = false;
         if (!PieService->IsSessionActive() && m_pendingAssetCreateRequest.Type != TypeId{})
         {
-            (void)AssetService->CreateRuntimeNodeAssetByType(Context,
-                                                             m_pendingAssetCreateRequest.Type,
-                                                             m_pendingAssetCreateRequest.Name,
-                                                             m_pendingAssetCreateRequest.FolderPath);
+            (void)AssetService->CreateSourceAssetByType(Context,
+                                                        m_pendingAssetCreateRequest.Type,
+                                                        m_pendingAssetCreateRequest.Name,
+                                                        m_pendingAssetCreateRequest.FolderPath);
         }
         m_pendingAssetCreateRequest = {};
     }
@@ -2051,7 +2208,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     if (m_hasPendingAssetInspectorSaveRequest)
     {
         m_hasPendingAssetInspectorSaveRequest = false;
-        (void)AssetService->SaveActiveAssetEditor();
+        (void)AssetService->SaveActiveAssetEditor(Context);
     }
 
     if (m_hasPendingAssetInspectorReimportRequest)
@@ -2066,7 +2223,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     if (m_hasPendingAssetInspectorCloseRequest)
     {
         m_hasPendingAssetInspectorCloseRequest = false;
-        AssetService->CloseAssetEditor();
+        AssetService->CloseAssetEditor(Context);
     }
 
     if (m_hasPendingAssetInspectorNodeSelectionRequest)
@@ -2099,6 +2256,170 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         default:
             break;
         }
+    }
+
+    if (m_hasPendingConduitVariableRenameRequest)
+    {
+        m_hasPendingConduitVariableRenameRequest = false;
+        if (!m_pendingConduitVariableRenameValue.empty())
+        {
+            (void)ConduitService->RenameSelectedVariable(m_pendingConduitVariableRenameValue);
+        }
+        m_pendingConduitVariableRenameValue.clear();
+    }
+
+    if (m_hasPendingConduitVariableTypeRequest)
+    {
+        m_hasPendingConduitVariableTypeRequest = false;
+        if (m_pendingConduitVariableType != TypeId{})
+        {
+            (void)ConduitService->SetSelectedVariableType(m_pendingConduitVariableType);
+        }
+        m_pendingConduitVariableType = {};
+    }
+
+    if (m_hasPendingConduitVariableDefaultBoolRequest)
+    {
+        m_hasPendingConduitVariableDefaultBoolRequest = false;
+        (void)ConduitService->SetSelectedVariableDefaultBool(m_pendingConduitVariableDefaultBool);
+    }
+
+    if (m_hasPendingConduitVariableDefaultTextRequest)
+    {
+        m_hasPendingConduitVariableDefaultTextRequest = false;
+        (void)ConduitService->SetSelectedVariableDefaultText(m_pendingConduitVariableDefaultText);
+        m_pendingConduitVariableDefaultText.clear();
+    }
+
+    if (m_hasPendingConduitVariableDefaultEnumRequest)
+    {
+        m_hasPendingConduitVariableDefaultEnumRequest = false;
+        if (!m_pendingConduitVariableDefaultEnum.empty())
+        {
+            (void)ConduitService->SetSelectedVariableDefaultEnum(m_pendingConduitVariableDefaultEnum);
+        }
+        m_pendingConduitVariableDefaultEnum.clear();
+    }
+
+    if (m_hasPendingConduitVariableClearDefaultRequest)
+    {
+        m_hasPendingConduitVariableClearDefaultRequest = false;
+        (void)ConduitService->ClearSelectedVariableDefault();
+    }
+
+    if (m_hasPendingConduitVariableCommitDefaultRequest)
+    {
+        m_hasPendingConduitVariableCommitDefaultRequest = false;
+        (void)ConduitService->CommitSelectedVariableComplexDefault();
+    }
+
+    if (m_hasPendingConduitVariableResetDefaultRequest)
+    {
+        m_hasPendingConduitVariableResetDefaultRequest = false;
+        (void)ConduitService->ResetSelectedVariableDefaultEditor();
+    }
+
+    if (m_hasPendingConduitNodePrimaryTextRequest)
+    {
+        m_hasPendingConduitNodePrimaryTextRequest = false;
+        (void)ConduitService->SetSelectedNodePrimaryText(m_pendingConduitNodePrimaryText);
+        m_pendingConduitNodePrimaryText.clear();
+    }
+
+    if (m_hasPendingConduitNodeSecondaryTextRequest)
+    {
+        m_hasPendingConduitNodeSecondaryTextRequest = false;
+        (void)ConduitService->SetSelectedNodeSecondaryText(m_pendingConduitNodeSecondaryText);
+        m_pendingConduitNodeSecondaryText.clear();
+    }
+
+    if (m_hasPendingConduitViewportRequest)
+    {
+        m_hasPendingConduitViewportRequest = false;
+        (void)ConduitService->SetViewport(
+            m_pendingConduitViewportPanX,
+            m_pendingConduitViewportPanY,
+            m_pendingConduitViewportZoom);
+    }
+
+    if (m_hasPendingConduitClassNameRequest)
+    {
+        m_hasPendingConduitClassNameRequest = false;
+        (void)ConduitService->RenameActiveClass(m_pendingConduitClassName);
+        m_pendingConduitClassName.clear();
+    }
+
+    if (m_hasPendingConduitVariableSelectionRequest)
+    {
+        m_hasPendingConduitVariableSelectionRequest = false;
+        (void)ConduitService->SelectVariable(m_pendingConduitVariableSelection);
+        m_pendingConduitVariableSelection = {};
+    }
+
+    if (m_hasPendingConduitVariableCreateRequest)
+    {
+        m_hasPendingConduitVariableCreateRequest = false;
+        if (!m_pendingConduitVariableCreateName.empty() && m_pendingConduitVariableCreateType != TypeId{})
+        {
+            (void)ConduitService->CreateVariable(m_pendingConduitVariableCreateName, m_pendingConduitVariableCreateType);
+        }
+        m_pendingConduitVariableCreateName.clear();
+        m_pendingConduitVariableCreateType = {};
+    }
+
+    if (m_hasPendingConduitVariableRemoveRequest)
+    {
+        m_hasPendingConduitVariableRemoveRequest = false;
+        (void)ConduitService->RemoveSelectedVariable();
+    }
+
+    if (m_hasPendingConduitNodeSelectionRequest)
+    {
+        m_hasPendingConduitNodeSelectionRequest = false;
+        (void)ConduitService->SelectNode(m_pendingConduitNodeSelection);
+        m_pendingConduitNodeSelection = {};
+    }
+
+    if (m_hasPendingConduitNodeCreateRequest)
+    {
+        m_hasPendingConduitNodeCreateRequest = false;
+        if (!m_pendingConduitNodeCreateStableId.empty())
+        {
+            (void)ConduitService->SpawnNode(m_pendingConduitNodeCreateStableId);
+        }
+        m_pendingConduitNodeCreateStableId.clear();
+    }
+
+    if (m_hasPendingConduitNodeRemoveRequest)
+    {
+        m_hasPendingConduitNodeRemoveRequest = false;
+        (void)ConduitService->RemoveSelectedNode();
+    }
+
+    if (m_hasPendingConduitNodeMoveRequest)
+    {
+        m_hasPendingConduitNodeMoveRequest = false;
+        (void)ConduitService->MoveNode(m_pendingConduitNodeMoveId, m_pendingConduitNodeMoveX, m_pendingConduitNodeMoveY);
+        m_pendingConduitNodeMoveId = {};
+        m_pendingConduitNodeMoveX = 0.0f;
+        m_pendingConduitNodeMoveY = 0.0f;
+    }
+
+    if (m_hasPendingConduitClassHostTypeRequest)
+    {
+        m_hasPendingConduitClassHostTypeRequest = false;
+        if (m_pendingConduitClassHostType != TypeId{})
+        {
+            (void)ConduitService->SetActiveClassHostType(m_pendingConduitClassHostType);
+        }
+        m_pendingConduitClassHostType = {};
+    }
+
+    if (m_hasPendingConduitClassGraphRequest)
+    {
+        m_hasPendingConduitClassGraphRequest = false;
+        (void)ConduitService->SetActiveClassGraph(m_pendingConduitClassGraph);
+        m_pendingConduitClassGraph.clear();
     }
 
     if (m_hasPendingSelectionRequest)
@@ -2201,7 +2522,8 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
 {
     auto* AssetService = Context.GetService<EditorAssetService>();
     auto* IconService = Context.GetService<EditorAssetIconService>();
-    if (!AssetService || !IconService)
+    auto* ConduitService = Context.GetService<Conduit::Editor::ConduitEditorService>();
+    if (!AssetService || !IconService || !ConduitService)
     {
         return;
     }
@@ -2214,7 +2536,7 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         ProjectState.ProjectFilePath = CurrentProject.ProjectFilePath;
         ProjectState.ProjectRootDirectory = CurrentProject.ProjectRootDirectory;
         ProjectState.AssetRootDirectory = CurrentProject.AssetRootDirectory;
-        ProjectState.StartupLevelPack = CurrentProject.StartupLevelPack;
+        ProjectState.StartupLevelAsset = CurrentProject.StartupLevelAsset;
         ProjectState.DefaultRenderSettingsAssetId = CurrentProject.DefaultRenderSettingsAssetId;
         m_layout.SetProjectState(std::move(ProjectState));
     }
@@ -2224,6 +2546,23 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     IconService->Synchronize(Context, Assets, LayoutContext);
 
     std::size_t AssetSignature = ComputeAssetListSignature(Assets);
+    std::size_t ConduitDocumentSignature = ConduitService->Documents().size() ^ (ConduitService->ClassDocuments().size() << 1);
+    const auto HashCombine = [&ConduitDocumentSignature](const std::size_t Value) {
+        ConduitDocumentSignature ^= Value + 0x9e3779b9 + (ConduitDocumentSignature << 6) + (ConduitDocumentSignature >> 2);
+    };
+    for (const auto& Document : ConduitService->Documents())
+    {
+        HashCombine(std::hash<std::string>{}(Document.AssetKey()));
+        HashCombine(static_cast<std::size_t>(Document.IsDirty() ? 1u : 0u));
+        HashCombine(std::hash<std::uint64_t>{}(Document.Revision()));
+    }
+    for (const auto& Document : ConduitService->ClassDocuments())
+    {
+        HashCombine(std::hash<std::string>{}(Document.AssetKey()));
+        HashCombine(static_cast<std::size_t>(Document.IsDirty() ? 1u : 0u));
+        HashCombine(std::hash<std::uint64_t>{}(Document.Revision()));
+    }
+    AssetSignature ^= ConduitDocumentSignature + 0x9e3779b9 + (AssetSignature << 6) + (AssetSignature >> 2);
     const std::uint64_t IconRevision = IconService->Revision();
     AssetSignature ^= std::hash<std::uint64_t>{}(IconRevision) + 0x9e3779b9 + (AssetSignature << 6) + (AssetSignature >> 2);
     if (AssetSignature != m_assetListSignature)
@@ -2238,7 +2577,7 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
             Entry.Type = Asset.TypeLabel;
             Entry.Variant = Asset.Variant;
             Entry.IsRuntime = Asset.IsRuntime;
-            Entry.IsDirty = Asset.IsDirty;
+            Entry.IsDirty = Asset.IsDirty || ConduitService->IsDocumentDirty(Asset.Key);
             const auto IconMetadata = IconService->ResolveAssetIcon(Context, Asset, LayoutContext);
             Entry.IconSource = std::move(IconMetadata.IconSource);
             Entry.IconTextureId = IconMetadata.TextureId;
@@ -2252,16 +2591,22 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     }
 
     EditorLayout::ContentAssetDetails Details{};
+    const Conduit::Editor::GraphDocument* SelectedConduitDocument = nullptr;
+    const Conduit::Editor::ClassDocument* SelectedConduitClassDocument = nullptr;
     if (const auto* SelectedAsset = AssetService->SelectedAsset())
     {
+        SelectedConduitDocument = ConduitService->FindDocument(SelectedAsset->Key);
+        SelectedConduitClassDocument = ConduitService->FindClassDocument(SelectedAsset->Key);
         Details.Name = SelectedAsset->Name;
         Details.Type = SelectedAsset->TypeLabel;
         Details.Variant = SelectedAsset->Variant.empty() ? std::string("default") : SelectedAsset->Variant;
         Details.AssetId = SelectedAsset->Key;
         Details.IsRuntime = SelectedAsset->IsRuntime;
-        Details.IsDirty = SelectedAsset->IsDirty;
+        Details.IsDirty = SelectedAsset->IsDirty ||
+                          (SelectedConduitDocument && SelectedConduitDocument->IsDirty()) ||
+                          (SelectedConduitClassDocument && SelectedConduitClassDocument->IsDirty());
         Details.CanPlace = CanPlaceAssetKind(SelectedAsset->AssetKind);
-        Details.CanSave = SelectedAsset->CanSave && (!SelectedAsset->IsRuntime || SelectedAsset->IsDirty);
+        Details.CanSave = SelectedAsset->CanSave && (!SelectedAsset->IsRuntime || Details.IsDirty);
     }
     else
     {
@@ -2283,6 +2628,57 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     {
         Details.Status = "Placement armed: click inside viewport to instantiate.";
     }
+    else if (SelectedConduitDocument)
+    {
+        if (const auto& LastCompile = SelectedConduitDocument->LastCompile(); LastCompile.has_value())
+        {
+            std::size_t WarningCount = 0;
+            std::size_t ErrorCount = 0;
+            for (const auto& Diagnostic : LastCompile->Diagnostics)
+            {
+                if (Diagnostic.Severity == Conduit::Editor::ECompileDiagnosticSeverity::Warning)
+                {
+                    ++WarningCount;
+                }
+                else if (Diagnostic.Severity == Conduit::Editor::ECompileDiagnosticSeverity::Error)
+                {
+                    ++ErrorCount;
+                }
+            }
+
+            if (ErrorCount > 0)
+            {
+                Details.Status = "Conduit compile failed with " + std::to_string(ErrorCount) + " error(s).";
+            }
+            else if (WarningCount > 0)
+            {
+                Details.Status = "Conduit compiled with " + std::to_string(WarningCount) + " warning(s).";
+            }
+            else
+            {
+                Details.Status = "Conduit compiled successfully.";
+            }
+        }
+        else if (SelectedConduitDocument->IsDirty())
+        {
+            Details.Status = "Conduit graph has unsaved edits.";
+        }
+        else
+        {
+            Details.Status = "Conduit graph ready.";
+        }
+    }
+    else if (SelectedConduitClassDocument)
+    {
+        if (SelectedConduitClassDocument->IsDirty())
+        {
+            Details.Status = "Conduit class has unsaved edits.";
+        }
+        else
+        {
+            Details.Status = "Conduit class ready.";
+        }
+    }
     else
     {
         Details.Status = "Ready";
@@ -2293,6 +2689,264 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     {
         m_layout.SetContentAssetDetails(std::move(Details));
         m_assetDetailsSignature = DetailsSignature;
+    }
+
+    const Conduit::Editor::ConduitEditorService::WorkspaceView ConduitView = ConduitService->ActiveWorkspaceView();
+    if (ConduitView.Revision != m_conduitWorkspaceRevision)
+    {
+        EditorLayout::ConduitWorkspaceState WorkspaceState{};
+        switch (ConduitView.Kind)
+        {
+        case Conduit::Editor::EWorkspaceDocumentKind::Graph:
+            WorkspaceState.Kind = EditorLayout::ConduitWorkspaceState::EDocumentKind::Graph;
+            break;
+        case Conduit::Editor::EWorkspaceDocumentKind::Class:
+            WorkspaceState.Kind = EditorLayout::ConduitWorkspaceState::EDocumentKind::Class;
+            break;
+        case Conduit::Editor::EWorkspaceDocumentKind::None:
+        default:
+            WorkspaceState.Kind = EditorLayout::ConduitWorkspaceState::EDocumentKind::None;
+            break;
+        }
+        WorkspaceState.Open = ConduitView.Open;
+        WorkspaceState.AssetKey = ConduitView.AssetKey;
+        WorkspaceState.Title = ConduitView.Title;
+        WorkspaceState.SelfTypeLabel = ConduitView.SelfTypeLabel;
+        WorkspaceState.HostTypeLabel = ConduitView.HostTypeLabel;
+        WorkspaceState.GraphAssetLabel = ConduitView.GraphAssetLabel;
+        WorkspaceState.SlotCount = ConduitView.SlotCount;
+        WorkspaceState.VariableCount = ConduitView.VariableCount;
+        WorkspaceState.NodeCount = ConduitView.NodeCount;
+        WorkspaceState.IsDirty = ConduitView.IsDirty;
+        WorkspaceState.CompileSucceeded = ConduitView.CompileSucceeded;
+        WorkspaceState.WarningCount = ConduitView.WarningCount;
+        WorkspaceState.ErrorCount = ConduitView.ErrorCount;
+        const auto VariableEntries = ConduitService->ActiveVariableEntries();
+        WorkspaceState.VariableEntries.reserve(VariableEntries.size());
+        for (const auto& Entry : VariableEntries)
+        {
+            WorkspaceState.VariableEntries.push_back(EditorLayout::ConduitWorkspaceState::VariableEntry{
+                .Id = Entry.Id,
+                .Name = Entry.Name,
+                .TypeLabel = Entry.TypeLabel,
+                .HasDefault = Entry.HasDefault,
+                .Selected = Entry.Selected,
+            });
+        }
+        const auto PaletteEntries = ConduitService->ActivePaletteEntries();
+        WorkspaceState.PaletteEntries.reserve(PaletteEntries.size());
+        for (const auto& Entry : PaletteEntries)
+        {
+            WorkspaceState.PaletteEntries.push_back(EditorLayout::ConduitWorkspaceState::PaletteEntry{
+                .StableId = Entry.StableId,
+                .DisplayName = Entry.DisplayName,
+                .Category = Entry.Category,
+                .Tooltip = Entry.Tooltip,
+                .RequiresSpecialization = Entry.RequiresSpecialization,
+            });
+        }
+        const auto NodeEntries = ConduitService->ActiveNodeEntries();
+        WorkspaceState.NodeEntries.reserve(NodeEntries.size());
+        for (const auto& Entry : NodeEntries)
+        {
+            WorkspaceState.NodeEntries.push_back(EditorLayout::ConduitWorkspaceState::NodeEntry{
+                .Id = Entry.Id,
+                .Title = Entry.Title,
+                .Detail = Entry.Detail,
+                .Selected = Entry.Selected,
+            });
+        }
+        const auto CanvasView = ConduitService->ActiveCanvasView();
+        WorkspaceState.CanvasPanX = CanvasView.Viewport.PanX;
+        WorkspaceState.CanvasPanY = CanvasView.Viewport.PanY;
+        WorkspaceState.CanvasZoom = CanvasView.Viewport.Zoom;
+        WorkspaceState.CanvasNodes.reserve(CanvasView.Nodes.size());
+        for (const auto& Node : CanvasView.Nodes)
+        {
+            std::vector<EditorLayout::ConduitWorkspaceState::CanvasNode::Pin> InputPins{};
+            InputPins.reserve(Node.InputPins.size());
+            for (const auto& Pin : Node.InputPins)
+            {
+                InputPins.push_back(EditorLayout::ConduitWorkspaceState::CanvasNode::Pin{
+                    .Name = Pin.Name,
+                    .TypeLabel = Pin.TypeLabel,
+                    .Kind = Pin.Kind,
+                    .IsInput = Pin.IsInput,
+                    .IsExec = Pin.IsExec,
+                });
+            }
+
+            std::vector<EditorLayout::ConduitWorkspaceState::CanvasNode::Pin> OutputPins{};
+            OutputPins.reserve(Node.OutputPins.size());
+            for (const auto& Pin : Node.OutputPins)
+            {
+                OutputPins.push_back(EditorLayout::ConduitWorkspaceState::CanvasNode::Pin{
+                    .Name = Pin.Name,
+                    .TypeLabel = Pin.TypeLabel,
+                    .Kind = Pin.Kind,
+                    .IsInput = Pin.IsInput,
+                    .IsExec = Pin.IsExec,
+                });
+            }
+
+            WorkspaceState.CanvasNodes.push_back(EditorLayout::ConduitWorkspaceState::CanvasNode{
+                .Id = Node.Id,
+                .Title = Node.Title,
+                .Detail = Node.Detail,
+                .X = Node.X,
+                .Y = Node.Y,
+                .Width = Node.Width,
+                .IsCollapsed = Node.IsCollapsed,
+                .Selected = Node.Selected,
+                .InputPins = std::move(InputPins),
+                .OutputPins = std::move(OutputPins),
+            });
+        }
+        WorkspaceState.CanvasComments.reserve(CanvasView.Comments.size());
+        for (const auto& Comment : CanvasView.Comments)
+        {
+            WorkspaceState.CanvasComments.push_back(EditorLayout::ConduitWorkspaceState::CanvasComment{
+                .Id = Comment.Id,
+                .Title = Comment.Title,
+                .X = Comment.X,
+                .Y = Comment.Y,
+                .Width = Comment.Width,
+                .Height = Comment.Height,
+                .ColorRgba = Comment.ColorRgba,
+                .Selected = Comment.Selected,
+            });
+        }
+        WorkspaceState.CanvasWires.reserve(CanvasView.Wires.size());
+        for (const auto& Wire : CanvasView.Wires)
+        {
+            WorkspaceState.CanvasWires.push_back(EditorLayout::ConduitWorkspaceState::CanvasWire{
+                .SourceNodeId = Wire.SourceNodeId,
+                .SourcePin = Wire.SourcePin,
+                .TargetNodeId = Wire.TargetNodeId,
+                .TargetPin = Wire.TargetPin,
+                .Kind = Wire.Kind,
+                .IsExec = Wire.IsExec,
+            });
+        }
+        const auto VariableTypes = ConduitService->AvailableVariableTypes();
+        WorkspaceState.VariableTypeOptions.reserve(VariableTypes.size());
+        for (const auto& Entry : VariableTypes)
+        {
+            WorkspaceState.VariableTypeOptions.push_back(EditorLayout::ConduitWorkspaceState::VariableTypeOption{
+                .Type = Entry.Type,
+                .Label = Entry.Label,
+            });
+        }
+        const auto ClassHostTypes = ConduitService->AvailableClassHostTypes();
+        WorkspaceState.ClassHostTypeOptions.reserve(ClassHostTypes.size());
+        for (const auto& Entry : ClassHostTypes)
+        {
+            WorkspaceState.ClassHostTypeOptions.push_back(EditorLayout::ConduitWorkspaceState::ClassHostTypeOption{
+                .Type = Entry.Type,
+                .Label = Entry.Label,
+            });
+        }
+        const auto ClassGraphs = ConduitService->AvailableClassGraphAssets();
+        WorkspaceState.ClassGraphOptions.reserve(ClassGraphs.size());
+        for (const auto& Entry : ClassGraphs)
+        {
+            WorkspaceState.ClassGraphOptions.push_back(EditorLayout::ConduitWorkspaceState::ClassGraphOption{
+                .AssetKey = Entry.AssetKey,
+                .Label = Entry.Label,
+            });
+        }
+        const auto InspectorView = ConduitService->ActiveVariableInspectorView();
+        WorkspaceState.SelectedVariable.HasSelection = InspectorView.HasSelection;
+        WorkspaceState.SelectedVariable.VariableId = InspectorView.VariableId;
+        WorkspaceState.SelectedVariable.Name = InspectorView.Name;
+        WorkspaceState.SelectedVariable.Type = InspectorView.Type;
+        WorkspaceState.SelectedVariable.TypeLabel = InspectorView.TypeLabel;
+        WorkspaceState.SelectedVariable.HasDefault = InspectorView.HasDefault;
+        WorkspaceState.SelectedVariable.BoolValue = InspectorView.BoolValue;
+        WorkspaceState.SelectedVariable.TextValue = InspectorView.TextValue;
+        WorkspaceState.SelectedVariable.EnumOptions = InspectorView.EnumOptions;
+        WorkspaceState.SelectedVariable.SelectedEnumIndex = InspectorView.SelectedEnumIndex;
+        WorkspaceState.SelectedVariable.ComplexObject = InspectorView.ComplexObject;
+        WorkspaceState.SelectedVariable.ComplexType = InspectorView.ComplexType;
+        switch (InspectorView.DefaultEditorKind)
+        {
+        case Conduit::Editor::EVariableDefaultEditorKind::Bool:
+            WorkspaceState.SelectedVariable.DefaultEditorKind =
+                EditorLayout::ConduitWorkspaceState::EVariableDefaultEditorKind::Bool;
+            break;
+        case Conduit::Editor::EVariableDefaultEditorKind::Text:
+            WorkspaceState.SelectedVariable.DefaultEditorKind =
+                EditorLayout::ConduitWorkspaceState::EVariableDefaultEditorKind::Text;
+            break;
+        case Conduit::Editor::EVariableDefaultEditorKind::Enum:
+            WorkspaceState.SelectedVariable.DefaultEditorKind =
+                EditorLayout::ConduitWorkspaceState::EVariableDefaultEditorKind::Enum;
+            break;
+        case Conduit::Editor::EVariableDefaultEditorKind::Complex:
+            WorkspaceState.SelectedVariable.DefaultEditorKind =
+                EditorLayout::ConduitWorkspaceState::EVariableDefaultEditorKind::Complex;
+            break;
+        case Conduit::Editor::EVariableDefaultEditorKind::None:
+        default:
+            WorkspaceState.SelectedVariable.DefaultEditorKind =
+                EditorLayout::ConduitWorkspaceState::EVariableDefaultEditorKind::None;
+            break;
+        }
+        const auto ClassInspector = ConduitService->ActiveClassInspectorView();
+        WorkspaceState.SelectedClass.HasSelection = ClassInspector.HasSelection;
+        WorkspaceState.SelectedClass.Name = ClassInspector.Name;
+        WorkspaceState.SelectedClass.HostType = ClassInspector.HostType;
+        WorkspaceState.SelectedClass.HostTypeLabel = ClassInspector.HostTypeLabel;
+        WorkspaceState.SelectedClass.GraphAssetKey = ClassInspector.GraphAssetKey;
+        WorkspaceState.SelectedClass.GraphAssetLabel = ClassInspector.GraphAssetLabel;
+        const auto NodeInspector = ConduitService->ActiveNodeInspectorView();
+        WorkspaceState.SelectedNode.HasSelection = NodeInspector.HasSelection;
+        WorkspaceState.SelectedNode.NodeId = NodeInspector.NodeId;
+        WorkspaceState.SelectedNode.Title = NodeInspector.Title;
+        WorkspaceState.SelectedNode.Detail = NodeInspector.Detail;
+        WorkspaceState.SelectedNode.CanEditPrimaryText = NodeInspector.CanEditPrimaryText;
+        WorkspaceState.SelectedNode.PrimaryTextLabel = NodeInspector.PrimaryTextLabel;
+        WorkspaceState.SelectedNode.PrimaryTextValue = NodeInspector.PrimaryTextValue;
+        WorkspaceState.SelectedNode.CanEditSecondaryText = NodeInspector.CanEditSecondaryText;
+        WorkspaceState.SelectedNode.SecondaryTextLabel = NodeInspector.SecondaryTextLabel;
+        WorkspaceState.SelectedNode.SecondaryTextValue = NodeInspector.SecondaryTextValue;
+        WorkspaceState.Revision = ConduitView.Revision;
+
+        if (!ConduitView.Open)
+        {
+            WorkspaceState.Status = "No Conduit document open.";
+        }
+        else if (ConduitView.Kind == Conduit::Editor::EWorkspaceDocumentKind::Class)
+        {
+            WorkspaceState.Status = ConduitView.IsDirty
+                ? std::string("Class modified. Save when ready.")
+                : std::string("Class open.");
+        }
+        else if (!ConduitView.HasCompile)
+        {
+            WorkspaceState.Status = ConduitView.IsDirty
+                ? std::string("Graph modified. Compile and save when ready.")
+                : std::string("Graph open. No compile cached yet.");
+        }
+        else if (ConduitView.ErrorCount > 0)
+        {
+            WorkspaceState.Status = "Compile failed with " + std::to_string(ConduitView.ErrorCount) + " error(s).";
+        }
+        else if (ConduitView.WarningCount > 0)
+        {
+            WorkspaceState.Status = "Compiled with " + std::to_string(ConduitView.WarningCount) + " warning(s).";
+        }
+        else if (ConduitView.CompileSucceeded)
+        {
+            WorkspaceState.Status = "Compiled successfully.";
+        }
+        else
+        {
+            WorkspaceState.Status = "Graph open.";
+        }
+
+        m_layout.SetConduitWorkspaceState(std::move(WorkspaceState));
+        m_conduitWorkspaceRevision = ConduitView.Revision;
     }
 
     const std::uint64_t InspectorRevision = AssetService->AssetEditorSessionRevision();
@@ -2399,6 +3053,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_assetDetailsSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
+    m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
@@ -2416,6 +3071,30 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_pendingAssetInspectorNodeSelection = {};
     m_hasPendingAssetInspectorHierarchyActionRequest = false;
     m_pendingAssetInspectorHierarchyActionRequest = {};
+    m_hasPendingConduitVariableSelectionRequest = false;
+    m_pendingConduitVariableSelection = {};
+    m_hasPendingConduitVariableCreateRequest = false;
+    m_pendingConduitVariableCreateName.clear();
+    m_pendingConduitVariableCreateType = {};
+    m_hasPendingConduitVariableRemoveRequest = false;
+    m_hasPendingConduitVariableRenameRequest = false;
+    m_pendingConduitVariableRenameValue.clear();
+    m_hasPendingConduitVariableTypeRequest = false;
+    m_pendingConduitVariableType = {};
+    m_hasPendingConduitVariableDefaultBoolRequest = false;
+    m_pendingConduitVariableDefaultBool = false;
+    m_hasPendingConduitVariableDefaultTextRequest = false;
+    m_pendingConduitVariableDefaultText.clear();
+    m_hasPendingConduitVariableDefaultEnumRequest = false;
+    m_pendingConduitVariableDefaultEnum.clear();
+    m_hasPendingConduitVariableClearDefaultRequest = false;
+    m_hasPendingConduitVariableCommitDefaultRequest = false;
+    m_hasPendingConduitVariableResetDefaultRequest = false;
+    m_hasPendingConduitNodeSelectionRequest = false;
+    m_pendingConduitNodeSelection = {};
+    m_hasPendingConduitNodeCreateRequest = false;
+    m_pendingConduitNodeCreateStableId.clear();
+    m_hasPendingConduitNodeRemoveRequest = false;
 
     SceneService->Tick(Context, 0.0f);
     CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
@@ -2512,6 +3191,98 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
                 m_pendingAssetInspectorHierarchyActionRequest = Request;
                 m_hasPendingAssetInspectorHierarchyActionRequest = true;
             }));
+    m_layout.SetConduitVariableSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)>::Bind([this](const Uuid& VariableId) {
+        m_pendingConduitVariableSelection = VariableId;
+        m_hasPendingConduitVariableSelectionRequest = true;
+    }));
+    m_layout.SetConduitVariableCreateHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const TypeId&)>::Bind(
+            [this](const std::string& Name, const TypeId& Type) {
+                m_pendingConduitVariableCreateName = Name;
+                m_pendingConduitVariableCreateType = Type;
+                m_hasPendingConduitVariableCreateRequest = true;
+            }));
+    m_layout.SetConduitVariableRemoveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableRemoveRequest = true;
+    }));
+    m_layout.SetConduitVariableRenameHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Name) {
+        m_pendingConduitVariableRenameValue = Name;
+        m_hasPendingConduitVariableRenameRequest = true;
+    }));
+    m_layout.SetConduitVariableTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)>::Bind([this](const TypeId& Type) {
+        m_pendingConduitVariableType = Type;
+        m_hasPendingConduitVariableTypeRequest = true;
+    }));
+    m_layout.SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)>::Bind([this](const bool Value) {
+        m_pendingConduitVariableDefaultBool = Value;
+        m_hasPendingConduitVariableDefaultBoolRequest = true;
+    }));
+    m_layout.SetConduitVariableDefaultTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitVariableDefaultText = Value;
+            m_hasPendingConduitVariableDefaultTextRequest = true;
+        }));
+    m_layout.SetConduitVariableDefaultEnumHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitVariableDefaultEnum = Value;
+            m_hasPendingConduitVariableDefaultEnumRequest = true;
+        }));
+    m_layout.SetConduitVariableClearDefaultHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableClearDefaultRequest = true;
+    }));
+    m_layout.SetConduitVariableCommitDefaultHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableCommitDefaultRequest = true;
+    }));
+    m_layout.SetConduitVariableResetDefaultHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitVariableResetDefaultRequest = true;
+    }));
+    m_layout.SetConduitNodeSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)>::Bind([this](const Uuid& NodeId) {
+        m_pendingConduitNodeSelection = NodeId;
+        m_hasPendingConduitNodeSelectionRequest = true;
+    }));
+    m_layout.SetConduitNodeCreateHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& StableId) {
+        m_pendingConduitNodeCreateStableId = StableId;
+        m_hasPendingConduitNodeCreateRequest = true;
+    }));
+    m_layout.SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitNodeRemoveRequest = true;
+    }));
+    m_layout.SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)>::Bind(
+        [this](const Uuid& NodeId, const float X, const float Y) {
+            m_pendingConduitNodeMoveId = NodeId;
+            m_pendingConduitNodeMoveX = X;
+            m_pendingConduitNodeMoveY = Y;
+            m_hasPendingConduitNodeMoveRequest = true;
+        }));
+    m_layout.SetConduitNodePrimaryTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitNodePrimaryText = Value;
+            m_hasPendingConduitNodePrimaryTextRequest = true;
+        }));
+    m_layout.SetConduitNodeSecondaryTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_pendingConduitNodeSecondaryText = Value;
+            m_hasPendingConduitNodeSecondaryTextRequest = true;
+        }));
+    m_layout.SetConduitViewportHandler(SnAPI::UI::TDelegate<void(float, float, float)>::Bind(
+        [this](const float PanX, const float PanY, const float Zoom) {
+            m_pendingConduitViewportPanX = PanX;
+            m_pendingConduitViewportPanY = PanY;
+            m_pendingConduitViewportZoom = Zoom;
+            m_hasPendingConduitViewportRequest = true;
+        }));
+    m_layout.SetConduitClassNameHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Name) {
+        m_pendingConduitClassName = Name;
+        m_hasPendingConduitClassNameRequest = true;
+    }));
+    m_layout.SetConduitClassHostTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)>::Bind([this](const TypeId& Type) {
+        m_pendingConduitClassHostType = Type;
+        m_hasPendingConduitClassHostTypeRequest = true;
+    }));
+    m_layout.SetConduitClassGraphHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
+        m_pendingConduitClassGraph = AssetKey;
+        m_hasPendingConduitClassGraphRequest = true;
+    }));
 
     if (auto* AssetService = Context.GetService<EditorAssetService>())
     {
@@ -2536,6 +3307,27 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetContentAssetInspectorCloseHandler({});
     m_layout.SetContentAssetInspectorNodeSelectionHandler({});
     m_layout.SetContentAssetInspectorHierarchyActionHandler({});
+    m_layout.SetConduitVariableSelectionHandler({});
+    m_layout.SetConduitVariableCreateHandler({});
+    m_layout.SetConduitVariableRemoveHandler({});
+    m_layout.SetConduitVariableRenameHandler({});
+    m_layout.SetConduitVariableTypeHandler({});
+    m_layout.SetConduitVariableDefaultBoolHandler({});
+    m_layout.SetConduitVariableDefaultTextHandler({});
+    m_layout.SetConduitVariableDefaultEnumHandler({});
+    m_layout.SetConduitVariableClearDefaultHandler({});
+    m_layout.SetConduitVariableCommitDefaultHandler({});
+    m_layout.SetConduitVariableResetDefaultHandler({});
+    m_layout.SetConduitNodeSelectionHandler({});
+    m_layout.SetConduitNodeCreateHandler({});
+    m_layout.SetConduitNodeRemoveHandler({});
+    m_layout.SetConduitNodeMoveHandler({});
+    m_layout.SetConduitNodePrimaryTextHandler({});
+    m_layout.SetConduitNodeSecondaryTextHandler({});
+    m_layout.SetConduitViewportHandler({});
+    m_layout.SetConduitClassNameHandler({});
+    m_layout.SetConduitClassHostTypeHandler({});
+    m_layout.SetConduitClassGraphHandler({});
     m_layout.SetHierarchySelectionHandler({});
     m_layout.SetHierarchyActionHandler({});
     m_layout.SetToolbarActionHandler({});
@@ -2572,11 +3364,54 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingAssetInspectorNodeSelection = {};
     m_hasPendingAssetInspectorHierarchyActionRequest = false;
     m_pendingAssetInspectorHierarchyActionRequest = {};
+    m_hasPendingConduitVariableSelectionRequest = false;
+    m_pendingConduitVariableSelection = {};
+    m_hasPendingConduitVariableCreateRequest = false;
+    m_pendingConduitVariableCreateName.clear();
+    m_pendingConduitVariableCreateType = {};
+    m_hasPendingConduitVariableRemoveRequest = false;
+    m_hasPendingConduitVariableRenameRequest = false;
+    m_pendingConduitVariableRenameValue.clear();
+    m_hasPendingConduitVariableTypeRequest = false;
+    m_pendingConduitVariableType = {};
+    m_hasPendingConduitVariableDefaultBoolRequest = false;
+    m_pendingConduitVariableDefaultBool = false;
+    m_hasPendingConduitVariableDefaultTextRequest = false;
+    m_pendingConduitVariableDefaultText.clear();
+    m_hasPendingConduitVariableDefaultEnumRequest = false;
+    m_pendingConduitVariableDefaultEnum.clear();
+    m_hasPendingConduitVariableClearDefaultRequest = false;
+    m_hasPendingConduitVariableCommitDefaultRequest = false;
+    m_hasPendingConduitVariableResetDefaultRequest = false;
+    m_hasPendingConduitNodeSelectionRequest = false;
+    m_pendingConduitNodeSelection = {};
+    m_hasPendingConduitNodeCreateRequest = false;
+    m_pendingConduitNodeCreateStableId.clear();
+    m_hasPendingConduitNodeRemoveRequest = false;
+    m_hasPendingConduitNodeMoveRequest = false;
+    m_pendingConduitNodeMoveId = {};
+    m_pendingConduitNodeMoveX = 0.0f;
+    m_pendingConduitNodeMoveY = 0.0f;
+    m_hasPendingConduitNodePrimaryTextRequest = false;
+    m_pendingConduitNodePrimaryText.clear();
+    m_hasPendingConduitNodeSecondaryTextRequest = false;
+    m_pendingConduitNodeSecondaryText.clear();
+    m_hasPendingConduitViewportRequest = false;
+    m_pendingConduitViewportPanX = 0.0f;
+    m_pendingConduitViewportPanY = 0.0f;
+    m_pendingConduitViewportZoom = 1.0f;
+    m_hasPendingConduitClassNameRequest = false;
+    m_pendingConduitClassName.clear();
+    m_hasPendingConduitClassHostTypeRequest = false;
+    m_pendingConduitClassHostType = {};
+    m_hasPendingConduitClassGraphRequest = false;
+    m_pendingConduitClassGraph.clear();
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
+    m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
     m_layout.Shutdown(&Context.Runtime());
 }
 

@@ -12,6 +12,7 @@
 
 #include <filesystem>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,7 +53,7 @@ enum class EAssetImportProfile : std::uint8_t
  * temporary state used by the asset inspector.
  *
  * Core responsibilities:
- * - discover mounted runtime and packed assets and expose a stable editor-facing list
+ * - discover source assets and mounted runtime assets and expose a stable editor-facing list
  * - create, rename, delete, save, and import assets
  * - manage project files, startup level packs, and default render settings assets
  * - host a temporary asset-editor session for node, level, world, texture, mesh, and material assets
@@ -94,18 +95,20 @@ public:
      */
     struct DiscoveredAsset
     {
-        std::string Key{}; /**< @brief Editor lookup key, currently derived from the asset id text. Stable until discovery state is rebuilt. */
-        std::string Name{}; /**< @brief Logical asset name used by packs and runtime lookup. */
+        std::string Key{}; /**< @brief Editor lookup key, currently derived from the logical source asset name. Stable until discovery state is rebuilt. */
+        std::string Name{}; /**< @brief Logical source asset name used by source discovery and runtime JIT lookup. */
         std::string TypeLabel{}; /**< @brief Human-readable asset-kind label for UI display. */
         std::string Variant{}; /**< @brief Variant key within the owning asset pack entry. Empty means the default variant. */
         ::SnAPI::AssetPipeline::AssetId AssetId{}; /**< @brief Stable asset identifier used by the asset pipeline and runtime references. */
+        TypeId AssetType{}; /**< @brief Reflected authored source asset type, or empty when unresolved. */
         ::SnAPI::AssetPipeline::TypeId AssetKind{}; /**< @brief Runtime asset kind describing how the asset loads or instantiates. */
         ::SnAPI::AssetPipeline::TypeId CookedPayloadType{}; /**< @brief Cooked payload serializer type currently associated with the asset. */
         uint32_t SchemaVersion = 0; /**< @brief Schema version of the currently discovered cooked payload. */
         bool IsRuntime = false; /**< @brief `true` when the asset currently lives in the runtime-asset store rather than only in a mounted pack. */
         bool IsDirty = false; /**< @brief `true` when the editor currently tracks unsaved runtime payload or metadata overrides for the asset. */
         bool CanSave = true; /**< @brief `true` when the current asset state is considered saveable through the editor workflow. */
-        std::string OwningPackPath{}; /**< @brief Best-known path to the mounted pack containing the asset. Empty for unresolved/runtime-only entries. */
+        std::string OwningPackPath{}; /**< @brief Best-known source or cooked backing path for UI display. */
+        std::string SourceFilePath{}; /**< @brief Absolute source file path when the editor discovered this asset from project content. */ 
     };
 
     /**
@@ -165,7 +168,7 @@ public:
         std::string ProjectRootDirectory{}; /**< @brief Resolved filesystem directory containing the project file. */
         std::string AssetRoot{}; /**< @brief Asset-root field stored in project settings, potentially project-relative or URI-based. */
         std::string AssetRootDirectory{}; /**< @brief Resolved filesystem directory used as the live asset root. */
-        std::string StartupLevelPack{}; /**< @brief Startup level pack field stored in project settings. */
+        std::string StartupLevelAsset{}; /**< @brief Startup level source-asset field stored in project settings. */
         std::string DefaultRenderSettingsAssetId{}; /**< @brief Asset id string for the project's default `WorldRenderSettings` node, if any. */
     };
 
@@ -261,6 +264,15 @@ public:
      */
     Result SaveSelectedAssetUpdate();
     /**
+     * @brief Save the currently selected asset using the full editor-service context.
+     * @param Context Borrowed editor-service context.
+     * @return Success or an error.
+     * @remarks
+     * This overload allows service-coordinated save behavior for asset kinds such as Conduit graphs
+     * that are edited through dedicated document services rather than the legacy asset-inspector lane.
+     */
+    Result SaveSelectedAssetUpdate(EditorServiceContext& Context);
+    /**
      * @brief Persist one asset's current editor-visible state.
      * @param Key Discovery key of the asset to save.
      * @return Success or an error.
@@ -269,6 +281,16 @@ public:
      * Packed assets are rewritten into their owning pack, incorporating staged rename or payload overrides.
      */
     Result SaveAssetByKey(std::string_view Key);
+    /**
+     * @brief Persist one asset's current editor-visible state using the full editor-service context.
+     * @param Context Borrowed editor-service context.
+     * @param Key Discovery key of the asset to save.
+     * @return Success or an error.
+     * @remarks
+     * This overload is used when the edited representation lives in another editor service such as
+     * `ConduitEditorService`.
+     */
+    Result SaveAssetByKey(EditorServiceContext& Context, std::string_view Key);
     /**
      * @brief Delete one asset.
      * @param Key Discovery key of the asset to delete.
@@ -317,10 +339,10 @@ public:
      * @return Success or an error.
      * @remarks Material and material-instance pseudo-types are redirected to dedicated creation helpers.
      */
-    Result CreateRuntimeNodeAssetByType(EditorServiceContext& Context,
-                                        const TypeId& NodeType,
-                                        std::string_view AssetName,
-                                        std::string_view FolderPath);
+    Result CreateSourceAssetByType(EditorServiceContext& Context,
+                                   const TypeId& AssetType,
+                                   std::string_view AssetName,
+                                   std::string_view FolderPath);
     /**
      * @brief Create a runtime material asset with default payload values.
      * @param Context Borrowed editor-service context.
@@ -368,9 +390,24 @@ public:
      */
     Result OpenAssetEditorByKey(std::string_view Key);
     /**
+     * @brief Open the editor surface for one asset using the full editor-service context.
+     * @param Context Borrowed editor-service context.
+     * @param Key Discovery key of the asset to inspect or open.
+     * @return Success or an error.
+     * @remarks
+     * This overload routes asset kinds that use dedicated document services, such as Conduit graph
+     * assets, into those editor systems instead of the legacy inspector-only path.
+     */
+    Result OpenAssetEditorByKey(EditorServiceContext& Context, std::string_view Key);
+    /**
      * @brief Close the active asset-editor session.
      */
     void CloseAssetEditor();
+    /**
+     * @brief Close the active asset editor or Conduit document session.
+     * @param Context Borrowed editor-service context.
+     */
+    void CloseAssetEditor(EditorServiceContext& Context);
     /**
      * @brief Change the selected node inside the active asset-editor hierarchy.
      * @param Node Requested node handle. A null handle selects the root.
@@ -422,6 +459,12 @@ public:
      */
     Result SaveActiveAssetEditor();
     /**
+     * @brief Save the active asset editor or Conduit document session.
+     * @param Context Borrowed editor-service context.
+     * @return Success or an error.
+     */
+    Result SaveActiveAssetEditor(EditorServiceContext& Context);
+    /**
      * @brief Reimport the asset currently open in the asset editor.
      * @param Context Borrowed editor-service context.
      * @return Success or an error.
@@ -462,7 +505,7 @@ public:
      * @param ParentDirectory Parent directory that will contain the project folder.
      * @return Success or an error.
      * @remarks
-     * This creates the project directory, asset root, starter level pack, template assets,
+     * This creates the project directory, asset root, starter level source asset, template assets,
      * starter script, and project configuration file before forwarding to `LoadProject()`.
      */
     Result CreateProject(EditorServiceContext& Context, std::string_view ProjectName, std::string_view ParentDirectory);
@@ -480,14 +523,14 @@ public:
      * @brief Persist editable project settings to the loaded project file.
      * @param Context Borrowed editor-service context.
      * @param ProjectName Updated project name. Empty keeps the current name.
-     * @param StartupLevelPack Updated startup level pack field. Empty keeps the current field.
+     * @param StartupLevelAsset Updated startup level source-asset field. Empty keeps the current field.
      * @param DefaultRenderSettingsAssetId Updated default render settings asset id. Empty keeps the current value.
      * @return Success or an error.
      * @remarks Saving also reloads the project's default render settings asset.
      */
     Result SaveProjectSettings(EditorServiceContext& Context,
                                std::string_view ProjectName,
-                               std::string_view StartupLevelPack,
+                               std::string_view StartupLevelAsset,
                                std::string_view DefaultRenderSettingsAssetId);
     /**
      * @brief Access the current project snapshot.
@@ -525,11 +568,12 @@ private:
     Result RebuildAssetManager();
     Result EnsureEditorTemplateAssets(EditorServiceContext& Context);
     Result EnsureProjectShaderDirectory(const std::filesystem::path& ProjectAssetRoot);
-    Result EnsureProjectStarterLevelPack(const std::filesystem::path& ProjectAssetRoot,
-                                         const std::filesystem::path& StartupPackPath);
-    Result LoadProjectStartupLevel(EditorServiceContext& Context, const std::filesystem::path& StartupPackPath);
+    Result EnsureProjectStarterLevelAsset(const std::filesystem::path& ProjectAssetRoot,
+                                         const std::filesystem::path& StartupAssetPath);
+    Result LoadProjectStartupLevelAsset(EditorServiceContext& Context, const std::filesystem::path& StartupAssetPath);
     Result LoadProjectDefaultRenderSettings(EditorServiceContext& Context);
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> SerializeAssetEditorPayload() const;
+    [[nodiscard]] std::expected<std::string, std::string> SerializeAssetEditorSourceJson() const;
     Result SyncMaterialInstanceEditorPayloadFromDescriptor();
     struct AssetImportMetadataEntry
     {
@@ -564,7 +608,7 @@ private:
     std::string m_previewSummary{};
     std::string m_statusMessage{};
     std::filesystem::path m_editorTemplateAssetDirectory{};
-    std::filesystem::path m_editorStarterLevelTemplatePackPath{};
+    std::filesystem::path m_editorStarterLevelTemplateAssetPath{};
     std::filesystem::path m_editorStarterScriptTemplatePath{};
     ProjectInfo m_currentProject{};
     NodeHandle m_loadedDefaultRenderSettingsNode{};
@@ -578,6 +622,7 @@ private:
     ::SnAPI::AssetPipeline::TypeId m_assetEditorAssetKind{};
     TypeId m_assetEditorTargetType{};
     void* m_assetEditorTargetObject = nullptr;
+    TypeId m_assetEditorSourceAssetType{};
     bool m_assetEditorDirty = false;
     bool m_assetEditorCanSave = false;
     bool m_assetEditorCanEditHierarchy = false;
@@ -596,6 +641,7 @@ private:
     std::optional<AssetImportMetadataEntry> m_assetEditorImportMetadataBaseline{};
     std::string m_assetEditorMaterialInstanceDescriptorParentKey{};
     std::vector<uint8_t> m_assetEditorBaselineCookedBytes{};
+    std::string m_assetEditorBaselineSourceJson{};
     std::string m_assetEditorTitle{};
     NodeHandle m_assetEditorSelectedNode{};
     std::vector<AssetEditorSessionView::NodeEntry> m_assetEditorHierarchy{};
@@ -605,6 +651,7 @@ private:
     std::unordered_map<::SnAPI::AssetPipeline::AssetId, AssetImportMetadataEntry, ::SnAPI::AssetPipeline::UuidHash> m_assetImportMetadata{};
     std::filesystem::path m_assetImportMetadataPath{};
     bool m_assetImportMetadataDirty = false;
+    std::unique_ptr<void, std::function<void(void*)>> m_assetEditorGenericSourceObject{nullptr, [](void*) {}};
 };
 
 } // namespace SnAPI::GameFramework::Editor

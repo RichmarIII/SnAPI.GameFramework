@@ -85,7 +85,7 @@ void RegisterAssetPipelinePayloads(::SnAPI::AssetPipeline::PayloadRegistry& Regi
  *
  * This installs:
  * - payload migrations for legacy node, level, and world payload schemas
- * - runtime factories for node, world, level, mesh, skeleton, animation, material, and material-instance assets
+ * - runtime factories for node, world, level, Conduit graph, Conduit class, mesh, skeleton, animation, material, and material-instance assets
  * - renderer texture factories when renderer support is compiled in
  *
  * Call this before resolving GameFramework asset references through the supplied manager.

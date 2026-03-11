@@ -3,114 +3,11 @@
 #include <exception>
 #include <sstream>
 
+#include "AuthoredAssetCereal.h"
 #include <cereal/archives/binary.hpp>
-#include <cereal/types/array.hpp>
-#include <cereal/types/string.hpp>
-#include <cereal/types/vector.hpp>
 
 namespace SnAPI::GameFramework
 {
-template<class Archive>
-void serialize(Archive& Ar, AssetRefPayload& Value)
-{
-    Ar(Value.AssetName, Value.AssetId);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, MeshStreamChunkRef& Value)
-{
-    Ar(Value.Semantic, Value.BulkIndex, Value.ElementCount, Value.StrideBytes);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, StaticSubMeshPayload& Value)
-{
-    Ar(Value.IndexOffset, Value.IndexCount, Value.MaterialSlot, Value.BoundsMin, Value.BoundsMax);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, StaticMeshPayload& Value)
-{
-    Ar(Value.Name, Value.BoundsMin, Value.BoundsMax, Value.SubMeshes, Value.MaterialInstances, Value.Streams);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, SkeletalBonePayload& Value)
-{
-    Ar(Value.Name, Value.ParentIndex, Value.BindPose);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, SkeletonPayload& Value)
-{
-    Ar(Value.Name, Value.Bones);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, AnimationKeyFramePayload& Value)
-{
-    Ar(Value.Time, Value.Translation, Value.Rotation, Value.Scale);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, AnimationTrackPayload& Value)
-{
-    Ar(Value.BoneName, Value.KeyFrames);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, AnimationPayload& Value)
-{
-    Ar(Value.Name, Value.DurationSeconds, Value.TicksPerSecond, Value.Tracks);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, SkeletalMeshPayload& Value)
-{
-    Ar(Value.BaseMesh, Value.Bones, Value.Skeleton, Value.Animations, Value.SkeletonAnimationBulkIndex);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, MaterialPayload& Value)
-{
-    Ar(
-        Value.ShaderModule,
-        Value.ShadingModel,
-        Value.FeatureAlbedoMap,
-        Value.FeatureNormalMap,
-        Value.FeatureRoughnessMap,
-        Value.FeatureMetalnessMap,
-        Value.FeatureOcclusionMap,
-        Value.FeatureAlphaTest,
-        Value.FeatureAlphaBlend,
-        Value.FeatureDoubleSided,
-        Value.FeatureInstancing);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, MaterialScalarParamPayload& Value)
-{
-    Ar(Value.Name, Value.Value);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, MaterialVectorParamPayload& Value)
-{
-    Ar(Value.Name, Value.Value);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, MaterialTextureParamPayload& Value)
-{
-    Ar(Value.SlotName, Value.Texture, Value.SRGB);
-}
-
-template<class Archive>
-void serialize(Archive& Ar, MaterialInstancePayload& Value)
-{
-    Ar(Value.ParentMaterial, Value.Scalars, Value.Vectors, Value.Textures);
-}
-
 namespace
 {
 
@@ -175,6 +72,16 @@ TExpected<TPayload> DeserializePayloadBinary(const uint8_t* Bytes, const size_t 
     }
 }
 } // namespace
+
+Result MaterialPayload::Save(std::ostream& Output) const
+{
+    return Detail::SaveAuthoredAssetViaCerealJsonStream(*this, Output);
+}
+
+Result MaterialInstancePayload::Save(std::ostream& Output) const
+{
+    return Detail::SaveAuthoredAssetViaCerealJsonStream(*this, Output);
+}
 
 TExpected<void> SerializeStaticMeshPayload(const StaticMeshPayload& Payload, std::vector<uint8_t>& OutBytes)
 {

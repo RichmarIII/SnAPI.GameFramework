@@ -127,7 +127,106 @@ bool IsAUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types, co
             return true;
         }
     }
+    for (const auto& InterfaceType : Info.InterfaceTypes)
+    {
+        if (InterfaceType == Base)
+        {
+            return true;
+        }
+        if (IsAUnlocked(Types, InterfaceType, Base))
+        {
+            return true;
+        }
+    }
     return false;
+}
+
+void* CastUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
+                   const TypeId& Source,
+                   const TypeId& Target,
+                   void* Instance,
+                   std::unordered_set<TypeId, UuidHash>& Visited)
+{
+    if (!Instance)
+    {
+        return nullptr;
+    }
+    if (Source == Target)
+    {
+        return Instance;
+    }
+    const auto It = Types.find(Source);
+    if (It == Types.end() || !Visited.insert(Source).second)
+    {
+        return nullptr;
+    }
+
+    for (const TypeCastInfo& CastInfo : It->second.DirectCasts)
+    {
+        if (!CastInfo.CastMutable)
+        {
+            continue;
+        }
+        void* Direct = CastInfo.CastMutable(Instance);
+        if (!Direct)
+        {
+            continue;
+        }
+        if (CastInfo.TargetType == Target)
+        {
+            return Direct;
+        }
+        if (void* Nested = CastUnlocked(Types, CastInfo.TargetType, Target, Direct, Visited))
+        {
+            return Nested;
+        }
+    }
+
+    return nullptr;
+}
+
+const void* CastUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
+                         const TypeId& Source,
+                         const TypeId& Target,
+                         const void* Instance,
+                         std::unordered_set<TypeId, UuidHash>& Visited)
+{
+    if (!Instance)
+    {
+        return nullptr;
+    }
+    if (Source == Target)
+    {
+        return Instance;
+    }
+    const auto It = Types.find(Source);
+    if (It == Types.end() || !Visited.insert(Source).second)
+    {
+        return nullptr;
+    }
+
+    for (const TypeCastInfo& CastInfo : It->second.DirectCasts)
+    {
+        if (!CastInfo.CastConst)
+        {
+            continue;
+        }
+        const void* Direct = CastInfo.CastConst(Instance);
+        if (!Direct)
+        {
+            continue;
+        }
+        if (CastInfo.TargetType == Target)
+        {
+            return Direct;
+        }
+        if (const void* Nested = CastUnlocked(Types, CastInfo.TargetType, Target, Direct, Visited))
+        {
+            return Nested;
+        }
+    }
+
+    return nullptr;
 }
 
 void BuildLineageUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
@@ -148,6 +247,11 @@ void BuildLineageUnlocked(const std::unordered_map<TypeId, TypeInfo, UuidHash>& 
     for (const TypeId& BaseType : It->second.BaseTypes)
     {
         BuildLineageUnlocked(Types, BaseType, Visited, OutLineage);
+    }
+
+    for (const TypeId& InterfaceType : It->second.InterfaceTypes)
+    {
+        BuildLineageUnlocked(Types, InterfaceType, Visited, OutLineage);
     }
 
     OutLineage.push_back(&It->second);
@@ -255,6 +359,64 @@ bool TypeRegistry::IsA(const TypeId& Type, const TypeId& Base) const
         return IsAUnlocked(m_types, Type, Base);
     }
     return IsAUnlocked(m_types, Type, Base);
+}
+
+void* TypeRegistry::Cast(const TypeId& SourceType, const TypeId& TargetType, void* Instance) const
+{
+    if (!Instance)
+    {
+        return nullptr;
+    }
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        GameLockGuard Lock(m_mutex);
+        std::unordered_set<TypeId, UuidHash> Visited{};
+        return CastUnlocked(m_types, SourceType, TargetType, Instance, Visited);
+    }
+
+    std::unordered_set<TypeId, UuidHash> Visited{};
+    return CastUnlocked(m_types, SourceType, TargetType, Instance, Visited);
+}
+
+const void* TypeRegistry::Cast(const TypeId& SourceType, const TypeId& TargetType, const void* Instance) const
+{
+    if (!Instance)
+    {
+        return nullptr;
+    }
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        GameLockGuard Lock(m_mutex);
+        std::unordered_set<TypeId, UuidHash> Visited{};
+        return CastUnlocked(m_types, SourceType, TargetType, Instance, Visited);
+    }
+
+    std::unordered_set<TypeId, UuidHash> Visited{};
+    return CastUnlocked(m_types, SourceType, TargetType, Instance, Visited);
+}
+
+std::vector<const TypeInfo*> TypeRegistry::All() const
+{
+    std::vector<const TypeInfo*> Result{};
+    if (!m_frozen.load(std::memory_order_acquire))
+    {
+        GameLockGuard Lock(m_mutex);
+        Result.reserve(m_types.size());
+        for (const auto& [Id, Info] : m_types)
+        {
+            (void)Id;
+            Result.push_back(&Info);
+        }
+        return Result;
+    }
+
+    Result.reserve(m_types.size());
+    for (const auto& [Id, Info] : m_types)
+    {
+        (void)Id;
+        Result.push_back(&Info);
+    }
+    return Result;
 }
 
 std::vector<const TypeInfo*> TypeRegistry::Derived(const TypeId& Base) const

@@ -3462,10 +3462,10 @@ bool UIPropertyPanel::ResolveLeafPath(
     {
         if (auto view = field->ViewGetter(current))
       {
-        next = view->BorrowedMutable();
+        next = view->UnsafeBorrowedMutable();
         if (!next)
         {
-          next = const_cast<void*>(view->Borrowed());
+          next = const_cast<void*>(view->UnsafeBorrowed());
         }
       }
     }

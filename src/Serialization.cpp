@@ -456,7 +456,7 @@ TExpected<void> SerializeFieldsRecursive(
             {
                 return std::unexpected(ViewResult.error());
             }
-            FieldPtr = ViewResult->Borrowed();
+            FieldPtr = ViewResult->UnsafeBorrowed();
         }
         if (!FieldPtr && Field->Getter)
         {
@@ -465,7 +465,7 @@ TExpected<void> SerializeFieldsRecursive(
             {
                 return std::unexpected(FieldResult.error());
             }
-            FieldPtr = FieldResult->Borrowed();
+            FieldPtr = FieldResult->UnsafeBorrowed();
         }
         if (!FieldPtr)
         {
@@ -555,7 +555,7 @@ TExpected<void> DeserializeFieldsRecursive(
             {
                 return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
             }
-            FieldPtr = ViewResult->BorrowedMutable();
+            FieldPtr = ViewResult->UnsafeBorrowedMutable();
         }
         if (!FieldPtr && Field->Setter && Entry.Codec)
         {
@@ -584,16 +584,16 @@ TExpected<void> DeserializeFieldsRecursive(
             {
                 return std::unexpected(FieldResult.error());
             }
-            if (!FieldResult->IsRef())
+            if (FieldResult->StorageKind() != Variant::EStorageKind::BorrowedMutable)
             {
+                if (FieldResult->StorageKind() == Variant::EStorageKind::BorrowedConst)
+                {
+                    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
+                }
                 return std::unexpected(
                     MakeError(EErrorCode::InvalidArgument, "Getter does not expose mutable storage"));
             }
-            if (FieldResult->IsConst())
-            {
-                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Cannot mutate const field"));
-            }
-            FieldPtr = const_cast<void*>(FieldResult->Borrowed());
+            FieldPtr = FieldResult->UnsafeBorrowedMutable();
         }
         if (Field->IsConst)
         {
@@ -644,6 +644,112 @@ TExpected<void> DeserializeFieldsRecursive(
     }
 
     return Ok();
+}
+
+TExpected<void> SerializeReflectedValueArchive(const TypeId& Type,
+                                              const void* Value,
+                                              cereal::BinaryOutputArchive& Archive,
+                                              const TSerializationContext& Context)
+{
+    if (!Value)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null reflected value"));
+    }
+
+    (void)TypeAutoRegistry::Instance().Ensure(Type);
+    if (const auto* Codec = ValueCodecRegistry::Instance().FindEntry(Type);
+        Codec && Codec->Encode)
+    {
+        return Codec->Encode(Value, Archive, Context);
+    }
+
+    std::unordered_map<TypeId, bool, UuidHash> Visited;
+    return SerializeFieldsRecursive(Type, Value, Archive, Context, Visited);
+}
+
+TExpected<void> DeserializeReflectedValueIntoArchive(const TypeId& Type,
+                                                     void* Value,
+                                                     cereal::BinaryInputArchive& Archive,
+                                                     const TSerializationContext& Context)
+{
+    if (!Value)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null reflected value"));
+    }
+
+    (void)TypeAutoRegistry::Instance().Ensure(Type);
+    if (const auto* Codec = ValueCodecRegistry::Instance().FindEntry(Type);
+        Codec && Codec->DecodeInto)
+    {
+        return Codec->DecodeInto(Value, Archive, Context);
+    }
+
+    std::unordered_map<TypeId, bool, UuidHash> Visited;
+    return DeserializeFieldsRecursive(Type, Value, Archive, Context, Visited);
+}
+
+TExpected<void> ConstructReflectedValueArchive(const TypeId& Type,
+                                               void* Storage,
+                                               cereal::BinaryInputArchive& Archive,
+                                               const TSerializationContext& Context)
+{
+    if (!Storage)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null reflected value storage"));
+    }
+
+    (void)TypeAutoRegistry::Instance().Ensure(Type);
+    const TypeInfo* Info = TypeRegistry::Instance().Find(Type);
+    if (!Info)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Reflected value type is not registered"));
+    }
+    if (!Info->RuntimeOps)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Reflected value type has no runtime ops"));
+    }
+
+    if (const auto* Codec = ValueCodecRegistry::Instance().FindEntry(Type);
+        Codec && Codec->Decode)
+    {
+        auto DecodeResult = Codec->Decode(Archive, Context);
+        if (!DecodeResult)
+        {
+            return std::unexpected(DecodeResult.error());
+        }
+        if (!Info->RuntimeOps->CopyConstruct)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "Reflected value type is not copy-constructible"));
+        }
+
+        const void* DecodedPtr = DecodeResult->UnsafeBorrowed();
+        if (!DecodedPtr)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Decoded reflected value has no payload"));
+        }
+        Info->RuntimeOps->CopyConstruct(DecodedPtr, Storage);
+        return Ok();
+    }
+
+    if (!Info->RuntimeOps->DefaultConstruct)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Reflected value type requires a default constructor for reflective decode"));
+    }
+
+    Info->RuntimeOps->DefaultConstruct(Storage);
+    auto DecodeResult = DeserializeReflectedValueIntoArchive(Type, Storage, Archive, Context);
+    if (DecodeResult)
+    {
+        return DecodeResult;
+    }
+
+    if (Info->RuntimeOps->Destroy)
+    {
+        Info->RuntimeOps->Destroy(Storage);
+    }
+    return DecodeResult;
 }
 } // namespace
 
@@ -923,6 +1029,111 @@ TExpected<void> ComponentSerializationRegistry::DeserializeByReflection(const Ty
     }
     std::unordered_map<TypeId, bool, UuidHash> Visited;
     return DeserializeFieldsRecursive(Type, Instance, Archive, Context, Visited);
+}
+
+TExpected<void> SerializeReflectedValue(const TypeId& Type,
+                                        const void* Value,
+                                        std::vector<uint8_t>& OutBytes,
+                                        const TSerializationContext& Context)
+{
+    try
+    {
+        OutBytes.clear();
+        VectorWriteStreambuf Buffer(OutBytes);
+        std::ostream Stream(&Buffer);
+        cereal::BinaryOutputArchive Archive(Stream);
+        return SerializeReflectedValueArchive(Type, Value, Archive, Context);
+    }
+    catch (const std::exception& Ex)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+    }
+}
+
+TExpected<void> DeserializeReflectedValueInto(const TypeId& Type,
+                                              void* Value,
+                                              const uint8_t* Bytes,
+                                              const size_t Size,
+                                              const TSerializationContext& Context)
+{
+    if (!Bytes && Size > 0)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null reflected value bytes"));
+    }
+
+    const auto DecodeWithContext = [&](const TSerializationContext& ActiveContext) -> TExpected<void>
+    {
+        try
+        {
+            MemoryReadStreambuf Buffer(Bytes, Size);
+            std::istream Stream(&Buffer);
+            cereal::BinaryInputArchive Archive(Stream);
+            return DeserializeReflectedValueIntoArchive(Type, Value, Archive, ActiveContext);
+        }
+        catch (const std::exception& Ex)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+        }
+    };
+
+    auto Result = DecodeWithContext(Context);
+    if (Result || !ShouldRetryWithLegacyFloatVectorDecode(Result.error(), Context))
+    {
+        return Result;
+    }
+
+    TSerializationContext LegacyContext = Context;
+    LegacyContext.UseLegacyFloatVectorDecode = true;
+    auto LegacyResult = DecodeWithContext(LegacyContext);
+    if (LegacyResult)
+    {
+        return LegacyResult;
+    }
+
+    return Result;
+}
+
+TExpected<void> ConstructReflectedValue(const TypeId& Type,
+                                        void* Storage,
+                                        const uint8_t* Bytes,
+                                        const size_t Size,
+                                        const TSerializationContext& Context)
+{
+    if (!Bytes && Size > 0)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null reflected value bytes"));
+    }
+
+    const auto DecodeWithContext = [&](const TSerializationContext& ActiveContext) -> TExpected<void>
+    {
+        try
+        {
+            MemoryReadStreambuf Buffer(Bytes, Size);
+            std::istream Stream(&Buffer);
+            cereal::BinaryInputArchive Archive(Stream);
+            return ConstructReflectedValueArchive(Type, Storage, Archive, ActiveContext);
+        }
+        catch (const std::exception& Ex)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
+        }
+    };
+
+    auto Result = DecodeWithContext(Context);
+    if (Result || !ShouldRetryWithLegacyFloatVectorDecode(Result.error(), Context))
+    {
+        return Result;
+    }
+
+    TSerializationContext LegacyContext = Context;
+    LegacyContext.UseLegacyFloatVectorDecode = true;
+    auto LegacyResult = DecodeWithContext(LegacyContext);
+    if (LegacyResult)
+    {
+        return LegacyResult;
+    }
+
+    return Result;
 }
 
 namespace

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Expected.h"
+#include "Conduit/Types.h"
 #include "Editor/EditorImportSettings.h"
 #include "Handles.h"
 #include "IAssetImportSettings.h"
@@ -42,6 +43,7 @@ class ITreeItemSource;
 class UIContextMenu;
 class UIButton;
 class UIComboBox;
+class UICheckbox;
 template<typename TElement>
 class TElementBuilder;
 } // namespace SnAPI::UI
@@ -55,6 +57,11 @@ class UIPropertyPanel;
 class UIRenderViewport;
 class World;
 } // namespace SnAPI::GameFramework
+
+namespace SnAPI::GameFramework::Conduit::Editor
+{
+class UIConduitGraphCanvas;
+}
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -194,6 +201,193 @@ public:
     };
 
     /**
+     * @brief Summary payload for the docked Conduit workspace surface.
+     *
+     * This is intentionally lightweight in the first slice. It gives the shell enough
+     * information to render a document-style Conduit tab without coupling the shell to
+     * full graph-canvas implementation details.
+     */
+    struct ConduitWorkspaceState
+    {
+        enum class EDocumentKind : std::uint8_t
+        {
+            None = 0,
+            Graph,
+            Class,
+        };
+
+        enum class EVariableDefaultEditorKind : std::uint8_t
+        {
+            None = 0,
+            Bool,
+            Text,
+            Enum,
+            Complex,
+        };
+
+        struct VariableEntry
+        {
+            Uuid Id{};
+            std::string Name{};
+            std::string TypeLabel{};
+            bool HasDefault = false;
+            bool Selected = false;
+        };
+
+        struct VariableTypeOption
+        {
+            TypeId Type{};
+            std::string Label{};
+        };
+
+        struct ClassHostTypeOption
+        {
+            TypeId Type{};
+            std::string Label{};
+        };
+
+        struct ClassGraphOption
+        {
+            std::string AssetKey{};
+            std::string Label{};
+        };
+
+        struct PaletteEntry
+        {
+            std::string StableId{};
+            std::string DisplayName{};
+            std::string Category{};
+            std::string Tooltip{};
+            bool RequiresSpecialization = false;
+        };
+
+        struct NodeEntry
+        {
+            Uuid Id{};
+            std::string Title{};
+            std::string Detail{};
+            bool Selected = false;
+        };
+
+        struct CanvasNode
+        {
+            Uuid Id{};
+            std::string Title{};
+            std::string Detail{};
+            float X = 0.0f;
+            float Y = 0.0f;
+            float Width = 240.0f;
+            bool IsCollapsed = false;
+            bool Selected = false;
+            struct Pin
+            {
+                std::string Name{};
+                std::string TypeLabel{};
+                SnAPI::GameFramework::Conduit::ESlotKind Kind = SnAPI::GameFramework::Conduit::ESlotKind::Value;
+                bool IsInput = true;
+                bool IsExec = false;
+            };
+            std::vector<Pin> InputPins{};
+            std::vector<Pin> OutputPins{};
+        };
+
+        struct CanvasComment
+        {
+            Uuid Id{};
+            std::string Title{};
+            float X = 0.0f;
+            float Y = 0.0f;
+            float Width = 480.0f;
+            float Height = 320.0f;
+            std::uint32_t ColorRgba = 0x334455FFu;
+            bool Selected = false;
+        };
+
+        struct CanvasWire
+        {
+            Uuid SourceNodeId{};
+            std::string SourcePin{};
+            Uuid TargetNodeId{};
+            std::string TargetPin{};
+            SnAPI::GameFramework::Conduit::ESlotKind Kind = SnAPI::GameFramework::Conduit::ESlotKind::Value;
+            bool IsExec = false;
+        };
+
+        struct VariableInspector
+        {
+            bool HasSelection = false;
+            Uuid VariableId{};
+            std::string Name{};
+            TypeId Type{};
+            std::string TypeLabel{};
+            bool HasDefault = false;
+            EVariableDefaultEditorKind DefaultEditorKind = EVariableDefaultEditorKind::None;
+            bool BoolValue = false;
+            std::string TextValue{};
+            std::vector<std::string> EnumOptions{};
+            int32_t SelectedEnumIndex = -1;
+            void* ComplexObject = nullptr;
+            TypeId ComplexType{};
+        };
+
+        struct ClassInspector
+        {
+            bool HasSelection = false;
+            std::string Name{};
+            TypeId HostType{};
+            std::string HostTypeLabel{};
+            std::string GraphAssetKey{};
+            std::string GraphAssetLabel{};
+        };
+
+        struct NodeInspector
+        {
+            bool HasSelection = false;
+            Uuid NodeId{};
+            std::string Title{};
+            std::string Detail{};
+            bool CanEditPrimaryText = false;
+            std::string PrimaryTextLabel{};
+            std::string PrimaryTextValue{};
+            bool CanEditSecondaryText = false;
+            std::string SecondaryTextLabel{};
+            std::string SecondaryTextValue{};
+        };
+
+        EDocumentKind Kind = EDocumentKind::None; /**< @brief Active Conduit document category. */
+        bool Open = false; /**< @brief `true` when a Conduit document is currently active. */
+        std::string AssetKey{}; /**< @brief Stable asset key of the active Conduit document. */
+        std::string Title{}; /**< @brief UI-facing title of the active document. */
+        std::string Status{}; /**< @brief Human-readable compile/save status text. */
+        std::string SelfTypeLabel{}; /**< @brief Human-readable reflected self type label. */
+        std::string HostTypeLabel{}; /**< @brief Human-readable reflected host type label for class documents. */
+        std::string GraphAssetLabel{}; /**< @brief Human-readable referenced graph asset label for class documents. */
+        std::size_t SlotCount = 0; /**< @brief Authored slot count. */
+        std::size_t VariableCount = 0; /**< @brief Authored graph-variable count. */
+        std::size_t NodeCount = 0; /**< @brief Authored node count. */
+        bool IsDirty = false; /**< @brief `true` when the active document has unsaved edits. */
+        bool CompileSucceeded = false; /**< @brief `true` when the last compile produced no errors. */
+        std::size_t WarningCount = 0; /**< @brief Warning count from the last compile. */
+        std::size_t ErrorCount = 0; /**< @brief Error count from the last compile. */
+        std::vector<VariableEntry> VariableEntries{};
+        std::vector<PaletteEntry> PaletteEntries{};
+        std::vector<NodeEntry> NodeEntries{};
+        std::vector<CanvasNode> CanvasNodes{};
+        std::vector<CanvasComment> CanvasComments{};
+        std::vector<CanvasWire> CanvasWires{};
+        float CanvasPanX = 0.0f;
+        float CanvasPanY = 0.0f;
+        float CanvasZoom = 1.0f;
+        std::vector<VariableTypeOption> VariableTypeOptions{};
+        VariableInspector SelectedVariable{};
+        NodeInspector SelectedNode{};
+        std::vector<ClassHostTypeOption> ClassHostTypeOptions{};
+        std::vector<ClassGraphOption> ClassGraphOptions{};
+        ClassInspector SelectedClass{};
+        std::uint64_t Revision = 0; /**< @brief Revision token used to avoid unnecessary UI updates. */
+    };
+
+    /**
      * @brief Hierarchy action kinds emitted by hierarchy context menus.
      */
     enum class EHierarchyAction : std::uint8_t
@@ -265,7 +459,7 @@ public:
         std::string ProjectName{}; /**< @brief User-facing project name. */
         std::string ProjectDirectory{}; /**< @brief Directory that should contain the project when creating a new one. */
         std::string ProjectFilePath{}; /**< @brief Absolute project file path used for open/save workflows. */
-        std::string StartupLevelPack{}; /**< @brief Asset id or pack path for the project's startup level. */
+        std::string StartupLevelAsset{}; /**< @brief Asset id or pack path for the project's startup level. */
         std::string DefaultRenderSettingsAssetId{}; /**< @brief Default render-settings asset id chosen in project settings. */
     };
 
@@ -279,7 +473,7 @@ public:
         std::string ProjectFilePath{}; /**< @brief Absolute path to the active project file. */
         std::string ProjectRootDirectory{}; /**< @brief Root directory that contains the project file and related metadata. */
         std::string AssetRootDirectory{}; /**< @brief Root content directory shown by the content browser. */
-        std::string StartupLevelPack{}; /**< @brief Configured startup level asset identifier or pack path. */
+        std::string StartupLevelAsset{}; /**< @brief Configured startup level asset identifier or pack path. */
         std::string DefaultRenderSettingsAssetId{}; /**< @brief Configured default render-settings asset identifier. */
     };
 
@@ -376,6 +570,50 @@ public:
     void SetContentAssetDetails(ContentAssetDetails Details);
     /** @brief Replace the asset-inspector modal state. */
     void SetContentAssetInspectorState(ContentAssetInspectorState State);
+    /** @brief Replace the docked Conduit workspace state. */
+    void SetConduitWorkspaceState(ConduitWorkspaceState State);
+    /** @brief Install the callback invoked when the user selects one Conduit graph variable. */
+    void SetConduitVariableSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)> Handler);
+    /** @brief Install the callback invoked when the user creates one Conduit graph variable. */
+    void SetConduitVariableCreateHandler(SnAPI::UI::TDelegate<void(const std::string&, const TypeId&)> Handler);
+    /** @brief Install the callback invoked when the user removes the selected Conduit graph variable. */
+    void SetConduitVariableRemoveHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user renames the selected Conduit graph variable. */
+    void SetConduitVariableRenameHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user changes the selected Conduit graph variable type. */
+    void SetConduitVariableTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler);
+    /** @brief Install the callback invoked when the user changes the selected bool default. */
+    void SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)> Handler);
+    /** @brief Install the callback invoked when the user submits a text-encoded selected-variable default. */
+    void SetConduitVariableDefaultTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user selects one enum default value. */
+    void SetConduitVariableDefaultEnumHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user clears the selected-variable default. */
+    void SetConduitVariableClearDefaultHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user applies complex-default edits. */
+    void SetConduitVariableCommitDefaultHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user resets complex-default scratch state. */
+    void SetConduitVariableResetDefaultHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user selects one authored Conduit node. */
+    void SetConduitNodeSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)> Handler);
+    /** @brief Install the callback invoked when the user spawns one schema-backed Conduit node. */
+    void SetConduitNodeCreateHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user removes the selected authored Conduit node. */
+    void SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user drags one authored Conduit node on the canvas. */
+    void SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)> Handler);
+    /** @brief Install the callback invoked when the user edits the primary text field for the selected authored Conduit node. */
+    void SetConduitNodePrimaryTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user edits the secondary text field for the selected authored Conduit node. */
+    void SetConduitNodeSecondaryTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user pans or zooms the Conduit canvas viewport. */
+    void SetConduitViewportHandler(SnAPI::UI::TDelegate<void(float, float, float)> Handler);
+    /** @brief Install the callback invoked when the user renames the active Conduit class. */
+    void SetConduitClassNameHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user changes the active Conduit class host type. */
+    void SetConduitClassHostTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler);
+    /** @brief Install the callback invoked when the user changes the active Conduit class graph reference. */
+    void SetConduitClassGraphHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
 
 private:
     using PanelBuilder = SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel>;
@@ -507,7 +745,9 @@ private:
     void RefreshContentBrowserPath();
     void RefreshContentAssetCardSelectionStyles();
     void RefreshContentAssetDetailsViewModel();
+    void RefreshConduitWorkspaceView();
     [[nodiscard]] std::size_t ResolveSelectedContentAssetIndex() const;
+    [[nodiscard]] UIPropertyPanel* ResolveConduitVariableDefaultPanel() const;
     void InitializeViewModel();
 
     template<typename TValue>
@@ -567,6 +807,50 @@ private:
     SnAPI::UI::ElementHandle<UIPropertyPanel> m_contentInspectorImportSettingsPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentInspectorSaveButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentInspectorReimportButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitWorkspaceTitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitWorkspaceStatusText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitWorkspaceSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_conduitVariablesTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitPaletteSearchInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_conduitPaletteTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitPaletteAddNodeButton{};
+    SnAPI::UI::ElementHandle<Conduit::Editor::UIConduitGraphCanvas> m_conduitGraphCanvas{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_conduitNodesTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitNodeRemoveButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitVariablesCard{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitNodesCard{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitInspectorCard{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitVariableInspectorPanel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitNodeInspectorPanel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitClassCard{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitGraphWorkspaceHost{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitClassWorkspaceHost{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitInspectorTitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitVariableCreateNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitVariableCreateTypeCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitVariableCreateButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitVariableNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitVariableTypeCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitVariableRemoveButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitVariableDefaultHintText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_conduitVariableDefaultBoolCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitVariableDefaultTextInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitVariableDefaultEnumCombo{};
+    SnAPI::UI::ElementHandle<UIPropertyPanel> m_conduitVariableDefaultPropertyPanel{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitVariableDefaultClearButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitVariableDefaultApplyButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitVariableDefaultResetButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitNodeSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitNodePrimaryLabelText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitNodePrimaryTextInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitNodeSecondaryLabelText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitNodeSecondaryTextInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitClassNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitClassHostTypeCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitClassGraphCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitClassOverviewSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitClassOverviewHostText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitClassOverviewGraphText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_menuFileButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectNameInput{};
@@ -575,7 +859,7 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectModalOkButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectSettingsModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectSettingsNameInput{};
-    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectSettingsStartupPackInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectSettingsStartupAssetInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_projectSettingsDefaultRenderSettingsCombo{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectSettingsSaveButton{};
 
@@ -625,6 +909,17 @@ private:
     AssimpImportSettings m_contentImportAssimpSettings{};
     TextureImportSettings m_contentImportTextureSettings{};
     ContentAssetInspectorState m_contentAssetInspectorState{};
+    ConduitWorkspaceState m_conduitWorkspaceState{};
+    std::vector<Uuid> m_conduitVisibleVariableIds{};
+    std::vector<Uuid> m_conduitVisibleNodeIds{};
+    std::vector<std::string> m_conduitVisiblePaletteStableIds{};
+    std::string m_conduitPaletteFilterText{};
+    std::string m_conduitSelectedPaletteStableId{};
+    std::string m_conduitCreateVariableNameText{};
+    TypeId m_conduitCreateSelectedVariableType{};
+    bool m_conduitVariableDefaultPanelBound = false;
+    void* m_conduitVariableDefaultBoundObject = nullptr;
+    TypeId m_conduitVariableDefaultBoundType{};
     bool m_projectModalOpen = false;
     bool m_projectModalRequired = false;
     bool m_projectModalShowWelcome = false;
@@ -634,7 +929,7 @@ private:
     std::string m_projectDirectoryText{};
     std::string m_projectFilePathText{};
     std::string m_projectSettingsNameText{};
-    std::string m_projectSettingsStartupPackText{};
+    std::string m_projectSettingsStartupAssetText{};
     std::string m_projectSettingsDefaultRenderSettingsAssetId{};
     std::vector<std::pair<std::string, std::string>> m_projectSettingsRenderSettingsOptions{};
     ProjectState m_projectState{};
@@ -660,6 +955,27 @@ private:
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorCloseRequested{};
     SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onContentAssetInspectorNodeSelected{};
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onContentAssetInspectorHierarchyActionRequested{};
+    SnAPI::UI::TDelegate<void(const Uuid&)> m_onConduitVariableSelected{};
+    SnAPI::UI::TDelegate<void(const std::string&, const TypeId&)> m_onConduitVariableCreateRequested{};
+    SnAPI::UI::TDelegate<void()> m_onConduitVariableRemoveRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitVariableRenameRequested{};
+    SnAPI::UI::TDelegate<void(const TypeId&)> m_onConduitVariableTypeRequested{};
+    SnAPI::UI::TDelegate<void(bool)> m_onConduitVariableDefaultBoolRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitVariableDefaultTextRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitVariableDefaultEnumRequested{};
+    SnAPI::UI::TDelegate<void()> m_onConduitVariableClearDefaultRequested{};
+    SnAPI::UI::TDelegate<void()> m_onConduitVariableCommitDefaultRequested{};
+    SnAPI::UI::TDelegate<void()> m_onConduitVariableResetDefaultRequested{};
+    SnAPI::UI::TDelegate<void(const Uuid&)> m_onConduitNodeSelected{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodeCreateRequested{};
+    SnAPI::UI::TDelegate<void()> m_onConduitNodeRemoveRequested{};
+    SnAPI::UI::TDelegate<void(const Uuid&, float, float)> m_onConduitNodeMoveRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodePrimaryTextRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodeSecondaryTextRequested{};
+    SnAPI::UI::TDelegate<void(float, float, float)> m_onConduitViewportRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitClassNameRequested{};
+    SnAPI::UI::TDelegate<void(const TypeId&)> m_onConduitClassHostTypeRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitClassGraphRequested{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_hierarchyItemSource{};
     enum class EContextMenuScope : std::uint8_t
     {

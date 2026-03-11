@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(SNAPI_ENABLE_IPO "Enable interprocedural optimization for Release and RelWithDebInfo builds" ON)
 option(SNAPI_GF_BUILD_TESTS "Build tests" ON)
 option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
@@ -12,6 +13,17 @@ option(SNAPI_GF_BUILD_EDITOR "Build editor target" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
+
+if (SNAPI_ENABLE_IPO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT SNAPI_IPO_SUPPORTED OUTPUT SNAPI_IPO_OUTPUT LANGUAGES C CXX)
+    if (SNAPI_IPO_SUPPORTED)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+    else()
+        message(WARNING "SNAPI_ENABLE_IPO is ON, but IPO is not supported: ${SNAPI_IPO_OUTPUT}")
+    endif()
+endif()
 
 if (SNAPI_GF_ENABLE_LUA AND NOT SNAPI_GF_ENABLE_SWIG)
     message(FATAL_ERROR "Lua scripting now requires SWIG bindings. Enable SNAPI_GF_ENABLE_SWIG.")
@@ -32,6 +44,15 @@ FetchContent_Declare(
     GIT_TAG v1.2.3
 )
 FetchContent_MakeAvailable(stduuid)
+
+if (NOT TARGET nlohmann_json::nlohmann_json)
+    FetchContent_Declare(
+        nlohmann_json
+        GIT_REPOSITORY https://github.com/nlohmann/json.git
+        GIT_TAG v3.12.0
+    )
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
 
 # SnAPI.Math integration (required)
 set(SNAPI_GF_MATH_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Math")
@@ -94,6 +115,9 @@ set(SNAPI_GF_SOURCES
     src/AudioListenerComponent.cpp
     src/AudioSourceComponent.cpp
     src/AudioSystem.cpp
+    src/AuthoredAssetRegistry.cpp
+    src/AuthoredAssetJson.cpp
+    src/AuthoredAssetSourcePipeline.cpp
     src/AssetRef.cpp
     src/AssetPipelinePlugin.cpp
     src/AssetPipelineFactories.cpp
@@ -102,6 +126,9 @@ set(SNAPI_GF_SOURCES
     src/CharacterMovementController.cpp
     src/CameraComponent.cpp
     src/ColliderComponent.cpp
+    src/Conduit.cpp
+    src/ConduitAsset.cpp
+    src/ConduitClassComponent.cpp
     src/DirectionalLightComponent.cpp
     src/EnvironmentCaptureComponent.cpp
     src/EnvironmentProbeNode.cpp
@@ -121,6 +148,7 @@ set(SNAPI_GF_SOURCES
     src/LocalPlayer.cpp
     src/LocalPlayerService.cpp
     src/MultiplayerConfigNode.cpp
+    src/NodeAsset.cpp
     src/SSAOParamsNode.cpp
     src/SSGIParamsNode.cpp
     src/SSRParamsNode.cpp
@@ -165,7 +193,7 @@ target_include_directories(SnAPI.GameFramework PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(SnAPI.GameFramework PUBLIC stduuid SnAPI.Math)
+target_link_libraries(SnAPI.GameFramework PUBLIC stduuid SnAPI.Math nlohmann_json::nlohmann_json)
 
 set(SNAPI_GF_DEFAULT_ASSET_ROOT "${CMAKE_BINARY_DIR}/Assets")
 file(TO_CMAKE_PATH "${SNAPI_GF_DEFAULT_ASSET_ROOT}" SNAPI_GF_DEFAULT_ASSET_ROOT)
@@ -214,9 +242,18 @@ if (SNAPI_GF_BUILD_EDITOR)
         include/Editor/GameFrameworkEditor.hpp
         include/Editor/IEditorService.h
         include/Editor/EditorWorld.h
+        include/Conduit/Editor.h
+        include/Conduit/Editor/Types.h
+        include/Conduit/Editor/Document.h
+        include/Conduit/Editor/Schema.h
+        include/Conduit/Editor/CompilerBridge.h
+        include/Conduit/Editor/GraphCanvas.h
+        include/Conduit/Editor/Service.h
         src/Editor/main.cpp
         src/Editor/EditorCameraComponent.cpp
         src/Editor/EditorAssetService.cpp
+        src/Editor/ConduitEditor.cpp
+        src/Editor/ConduitGraphCanvas.cpp
         src/Editor/EditorCoreServices.cpp
         src/Editor/EditorLayout.cpp
         src/Editor/EditorSelectionModel.cpp

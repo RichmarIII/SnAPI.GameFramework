@@ -322,7 +322,7 @@ TExpected<void> EncodeArgs(std::span<const TypeId> Types,
         {
             return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Argument type mismatch"));
         }
-        auto EncodeResult = Registry.Encode(Types[i], Args[i].Borrowed(), Archive, Context);
+        auto EncodeResult = Registry.Encode(Types[i], Args[i].UnsafeBorrowed(), Archive, Context);
         if (!EncodeResult)
         {
             return EncodeResult;
@@ -368,7 +368,7 @@ TExpected<void> EncodeReturnValue(const TypeId& ReturnType,
     std::ostream Os(&Buffer);
     cereal::BinaryOutputArchive Archive(Os);
     auto& Registry = ValueCodecRegistry::Instance();
-    return Registry.Encode(ReturnType, Value.Borrowed(), Archive, Context);
+    return Registry.Encode(ReturnType, Value.UnsafeBorrowed(), Archive, Context);
 }
 
 TExpected<Variant> DecodeReturnValue(const TypeId& ReturnType,
