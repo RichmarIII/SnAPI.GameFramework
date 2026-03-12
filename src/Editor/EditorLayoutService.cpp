@@ -203,15 +203,55 @@ private:
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
-    if (NodeCast<PlayerStart>(&Node) != nullptr)
+    (void)WorldRef.RequestNodeOnCreate(Node.Handle());
+}
+
+[[nodiscard]] const char* EditorErrorCodeLabel(const EErrorCode Code)
+{
+    switch (Code)
     {
-        (void)WorldRef.RequestNodeOnCreate(Node.Handle());
+    case EErrorCode::None:
+        return "None";
+    case EErrorCode::NotFound:
+        return "NotFound";
+    case EErrorCode::InvalidArgument:
+        return "InvalidArgument";
+    case EErrorCode::TypeMismatch:
+        return "TypeMismatch";
+    case EErrorCode::OutOfRange:
+        return "OutOfRange";
+    case EErrorCode::AlreadyExists:
+        return "AlreadyExists";
+    case EErrorCode::NotReady:
+        return "NotReady";
+    case EErrorCode::InternalError:
+        return "InternalError";
+    default:
+        return "Unknown";
+    }
+}
+
+template<typename TExpectedLike>
+void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike& ResultValue)
+{
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (ResultValue)
+    {
+        return;
     }
 
-    if (NodeCast<PawnBase>(&Node) != nullptr)
-    {
-        (void)WorldRef.RequestNodeOnCreate(Node.Handle());
-    }
+    const Error& ErrorValue = ResultValue.error();
+    std::fprintf(stdout,
+                 "[SnAPI][EditorError][%s] %.*s: %s\n",
+                 EditorErrorCodeLabel(ErrorValue.Code),
+                 static_cast<int>(Operation.size()),
+                 Operation.data(),
+                 ErrorValue.Message.c_str());
+    std::fflush(stdout);
+#else
+    (void)Operation;
+    (void)ResultValue;
+#endif
 }
 
 [[nodiscard]] Result ExecuteHierarchyAction(EditorServiceContext& Context,
@@ -747,6 +787,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
                 Request.DefaultRenderSettingsAssetId);
         }
 
+        ReportEditorExpectedFailure("Project action", ProjectResult);
+
         if (ProjectResult &&
             (Request.Action == EditorLayout::EProjectAction::CreateNew ||
              Request.Action == EditorLayout::EProjectAction::OpenExisting))
@@ -784,7 +826,9 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
                 auto OpenEditorResult = AssetService->OpenAssetEditorByKey(Context, m_pendingAssetSelectionKey);
                 if (!OpenEditorResult)
                 {
-                    (void)AssetService->OpenSelectedAssetPreview();
+                    ReportEditorExpectedFailure("Open asset editor", OpenEditorResult);
+                    auto PreviewResult = AssetService->OpenSelectedAssetPreview();
+                    ReportEditorExpectedFailure("Open asset preview", PreviewResult);
                 }
             }
         }
@@ -799,7 +843,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
         if (!PieService->IsSessionActive() && !m_pendingAssetPlaceKey.empty())
         {
-            (void)AssetService->ArmPlacementByKey(m_pendingAssetPlaceKey);
+            auto PlaceResult = AssetService->ArmPlacementByKey(m_pendingAssetPlaceKey);
+            ReportEditorExpectedFailure("Arm asset placement", PlaceResult);
         }
 
         m_pendingAssetPlaceKey.clear();
@@ -811,7 +856,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
         if (!m_pendingAssetSaveKey.empty())
         {
-            (void)AssetService->SaveAssetByKey(Context, m_pendingAssetSaveKey);
+            auto SaveResult = AssetService->SaveAssetByKey(Context, m_pendingAssetSaveKey);
+            ReportEditorExpectedFailure("Save asset", SaveResult);
         }
 
         m_pendingAssetSaveKey.clear();
@@ -823,7 +869,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
         if (!m_pendingAssetRenameKey.empty())
         {
-            (void)AssetService->RenameAssetByKey(m_pendingAssetRenameKey, m_pendingAssetRenameValue);
+            auto RenameResult = AssetService->RenameAssetByKey(m_pendingAssetRenameKey, m_pendingAssetRenameValue);
+            ReportEditorExpectedFailure("Rename asset", RenameResult);
         }
 
         m_pendingAssetRenameKey.clear();
@@ -836,7 +883,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
         if (!m_pendingAssetDeleteKey.empty())
         {
-            (void)AssetService->DeleteAssetByKey(m_pendingAssetDeleteKey);
+            auto DeleteResult = AssetService->DeleteAssetByKey(m_pendingAssetDeleteKey);
+            ReportEditorExpectedFailure("Delete asset", DeleteResult);
         }
 
         m_pendingAssetDeleteKey.clear();
@@ -847,10 +895,22 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_hasPendingAssetCreateRequest = false;
         if (!PieService->IsSessionActive() && m_pendingAssetCreateRequest.Type != TypeId{})
         {
-            (void)AssetService->CreateSourceAssetByType(Context,
-                                                        m_pendingAssetCreateRequest.Type,
-                                                        m_pendingAssetCreateRequest.Name,
-                                                        m_pendingAssetCreateRequest.FolderPath);
+            if (TypeRegistry::Instance().IsA(m_pendingAssetCreateRequest.Type, StaticTypeId<BaseNode>()))
+            {
+                auto CreateResult = AssetService->CreatePrefabSourceAssetByNodeType(Context,
+                                                                                   m_pendingAssetCreateRequest.Type,
+                                                                                   m_pendingAssetCreateRequest.Name,
+                                                                                   m_pendingAssetCreateRequest.FolderPath);
+                ReportEditorExpectedFailure("Create prefab asset", CreateResult);
+            }
+            else
+            {
+                auto CreateResult = AssetService->CreateSourceAssetByType(Context,
+                                                                          m_pendingAssetCreateRequest.Type,
+                                                                          m_pendingAssetCreateRequest.Name,
+                                                                          m_pendingAssetCreateRequest.FolderPath);
+                ReportEditorExpectedFailure("Create source asset", CreateResult);
+            }
         }
         m_pendingAssetCreateRequest = {};
     }
@@ -860,11 +920,12 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_hasPendingAssetImportRequest = false;
         if (!PieService->IsSessionActive() && !m_pendingAssetImportRequest.SourcePath.empty())
         {
-            (void)AssetService->ImportSourceAsset(Context,
-                                                  m_pendingAssetImportRequest.SourcePath,
-                                                  m_pendingAssetImportRequest.FolderPath,
-                                                  m_pendingAssetImportRequest.BuildOptions,
-                                                  m_pendingAssetImportRequest.ImportSettings);
+            auto ImportResult = AssetService->ImportSourceAsset(Context,
+                                                                m_pendingAssetImportRequest.SourcePath,
+                                                                m_pendingAssetImportRequest.FolderPath,
+                                                                m_pendingAssetImportRequest.BuildOptions,
+                                                                m_pendingAssetImportRequest.ImportSettings);
+            ReportEditorExpectedFailure("Import source asset", ImportResult);
         }
         m_pendingAssetImportRequest = {};
     }
@@ -872,7 +933,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     if (m_hasPendingAssetInspectorSaveRequest)
     {
         m_hasPendingAssetInspectorSaveRequest = false;
-        (void)AssetService->SaveActiveAssetEditor(Context);
+        auto SaveResult = AssetService->SaveActiveAssetEditor(Context);
+        ReportEditorExpectedFailure("Save active asset editor", SaveResult);
     }
 
     if (m_hasPendingAssetInspectorReimportRequest)
@@ -880,7 +942,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_hasPendingAssetInspectorReimportRequest = false;
         if (!PieService->IsSessionActive())
         {
-            (void)AssetService->ReimportActiveAsset(Context);
+            auto ReimportResult = AssetService->ReimportActiveAsset(Context);
+            ReportEditorExpectedFailure("Reimport active asset", ReimportResult);
         }
     }
 
@@ -893,7 +956,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     if (m_hasPendingAssetInspectorNodeSelectionRequest)
     {
         m_hasPendingAssetInspectorNodeSelectionRequest = false;
-        (void)AssetService->SelectAssetEditorNode(m_pendingAssetInspectorNodeSelection);
+        auto SelectResult = AssetService->SelectAssetEditorNode(m_pendingAssetInspectorNodeSelection);
+        ReportEditorExpectedFailure("Select asset editor node", SelectResult);
         m_pendingAssetInspectorNodeSelection = {};
     }
 
@@ -906,16 +970,20 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         switch (Request.Action)
         {
         case EditorLayout::EHierarchyAction::AddNodeType:
-            (void)AssetService->AddAssetEditorNode(Request.TargetNode, Request.Type);
+            ReportEditorExpectedFailure("Add asset editor node",
+                                        AssetService->AddAssetEditorNode(Request.TargetNode, Request.Type));
             break;
         case EditorLayout::EHierarchyAction::AddComponentType:
-            (void)AssetService->AddAssetEditorComponent(Request.TargetNode, Request.Type);
+            ReportEditorExpectedFailure("Add asset editor component",
+                                        AssetService->AddAssetEditorComponent(Request.TargetNode, Request.Type));
             break;
         case EditorLayout::EHierarchyAction::RemoveComponentType:
-            (void)AssetService->RemoveAssetEditorComponent(Request.TargetNode, Request.Type);
+            ReportEditorExpectedFailure("Remove asset editor component",
+                                        AssetService->RemoveAssetEditorComponent(Request.TargetNode, Request.Type));
             break;
         case EditorLayout::EHierarchyAction::DeleteNode:
-            (void)AssetService->DeleteAssetEditorNode(Request.TargetNode);
+            ReportEditorExpectedFailure("Delete asset editor node",
+                                        AssetService->DeleteAssetEditorNode(Request.TargetNode));
             break;
         default:
             break;
@@ -1113,7 +1181,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_pendingHierarchyActionRequest = {};
         if (!PieService->IsSessionActive())
         {
-            (void)ExecuteHierarchyAction(Context, Request);
+            auto ActionResult = ExecuteHierarchyAction(Context, Request);
+            ReportEditorExpectedFailure("Execute hierarchy action", ActionResult);
         }
     }
 

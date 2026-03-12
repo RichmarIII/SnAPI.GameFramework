@@ -228,14 +228,14 @@ public:
      * @param ContextID UI context id.
      * @return Success or error.
      */
-    Result BindViewportWithUI(std::uint64_t ViewportID, UISystem::ContextId ContextID);
+    Result BindViewportWithUI(std::uint64_t ViewportID, UISystem::ContextId ContextID) const;
 
     /**
      * @brief Remove viewport->UI context binding.
      * @param ViewportID Target renderer viewport id.
      * @return Success or error.
      */
-    Result UnbindViewportFromUI(std::uint64_t ViewportID);
+    Result UnbindViewportFromUI(std::uint64_t ViewportID) const;
 
     /**
      * @brief Query currently bound UI context for one viewport.

@@ -12,6 +12,7 @@
 #include "Conduit/Asset.h"
 #include "Conduit/Value.h"
 #include "IAsset.h"
+#include "Math.h"
 #include "NodeAsset.h"
 #include "RenderAssetPayloads.h"
 #include "Serialization.h"
@@ -24,6 +25,9 @@ namespace
 
 using Json = nlohmann::json;
 
+constexpr std::string_view kOpaqueJsonBytesField = "$bytes";
+constexpr std::string_view kOpaqueJsonTypeField = "$type";
+
 TExpected<Json> SerializeValueToJson(const TypeId& Type, const void* Value);
 Result DeserializeValueFromJsonInto(const TypeId& Type, void* Value, const Json& Source, bool TolerateFailures);
 Result DeserializeObjectFromJson(const TypeId& Type,
@@ -32,6 +36,104 @@ Result DeserializeObjectFromJson(const TypeId& Type,
                                  bool TolerateFailures,
                                  AuthoredAssetImportDiagnostics* Diagnostics,
                                  std::string_view Path);
+
+template<typename TScalar>
+Result ReadNumericJsonComponent(const Json& Source, const std::string_view Name, const std::size_t ArrayIndex, TScalar& OutValue)
+{
+    try
+    {
+        if (Source.is_object())
+        {
+            const auto It = Source.find(std::string(Name));
+            if (It == Source.end())
+            {
+                return std::unexpected(
+                    MakeError(EErrorCode::InvalidArgument, "JSON object is missing component '" + std::string(Name) + "'"));
+            }
+
+            OutValue = static_cast<TScalar>(It->get<double>());
+            return Ok();
+        }
+
+        if (Source.is_array())
+        {
+            if (ArrayIndex >= Source.size())
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                                 "JSON array is missing component index " + std::to_string(ArrayIndex)));
+            }
+
+            OutValue = static_cast<TScalar>(Source[ArrayIndex].get<double>());
+            return Ok();
+        }
+    }
+    catch (const std::exception& Ex)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, Ex.what()));
+    }
+
+    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "JSON value must be an object or array"));
+}
+
+TExpected<Json> SerializeOpaqueValueToJson(const TypeId& Type, const void* Value)
+{
+    if (!Value)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null JSON value"));
+    }
+
+    std::vector<std::uint8_t> Bytes{};
+    auto SerializeResult = SerializeReflectedValue(Type, Value, Bytes);
+    if (!SerializeResult)
+    {
+        return std::unexpected(SerializeResult.error());
+    }
+
+    Json Out = Json::object();
+    Out[std::string(kOpaqueJsonBytesField)] = std::move(Bytes);
+    if (const TypeInfo* Info = TypeRegistry::Instance().Find(Type))
+    {
+        Out[std::string(kOpaqueJsonTypeField)] = Info->Name;
+    }
+    else
+    {
+        Out[std::string(kOpaqueJsonTypeField)] = ToString(Type);
+    }
+    return Out;
+}
+
+Result DeserializeOpaqueValueFromJsonInto(const TypeId& Type, void* Value, const Json& Source)
+{
+    if (!Value)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null JSON destination"));
+    }
+    if (!Source.is_object())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Opaque JSON value must be an object"));
+    }
+
+    const auto BytesIt = Source.find(std::string(kOpaqueJsonBytesField));
+    if (BytesIt == Source.end() || !BytesIt->is_array())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Opaque JSON value is missing '$bytes'"));
+    }
+
+    try
+    {
+        const auto Bytes = BytesIt->get<std::vector<std::uint8_t>>();
+        auto DeserializeResult = DeserializeReflectedValueInto(Type, Value, Bytes.data(), Bytes.size());
+        if (!DeserializeResult)
+        {
+            return std::unexpected(DeserializeResult.error());
+        }
+        return Ok();
+    }
+    catch (const std::exception& Ex)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, Ex.what()));
+    }
+}
 
 void AddImportDiagnostic(AuthoredAssetImportDiagnostics* Diagnostics,
                          const std::string_view Path,
@@ -221,6 +323,227 @@ private:
                           });
     }
 
+    void RegisterVec2()
+    {
+        m_entries.emplace(StaticTypeId<Vec2>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null Vec2 JSON value"));
+                                  }
+
+                                  const auto& Vector = *static_cast<const Vec2*>(Value);
+                                  Json Out = Json::object();
+                                  Out["x"] = Vector.x();
+                                  Out["y"] = Vector.y();
+                                  return Out;
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null Vec2 JSON destination"));
+                                  }
+
+                                  auto& Vector = *static_cast<Vec2*>(Value);
+                                  Result ReadResult = ReadNumericJsonComponent(Source, "x", 0, Vector.x());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  return ReadNumericJsonComponent(Source, "y", 1, Vector.y());
+                              },
+                          });
+    }
+
+    void RegisterVec3()
+    {
+        m_entries.emplace(StaticTypeId<Vec3>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null Vec3 JSON value"));
+                                  }
+
+                                  const auto& Vector = *static_cast<const Vec3*>(Value);
+                                  Json Out = Json::object();
+                                  Out["x"] = Vector.x();
+                                  Out["y"] = Vector.y();
+                                  Out["z"] = Vector.z();
+                                  return Out;
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null Vec3 JSON destination"));
+                                  }
+
+                                  auto& Vector = *static_cast<Vec3*>(Value);
+                                  Result ReadResult = ReadNumericJsonComponent(Source, "x", 0, Vector.x());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  ReadResult = ReadNumericJsonComponent(Source, "y", 1, Vector.y());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  return ReadNumericJsonComponent(Source, "z", 2, Vector.z());
+                              },
+                          });
+    }
+
+    void RegisterVec4()
+    {
+        m_entries.emplace(StaticTypeId<Vec4>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null Vec4 JSON value"));
+                                  }
+
+                                  const auto& Vector = *static_cast<const Vec4*>(Value);
+                                  Json Out = Json::object();
+                                  Out["x"] = Vector.x();
+                                  Out["y"] = Vector.y();
+                                  Out["z"] = Vector.z();
+                                  Out["w"] = Vector.w();
+                                  return Out;
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null Vec4 JSON destination"));
+                                  }
+
+                                  auto& Vector = *static_cast<Vec4*>(Value);
+                                  Result ReadResult = ReadNumericJsonComponent(Source, "x", 0, Vector.x());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  ReadResult = ReadNumericJsonComponent(Source, "y", 1, Vector.y());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  ReadResult = ReadNumericJsonComponent(Source, "z", 2, Vector.z());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  return ReadNumericJsonComponent(Source, "w", 3, Vector.w());
+                              },
+                          });
+    }
+
+    void RegisterQuat()
+    {
+        m_entries.emplace(StaticTypeId<Quat>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null quaternion JSON value"));
+                                  }
+
+                                  const auto& Rotation = *static_cast<const Quat*>(Value);
+                                  Json Out = Json::object();
+                                  Out["x"] = Rotation.x();
+                                  Out["y"] = Rotation.y();
+                                  Out["z"] = Rotation.z();
+                                  Out["w"] = Rotation.w();
+                                  return Out;
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null quaternion JSON destination"));
+                                  }
+
+                                  auto& Rotation = *static_cast<Quat*>(Value);
+                                  Result ReadResult = ReadNumericJsonComponent(Source, "x", 0, Rotation.x());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  ReadResult = ReadNumericJsonComponent(Source, "y", 1, Rotation.y());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  ReadResult = ReadNumericJsonComponent(Source, "z", 2, Rotation.z());
+                                  if (!ReadResult)
+                                  {
+                                      return ReadResult;
+                                  }
+                                  return ReadNumericJsonComponent(Source, "w", 3, Rotation.w());
+                              },
+                          });
+    }
+
+    template<typename THandle>
+    void RegisterHandle()
+    {
+        m_entries.emplace(StaticTypeId<THandle>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null handle JSON value"));
+                                  }
+
+                                  const auto& HandleValue = *static_cast<const THandle*>(Value);
+                                  if (HandleValue.IsNull())
+                                  {
+                                      return Json(nullptr);
+                                  }
+                                  return Json(ToString(HandleValue.Id));
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null handle JSON destination"));
+                                  }
+
+                                  auto& HandleValue = *static_cast<THandle*>(Value);
+                                  if (Source.is_null())
+                                  {
+                                      HandleValue = {};
+                                      return Ok();
+                                  }
+                                  if (!Source.is_string())
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Handle JSON value must be a string or null"));
+                                  }
+
+                                  const auto Parsed = Uuid::from_string(Source.get<std::string>());
+                                  if (!Parsed)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Invalid handle UUID"));
+                                  }
+
+                                  HandleValue = THandle(*Parsed);
+                                  return Ok();
+                              },
+                          });
+    }
+
     void EnsureBuilt()
     {
         if (m_built)
@@ -236,6 +559,12 @@ private:
         RegisterScalar<float>();
         RegisterScalar<double>();
         RegisterScalar<std::string>();
+        RegisterVec2();
+        RegisterVec3();
+        RegisterVec4();
+        RegisterQuat();
+        RegisterHandle<NodeHandle>();
+        RegisterHandle<ComponentHandle>();
         RegisterVector<Uuid>();
         RegisterVector<Conduit::SlotId>();
         RegisterVector<Conduit::GraphNodeEditorAsset>();
@@ -994,7 +1323,12 @@ TExpected<Json> SerializeValueToJson(const TypeId& Type, const void* Value)
         return SerializeObjectToJson(Type, Value);
     }
 
-    return std::unexpected(MakeError(EErrorCode::NotFound, "No JSON serializer for reflected type '" + Info->Name + "'"));
+    auto OpaqueResult = SerializeOpaqueValueToJson(Type, Value);
+    if (!OpaqueResult)
+    {
+        return std::unexpected(OpaqueResult.error());
+    }
+    return OpaqueResult;
 }
 
 Result DeserializeValueFromJsonInto(const TypeId& Type, void* Value, const Json& Source, const bool TolerateFailures)
@@ -1032,6 +1366,16 @@ Result DeserializeValueFromJsonInto(const TypeId& Type, void* Value, const Json&
     if (!Info->Fields.empty() || !Info->BaseTypes.empty())
     {
         auto ResultValue = DeserializeObjectFromJson(Type, Value, Source, TolerateFailures, nullptr, {});
+        if (!ResultValue && TolerateFailures)
+        {
+            return Ok();
+        }
+        return ResultValue;
+    }
+
+    if (Source.is_object() && Source.contains(std::string(kOpaqueJsonBytesField)))
+    {
+        auto ResultValue = DeserializeOpaqueValueFromJsonInto(Type, Value, Source);
         if (!ResultValue && TolerateFailures)
         {
             return Ok();

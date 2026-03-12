@@ -50,6 +50,38 @@ inline ::SnAPI::AssetPipeline::AssetId AssetPipelineAssetIdFromName(std::string_
     return ::SnAPI::AssetPipeline::Uuid::GenerateV5(AssetPipelineNamespace(), std::string(Name));
 }
 
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Shared UUID namespace for deterministic source-asset identifiers.
+ * @return UUID namespace value.
+ *
+ * Source-authored assets use a separate stable namespace so a logical source path can map to the
+ * same id before the asset manager has catalogued it.
+ */
+inline ::SnAPI::AssetPipeline::Uuid SourceAssetNamespace()
+{
+    static const auto Namespace = ::SnAPI::AssetPipeline::Uuid::FromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+    return Namespace;
+}
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Generate the deterministic id used for source-authored assets.
+ * @param LogicalName Logical asset path relative to the asset root.
+ * @param VariantKey Optional variant key.
+ * @return UUIDv5-derived source asset id.
+ */
+inline ::SnAPI::AssetPipeline::AssetId SourceAssetIdFromLogicalName(std::string_view LogicalName,
+                                                                    std::string_view VariantKey = {})
+{
+    std::string Combined{};
+    Combined.reserve(LogicalName.size() + VariantKey.size() + 1u);
+    Combined.append(LogicalName);
+    Combined.push_back('|');
+    Combined.append(VariantKey);
+    return ::SnAPI::AssetPipeline::Uuid::GenerateV5(SourceAssetNamespace(), Combined);
+}
+
 /** @brief Asset kind name for Level assets. */
 constexpr const char* kAssetKindLevelName = "SnAPI.GameFramework.AssetKind.Level";
 /** @brief Asset kind name for Node assets. */

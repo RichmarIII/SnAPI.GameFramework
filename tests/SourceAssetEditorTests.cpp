@@ -5,6 +5,7 @@
 #include <sstream>
 #include <typeindex>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "AuthoredAssetJson.h"
@@ -13,6 +14,11 @@
 #include "Editor/IEditorService.h"
 #include "GameFramework.hpp"
 #include "PathResolver.h"
+#include "TypeAutoRegistry.h"
+#include "UIContext.h"
+#include "UINumberField.h"
+#include "UIPropertyPanel.h"
+#include "UIText.h"
 
 using namespace SnAPI::GameFramework;
 using namespace SnAPI::GameFramework::Editor;
@@ -25,6 +31,63 @@ struct SourceAssetEditorNodeHost : BaseNode
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorNodeHost";
 };
 
+struct SourceAssetEditorDefaultNode : BaseNode
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorDefaultNode";
+
+    void OnCreate()
+    {
+        if (!Has<TransformComponent>())
+        {
+            (void)Add<TransformComponent>();
+        }
+    }
+};
+
+struct SourceAssetEditorNestedSettingsComponent : BaseComponent, ComponentCRTP<SourceAssetEditorNestedSettingsComponent>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorNestedSettingsComponent";
+
+    struct Settings
+    {
+        static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorNestedSettingsComponent::Settings";
+
+        float Scalar = 3.0f;
+    };
+
+    Settings& EditSettings() { return m_settings; }
+    const Settings& GetSettings() const { return m_settings; }
+
+private:
+    Settings m_settings{};
+};
+
+struct SourceAssetEditorNestedSettingsNode : BaseNode
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorNestedSettingsNode";
+
+    void OnCreate()
+    {
+        if (!Has<SourceAssetEditorNestedSettingsComponent>())
+        {
+            (void)Add<SourceAssetEditorNestedSettingsComponent>();
+        }
+    }
+};
+
+struct SourceAssetEditorCameraNode : BaseNode
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorCameraNode";
+
+    void OnCreate()
+    {
+        if (!Has<CameraComponent>())
+        {
+            (void)Add<CameraComponent>();
+        }
+    }
+};
+
 void EnsureSourceAssetEditorNodeHostRegistered()
 {
     RegisterBuiltinTypes();
@@ -35,6 +98,76 @@ void EnsureSourceAssetEditorNodeHostRegistered()
     }
 
     auto RegisterResult = TTypeBuilder<SourceAssetEditorNodeHost>(SourceAssetEditorNodeHost::kTypeName)
+        .Base<BaseNode>()
+        .Constructor<>()
+        .Register();
+    REQUIRE(RegisterResult);
+}
+
+void EnsureSourceAssetEditorDefaultNodeRegistered()
+{
+    RegisterBuiltinTypes();
+
+    if (TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorDefaultNode>()))
+    {
+        return;
+    }
+
+    auto RegisterResult = TTypeBuilder<SourceAssetEditorDefaultNode>(SourceAssetEditorDefaultNode::kTypeName)
+        .Base<BaseNode>()
+        .Constructor<>()
+        .Register();
+    REQUIRE(RegisterResult);
+}
+
+void EnsureSourceAssetEditorNestedSettingsNodeRegistered()
+{
+    RegisterBuiltinTypes();
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorNestedSettingsComponent::Settings>()))
+    {
+        auto SettingsRegisterResult = TTypeBuilder<SourceAssetEditorNestedSettingsComponent::Settings>(
+            SourceAssetEditorNestedSettingsComponent::Settings::kTypeName)
+            .Field("Scalar", &SourceAssetEditorNestedSettingsComponent::Settings::Scalar)
+            .Constructor<>()
+            .Register();
+        REQUIRE(SettingsRegisterResult);
+    }
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorNestedSettingsComponent>()))
+    {
+        auto ComponentRegisterResult = TTypeBuilder<SourceAssetEditorNestedSettingsComponent>(
+            SourceAssetEditorNestedSettingsComponent::kTypeName)
+            .Field("Settings",
+                   &SourceAssetEditorNestedSettingsComponent::EditSettings,
+                   &SourceAssetEditorNestedSettingsComponent::GetSettings)
+            .Constructor<>()
+            .Register();
+        REQUIRE(ComponentRegisterResult);
+    }
+
+    if (TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorNestedSettingsNode>()))
+    {
+        return;
+    }
+
+    auto RegisterResult = TTypeBuilder<SourceAssetEditorNestedSettingsNode>(SourceAssetEditorNestedSettingsNode::kTypeName)
+        .Base<BaseNode>()
+        .Constructor<>()
+        .Register();
+    REQUIRE(RegisterResult);
+}
+
+void EnsureSourceAssetEditorCameraNodeRegistered()
+{
+    RegisterBuiltinTypes();
+
+    if (TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorCameraNode>()))
+    {
+        return;
+    }
+
+    auto RegisterResult = TTypeBuilder<SourceAssetEditorCameraNode>(SourceAssetEditorCameraNode::kTypeName)
         .Base<BaseNode>()
         .Constructor<>()
         .Register();
@@ -67,6 +200,18 @@ std::string ReadTextFile(const std::filesystem::path& Path)
     std::ostringstream Buffer{};
     Buffer << In.rdbuf();
     return Buffer.str();
+}
+
+void WriteTextFile(const std::filesystem::path& Path, const std::string& Text)
+{
+    std::error_code Ec{};
+    std::filesystem::create_directories(Path.parent_path(), Ec);
+    REQUIRE_FALSE(Ec);
+
+    std::ofstream Out(Path, std::ios::binary | std::ios::trunc);
+    REQUIRE(Out.is_open());
+    Out.write(Text.data(), static_cast<std::streamsize>(Text.size()));
+    REQUIRE(Out.good());
 }
 
 struct ScopedAssetRoot
@@ -143,6 +288,68 @@ struct TestEditorHost final : IEditorServiceHost
         return nullptr;
     }
 };
+
+#if defined(SNAPI_GF_ENABLE_UI)
+
+void CollectElementAndDescendants(SnAPI::UI::UIContext& Context,
+                                  const SnAPI::UI::ElementId Root,
+                                  std::vector<SnAPI::UI::ElementId>& Out)
+{
+    if (Root.Value == 0)
+    {
+        return;
+    }
+
+    Out.push_back(Root);
+    auto& Element = Context.GetElement(Root);
+    for (std::uint32_t Index = 0; Index < Element.ChildCount(); ++Index)
+    {
+        CollectElementAndDescendants(Context, Element.ChildAt(Index).GetId(), Out);
+    }
+}
+
+std::optional<SnAPI::UI::ElementId> FindTextElementByText(SnAPI::UI::UIContext& Context,
+                                                          const SnAPI::UI::ElementId Root,
+                                                          std::string_view Text)
+{
+    std::vector<SnAPI::UI::ElementId> Elements{};
+    CollectElementAndDescendants(Context, Root, Elements);
+    for (const SnAPI::UI::ElementId Id : Elements)
+    {
+        auto* Label = dynamic_cast<SnAPI::UI::UIText*>(&Context.GetElement(Id));
+        if (!Label)
+        {
+            continue;
+        }
+
+        if (Label->Properties().GetPropertyOr(SnAPI::UI::UIText::TextKey, std::string{}) == Text)
+        {
+            return Id;
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::vector<SnAPI::UI::UINumberField*> FindNumberFieldsUnder(SnAPI::UI::UIContext& Context,
+                                                             const SnAPI::UI::ElementId Root)
+{
+    std::vector<SnAPI::UI::ElementId> Elements{};
+    CollectElementAndDescendants(Context, Root, Elements);
+
+    std::vector<SnAPI::UI::UINumberField*> Result{};
+    for (const SnAPI::UI::ElementId Id : Elements)
+    {
+        if (auto* NumberField = dynamic_cast<SnAPI::UI::UINumberField*>(&Context.GetElement(Id)))
+        {
+            Result.push_back(NumberField);
+        }
+    }
+
+    return Result;
+}
+
+#endif
 
 } // namespace
 
@@ -259,6 +466,264 @@ TEST_CASE("Editor asset service can create and persist generic authored source a
     REQUIRE(Host.AssetService.DeleteAssetByKey("Rendering/RenamedMaterial.material"));
     CHECK_FALSE(std::filesystem::exists(Root.Path / "Rendering" / "RenamedMaterial.material"));
 }
+
+TEST_CASE("Editor asset service creates typed prefabs that open in the hierarchy editor", "[Assets][Editor][Source]")
+{
+    EnsureSourceAssetEditorNodeHostRegistered();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.CreatePrefabSourceAssetByNodeType(
+        Context,
+        StaticTypeId<SourceAssetEditorNodeHost>(),
+        "TypedEnemy",
+        "Gameplay"));
+
+    const auto* Created = Host.AssetService.SelectedAsset();
+    REQUIRE(Created != nullptr);
+    const std::string CreatedKey = Created->Key;
+    REQUIRE(CreatedKey == "Gameplay/TypedEnemy.prefab");
+    REQUIRE(std::filesystem::exists(Root.Path / "Gameplay" / "TypedEnemy.prefab"));
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+    auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.CanEditHierarchy);
+    REQUIRE(Session.TargetType == StaticTypeId<SourceAssetEditorNodeHost>());
+    REQUIRE(Session.SelectedNode.IsValidSlowByUuid());
+    REQUIRE(Session.Nodes.size() == 1);
+
+    REQUIRE(Host.AssetService.AddAssetEditorComponent(Session.SelectedNode, StaticTypeId<TransformComponent>()));
+    REQUIRE(Host.AssetService.AddAssetEditorNode(Session.SelectedNode, StaticTypeId<BaseNode>()));
+    Host.AssetService.TickAssetEditorSession(0.25f);
+    CHECK(Host.AssetService.AssetEditorSession().RuntimeDirty);
+
+    const auto SaveResult = Host.AssetService.SaveActiveAssetEditor();
+    INFO("save error: " << (SaveResult ? std::string("ok") : SaveResult.error().Message));
+    REQUIRE(SaveResult);
+
+    NodeAsset SavedPrefab{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / "Gameplay" / "TypedEnemy.prefab"),
+        SavedPrefab));
+    REQUIRE(SavedPrefab.Nodes.size() == 1);
+    CHECK(SavedPrefab.Nodes.front().Type == StaticTypeId<SourceAssetEditorNodeHost>());
+    REQUIRE(SavedPrefab.Nodes.front().Components.size() == 1);
+    CHECK(SavedPrefab.Nodes.front().Components.front().Type == StaticTypeId<TransformComponent>());
+    REQUIRE(SavedPrefab.Nodes.front().Children.size() == 1);
+    CHECK(SavedPrefab.Nodes.front().Children.front().Type == StaticTypeId<BaseNode>());
+}
+
+TEST_CASE("Typed asset refs enumerate source prefabs before they are opened in the asset editor", "[Assets][Editor][Source]")
+{
+    RegisterBuiltinTypes();
+    REQUIRE(TypeAutoRegistry::Instance().Ensure(StaticTypeId<PawnBase>()));
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    REQUIRE(TypeAutoRegistry::Instance().Ensure(StaticTypeId<WorldRenderSettings>()));
+#endif
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    World PawnWorld("TypedAssetRefEnumerationPawnWorld");
+    auto PawnHandleResult = PawnWorld.CreateNode(StaticTypeId<PawnBase>(), "UnitPawn");
+    REQUIRE(PawnHandleResult);
+    auto PawnAssetResult = CaptureNodeAsset(*PawnHandleResult->Borrowed());
+    REQUIRE(PawnAssetResult);
+    auto PawnJson = SerializeAuthoredAssetToJson(*PawnAssetResult);
+    REQUIRE(PawnJson);
+    WriteTextFile(Root.Path / "Gameplay" / "UnitPawn.prefab", *PawnJson);
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    World RenderWorld("TypedAssetRefEnumerationRenderWorld");
+    auto RenderHandleResult = RenderWorld.CreateNode(StaticTypeId<WorldRenderSettings>(), "UnitRenderSettings");
+    REQUIRE(RenderHandleResult);
+    auto RenderAssetResult = CaptureNodeAsset(*RenderHandleResult->Borrowed());
+    REQUIRE(RenderAssetResult);
+    auto RenderJson = SerializeAuthoredAssetToJson(*RenderAssetResult);
+    REQUIRE(RenderJson);
+    WriteTextFile(Root.Path / "Rendering" / "UnitRenderSettings.prefab", *RenderJson);
+#endif
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+
+    const auto PawnEntries = TAssetRef<PawnBase>::EnumerateCompatibleAssets();
+    CHECK(std::any_of(PawnEntries.begin(), PawnEntries.end(), [](const TAssetRef<PawnBase>::TEntry& Entry) {
+        return Entry.Name == "Gameplay/UnitPawn.prefab";
+    }));
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    const auto RenderEntries = TAssetRef<WorldRenderSettings>::EnumerateCompatibleAssets();
+    CHECK(std::any_of(RenderEntries.begin(), RenderEntries.end(), [](const TAssetRef<WorldRenderSettings>::TEntry& Entry) {
+        return Entry.Name == "Rendering/UnitRenderSettings.prefab";
+    }));
+#endif
+
+    (void)Context;
+}
+
+TEST_CASE("Typed prefabs persist default components and saved component settings", "[Assets][Editor][Source]")
+{
+    EnsureSourceAssetEditorDefaultNodeRegistered();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.CreatePrefabSourceAssetByNodeType(
+        Context,
+        StaticTypeId<SourceAssetEditorDefaultNode>(),
+        "DefaultNode",
+        "Gameplay"));
+
+    const auto* Created = Host.AssetService.SelectedAsset();
+    REQUIRE(Created != nullptr);
+    const std::string CreatedKey = Created->Key;
+    REQUIRE(CreatedKey == "Gameplay/DefaultNode.prefab");
+
+    NodeAsset CreatedPrefab{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / "Gameplay" / "DefaultNode.prefab"),
+        CreatedPrefab));
+    REQUIRE(CreatedPrefab.Nodes.size() == 1);
+    CHECK(CreatedPrefab.Nodes.front().Type == StaticTypeId<SourceAssetEditorDefaultNode>());
+    CHECK(std::any_of(
+        CreatedPrefab.Nodes.front().Components.begin(),
+        CreatedPrefab.Nodes.front().Components.end(),
+        [](const NodeComponentAsset& Component) {
+            return Component.Type == StaticTypeId<TransformComponent>();
+        }));
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+    auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.TargetType == StaticTypeId<SourceAssetEditorDefaultNode>());
+
+    auto* Node = static_cast<SourceAssetEditorDefaultNode*>(Session.TargetObject);
+    REQUIRE(Node != nullptr);
+    auto* Transform = static_cast<TransformComponent*>(
+        Node->World()->BorrowedComponent(Node->Handle(), StaticTypeId<TransformComponent>()));
+    REQUIRE(Transform != nullptr);
+    Transform->Position = Vec3(12.0, 34.0, 56.0);
+
+    Host.AssetService.TickAssetEditorSession(0.25f);
+    REQUIRE(Host.AssetService.SaveAssetByKey(CreatedKey));
+
+    Host.AssetService.CloseAssetEditor();
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+    Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+
+    auto* ReopenedNode = static_cast<SourceAssetEditorDefaultNode*>(Session.TargetObject);
+    REQUIRE(ReopenedNode != nullptr);
+    auto* ReopenedTransform = static_cast<TransformComponent*>(
+        ReopenedNode->World()->BorrowedComponent(ReopenedNode->Handle(), StaticTypeId<TransformComponent>()));
+    REQUIRE(ReopenedTransform != nullptr);
+    CHECK(ReopenedTransform->Position.x() == Catch::Approx(12.0));
+    CHECK(ReopenedTransform->Position.y() == Catch::Approx(34.0));
+    CHECK(ReopenedTransform->Position.z() == Catch::Approx(56.0));
+}
+
+#if defined(SNAPI_GF_ENABLE_UI)
+
+TEST_CASE("UI property panel edits on typed prefabs persist component settings through save and reopen",
+          "[Assets][Editor][Source][UI]")
+{
+    EnsureSourceAssetEditorCameraNodeRegistered();
+
+    auto Host = std::make_unique<TestEditorHost>();
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(*Host);
+
+    REQUIRE(Host->AssetService.RefreshDiscovery());
+    REQUIRE(Host->AssetService.CreatePrefabSourceAssetByNodeType(
+        Context,
+        StaticTypeId<SourceAssetEditorCameraNode>(),
+        "UICameraNode",
+        "Gameplay"));
+
+    const auto* Created = Host->AssetService.SelectedAsset();
+    REQUIRE(Created != nullptr);
+    const std::string CreatedKey = Created->Key;
+    REQUIRE(CreatedKey == "Gameplay/UICameraNode.prefab");
+
+    REQUIRE(Host->AssetService.OpenAssetEditorByKey(CreatedKey));
+    const auto Session = Host->AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+
+    auto* RootNode = static_cast<BaseNode*>(Session.TargetObject);
+    REQUIRE(RootNode != nullptr);
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindNode(RootNode));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    const auto LabelId = FindTextElementByText(*UiContext, PanelBuilder.Handle().Id, "Fov Degrees");
+    REQUIRE(LabelId.has_value());
+
+    const SnAPI::UI::ElementId RowId = UiContext->GetParent(*LabelId);
+    REQUIRE(RowId.Value != 0);
+
+    auto NumberFields = FindNumberFieldsUnder(*UiContext, RowId);
+    REQUIRE(NumberFields.size() == 1);
+
+    NumberFields.front()->Value().Set(91.0);
+    UiContext->Tick(0.016f);
+
+    auto* EditedComponent = static_cast<CameraComponent*>(
+        RootNode->World()->BorrowedComponent(
+            RootNode->Handle(),
+            StaticTypeId<CameraComponent>()));
+    REQUIRE(EditedComponent != nullptr);
+    CHECK(EditedComponent->GetSettings().FovDegrees == Catch::Approx(91.0f));
+
+    Host->AssetService.TickAssetEditorSession(0.25f);
+    const bool RuntimeDirty = Host->AssetService.AssetEditorSession().RuntimeDirty;
+    REQUIRE(Host->AssetService.SaveActiveAssetEditor());
+
+    Host->AssetService.CloseAssetEditor();
+    REQUIRE(Host->AssetService.OpenAssetEditorByKey(CreatedKey));
+
+    const auto ReopenedSession = Host->AssetService.AssetEditorSession();
+    REQUIRE(ReopenedSession.IsOpen);
+
+    auto* ReopenedNode = static_cast<BaseNode*>(ReopenedSession.TargetObject);
+    REQUIRE(ReopenedNode != nullptr);
+
+    auto* ReopenedComponent = static_cast<CameraComponent*>(
+        ReopenedNode->World()->BorrowedComponent(
+            ReopenedNode->Handle(),
+            StaticTypeId<CameraComponent>()));
+    REQUIRE(ReopenedComponent != nullptr);
+    CHECK(RuntimeDirty);
+    CHECK(ReopenedComponent->GetSettings().FovDegrees == Catch::Approx(91.0f));
+}
+
+#endif
 
 TEST_CASE("Editor asset service routes Conduit source assets through the Conduit document service", "[Assets][Editor][Source][Conduit]")
 {

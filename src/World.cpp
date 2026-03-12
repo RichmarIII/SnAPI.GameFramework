@@ -147,6 +147,28 @@ RuntimeNodeHandle ResolveRuntimeOwnerHandle(IWorld& WorldRef, BaseNode& Node)
     return OwnerRuntime;
 }
 
+[[nodiscard]] BaseNode* ResolveComponentOwnerNode(const IWorld& WorldRef, const NodeHandle& Owner, NodeHandle& OutResolvedHandle)
+{
+    if (Owner.IsNull())
+    {
+        return nullptr;
+    }
+
+    OutResolvedHandle = Owner;
+    if (BaseNode* Node = OutResolvedHandle.Borrowed())
+    {
+        return Node;
+    }
+
+    if (auto HandleResult = WorldRef.NodeHandleById(Owner.Id); HandleResult)
+    {
+        OutResolvedHandle = *HandleResult;
+        return OutResolvedHandle.Borrowed();
+    }
+
+    return nullptr;
+}
+
 void UnregisterRuntimeTypeOnNode(BaseNode& Node, const TypeId& Type)
 {
     const uint32_t TypeIndex = ComponentTypeRegistry::TypeIndex(Type);
@@ -715,7 +737,8 @@ Result World::DetachChild(const NodeHandle& Child)
 
 void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type)
 {
-    BaseNode* Node = NodePool().Borrowed(Owner);
+    NodeHandle ResolvedOwner{};
+    BaseNode* Node = ResolveComponentOwnerNode(*this, Owner, ResolvedOwner);
     if (!Node)
     {
         return nullptr;
@@ -734,7 +757,8 @@ void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type)
 
 const void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) const
 {
-    const BaseNode* Node = NodePool().Borrowed(Owner);
+    NodeHandle ResolvedOwner{};
+    const BaseNode* Node = ResolveComponentOwnerNode(*this, Owner, ResolvedOwner);
     if (!Node)
     {
         return nullptr;

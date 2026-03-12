@@ -14,6 +14,7 @@
 #include "PawnBase.h"
 #include "PlayerStart.h"
 #include "FollowTargetComponent.h"
+#include "FrameGraphNode.h"
 #include "Relevance.h"
 #include "Serialization.h"
 #include "ScriptComponent.h"
@@ -578,6 +579,31 @@ SNAPI_REFLECT_TYPE(GameplayRpcGateway, (TTypeBuilder<GameplayRpcGateway>(Gamepla
             EMethodFlagBits::RpcReliable | EMethodFlagBits::RpcNetServer)
     .Constructor<>()
     .Register()));
+
+#if defined(SNAPI_GF_ENABLE_UI)
+SNAPI_REFLECT_TYPE(FrameGraphNode, (TTypeBuilder<FrameGraphNode>(FrameGraphNode::kTypeName)
+    .Base<BaseNode>()
+    .Field("Title",
+           &FrameGraphNode::EditTitle,
+           &FrameGraphNode::GetTitle)
+    .Field("ShowLegend",
+           &FrameGraphNode::EditShowLegend,
+           &FrameGraphNode::GetShowLegend)
+    .Field("ValuePrecision",
+           &FrameGraphNode::EditValuePrecision,
+           &FrameGraphNode::GetValuePrecision)
+    .Field("SampleCapacity",
+           &FrameGraphNode::EditSampleCapacity,
+           &FrameGraphNode::GetSampleCapacity)
+    .Field("FrameTimeMaxSeconds",
+           &FrameGraphNode::EditFrameTimeMaxSeconds,
+           &FrameGraphNode::GetFrameTimeMaxSeconds)
+    .Field("FpsMax",
+           &FrameGraphNode::EditFpsMax,
+           &FrameGraphNode::GetFpsMax)
+    .Constructor<>()
+    .Register()));
+#endif
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 

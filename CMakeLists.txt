@@ -5,11 +5,12 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(SNAPI_ENABLE_IPO "Enable interprocedural optimization for Release and RelWithDebInfo builds" ON)
+option(SNAPI_ENABLE_IPO "Enable interprocedural optimization for Release builds" ON)
 option(SNAPI_GF_BUILD_TESTS "Build tests" ON)
 option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
 option(SNAPI_GF_BUILD_EDITOR "Build editor target" ON)
+option(SNAPI_GF_BUILD_RUNTIME "Build runtime engine target" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
@@ -18,8 +19,11 @@ if (SNAPI_ENABLE_IPO)
     include(CheckIPOSupported)
     check_ipo_supported(RESULT SNAPI_IPO_SUPPORTED OUTPUT SNAPI_IPO_OUTPUT LANGUAGES C CXX)
     if (SNAPI_IPO_SUPPORTED)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
         set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO ON)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO OFF)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL OFF)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_DEBUG OFF)
     else()
         message(WARNING "SNAPI_ENABLE_IPO is ON, but IPO is not supported: ${SNAPI_IPO_OUTPUT}")
     endif()
@@ -133,9 +137,11 @@ set(SNAPI_GF_SOURCES
     src/EnvironmentCaptureComponent.cpp
     src/EnvironmentProbeNode.cpp
     src/FollowTargetComponent.cpp
+    src/FrameGraphNode.cpp
     src/GameplayHost.cpp
     src/GameplayRpcGateway.cpp
     src/GameFramework.cpp
+    src/GameProjectRuntime.cpp
     src/GameRuntime.cpp
     src/BaseComponent.cpp
     src/InputComponent.cpp
@@ -206,6 +212,13 @@ if (SNAPI_GF_ENABLE_PROFILER)
     target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PROFILER=1)
 else()
     target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_PROFILER=0)
+endif()
+
+if (SNAPI_GF_BUILD_RUNTIME)
+    add_executable(SnAPI.GameFramework.Runtime
+        src/Runtime/main.cpp
+    )
+    target_link_libraries(SnAPI.GameFramework.Runtime PRIVATE SnAPI.GameFramework)
 endif()
 
 if (SNAPI_GF_ENABLE_SWIG)
@@ -597,6 +610,17 @@ if (SNAPI_GF_RENDERER_ROOT)
     FetchContent_MakeAvailable(SnAPI.Renderer)
 
     if (TARGET SnAPI.Renderer)
+        # SnAPI.Renderer uses fmt internally but does not currently declare it on the target.
+        # Link the packaged library when available and fall back to header-only mode otherwise.
+        find_package(fmt CONFIG QUIET)
+        if (TARGET fmt::fmt)
+            target_link_libraries(SnAPI.Renderer PUBLIC fmt::fmt)
+        elseif (TARGET fmt::fmt-header-only)
+            target_link_libraries(SnAPI.Renderer PUBLIC fmt::fmt-header-only)
+        else()
+            target_compile_definitions(SnAPI.Renderer PRIVATE FMT_HEADER_ONLY)
+        endif()
+
         target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Renderer)
         target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_RENDERER)
         target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GF_RENDERER_SHADER_SOURCE_DIR="${SNAPI_GF_RENDERER_SHADER_SOURCE_DIR}")

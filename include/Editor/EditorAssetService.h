@@ -331,9 +331,9 @@ public:
      */
     Result CreateRuntimePrefabFromNode(EditorServiceContext& Context, const NodeHandle& SourceHandle);
     /**
-     * @brief Create a new runtime asset from a node type.
+     * @brief Create a new authored source asset by reflected asset type.
      * @param Context Borrowed editor-service context.
-     * @param NodeType Reflected node type to instantiate into a scratch world.
+     * @param AssetType Reflected authored asset type to default-construct and serialize.
      * @param AssetName Preferred logical asset name.
      * @param FolderPath Logical destination folder inside the asset root.
      * @return Success or an error.
@@ -343,6 +343,18 @@ public:
                                    const TypeId& AssetType,
                                    std::string_view AssetName,
                                    std::string_view FolderPath);
+    /**
+     * @brief Create a prefab source asset initialized from one concrete node type.
+     * @param Context Borrowed editor-service context.
+     * @param NodeType Reflected root-node type to instantiate into a scratch world.
+     * @param AssetName Preferred logical asset name.
+     * @param FolderPath Logical destination folder inside the asset root.
+     * @return Success or an error.
+     */
+    Result CreatePrefabSourceAssetByNodeType(EditorServiceContext& Context,
+                                             const TypeId& NodeType,
+                                             std::string_view AssetName,
+                                             std::string_view FolderPath);
     /**
      * @brief Create a runtime material asset with default payload values.
      * @param Context Borrowed editor-service context.
@@ -549,7 +561,7 @@ public:
      * @return Borrowed string reference.
      * @warning The returned reference is invalidated by later service operations.
      */
-    [[nodiscard]] const std::string& StatusMessage() const { return m_statusMessage; }
+    [[nodiscard]] const std::string& StatusMessage() const;
 
 private:
     [[nodiscard]] std::vector<std::string> BuildPackSearchPaths() const;
@@ -597,6 +609,7 @@ private:
     [[nodiscard]] BaseNode* ResolveAssetEditorNode(const NodeHandle& Node) const;
     void RefreshAssetEditorHierarchy();
     void ClearAssetEditorState();
+    void MaybeReportStatusMessageToStdout() const;
 
     std::unique_ptr<::SnAPI::AssetPipeline::AssetManager> m_assetManager{};
     std::vector<DiscoveredAsset> m_assets{};
@@ -607,6 +620,7 @@ private:
     std::string m_placementAssetKey{};
     std::string m_previewSummary{};
     std::string m_statusMessage{};
+    mutable std::string m_lastReportedStatusMessage{};
     std::filesystem::path m_editorTemplateAssetDirectory{};
     std::filesystem::path m_editorStarterLevelTemplateAssetPath{};
     std::filesystem::path m_editorStarterScriptTemplatePath{};

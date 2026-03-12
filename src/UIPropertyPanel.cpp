@@ -2,6 +2,7 @@
 
 #if defined(SNAPI_GF_ENABLE_UI)
 
+#include "AuthoredAssetRegistry.h"
 #include "AssetRef.h"
 #include "AssetPipelineIds.h"
 #include "BaseNode.h"
@@ -42,6 +43,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <utility>
 
 #include <TextureCompressorIds.h>
@@ -196,21 +198,103 @@ struct GenericAssetRefEntry
     return Entries;
   }
 
+  std::unordered_set<std::string> SeenAssetIds{};
+  const auto TryAppendEntry = [&Entries, &SeenAssetIds, &AssetKindFilter](
+                                const std::string& Name,
+                                const ::SnAPI::AssetPipeline::AssetId& AssetId,
+                                const ::SnAPI::AssetPipeline::TypeId& AssetKind) {
+    if (Name.empty() || AssetId.IsNull())
+    {
+      return;
+    }
+    if (AssetKindFilter.has_value() && AssetKind != *AssetKindFilter)
+    {
+      return;
+    }
+
+    const std::string AssetIdText = AssetId.ToString();
+    if (!SeenAssetIds.insert(AssetIdText).second)
+    {
+      return;
+    }
+
+    GenericAssetRefEntry Entry{};
+    Entry.Name = Name;
+    Entry.AssetId = AssetIdText;
+    Entry.AssetKind = AssetKind;
+    Entry.Label = Entry.Name + " [" + (Entry.AssetId.size() > 8 ? Entry.AssetId.substr(0, 8) : Entry.AssetId) + "]";
+    Entries.push_back(std::move(Entry));
+  };
+
   const auto catalog = manager->ListAssetCatalog();
   Entries.reserve(catalog.size());
   for (const auto& catalogEntry : catalog)
   {
-    if (AssetKindFilter.has_value() && catalogEntry.Info.AssetKind != *AssetKindFilter)
-    {
-      continue;
-    }
+    TryAppendEntry(catalogEntry.Info.Name.empty() ? catalogEntry.Info.Id.ToString() : catalogEntry.Info.Name,
+                   catalogEntry.Info.Id,
+                   catalogEntry.Info.AssetKind);
+  }
 
-    GenericAssetRefEntry entry{};
-    entry.Name = catalogEntry.Info.Name.empty() ? catalogEntry.Info.Id.ToString() : catalogEntry.Info.Name;
-    entry.AssetId = catalogEntry.Info.Id.ToString();
-    entry.AssetKind = catalogEntry.Info.AssetKind;
-    entry.Label = entry.Name + " [" + (entry.AssetId.size() > 8 ? entry.AssetId.substr(0, 8) : entry.AssetId) + "]";
-    Entries.push_back(std::move(entry));
+  AuthoredAssetRegistry::Instance().EnsureBuilt();
+  const std::filesystem::path AssetRoot = SPathResolver::Instance().AssetRoot();
+  std::error_code Error{};
+  if (!AssetRoot.empty() && std::filesystem::exists(AssetRoot, Error) && !Error)
+  {
+    std::filesystem::recursive_directory_iterator It(
+      AssetRoot,
+      std::filesystem::directory_options::skip_permission_denied,
+      Error);
+    const std::filesystem::recursive_directory_iterator End{};
+    for (; !Error && It != End; It.increment(Error))
+    {
+      const std::filesystem::directory_entry& EntryRef = *It;
+      if (!EntryRef.is_regular_file())
+      {
+        continue;
+      }
+
+      std::filesystem::path SourcePath = EntryRef.path().lexically_normal();
+      if (SourcePath.extension() == ".snpak")
+      {
+        continue;
+      }
+
+      std::string Extension = SourcePath.extension().string();
+      std::transform(Extension.begin(), Extension.end(), Extension.begin(), [](const unsigned char Character) {
+        return static_cast<char>(std::tolower(Character));
+      });
+      const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByExtension(Extension);
+      if (!Descriptor)
+      {
+        continue;
+      }
+
+      std::error_code RelativeError{};
+      std::filesystem::path Relative = std::filesystem::relative(SourcePath, AssetRoot, RelativeError);
+      if (RelativeError)
+      {
+        Relative = SourcePath.filename();
+      }
+
+      std::string LogicalName = Relative.generic_string();
+      std::replace(LogicalName.begin(), LogicalName.end(), '\\', '/');
+      while (LogicalName.rfind("./", 0) == 0)
+      {
+        LogicalName.erase(0, 2u);
+      }
+      while (!LogicalName.empty() && LogicalName.front() == '/')
+      {
+        LogicalName.erase(LogicalName.begin());
+      }
+      if (LogicalName.empty())
+      {
+        continue;
+      }
+
+      TryAppendEntry(LogicalName,
+                     SourceAssetIdFromLogicalName(LogicalName),
+                     Descriptor->CookedAssetKind);
+    }
   }
 
   std::ranges::sort(Entries, [](const GenericAssetRefEntry& Left, const GenericAssetRefEntry& Right) {

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <mutex>
+#include <openssl/types.h>
 #include <optional>
 #include <string_view>
 #include <thread>
@@ -633,6 +634,20 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
 #endif
 
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
+    if (m_settings.Renderer && m_settings.UI)
+    {
+        if (m_world->Renderer().IsUsingDefaultRenderViewport())
+        {
+            if (const auto BindResult = BindViewportWithUI(m_world->Renderer().Graphics()->DefaultRenderViewportID(), m_world->UI().RootContextId()); !BindResult)
+            {
+                Shutdown();
+                return std::unexpected(BindResult.error());
+            }
+        }
+    }
+#endif
+
     if (m_settings.Gameplay && m_world->ShouldRunGameplay())
     {
         auto InitGameplay = StartGameplayHost();
@@ -803,6 +818,35 @@ bool GameRuntime::Update(float DeltaSeconds)
             ApplyFramePacing(FrameStart);
         }
     }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+    auto& Renderer = m_world->Renderer();
+    auto& UI = m_world->UI();
+    if (Renderer.IsInitialized() && UI.IsInitialized())
+    {
+        if (const auto* GraphicsApi = Renderer.Graphics())
+        {
+            const auto RootContextID = UI.RootContextId();
+            if (RootContextID != 0)
+            {
+                if (const auto ViewportID = UI.BoundViewportForContext(RootContextID))
+                {
+                    if (const auto RenderViewportConfig = GraphicsApi->GetRenderViewportConfig(
+                            static_cast<SnAPI::Graphics::RenderViewportID>(*ViewportID)))
+                    {
+                        // The root context is not owned by a UIRenderViewport, so keep its
+                        // screen rect aligned with the renderer viewport it is bound to.
+                        (void)UI.SetContextScreenRect(RootContextID,
+                                                      RenderViewportConfig->OutputRect.X,
+                                                      RenderViewportConfig->OutputRect.Y,
+                                                      RenderViewportConfig->OutputRect.Width,
+                                                      RenderViewportConfig->OutputRect.Height);
+                    }
+                }
+            }
+        }
+    }
+#endif
 
     SNAPI_GF_PROFILE_END_FRAME();
 
@@ -1271,7 +1315,7 @@ void GameRuntime::StopGameplayHost()
 }
 
 #if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
-Result GameRuntime::BindViewportWithUI(const std::uint64_t ViewportID, const UISystem::ContextId ContextID)
+Result GameRuntime::BindViewportWithUI(const std::uint64_t ViewportID, const UISystem::ContextId ContextID) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Runtime");
     if (ViewportID == 0 || ContextID == 0)
@@ -1285,7 +1329,7 @@ Result GameRuntime::BindViewportWithUI(const std::uint64_t ViewportID, const UIS
     }
 
     auto& UI = m_world->UI();
-    auto& Renderer = m_world->Renderer();
+    const auto& Renderer = m_world->Renderer();
     if (!UI.IsInitialized() || !Renderer.IsInitialized())
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "UI or renderer system is not initialized"));
@@ -1299,7 +1343,7 @@ Result GameRuntime::BindViewportWithUI(const std::uint64_t ViewportID, const UIS
     return UI.BindViewportContext(ViewportID, ContextID);
 }
 
-Result GameRuntime::UnbindViewportFromUI(const std::uint64_t ViewportID)
+Result GameRuntime::UnbindViewportFromUI(const std::uint64_t ViewportID) const
 {
     SNAPI_GF_PROFILE_FUNCTION("Runtime");
     if (ViewportID == 0)

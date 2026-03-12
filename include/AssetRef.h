@@ -4,14 +4,19 @@
 #include <any>
 #include <cctype>
 #include <expected>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "AssetManager.h"
 #include "AssetPipelineFactories.h"
@@ -19,6 +24,7 @@
 #include "BaseNode.h"
 #include "Export.h"
 #include "IWorld.h"
+#include "PathResolver.h"
 #include "StaticTypeId.h"
 #include "TypeRegistry.h"
 
@@ -561,6 +567,130 @@ public:
     [[nodiscard]] static std::vector<TEntry> EnumerateCompatibleAssets(::SnAPI::AssetPipeline::AssetManager& Manager)
     {
         std::vector<TEntry> Entries{};
+        std::unordered_set<std::string> SeenAssetIds{};
+
+        const auto TryAppendEntry = [&Manager, &Entries, &SeenAssetIds](const std::string& AssetName,
+                                                                        const std::optional<::SnAPI::AssetPipeline::AssetId>& AssetId,
+                                                                        const bool LoadByName,
+                                                                        const std::filesystem::path* SourcePath = nullptr) {
+            if (AssetName.empty() && !AssetId.has_value())
+            {
+                return;
+            }
+
+            const ::SnAPI::AssetPipeline::AssetId EffectiveId = AssetId.value_or(SourceAssetIdFromLogicalName(AssetName));
+            const std::string EffectiveIdText = EffectiveId.ToString();
+            if (!SeenAssetIds.insert(EffectiveIdText).second)
+            {
+                return;
+            }
+
+            if constexpr (std::is_base_of_v<BaseNode, TBase>)
+            {
+                if (LoadByName && SourcePath != nullptr)
+                {
+                    if (SourcePath->extension() != ".prefab")
+                    {
+                        return;
+                    }
+
+                    std::ifstream File(*SourcePath, std::ios::binary | std::ios::ate);
+                    if (!File.is_open())
+                    {
+                        return;
+                    }
+
+                    const std::streamsize Size = File.tellg();
+                    std::string SourceJson{};
+                    if (Size > 0)
+                    {
+                        SourceJson.resize(static_cast<std::size_t>(Size));
+                        File.seekg(0, std::ios::beg);
+                        File.read(SourceJson.data(), Size);
+                    }
+
+                    const nlohmann::json SourceDocument = nlohmann::json::parse(SourceJson, nullptr, false);
+                    if (SourceDocument.is_discarded())
+                    {
+                        return;
+                    }
+
+                    const nlohmann::json* AssetRoot = &SourceDocument;
+                    if (SourceDocument.is_object())
+                    {
+                        const auto AssetIt = SourceDocument.find("Asset");
+                        if (AssetIt != SourceDocument.end() && AssetIt->is_object())
+                        {
+                            AssetRoot = &(*AssetIt);
+                        }
+                    }
+
+                    const auto NodesIt = AssetRoot->find("Nodes");
+                    if (NodesIt == AssetRoot->end() || !NodesIt->is_array() || NodesIt->empty())
+                    {
+                        return;
+                    }
+
+                    if (!(*NodesIt)[0].is_object())
+                    {
+                        return;
+                    }
+
+                    const auto TypeIt = (*NodesIt)[0].find("Type");
+                    if (TypeIt == (*NodesIt)[0].end() || !TypeIt->is_string())
+                    {
+                        return;
+                    }
+
+                    TypeId SourceNodeType{};
+                    const std::string TypeText = TypeIt->get<std::string>();
+                    if (const auto* TypeInfoPtr = TypeRegistry::Instance().FindByName(TypeText))
+                    {
+                        SourceNodeType = TypeInfoPtr->Id;
+                    }
+                    else if (const auto Parsed = Uuid::from_string(TypeText); Parsed)
+                    {
+                        SourceNodeType = *Parsed;
+                    }
+
+                    if (SourceNodeType == TypeId{} || !IsNodeCompatible(SourceNodeType))
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    auto Preview = LoadByName
+                        ? Manager.Load<BaseNode>(AssetName)
+                        : Manager.Load<BaseNode>(EffectiveId);
+                    if (!Preview)
+                    {
+                        return;
+                    }
+                    if (!IsNodeCompatible((*Preview)->TypeKey()))
+                    {
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                auto Preview = LoadByName
+                    ? Manager.Load<TBase>(AssetName)
+                    : Manager.Load<TBase>(EffectiveId);
+                if (!Preview)
+                {
+                    return;
+                }
+            }
+
+            const std::string EntryName = !AssetName.empty() ? AssetName : EffectiveIdText;
+            TEntry Entry{};
+            Entry.Name = EntryName;
+            Entry.AssetId = EffectiveIdText;
+            Entry.Label = EntryName + " [" + ShortAssetId(EffectiveIdText) + "]";
+            Entries.push_back(std::move(Entry));
+        };
 
         for (const auto& CatalogEntry : Manager.ListAssetCatalog())
         {
@@ -572,34 +702,63 @@ public:
                 {
                     continue;
                 }
-
-                auto Preview = Manager.Load<BaseNode>(Info.Id);
-                if (!Preview)
-                {
-                    continue;
-                }
-
-                if (!IsNodeCompatible((*Preview)->TypeKey()))
-                {
-                    continue;
-                }
             }
             else
             {
-                auto Preview = Manager.Load<TBase>(Info.Id);
-                if (!Preview)
-                {
-                    continue;
-                }
+                // Compatibility is validated in TryAppendEntry.
             }
 
             const std::string AssetName = Info.Name.empty() ? Info.Id.ToString() : Info.Name;
-            const std::string AssetId = Info.Id.ToString();
-            TEntry Entry{};
-            Entry.Name = AssetName;
-            Entry.AssetId = AssetId;
-            Entry.Label = AssetName + " [" + ShortAssetId(AssetId) + "]";
-            Entries.push_back(std::move(Entry));
+            TryAppendEntry(AssetName, Info.Id, false);
+        }
+
+        const std::filesystem::path AssetRoot = SPathResolver::Instance().AssetRoot();
+        std::error_code Error{};
+        if (!AssetRoot.empty() && std::filesystem::exists(AssetRoot, Error) && !Error)
+        {
+            std::filesystem::recursive_directory_iterator It(
+                AssetRoot,
+                std::filesystem::directory_options::skip_permission_denied,
+                Error);
+            const std::filesystem::recursive_directory_iterator End{};
+            for (; !Error && It != End; It.increment(Error))
+            {
+                const std::filesystem::directory_entry& EntryRef = *It;
+                if (!EntryRef.is_regular_file())
+                {
+                    continue;
+                }
+
+                std::filesystem::path SourcePath = EntryRef.path().lexically_normal();
+                if (SourcePath.extension() == ".snpak")
+                {
+                    continue;
+                }
+
+                std::error_code RelativeError{};
+                std::filesystem::path Relative = std::filesystem::relative(SourcePath, AssetRoot, RelativeError);
+                if (RelativeError)
+                {
+                    Relative = SourcePath.filename();
+                }
+
+                std::string LogicalName = Relative.generic_string();
+                std::replace(LogicalName.begin(), LogicalName.end(), '\\', '/');
+                while (LogicalName.rfind("./", 0) == 0)
+                {
+                    LogicalName.erase(0, 2u);
+                }
+                while (!LogicalName.empty() && LogicalName.front() == '/')
+                {
+                    LogicalName.erase(LogicalName.begin());
+                }
+                if (LogicalName.empty())
+                {
+                    continue;
+                }
+
+                TryAppendEntry(LogicalName, std::nullopt, true, &SourcePath);
+            }
         }
 
         std::sort(Entries.begin(), Entries.end(), [](const TEntry& Left, const TEntry& Right) {

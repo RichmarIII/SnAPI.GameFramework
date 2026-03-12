@@ -558,3 +558,56 @@ TEST_CASE("Asset manager JIT loads authored prefab level and world source assets
     REQUIRE(*WorldLoad);
     CHECK(CountWorldNodes(**WorldLoad) == 2);
 }
+
+TEST_CASE("Prefab capture resolves subtree components from UUID-only live node handles", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("PrefabCaptureWorld");
+    auto RootHandleResult = SourceWorld.CreateNode("PrefabRoot");
+    REQUIRE(RootHandleResult);
+    auto ChildHandleResult = SourceWorld.CreateNode("PrefabChild");
+    REQUIRE(ChildHandleResult);
+    REQUIRE(SourceWorld.AttachChild(*RootHandleResult, *ChildHandleResult));
+
+    auto* RootNode = RootHandleResult->Borrowed();
+    REQUIRE(RootNode != nullptr);
+    auto* ChildNode = ChildHandleResult->Borrowed();
+    REQUIRE(ChildNode != nullptr);
+
+    auto RootTransform = RootNode->Add<TransformComponent>();
+    REQUIRE(RootTransform);
+    RootTransform->Position = Vec3(1.0, 2.0, 3.0);
+
+    auto ChildTransform = ChildNode->Add<TransformComponent>();
+    REQUIRE(ChildTransform);
+    ChildTransform->Position = Vec3(4.0, 5.0, 6.0);
+
+    // Mimic editor/serialized-handle flows where only UUID identity is available and the
+    // component lookup must rehydrate the owner handle through the world.
+    RootNode->Handle(NodeHandle{RootNode->Id()});
+    ChildNode->Handle(NodeHandle{ChildNode->Id()});
+
+    auto CaptureResult = CaptureNodeAsset(*RootNode);
+    REQUIRE(CaptureResult);
+    REQUIRE(CaptureResult->Nodes.size() == 1);
+
+    const NodeObjectAsset& RootAsset = CaptureResult->Nodes.front();
+    REQUIRE(RootAsset.Components.size() == 1);
+    CHECK(RootAsset.Components.front().Type == StaticTypeId<TransformComponent>());
+    REQUIRE(RootAsset.Children.size() == 1);
+    REQUIRE(RootAsset.Children.front().Components.size() == 1);
+    CHECK(RootAsset.Children.front().Components.front().Type == StaticTypeId<TransformComponent>());
+
+    auto JsonResult = SerializeAuthoredAssetToJson(*CaptureResult);
+    REQUIRE(JsonResult);
+
+    NodeAsset RoundTripped{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(*JsonResult, RoundTripped));
+    REQUIRE(RoundTripped.Nodes.size() == 1);
+    REQUIRE(RoundTripped.Nodes.front().Components.size() == 1);
+    CHECK(RoundTripped.Nodes.front().Components.front().Type == StaticTypeId<TransformComponent>());
+    REQUIRE(RoundTripped.Nodes.front().Children.size() == 1);
+    REQUIRE(RoundTripped.Nodes.front().Children.front().Components.size() == 1);
+    CHECK(RoundTripped.Nodes.front().Children.front().Components.front().Type == StaticTypeId<TransformComponent>());
+}

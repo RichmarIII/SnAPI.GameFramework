@@ -2,6 +2,7 @@ add_executable(GameFrameworkTests
     AuthoredAssetTests.cpp
     ConduitTests.cpp
     EcsOnlyWorldTests.cpp
+    GameProjectRuntimeTests.cpp
     WorldEcsRuntimeTests.cpp
     SerializationTests.cpp
     LevelWorldSerializationTests.cpp
@@ -44,9 +45,11 @@ target_include_directories(ConduitPerf PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ConduitPerf PRIVATE SNAPI_BENCH_BUILD_LABEL="${CMAKE_BUILD_TYPE}")
 if (SNAPI_ENABLE_IPO AND SNAPI_IPO_SUPPORTED)
     set_target_properties(ConduitPerf PROPERTIES
-        INTERPROCEDURAL_OPTIMIZATION TRUE
+        INTERPROCEDURAL_OPTIMIZATION FALSE
         INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
-        INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE
+        INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO FALSE
+        INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL FALSE
+        INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
     )
 endif()
 if (SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR)

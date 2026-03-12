@@ -545,7 +545,7 @@ void ConfigureFolderCardIcon(SnAPI::UI::UIImage& Image)
 [[nodiscard]] std::string ToLower(const std::string_view Text)
 {
     std::string Out(Text);
-    std::transform(Out.begin(), Out.end(), Out.begin(), [](const unsigned char Ch) {
+    std::ranges::transform(Out, Out.begin(), [](const unsigned char Ch) {
         return static_cast<char>(std::tolower(Ch));
     });
     return Out;
@@ -711,6 +711,8 @@ struct CreateNodeTypeEntry
     bool HasChildren = false;
 };
 
+[[nodiscard]] std::vector<const TypeInfo*> CollectContentInspectorCreatableNodeTypes();
+
 [[nodiscard]] std::vector<CreateNodeTypeEntry> BuildCreateNodeTypeEntries(const std::string& FilterLower)
 {
     AuthoredAssetRegistry::Instance().EnsureBuilt();
@@ -734,6 +736,32 @@ struct CreateNodeTypeEntry
         Entries.push_back(CreateNodeTypeEntry{
             .Type = Descriptor.AssetType,
             .Label = Descriptor.DisplayName,
+            .QualifiedName = QualifiedName,
+            .Depth = 0,
+            .HasChildren = false,
+        });
+    }
+
+    for (const TypeInfo* Type : CollectContentInspectorCreatableNodeTypes())
+    {
+        if (!Type)
+        {
+            continue;
+        }
+
+        const std::string TypeLabel = ShortTypeLabel(Type->Name);
+        const std::string QualifiedName = Type->Name;
+        if (!FilterLower.empty() &&
+            !LabelMatchesFilter(TypeLabel, FilterLower) &&
+            !LabelMatchesFilter(QualifiedName, FilterLower) &&
+            !LabelMatchesFilter("Prefab", FilterLower))
+        {
+            continue;
+        }
+
+        Entries.push_back(CreateNodeTypeEntry{
+            .Type = Type->Id,
+            .Label = TypeLabel.empty() ? std::string("Node") : (TypeLabel + " (Prefab)"),
             .QualifiedName = QualifiedName,
             .Depth = 0,
             .HasChildren = false,

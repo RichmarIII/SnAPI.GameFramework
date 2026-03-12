@@ -67,6 +67,7 @@ struct NodeAsset : public IAsset
     [[nodiscard]] std::string_view DisplayName() const override { return "Prefab"; }
     [[nodiscard]] std::string_view FileExtension() const override { return ".prefab"; }
     [[nodiscard]] std::string_view Category() const override { return "World"; }
+    [[nodiscard]] bool CanCreate() const override { return false; }
     [[nodiscard]] Result Save(std::ostream& Output) const override;
     [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourceAssetKind() const override { return AssetKindNode(); }
     [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourcePayloadType() const override { return PayloadNodeSource(); }
