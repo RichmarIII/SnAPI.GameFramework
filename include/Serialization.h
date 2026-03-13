@@ -48,7 +48,7 @@ class IWorld;
  *
  * Core semantics:
  * - `World` is the primary runtime lookup surface for live handles.
- * - `Graph` provides an optional level-scoped fallback when a serializer is operating
+ * - `GraphHandle` provides an optional level-scoped fallback when a serializer is operating
  *   against a `Level`.
  * - `NodeIdRemap` and `ComponentIdRemap` rewrite serialized source/template ids to fresh
  *   runtime ids when deserialization is configured to regenerate object identity.
@@ -66,7 +66,7 @@ class IWorld;
 struct TSerializationContext
 {
     const IWorld* World = nullptr; /**< @brief Borrowed World used as the primary runtime lookup surface for Node and Component handles during decode. */
-    const Level* Graph = nullptr; /**< @brief Optional borrowed Level used as a secondary graph-local lookup surface when a World lookup is unavailable or insufficient. */
+    NodeHandle GraphHandle{}; /**< @brief Optional Level handle used as a secondary graph-local lookup surface when a World lookup is unavailable or insufficient. */
     const std::unordered_map<Uuid, Uuid, UuidHash>* NodeIdRemap = nullptr; /**< @brief Optional borrowed source-node-id to runtime-node-id remap applied before handle resolution. */
     const std::unordered_map<Uuid, Uuid, UuidHash>* ComponentIdRemap = nullptr; /**< @brief Optional borrowed source-component-id to runtime-component-id remap applied before handle resolution. */
     bool UseLegacyFloatVectorDecode = false; /**< @brief Compatibility flag enabling legacy float32 decode for vector and quaternion payloads when the runtime scalar type is wider. */
@@ -316,12 +316,17 @@ struct TValueCodec
                     return HandleResult.value();
                 }
             }
-            if (Context.Graph)
+            if (!Context.GraphHandle.IsNull())
             {
-                auto HandleResult = Context.Graph->NodeHandleByIdSlow(Id);
-                if (HandleResult)
+                NodeHandle GraphHandle = Context.GraphHandle;
+                if (const BaseNode* GraphNode = GraphHandle.Borrowed())
                 {
-                    return HandleResult.value();
+                    const auto* GraphLevel = static_cast<const Level*>(GraphNode);
+                    auto HandleResult = GraphLevel->NodeHandleByIdSlow(Id);
+                    if (HandleResult)
+                    {
+                        return HandleResult.value();
+                    }
                 }
             }
             if (auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Id))
@@ -468,13 +473,18 @@ struct TValueCodec
                     return Ok();
                 }
             }
-            if (Context.Graph)
+            if (!Context.GraphHandle.IsNull())
             {
-                auto HandleResult = Context.Graph->NodeHandleByIdSlow(Id);
-                if (HandleResult)
+                NodeHandle GraphHandle = Context.GraphHandle;
+                if (const BaseNode* GraphNode = GraphHandle.Borrowed())
                 {
-                    Value = HandleResult.value();
-                    return Ok();
+                    const auto* GraphLevel = static_cast<const Level*>(GraphNode);
+                    auto HandleResult = GraphLevel->NodeHandleByIdSlow(Id);
+                    if (HandleResult)
+                    {
+                        Value = HandleResult.value();
+                        return Ok();
+                    }
                 }
             }
             if (auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Id))
@@ -849,9 +859,9 @@ class ComponentSerializationRegistry
 {
 public:
     /** @brief Callback signature used to create one Component instance inside a World. */
-    using CreateFn = std::function<TExpected<void*>(IWorld& WorldRef, const NodeHandle& Owner)>;
+    using CreateFn = std::function<TExpected<void*>(IWorld& WorldRef, NodeHandle& InOutOwner)>;
     /** @brief Callback signature used to create one Component with an explicit UUID. */
-    using CreateWithIdFn = std::function<TExpected<void*>(IWorld& WorldRef, const NodeHandle& Owner, const Uuid& Id)>;
+    using CreateWithIdFn = std::function<TExpected<void*>(IWorld& WorldRef, NodeHandle& InOutOwner, const Uuid& Id)>;
     /** @brief Callback signature used to serialize one type-erased Component instance. */
     using SerializeFn = std::function<TExpected<void>(const void* Instance, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context)>;
     /** @brief Callback signature used to deserialize bytes into one existing type-erased Component instance. */
@@ -884,6 +894,11 @@ public:
     template<typename T>
     void Register()
     {
+        static_assert(std::is_base_of_v<BaseComponent, T>,
+                      "Component serialization registration requires a BaseComponent-derived type");
+        static_assert(DenseRuntimeComponentType<T>,
+                      "Dense ECS component types must inherit ComponentCRTP<Derived>, be move-only, and be noexcept movable");
+
         const TypeId Type = StaticTypeId<T>();
         {
             GameLockGuard Lock(m_mutex);
@@ -893,11 +908,10 @@ public:
             }
         }
         Entry EntryValue;
-        EntryValue.Create = [](IWorld& WorldRef, const NodeHandle& Owner) -> TExpected<void*> {
-            (void)WorldRef;
-            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
+        EntryValue.Create = [](IWorld& WorldRef, NodeHandle& InOutOwner) -> TExpected<void*> {
+            if constexpr (DenseRuntimeComponentType<T>)
             {
-                BaseNode* OwnerNode = Owner.Borrowed();
+                BaseNode* OwnerNode = WorldRef.BorrowedNode(InOutOwner);
                 if (OwnerNode)
                 {
                     auto AddResult = OwnerNode->AddRuntimeComponent<T>();
@@ -914,13 +928,12 @@ public:
             }
 
             return std::unexpected(MakeError(EErrorCode::InvalidArgument,
-                                             "ECS-only components must be runtime-compatible and move constructible"));
+                                             "ECS-only components must be dense-runtime compatible"));
         };
-        EntryValue.CreateWithId = [](IWorld& WorldRef, const NodeHandle& Owner, const Uuid& Id) -> TExpected<void*> {
-            (void)WorldRef;
-            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
+        EntryValue.CreateWithId = [](IWorld& WorldRef, NodeHandle& InOutOwner, const Uuid& Id) -> TExpected<void*> {
+            if constexpr (DenseRuntimeComponentType<T>)
             {
-                BaseNode* OwnerNode = Owner.Borrowed();
+                BaseNode* OwnerNode = WorldRef.BorrowedNode(InOutOwner);
                 if (OwnerNode)
                 {
                     auto AddResult = OwnerNode->AddRuntimeComponentWithId<T>(Id);
@@ -937,7 +950,7 @@ public:
             }
 
             return std::unexpected(MakeError(EErrorCode::InvalidArgument,
-                                             "ECS-only components must be runtime-compatible and move constructible"));
+                                             "ECS-only components must be dense-runtime compatible"));
         };
         EntryValue.Serialize = [Type](const void* Instance, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context) -> TExpected<void> {
             return SerializeByReflection(Type, Instance, Archive, Context);
@@ -986,13 +999,17 @@ public:
     template<typename T>
     void RegisterCustom(SerializeFn Serialize, DeserializeFn Deserialize)
     {
+        static_assert(std::is_base_of_v<BaseComponent, T>,
+                      "Component serialization registration requires a BaseComponent-derived type");
+        static_assert(DenseRuntimeComponentType<T>,
+                      "Dense ECS component types must inherit ComponentCRTP<Derived>, be move-only, and be noexcept movable");
+
         const TypeId Type = StaticTypeId<T>();
         Entry EntryValue;
-        EntryValue.Create = [](IWorld& WorldRef, const NodeHandle& Owner) -> TExpected<void*> {
-            (void)WorldRef;
-            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
+        EntryValue.Create = [](IWorld& WorldRef, NodeHandle& InOutOwner) -> TExpected<void*> {
+            if constexpr (DenseRuntimeComponentType<T>)
             {
-                BaseNode* OwnerNode = Owner.Borrowed();
+                BaseNode* OwnerNode = WorldRef.BorrowedNode(InOutOwner);
                 if (OwnerNode)
                 {
                     auto AddResult = OwnerNode->AddRuntimeComponent<T>();
@@ -1009,13 +1026,12 @@ public:
             }
 
             return std::unexpected(MakeError(EErrorCode::InvalidArgument,
-                                             "ECS-only components must be runtime-compatible and move constructible"));
+                                             "ECS-only components must be dense-runtime compatible"));
         };
-        EntryValue.CreateWithId = [](IWorld& WorldRef, const NodeHandle& Owner, const Uuid& Id) -> TExpected<void*> {
-            (void)WorldRef;
-            if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
+        EntryValue.CreateWithId = [](IWorld& WorldRef, NodeHandle& InOutOwner, const Uuid& Id) -> TExpected<void*> {
+            if constexpr (DenseRuntimeComponentType<T>)
             {
-                BaseNode* OwnerNode = Owner.Borrowed();
+                BaseNode* OwnerNode = WorldRef.BorrowedNode(InOutOwner);
                 if (OwnerNode)
                 {
                     auto AddResult = OwnerNode->AddRuntimeComponentWithId<T>(Id);
@@ -1032,7 +1048,7 @@ public:
             }
 
             return std::unexpected(MakeError(EErrorCode::InvalidArgument,
-                                             "ECS-only components must be runtime-compatible and move constructible"));
+                                             "ECS-only components must be dense-runtime compatible"));
         };
         EntryValue.Serialize = std::move(Serialize);
         EntryValue.Deserialize = std::move(Deserialize);
@@ -1101,7 +1117,7 @@ public:
      *         when the type is unknown or cannot be created with the default runtime
      *         component path.
      */
-    TExpected<void*> Create(IWorld& WorldRef, const NodeHandle& Owner, const TypeId& Type) const;
+    TExpected<void*> Create(IWorld& WorldRef, NodeHandle& InOutOwner, const TypeId& Type) const;
     /**
      * @brief Create a Component instance by reflected type id with an explicit UUID.
      * @param WorldRef Destination World that will own the new Component.
@@ -1112,7 +1128,7 @@ public:
      *         when the type is unknown or cannot be created with the default runtime
      *         component path.
      */
-    TExpected<void*> CreateWithId(IWorld& WorldRef, const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) const;
+    TExpected<void*> CreateWithId(IWorld& WorldRef, NodeHandle& InOutOwner, const TypeId& Type, const Uuid& Id) const;
     /**
      * @brief Serialize one Component instance into its raw payload byte form.
      * @param Type Reflected Component type id.

@@ -3,12 +3,13 @@
 SnAPI.GameFramework is a high‑performance, single‑threaded game framework core built around **nodes**, **components**, and a **first‑class reflection system**. It is designed to handle tens of thousands of nodes with minimal overhead, while still offering a developer‑friendly, type‑safe API and automatic serialization through reflection.
 
 The framework uses:
-- **Node graphs** (nested graphs are first‑class nodes).
+- **World-owned node hierarchies** (`Level` is a node, child `Level` nodes are partitions).
 - **Component‑based composition** (Unity‑style behaviors).
-- **Stable UUID handles** for cross‑graph/cross‑asset references.
+- **UUID-backed handles with fast runtime-key rehydration** for cross-asset and hot-path references.
 - **Reflection‑driven serialization** (C++23, template‑centric).
 - **Conduit visual scripting runtime** built on compiled slots, intrinsics, and control flow.
 - **World-owned subsystem adapters** (input, ui, networking, audio, physics, renderer).
+- **Page-backed dense runtime storage** for nodes and components.
 - **End‑of‑frame deletion** to avoid dangling handles during a frame.
 - **Relevance system** to cull work for inactive/out‑of‑budget nodes.
 
@@ -23,10 +24,10 @@ This repository targets C++23 and is intended to be multi‑platform.
 - [Build & Dependencies](#build--dependencies)
 - [Project Layout](#project-layout)
 - [Quick Start](#quick-start)
-- [Nodes and NodeGraphs](#nodes-and-nodegraphs)
+- [Nodes, Levels, and Components](#nodes-levels-and-components)
 - [Components](#components)
 - [Renderer Integration (optional module)](#renderer-integration-optional-module)
-- [Handles (UUID‑based)](#handles-uuid-based)
+- [Handles (UUID + Runtime Key)](#handles-uuid--runtime-key)
 - [Reflection System](#reflection-system)
 - [Conduit Visual Scripting](#conduit-visual-scripting)
 - [Authored Assets](#authored-assets)
@@ -41,13 +42,13 @@ This repository targets C++23 and is intended to be multi‑platform.
 
 ## Core Concepts
 
-**World → Level → NodeGraph → Node → Component**
+**GameRuntime → World → Level / BaseNode → BaseComponent**
 
-- **World** is a root `NodeGraph` and a tick source.
-- **Level** is a `NodeGraph` that lives inside a World (as a node).
-- **NodeGraph** is itself a node; it can contain child nodes and other graphs.
-- **Node** is an `INode` with a handle, name, parent/child links, and a component set.
-- **Component** is an `IComponent` attached to a node to provide behavior or data.
+- **GameRuntime** is the normal application host for startup, frame update, and shutdown.
+- **World** is the authoritative owner of nodes, components, dense runtime storage, and optional subsystems.
+- **Level** is a `BaseNode`-derived grouping root or authored partition.
+- **BaseNode** is the identity-bearing gameplay object with hierarchy and component access.
+- **BaseComponent** is an attachable behavior/data object owned by world-managed dense storage.
 
 **Reflection** is first‑class:
 - Every reflectable type has a stable UUID TypeId (derived from its name).
@@ -60,9 +61,10 @@ This repository targets C++23 and is intended to be multi‑platform.
 - basic logic uses builtin intrinsics instead of reflected helper methods everywhere
 - reflected fields/methods are bound once and executed through cached metadata
 
-**Handles** are UUID‑only:
+**Handles** are UUID-backed:
 - Any reference to another object is a handle (not a raw pointer).
-- Handles resolve via a **global registry** and remain valid across assets.
+- Handles carry a stable UUID plus an optional runtime-key cache for fast resolution.
+- Borrowed pointers returned from handles are transient views and must not be cached.
 
 ---
 
@@ -223,6 +225,7 @@ cmake -S . -B build \
 
 ```cpp
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 using namespace SnAPI::GameFramework;
 
@@ -232,12 +235,13 @@ int main()
 
     World WorldInstance("GameWorld");
     auto LevelHandle = WorldInstance.CreateLevel("MainLevel").value();
-    auto& LevelRef = *WorldInstance.LevelRef(LevelHandle);
+    auto* Level = NodeCast<Level>(LevelHandle.Borrowed());
+    if (!Level)
+    {
+        return 1;
+    }
 
-    auto GraphHandle = LevelRef.CreateGraph("Gameplay").value();
-    auto& GraphRef = *LevelRef.Graph(GraphHandle);
-
-    auto PlayerHandle = GraphRef.CreateNode("Player").value();
+    auto PlayerHandle = Level->CreateNode<BaseNode>("Player").value();
     auto* Player = PlayerHandle.Borrowed();
 
     auto Transform = Player->Add<TransformComponent>();
@@ -250,54 +254,61 @@ int main()
 
 ---
 
-## Nodes and NodeGraphs
+## Nodes, Levels, and Components
 
-### BaseNode / INode
+### BaseNode
 Nodes provide:
 - Name / Handle / Parent / Children
 - Active flag
 - Component list + type mask
-- Tick hooks: `Tick`, `FixedTick`, `LateTick`
+- Tick hooks: `PreTick`, `Tick`, `FixedTick`, `LateTick`, `PostTick`, `EndFrame`
+- Dense world-owned storage with stable address until destroy
 
-### NodeGraph
-`NodeGraph` is a node that can own other nodes:
+### Level
+`Level` is a convenience `BaseNode` type used for grouping and authored partitions:
 
 ```cpp
-NodeGraph Graph("Gameplay");
-auto Handle = Graph.CreateNode("Enemy");
-Graph.AttachChild(Parent, Handle);
+World WorldInstance("Gameplay");
+auto MainLevel = WorldInstance.CreateLevel("MainLevel").value();
+auto* Main = NodeCast<Level>(MainLevel.Borrowed());
+auto Enemy = Main->CreateNode<BaseNode>("Enemy").value();
 ```
+
+There is no separate public `NodeGraph` object you need to create first.
 
 ### Creating nodes (compile-time and runtime)
 ```cpp
 // Compile-time (fast path, fully typed)
-auto EnemyHandle = Graph.CreateNode<EnemyNode>("Enemy").value();
+auto EnemyHandle = WorldInstance.CreateNode<EnemyNode>("Enemy").value();
 
 // Runtime (reflection path)
 const TypeId EnemyType = TypeIdFromName(EnemyNode::kTypeName);
-auto AnyHandle = Graph.CreateNode(EnemyType, "Enemy").value();
+auto AnyHandle = WorldInstance.CreateNode(EnemyType, "Enemy").value();
 ```
 
 Runtime creation requires that a default constructor was registered for the type.
 
 ### Update order
-`NodeGraph::Tick` evaluates relevance, then ticks root nodes. Each node:
-1. Ticks itself
-2. Ticks its components
-3. Ticks its direct children (depth-first)
+World execution is phase-based:
+1. `PreTick`
+2. `Tick`
+3. `FixedTick`
+4. `LateTick`
+5. `PostTick`
+6. `EndFrame`
 
-This keeps update order simple and predictable, and avoids a central "graph
-updates everything" pass.
+Dense node and component storages are scheduled by per-phase class priority.
 
 ### Custom node types
 ```cpp
-class RotatorNode : public BaseNode
+class RotatorNode final : public BaseNode, public NodeCRTP<RotatorNode>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::RotatorNode";
+    static constexpr std::size_t kStoragePageSize = 1024;
     float m_speed = 90.0f;
 
-    void Tick(float DeltaSeconds) override
+    void Tick(float DeltaSeconds)
     {
         (void)DeltaSeconds;
         // Custom tick logic
@@ -311,11 +322,10 @@ SNAPI_REFLECT_TYPE(RotatorNode, (TTypeBuilder<RotatorNode>(RotatorNode::kTypeNam
     .Register()));
 ```
 
-Implementing `INode` directly is supported, but you lose the default behavior
-and storage that `BaseNode` provides.
+Gameplay nodes should derive from `BaseNode`. Constructors and destructors should stay side-effect free; runtime/backend work belongs in `OnCreate()` / `OnDestroy()`.
 
 ### World and Level
-Both inherit from `NodeGraph`:
+`World` owns storage. `Level` is a convenience node on top:
 
 ```cpp
 World WorldInstance;
@@ -323,20 +333,20 @@ auto LevelHandle = WorldInstance.CreateLevel("LevelA");
 auto& LevelRef = *WorldInstance.LevelRef(LevelHandle);
 ```
 
-World and Level are graphs, so they can be saved, loaded, nested, and treated
-like any other node graph.
+World and Level can both be serialized and nested through normal node hierarchy rules.
 
 ---
 
 ## Components
 
-Components derive from `IComponent`:
+Components derive from `BaseComponent` and participate in the same dense runtime model:
 
 ```cpp
-class HealthComponent : public IComponent
+class HealthComponent final : public BaseComponent, public ComponentCRTP<HealthComponent>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::HealthComponent";
+    static constexpr std::size_t kStoragePageSize = 1024;
     int m_health = 100;
 };
 ```
@@ -352,10 +362,11 @@ Component lifetime:
 - Added instantly.
 - Removed via `Remove<T>()`.
 - Actually destroyed at **end of frame**.
+- Stored in page-backed dense runtime storage, so creating another object does not relocate existing live objects.
 
 ### Custom components + reflection
 ```cpp
-class DamageComponent : public IComponent
+class DamageComponent final : public BaseComponent, public ComponentCRTP<DamageComponent>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::DamageComponent";
@@ -501,12 +512,14 @@ Key rules:
 - Handles remain valid across serialization and asset loads.
 - A handle resolves **only once the target object is loaded and registered**.
 - Borrowed pointers **must not be cached** (use handles instead).
-- In hot/runtime APIs, pass handles as `const NodeHandle&` / `const ComponentHandle&`.
+- In hot/runtime APIs that may rehydrate the runtime key, pass handles as mutable `NodeHandle&` / `ComponentHandle&`.
+- `Borrowed()` is mutable and can refresh the cached runtime key on the handle instance.
+- `IsValidMaybeSlow()` is the non-mutating validity path when you explicitly want a const check that may still pay UUID fallback.
 - Do not pass handles by value in hot paths; copies do not preserve runtime-key refresh on the caller instance and can repeatedly hit UUID fallback.
 
 There are two core handle types:
 - `NodeHandle` for nodes (BaseNode and derived).
-- `ComponentHandle` for components (IComponent and derived).
+- `ComponentHandle` for components (BaseComponent and derived).
 
 Handles resolve through a global registry. Object creation registers the UUID,
 and destruction happens at end-of-frame to avoid dangling references during a
@@ -604,11 +617,11 @@ Serialization is reflection‑driven:
 - Handles serialize as UUIDs, so cross‑graph references survive load.
 
 Payload serialization is done with cereal binary archives. The helpers:
-`SerializeNodeGraphPayload`, `SerializeLevelPayload`, and `SerializeWorldPayload`
+`SerializeNodePayload`, `SerializeLevelPayload`, and `SerializeWorldPayload`
 encode the reflection data into byte blobs suitable for AssetPipeline packs.
 
 If a node type has no registered fields, only its identity, name, active state,
-parent/child links, components, and nested graphs are serialized.
+parent/child links, components, and nested child nodes are serialized.
 
 If a field type is not a built‑in:
 1. Register it in the `TypeRegistry`.
@@ -653,10 +666,11 @@ SNAPI_REFLECT_TYPE(TDamageInfo, (TTypeBuilder<TDamageInfo>(TDamageInfo::kTypeNam
     .Constructor<>()
     .Register()));
 
-class DamageComponent : public IComponent
+class DamageComponent final : public BaseComponent, public ComponentCRTP<DamageComponent>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::DamageComponent";
+    static constexpr std::size_t kStoragePageSize = 1024;
     TDamageInfo m_info{};
 };
 
@@ -705,7 +719,7 @@ if (!MountResult.has_value())
 
 auto WorldResult = Manager.Load<World>("main.world");
 auto LevelResult = Manager.Load<Level>("main.level");
-auto GraphResult = Manager.Load<NodeGraph>("main.graph");
+auto PrefabResult = Manager.Load<NodeAsset>("player.prefab");
 ```
 
 ### Write packs (cooked payloads)
@@ -726,7 +740,7 @@ Writer.Write("GameContent.snpak");
 
 ### Inline plugin
 If you use the AssetPipeline plugin system, the GameFramework plugin registers
-the payload serializers for NodeGraph, Level, and World. Link this library so
+the payload serializers for node, level, and world payloads. Link this library so
 the plugin symbol is available.
 
 ### Custom nodes/components
@@ -781,10 +795,10 @@ Relevance->Policy(TDistancePolicy{});
 
 Control evaluation cost:
 ```cpp
-Graph.RelevanceBudget(1000); // 0 = unlimited
+WorldInstance.RelevanceBudget(1000); // 0 = unlimited
 ```
 
-Relevance is evaluated at the start of `NodeGraph::Tick`. Nodes that are not
+Relevance is evaluated during world tick. Nodes that are not
 relevant do not tick or tick their components/children.
 
 ---
@@ -800,9 +814,9 @@ ctest --test-dir build
 
 Tests cover:
 - Reflection registration
-- Node graph creation and traversal
+- Node and level creation and traversal
 - Handle validity and serialization
-- World/level graph serialization
+- World/level serialization
 - Relevance policy behavior
 
 ---
@@ -812,7 +826,7 @@ Tests cover:
 The example app lives in `examples/FeatureShowcase` and demonstrates:
 - Node and component creation
 - Custom node/component reflection
-- Graph nesting and world/level setup
+- Level partitions and world/level setup
 - Serialization to payloads and `.snpak` packs
 - Loading assets via AssetManager
 

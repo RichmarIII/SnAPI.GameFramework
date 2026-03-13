@@ -158,6 +158,43 @@ constexpr uint32_t kAssetImportMetadataVersion = 1u;
 
 using EImportProfile = EAssetImportProfile;
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+struct WorldRenderSettingsRootSet
+{
+    std::vector<NodeHandle> AuthoredRoots{};
+    std::vector<NodeHandle> TransientRoots{};
+};
+
+[[nodiscard]] WorldRenderSettingsRootSet CollectWorldRenderSettingsRoots(World& WorldRef)
+{
+    WorldRenderSettingsRootSet Result{};
+    WorldRef.ForEachNode([&Result](const NodeHandle& Handle, BaseNode& Node) {
+        if (NodeCast<WorldRenderSettings>(&Node) == nullptr)
+        {
+            return;
+        }
+
+        if (Node.EditorTransient())
+        {
+            Result.TransientRoots.push_back(Handle);
+        }
+        else
+        {
+            Result.AuthoredRoots.push_back(Handle);
+        }
+    });
+    return Result;
+}
+
+void DestroyNodes(World& WorldRef, std::vector<NodeHandle>& Handles)
+{
+    for (NodeHandle& Handle : Handles)
+    {
+        (void)WorldRef.DestroyNode(Handle);
+    }
+}
+#endif
+
 struct AssetImportMetadataEntryDisk
 {
     std::string AssetId{};
@@ -1979,7 +2016,7 @@ struct DefaultShapePackSpec
         return std::unexpected(NodeResult.error().Message);
     }
 
-    const NodeHandle CreatedHandle = *NodeResult;
+    NodeHandle CreatedHandle = *NodeResult;
     BaseNode* Node = CreatedHandle.Borrowed();
     if (!Node)
     {
@@ -1991,7 +2028,7 @@ struct DefaultShapePackSpec
         return std::unexpected("Failed to resolve created runtime node for default shape asset");
     }
 
-    auto CleanupNode = [&RuntimeWorld, CreatedHandle]() {
+    auto CleanupNode = [&RuntimeWorld, CreatedHandle]() mutable {
         (void)RuntimeWorld.DestroyNode(CreatedHandle);
     };
 
@@ -2155,7 +2192,7 @@ struct RuntimeWorldCounts
 [[nodiscard]] RuntimeWorldCounts CountRuntimeWorldObjects(World& WorldRef)
 {
     RuntimeWorldCounts Counts{};
-    WorldRef.NodePool().ForEach([&](const NodeHandle&, BaseNode& NodeRef) {
+    WorldRef.ForEachNode([&](const NodeHandle&, BaseNode& NodeRef) {
         ++Counts.Nodes;
         Counts.Components += NodeRef.ComponentTypes().size();
     });
@@ -2278,7 +2315,8 @@ void AppendUniquePath(std::vector<std::string>& Paths,
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
-    (void)WorldRef.RequestNodeOnCreate(Node.Handle());
+    NodeHandle NodeHandleValue = Node.Handle();
+    (void)WorldRef.RequestNodeOnCreate(NodeHandleValue);
 }
 
 [[nodiscard]] std::string MakeUniqueLogicalName(::SnAPI::AssetPipeline::AssetManager& AssetManagerRef,
@@ -2660,16 +2698,35 @@ void EditorAssetService::Tick(EditorServiceContext& Context, float DeltaSeconds)
         return;
     }
 
+    WorldRenderSettingsRootSet ExistingRoots = CollectWorldRenderSettingsRoots(*RuntimeWorld);
+    if (!ExistingRoots.AuthoredRoots.empty())
+    {
+        DestroyNodes(*RuntimeWorld, ExistingRoots.TransientRoots);
+        m_loadedDefaultRenderSettingsNode = {};
+        m_defaultRenderSettingsApplyPending = false;
+        return;
+    }
+
+    if (!ExistingRoots.TransientRoots.empty())
+    {
+        m_loadedDefaultRenderSettingsNode = ExistingRoots.TransientRoots.front();
+        for (std::size_t Index = 1; Index < ExistingRoots.TransientRoots.size(); ++Index)
+        {
+            NodeHandle Duplicate = ExistingRoots.TransientRoots[Index];
+            (void)RuntimeWorld->DestroyNode(Duplicate);
+        }
+    }
+
     BaseNode* LoadedNode = nullptr;
     if (!m_loadedDefaultRenderSettingsNode.IsNull())
     {
-        LoadedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+        LoadedNode = RuntimeWorld->BorrowedNode(m_loadedDefaultRenderSettingsNode);
         if (!LoadedNode)
         {
             if (auto HandleResult = RuntimeWorld->NodeHandleById(m_loadedDefaultRenderSettingsNode.Id); HandleResult)
             {
                 m_loadedDefaultRenderSettingsNode = *HandleResult;
-                LoadedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+                LoadedNode = RuntimeWorld->BorrowedNode(m_loadedDefaultRenderSettingsNode);
             }
             else
             {
@@ -2681,7 +2738,7 @@ void EditorAssetService::Tick(EditorServiceContext& Context, float DeltaSeconds)
     if (!LoadedNode)
     {
         (void)LoadProjectDefaultRenderSettings(Context);
-        LoadedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+        LoadedNode = RuntimeWorld->BorrowedNode(m_loadedDefaultRenderSettingsNode);
         if (!LoadedNode)
         {
             return;
@@ -4023,10 +4080,11 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
 {
     (void)Context;
 
-    BaseNode* SourceNode = SourceHandle.Borrowed();
+    NodeHandle ResolvedSourceHandle = SourceHandle;
+    BaseNode* SourceNode = ResolvedSourceHandle.Borrowed();
     if (!SourceNode)
     {
-        SourceNode = SourceHandle.BorrowedSlowByUuid();
+        SourceNode = ResolvedSourceHandle.BorrowedSlowByUuid();
     }
     if (!SourceNode)
     {
@@ -4803,7 +4861,7 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
             return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
         }
 
-        BaseNode* RootNode = m_assetEditorRootHandle.Borrowed();
+        BaseNode* RootNode = ResolveAssetEditorNode(m_assetEditorRootHandle);
         if (!RootNode)
         {
             ClearAssetEditorState();
@@ -4835,7 +4893,7 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
             return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
         }
 
-        auto* LevelNode = NodeCast<Level>(m_assetEditorRootHandle.Borrowed());
+        auto* LevelNode = NodeCast<Level>(ResolveAssetEditorNode(m_assetEditorRootHandle));
         if (!LevelNode)
         {
             ClearAssetEditorState();
@@ -5084,7 +5142,7 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
 
     (void)RefreshAssetEditorImportSettingsBinding(*Asset);
 
-    if (m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{})
+    if (HasAssetEditorRuntimeTarget())
     {
         if (m_assetEditorSourceAssetType != TypeId{})
         {
@@ -5346,7 +5404,7 @@ Result EditorAssetService::AddAssetEditorNode(const NodeHandle& Parent, const Ty
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World/Level types cannot be added inside node assets"));
     }
 
-    const NodeHandle ParentHandle = Parent.IsNull() ? m_assetEditorRootHandle : Parent;
+    NodeHandle ParentHandle = Parent.IsNull() ? m_assetEditorRootHandle : Parent;
     BaseNode* ParentNode = ResolveAssetEditorNode(ParentHandle);
     if (!ParentNode)
     {
@@ -5365,7 +5423,8 @@ Result EditorAssetService::AddAssetEditorNode(const NodeHandle& Parent, const Ty
         return std::unexpected(CreateResult.error());
     }
 
-    auto AttachResult = m_assetEditorWorld->AttachChild(ParentNode->Handle(), *CreateResult);
+    NodeHandle ResolvedParentHandle = ParentNode->Handle();
+    auto AttachResult = m_assetEditorWorld->AttachChild(ResolvedParentHandle, *CreateResult);
     if (!AttachResult)
     {
         return std::unexpected(AttachResult.error());
@@ -5397,7 +5456,8 @@ Result EditorAssetService::DeleteAssetEditorNode(const NodeHandle& Node)
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is required"));
     }
 
-    BaseNode* TargetNode = ResolveAssetEditorNode(Node);
+    NodeHandle TargetHandle = Node;
+    BaseNode* TargetNode = ResolveAssetEditorNode(TargetHandle);
     if (!TargetNode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Target node was not found"));
@@ -5408,7 +5468,8 @@ Result EditorAssetService::DeleteAssetEditorNode(const NodeHandle& Node)
     }
 
     const NodeHandle NextSelection = !TargetNode->Parent().IsNull() ? TargetNode->Parent() : m_assetEditorRootHandle;
-    auto DestroyResult = m_assetEditorWorld->DestroyNode(TargetNode->Handle());
+    NodeHandle DestroyHandle = TargetNode->Handle();
+    auto DestroyResult = m_assetEditorWorld->DestroyNode(DestroyHandle);
     if (!DestroyResult)
     {
         return std::unexpected(DestroyResult.error());
@@ -5439,13 +5500,15 @@ Result EditorAssetService::AddAssetEditorComponent(const NodeHandle& Owner, cons
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Requested type is not a component type"));
     }
 
-    BaseNode* OwnerNode = ResolveAssetEditorNode(Owner);
+    NodeHandle OwnerHandle = Owner;
+    BaseNode* OwnerNode = ResolveAssetEditorNode(OwnerHandle);
     if (!OwnerNode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node was not found"));
     }
 
-    auto AddResult = m_assetEditorWorld->CreateComponent(OwnerNode->Handle(), ComponentType);
+    NodeHandle OwnerRuntimeHandle = OwnerNode->Handle();
+    auto AddResult = m_assetEditorWorld->CreateComponent(OwnerRuntimeHandle, ComponentType);
     if (!AddResult)
     {
         return std::unexpected(AddResult.error());
@@ -5473,13 +5536,15 @@ Result EditorAssetService::RemoveAssetEditorComponent(const NodeHandle& Owner, c
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Component type is required"));
     }
 
-    BaseNode* OwnerNode = ResolveAssetEditorNode(Owner);
+    NodeHandle OwnerHandle = Owner;
+    BaseNode* OwnerNode = ResolveAssetEditorNode(OwnerHandle);
     if (!OwnerNode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node was not found"));
     }
 
-    auto RemoveResult = m_assetEditorWorld->RemoveComponentByType(OwnerNode->Handle(), ComponentType);
+    NodeHandle OwnerRuntimeHandle = OwnerNode->Handle();
+    auto RemoveResult = m_assetEditorWorld->RemoveComponentByType(OwnerRuntimeHandle, ComponentType);
     if (!RemoveResult)
     {
         return std::unexpected(RemoveResult.error());
@@ -5517,12 +5582,7 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
 
     if (m_assetEditorSourceAssetType != TypeId{})
     {
-        m_assetEditorDirtyCheckCooldownSeconds -= std::max(0.0f, DeltaSeconds);
-        if (m_assetEditorDirtyCheckCooldownSeconds > 0.0f)
-        {
-            return;
-        }
-        m_assetEditorDirtyCheckCooldownSeconds = 0.2f;
+        m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
 
         const bool PreviousAnyDirty = m_assetEditorDirty;
         auto JsonResult = SerializeAssetEditorSourceJson();
@@ -5543,7 +5603,7 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
 
     if (Asset->AssetKind == AssetKindNode() || Asset->AssetKind == AssetKindLevel())
     {
-        BaseNode* RootNode = m_assetEditorRootHandle.Borrowed();
+        BaseNode* RootNode = ResolveAssetEditorNode(m_assetEditorRootHandle);
         if (!RootNode)
         {
             ClearAssetEditorState();
@@ -5601,7 +5661,7 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
     const bool PreviousAnyDirty = m_assetEditorDirty;
 
     bool RuntimeDirtyNow = false;
-    if (m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{})
+    if (HasAssetEditorRuntimeTarget())
     {
         auto SerializedPayloadResult = SerializeAssetEditorPayload();
         if (!SerializedPayloadResult)
@@ -5702,7 +5762,7 @@ Result EditorAssetService::SaveActiveAssetEditor()
     }
 
     const bool WasDirty = m_assetEditorDirty;
-    if (m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{})
+    if (HasAssetEditorRuntimeTarget())
     {
         auto SerializedPayloadResult = SerializeAssetEditorPayload();
         if (SerializedPayloadResult)
@@ -5762,7 +5822,7 @@ EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSessio
     {
         return View;
     }
-    const bool HasRuntimeTarget = m_assetEditorTargetObject != nullptr && m_assetEditorTargetType != TypeId{};
+    const bool HasRuntimeTarget = HasAssetEditorRuntimeTarget();
     const bool HasImportTarget = m_assetEditorImportSettingsObject != nullptr && m_assetEditorImportSettingsType != TypeId{};
     if (!HasRuntimeTarget && !HasImportTarget)
     {
@@ -5773,7 +5833,7 @@ EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSessio
     View.AssetKey = m_assetEditorAssetKey;
     View.Title = m_assetEditorTitle;
     View.TargetType = m_assetEditorTargetType;
-    View.TargetObject = m_assetEditorTargetObject;
+    View.TargetObject = ResolveAssetEditorRuntimeTargetObject();
     View.ImportSettingsType = m_assetEditorImportSettingsType;
     View.ImportSettingsObject = m_assetEditorImportSettingsObject;
     View.Nodes = m_assetEditorHierarchy;
@@ -5962,10 +6022,11 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
             const std::vector<NodeHandle> Levels = RuntimeWorld->Levels();
             if (!Levels.empty())
             {
-                SourceLevel = NodeCast<Level>(Levels.front().Borrowed());
+                NodeHandle SourceLevelHandle = Levels.front();
+                SourceLevel = NodeCast<Level>(SourceLevelHandle.Borrowed());
                 if (!SourceLevel)
                 {
-                    SourceLevel = NodeCast<Level>(Levels.front().BorrowedSlowByUuid());
+                    SourceLevel = NodeCast<Level>(SourceLevelHandle.BorrowedSlowByUuid());
                 }
             }
         }
@@ -6560,12 +6621,6 @@ Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext
     {
         return Ok();
     }
-
-    if (!m_loadedDefaultRenderSettingsNode.IsNull())
-    {
-        (void)RuntimeWorld->DestroyNode(m_loadedDefaultRenderSettingsNode);
-        m_loadedDefaultRenderSettingsNode = {};
-    }
     m_defaultRenderSettingsApplyPending = false;
     // Force one deferred re-apply in Tick() after initial load.
     // Editor viewport pass graphs can be registered after this call.
@@ -6574,7 +6629,38 @@ Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext
     const std::string DefaultSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
     if (DefaultSettingsAssetId.empty())
     {
+        WorldRenderSettingsRootSet ExistingRoots = CollectWorldRenderSettingsRoots(*RuntimeWorld);
+        DestroyNodes(*RuntimeWorld, ExistingRoots.TransientRoots);
+        m_loadedDefaultRenderSettingsNode = {};
         return Ok();
+    }
+
+    WorldRenderSettingsRootSet ExistingRoots = CollectWorldRenderSettingsRoots(*RuntimeWorld);
+    if (!ExistingRoots.AuthoredRoots.empty())
+    {
+        DestroyNodes(*RuntimeWorld, ExistingRoots.TransientRoots);
+        m_loadedDefaultRenderSettingsNode = {};
+        return Ok();
+    }
+
+    if (!ExistingRoots.TransientRoots.empty())
+    {
+        m_loadedDefaultRenderSettingsNode = ExistingRoots.TransientRoots.front();
+        for (std::size_t Index = 1; Index < ExistingRoots.TransientRoots.size(); ++Index)
+        {
+            NodeHandle Duplicate = ExistingRoots.TransientRoots[Index];
+            (void)RuntimeWorld->DestroyNode(Duplicate);
+        }
+
+        if (auto* ExistingNode = RuntimeWorld->BorrowedNode(m_loadedDefaultRenderSettingsNode);
+            NodeCast<WorldRenderSettings>(ExistingNode) != nullptr)
+        {
+            ExistingNode->EditorTransient(true);
+            m_defaultRenderSettingsApplyPending = true;
+            return Ok();
+        }
+
+        m_loadedDefaultRenderSettingsNode = {};
     }
 
     TAssetRef<WorldRenderSettings> SettingsRef{};
@@ -6598,9 +6684,10 @@ Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext
     else
     {
         m_loadedDefaultRenderSettingsNode = *InstantiateResult;
-        if (auto* CreatedNode = m_loadedDefaultRenderSettingsNode.Borrowed();
+        if (auto* CreatedNode = RuntimeWorld->BorrowedNode(m_loadedDefaultRenderSettingsNode);
             NodeCast<WorldRenderSettings>(CreatedNode) != nullptr)
         {
+            CreatedNode->EditorTransient(true);
             // Apply immediately for already-ready pass graphs.
             (void)RuntimeWorld->RequestNodeOnCreate(m_loadedDefaultRenderSettingsNode);
             // Also schedule one deferred apply when the pass graph revision is available/stable.
@@ -7295,30 +7382,95 @@ Result EditorAssetService::ReimportActiveAsset(EditorServiceContext& Context)
     return Ok();
 }
 
-BaseNode* EditorAssetService::ResolveAssetEditorNode(const NodeHandle& Node) const
+BaseNode* EditorAssetService::ResolveAssetEditorNode(NodeHandle& InOutNode)
 {
-    if (Node.IsNull())
+    if (InOutNode.IsNull())
     {
         return nullptr;
     }
 
-    if (BaseNode* Direct = Node.Borrowed())
+    if (m_assetEditorWorld)
+    {
+        if (BaseNode* Direct = m_assetEditorWorld->BorrowedNode(InOutNode))
+        {
+            return Direct;
+        }
+    }
+
+    if (BaseNode* Direct = InOutNode.Borrowed())
     {
         return Direct;
     }
 
     if (m_assetEditorWorld)
     {
-        if (const auto HandleResult = m_assetEditorWorld->NodeHandleById(Node.Id); HandleResult.has_value())
+        if (const auto HandleResult = m_assetEditorWorld->NodeHandleById(InOutNode.Id); HandleResult.has_value())
         {
-            if (BaseNode* Resolved = HandleResult->Borrowed())
+            InOutNode = *HandleResult;
+            if (BaseNode* Resolved = m_assetEditorWorld->BorrowedNode(InOutNode))
             {
                 return Resolved;
             }
         }
     }
 
-    return Node.BorrowedSlowByUuid();
+    return InOutNode.BorrowedSlowByUuid();
+}
+
+const BaseNode* EditorAssetService::ResolveAssetEditorNode(const NodeHandle& Node) const
+{
+    NodeHandle ResolvedNode = Node;
+    if (ResolvedNode.IsNull())
+    {
+        return nullptr;
+    }
+
+    if (m_assetEditorWorld)
+    {
+        if (const BaseNode* Direct = m_assetEditorWorld->BorrowedNode(ResolvedNode))
+        {
+            return Direct;
+        }
+    }
+
+    if (const BaseNode* Direct = ResolvedNode.Borrowed())
+    {
+        return Direct;
+    }
+
+    if (m_assetEditorWorld)
+    {
+        if (const auto HandleResult = m_assetEditorWorld->NodeHandleById(ResolvedNode.Id); HandleResult.has_value())
+        {
+            ResolvedNode = *HandleResult;
+            if (const BaseNode* Resolved = m_assetEditorWorld->BorrowedNode(ResolvedNode))
+            {
+                return Resolved;
+            }
+        }
+    }
+
+    return ResolvedNode.BorrowedSlowByUuid();
+}
+
+void* EditorAssetService::ResolveAssetEditorRuntimeTargetObject() const
+{
+    if (m_assetEditorTargetType == TypeId{})
+    {
+        return nullptr;
+    }
+
+    if (m_assetEditorAssetKind == AssetKindNode() || m_assetEditorAssetKind == AssetKindLevel())
+    {
+        return const_cast<BaseNode*>(ResolveAssetEditorNode(m_assetEditorRootHandle));
+    }
+
+    return m_assetEditorTargetObject;
+}
+
+bool EditorAssetService::HasAssetEditorRuntimeTarget() const
+{
+    return ResolveAssetEditorRuntimeTargetObject() != nullptr && m_assetEditorTargetType != TypeId{};
 }
 
 void EditorAssetService::RefreshAssetEditorHierarchy()
@@ -7578,14 +7730,15 @@ Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
 
 std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetService::SerializeAssetEditorPayload() const
 {
-    if (m_assetEditorTargetObject == nullptr || m_assetEditorTargetType == TypeId{})
+    if (!HasAssetEditorRuntimeTarget())
     {
         return std::unexpected("No active asset editor object is available");
     }
 
     if (m_assetEditorAssetKind == AssetKindNode())
     {
-        auto* Node = static_cast<BaseNode*>(m_assetEditorTargetObject);
+        NodeHandle RootHandle = m_assetEditorRootHandle;
+        auto* Node = const_cast<BaseNode*>(ResolveAssetEditorNode(RootHandle));
         if (!Node)
         {
             return std::unexpected("Asset editor node target is null");
@@ -7609,7 +7762,8 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (m_assetEditorAssetKind == AssetKindLevel())
     {
-        auto* LevelNode = static_cast<Level*>(m_assetEditorTargetObject);
+        NodeHandle RootHandle = m_assetEditorRootHandle;
+        auto* LevelNode = NodeCast<Level>(const_cast<BaseNode*>(ResolveAssetEditorNode(RootHandle)));
         if (!LevelNode)
         {
             return std::unexpected("Asset editor level target is null");
@@ -7633,7 +7787,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (m_assetEditorAssetKind == AssetKindWorld())
     {
-        auto* WorldRef = static_cast<World*>(m_assetEditorTargetObject);
+        auto* WorldRef = static_cast<World*>(ResolveAssetEditorRuntimeTargetObject());
         if (!WorldRef)
         {
             return std::unexpected("Asset editor world target is null");
@@ -7662,7 +7816,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
             return std::unexpected("Texture cooked payload is not loaded");
         }
 
-        auto* TextureEditor = static_cast<Editor::TextureAssetEditorPayload*>(m_assetEditorTargetObject);
+        auto* TextureEditor = static_cast<Editor::TextureAssetEditorPayload*>(ResolveAssetEditorRuntimeTargetObject());
         if (!TextureEditor)
         {
             return std::unexpected("Asset editor texture target is null");
@@ -7699,7 +7853,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
             return std::unexpected("Static mesh payload is not loaded");
         }
 
-        auto* StaticMeshEditor = static_cast<Editor::StaticMeshAssetEditorPayload*>(m_assetEditorTargetObject);
+        auto* StaticMeshEditor = static_cast<Editor::StaticMeshAssetEditorPayload*>(ResolveAssetEditorRuntimeTargetObject());
         if (!StaticMeshEditor)
         {
             return std::unexpected("Asset editor static mesh target is null");
@@ -7724,7 +7878,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (m_assetEditorAssetKind == AssetKindMaterial())
     {
-        auto* Material = static_cast<MaterialPayload*>(m_assetEditorTargetObject);
+        auto* Material = static_cast<MaterialPayload*>(ResolveAssetEditorRuntimeTargetObject());
         if (!Material)
         {
             return std::unexpected("Asset editor material target is null");
@@ -7742,7 +7896,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (m_assetEditorAssetKind == AssetKindMaterialInstance())
     {
-        auto* MaterialInstance = static_cast<MaterialInstancePayload*>(m_assetEditorTargetObject);
+        auto* MaterialInstance = static_cast<MaterialInstancePayload*>(ResolveAssetEditorRuntimeTargetObject());
         if (!MaterialInstance)
         {
             return std::unexpected("Asset editor material instance target is null");
@@ -7773,7 +7927,7 @@ std::expected<std::string, std::string> EditorAssetService::SerializeAssetEditor
 
     if (m_assetEditorAssetKind == AssetKindNode())
     {
-        BaseNode* RootNode = ResolveAssetEditorNode(m_assetEditorRootHandle);
+        const BaseNode* RootNode = ResolveAssetEditorNode(m_assetEditorRootHandle);
         if (!RootNode)
         {
             return std::unexpected("Opened prefab source asset has no loaded root node");

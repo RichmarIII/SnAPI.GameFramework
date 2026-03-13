@@ -2,6 +2,7 @@
 
 #include "CameraComponent.h"
 #include "GameRuntime.h"
+#include "World.h"
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -19,7 +20,7 @@ Result EditorSelectionService::Initialize(EditorServiceContext& Context)
 {
     m_selection.Clear();
     auto* SceneService = Context.GetService<EditorSceneService>();
-    EnsureSelectionValid(Context, SceneService != nullptr ? SceneService->ActiveCameraComponent() : nullptr);
+    EnsureSelectionValid(Context, SceneService != nullptr ? SceneService->ActiveCameraHandle() : ComponentHandle{});
     return Ok();
 }
 
@@ -27,7 +28,7 @@ void EditorSelectionService::Tick(EditorServiceContext& Context, const float Del
 {
     (void)DeltaSeconds;
     auto* SceneService = Context.GetService<EditorSceneService>();
-    EnsureSelectionValid(Context, SceneService != nullptr ? SceneService->ActiveCameraComponent() : nullptr);
+    EnsureSelectionValid(Context, SceneService != nullptr ? SceneService->ActiveCameraHandle() : ComponentHandle{});
 }
 
 void EditorSelectionService::Shutdown(EditorServiceContext& Context)
@@ -36,7 +37,7 @@ void EditorSelectionService::Shutdown(EditorServiceContext& Context)
     m_selection.Clear();
 }
 
-void EditorSelectionService::EnsureSelectionValid(EditorServiceContext& Context, CameraComponent* ActiveCamera)
+void EditorSelectionService::EnsureSelectionValid(EditorServiceContext& Context, ComponentHandle ActiveCamera)
 {
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
@@ -59,9 +60,12 @@ void EditorSelectionService::EnsureSelectionValid(EditorServiceContext& Context,
         }
     }
 
-    if (ActiveCamera && !ActiveCamera->Owner().IsNull())
+    auto* ActiveCameraComponent = ActiveCamera.IsNull()
+        ? nullptr
+        : static_cast<CameraComponent*>(WorldPtr->BorrowedComponent(ActiveCamera));
+    if (ActiveCameraComponent && !ActiveCameraComponent->Owner().IsNull())
     {
-        (void)m_selection.SelectNode(ActiveCamera->Owner());
+        (void)m_selection.SelectNode(ActiveCameraComponent->Owner());
         return;
     }
 

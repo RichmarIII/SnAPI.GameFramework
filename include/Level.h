@@ -6,7 +6,6 @@
 #include "BaseNode.h"
 #include "Expected.h"
 #include "IWorld.h"
-#include "ObjectPool.h"
 #include "StaticTypeId.h"
 
 namespace SnAPI::GameFramework
@@ -38,7 +37,7 @@ namespace SnAPI::GameFramework
  * @see World
  * @see BaseNode
  */
-class Level : public BaseNode
+class Level : public BaseNode, public NodeCRTP<Level>
 {
 public:
     using BaseNode::World;
@@ -133,7 +132,8 @@ public:
             return std::unexpected(MakeError(EErrorCode::NotReady, "Level is not bound to a world"));
         }
 
-        if (Handle().IsNull())
+        NodeHandle SelfHandle = Handle();
+        if (SelfHandle.IsNull())
         {
             return OwnerWorld->CreateNode(Type, std::move(Name));
         }
@@ -144,8 +144,8 @@ public:
             return std::unexpected(CreateResult.error());
         }
 
-        const NodeHandle CreatedHandle = *CreateResult;
-        auto AttachResult = OwnerWorld->AttachChild(Handle(), CreatedHandle);
+        NodeHandle CreatedHandle = *CreateResult;
+        auto AttachResult = OwnerWorld->AttachChild(SelfHandle, CreatedHandle);
         if (!AttachResult)
         {
             (void)OwnerWorld->DestroyNode(CreatedHandle);
@@ -170,7 +170,8 @@ public:
             return std::unexpected(MakeError(EErrorCode::NotReady, "Level is not bound to a world"));
         }
 
-        if (Handle().IsNull())
+        NodeHandle SelfHandle = Handle();
+        if (SelfHandle.IsNull())
         {
             return OwnerWorld->CreateNodeWithId(Type, std::move(Name), Id);
         }
@@ -181,8 +182,8 @@ public:
             return std::unexpected(CreateResult.error());
         }
 
-        const NodeHandle CreatedHandle = *CreateResult;
-        auto AttachResult = OwnerWorld->AttachChild(Handle(), CreatedHandle);
+        NodeHandle CreatedHandle = *CreateResult;
+        auto AttachResult = OwnerWorld->AttachChild(SelfHandle, CreatedHandle);
         if (!AttachResult)
         {
             (void)OwnerWorld->DestroyNode(CreatedHandle);
@@ -197,7 +198,7 @@ public:
      * @return Success or error.
      * @remarks Destruction semantics are whatever the owning world implements, typically end-of-frame deferred.
      */
-    TExpected<void> DestroyNode(const NodeHandle& Handle)
+    TExpected<void> DestroyNode(NodeHandle& InOutHandle)
     {
         IWorld* OwnerWorld = World();
         if (!OwnerWorld)
@@ -205,7 +206,7 @@ public:
             return std::unexpected(MakeError(EErrorCode::NotReady, "Level is not bound to a world"));
         }
 
-        auto DestroyResult = OwnerWorld->DestroyNode(Handle);
+        auto DestroyResult = OwnerWorld->DestroyNode(InOutHandle);
         if (!DestroyResult)
         {
             return std::unexpected(DestroyResult.error());
@@ -220,7 +221,7 @@ public:
      * @return Success or error.
      * @remarks This forwards directly into the owning world.
      */
-    TExpected<void> AttachChild(const NodeHandle& Parent, const NodeHandle& Child)
+    TExpected<void> AttachChild(NodeHandle& InOutParent, NodeHandle& InOutChild)
     {
         IWorld* OwnerWorld = World();
         if (!OwnerWorld)
@@ -228,7 +229,7 @@ public:
             return std::unexpected(MakeError(EErrorCode::NotReady, "Level is not bound to a world"));
         }
 
-        auto AttachResult = OwnerWorld->AttachChild(Parent, Child);
+        auto AttachResult = OwnerWorld->AttachChild(InOutParent, InOutChild);
         if (!AttachResult)
         {
             return std::unexpected(AttachResult.error());
@@ -241,7 +242,7 @@ public:
      * @param Child Child node handle.
      * @return Success or error.
      */
-    TExpected<void> DetachChild(const NodeHandle& Child)
+    TExpected<void> DetachChild(NodeHandle& InOutChild)
     {
         IWorld* OwnerWorld = World();
         if (!OwnerWorld)
@@ -249,7 +250,7 @@ public:
             return std::unexpected(MakeError(EErrorCode::NotReady, "Level is not bound to a world"));
         }
 
-        auto DetachResult = OwnerWorld->DetachChild(Child);
+        auto DetachResult = OwnerWorld->DetachChild(InOutChild);
         if (!DetachResult)
         {
             return std::unexpected(DetachResult.error());
@@ -269,34 +270,6 @@ public:
     void Clear() {}
 
     /**
-     * @brief Access the owning world's node pool.
-     * @return Mutable node pool reference.
-     * @remarks Returns a process-local null pool facade when the level is unbound.
-     */
-    TObjectPool<BaseNode>& NodePool()
-    {
-        if (IWorld* OwnerWorld = World())
-        {
-            return OwnerWorld->NodePool();
-        }
-        return NullNodePool();
-    }
-
-    /**
-     * @brief Access the owning world's node pool.
-     * @return Const node pool reference.
-     * @remarks Returns a process-local null pool facade when the level is unbound.
-     */
-    const TObjectPool<BaseNode>& NodePool() const
-    {
-        if (const IWorld* OwnerWorld = World())
-        {
-            return OwnerWorld->NodePool();
-        }
-        return NullNodePool();
-    }
-
-    /**
      * @brief Resolve a node by UUID through the owning world.
      * @param Id Stable node UUID.
      * @return Handle to the resolved node or an error.
@@ -313,19 +286,82 @@ public:
     }
 
     /**
+     * @brief Borrow a node through this level's owning world and refresh its runtime key on success.
+     * @param InOutHandle Node handle to resolve.
+     * @return Borrowed node pointer or nullptr when missing.
+     */
+    BaseNode* BorrowedNode(NodeHandle& InOutHandle)
+    {
+        IWorld* OwnerWorld = World();
+        return OwnerWorld ? OwnerWorld->BorrowedNode(InOutHandle) : InOutHandle.Borrowed();
+    }
+
+    /**
+     * @brief Borrow a node through this level's owning world and refresh its runtime key on success.
+     * @param InOutHandle Node handle to resolve.
+     * @return Borrowed node pointer or nullptr when missing.
+     */
+    const BaseNode* BorrowedNode(NodeHandle& InOutHandle) const
+    {
+        const IWorld* OwnerWorld = World();
+        return OwnerWorld ? OwnerWorld->BorrowedNode(InOutHandle) : InOutHandle.Borrowed();
+    }
+
+    /**
+     * @brief Borrow a component by handle through this level's owning world and refresh its runtime key on success.
+     * @param InOutHandle Component handle to resolve.
+     * @return Borrowed component pointer or nullptr when missing.
+     */
+    BaseComponent* BorrowedComponent(ComponentHandle& InOutHandle)
+    {
+        IWorld* OwnerWorld = World();
+        return OwnerWorld ? OwnerWorld->BorrowedComponent(InOutHandle) : InOutHandle.Borrowed();
+    }
+
+    /**
+     * @brief Borrow a component by handle through this level's owning world and refresh its runtime key on success.
+     * @param InOutHandle Component handle to resolve.
+     * @return Borrowed component pointer or nullptr when missing.
+     */
+    const BaseComponent* BorrowedComponent(ComponentHandle& InOutHandle) const
+    {
+        const IWorld* OwnerWorld = World();
+        return OwnerWorld ? OwnerWorld->BorrowedComponent(InOutHandle) : InOutHandle.Borrowed();
+    }
+
+    /**
      * @brief Remove a component by reflected type from a node.
      * @param Owner Owning node handle.
      * @param Type Reflected component type id.
      * @return Success or error.
      */
-    Result RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type)
+    Result RemoveComponentByType(NodeHandle& InOutOwner, const TypeId& Type)
     {
         IWorld* OwnerWorld = World();
         if (!OwnerWorld)
         {
             return std::unexpected(MakeError(EErrorCode::NotReady, "Level is not bound to a world"));
         }
-        return OwnerWorld->RemoveComponentByType(Owner, Type);
+        return OwnerWorld->RemoveComponentByType(InOutOwner, Type);
+    }
+
+    /**
+     * @brief Attach a runtime-compatible component to a node.
+     * @tparam T Concrete component type.
+     * @tparam Args Constructor argument types forwarded into the component creation path.
+     * @param Owner Owning node handle.
+     * @param args Constructor arguments forwarded to `BaseNode::Add<T>()`.
+     * @return Borrowed reference wrapper to the attached component or an error.
+     */
+    template<typename T, typename... Args>
+    TExpectedRef<T> AddComponent(NodeHandle& InOutOwner, Args&&... args)
+    {
+        BaseNode* OwnerNode = BorrowedNode(InOutOwner);
+        if (!OwnerNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
+        }
+        return OwnerNode->Add<T>(std::forward<Args>(args)...);
     }
 
     /**
@@ -339,12 +375,8 @@ public:
     template<typename T, typename... Args>
     TExpectedRef<T> AddComponent(const NodeHandle& Owner, Args&&... args)
     {
-        BaseNode* OwnerNode = Owner.Borrowed();
-        if (!OwnerNode)
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
-        }
-        return OwnerNode->Add<T>(std::forward<Args>(args)...);
+        NodeHandle ResolvedOwner = Owner;
+        return AddComponent<T>(ResolvedOwner, std::forward<Args>(args)...);
     }
 
     /**
@@ -357,15 +389,15 @@ public:
      * @return Borrowed reference wrapper to the attached component or an error.
      */
     template<typename T, typename... Args>
-    TExpectedRef<T> AddComponentWithId(const NodeHandle& Owner, const Uuid& Id, Args&&... args)
+    TExpectedRef<T> AddComponentWithId(NodeHandle& InOutOwner, const Uuid& Id, Args&&... args)
     {
-        BaseNode* OwnerNode = Owner.Borrowed();
+        BaseNode* OwnerNode = BorrowedNode(InOutOwner);
         if (!OwnerNode)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
         }
 
-        if constexpr (RuntimeTickType<T> && std::is_move_constructible_v<T>)
+        if constexpr (RuntimeTickType<T> && std::is_base_of_v<BaseComponent, T> && std::is_move_constructible_v<T>)
         {
             auto AddResult = OwnerNode->AddRuntimeComponentWithId<T>(Id, std::forward<Args>(args)...);
             if (!AddResult)
@@ -384,6 +416,39 @@ public:
     }
 
     /**
+     * @brief Attach a runtime-compatible component with an explicit UUID.
+     * @tparam T Concrete component type.
+     * @tparam Args Constructor argument types forwarded into the runtime component creation path.
+     * @param Owner Owning node handle.
+     * @param Id Explicit stable component identity.
+     * @param args Constructor arguments forwarded to the runtime storage path.
+     * @return Borrowed reference wrapper to the attached component or an error.
+     */
+    template<typename T, typename... Args>
+    TExpectedRef<T> AddComponentWithId(const NodeHandle& Owner, const Uuid& Id, Args&&... args)
+    {
+        NodeHandle ResolvedOwner = Owner;
+        return AddComponentWithId<T>(ResolvedOwner, Id, std::forward<Args>(args)...);
+    }
+
+    /**
+     * @brief Resolve a typed component attached to a node.
+     * @tparam T Concrete component type.
+     * @param Owner Owning node handle.
+     * @return Borrowed reference wrapper to the component or an error.
+     */
+    template<typename T>
+    TExpectedRef<T> Component(NodeHandle& InOutOwner)
+    {
+        BaseNode* OwnerNode = BorrowedNode(InOutOwner);
+        if (!OwnerNode)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
+        }
+        return OwnerNode->Component<T>();
+    }
+
+    /**
      * @brief Resolve a typed component attached to a node.
      * @tparam T Concrete component type.
      * @param Owner Owning node handle.
@@ -392,12 +457,25 @@ public:
     template<typename T>
     TExpectedRef<T> Component(const NodeHandle& Owner)
     {
-        BaseNode* OwnerNode = Owner.Borrowed();
+        NodeHandle ResolvedOwner = Owner;
+        return Component<T>(ResolvedOwner);
+    }
+
+    /**
+     * @brief Check whether a node currently has a component of type `T`.
+     * @tparam T Concrete component type.
+     * @param Owner Owning node handle.
+     * @return `true` when the component is attached.
+     */
+    template<typename T>
+    bool HasComponent(NodeHandle& InOutOwner) const
+    {
+        const BaseNode* OwnerNode = BorrowedNode(InOutOwner);
         if (!OwnerNode)
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
+            return false;
         }
-        return OwnerNode->Component<T>();
+        return OwnerNode->Has<T>();
     }
 
     /**
@@ -409,12 +487,23 @@ public:
     template<typename T>
     bool HasComponent(const NodeHandle& Owner) const
     {
-        const BaseNode* OwnerNode = Owner.Borrowed();
-        if (!OwnerNode)
+        NodeHandle ResolvedOwner = Owner;
+        return HasComponent<T>(ResolvedOwner);
+    }
+
+    /**
+     * @brief Remove a typed component from a node if it exists.
+     * @tparam T Concrete component type.
+     * @param Owner Owning node handle.
+     * @remarks Missing owners are silently ignored.
+     */
+    template<typename T>
+    void RemoveComponent(NodeHandle& InOutOwner)
+    {
+        if (BaseNode* OwnerNode = BorrowedNode(InOutOwner))
         {
-            return false;
+            OwnerNode->Remove<T>();
         }
-        return OwnerNode->Has<T>();
     }
 
     /**
@@ -426,10 +515,8 @@ public:
     template<typename T>
     void RemoveComponent(const NodeHandle& Owner)
     {
-        if (BaseNode* OwnerNode = Owner.Borrowed())
-        {
-            OwnerNode->Remove<T>();
-        }
+        NodeHandle ResolvedOwner = Owner;
+        RemoveComponent<T>(ResolvedOwner);
     }
 
     /**
@@ -441,7 +528,12 @@ public:
     void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type)
     {
         IWorld* OwnerWorld = World();
-        return OwnerWorld ? OwnerWorld->BorrowedComponent(Owner, Type) : nullptr;
+        if (!OwnerWorld)
+        {
+            return nullptr;
+        }
+        NodeHandle ResolvedOwner = Owner;
+        return OwnerWorld->BorrowedComponent(ResolvedOwner, Type);
     }
 
     /**
@@ -453,15 +545,14 @@ public:
     const void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) const
     {
         const IWorld* OwnerWorld = World();
-        return OwnerWorld ? OwnerWorld->BorrowedComponent(Owner, Type) : nullptr;
+        if (!OwnerWorld)
+        {
+            return nullptr;
+        }
+        NodeHandle ResolvedOwner = Owner;
+        return OwnerWorld->BorrowedComponent(ResolvedOwner, Type);
     }
 
-private:
-    static TObjectPool<BaseNode>& NullNodePool()
-    {
-        static TObjectPool<BaseNode> Pool{};
-        return Pool;
-    }
 };
 
 } // namespace SnAPI::GameFramework

@@ -806,11 +806,13 @@ bool UIPropertyPanel::BindObject(const TypeId& Type, void* Instance)
 
   m_BoundType = Type;
   m_BoundInstance = Instance;
+  m_BoundNodeHandle = {};
   m_BoundSections.clear();
   m_BoundSections.push_back(BoundSection{
     .Type = Type,
     .Instance = Instance,
     .Heading = PrettyTypeName(Type),
+    .RuntimeTarget = {},
     .ComponentOwner = {},
     .IsComponent = false});
 
@@ -833,6 +835,7 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
 
   m_BoundType = Node->TypeKey();
   m_BoundInstance = Node;
+  m_BoundNodeHandle = Node->Handle();
   m_BoundSections.clear();
 
   std::string nodeHeading = Node->Name();
@@ -850,6 +853,7 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
     .Type = Node->TypeKey(),
     .Instance = Node,
     .Heading = std::move(nodeHeading),
+    .RuntimeTarget = m_BoundNodeHandle,
     .ComponentOwner = {},
     .IsComponent = false});
 
@@ -876,7 +880,8 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
       if (!ComponentInstance)
       {
         // UUID-resolved fallback keeps inspector usable when runtime key fields drift.
-        ComponentInstance = WorldRef->BorrowedComponent(NodeHandle{Node->Id()}, ComponentType);
+        NodeHandle UuidOnlyOwner{Node->Id()};
+        ComponentInstance = WorldRef->BorrowedComponent(UuidOnlyOwner, ComponentType);
       }
     }
     if (!ComponentInstance)
@@ -888,6 +893,7 @@ bool UIPropertyPanel::BindNode(BaseNode* Node)
       .Type = ComponentType,
       .Instance = ComponentInstance,
       .Heading = PrettyTypeName(ComponentType),
+      .RuntimeTarget = ComponentOwner,
       .ComponentOwner = ComponentOwner,
       .IsComponent = true});
   }
@@ -918,6 +924,7 @@ void UIPropertyPanel::ClearObject()
 
   m_BoundType = TypeId{};
   m_BoundInstance = nullptr;
+  m_BoundNodeHandle = {};
   m_BoundSections.clear();
   m_ContentRoot = {};
   std::fill(std::begin(m_Children), std::end(m_Children), SnAPI::UI::ElementId{});
@@ -932,6 +939,7 @@ void UIPropertyPanel::ClearObject()
 
 void UIPropertyPanel::RefreshFromModel()
 {
+  RefreshBoundSectionInstances();
   SyncModelToEditors();
 }
 
@@ -953,7 +961,13 @@ void UIPropertyPanel::Paint(SnAPI::UI::UIPaintContext& Context) const
 
 bool UIPropertyPanel::RebuildUi()
 {
-  if (!m_Context || !m_BoundInstance)
+  if (!m_Context)
+  {
+    return false;
+  }
+
+  RefreshBoundSectionInstances();
+  if (!m_BoundInstance)
   {
     return false;
   }
@@ -1019,12 +1033,13 @@ bool UIPropertyPanel::RebuildUi()
   if (m_BoundSections.size() == 1)
   {
     const BoundSection& Section = m_BoundSections.front();
-    BuildTypeIntoContainer(m_ContentRoot, Section.Type, Section.Instance, {}, 0);
+    BuildTypeIntoContainer(m_ContentRoot, Section.Type, Section.Instance, {}, 0, 0);
   }
   else
   {
-    for (const BoundSection& Section : m_BoundSections)
+    for (std::size_t SectionIndex = 0; SectionIndex < m_BoundSections.size(); ++SectionIndex)
     {
+      const BoundSection& Section = m_BoundSections[SectionIndex];
       if (!Section.Instance)
       {
         continue;
@@ -1103,7 +1118,7 @@ bool UIPropertyPanel::RebuildUi()
         accordion->SetSectionExpanded(bodyHandle.Id, true);
       }
 
-      BuildTypeIntoContainer(bodyHandle.Id, Section.Type, Section.Instance, {}, 0);
+      BuildTypeIntoContainer(bodyHandle.Id, Section.Type, Section.Instance, {}, 0, SectionIndex);
     }
   }
 
@@ -1116,12 +1131,91 @@ bool UIPropertyPanel::RebuildUi()
   return true;
 }
 
+void UIPropertyPanel::RefreshBoundSectionInstances()
+{
+  if (m_BoundNodeHandle.IsNull())
+  {
+    return;
+  }
+
+  BaseNode* RootNode = m_BoundNodeHandle.Borrowed();
+  if (!RootNode)
+  {
+    RootNode = m_BoundNodeHandle.BorrowedSlowByUuid();
+  }
+
+  m_BoundInstance = RootNode;
+  if (m_BoundSections.empty())
+  {
+    RefreshBindingRootInstances();
+    return;
+  }
+
+  if (!RootNode)
+  {
+    for (BoundSection& Section : m_BoundSections)
+    {
+      Section.Instance = nullptr;
+    }
+    RefreshBindingRootInstances();
+    return;
+  }
+
+  m_BoundType = RootNode->TypeKey();
+  m_BoundSections.front().Type = RootNode->TypeKey();
+  m_BoundSections.front().Instance = RootNode;
+  m_BoundSections.front().RuntimeTarget = RootNode->Handle();
+
+  IWorld* WorldRef = RootNode->World();
+  for (std::size_t SectionIndex = 1; SectionIndex < m_BoundSections.size(); ++SectionIndex)
+  {
+    BoundSection& Section = m_BoundSections[SectionIndex];
+    if (!Section.IsComponent || !WorldRef)
+    {
+      continue;
+    }
+
+    NodeHandle OwnerHandle = Section.RuntimeTarget;
+    if (OwnerHandle.IsNull())
+    {
+      OwnerHandle = RootNode->Handle();
+    }
+
+    void* ComponentInstance = WorldRef->BorrowedComponent(OwnerHandle, Section.Type);
+    if (!ComponentInstance && !OwnerHandle.Id.is_nil())
+    {
+      NodeHandle UuidOnlyOwner{OwnerHandle.Id};
+      ComponentInstance = WorldRef->BorrowedComponent(UuidOnlyOwner, Section.Type);
+      if (ComponentInstance)
+      {
+        OwnerHandle = UuidOnlyOwner;
+      }
+    }
+
+    Section.RuntimeTarget = OwnerHandle;
+    Section.ComponentOwner = OwnerHandle;
+    Section.Instance = ComponentInstance;
+  }
+
+  RefreshBindingRootInstances();
+}
+
+void UIPropertyPanel::RefreshBindingRootInstances()
+{
+  for (FieldBinding& Binding : m_Bindings)
+  {
+    Binding.RootInstance =
+      (Binding.SectionIndex < m_BoundSections.size()) ? m_BoundSections[Binding.SectionIndex].Instance : nullptr;
+  }
+}
+
 void UIPropertyPanel::BuildTypeIntoContainer(
   const SnAPI::UI::ElementId Parent,
   const TypeId& Type,
   void* RootInstance,
   const std::vector<FieldPathEntry>& PathPrefix,
-  const int Depth)
+  const int Depth,
+  const std::size_t SectionIndex)
 {
   if (!m_Context)
   {
@@ -1171,7 +1265,7 @@ void UIPropertyPanel::BuildTypeIntoContainer(
 
       auto parentPath = PathPrefix;
       parentPath.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
-      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(parentPath), Depth);
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(parentPath), Depth, SectionIndex);
       break;
     }
 
@@ -1206,7 +1300,7 @@ void UIPropertyPanel::BuildTypeIntoContainer(
 
       auto path = PathPrefix;
       path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
-      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
     }
 
     const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) { return entry.IsConst; });
@@ -1243,7 +1337,7 @@ void UIPropertyPanel::BuildTypeIntoContainer(
 
       auto path = PathPrefix;
       path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
-      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
     }
 
     if (!hasOverrideField)
@@ -1309,16 +1403,17 @@ void UIPropertyPanel::BuildTypeIntoContainer(
 
     auto path = PathPrefix;
     path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
-    AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth);
+    AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
   }
 
-  AddMethodActionEditors(Parent, Type, RootInstance);
+  AddMethodActionEditors(Parent, Type, RootInstance, SectionIndex);
 }
 
 void UIPropertyPanel::AddMethodActionEditors(
   const SnAPI::UI::ElementId Parent,
   const TypeId& Type,
-  void* RootInstance)
+  void* RootInstance,
+  const std::size_t SectionIndex)
 {
   if (!m_Context || !RootInstance)
   {
@@ -1416,8 +1511,14 @@ void UIPropertyPanel::AddMethodActionEditors(
       button->BorderThickness().Set(1.0f);
       button->CornerRadius().Set(4.0f);
 
-      button->OnClick([this, method, RootInstance]() {
-        const auto Result = method->Invoke(RootInstance, {});
+      button->OnClick([this, method, RootInstance, SectionIndex]() {
+        RefreshBoundSectionInstances();
+        void* LiveInstance = RootInstance;
+        if (SectionIndex < m_BoundSections.size() && m_BoundSections[SectionIndex].Instance)
+        {
+          LiveInstance = m_BoundSections[SectionIndex].Instance;
+        }
+        const auto Result = method->Invoke(LiveInstance, {});
         if (!Result)
         {
           return;
@@ -1447,7 +1548,8 @@ void UIPropertyPanel::AddFieldEditor(
   const FieldInfo& Field,
   void* RootInstance,
   std::vector<FieldPathEntry> Path,
-  const int Depth)
+  const int Depth,
+  const std::size_t SectionIndex)
 {
   if (!m_Context)
   {
@@ -1484,7 +1586,7 @@ void UIPropertyPanel::AddFieldEditor(
         body->BorderThickness().Set(0.0f);
       }
 
-      BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, RootInstance, std::move(Path), Depth + 1);
+      BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, RootInstance, std::move(Path), Depth + 1, SectionIndex);
       return;
     }
 
@@ -1553,7 +1655,7 @@ void UIPropertyPanel::AddFieldEditor(
       accordion->SetSectionExpanded(bodyHandle.Id, true);
     }
 
-    BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, RootInstance, std::move(Path), Depth + 1);
+    BuildTypeIntoContainer(bodyHandle.Id, Field.FieldType, RootInstance, std::move(Path), Depth + 1, SectionIndex);
     return;
   }
 
@@ -1636,6 +1738,7 @@ void UIPropertyPanel::AddFieldEditor(
 
   FieldBinding binding{};
   binding.RootInstance = RootInstance;
+  binding.SectionIndex = SectionIndex;
   binding.Path = std::move(Path);
   binding.FieldType = Field.FieldType;
   binding.EditorKind = editorKind;
@@ -4777,6 +4880,7 @@ void UIPropertyPanel::CommitBindingFromEditor(
     return;
   }
 
+  RefreshBoundSectionInstances();
   ScopedFlag guard(m_CommittingEditorToModel);
   if (!WriteFieldValue(*binding, TextValue, BoolValue) && !IsEditorFocused(*binding))
   {
@@ -4799,6 +4903,7 @@ void UIPropertyPanel::CommitBindingFromComponents(
     return;
   }
 
+  RefreshBoundSectionInstances();
   std::array<double, 4> currentComponents{};
   bool hasAnyComponent = false;
   for (std::uint8_t index = 0; index < binding->ComponentCount; ++index)

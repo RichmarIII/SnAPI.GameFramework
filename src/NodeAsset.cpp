@@ -83,20 +83,19 @@ private:
     return nullptr;
 }
 
-[[nodiscard]] BaseNode* ResolveChildNode(const NodeHandle& Handle, const IWorld* WorldRef)
+[[nodiscard]] BaseNode* ResolveChildNode(NodeHandle Handle, IWorld* WorldRef)
 {
+    if (WorldRef)
+    {
+        if (BaseNode* Node = WorldRef->BorrowedNode(Handle))
+        {
+            return Node;
+        }
+    }
+
     if (BaseNode* Node = Handle.Borrowed())
     {
         return Node;
-    }
-
-    if (WorldRef && !Handle.Id.is_nil())
-    {
-        auto WorldHandle = WorldRef->NodeHandleById(Handle.Id);
-        if (WorldHandle)
-        {
-            return WorldHandle->Borrowed();
-        }
     }
 
     if (!Handle.Id.is_nil())
@@ -300,7 +299,8 @@ TExpected<NodeComponentAsset> CaptureComponentAsset(const BaseNode& OwnerNode, c
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is invalid"));
     }
 
-    const void* ComponentPtr = WorldRef->BorrowedComponent(OwnerNode.Handle(), ComponentType);
+    NodeHandle OwnerHandle = OwnerNode.Handle();
+    const void* ComponentPtr = WorldRef->BorrowedComponent(OwnerHandle, ComponentType);
     if (!ComponentPtr)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Component instance could not be resolved"));
@@ -421,7 +421,8 @@ TExpected<NodeHandle> MaterializeNodeObject(const NodeObjectAsset& Asset,
     NodeHandle Handle = *CreateResult;
     if (!Parent.IsNull())
     {
-        if (const Result AttachResult = WorldRef.AttachChild(Parent, Handle); !AttachResult)
+        NodeHandle ParentHandle = Parent;
+        if (const Result AttachResult = WorldRef.AttachChild(ParentHandle, Handle); !AttachResult)
         {
             return std::unexpected(AttachResult.error());
         }
@@ -620,12 +621,6 @@ TExpected<LevelPayload> CookLevelAsset(const LevelAsset& Asset)
         return std::unexpected(LevelHandleResult.error());
     }
 
-    auto* LevelNode = NodeCast<Level>(LevelHandleResult->Borrowed());
-    if (!LevelNode)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Cooked level root could not be resolved"));
-    }
-
     for (const NodeObjectAsset& NodeAssetValue : Asset.Nodes)
     {
         auto NodeResult = MaterializeNodeObject(NodeAssetValue, ScratchWorld, *LevelHandleResult);
@@ -633,6 +628,12 @@ TExpected<LevelPayload> CookLevelAsset(const LevelAsset& Asset)
         {
             return std::unexpected(NodeResult.error());
         }
+    }
+
+    auto* LevelNode = NodeCast<Level>(LevelHandleResult->Borrowed());
+    if (!LevelNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Cooked level root could not be resolved"));
     }
 
     return LevelSerializer::Serialize(*LevelNode);

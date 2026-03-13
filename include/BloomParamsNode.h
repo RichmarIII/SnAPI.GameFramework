@@ -46,7 +46,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
-class SNAPI_GAMEFRAMEWORK_API BloomParamsNode : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API BloomParamsNode : public BaseNode, public NodeCRTP<BloomParamsNode>
 {
 public:
     /** @brief Stable reflected type name used for serialization and asset lookup. */
@@ -100,6 +100,7 @@ public:
      * @remarks Safe before viewport readiness; the node will retry until a bloom pass exists.
      */
     void OnCreate();
+    void OnDestroy();
     /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR

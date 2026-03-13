@@ -44,6 +44,38 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetTAAPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    if (ViewportID < 0)
+    {
+        Renderer.SetDefaultTaaJitterScale(1.0f);
+    }
+
+    for (const auto ViewportId : TargetViewports)
+    {
+        if (ViewportID >= 0)
+        {
+            Renderer.SetViewportTaaJitterScale(static_cast<std::uint64_t>(ViewportId), 1.0f);
+        }
+
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::TAA);
+        auto* TAA = dynamic_cast<SnAPI::Graphics::TAAPass*>(Pass);
+        if (!TAA)
+        {
+            continue;
+        }
+
+        TAA->SetParams(SnAPI::Graphics::TAAContract::DefaultParams());
+    }
+}
 } // namespace
 
 TAAParamsNode::TAAParamsNode()
@@ -79,6 +111,26 @@ void TAAParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void TAAParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetTAAPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void TAAParamsNode::Tick(const float DeltaSeconds)

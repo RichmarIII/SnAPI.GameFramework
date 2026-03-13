@@ -46,7 +46,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
-class SNAPI_GAMEFRAMEWORK_API ToneMapParamsNode : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API ToneMapParamsNode : public BaseNode, public NodeCRTP<ToneMapParamsNode>
 {
 public:
     /** @brief Stable reflected type name used for serialization and asset lookup. */
@@ -140,6 +140,7 @@ public:
      * @remarks Safe before viewport readiness; missing passes simply cause future retries.
      */
     void OnCreate();
+    void OnDestroy();
     /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR

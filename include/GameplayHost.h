@@ -458,7 +458,7 @@ private:
     void NotifyConnectionRemoved(std::uint64_t OwnerConnectionId);
     Result AutoCreateConfiguredLocalPlayer();
     Result EnsureRpcGatewayNode();
-    GameplayRpcGateway* ResolveRpcGatewayNode() const;
+    GameplayRpcGateway* ResolveRpcGatewayNode();
     Result EvaluateJoinRequestPolicy(std::uint64_t OwnerConnectionId,
                                      const std::string& RequestedName,
                                      std::optional<unsigned int> PreferredPlayerIndex,
@@ -469,7 +469,7 @@ private:
     Result EvaluateUnloadLevelRequestPolicy(std::uint64_t OwnerConnectionId, const Uuid& LevelId);
     void SyncLocalPlayerPossessionCallbacks();
     NodeHandle ResolvePlayerStart(LocalPlayer& Player);
-    NodeHandle SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& PlayerStart);
+    NodeHandle SpawnPlayerPawn(LocalPlayer& Player, NodeHandle PlayerStart);
     NodeHandle FindAutoPossessTarget(std::uint64_t OwnerConnectionId) const;
     void EnsurePlayerHasPossession(LocalPlayer& Player);
     std::optional<unsigned int> FirstAvailablePlayerIndexForOwner(std::uint64_t OwnerConnectionId) const;
@@ -488,6 +488,7 @@ private:
     std::unordered_set<Uuid, UuidHash> m_knownLevelIds{};
     std::unordered_set<Uuid, UuidHash> m_knownLocalPlayerIds{};
     std::unordered_set<std::uint64_t> m_knownConnectionIds{};
+    NodeHandle m_rpcGatewayNode{};
 
     bool m_initialized = false;
 };

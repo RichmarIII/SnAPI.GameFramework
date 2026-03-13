@@ -14,12 +14,12 @@ using namespace SnAPI::GameFramework::Conduit::Editor;
 namespace
 {
 
-struct ConduitEditorNodeHost : BaseNode
+struct ConduitEditorNodeHost : BaseNode, NodeCRTP<ConduitEditorNodeHost>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitEditorNodeHost";
 };
 
-struct ConduitEditorDotNamedHost : BaseNode
+struct ConduitEditorDotNamedHost : BaseNode, NodeCRTP<ConduitEditorDotNamedHost>
 {
     static constexpr const char* kTypeName = "SnAPI.GameFramework.Tests.ConduitEditorDotNamedHost";
 };

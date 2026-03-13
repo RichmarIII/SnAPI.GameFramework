@@ -9,12 +9,14 @@
 
 #include <nlohmann/json.hpp>
 
+#include "BuiltinTypes.h"
 #include "Conduit/Asset.h"
 #include "Conduit/Value.h"
 #include "IAsset.h"
 #include "Math.h"
 #include "NodeAsset.h"
 #include "RenderAssetPayloads.h"
+#include "RenderAssetRuntime.h"
 #include "Serialization.h"
 #include "TypeRegistration.h"
 
@@ -579,6 +581,7 @@ private:
         RegisterVector<MaterialScalarParamPayload>();
         RegisterVector<MaterialVectorParamPayload>();
         RegisterVector<MaterialTextureParamPayload>();
+        RegisterVector<MaterialInstanceAssetRef>();
         RegisterArray<float, 4>();
 
         m_entries.emplace(StaticTypeId<std::vector<std::uint8_t>>(),

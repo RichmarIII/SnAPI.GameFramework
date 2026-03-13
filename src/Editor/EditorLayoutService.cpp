@@ -176,26 +176,28 @@ private:
            AssetKind == AssetKindWorld();
 }
 
-[[nodiscard]] BaseNode* ResolveNodeFromHandle(const NodeHandle Handle, World& WorldRef)
+[[nodiscard]] BaseNode* ResolveNodeFromHandle(NodeHandle& InOutHandle, World& WorldRef)
 {
-    if (Handle.IsNull())
+    if (InOutHandle.IsNull())
     {
         return nullptr;
     }
 
-    if (auto* Node = Handle.Borrowed())
+    if (auto* Node = WorldRef.BorrowedNode(InOutHandle))
     {
         return Node;
     }
 
-    if (auto* Node = Handle.BorrowedSlowByUuid())
+    if (auto* Node = InOutHandle.BorrowedSlowByUuid())
     {
+        InOutHandle = Node->Handle();
         return Node;
     }
 
-    if (const auto HandleResult = WorldRef.NodeHandleById(Handle.Id); HandleResult.has_value())
+    if (const auto HandleResult = WorldRef.NodeHandleById(InOutHandle.Id); HandleResult.has_value())
     {
-        return WorldRef.NodePool().Borrowed(*HandleResult);
+        InOutHandle = *HandleResult;
+        return WorldRef.BorrowedNode(InOutHandle);
     }
 
     return nullptr;
@@ -203,7 +205,8 @@ private:
 
 void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
-    (void)WorldRef.RequestNodeOnCreate(Node.Handle());
+    NodeHandle NodeHandleValue = Node.Handle();
+    (void)WorldRef.RequestNodeOnCreate(NodeHandleValue);
 }
 
 [[nodiscard]] const char* EditorErrorCodeLabel(const EErrorCode Code)
@@ -255,7 +258,7 @@ void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike
 }
 
 [[nodiscard]] Result ExecuteHierarchyAction(EditorServiceContext& Context,
-                                            const EditorLayout::HierarchyActionRequest& Request)
+                                            EditorLayout::HierarchyActionRequest& Request)
 {
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
@@ -295,7 +298,8 @@ void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "World cannot be deleted"));
         }
 
-        auto DestroyResult = WorldPtr->DestroyNode(TargetNode->Handle());
+        NodeHandle TargetHandle = TargetNode->Handle();
+        auto DestroyResult = WorldPtr->DestroyNode(TargetHandle);
         if (!DestroyResult)
         {
             return std::unexpected(DestroyResult.error());
@@ -320,7 +324,8 @@ void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike
             return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
         }
 
-        auto RemoveResult = WorldPtr->RemoveComponentByType(TargetNode->Handle(), Request.Type);
+        NodeHandle TargetHandle = TargetNode->Handle();
+        auto RemoveResult = WorldPtr->RemoveComponentByType(TargetHandle, Request.Type);
         if (!RemoveResult)
         {
             return std::unexpected(RemoveResult.error());
@@ -373,7 +378,8 @@ void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike
 
         if (!Request.TargetIsWorldRoot)
         {
-            auto AttachResult = WorldPtr->AttachChild(ParentNode->Handle(), *CreateResult);
+            NodeHandle ParentHandle = ParentNode->Handle();
+            auto AttachResult = WorldPtr->AttachChild(ParentHandle, *CreateResult);
             if (!AttachResult)
             {
                 return std::unexpected(AttachResult.error());
@@ -407,7 +413,8 @@ void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike
         return std::unexpected(MakeError(EErrorCode::NotFound, "Target node not found"));
     }
 
-    auto CreateComponentResult = WorldPtr->CreateComponent(TargetNode->Handle(), Type->Id);
+    NodeHandle TargetHandle = TargetNode->Handle();
+    auto CreateComponentResult = WorldPtr->CreateComponent(TargetHandle, Type->Id);
     if (!CreateComponentResult)
     {
         return std::unexpected(CreateComponentResult.error());
@@ -547,7 +554,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
-                                              SceneService->ActiveCameraComponent(),
+                                              SceneService->ActiveCameraHandle(),
                                               &SelectionService->Model());
     if (!BuildResult)
     {
@@ -809,9 +816,8 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     if (!HasProjectLoaded)
     {
         SceneService->Tick(Context, 0.0f);
-        CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
         ApplyAssetBrowserState(Context);
-        m_layout.Sync(Context.Runtime(), ActiveCamera, &SelectionService->Model(), DeltaSeconds);
+        m_layout.Sync(Context.Runtime(), SceneService->ActiveCameraHandle(), &SelectionService->Model(), DeltaSeconds);
         return;
     }
 
@@ -1176,7 +1182,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
 
     if (m_hasPendingHierarchyActionRequest)
     {
-        const EditorLayout::HierarchyActionRequest Request = m_pendingHierarchyActionRequest;
+        EditorLayout::HierarchyActionRequest Request = m_pendingHierarchyActionRequest;
         m_hasPendingHierarchyActionRequest = false;
         m_pendingHierarchyActionRequest = {};
         if (!PieService->IsSessionActive())
@@ -1245,10 +1251,9 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     }
 
     SceneService->Tick(Context, 0.0f);
-    CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
     AssetService->TickAssetEditorSession(DeltaSeconds);
     ApplyAssetBrowserState(Context);
-    m_layout.Sync(Context.Runtime(), ActiveCamera, &SelectionService->Model(), DeltaSeconds);
+    m_layout.Sync(Context.Runtime(), SceneService->ActiveCameraHandle(), &SelectionService->Model(), DeltaSeconds);
 }
 
 void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
@@ -1830,10 +1835,9 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_hasPendingConduitNodeRemoveRequest = false;
 
     SceneService->Tick(Context, 0.0f);
-    CameraComponent* ActiveCamera = SceneService->ActiveCameraComponent();
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
-                                              ActiveCamera,
+                                              SceneService->ActiveCameraHandle(),
                                               &SelectionService->Model());
     if (!BuildResult)
     {

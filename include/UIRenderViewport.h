@@ -3,6 +3,7 @@
 #if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -113,6 +114,11 @@ public:
      * @remarks Also updates the camera aspect ratio when the viewport has a valid render extent.
      */
     void SetViewportCamera(SnAPI::Graphics::ICamera* Camera);
+    /**
+     * @brief Set the camera rendered by the owned viewport with retained shared ownership.
+     * @param Camera Shared camera reference, or empty to clear the viewport camera.
+     */
+    void SetViewportCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera);
     /** @brief Access the borrowed camera pointer currently used by the viewport. @return Camera pointer or `nullptr`. */
     SnAPI::Graphics::ICamera* GetViewportCamera() const { return m_camera; }
     /**
@@ -149,6 +155,7 @@ private:
 
     GameRuntime* m_runtime = nullptr;
     SnAPI::Graphics::ICamera* m_camera = nullptr;
+    std::shared_ptr<SnAPI::Graphics::ICamera> m_retainedCamera{};
     std::uint64_t m_ownedViewportId = 0;
     std::uint64_t m_ownedSwapChainId = 0;
     std::uint64_t m_ownedContextId = 0;

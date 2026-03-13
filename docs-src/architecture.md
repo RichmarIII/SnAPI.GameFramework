@@ -8,6 +8,7 @@ If you remember the older generated docs, reset your mental model first:
 - `World` owns the hierarchy.
 - `Level` is a node that provides level-style creation and attachment helpers on top of world ownership.
 - `GameRuntime` is the normal application shell.
+- Nodes and components both live in page-backed dense runtime storage.
 
 ## Mental Model
 
@@ -21,7 +22,7 @@ GameRuntime
         -> BaseComponent attachments
     -> optional subsystems (input, UI, networking, physics, audio, renderer)
     -> script runtime
-    -> runtime ECS mirror (WorldEcsRuntime)
+    -> dense runtime storage scheduler (WorldEcsRuntime)
 ```
 
 What each layer means:
@@ -29,18 +30,19 @@ What each layer means:
 - `GameRuntime` is the host for startup, update, shutdown, fixed-step accumulation, optional platform input forwarding, and optional gameplay host lifetime.
 - `World` is the authoritative owner of gameplay objects and subsystems.
 - `Level` is a convenience grouping node. Creating a child `Level` is the current way to partition a scene into authored regions or logical chunks.
-- `BaseNode` is the stable gameplay object with identity, hierarchy, and component access.
+- `BaseNode` is the identity-bearing gameplay object with hierarchy, reflected type metadata, and component access.
 - `BaseComponent` adds behavior or data to a node without changing the node type.
+- `WorldEcsRuntime` is the dense storage/orchestration layer behind nodes and components, not a second public object model.
 
 ## Ownership And Lifetime
 
 The rules that matter most are simple:
 
-- The world owns nodes.
-- The world also owns classic components and runtime ECS components.
+- The world owns nodes and components.
 - Handles are stable public identity.
 - Borrowed pointers are temporary views. Do not store them across destructive operations or subsystem shutdown.
 - Destruction is usually deferred to `World::EndFrame()`, which is how handle stability is preserved during a frame.
+- Create does not relocate existing live objects because runtime storage is page-backed.
 
 The practical consequence is that this style is correct:
 
@@ -92,7 +94,7 @@ Inside `World::Tick`, the order is:
 3. input pump
 4. UI tick
 5. networking session pump
-6. runtime ECS gameplay tick or editor tick
+6. dense node/component gameplay tick or editor tick
 7. physics variable step, when configured
 8. audio update
 
@@ -100,7 +102,7 @@ Inside `World::EndFrame`, the important work is:
 
 1. queued task execution
 2. networking queued-task flush
-3. deferred node destruction and runtime-node teardown
+3. deferred destroy flush for dense nodes/components
 4. UI packet generation for viewport-bound contexts
 5. renderer end-of-frame submission
 
@@ -118,28 +120,31 @@ The editor no longer assumes node `OnCreate()` work can run immediately while th
 
 This is the reason render-facing nodes such as `WorldRenderSettings` and similar initialization code are now safer in editor startup than they were under the old docs.
 
-## Runtime ECS Mirror
+## Dense Runtime Storage
 
-There are two layers users should know about:
+`WorldEcsRuntime` is the dense storage and scheduling layer behind the public node/component API.
 
-- the user-facing node/component API (`BaseNode`, `BaseComponent`)
-- the dense runtime ECS mirror (`WorldEcsRuntime`)
+Important facts:
 
-You normally work with the first layer.
+- concrete node/component types live in per-type dense storages
+- storages are page-backed rather than one relocating `std::vector<T>`
+- the handle runtime index is decoded internally as page plus slot
+- live objects keep a stable address until that specific object is destroyed
+- tick phases are scheduled by per-phase class priority
+- types can override page size with `static constexpr std::size_t kStoragePageSize`
+- `TStoragePageSize<T>()` resolves that compile-time page size and defaults to `1024`
 
-The second layer exists for:
+The design goal is:
 
-- dense storage
-- tick-priority ordering
-- runtime-only ECS components
-- faster hot-path traversal and hierarchy mirroring
+- fast bulk iteration by type
+- stable borrowed pointers through unrelated creates
+- cheap hot-path handle resolution
+- no second shadow node representation
 
-Useful facts:
+Lifecycle discipline matters here:
 
-- `BaseNode` exposes `AddRuntimeComponent<T>()`, `RuntimeComponent<T>()`, and related helpers.
-- runtime component storages tick in ascending `kTickPriority`
-- runtime node hierarchy mirrors the world hierarchy
-- world execution profiles can disable gameplay ECS phases entirely, which is how editor worlds avoid running runtime gameplay logic
+- constructors/destructors should stay side-effect free
+- `OnCreate()` / `OnDestroy()` own runtime/backend setup and teardown
 
 ## Reflection, Serialization, Replication
 
@@ -218,5 +223,6 @@ If you are adding new gameplay code, these rules keep you out of most trouble:
 4. Treat borrowed pointers as frame-local.
 5. Use `EndFrame()` in manual world loops, or just use `GameRuntime` so you do not forget it.
 6. For editor-facing render setup, assume viewport creation is lazy and rely on the framework's deferred bootstrap behavior rather than forcing eager initialization from node constructors.
+7. In hot/runtime APIs, prefer mutable `NodeHandle&` / `ComponentHandle&` parameters when resolution may need to rehydrate the runtime key.
 
 Continue to [Start Here](tutorials.md) if you want the guided path.

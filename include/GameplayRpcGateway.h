@@ -26,7 +26,7 @@ namespace SnAPI::GameFramework
  *
  * @see GameplayHost
  */
-class SNAPI_GAMEFRAMEWORK_API GameplayRpcGateway final : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API GameplayRpcGateway final : public BaseNode, public NodeCRTP<GameplayRpcGateway>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::GameplayRpcGateway";

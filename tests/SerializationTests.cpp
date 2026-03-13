@@ -72,7 +72,7 @@ namespace
 /**
  * @brief Base node type used to validate inherited node field serialization.
  */
-struct BaseStatsNode : public BaseNode
+struct BaseStatsNode : public BaseNode, public NodeCRTP<BaseStatsNode>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::BaseStatsNode";
     int m_baseValue = 0;
@@ -81,7 +81,7 @@ struct BaseStatsNode : public BaseNode
 /**
  * @brief Derived node type used to validate base+derived field round-trip behavior.
  */
-struct DerivedStatsNode : public BaseStatsNode
+struct DerivedStatsNode : public BaseStatsNode, public NodeCRTP<DerivedStatsNode>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::DerivedStatsNode";
     int m_health = 0;
@@ -125,7 +125,7 @@ struct CrossRefComponent : public BaseComponent, public ComponentCRTP<CrossRefCo
     NodeHandle Target{};
 };
 
-struct ReflectionNotifyNode : public BaseNode
+struct ReflectionNotifyNode : public BaseNode, public NodeCRTP<ReflectionNotifyNode>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::ReflectionNotifyNode";
     int Value = 0;
@@ -142,7 +142,7 @@ struct ReflectionNotifyNode : public BaseNode
 NodeHandle FindNodeByName(const World& WorldRef, const std::string& Name)
 {
     NodeHandle Found{};
-    WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    WorldRef.ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
         if (Node.Name() == Name)
         {
             Found = Handle;
@@ -224,7 +224,9 @@ TEST_CASE("Node serialization round-trips subtree with components and handles")
     REQUIRE(AResult);
     auto BResult = SourceWorld.CreateNode("B");
     REQUIRE(BResult);
-    REQUIRE(SourceWorld.AttachChild(AResult.value(), BResult.value()));
+    NodeHandle AHandle = AResult.value();
+    NodeHandle BHandle = BResult.value();
+    REQUIRE(SourceWorld.AttachChild(AHandle, BHandle));
 
     auto* NodeA = AResult.value().Borrowed();
     REQUIRE(NodeA != nullptr);
@@ -613,7 +615,9 @@ TEST_CASE("Node deserialization can regenerate object UUIDs and remap handles")
     REQUIRE(OwnerResult);
     auto TargetResult = SourceWorld.CreateNode("Target");
     REQUIRE(TargetResult);
-    REQUIRE(SourceWorld.AttachChild(OwnerResult.value(), TargetResult.value()));
+    NodeHandle OwnerHandle = OwnerResult.value();
+    NodeHandle TargetHandle = TargetResult.value();
+    REQUIRE(SourceWorld.AttachChild(OwnerHandle, TargetHandle));
 
     auto* OwnerNode = OwnerResult.value().Borrowed();
     REQUIRE(OwnerNode != nullptr);

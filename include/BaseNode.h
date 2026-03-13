@@ -19,7 +19,6 @@ namespace SnAPI::GameFramework
 {
 
 class IWorld;
-class ComponentStorageView;
 class RelevanceComponent;
 class Variant;
 
@@ -33,9 +32,9 @@ class Variant;
  * types should derive from `BaseNode` rather than inventing a parallel ownership model.
  *
  * Why this type exists:
- * - it gives gameplay code an address-stable object to reason about while the world owns storage
+ * - it gives gameplay code one canonical node object API while the world owns storage
  * - it keeps hierarchy, identity, and reflected type metadata in one place
- * - it separates user-facing node semantics from the lower-level ECS/runtime records stored in `WorldEcsRuntime`
+ * - it keeps generic `BaseNode` instances on the same dense runtime contract as concrete node types
  *
  * Ownership and lifetime:
  * - `IWorld` owns node lifetime and backing storage.
@@ -69,6 +68,7 @@ public:
 
     /**
      * @brief Construct a node with default name.
+     * @remarks Constructors must stay side-effect free; world/backend setup belongs in `OnCreate()`.
      */
     BaseNode()
         : m_typeId(StaticTypeId<BaseNode>())
@@ -77,6 +77,7 @@ public:
     /**
      * @brief Construct a node with a custom name.
      * @param InName Node name.
+     * @remarks Constructors must stay side-effect free; world/backend setup belongs in `OnCreate()`.
      */
     explicit BaseNode(std::string InName)
         : m_name(std::move(InName))
@@ -84,6 +85,11 @@ public:
     {
     }
 
+    BaseNode(const BaseNode&) = delete;
+    BaseNode& operator=(const BaseNode&) = delete;
+    BaseNode(BaseNode&&) noexcept = default;
+    BaseNode& operator=(BaseNode&&) noexcept = default;
+    /** @brief Default destructor. Runtime/backend teardown belongs in `OnDestroy()`, not here. */
     ~BaseNode() = default;
 
     /**
@@ -247,20 +253,6 @@ public:
     void AddChild(const NodeHandle& Child)
     {
         m_children.push_back(Child);
-        m_childNodes.push_back(nullptr);
-    }
-
-    /**
-     * @brief Add a child with a resolved pointer cache entry.
-     * @param Child Child handle.
-     * @param ChildNode Resolved child node pointer.
-     * @remarks
-     * Internal fast-path used by world-owned hierarchy code to avoid first-frame resolve cost.
-     */
-    void AddChildResolved(const NodeHandle& Child, BaseNode* ChildNode)
-    {
-        m_children.push_back(Child);
-        m_childNodes.push_back(ChildNode);
     }
 
     /**
@@ -278,11 +270,6 @@ public:
             {
                 auto ChildIt = m_children.begin() + static_cast<std::vector<NodeHandle>::difference_type>(Index);
                 m_children.erase(ChildIt);
-                if (Index < m_childNodes.size())
-                {
-                    auto CacheIt = m_childNodes.begin() + static_cast<std::vector<BaseNode*>::difference_type>(Index);
-                    m_childNodes.erase(CacheIt);
-                }
                 return;
             }
         }
@@ -443,25 +430,6 @@ public:
     }
 
     /**
-     * @brief Access attached component storages for this node.
-     * @remarks
-     * This is a hot-path cache used by tick traversal to avoid per-frame
-     * type-id map lookups in world storage.
-     */
-    std::vector<ComponentStorageView*>& ComponentStorages()
-    {
-        return m_componentStorages;
-    }
-
-    /**
-     * @brief Access attached component storages for this node (const).
-     */
-    const std::vector<ComponentStorageView*>& ComponentStorages() const
-    {
-        return m_componentStorages;
-    }
-
-    /**
      * @brief Get cached relevance component pointer for this node.
      * @return Relevance component pointer or nullptr.
      * @remarks
@@ -553,27 +521,6 @@ public:
     }
 
     /**
-     * @brief Get cached world-runtime node handle for this node.
-     * @return Runtime node handle.
-     * @remarks
-     * Populated by world runtime mirroring paths to avoid repeated UUID lookups
-     * in hot transform/runtime queries.
-     */
-    RuntimeNodeHandle RuntimeNode() const
-    {
-        return m_runtimeNode;
-    }
-
-    /**
-     * @brief Set cached world-runtime node handle for this node.
-     * @param Handle Runtime node handle.
-     */
-    void RuntimeNode(const RuntimeNodeHandle Handle)
-    {
-        m_runtimeNode = Handle;
-    }
-
-    /**
      * @brief Add a world-owned runtime ECS component to this node.
      * @tparam T Runtime component type (`RuntimeTickType`).
      * @param args Constructor arguments for the runtime component.
@@ -658,25 +605,19 @@ public:
     void Remove();
 
 private:
-    [[nodiscard]] RuntimeNodeHandle ResolveRuntimeNodeHandle() const;
-    [[nodiscard]] RuntimeNodeHandle ResolveRuntimeNodeHandleAndCache();
-
     NodeHandle m_self{}; /**< @brief Stable runtime identity handle for this node. */
     NodeHandle m_parent{}; /**< @brief Parent identity; null indicates this node is a root in world hierarchy. */
     std::vector<NodeHandle> m_children{}; /**< @brief Ordered child identity list used for deterministic traversal. */
-    std::vector<BaseNode*> m_childNodes{}; /**< @brief Child pointer cache aligned with `m_children` to reduce handle resolves. */
     std::string m_name{"Node"}; /**< @brief Human-readable/debug name (not required to be unique). */
     bool m_active = true; /**< @brief Local execution gate used by tree traversal. */
     bool m_replicated = false; /**< @brief Runtime replication gate for networking bridges. */
     bool m_pendingDestroy = false; /**< @brief True when this node has been scheduled for end-of-frame destruction. */
     bool m_editorTransient = false; /**< @brief True when this node is an editor-only transient helper and must not be persisted. */
     std::vector<TypeId> m_componentTypes{}; /**< @brief Attached component type ids for introspection and fast feature checks. */
-    std::vector<ComponentStorageView*> m_componentStorages{}; /**< @brief Attached component storage cache aligned with m_componentTypes. */
     RelevanceComponent* m_relevanceComponent = nullptr; /**< @brief Cached relevance component pointer for hot-path activation checks. */
     std::vector<uint64_t> m_componentMask{}; /**< @brief Dense bitmask mirror of `m_componentTypes` for fast `Has<T>` checks. */
     uint32_t m_maskVersion = 0; /**< @brief Last component-type-registry version this mask was synchronized against. */
     IWorld* m_world = nullptr; /**< @brief Non-owning pointer to world context for subsystem access and role queries. */
-    RuntimeNodeHandle m_runtimeNode{}; /**< @brief Cached world-runtime handle for fast runtime hierarchy access. */
     TypeId m_typeId{}; /**< @brief Reflected type identity used by serialization/rpc/replication metadata lookups. */
 };
 

@@ -496,13 +496,13 @@ public:
     [[nodiscard]] std::enable_if_t<std::is_base_of_v<BaseNode, U>, std::expected<NodeHandle, std::string>> Instantiate(
         ::SnAPI::AssetPipeline::AssetManager& Manager,
         IWorld& WorldRef,
-        const NodeHandle& Parent = {},
+        NodeHandle& InOutParent,
         bool InstantiateAsCopy = true) const
     {
         NodeHandle Spawned{};
         NodeAssetLoadParams Params{};
         Params.TargetWorld = &WorldRef;
-        Params.Parent = Parent;
+        Params.Parent = InOutParent;
         Params.InstantiateAsCopy = InstantiateAsCopy;
         Params.OutCreatedRoot = &Spawned;
 
@@ -517,7 +517,7 @@ public:
             return std::unexpected("Asset load did not report an instantiated node handle");
         }
 
-        BaseNode* SpawnedNode = Spawned.Borrowed();
+        BaseNode* SpawnedNode = WorldRef.BorrowedNode(Spawned);
         if (!SpawnedNode)
         {
             return std::unexpected("Instantiated node handle could not be resolved");
@@ -532,6 +532,16 @@ public:
         return Spawned;
     }
 
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<BaseNode, U>, std::expected<NodeHandle, std::string>> Instantiate(
+        ::SnAPI::AssetPipeline::AssetManager& Manager,
+        IWorld& WorldRef,
+        bool InstantiateAsCopy = true) const
+    {
+        NodeHandle RootParent{};
+        return Instantiate(Manager, WorldRef, RootParent, InstantiateAsCopy);
+    }
+
     /**
      * @brief Instantiate a node-derived asset directly into a world through the default asset manager.
      * @tparam U Deduced base type. Enabled only when `TBase` is node-derived.
@@ -543,7 +553,7 @@ public:
     template<typename U = TBase>
     [[nodiscard]] std::enable_if_t<std::is_base_of_v<BaseNode, U>, std::expected<NodeHandle, std::string>> Instantiate(
         IWorld& WorldRef,
-        const NodeHandle& Parent = {},
+        NodeHandle& InOutParent,
         bool InstantiateAsCopy = true) const
     {
         auto* Manager = ResolveDefaultAssetManager();
@@ -551,7 +561,21 @@ public:
         {
             return std::unexpected("No default AssetManager resolver is configured");
         }
-        return Instantiate(*Manager, WorldRef, Parent, InstantiateAsCopy);
+        return Instantiate(*Manager, WorldRef, InOutParent, InstantiateAsCopy);
+    }
+
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<BaseNode, U>, std::expected<NodeHandle, std::string>> Instantiate(
+        IWorld& WorldRef,
+        bool InstantiateAsCopy = true) const
+    {
+        auto* Manager = ResolveDefaultAssetManager();
+        if (!Manager)
+        {
+            return std::unexpected("No default AssetManager resolver is configured");
+        }
+        NodeHandle RootParent{};
+        return Instantiate(*Manager, WorldRef, RootParent, InstantiateAsCopy);
     }
 
     /**

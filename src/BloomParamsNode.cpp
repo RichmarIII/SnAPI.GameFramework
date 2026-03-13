@@ -44,6 +44,30 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetBloomPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto DefaultParams = SnAPI::Graphics::BloomContract::DefaultParams();
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Bloom);
+        auto* Bloom = dynamic_cast<SnAPI::Graphics::BloomPass*>(Pass);
+        if (!Bloom)
+        {
+            continue;
+        }
+
+        Bloom->SetParams(DefaultParams);
+        Bloom->SetMipCount(5u);
+    }
+}
 } // namespace
 
 BloomParamsNode::BloomParamsNode()
@@ -82,6 +106,26 @@ void BloomParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void BloomParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetBloomPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void BloomParamsNode::Tick(const float DeltaSeconds)

@@ -15,7 +15,7 @@ namespace
 void SetEditorCameraEnabledForPie(World& WorldRef, const bool Enabled)
 {
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
-    WorldRef.NodePool().ForEach([Enabled](const NodeHandle&, BaseNode& Node) {
+    WorldRef.ForEachNode([Enabled](const NodeHandle&, BaseNode& Node) {
         auto EditorCamera = Node.Component<EditorCameraComponent>();
         if (!EditorCamera)
         {

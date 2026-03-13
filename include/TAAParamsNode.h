@@ -16,7 +16,7 @@ class TAAPass;
 
 namespace SnAPI::GameFramework
 {
-class SNAPI_GAMEFRAMEWORK_API TAAParamsNode : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API TAAParamsNode : public BaseNode, public NodeCRTP<TAAParamsNode>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TAAParamsNode";
@@ -43,6 +43,7 @@ public:
     const float& GetJitterScale() const;
 
     void OnCreate();
+    void OnDestroy();
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     void EditorTick(float DeltaSeconds);

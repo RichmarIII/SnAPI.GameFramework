@@ -1,6 +1,5 @@
 #include "BaseNode.h"
 
-#include "ComponentStorage.h"
 #include "IWorld.h"
 #include "Profiling.h"
 #include "TypeRegistry.h"
@@ -80,36 +79,6 @@ bool InvokeLocal(void* Instance, const MethodInfo& Method, const std::span<const
     return Result.has_value();
 }
 } // namespace
-
-RuntimeNodeHandle BaseNode::ResolveRuntimeNodeHandle() const
-{
-    if (!m_world || m_self.Id.is_nil())
-    {
-        return {};
-    }
-
-    if (!m_runtimeNode.IsNull())
-    {
-        if (m_world->EcsRuntime().Nodes().Resolve(m_runtimeNode))
-        {
-            return m_runtimeNode;
-        }
-    }
-
-    auto RuntimeHandleResult = m_world->RuntimeNodeById(m_self.Id);
-    if (!RuntimeHandleResult)
-    {
-        return {};
-    }
-
-    return RuntimeHandleResult.value();
-}
-
-RuntimeNodeHandle BaseNode::ResolveRuntimeNodeHandleAndCache()
-{
-    m_runtimeNode = ResolveRuntimeNodeHandle();
-    return m_runtimeNode;
-}
 
 bool BaseNode::IsServer() const
 {

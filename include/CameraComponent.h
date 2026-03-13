@@ -34,9 +34,10 @@ class RendererSystem;
  * - when `Settings::Active` is enabled, the component attempts to become the world's active renderer camera
  *
  * Ownership and lifetime:
- * - Owned by the component.
- * - The renderer does not own the returned camera pointer.
- * - `Camera()` returns a non-owning pointer that becomes invalid after `OnDestroy()` or component destruction.
+ * - Owned primarily by the component.
+ * - The renderer may retain a shared reference while this camera is active so backend-global camera state
+ *   cannot dangle across deferred destroy or editor/world rebinding.
+ * - `Camera()` returns a non-owning pointer into the shared camera object.
  *
  * Threading model:
  * - Main-thread only.
@@ -101,6 +102,8 @@ public:
     SnAPI::Graphics::CameraBase* Camera();
     /** @brief Get renderer camera instance (const). @return Non-owning camera pointer, or `nullptr` before creation/after destruction. */
     const SnAPI::Graphics::CameraBase* Camera() const;
+    /** @brief Access the shared renderer camera object retained by this component. */
+    std::shared_ptr<SnAPI::Graphics::CameraBase> CameraShared() const;
 
     /** @brief Runtime active state helper. */
     bool IsActive() const
@@ -131,19 +134,14 @@ public:
 #endif
 
 private:
-    struct CameraDeleter
-    {
-        void operator()(SnAPI::Graphics::CameraBase* Camera) const;
-    };
-
     RendererSystem* ResolveRendererSystem() const;
     void EnsureCamera();
-    void ApplyCameraSettings();
-    void SyncFromTransform();
+    void ApplyCameraSettings() const;
+    void SyncFromTransform() const;
     void UpdateCamera(float DeltaSeconds);
 
     Settings m_settings{}; /**< @brief Camera configuration. */
-    std::unique_ptr<SnAPI::Graphics::CameraBase, CameraDeleter> m_camera{}; /**< @brief Owned renderer camera instance. */
+    std::shared_ptr<SnAPI::Graphics::CameraBase> m_camera{}; /**< @brief Shared renderer camera instance retained by the renderer while active. */
 };
 
 } // namespace SnAPI::GameFramework

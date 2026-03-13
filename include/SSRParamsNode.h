@@ -51,7 +51,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
-class SNAPI_GAMEFRAMEWORK_API SSRParamsNode : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API SSRParamsNode : public BaseNode, public NodeCRTP<SSRParamsNode>
 {
 public:
     /** @brief Stable reflected type name used for serialization and asset lookup. */
@@ -139,6 +139,7 @@ public:
      * @remarks Missing renderer/pass state is treated as deferred readiness, not an error.
      */
     void OnCreate();
+    void OnDestroy();
     /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR

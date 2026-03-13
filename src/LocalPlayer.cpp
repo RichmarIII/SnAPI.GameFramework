@@ -113,13 +113,19 @@ const NodeHandle& LocalPlayer::GetPossessedNode() const
 
 void LocalPlayer::SetPossessedNode(const NodeHandle& Target)
 {
-    if (Target == m_possessedNode)
+    NodeHandle ResolvedTarget = Target;
+    if (auto* SelfWorld = World(); SelfWorld && !ResolvedTarget.IsNull())
+    {
+        (void)SelfWorld->BorrowedNode(ResolvedTarget);
+    }
+
+    if (ResolvedTarget == m_possessedNode)
     {
         return;
     }
 
     const NodeHandle PreviousTarget = m_possessedNode;
-    m_possessedNode = Target;
+    m_possessedNode = ResolvedTarget;
     DispatchPossessionTransition(PreviousTarget, m_possessedNode);
 }
 
@@ -245,7 +251,8 @@ bool LocalPlayer::CanPossessTarget(const NodeHandle& Target) const
     }
 
     const auto* SelfWorld = World();
-    auto* TargetNode = Target.Borrowed();
+    NodeHandle ResolvedTarget = Target;
+    const auto* TargetNode = SelfWorld ? SelfWorld->BorrowedNode(ResolvedTarget) : nullptr;
     if (!SelfWorld || !TargetNode)
     {
         return false;
@@ -261,12 +268,16 @@ void LocalPlayer::DispatchPossessionTransition(const NodeHandle& PreviousTarget,
         return;
     }
 
-    if (BaseNode* PreviousNode = PreviousTarget.Borrowed(); PreviousNode && PreviousNode->World() == World())
+    NodeHandle ResolvedPreviousTarget = PreviousTarget;
+    if (BaseNode* PreviousNode = World() ? World()->BorrowedNode(ResolvedPreviousTarget) : nullptr;
+        PreviousNode && PreviousNode->World() == World())
     {
         InvokePossessionCallback(PreviousNode, "OnUnpossess", Handle());
     }
 
-    if (BaseNode* NewNode = NewTarget.Borrowed(); NewNode && NewNode->World() == World())
+    NodeHandle ResolvedNewTarget = NewTarget;
+    if (BaseNode* NewNode = World() ? World()->BorrowedNode(ResolvedNewTarget) : nullptr;
+        NewNode && NewNode->World() == World())
     {
         InvokePossessionCallback(NewNode, "OnPossess", Handle());
     }

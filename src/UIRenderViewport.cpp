@@ -127,17 +127,32 @@ void UIRenderViewport::SetGameRuntime(GameRuntime* Runtime)
 
     ReleaseOwnedResources();
     m_runtime = Runtime;
+    m_retainedCamera.reset();
+    m_camera = nullptr;
     SyncViewport();
 }
 
 void UIRenderViewport::SetViewportCamera(SnAPI::Graphics::ICamera* Camera)
 {
-    if (m_camera == Camera)
+    if (m_camera == Camera && !m_retainedCamera)
     {
         return;
     }
 
+    m_retainedCamera.reset();
     m_camera = Camera;
+    SyncViewport();
+}
+
+void UIRenderViewport::SetViewportCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera)
+{
+    if (m_camera == Camera.get() && m_retainedCamera == Camera)
+    {
+        return;
+    }
+
+    m_retainedCamera = Camera;
+    m_camera = m_retainedCamera.get();
     SyncViewport();
 }
 
@@ -288,6 +303,7 @@ void UIRenderViewport::OnDestroyed()
     ReleaseOwnedResources();
     m_runtime = nullptr;
     m_camera = nullptr;
+    m_retainedCamera.reset();
     m_pointerEventHandler = {};
 }
 

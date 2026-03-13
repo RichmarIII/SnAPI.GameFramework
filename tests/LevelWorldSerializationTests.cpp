@@ -10,18 +10,19 @@ namespace
 {
 BaseNode* ResolveNodeHandle(const NodeHandle& Handle, const IWorld* WorldRef)
 {
-    if (BaseNode* Node = Handle.Borrowed())
+    NodeHandle ResolvedHandle = Handle;
+    if (BaseNode* Node = ResolvedHandle.Borrowed())
     {
         return Node;
     }
-    if (WorldRef && !Handle.Id.is_nil())
+    if (WorldRef && !ResolvedHandle.Id.is_nil())
     {
-        if (auto Rehydrated = WorldRef->NodeHandleById(Handle.Id); Rehydrated)
+        if (auto Rehydrated = WorldRef->NodeHandleById(ResolvedHandle.Id); Rehydrated)
         {
             return Rehydrated->Borrowed();
         }
     }
-    return Handle.BorrowedSlowByUuid();
+    return ResolvedHandle.BorrowedSlowByUuid();
 }
 
 BaseNode* FindNodeByNameInSubtree(const BaseNode& Root, const std::string& Name)
@@ -52,7 +53,7 @@ BaseNode* FindNodeByNameInSubtree(const BaseNode& Root, const std::string& Name)
 Level* FindLevelByName(const World& WorldRef, const std::string& Name)
 {
     Level* Found = nullptr;
-    WorldRef.NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
+    const_cast<World&>(WorldRef).ForEachNode([&](const NodeHandle&, BaseNode& Node) {
         if (!Found && Node.Name() == Name)
         {
             Found = NodeCast<Level>(&Node);
@@ -75,6 +76,8 @@ TEST_CASE("Level serialization round-trips nested levels")
 
     auto GameplayHandle = MainLevel->CreateNode<Level>("Gameplay");
     REQUIRE(GameplayHandle);
+    MainLevel = NodeCast<Level>(MainLevelHandle->Borrowed());
+    REQUIRE(MainLevel != nullptr);
     auto* GameplayLevel = NodeCast<Level>(GameplayHandle->Borrowed());
     REQUIRE(GameplayLevel != nullptr);
 
@@ -104,6 +107,8 @@ TEST_CASE("Level serialization round-trips nested levels")
     REQUIRE(LoadedLevel != nullptr);
 
     REQUIRE(LevelSerializer::Deserialize(PayloadRoundTrip.value(), *LoadedLevel));
+    LoadedLevel = NodeCast<Level>(LoadedLevelHandle->Borrowed());
+    REQUIRE(LoadedLevel != nullptr);
 
     BaseNode* GameplayNode = FindNodeByNameInSubtree(*LoadedLevel, "Gameplay");
     REQUIRE(GameplayNode != nullptr);
@@ -129,7 +134,8 @@ TEST_CASE("World serialization round-trips levels")
     auto LevelHandleResult = SourceWorld.CreateLevel("LevelOne");
     REQUIRE(LevelHandleResult);
 
-    auto LevelResult = SourceWorld.LevelRef(LevelHandleResult.value());
+    NodeHandle LevelHandle = LevelHandleResult.value();
+    auto LevelResult = SourceWorld.LevelRef(LevelHandle);
     REQUIRE(LevelResult);
     auto& LevelRef = *LevelResult;
 
@@ -177,7 +183,8 @@ TEST_CASE("Level deserialization can regenerate UUIDs for repeated instantiation
     auto SourceLevelHandle = SourceWorld.CreateLevel("SourceLevel");
     REQUIRE(SourceLevelHandle);
 
-    auto SourceLevelResult = SourceWorld.LevelRef(SourceLevelHandle.value());
+    NodeHandle SourceLevelNodeHandle = SourceLevelHandle.value();
+    auto SourceLevelResult = SourceWorld.LevelRef(SourceLevelNodeHandle);
     REQUIRE(SourceLevelResult);
     auto& SourceLevel = *SourceLevelResult;
 
@@ -194,6 +201,8 @@ TEST_CASE("Level deserialization can regenerate UUIDs for repeated instantiation
     auto* FirstLevel = NodeCast<Level>(FirstLevelHandle->Borrowed());
     REQUIRE(FirstLevel != nullptr);
     REQUIRE(LevelSerializer::Deserialize(PayloadResult.value(), *FirstLevel));
+    FirstLevel = NodeCast<Level>(FirstLevelHandle->Borrowed());
+    REQUIRE(FirstLevel != nullptr);
 
     BaseNode* FirstNode = FindNodeByNameInSubtree(*FirstLevel, "NodeA");
     REQUIRE(FirstNode != nullptr);
@@ -207,6 +216,8 @@ TEST_CASE("Level deserialization can regenerate UUIDs for repeated instantiation
     TDeserializeOptions CopyOptions{};
     CopyOptions.RegenerateObjectIds = true;
     REQUIRE(LevelSerializer::Deserialize(PayloadResult.value(), *SecondLevel, CopyOptions));
+    SecondLevel = NodeCast<Level>(SecondLevelHandle->Borrowed());
+    REQUIRE(SecondLevel != nullptr);
 
     BaseNode* SecondNode = FindNodeByNameInSubtree(*SecondLevel, "NodeA");
     REQUIRE(SecondNode != nullptr);

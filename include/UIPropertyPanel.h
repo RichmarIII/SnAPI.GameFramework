@@ -186,6 +186,7 @@ private:
   struct FieldBinding
   {
     void* RootInstance = nullptr;
+    std::size_t SectionIndex = 0;
     std::vector<FieldPathEntry> Path{};
     TypeId FieldType{};
     EEditorKind EditorKind = EEditorKind::Unsupported;
@@ -205,23 +206,28 @@ private:
     TypeId Type{};
     void* Instance = nullptr;
     std::string Heading{};
+    NodeHandle RuntimeTarget{};
     NodeHandle ComponentOwner{};
     bool IsComponent = false;
   };
 
   bool RebuildUi();
+  void RefreshBoundSectionInstances();
+  void RefreshBindingRootInstances();
   void BuildTypeIntoContainer(
     SnAPI::UI::ElementId Parent,
     const TypeId& Type,
     void* RootInstance,
     const std::vector<FieldPathEntry>& PathPrefix,
-    int Depth);
+    int Depth,
+    std::size_t SectionIndex);
   void AddFieldEditor(
     SnAPI::UI::ElementId Parent,
     const FieldInfo& Field,
     void* RootInstance,
     std::vector<FieldPathEntry> Path,
-    int Depth);
+    int Depth,
+    std::size_t SectionIndex);
   void AddMaterialScalarCollectionEditor(
     SnAPI::UI::ElementId Parent,
     std::vector<MaterialScalarParamPayload>& Scalars,
@@ -257,7 +263,8 @@ private:
   void AddMethodActionEditors(
     SnAPI::UI::ElementId Parent,
     const TypeId& Type,
-    void* RootInstance);
+    void* RootInstance,
+    std::size_t SectionIndex);
 
   [[nodiscard]] EEditorKind ResolveEditorKind(const TypeId& Type) const;
   [[nodiscard]] bool IsNestedStructType(const TypeId& Type) const;
@@ -315,6 +322,7 @@ private:
 
   TypeId m_BoundType{};
   void* m_BoundInstance = nullptr;
+  NodeHandle m_BoundNodeHandle{};
   std::vector<BoundSection> m_BoundSections{};
   SnAPI::UI::ElementId m_ContentRoot{};
   std::vector<FieldBinding> m_Bindings{};

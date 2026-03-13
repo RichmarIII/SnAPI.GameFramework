@@ -38,6 +38,11 @@ Result EditorSceneService::EnsureEditorCamera(EditorServiceContext& Context)
     return m_scene.EnsureEditorCamera(*WorldPtr);
 }
 
+ComponentHandle EditorSceneService::ActiveCameraHandle() const
+{
+    return m_scene.ActiveCameraHandle();
+}
+
 CameraComponent* EditorSceneService::ActiveCameraComponent() const
 {
     return m_scene.ActiveCameraComponent();

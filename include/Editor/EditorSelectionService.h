@@ -26,7 +26,7 @@ public:
     [[nodiscard]] const EditorSelectionModel& Model() const { return m_selection; }
 
 private:
-    void EnsureSelectionValid(EditorServiceContext& Context, CameraComponent* ActiveCamera);
+    void EnsureSelectionValid(EditorServiceContext& Context, ComponentHandle ActiveCamera);
 
     EditorSelectionModel m_selection{};
 };

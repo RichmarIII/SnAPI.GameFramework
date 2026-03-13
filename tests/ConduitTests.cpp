@@ -57,7 +57,7 @@ struct ConduitHarnessHandle
     int Id = 0;
 };
 
-struct ConduitNodeHarness : BaseNode
+struct ConduitNodeHarness : BaseNode, NodeCRTP<ConduitNodeHarness>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitNodeHarness";
 

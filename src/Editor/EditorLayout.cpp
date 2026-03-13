@@ -697,6 +697,13 @@ void ConfigureFolderCardIcon(SnAPI::UI::UIImage& Image)
     for (const TypeId& Type : Node.ComponentTypes())
     {
         HashCombine(UuidHash{}(Type));
+
+        NodeHandle OwnerHandle = Node.Handle();
+        if (auto* WorldRef = Node.World())
+        {
+            const void* ComponentPtr = WorldRef->BorrowedComponent(OwnerHandle, Type);
+            HashCombine(std::hash<const void*>{}(ComponentPtr));
+        }
     }
 
     return Seed;
@@ -856,11 +863,27 @@ struct CreateNodeTypeEntry
     });
     return CandidateTypes;
 }
+
+[[nodiscard]] CameraComponent* ResolveActiveCameraComponent(GameRuntime& Runtime, ComponentHandle& InOutHandle)
+{
+    if (InOutHandle.IsNull())
+    {
+        return nullptr;
+    }
+
+    auto* WorldPtr = Runtime.WorldPtr();
+    if (!WorldPtr)
+    {
+        return nullptr;
+    }
+
+    return static_cast<CameraComponent*>(WorldPtr->BorrowedComponent(InOutHandle));
+}
 } // namespace
 
 Result EditorLayout::Build(GameRuntime& Runtime,
                            SnAPI::UI::Theme& Theme,
-                           CameraComponent* ActiveCamera,
+                           ComponentHandle ActiveCamera,
                            EditorSelectionModel* SelectionModel)
 {
 #if !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(SNAPI_GF_ENABLE_UI)
@@ -889,7 +912,7 @@ Result EditorLayout::Build(GameRuntime& Runtime,
     m_context->SetActiveTheme(&Theme);
     BuildShell(*m_context, Runtime, ActiveCamera, SelectionModel);
     SyncInvalidationDebugOverlay();
-    BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
+    BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), Runtime, ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
 
     m_built = true;
@@ -1042,8 +1065,10 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentInspectorVisibleNodes.clear();
     m_contentInspectorHierarchySource.reset();
     m_contentInspectorTargetBound = false;
+    m_contentInspectorBoundNode = {};
     m_contentInspectorBoundObject = nullptr;
     m_contentInspectorBoundType = {};
+    m_contentInspectorBoundComponentSignature = 0;
     m_contentInspectorImportTargetBound = false;
     m_contentInspectorImportBoundObject = nullptr;
     m_contentInspectorImportBoundType = {};
@@ -1084,6 +1109,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onHierarchyActionRequested = {};
     m_onToolbarActionRequested = {};
     m_onProjectActionRequested = {};
+    m_boundInspectorNode = {};
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
     m_boundInspectorComponentSignature = 0;
@@ -1104,7 +1130,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
 }
 
 void EditorLayout::Sync(GameRuntime& Runtime,
-                        CameraComponent* ActiveCamera,
+                        ComponentHandle ActiveCamera,
                         EditorSelectionModel* SelectionModel,
                         const float DeltaSeconds)
 {
@@ -1132,7 +1158,7 @@ void EditorLayout::Sync(GameRuntime& Runtime,
     m_selection = SelectionModel;
     SyncInvalidationDebugOverlay();
     SyncHierarchy(Runtime, ActiveCamera);
-    BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
+    BindInspectorTarget(ResolveSelectedNode(Runtime, ActiveCamera), Runtime, ActiveCamera);
     SyncGameViewportCamera(Runtime, ActiveCamera);
     (void)DeltaSeconds;
 #endif
@@ -1186,7 +1212,7 @@ SnAPI::UI::UIContext* EditorLayout::RootContext(GameRuntime& Runtime) const
 
 void EditorLayout::BuildShell(SnAPI::UI::UIContext& Context,
                               GameRuntime& Runtime,
-                              CameraComponent* ActiveCamera,
+                              ComponentHandle& ActiveCamera,
                               EditorSelectionModel* SelectionModel)
 {
     auto Root = Context.Root();
@@ -1485,7 +1511,7 @@ void EditorLayout::BuildToolbar(PanelBuilder& Root)
 
 void EditorLayout::BuildWorkspace(PanelBuilder& Root,
                                   GameRuntime& Runtime,
-                                  CameraComponent* ActiveCamera,
+                                  ComponentHandle& ActiveCamera,
                                   EditorSelectionModel* SelectionModel)
 {
     auto Workspace = Root.Add(SnAPI::UI::UIPanel("Editor.Workspace"));
@@ -1516,7 +1542,7 @@ void EditorLayout::BuildWorkspace(PanelBuilder& Root,
 
     auto InspectorHost = CenterRightSplit.Add(SnAPI::UI::UIPanel("Editor.Workspace.InspectorHost"));
     ConfigureHostPanel(InspectorHost.Element());
-    BuildInspectorPane(InspectorHost, ResolveSelectedNode(Runtime, ActiveCamera), ActiveCamera);
+    BuildInspectorPane(InspectorHost, ResolveSelectedNode(Runtime, ActiveCamera), Runtime, ActiveCamera);
 }
 
 void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
@@ -2554,7 +2580,7 @@ void EditorLayout::BuildContentDetailsPane(PanelBuilder& DetailsTab)
 
 void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
                                       GameRuntime& Runtime,
-                                      CameraComponent* ActiveCamera,
+                                      ComponentHandle& ActiveCamera,
                                       EditorSelectionModel* SelectionModel)
 {
     auto Hierarchy = Workspace.Add(SnAPI::UI::UIPanel("Editor.Hierarchy"));
@@ -2780,7 +2806,7 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
     HierarchyPagerElement.Width().Set(SnAPI::UI::Sizing::Fill());
 
     m_selection = SelectionModel;
-    EnsureDefaultSelection(ActiveCamera);
+    EnsureDefaultSelection(Runtime, ActiveCamera);
     SyncHierarchy(Runtime, ActiveCamera);
 
     if (m_selection)
@@ -2788,7 +2814,7 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
         std::size_t NodeCount = 1; // Include synthetic World root row.
         if (auto* WorldPtr = Runtime.WorldPtr())
         {
-            WorldPtr->NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
+            WorldPtr->ForEachNode([&](const NodeHandle&, BaseNode& Node) {
                 if (!Node.EditorTransient())
                 {
                     ++NodeCount;
@@ -2799,29 +2825,30 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
     }
 }
 
-void EditorLayout::EnsureDefaultSelection(CameraComponent* ActiveCamera)
+void EditorLayout::EnsureDefaultSelection(GameRuntime& Runtime, ComponentHandle& ActiveCamera)
 {
     if (!m_selection || !m_selection->SelectedNode().IsNull())
     {
         return;
     }
 
-    if (!ActiveCamera || ActiveCamera->Owner().IsNull())
+    auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
+    if (!ActiveCameraComponent || ActiveCameraComponent->Owner().IsNull())
     {
         return;
     }
 
-    (void)m_selection->SelectNode(ActiveCamera->Owner());
+    (void)m_selection->SelectNode(ActiveCameraComponent->Owner());
 }
 
-void EditorLayout::SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCamera)
+void EditorLayout::SyncHierarchy(GameRuntime& Runtime, ComponentHandle& ActiveCamera)
 {
     if (!m_context || m_hierarchyTree.Id.Value == 0)
     {
         return;
     }
 
-    EnsureDefaultSelection(ActiveCamera);
+    EnsureDefaultSelection(Runtime, ActiveCamera);
 
     auto* WorldPtr = Runtime.WorldPtr();
     if (!WorldPtr)
@@ -2886,7 +2913,7 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
     };
 
     const auto CollectWorldRoots = [](World& WorldContext, const int Depth, std::vector<TraversalNode>& OutNodes) {
-        WorldContext.NodePool().ForEach([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
+        WorldContext.ForEachNode([Depth, &OutNodes](const NodeHandle& Handle, BaseNode& Node) {
             if (Node.EditorTransient())
             {
                 return;
@@ -2914,7 +2941,7 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
 
     while (!Stack.empty())
     {
-        const TraversalNode Current = Stack.back();
+        TraversalNode Current = Stack.back();
         Stack.pop_back();
 
         BaseNode* Node = Current.Node;
@@ -2966,7 +2993,7 @@ bool EditorLayout::CollectHierarchyEntries(World& WorldRef, std::vector<Hierarch
         std::vector<TraversalNode> ChildNodes{};
         ChildNodes.reserve(Node->Children().size() + 8u);
 
-        for (const NodeHandle ChildHandle : Node->Children())
+        for (NodeHandle ChildHandle : Node->Children())
         {
             if (ChildHandle.IsNull())
             {
@@ -3372,8 +3399,10 @@ void EditorLayout::SetContentAssetInspectorState(ContentAssetInspectorState Stat
     if (SessionRevisionChanged)
     {
         m_contentInspectorTargetBound = false;
+        m_contentInspectorBoundNode = {};
         m_contentInspectorBoundObject = nullptr;
         m_contentInspectorBoundType = {};
+        m_contentInspectorBoundComponentSignature = 0;
         m_contentInspectorImportTargetBound = false;
         m_contentInspectorImportBoundObject = nullptr;
         m_contentInspectorImportBoundType = {};
@@ -7721,8 +7750,10 @@ void EditorLayout::DestroyContentAssetInspectorModalOverlay()
     }
 
     m_contentInspectorTargetBound = false;
+    m_contentInspectorBoundNode = {};
     m_contentInspectorBoundObject = nullptr;
     m_contentInspectorBoundType = {};
+    m_contentInspectorBoundComponentSignature = 0;
     m_contentInspectorImportTargetBound = false;
     m_contentInspectorImportBoundObject = nullptr;
     m_contentInspectorImportBoundType = {};
@@ -7893,6 +7924,8 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
     void* RuntimeBindingTargetObject = m_contentAssetInspectorState.TargetObject;
     TypeId RuntimeBindingTargetType = m_contentAssetInspectorState.TargetType;
     BaseNode* SelectedHierarchyNode = nullptr;
+    NodeHandle RuntimeBindingTargetNode{};
+    std::size_t RuntimeBindingComponentSignature = 0;
     if (m_contentAssetInspectorState.CanEditHierarchy && !m_contentAssetInspectorState.SelectedNode.IsNull())
     {
         SelectedHierarchyNode = m_contentAssetInspectorState.SelectedNode.Borrowed();
@@ -7904,6 +7937,8 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
         {
             RuntimeBindingTargetObject = SelectedHierarchyNode;
             RuntimeBindingTargetType = SelectedHierarchyNode->TypeKey();
+            RuntimeBindingTargetNode = m_contentAssetInspectorState.SelectedNode;
+            RuntimeBindingComponentSignature = ComputeNodeComponentSignature(*SelectedHierarchyNode);
             HasRuntimeTarget = true;
         }
     }
@@ -8086,9 +8121,17 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
         {
             if (m_contentAssetInspectorState.Open && HasRuntimeTarget)
             {
-                if (!m_contentInspectorTargetBound ||
-                    m_contentInspectorBoundObject != RuntimeBindingTargetObject ||
-                    m_contentInspectorBoundType != RuntimeBindingTargetType)
+                const bool BindingNodeTarget = !RuntimeBindingTargetNode.IsNull() && SelectedHierarchyNode != nullptr;
+                const bool NeedsRebind =
+                    !m_contentInspectorTargetBound ||
+                    (BindingNodeTarget
+                        ? (m_contentInspectorBoundNode != RuntimeBindingTargetNode ||
+                           m_contentInspectorBoundObject != RuntimeBindingTargetObject ||
+                           m_contentInspectorBoundType != RuntimeBindingTargetType ||
+                           m_contentInspectorBoundComponentSignature != RuntimeBindingComponentSignature)
+                        : (m_contentInspectorBoundObject != RuntimeBindingTargetObject ||
+                           m_contentInspectorBoundType != RuntimeBindingTargetType));
+                if (NeedsRebind)
                 {
                     PropertyPanel->ClearObject();
                     if (SelectedHierarchyNode && m_contentAssetInspectorState.CanEditHierarchy)
@@ -8101,13 +8144,17 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
                     }
                     if (m_contentInspectorTargetBound)
                     {
+                        m_contentInspectorBoundNode = RuntimeBindingTargetNode;
                         m_contentInspectorBoundObject = RuntimeBindingTargetObject;
                         m_contentInspectorBoundType = RuntimeBindingTargetType;
+                        m_contentInspectorBoundComponentSignature = RuntimeBindingComponentSignature;
                     }
                     else
                     {
+                        m_contentInspectorBoundNode = {};
                         m_contentInspectorBoundObject = nullptr;
                         m_contentInspectorBoundType = {};
+                        m_contentInspectorBoundComponentSignature = 0;
                     }
                 }
                 else
@@ -8119,8 +8166,10 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
             {
                 PropertyPanel->ClearObject();
                 m_contentInspectorTargetBound = false;
+                m_contentInspectorBoundNode = {};
                 m_contentInspectorBoundObject = nullptr;
                 m_contentInspectorBoundType = {};
+                m_contentInspectorBoundComponentSignature = 0;
             }
         }
     }
@@ -8385,7 +8434,7 @@ void EditorLayout::PublishInvalidationDebugState()
     ViewModelProperty<bool>(kVmInvalidationDebugEnabledKey).Set(m_invalidationDebugOverlayEnabled);
 }
 
-BaseNode* EditorLayout::ResolveSelectedNode(GameRuntime& Runtime, CameraComponent* ActiveCamera) const
+BaseNode* EditorLayout::ResolveSelectedNode(GameRuntime& Runtime, ComponentHandle& ActiveCamera) const
 {
     auto* WorldPtr = Runtime.WorldPtr();
     if (!WorldPtr)
@@ -8401,19 +8450,19 @@ BaseNode* EditorLayout::ResolveSelectedNode(GameRuntime& Runtime, CameraComponen
         }
     }
 
-    if (ActiveCamera && !ActiveCamera->Owner().IsNull())
+    if (auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
+        ActiveCameraComponent && !ActiveCameraComponent->Owner().IsNull())
     {
-        if (auto* CameraNode = ActiveCamera->Owner().Borrowed())
+        if (auto* CameraNode = ActiveCameraComponent->OwnerNode())
         {
             return CameraNode;
         }
-        return ActiveCamera->Owner().BorrowedSlowByUuid();
     }
 
     return nullptr;
 }
 
-void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, CameraComponent* ActiveCamera)
+void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, ComponentHandle& ActiveCamera)
 {
     auto GamePane = Workspace.Add(SnAPI::UI::UIPanel("Editor.GamePane"));
     auto& GamePaneElement = GamePane.Element();
@@ -8513,9 +8562,10 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ViewportElement.RenderScale().Set(1.0f);
     ViewportElement.Enabled().Set(true);
     ViewportElement.SetGameRuntime(&Runtime);
-    if (ActiveCamera && ActiveCamera->Camera())
+    if (auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
+        ActiveCameraComponent && ActiveCameraComponent->Camera())
     {
-        ViewportElement.SetViewportCamera(ActiveCamera->Camera());
+        ViewportElement.SetViewportCamera(ActiveCameraComponent->CameraShared());
     }
 
     auto ProfilerTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameProfilerTab"));
@@ -9236,7 +9286,10 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     m_gameViewport = Viewport.Handle();
 }
 
-void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* SelectedNode, CameraComponent* ActiveCamera)
+void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace,
+                                      BaseNode* SelectedNode,
+                                      GameRuntime& Runtime,
+                                      ComponentHandle& ActiveCamera)
 {
     auto Inspector = Workspace.Add(SnAPI::UI::UIPanel("Editor.Inspector"));
     auto& InspectorPanel = Inspector.Element();
@@ -9447,10 +9500,10 @@ void EditorLayout::BuildInspectorPane(PanelBuilder& Workspace, BaseNode* Selecte
     InspectorTabsElement.SetTabLabel(1, "Tools");
 
     m_inspectorPropertyPanel = PropertyPanelBuilder.Handle();
-    BindInspectorTarget(SelectedNode, ActiveCamera);
+    BindInspectorTarget(SelectedNode, Runtime, ActiveCamera);
 }
 
-void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* ActiveCamera)
+void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, GameRuntime& Runtime, ComponentHandle& ActiveCamera)
 {
     if (!m_context)
     {
@@ -9469,19 +9522,22 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
     if (SelectedNode)
     {
         const std::size_t ComponentSignature = ComputeNodeComponentSignature(*SelectedNode);
-        if (m_boundInspectorObject != SelectedNode
+        if (m_boundInspectorNode != SelectedNode->Handle()
+            || m_boundInspectorObject != SelectedNode
             || m_boundInspectorType != SelectedNode->TypeKey()
             || m_boundInspectorComponentSignature != ComponentSignature)
         {
             PropertyPanel->ClearObject();
             if (PropertyPanel->BindNode(SelectedNode))
             {
+                m_boundInspectorNode = SelectedNode->Handle();
                 m_boundInspectorObject = SelectedNode;
                 m_boundInspectorType = SelectedNode->TypeKey();
                 m_boundInspectorComponentSignature = ComponentSignature;
             }
             else
             {
+                m_boundInspectorNode = {};
                 m_boundInspectorObject = nullptr;
                 m_boundInspectorType = {};
                 m_boundInspectorComponentSignature = 0;
@@ -9494,15 +9550,16 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
         return;
     }
 
-    if (ActiveCamera)
+    if (auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera))
     {
-        TargetObject = ActiveCamera;
+        TargetObject = ActiveCameraComponent;
         TargetType = StaticTypeId<CameraComponent>();
     }
 
     if (!TargetObject)
     {
         PropertyPanel->ClearObject();
+        m_boundInspectorNode = {};
         m_boundInspectorObject = nullptr;
         m_boundInspectorType = {};
         m_boundInspectorComponentSignature = 0;
@@ -9518,19 +9575,21 @@ void EditorLayout::BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* 
     PropertyPanel->ClearObject();
     if (PropertyPanel->BindObject(TargetType, TargetObject))
     {
+        m_boundInspectorNode = {};
         m_boundInspectorObject = TargetObject;
         m_boundInspectorType = TargetType;
         m_boundInspectorComponentSignature = 0;
     }
     else
     {
+        m_boundInspectorNode = {};
         m_boundInspectorObject = nullptr;
         m_boundInspectorType = {};
         m_boundInspectorComponentSignature = 0;
     }
 }
 
-void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent* ActiveCamera)
+void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle& ActiveCamera)
 {
     auto* Viewport = ResolveGameViewport();
     if (!Viewport)
@@ -9540,10 +9599,13 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent*
 
     Viewport->SetGameRuntime(&Runtime);
 
+    std::shared_ptr<SnAPI::Graphics::ICamera> RetainedCamera{};
     SnAPI::Graphics::ICamera* RenderCamera = nullptr;
-    if (ActiveCamera)
+    CameraComponent* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
+    if (ActiveCameraComponent)
     {
-        RenderCamera = ActiveCamera->Camera();
+        RetainedCamera = ActiveCameraComponent->CameraShared();
+        RenderCamera = RetainedCamera.get();
     }
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
@@ -9551,22 +9613,30 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent*
     {
         if (auto* WorldPtr = Runtime.WorldPtr())
         {
-            RenderCamera = WorldPtr->Renderer().ActiveCamera();
+            RetainedCamera = WorldPtr->Renderer().ActiveCameraShared();
+            RenderCamera = RetainedCamera ? RetainedCamera.get() : WorldPtr->Renderer().ActiveCamera();
         }
     }
 #endif
 
-    if (ActiveCamera && Viewport)
+    if (ActiveCameraComponent && Viewport)
     {
         const SnAPI::UI::UIRect ViewRect = Viewport->LayoutRect();
         if (ViewRect.W > 0.0f && ViewRect.H > 0.0f)
         {
-            auto& CameraSettings = ActiveCamera->EditSettings();
+            auto& CameraSettings = ActiveCameraComponent->EditSettings();
             CameraSettings.Aspect = ViewRect.W / ViewRect.H;
         }
     }
 
-    Viewport->SetViewportCamera(RenderCamera);
+    if (RetainedCamera)
+    {
+        Viewport->SetViewportCamera(RetainedCamera);
+    }
+    else
+    {
+        Viewport->SetViewportCamera(RenderCamera);
+    }
 }
 
 UIRenderViewport* EditorLayout::GameViewport() const

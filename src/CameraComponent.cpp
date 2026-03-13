@@ -2,8 +2,6 @@
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
-#include "Profiling.h"
-
 #include <algorithm>
 #include <cmath>
 
@@ -94,11 +92,6 @@ bool IsCameraSettingsField(const std::string_view Name)
 #endif
 } // namespace
 
-void CameraComponent::CameraDeleter::operator()(SnAPI::Graphics::CameraBase* Camera) const
-{
-    delete Camera;
-}
-
 SnAPI::Graphics::CameraBase* CameraComponent::Camera()
 {
     return m_camera.get();
@@ -107,6 +100,11 @@ SnAPI::Graphics::CameraBase* CameraComponent::Camera()
 const SnAPI::Graphics::CameraBase* CameraComponent::Camera() const
 {
     return m_camera.get();
+}
+
+std::shared_ptr<SnAPI::Graphics::CameraBase> CameraComponent::CameraShared() const
+{
+    return m_camera;
 }
 
 CameraComponent::~CameraComponent() = default;
@@ -122,7 +120,7 @@ void CameraComponent::SetActive(const bool Active)
 
     if (m_settings.Active)
     {
-        (void)Renderer->SetActiveCamera(m_camera.get());
+        (void)Renderer->SetActiveCamera(m_camera);
     }
     else if (Renderer->ActiveCamera() == m_camera.get())
     {
@@ -138,7 +136,7 @@ void CameraComponent::OnCreate()
 
     if (auto* Renderer = ResolveRendererSystem(); Renderer && Renderer->IsInitialized() && m_settings.Active)
     {
-        (void)Renderer->SetActiveCamera(m_camera.get());
+        (void)Renderer->SetActiveCamera(m_camera);
     }
 }
 
@@ -195,7 +193,7 @@ void CameraComponent::UpdateCamera(const float DeltaSeconds)
     {
         if (Renderer->ActiveCamera() != m_camera.get())
         {
-            (void)Renderer->SetActiveCamera(m_camera.get());
+            (void)Renderer->SetActiveCamera(m_camera);
         }
     }
     else if (Renderer->ActiveCamera() == m_camera.get())
@@ -225,11 +223,11 @@ void CameraComponent::EnsureCamera()
 {
     if (!m_camera)
     {
-        m_camera.reset(new SnAPI::Graphics::CameraBase());
+        m_camera = std::make_shared<SnAPI::Graphics::CameraBase>();
     }
 }
 
-void CameraComponent::ApplyCameraSettings()
+void CameraComponent::ApplyCameraSettings() const
 {
     if (!m_camera)
     {
@@ -247,7 +245,7 @@ void CameraComponent::ApplyCameraSettings()
     m_camera->Aspect(Aspect);
 }
 
-void CameraComponent::SyncFromTransform()
+void CameraComponent::SyncFromTransform() const
 {
     if (!m_camera || !m_settings.SyncFromTransform)
     {

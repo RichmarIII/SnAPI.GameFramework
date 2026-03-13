@@ -7,7 +7,7 @@ using namespace SnAPI::GameFramework;
 /**
  * @brief Tick-counting node used to verify relevance gating behavior.
  */
-struct RelevanceTickNode : public BaseNode
+struct RelevanceTickNode : public BaseNode, public NodeCRTP<RelevanceTickNode>
 {
     static constexpr auto kTypeName = "SnAPI::GameFramework::RelevanceTickNode";
     int* Counter = nullptr;

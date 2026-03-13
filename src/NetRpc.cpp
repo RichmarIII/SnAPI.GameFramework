@@ -779,7 +779,8 @@ NetRpcResponse NetRpcBridge::HandleRequest(const NetConnectionHandle Handle,
 
             for (const auto& Type : Node.ComponentTypes())
             {
-                void* RawComponent = Context->World->BorrowedComponent(OwnerHandle, Type);
+                NodeHandle ResolvedOwnerHandle = OwnerHandle;
+                void* RawComponent = Context->World->BorrowedComponent(ResolvedOwnerHandle, Type);
                 auto* Component = static_cast<BaseComponent*>(RawComponent);
                 if (!Component)
                 {

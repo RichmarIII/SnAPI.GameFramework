@@ -490,7 +490,7 @@ public:
      */
     Result Build(GameRuntime& Runtime,
                  SnAPI::UI::Theme& Theme,
-                 CameraComponent* ActiveCamera,
+                 ComponentHandle ActiveCamera,
                  EditorSelectionModel* SelectionModel);
     /**
      * @brief Destroy the current shell and clear all element handles, modal state, and callback bindings.
@@ -501,13 +501,13 @@ public:
     /**
      * @brief Synchronize the built shell with current runtime, selection, and camera state.
      * @param Runtime Borrowed runtime.
-     * @param ActiveCamera Non-owning active editor camera pointer.
+     * @param ActiveCamera Active editor camera handle.
      * @param SelectionModel Borrowed selection model.
      * @param DeltaSeconds Frame delta time in seconds.
      *
      * This is the steady-state update path and does not rebuild the shell.
      */
-    void Sync(GameRuntime& Runtime, CameraComponent* ActiveCamera, EditorSelectionModel* SelectionModel, float DeltaSeconds);
+    void Sync(GameRuntime& Runtime, ComponentHandle ActiveCamera, EditorSelectionModel* SelectionModel, float DeltaSeconds);
     /** @brief Query whether the shell is currently built. */
     [[nodiscard]] bool IsBuilt() const { return m_built; }
     /** @brief Access the embedded game-viewport UI element. @return Non-owning pointer or `nullptr`. */
@@ -645,7 +645,7 @@ private:
 
     void BuildShell(SnAPI::UI::UIContext& Context,
                     GameRuntime& Runtime,
-                    CameraComponent* ActiveCamera,
+                    ComponentHandle& ActiveCamera,
                     EditorSelectionModel* SelectionModel);
     void ConfigureRoot(SnAPI::UI::UIContext& Context);
 
@@ -653,7 +653,7 @@ private:
     void BuildToolbar(PanelBuilder& Root);
     void BuildWorkspace(PanelBuilder& Root,
                         GameRuntime& Runtime,
-                        CameraComponent* ActiveCamera,
+                        ComponentHandle& ActiveCamera,
                         EditorSelectionModel* SelectionModel);
     void BuildContentBrowser(PanelBuilder& Root);
     void EnsureContextMenuOverlay();
@@ -670,20 +670,20 @@ private:
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
-                            CameraComponent* ActiveCamera,
+                            ComponentHandle& ActiveCamera,
                             EditorSelectionModel* SelectionModel);
-    void BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, CameraComponent* ActiveCamera);
-    void BuildInspectorPane(PanelBuilder& Workspace, BaseNode* SelectedNode, CameraComponent* ActiveCamera);
+    void BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, ComponentHandle& ActiveCamera);
+    void BuildInspectorPane(PanelBuilder& Workspace, BaseNode* SelectedNode, GameRuntime& Runtime, ComponentHandle& ActiveCamera);
     void BuildContentDetailsPane(PanelBuilder& DetailsTab);
 
-    void EnsureDefaultSelection(CameraComponent* ActiveCamera);
-    void SyncHierarchy(GameRuntime& Runtime, CameraComponent* ActiveCamera);
+    void EnsureDefaultSelection(GameRuntime& Runtime, ComponentHandle& ActiveCamera);
+    void SyncHierarchy(GameRuntime& Runtime, ComponentHandle& ActiveCamera);
     void RebuildHierarchyTree(const std::vector<HierarchyEntry>& Entries, const NodeHandle& SelectedNode);
     void SyncHierarchySelection(const NodeHandle& SelectedNode);
     [[nodiscard]] bool CollectHierarchyEntries(World& WorldRef, std::vector<HierarchyEntry>& OutEntries) const;
     [[nodiscard]] std::uint64_t ComputeHierarchySignature(const std::vector<HierarchyEntry>& Entries) const;
     void OnHierarchyNodeChosen(const NodeHandle& Handle);
-    [[nodiscard]] BaseNode* ResolveSelectedNode(GameRuntime& Runtime, CameraComponent* ActiveCamera) const;
+    [[nodiscard]] BaseNode* ResolveSelectedNode(GameRuntime& Runtime, ComponentHandle& ActiveCamera) const;
     [[nodiscard]] bool QueryInvalidationDebugOverlayEnabled() const;
     void SetInvalidationDebugOverlayEnabled(bool Enabled);
     void ToggleInvalidationDebugOverlay();
@@ -756,8 +756,8 @@ private:
         return SnAPI::UI::TPropertyRef<TValue>(&m_viewModel, Key);
     }
 
-    void BindInspectorTarget(BaseNode* SelectedNode, CameraComponent* ActiveCamera);
-    void SyncGameViewportCamera(GameRuntime& Runtime, CameraComponent* ActiveCamera);
+    void BindInspectorTarget(BaseNode* SelectedNode, GameRuntime& Runtime, ComponentHandle& ActiveCamera);
+    void SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle& ActiveCamera);
 
     [[nodiscard]] UIRenderViewport* ResolveGameViewport() const;
     [[nodiscard]] SnAPI::UI::UITabs* ResolveGameViewTabs() const;
@@ -937,8 +937,10 @@ private:
     std::vector<NodeHandle> m_contentInspectorVisibleNodes{};
     std::shared_ptr<SnAPI::UI::ITreeItemSource> m_contentInspectorHierarchySource{};
     bool m_contentInspectorTargetBound = false;
+    NodeHandle m_contentInspectorBoundNode{};
     void* m_contentInspectorBoundObject = nullptr;
     TypeId m_contentInspectorBoundType{};
+    std::size_t m_contentInspectorBoundComponentSignature = 0;
     bool m_contentInspectorImportTargetBound = false;
     void* m_contentInspectorImportBoundObject = nullptr;
     TypeId m_contentInspectorImportBoundType{};
@@ -1017,6 +1019,7 @@ private:
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onHierarchyActionRequested{};
     SnAPI::UI::TDelegate<void(EToolbarAction)> m_onToolbarActionRequested{};
     SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> m_onProjectActionRequested{};
+    NodeHandle m_boundInspectorNode{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};
     std::size_t m_boundInspectorComponentSignature = 0;

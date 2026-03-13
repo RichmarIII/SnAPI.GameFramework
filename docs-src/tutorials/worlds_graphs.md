@@ -22,7 +22,7 @@ The world owns:
 - component lifetime
 - runtime hierarchy
 - subsystem objects
-- runtime ECS mirroring
+- dense runtime scheduling/storage
 
 That is why almost all creation APIs eventually forward into `World`, even when you call them through a `Level`.
 
@@ -122,6 +122,7 @@ Good pattern:
 
 - storing a `NodeHandle`
 - resolving with `Borrowed()` when needed
+- passing `NodeHandle&` in hot/runtime APIs when the call may need to rehydrate the runtime key
 
 ## Frame Order Matters
 
@@ -167,21 +168,16 @@ Why that design exists:
 
 If you are testing manual world code and forget `EndFrame()`, destroyed nodes can appear to "stick around" longer than you expect.
 
-## Runtime ECS Mirror
+## Dense Runtime Storage
 
-Even if you only use classic nodes and components, the world mirrors hierarchy into `WorldEcsRuntime`.
+`WorldEcsRuntime` is the world-owned dense storage/scheduling layer behind the normal node/component API.
 
-You mostly do not have to care about that until you want:
+Important consequences:
 
-- runtime-only dense components
-- explicit runtime tick priority
-- ECS-only high-frequency data
-
-When you do, `BaseNode` exposes helpers like:
-
-- `AddRuntimeComponent<T>()`
-- `RuntimeComponent<T>()`
-- `RemoveRuntimeComponent<T>()`
+- concrete node/component types tick in dense per-type batches
+- storage is page-backed, so creating one object does not relocate unrelated live objects
+- handles still resolve through the same `Borrowed()` API, but hot paths should pass mutable handles when rehydration matters
+- types can override `kStoragePageSize` if they need a larger or smaller page policy
 
 ## Common Mistakes
 

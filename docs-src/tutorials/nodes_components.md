@@ -35,10 +35,11 @@ A component is the right place for:
 
 using namespace SnAPI::GameFramework;
 
-class TreasureNode final : public BaseNode
+class TreasureNode final : public BaseNode, public NodeCRTP<TreasureNode>
 {
 public:
     static constexpr const char* kTypeName = "MyGame::TreasureNode";
+    static constexpr std::size_t kStoragePageSize = 1024;
 
     int Coins = 10;
     bool Claimed = false;
@@ -48,6 +49,7 @@ class SpinComponent final : public BaseComponent, public ComponentCRTP<SpinCompo
 {
 public:
     static constexpr const char* kTypeName = "MyGame::SpinComponent";
+    static constexpr std::size_t kStoragePageSize = 1024;
 
     float DegreesPerSecond = 90.0f;
 
@@ -162,6 +164,17 @@ This is especially important in the editor path.
 
 If your node depends on renderer viewports or editor UI state, do not assume `OnCreate` runs at the instant the C++ object was allocated. The framework can intentionally defer it until the world is actually ready.
 
+### Constructors and destructors should stay boring
+
+Dense nodes and components are move-only runtime objects. Keep constructors and destructors limited to plain member initialization and already-owned wrapper cleanup.
+
+Put actual runtime side effects in:
+
+- `OnCreate`
+- `OnDestroy`
+- tick phases
+- explicit refresh or rebuild helpers
+
 ## Activity, Replication, and Destroy State
 
 Every node and component has separate concepts for:
@@ -176,20 +189,6 @@ Those are not the same thing.
 - `Replicated(true)` only opens the object-level replication gate.
 - `PendingDestroy()` means the object has been scheduled for cleanup.
 
-## Runtime Components
-
-Classic components are not the only option.
-
-If you want very dense runtime-only state, you can attach runtime ECS components through the runtime mirror.
-
-Typical reasons to use runtime components:
-
-- thousands of lightweight simulation records
-- explicit tick-priority ordering
-- data that does not need the full reflected component model
-
-Do not reach for runtime components by default. Start with classic nodes/components first.
-
 ## Design Heuristics
 
 Use these rules when deciding between node vs component:
@@ -197,7 +196,7 @@ Use these rules when deciding between node vs component:
 1. If it needs its own handle and hierarchy identity, make it a node.
 2. If it is reusable behavior, make it a component.
 3. If it is world-scoped policy rather than object behavior, consider a world subsystem, gameplay service, or a special node like `WorldRenderSettings`.
-4. If it needs fixed-step, high-density runtime processing, consider a runtime component.
+4. If it is hot enough to care about storage tuning, give the concrete node/component type a `kStoragePageSize` that matches its real usage.
 
 ## What To Read Next
 

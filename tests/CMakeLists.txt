@@ -3,6 +3,7 @@ add_executable(GameFrameworkTests
     ConduitTests.cpp
     EcsOnlyWorldTests.cpp
     GameProjectRuntimeTests.cpp
+    HandleTests.cpp
     WorldEcsRuntimeTests.cpp
     SerializationTests.cpp
     LevelWorldSerializationTests.cpp
@@ -25,6 +26,7 @@ add_executable(GameFrameworkEditorTests
     SourceAssetEditorTests.cpp
     ConduitEditorTests.cpp
     ../src/Editor/EditorAssetService.cpp
+    ../src/Editor/EditorPieService.cpp
     ../src/Editor/ConduitEditor.cpp
 )
 
@@ -54,6 +56,20 @@ if (SNAPI_ENABLE_IPO AND SNAPI_IPO_SUPPORTED)
 endif()
 if (SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR)
     target_include_directories(ConduitPerf PRIVATE ${SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR})
+endif()
+
+add_executable(EcsStoragePerf
+    EcsStoragePerf.cpp
+)
+target_compile_definitions(EcsStoragePerf PRIVATE SNAPI_BENCH_BUILD_LABEL="${CMAKE_BUILD_TYPE}")
+if (SNAPI_ENABLE_IPO AND SNAPI_IPO_SUPPORTED)
+    set_target_properties(EcsStoragePerf PROPERTIES
+        INTERPROCEDURAL_OPTIMIZATION FALSE
+        INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE
+        INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO FALSE
+        INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL FALSE
+        INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
+    )
 endif()
 
 add_executable(GameThreadingTests

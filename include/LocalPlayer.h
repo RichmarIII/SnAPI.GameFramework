@@ -41,7 +41,7 @@ namespace SnAPI::GameFramework
  * @see LocalPlayerService
  * @see PawnBase
  */
-class SNAPI_GAMEFRAMEWORK_API LocalPlayer : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API LocalPlayer : public BaseNode, public NodeCRTP<LocalPlayer>
 {
 public:
     static constexpr auto kTypeName = "SnAPI::GameFramework::LocalPlayer";

@@ -7,7 +7,6 @@
 #include "BaseNode.h"
 #include "IWorld.h"
 #include "Level.h"
-#include "WorldEcsRuntime.h"
 
 namespace SnAPI::GameFramework
 {
@@ -65,128 +64,17 @@ bool ReadLocalTransformFromComponent(BaseNode& Node, NodeTransform& OutTransform
     return true;
 }
 
-RuntimeNodeTransform ToRuntimeTransform(const NodeTransform& Transform)
-{
-    RuntimeNodeTransform Out{};
-    Out.Position = Transform.Position;
-    Out.Rotation = Transform.Rotation;
-    Out.Scale = Transform.Scale;
-    return Out;
-}
-
-NodeTransform ToNodeTransform(const RuntimeNodeTransform& Transform)
-{
-    NodeTransform Out{};
-    Out.Position = Transform.Position;
-    Out.Rotation = Transform.Rotation;
-    Out.Scale = Transform.Scale;
-    return Out;
-}
-
-bool ResolveRuntimeNode(BaseNode& Node, IWorld*& OutWorld, RuntimeNodeHandle& OutHandle)
-{
-    OutWorld = Node.World();
-    OutHandle = {};
-    if (!OutWorld)
-    {
-        return false;
-    }
-
-    auto& NodeRuntime = OutWorld->EcsRuntime().Nodes();
-    RuntimeNodeHandle CachedHandle = Node.RuntimeNode();
-    if (!CachedHandle.IsNull() && NodeRuntime.Resolve(CachedHandle))
-    {
-        OutHandle = CachedHandle;
-        return true;
-    }
-
-    auto RuntimeHandleResult = OutWorld->RuntimeNodeById(Node.Id());
-    if (!RuntimeHandleResult)
-    {
-        Node.RuntimeNode({});
-        return false;
-    }
-
-    OutHandle = RuntimeHandleResult.value();
-    Node.RuntimeNode(OutHandle);
-    return !OutHandle.IsNull();
-}
-
-void SyncNodeLocalTransformToRuntime(BaseNode& Node, IWorld& WorldRef, const RuntimeNodeHandle Handle)
-{
-    NodeTransform Local = IdentityNodeTransform();
-    auto& NodeRuntime = WorldRef.EcsRuntime().Nodes();
-    if (ReadLocalTransformFromComponent(Node, Local))
-    {
-        (void)NodeRuntime.SetLocalTransform(Handle, ToRuntimeTransform(Local));
-    }
-    else
-    {
-        (void)NodeRuntime.ClearLocalTransform(Handle);
-    }
-}
-
-bool SyncAncestorChainToRuntime(BaseNode& Node,
-                                IWorld& WorldRef,
-                                RuntimeNodeHandle& OutLeafHandle,
-                                std::vector<BaseNode*>& ScratchChain)
-{
-    OutLeafHandle = {};
-    if (!BuildAncestorChain(Node, ScratchChain))
-    {
-        return false;
-    }
-
-    IWorld* SyncWorld = nullptr;
-    if (!ResolveRuntimeNode(Node, SyncWorld, OutLeafHandle))
-    {
-        return false;
-    }
-
-    for (BaseNode* ChainNode : ScratchChain)
-    {
-        if (!ChainNode)
-        {
-            continue;
-        }
-
-        IWorld* ChainWorld = nullptr;
-        RuntimeNodeHandle ChainRuntimeHandle{};
-        if (!ResolveRuntimeNode(*ChainNode, ChainWorld, ChainRuntimeHandle))
-        {
-            return false;
-        }
-        if (ChainWorld != &WorldRef)
-        {
-            return false;
-        }
-
-        SyncNodeLocalTransformToRuntime(*ChainNode, WorldRef, ChainRuntimeHandle);
-    }
-    return true;
-}
-
 BaseNode* ResolveHierarchyParent(BaseNode& Node)
 {
     NodeHandle ParentHandle = Node.Parent();
+    IWorld* WorldRef = Node.World();
     if (!ParentHandle.IsNull())
     {
-        return ParentHandle.Borrowed();
-    }
-
-    IWorld* WorldRef = nullptr;
-    RuntimeNodeHandle RuntimeHandle{};
-    if (ResolveRuntimeNode(Node, WorldRef, RuntimeHandle) && WorldRef)
-    {
-        const RuntimeNodeHandle ParentRuntime = WorldRef->RuntimeParent(RuntimeHandle);
-        if (!ParentRuntime.IsNull())
+        if (WorldRef)
         {
-            auto ParentHandleResult = WorldRef->NodeHandleById(ParentRuntime.Id);
-            if (ParentHandleResult)
-            {
-                return ParentHandleResult->Borrowed();
-            }
+            return WorldRef->BorrowedNode(ParentHandle);
         }
+        return ParentHandle.Borrowed();
     }
 
     return nullptr;
@@ -263,15 +151,7 @@ NodeTransform TransformComponent::LocalNodeTransformFromWorld(const NodeTransfor
 bool TransformComponent::TryGetNodeLocalTransform(BaseNode& Node, NodeTransform& OutTransform)
 {
     OutTransform = IdentityNodeTransform();
-    const bool HasLocal = ReadLocalTransformFromComponent(Node, OutTransform);
-
-    IWorld* WorldRef = nullptr;
-    RuntimeNodeHandle RuntimeHandle{};
-    if (ResolveRuntimeNode(Node, WorldRef, RuntimeHandle) && WorldRef)
-    {
-        SyncNodeLocalTransformToRuntime(Node, *WorldRef, RuntimeHandle);
-    }
-    return HasLocal;
+    return ReadLocalTransformFromComponent(Node, OutTransform);
 }
 
 bool TransformComponent::TryGetNodeWorldTransform(BaseNode& Node, NodeTransform& OutTransform)
@@ -280,22 +160,6 @@ bool TransformComponent::TryGetNodeWorldTransform(BaseNode& Node, NodeTransform&
 
     std::vector<BaseNode*> Chain{};
     Chain.reserve(16);
-
-    IWorld* WorldRef = nullptr;
-    RuntimeNodeHandle RuntimeHandle{};
-    if (ResolveRuntimeNode(Node, WorldRef, RuntimeHandle) && WorldRef)
-    {
-        RuntimeNodeHandle SyncedLeafHandle{};
-        if (SyncAncestorChainToRuntime(Node, *WorldRef, SyncedLeafHandle, Chain))
-        {
-            RuntimeNodeTransform RuntimeWorld{};
-            if (WorldRef->EcsRuntime().Nodes().TryGetWorldTransform(SyncedLeafHandle, RuntimeWorld))
-            {
-                OutTransform = ToNodeTransform(RuntimeWorld);
-                return true;
-            }
-        }
-    }
 
     if (!BuildAncestorChain(Node, Chain))
     {
@@ -321,25 +185,6 @@ bool TransformComponent::TryGetNodeWorldTransform(BaseNode& Node, NodeTransform&
 bool TransformComponent::TryGetNodeParentWorldTransform(BaseNode& Node, NodeTransform& OutTransform)
 {
     OutTransform = IdentityNodeTransform();
-
-    std::vector<BaseNode*> Chain{};
-    Chain.reserve(16);
-
-    IWorld* WorldRef = nullptr;
-    RuntimeNodeHandle RuntimeHandle{};
-    if (ResolveRuntimeNode(Node, WorldRef, RuntimeHandle) && WorldRef)
-    {
-        RuntimeNodeHandle SyncedLeafHandle{};
-        if (SyncAncestorChainToRuntime(Node, *WorldRef, SyncedLeafHandle, Chain))
-        {
-            RuntimeNodeTransform RuntimeParentWorld{};
-            if (WorldRef->EcsRuntime().Nodes().TryGetParentWorldTransform(SyncedLeafHandle, RuntimeParentWorld))
-            {
-                OutTransform = ToNodeTransform(RuntimeParentWorld);
-                return true;
-            }
-        }
-    }
 
     BaseNode* ParentNode = ResolveHierarchyParent(Node);
     if (!ParentNode)
@@ -370,31 +215,6 @@ bool TransformComponent::TrySetNodeWorldTransform(BaseNode& Node,
             return false;
         }
         TransformResult = AddedResult;
-    }
-
-    IWorld* WorldRef = nullptr;
-    RuntimeNodeHandle RuntimeHandle{};
-    std::vector<BaseNode*> Chain{};
-    Chain.reserve(16);
-    if (ResolveRuntimeNode(Node, WorldRef, RuntimeHandle) && WorldRef)
-    {
-        RuntimeNodeHandle SyncedLeafHandle{};
-        if (SyncAncestorChainToRuntime(Node, *WorldRef, SyncedLeafHandle, Chain))
-        {
-            auto& NodeRuntime = WorldRef->EcsRuntime().Nodes();
-            if (NodeRuntime.TrySetWorldTransform(SyncedLeafHandle, ToRuntimeTransform(NormalizedWorldTransform)))
-            {
-                RuntimeNodeTransform RuntimeLocal{};
-                if (NodeRuntime.TryGetLocalTransform(SyncedLeafHandle, RuntimeLocal))
-                {
-                    const NodeTransform LocalTransform = ToNodeTransform(RuntimeLocal);
-                    TransformResult->Position = LocalTransform.Position;
-                    TransformResult->Rotation = LocalTransform.Rotation;
-                    TransformResult->Scale = LocalTransform.Scale;
-                    return true;
-                }
-            }
-        }
     }
 
     NodeTransform ParentWorld = IdentityNodeTransform();

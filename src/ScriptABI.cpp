@@ -349,7 +349,8 @@ SNAPI_GAMEFRAMEWORK_API void* sn_gf_node_get_component(void* nodeInstance, SnGfU
         return nullptr;
     }
 
-    return World->BorrowedComponent(Node->Handle(), SnAPI::GameFramework::FromC(componentType));
+    SnAPI::GameFramework::NodeHandle OwnerHandle = Node->Handle();
+    return World->BorrowedComponent(OwnerHandle, SnAPI::GameFramework::FromC(componentType));
 }
 
 } // extern "C"

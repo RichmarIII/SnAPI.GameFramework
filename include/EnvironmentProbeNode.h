@@ -26,7 +26,7 @@ namespace SnAPI::GameFramework
  * @see StaticMeshComponent
  * @see TransformComponent
  */
-class SNAPI_GAMEFRAMEWORK_API EnvironmentProbeNode final : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API EnvironmentProbeNode final : public BaseNode, public NodeCRTP<EnvironmentProbeNode>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::EnvironmentProbeNode";

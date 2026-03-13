@@ -54,6 +54,29 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetSSRPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::SSR);
+        auto* SSR = dynamic_cast<SnAPI::Graphics::SSRPass*>(Pass);
+        if (!SSR)
+        {
+            continue;
+        }
+
+        SSR->SetParams(SnAPI::Graphics::SSRContract::DefaultParams());
+        SSR->SetTemporalParams(SnAPI::Graphics::SSRTemporalContract::DefaultParams());
+    }
+}
 } // namespace
 
 SSRParamsNode::SSRParamsNode()
@@ -110,6 +133,26 @@ void SSRParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void SSRParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetSSRPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void SSRParamsNode::Tick(const float DeltaSeconds)

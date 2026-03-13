@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "GameThreading.h"
@@ -86,8 +87,8 @@ struct WorldExecutionProfile
  * @ingroup SnAPI_GameFramework
  * @brief Concrete world implementation that owns graph storage, subsystems, and frame execution.
  *
- * `World` is the default implementation behind `IWorld`. It owns the concrete node pool,
- * ECS runtime state, script runtime, task dispatcher, and optional subsystems such as input,
+ * `World` is the default implementation behind `IWorld`. It owns dense node/component runtime state,
+ * script runtime, task dispatcher, and optional subsystems such as input,
  * UI, networking, physics, audio, and rendering. `GameRuntime` typically owns exactly one
  * `World` instance for the lifetime of a running session.
  *
@@ -202,21 +203,36 @@ public:
     bool ShouldRunNodeEndFrame() const override;
     bool ShouldBuildUiRenderPackets() const override;
     bool ShouldRenderFrame() const override;
-    TObjectPool<BaseNode>& NodePool() override;
-    const TObjectPool<BaseNode>& NodePool() const override;
     void ForEachNode(NodeVisitor Visitor, void* UserData) override;
+    void ForEachNode(NodeVisitor Visitor, void* UserData) const;
+
+    template<typename Visitor>
+    void ForEachNode(Visitor&& VisitorFn)
+    {
+        IWorld::ForEachNode(std::forward<Visitor>(VisitorFn));
+    }
+
+    template<typename Visitor>
+    void ForEachNode(Visitor&& VisitorFn) const
+    {
+        const_cast<World*>(this)->ForEachNode(std::forward<Visitor>(VisitorFn));
+    }
     TExpected<NodeHandle> NodeHandleById(const Uuid& Id) const override;
     TExpected<NodeHandle> CreateNode(const TypeId& Type, std::string Name) override;
     TExpected<NodeHandle> CreateNodeWithId(const TypeId& Type, std::string Name, const Uuid& Id) override;
-    Result DestroyNode(const NodeHandle& Handle) override;
-    Result AttachChild(const NodeHandle& Parent, const NodeHandle& Child) override;
-    Result DetachChild(const NodeHandle& Child) override;
-    void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) override;
-    const void* BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) const override;
-    Result RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type) override;
-    TExpected<void*> CreateComponent(const NodeHandle& Owner, const TypeId& Type) override;
-    TExpected<void*> CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) override;
-    Result RequestNodeOnCreate(const NodeHandle& Handle) override;
+    BaseNode* BorrowedNode(NodeHandle& InOutHandle) override;
+    const BaseNode* BorrowedNode(NodeHandle& InOutHandle) const override;
+    Result DestroyNode(NodeHandle& InOutHandle) override;
+    Result AttachChild(NodeHandle& InOutParent, NodeHandle& InOutChild) override;
+    Result DetachChild(NodeHandle& InOutChild) override;
+    void* BorrowedComponent(NodeHandle& InOutOwner, const TypeId& Type) override;
+    const void* BorrowedComponent(NodeHandle& InOutOwner, const TypeId& Type) const override;
+    BaseComponent* BorrowedComponent(ComponentHandle& InOutHandle) override;
+    const BaseComponent* BorrowedComponent(ComponentHandle& InOutHandle) const override;
+    Result RemoveComponentByType(NodeHandle& InOutOwner, const TypeId& Type) override;
+    TExpected<void*> CreateComponent(NodeHandle& InOutOwner, const TypeId& Type) override;
+    TExpected<void*> CreateComponentWithId(NodeHandle& InOutOwner, const TypeId& Type, const Uuid& Id) override;
+    Result RequestNodeOnCreate(NodeHandle& InOutHandle) override;
     bool AreNodeOnCreateCallbacksDeferred() const override;
     bool IsServer() const;
     bool IsClient() const;
@@ -340,24 +356,14 @@ public:
      * @param Handle Level handle.
      * @return Reference wrapper or error.
      */
-    TExpectedRef<Level> LevelRef(const NodeHandle& Handle) override;
-    TExpected<RuntimeNodeHandle> CreateRuntimeNode(std::string Name, const TypeId& Type) override;
-    TExpected<RuntimeNodeHandle> CreateRuntimeNodeWithId(const Uuid& Id, std::string Name, const TypeId& Type) override;
-    Result DestroyRuntimeNode(RuntimeNodeHandle Handle) override;
-    Result AttachRuntimeChild(RuntimeNodeHandle Parent, RuntimeNodeHandle Child) override;
-    Result DetachRuntimeChild(RuntimeNodeHandle Child) override;
-    TExpected<RuntimeNodeHandle> RuntimeNodeById(const Uuid& Id) const override;
-    RuntimeNodeHandle RuntimeParent(RuntimeNodeHandle Child) const override;
-    std::vector<RuntimeNodeHandle> RuntimeChildren(RuntimeNodeHandle Parent) const override;
-    void ForEachRuntimeChild(RuntimeNodeHandle Parent, RuntimeChildVisitor Visitor, void* UserData) const override;
-    std::vector<RuntimeNodeHandle> RuntimeRoots() const override;
-    TExpected<RuntimeComponentHandle> AddRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) override;
-    TExpected<RuntimeComponentHandle> AddRuntimeComponentWithId(RuntimeNodeHandle Owner,
+    TExpectedRef<Level> LevelRef(NodeHandle& InOutHandle) override;
+    TExpected<RuntimeComponentHandle> AddRuntimeComponent(NodeHandle& InOutOwner, const TypeId& Type) override;
+    TExpected<RuntimeComponentHandle> AddRuntimeComponentWithId(NodeHandle& InOutOwner,
                                                                 const TypeId& Type,
                                                                 const Uuid& Id) override;
-    Result RemoveRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) override;
-    bool HasRuntimeComponent(RuntimeNodeHandle Owner, const TypeId& Type) const override;
-    TExpected<RuntimeComponentHandle> RuntimeComponentByType(RuntimeNodeHandle Owner,
+    Result RemoveRuntimeComponent(NodeHandle& InOutOwner, const TypeId& Type) override;
+    bool HasRuntimeComponent(NodeHandle& InOutOwner, const TypeId& Type) const override;
+    TExpected<RuntimeComponentHandle> RuntimeComponentByType(NodeHandle& InOutOwner,
                                                              const TypeId& Type) const override;
     void* ResolveRuntimeComponentRaw(RuntimeComponentHandle Handle, const TypeId& Type) override;
     const void* ResolveRuntimeComponentRaw(RuntimeComponentHandle Handle, const TypeId& Type) const override;
@@ -491,7 +497,6 @@ public:
 
 private:
     std::string m_name{"World"}; /**< @brief World display/debug name. */
-    std::shared_ptr<TObjectPool<BaseNode>> m_nodePool{}; /**< @brief World-owned node storage. */
     std::vector<NodeHandle> m_rootNodes{}; /**< @brief Root nodes in world hierarchy. */
     std::vector<NodeHandle> m_pendingDestroy{}; /**< @brief Deferred node-destroy queue. */
     mutable GameMutex m_threadMutex{}; /**< @brief World-thread affinity guard for queued task execution. */

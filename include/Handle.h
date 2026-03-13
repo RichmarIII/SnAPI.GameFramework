@@ -29,7 +29,7 @@ namespace SnAPI::GameFramework
  * - Handles never own the target object.
  * - Equality compares stable UUID identity, not pointer identity.
  * - A non-null handle may still fail to resolve if the object has been destroyed or is not loaded.
- * - Successful `Borrowed()` resolution may refresh the cached runtime key on the handle instance.
+ * - Successful mutable `Borrowed()` resolution may refresh the cached runtime key on the handle instance.
  *
  * Ownership and lifetime:
  * - The caller owns only the handle value, never the resolved object.
@@ -38,7 +38,7 @@ namespace SnAPI::GameFramework
  *
  * Threading:
  * - Copying and comparing handles is thread-safe.
- * - Calling `Borrowed()` on the same handle instance from multiple threads is not thread-safe,
+ * - Calling mutable `Borrowed()` on the same handle instance from multiple threads is not thread-safe,
  *   because the runtime cache fields are updated lazily.
  * - External synchronization is required if one handle instance is shared across threads.
  *
@@ -96,9 +96,9 @@ struct THandle
     }
 
     Uuid Id{}; /**< @brief Stable UUID of the referenced object; this is the canonical identity used for equality and persistence. */
-    mutable uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Optional cached pool token used to bypass UUID lookup during hot resolution. */
-    mutable uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Optional cached slot index paired with `RuntimePoolToken` for fast lookup. */
-    mutable uint32_t RuntimeGeneration = 0; /**< @brief Cached generation used to reject stale slot reuse after object destruction. */
+    uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Optional cached pool token used to bypass UUID lookup during hot resolution. */
+    uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Optional cached slot index paired with `RuntimePoolToken` for fast lookup. */
+    uint32_t RuntimeGeneration = 0; /**< @brief Cached generation used to reject stale slot reuse after object destruction. */
 
     /**
      * @brief Check if the handle is null.
@@ -158,34 +158,6 @@ struct THandle
      * Returns `nullptr` when the object cannot be resolved.
      * @note The returned pointer must not be stored across frames or destroy boundaries.
      */
-    T* Borrowed() const
-    {
-        ObjectRegistry::RuntimeIdentity Identity{};
-        T* Resolved = ObjectRegistry::Instance().ResolveFastOrFallback<T>(
-            Id,
-            RuntimePoolToken,
-            RuntimeIndex,
-            RuntimeGeneration,
-            &Identity);
-        if (Resolved)
-        {
-            RuntimePoolToken = Identity.RuntimePoolToken;
-            RuntimeIndex = Identity.RuntimeIndex;
-            RuntimeGeneration = Identity.RuntimeGeneration;
-        }
-        return Resolved;
-    }
-
-    // Borrowed pointers are valid only for the current frame; do not cache or store them.
-    /**
-     * @brief Resolve to a non-owning pointer using cached runtime identity when possible.
-     * @return Non-owning pointer to the object, or `nullptr` if the object is not currently registered.
-     * @remarks
-     * Fast path uses runtime pool token/index/generation only (no UUID hash lookup).
-     * On success, runtime identity is refreshed on this handle instance.
-     * Returns `nullptr` when the object cannot be resolved.
-     * @note The returned pointer must not be stored across frames or destroy boundaries.
-     */
     T* Borrowed()
     {
         ObjectRegistry::RuntimeIdentity Identity{};
@@ -232,9 +204,25 @@ struct THandle
      * Fast path uses runtime slot identity only. For UUID-only persistence handles,
      * use `IsValidSlowByUuid()`.
      */
-    bool IsValid() const
+    bool IsValid()
     {
         return Borrowed() != nullptr;
+    }
+
+    /**
+     * @brief Check whether the handle resolves to a live object without mutating runtime cache state.
+     * @return `true` when the object is currently registered and reachable through the fast-or-fallback resolve path.
+     * @remarks
+     * This preserves const semantics by discarding any refreshed runtime identity, so repeated
+     * calls may continue paying the UUID fallback path when the handle is stale or UUID-only.
+     */
+    bool IsValidMaybeSlow() const
+    {
+        return ObjectRegistry::Instance().ResolveFast<T>(
+            Id,
+            RuntimePoolToken,
+            RuntimeIndex,
+            RuntimeGeneration) != nullptr;
     }
 
     /**

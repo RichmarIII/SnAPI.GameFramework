@@ -217,7 +217,7 @@ bool SpawnPrimitive(Level& GraphRef, const PrimitiveSpawnSpec& Spec, std::vector
     }
 
     NodeHandle Handle = NodeResult.value();
-    BaseNode* Node = Handle.Borrowed();
+    BaseNode* Node = GraphRef.BorrowedNode(Handle);
     if (!Node)
     {
         (void)GraphRef.DestroyNode(Handle);
@@ -298,7 +298,7 @@ void AttachPlatformBobScript(std::vector<NodeHandle>& Nodes)
 {
 #if defined(SNAPI_GF_ENABLE_LUA)
     constexpr std::string_view kTargetNodeName = "Platform.StepB";
-    for (const NodeHandle& Handle : Nodes)
+    for (NodeHandle Handle : Nodes)
     {
         BaseNode* Node = Handle.Borrowed();
         if (!Node || Node->Name() != kTargetNodeName)
@@ -593,23 +593,25 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(MakeError(EErrorCode::NotReady, "Renderer system is not initialized"));
     }
 
-    if (!m_levelNode.IsNull() && m_levelNode.Borrowed() == nullptr)
+    if (!m_levelNode.IsNull() && WorldPtr->BorrowedNode(m_levelNode) == nullptr)
     {
         m_levelNode = {};
     }
-    if (!m_cameraNode.IsNull() && m_cameraNode.Borrowed() == nullptr)
+    if (!m_cameraNode.IsNull() && WorldPtr->BorrowedNode(m_cameraNode) == nullptr)
     {
         m_cameraNode = {};
-        m_cameraComponent = nullptr;
+        m_cameraComponent = {};
     }
     m_sceneNodes.erase(std::remove_if(m_sceneNodes.begin(), m_sceneNodes.end(),
-                                      [](const NodeHandle& Handle) { return Handle.IsNull() || Handle.Borrowed() == nullptr; }),
+                                      [WorldPtr](NodeHandle& Handle) {
+                                          return Handle.IsNull() || WorldPtr->BorrowedNode(Handle) == nullptr;
+                                      }),
                        m_sceneNodes.end());
 
     if (!m_levelNode.IsNull() && !m_cameraNode.IsNull() && !m_sceneNodes.empty())
     {
         SyncActiveCamera(*WorldPtr);
-        if (m_cameraComponent)
+        if (ActiveCameraComponent() != nullptr)
         {
             return Ok();
         }
@@ -635,7 +637,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         (void)WorldPtr->DestroyNode(m_cameraNode);
         m_cameraNode = {};
     }
-    m_cameraComponent = nullptr;
+    m_cameraComponent = {};
 
     auto LevelNodeResult = WorldPtr->CreateLevel("Level");
     if (!LevelNodeResult)
@@ -643,13 +645,14 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(LevelNodeResult.error());
     }
 
-    auto* LevelNode = NodeCast<Level>(LevelNodeResult->Borrowed());
+    NodeHandle LevelHandle = LevelNodeResult.value();
+    auto* LevelNode = NodeCast<Level>(WorldPtr->BorrowedNode(LevelHandle));
     if (!LevelNode)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow editor level node"));
     }
 
-    m_levelNode = LevelNodeResult.value();
+    m_levelNode = LevelHandle;
 
     auto CameraNodeResult = WorldPtr->CreateNode("EditorCamera");
     if (!CameraNodeResult)
@@ -657,7 +660,8 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(CameraNodeResult.error());
     }
 
-    auto* CameraNode = CameraNodeResult->Borrowed();
+    NodeHandle CameraHandle = CameraNodeResult.value();
+    auto* CameraNode = WorldPtr->BorrowedNode(CameraHandle);
     if (!CameraNode)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow editor camera node"));
@@ -689,8 +693,8 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
     ApplyEditorCameraFlyDefaults(*EditorCameraResult);
 #endif
 
-    m_cameraNode = CameraNodeResult.value();
-    m_cameraComponent = Camera;
+    m_cameraNode = CameraHandle;
+    m_cameraComponent = Camera->Handle();
 
     auto LightNodeResult = LevelNode->CreateNode("DirectionalLight");
     if (!LightNodeResult)
@@ -698,7 +702,8 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
         return std::unexpected(LightNodeResult.error());
     }
 
-    auto* LightNode = LightNodeResult->Borrowed();
+    NodeHandle LightHandle = LightNodeResult.value();
+    auto* LightNode = WorldPtr->BorrowedNode(LightHandle);
     if (!LightNode)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow directional-light node"));
@@ -724,7 +729,7 @@ Result EditorSceneBootstrap::Initialize(GameRuntime& Runtime)
     LightSettings.SoftShadows = true;
     LightSettings.ContactHardening = false;
     LightSettings.CascadeBlending = true;
-    m_sceneNodes.push_back(*LightNodeResult);
+    m_sceneNodes.push_back(LightHandle);
 
     BuildPlatformingScene(*LevelNode, m_sceneNodes);
 
@@ -761,7 +766,7 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
     m_levelNode = {};
     m_cameraNode = {};
     m_sceneNodes.clear();
-    m_cameraComponent = nullptr;
+    m_cameraComponent = {};
 }
 
 Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
@@ -773,10 +778,10 @@ Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
         return Ok();
     }
 
-    if (!m_cameraNode.IsNull() && m_cameraNode.Borrowed() == nullptr)
+    if (!m_cameraNode.IsNull() && WorldRef.BorrowedNode(m_cameraNode) == nullptr)
     {
         m_cameraNode = {};
-        m_cameraComponent = nullptr;
+        m_cameraComponent = {};
     }
 
     BaseNode* CameraNode = nullptr;
@@ -786,7 +791,7 @@ Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
 
     if (!m_cameraNode.IsNull())
     {
-        CameraNode = m_cameraNode.Borrowed();
+        CameraNode = WorldRef.BorrowedNode(m_cameraNode);
         if (CameraNode)
         {
             if (auto CameraResult = CameraNode->Component<CameraComponent>())
@@ -798,7 +803,7 @@ Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
 
     if (!CameraNode || !Camera)
     {
-        WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+        WorldRef.ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
             if (Camera != nullptr)
             {
                 return;
@@ -827,12 +832,13 @@ Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
         {
             return std::unexpected(CameraNodeResult.error());
         }
-        CameraNode = CameraNodeResult->Borrowed();
+        NodeHandle CameraHandle = CameraNodeResult.value();
+        CameraNode = WorldRef.BorrowedNode(CameraHandle);
         if (!CameraNode)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to borrow created editor camera node"));
         }
-        m_cameraNode = CameraNodeResult.value();
+        m_cameraNode = CameraHandle;
         CreatedNode = true;
     }
 
@@ -875,17 +881,17 @@ Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)
     }
 #endif
 
-    m_cameraComponent = Camera;
+    m_cameraComponent = Camera ? Camera->Handle() : ComponentHandle{};
     return Ok();
 }
 
 void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
 {
-    m_cameraComponent = nullptr;
+    m_cameraComponent = {};
 
     if (CameraComponent* Active = ResolveActiveCameraComponent(WorldRef))
     {
-        m_cameraComponent = Active;
+        m_cameraComponent = Active->Handle();
         return;
     }
 
@@ -896,18 +902,18 @@ void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
     }
 
     (void)EnsureEditorCamera(WorldRef);
-    if (m_cameraComponent)
+    if (ActiveCameraComponent() != nullptr)
     {
         return;
     }
 
     if (!m_cameraNode.IsNull())
     {
-        if (auto* CameraNode = m_cameraNode.Borrowed())
+        if (auto* CameraNode = WorldRef.BorrowedNode(m_cameraNode))
         {
             if (auto Camera = CameraNode->Component<CameraComponent>())
             {
-                m_cameraComponent = &*Camera;
+                m_cameraComponent = Camera->Handle();
                 return;
             }
         }
@@ -916,17 +922,24 @@ void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
 
 CameraComponent* EditorSceneBootstrap::ActiveCameraComponent() const
 {
-    return m_cameraComponent;
-}
-
-SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
-{
-    if (!m_cameraComponent)
+    if (m_cameraComponent.IsNull())
     {
         return nullptr;
     }
 
-    return m_cameraComponent->Camera();
+    ComponentHandle CameraHandle = m_cameraComponent;
+    return static_cast<CameraComponent*>(CameraHandle.Borrowed());
+}
+
+SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
+{
+    CameraComponent* Camera = ActiveCameraComponent();
+    if (!Camera)
+    {
+        return nullptr;
+    }
+
+    return Camera->Camera();
 }
 
 CameraComponent* EditorSceneBootstrap::ResolveActiveCameraComponent(World& WorldRef) const
@@ -938,7 +951,7 @@ CameraComponent* EditorSceneBootstrap::ResolveActiveCameraComponent(World& World
     }
 
     CameraComponent* MatchedCamera = nullptr;
-    WorldRef.NodePool().ForEach([&](const NodeHandle&, BaseNode& Node) {
+    WorldRef.ForEachNode([&](const NodeHandle&, BaseNode& Node) {
         if (MatchedCamera != nullptr || !Node.Has<CameraComponent>())
         {
             return;
@@ -981,7 +994,7 @@ void EditorSceneBootstrap::Shutdown(GameRuntime* Runtime)
     m_levelNode = {};
     m_cameraNode = {};
     m_sceneNodes.clear();
-    m_cameraComponent = nullptr;
+    m_cameraComponent = {};
 }
 
 Result EditorSceneBootstrap::EnsureEditorCamera(World& WorldRef)

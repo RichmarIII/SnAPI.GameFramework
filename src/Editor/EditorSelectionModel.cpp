@@ -23,7 +23,8 @@ BaseNode* ResolveNodeInWorldById(World& WorldRef, const Uuid& TargetId)
     const auto HandleResult = WorldRef.NodeHandleById(TargetId);
     if (HandleResult)
     {
-        if (auto* Direct = WorldRef.NodePool().Borrowed(*HandleResult))
+        NodeHandle ResolvedHandle = *HandleResult;
+        if (auto* Direct = WorldRef.BorrowedNode(ResolvedHandle))
         {
             return Direct;
         }
@@ -41,7 +42,8 @@ const BaseNode* ResolveNodeInWorldById(const World& WorldRef, const Uuid& Target
     const auto HandleResult = WorldRef.NodeHandleById(TargetId);
     if (HandleResult)
     {
-        if (const auto* Direct = WorldRef.NodePool().Borrowed(*HandleResult))
+        NodeHandle ResolvedHandle = *HandleResult;
+        if (const auto* Direct = WorldRef.BorrowedNode(ResolvedHandle))
         {
             return Direct;
         }
@@ -67,14 +69,14 @@ void EditorSelectionModel::Clear()
     m_selectedNode = {};
 }
 
-BaseNode* EditorSelectionModel::ResolveSelectedNode(World& WorldRef) const
+BaseNode* EditorSelectionModel::ResolveSelectedNode(World& WorldRef)
 {
     if (m_selectedNode.IsNull())
     {
         return nullptr;
     }
 
-    if (auto* Node = m_selectedNode.Borrowed())
+    if (auto* Node = WorldRef.BorrowedNode(m_selectedNode))
     {
         return Node;
     }
@@ -94,17 +96,18 @@ const BaseNode* EditorSelectionModel::ResolveSelectedNode(const World& WorldRef)
         return nullptr;
     }
 
-    if (auto* Node = m_selectedNode.Borrowed())
+    NodeHandle SelectedNode = m_selectedNode;
+    if (const auto* Node = WorldRef.BorrowedNode(SelectedNode))
     {
         return Node;
     }
 
-    if (const auto* Node = ResolveNodeInWorldById(WorldRef, m_selectedNode.Id))
+    if (const auto* Node = ResolveNodeInWorldById(WorldRef, SelectedNode.Id))
     {
         return Node;
     }
 
-    return m_selectedNode.BorrowedSlowByUuid();
+    return SelectedNode.BorrowedSlowByUuid();
 }
 
 } // namespace SnAPI::GameFramework::Editor

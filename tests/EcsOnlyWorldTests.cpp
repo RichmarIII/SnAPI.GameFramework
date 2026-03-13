@@ -60,7 +60,7 @@ TEST_CASE("World ECS-only tick updates runtime components")
     REQUIRE(TickCount == 1);
 }
 
-TEST_CASE("World ECS hierarchy attach and detach mirrors runtime hierarchy")
+TEST_CASE("World ECS hierarchy attach and detach updates node parent links")
 {
     EnsureBuiltinsRegistered();
     World WorldInstance{"EcsOnlyHierarchyWorld"};
@@ -70,19 +70,16 @@ TEST_CASE("World ECS hierarchy attach and detach mirrors runtime hierarchy")
     REQUIRE(ParentResult.has_value());
     REQUIRE(ChildResult.has_value());
 
-    const NodeHandle Parent = *ParentResult;
-    const NodeHandle Child = *ChildResult;
+    NodeHandle Parent = *ParentResult;
+    NodeHandle Child = *ChildResult;
 
     REQUIRE(WorldInstance.AttachChild(Parent, Child));
-
-    auto ParentRuntime = WorldInstance.RuntimeNodeById(Parent.Id);
-    auto ChildRuntime = WorldInstance.RuntimeNodeById(Child.Id);
-    REQUIRE(ParentRuntime.has_value());
-    REQUIRE(ChildRuntime.has_value());
-    REQUIRE(WorldInstance.RuntimeParent(*ChildRuntime) == *ParentRuntime);
+    REQUIRE(Child.Borrowed() != nullptr);
+    REQUIRE(Child.Borrowed()->Parent() == Parent);
 
     REQUIRE(WorldInstance.DetachChild(Child));
-    REQUIRE(WorldInstance.RuntimeParent(*ChildRuntime).IsNull());
+    REQUIRE(Child.Borrowed() != nullptr);
+    REQUIRE(Child.Borrowed()->Parent().IsNull());
 }
 
 TEST_CASE("World ECS destroy is recursive for node subtrees")
@@ -95,8 +92,8 @@ TEST_CASE("World ECS destroy is recursive for node subtrees")
     REQUIRE(ParentResult.has_value());
     REQUIRE(ChildResult.has_value());
 
-    const NodeHandle Parent = *ParentResult;
-    const NodeHandle Child = *ChildResult;
+    NodeHandle Parent = *ParentResult;
+    NodeHandle Child = *ChildResult;
 
     REQUIRE(WorldInstance.AttachChild(Parent, Child));
     REQUIRE(WorldInstance.DestroyNode(Parent));
@@ -105,8 +102,6 @@ TEST_CASE("World ECS destroy is recursive for node subtrees")
 
     REQUIRE(Parent.Borrowed() == nullptr);
     REQUIRE(Child.Borrowed() == nullptr);
-    REQUIRE_FALSE(WorldInstance.RuntimeNodeById(Parent.Id).has_value());
-    REQUIRE_FALSE(WorldInstance.RuntimeNodeById(Child.Id).has_value());
 }
 
 TEST_CASE("Level nodes are lightweight wrappers over world-owned storage")
@@ -123,9 +118,6 @@ TEST_CASE("Level nodes are lightweight wrappers over world-owned storage")
     auto NestedResult = LevelNode->CreateNode<BaseNode>("Nested");
     REQUIRE(NestedResult.has_value());
 
-    auto LevelRuntime = WorldInstance.RuntimeNodeById(LevelResult->Id);
-    auto NestedRuntime = WorldInstance.RuntimeNodeById(NestedResult->Id);
-    REQUIRE(LevelRuntime.has_value());
-    REQUIRE(NestedRuntime.has_value());
-    REQUIRE(WorldInstance.RuntimeParent(*NestedRuntime) == *LevelRuntime);
+    REQUIRE(NestedResult->Borrowed() != nullptr);
+    REQUIRE(NestedResult->Borrowed()->Parent() == *LevelResult);
 }

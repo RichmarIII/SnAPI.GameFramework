@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "AssetPipelineIds.h"
 #include "AuthoredAssetJson.h"
 #include "GameFramework.hpp"
 
@@ -52,6 +53,23 @@ std::size_t CountWorldNodes(World& WorldRef)
             ++(*Counter);
         },
         &Count);
+    return Count;
+}
+
+std::size_t CountNodesOfType(World& WorldRef, const TypeId& Type, const bool RootsOnly = false)
+{
+    std::size_t Count = 0;
+    WorldRef.ForEachNode([&Count, Type, RootsOnly](const NodeHandle&, BaseNode& Node) {
+        if (RootsOnly && !Node.Parent().IsNull())
+        {
+            return;
+        }
+
+        if (TypeRegistry::Instance().IsA(Node.TypeKey(), Type))
+        {
+            ++Count;
+        }
+    });
     return Count;
 }
 
@@ -106,7 +124,7 @@ TEST_CASE("GameProjectRuntime loads a project startup level", "[Runtime][Project
     CHECK(std::filesystem::path(RuntimeHost.Project().AssetRootDirectory).lexically_normal()
           == (ProjectFilePath.parent_path() / "Assets").lexically_normal());
     CHECK(RuntimeHost.Runtime().World().Levels().size() == 1);
-    CHECK(CountWorldNodes(RuntimeHost.Runtime().World()) == 1);
+    CHECK(CountWorldNodes(RuntimeHost.Runtime().World()) == 2);
 
     RuntimeHost.Shutdown();
 }
@@ -133,3 +151,86 @@ TEST_CASE("GameProjectRuntime restarts gameplay host after project content loads
 
     RuntimeHost.Shutdown();
 }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+TEST_CASE("GameProjectRuntime does not inject project default render settings over authored startup settings",
+          "[Runtime][Project][Renderer]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    const std::filesystem::path ProjectRoot = Root.Path / "RuntimeRenderSettingsProject";
+    const std::filesystem::path AssetRoot = ProjectRoot / "Assets";
+    const std::filesystem::path ProjectFilePath = ProjectRoot / "project.snproj.json";
+
+    NodeAsset FogPrefab{};
+    FogPrefab.Name = "ProjectFogParams";
+    FogPrefab.Nodes.push_back(NodeObjectAsset{
+        .Id = NewUuid(),
+        .Type = StaticTypeId<HeightFogParamsNode>(),
+        .Name = "ProjectFogParams",
+        .Active = true,
+    });
+    auto FogJson = SerializeAuthoredAssetToJson(FogPrefab);
+    REQUIRE(FogJson);
+    WriteTextFile(AssetRoot / "Rendering" / "ProjectFogParams.prefab", *FogJson);
+
+    TAssetRef<HeightFogParamsNode> FogRef{};
+    FogRef.EditAssetName() = "Rendering/ProjectFogParams.prefab";
+    FogRef.EditAssetId() = SourceAssetIdFromLogicalName(FogRef.GetAssetName()).ToString();
+
+    NodeAsset DefaultRenderSettingsPrefab{};
+    DefaultRenderSettingsPrefab.Name = "ProjectDefaultRenderSettings";
+    DefaultRenderSettingsPrefab.Nodes.push_back(NodeObjectAsset{
+        .Id = NewUuid(),
+        .Type = StaticTypeId<WorldRenderSettings>(),
+        .Name = "ProjectDefaultRenderSettings",
+        .Active = true,
+        .Fields = {
+            NodeFieldAsset{
+                .Name = "HeightFogParams",
+                .Value = Conduit::SerializedValue::FromValue(FogRef).value(),
+            },
+        },
+    });
+    auto RenderSettingsJson = SerializeAuthoredAssetToJson(DefaultRenderSettingsPrefab);
+    REQUIRE(RenderSettingsJson);
+    WriteTextFile(AssetRoot / "Rendering" / "ProjectDefaultRenderSettings.prefab", *RenderSettingsJson);
+
+    LevelAsset StartupLevel{};
+    StartupLevel.Name = "Startup";
+    StartupLevel.Nodes.push_back(NodeObjectAsset{
+        .Id = NewUuid(),
+        .Type = StaticTypeId<WorldRenderSettings>(),
+        .Name = "AuthoredWorldRenderSettings",
+        .Active = true,
+    });
+    auto LevelJson = SerializeAuthoredAssetToJson(StartupLevel);
+    REQUIRE(LevelJson);
+    WriteTextFile(AssetRoot / "Levels" / "Startup.level", *LevelJson);
+
+    const std::string ProjectConfig =
+        std::string("{\n") +
+        "  \"version\": 1,\n"
+        "  \"name\": \"RuntimeRenderSettingsProject\",\n"
+        "  \"assetRoot\": \"Assets\",\n"
+        "  \"startupLevelAsset\": \"Levels/Startup.level\",\n"
+        "  \"defaultRenderSettings\": \"" +
+        SourceAssetIdFromLogicalName("Rendering/ProjectDefaultRenderSettings.prefab").ToString() + "\"\n"
+        "}\n";
+    WriteTextFile(ProjectFilePath, ProjectConfig);
+
+    GameProjectRuntime RuntimeHost{};
+    GameProjectRuntimeSettings Settings{};
+    Settings.ProjectFilePath = ProjectFilePath.string();
+    Settings.Runtime.WorldName = "RuntimeRenderSettingsWorld";
+    Settings.Runtime.RegisterBuiltins = true;
+
+    REQUIRE(RuntimeHost.Initialize(Settings));
+    REQUIRE(RuntimeHost.IsInitialized());
+    CHECK(CountNodesOfType(RuntimeHost.Runtime().World(), StaticTypeId<WorldRenderSettings>()) == 1);
+    CHECK(CountNodesOfType(RuntimeHost.Runtime().World(), StaticTypeId<HeightFogParamsNode>()) == 0);
+
+    RuntimeHost.Shutdown();
+}
+#endif

@@ -3,8 +3,10 @@
 #include "AudioSourceComponent.h"
 #include "CameraComponent.h"
 #include "CharacterMovementController.h"
+#include "ComponentTypeRegistry.h"
 #include "FollowTargetComponent.h"
 #include "InputComponent.h"
+#include "NodeStorageFactoryRegistry.h"
 #include "Profiling.h"
 #include "Relevance.h"
 #include "RigidBodyComponent.h"
@@ -127,46 +129,39 @@ private:
 };
 #endif
 
-RuntimeNodeHandle ResolveRuntimeOwnerHandle(IWorld& WorldRef, BaseNode& Node)
+[[nodiscard]] const BaseNode* ResolveComponentOwnerNode(const IWorld& WorldRef,
+                                                        NodeHandle& InOutOwner,
+                                                        NodeHandle& OutResolvedHandle)
 {
-    RuntimeNodeHandle OwnerRuntime = Node.RuntimeNode();
-    if (!OwnerRuntime.IsNull() && WorldRef.EcsRuntime().Nodes().Resolve(OwnerRuntime))
-    {
-        return OwnerRuntime;
-    }
-
-    auto RuntimeHandleResult = WorldRef.RuntimeNodeById(Node.Id());
-    if (!RuntimeHandleResult)
-    {
-        Node.RuntimeNode({});
-        return {};
-    }
-
-    OwnerRuntime = RuntimeHandleResult.value();
-    Node.RuntimeNode(OwnerRuntime);
-    return OwnerRuntime;
-}
-
-[[nodiscard]] BaseNode* ResolveComponentOwnerNode(const IWorld& WorldRef, const NodeHandle& Owner, NodeHandle& OutResolvedHandle)
-{
-    if (Owner.IsNull())
+    if (InOutOwner.IsNull())
     {
         return nullptr;
     }
 
-    OutResolvedHandle = Owner;
-    if (BaseNode* Node = OutResolvedHandle.Borrowed())
+    OutResolvedHandle = InOutOwner;
+    if (const BaseNode* Node = WorldRef.BorrowedNode(OutResolvedHandle))
     {
+        InOutOwner = OutResolvedHandle;
         return Node;
     }
 
-    if (auto HandleResult = WorldRef.NodeHandleById(Owner.Id); HandleResult)
+    if (auto HandleResult = WorldRef.NodeHandleById(InOutOwner.Id); HandleResult)
     {
         OutResolvedHandle = *HandleResult;
-        return OutResolvedHandle.Borrowed();
+        if (const BaseNode* Node = WorldRef.BorrowedNode(OutResolvedHandle))
+        {
+            InOutOwner = OutResolvedHandle;
+            return Node;
+        }
     }
 
     return nullptr;
+}
+
+[[nodiscard]] BaseNode* ResolveComponentOwnerNode(IWorld& WorldRef, NodeHandle& InOutOwner, NodeHandle& OutResolvedHandle)
+{
+    return const_cast<BaseNode*>(
+        ResolveComponentOwnerNode(static_cast<const IWorld&>(WorldRef), InOutOwner, OutResolvedHandle));
 }
 
 void UnregisterRuntimeTypeOnNode(BaseNode& Node, const TypeId& Type)
@@ -180,7 +175,6 @@ void UnregisterRuntimeTypeOnNode(BaseNode& Node, const TypeId& Type)
     }
 
     auto& Types = Node.ComponentTypes();
-    auto& Storages = Node.ComponentStorages();
     for (std::size_t Index = 0; Index < Types.size(); ++Index)
     {
         if (Types[Index] != Type)
@@ -190,11 +184,6 @@ void UnregisterRuntimeTypeOnNode(BaseNode& Node, const TypeId& Type)
 
         auto TypeIt = Types.begin() + static_cast<std::vector<TypeId>::difference_type>(Index);
         Types.erase(TypeIt);
-        if (Index < Storages.size())
-        {
-            auto StorageIt = Storages.begin() + static_cast<std::vector<ComponentStorageView*>::difference_type>(Index);
-            Storages.erase(StorageIt);
-        }
         break;
     }
 
@@ -205,9 +194,9 @@ void UnregisterRuntimeTypeOnNode(BaseNode& Node, const TypeId& Type)
     }
 }
 
-void* ResolveRuntimeRawFromStorage(WorldEcsRuntime& Runtime, const RuntimeNodeHandle OwnerRuntime, const TypeId& Type)
+void* ResolveRuntimeRawFromStorage(WorldEcsRuntime& Runtime, const NodeHandle& OwnerHandle, const TypeId& Type)
 {
-    auto RuntimeComponentHandle = Runtime.ComponentHandle(OwnerRuntime, Type);
+    auto RuntimeComponentHandle = Runtime.ComponentHandle(OwnerHandle, Type);
     if (!RuntimeComponentHandle)
     {
         return nullptr;
@@ -216,10 +205,10 @@ void* ResolveRuntimeRawFromStorage(WorldEcsRuntime& Runtime, const RuntimeNodeHa
 }
 
 const void* ResolveRuntimeRawFromStorage(const WorldEcsRuntime& Runtime,
-                                         const RuntimeNodeHandle OwnerRuntime,
+                                         const NodeHandle& OwnerHandle,
                                          const TypeId& Type)
 {
-    auto RuntimeComponentHandle = Runtime.ComponentHandle(OwnerRuntime, Type);
+    auto RuntimeComponentHandle = Runtime.ComponentHandle(OwnerHandle, Type);
     if (!RuntimeComponentHandle)
     {
         return nullptr;
@@ -227,44 +216,33 @@ const void* ResolveRuntimeRawFromStorage(const WorldEcsRuntime& Runtime,
     return Runtime.ResolveComponentRaw(*RuntimeComponentHandle, Type);
 }
 
-BaseNode* ResolveNodeIncludingPendingDestroy(const std::shared_ptr<TObjectPool<BaseNode>>& NodePool,
-                                             const NodeHandle& Handle)
+BaseNode* ResolveNodeIncludingPendingDestroy(WorldEcsRuntime& Runtime, const NodeHandle& Handle)
 {
-    if (!NodePool)
+    if (Handle.IsNull())
     {
         return nullptr;
     }
 
-    if (BaseNode* Node = NodePool->Borrowed(Handle))
+    if (Handle.HasRuntimeKey())
+    {
+        if (BaseNode* Node = Runtime.ResolveNodeIncludingPendingDestroy(Handle))
+        {
+            return Node;
+        }
+    }
+
+    NodeHandle ResolvedHandle = Handle;
+    if (BaseNode* Node = ResolvedHandle.Borrowed())
     {
         return Node;
     }
 
-    return ObjectRegistry::Instance().Resolve<BaseNode>(Handle.Id);
-}
-
-Result InvokeNodeOnCreateCallback(IWorld& WorldRef, BaseNode& Node)
-{
-    const TypeInfo* NodeTypeInfo = TypeRegistry::Instance().Find(Node.TypeKey());
-    if (!NodeTypeInfo || !NodeTypeInfo->NodeOnCreate)
+    if (auto HandleResult = Runtime.NodeHandleById(Handle.Id); HandleResult)
     {
-        return Ok();
+        return Runtime.ResolveNodeIncludingPendingDestroy(*HandleResult);
     }
 
-    try
-    {
-        NodeTypeInfo->NodeOnCreate(&Node, &WorldRef);
-    }
-    catch (const std::exception& Ex)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, Ex.what()));
-    }
-    catch (...)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Node OnCreate invocation threw"));
-    }
-
-    return Ok();
+    return nullptr;
 }
 } // namespace
 
@@ -290,7 +268,6 @@ WorldExecutionProfile WorldExecutionProfile::PIE()
 
 World::World()
     : m_name("World")
-    , m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     , m_networkSystem(*this)
 #endif
@@ -302,7 +279,6 @@ World::World()
 
 World::World(std::string Name)
     : m_name(std::move(Name))
-    , m_nodePool(std::make_shared<TObjectPool<BaseNode>>())
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     , m_networkSystem(*this)
 #endif
@@ -399,20 +375,6 @@ bool World::ShouldRenderFrame() const
     return m_executionProfile.RenderFrame;
 }
 
-TObjectPool<BaseNode>& World::NodePool()
-{
-    if (!m_nodePool)
-    {
-        m_nodePool = std::make_shared<TObjectPool<BaseNode>>();
-    }
-    return *m_nodePool;
-}
-
-const TObjectPool<BaseNode>& World::NodePool() const
-{
-    return const_cast<World*>(this)->NodePool();
-}
-
 void World::ForEachNode(const NodeVisitor Visitor, void* const UserData)
 {
     if (!Visitor)
@@ -420,18 +382,17 @@ void World::ForEachNode(const NodeVisitor Visitor, void* const UserData)
         return;
     }
 
-    NodePool().ForEach([Visitor, UserData](const NodeHandle& Handle, BaseNode& Node) {
-        Visitor(UserData, Handle, Node);
-    });
+    m_ecsRuntime.ForEachNode(Visitor, UserData);
+}
+
+void World::ForEachNode(const NodeVisitor Visitor, void* const UserData) const
+{
+    const_cast<World*>(this)->ForEachNode(Visitor, UserData);
 }
 
 TExpected<NodeHandle> World::NodeHandleById(const Uuid& Id) const
 {
-    if (!m_nodePool)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node storage is not initialized"));
-    }
-    return m_nodePool->HandleByIdSlow(Id);
+    return m_ecsRuntime.NodeHandleById(Id);
 }
 
 TExpected<NodeHandle> World::CreateNode(const TypeId& Type, std::string Name)
@@ -445,78 +406,23 @@ TExpected<NodeHandle> World::CreateNode(const TypeId& Type, std::string Name)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type is not a node type"));
     }
+    (void)Info;
 
-    const ConstructorInfo* Ctor = nullptr;
-    for (const auto& Candidate : Info->Constructors)
+    if (const Result EnsureStorageResult = NodeStorageFactoryRegistry::Instance().EnsureStorage(Type, m_ecsRuntime);
+        !EnsureStorageResult)
     {
-        if (Candidate.ParamTypes.empty())
-        {
-            Ctor = &Candidate;
-            break;
-        }
-    }
-    if (!Ctor)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "No default constructor registered"));
+        return std::unexpected(EnsureStorageResult.error());
     }
 
-    std::span<const Variant> EmptyArgs;
-    auto InstanceResult = Ctor->Construct(EmptyArgs);
-    if (!InstanceResult)
-    {
-        return std::unexpected(InstanceResult.error());
-    }
-
-    auto BasePtr = std::static_pointer_cast<BaseNode>(InstanceResult.value());
-    if (!BasePtr)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Node type mismatch"));
-    }
-
-    if (!m_nodePool)
-    {
-        m_nodePool = std::make_shared<TObjectPool<BaseNode>>();
-    }
-
-    auto HandleResult = m_nodePool->CreateFromShared(std::move(BasePtr));
+    ScopedComponentOnCreateSuppression SuppressOnCreate{};
+    auto HandleResult = m_ecsRuntime.CreateNode(*this, Type, std::move(Name));
     if (!HandleResult)
     {
         return std::unexpected(HandleResult.error());
     }
 
-    const NodeHandle Handle = *HandleResult;
-    BaseNode* Node = m_nodePool->Borrowed(Handle);
-    if (!Node)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Created node could not be resolved"));
-    }
-
-    Node->Handle(Handle);
-    Node->Name(std::move(Name));
-    Node->World(this);
-    Node->RuntimeNode({});
-    Node->PendingDestroy(false);
-    Node->Parent({});
-    Node->TypeKey(Type);
-
-    ObjectRegistry::Instance().RegisterNode(
-        Node->Id(),
-        Node,
-        Handle.RuntimePoolToken,
-        Handle.RuntimeIndex,
-        Handle.RuntimeGeneration);
-
-    auto RuntimeCreateResult = m_ecsRuntime.Nodes().CreateNodeWithId(*this, Node->Id(), Node->Name(), Node->TypeKey());
-    if (!RuntimeCreateResult)
-    {
-        ObjectRegistry::Instance().Unregister(Node->Id());
-        (void)m_nodePool->DestroyLater(Handle);
-        m_nodePool->EndFrame();
-        return std::unexpected(RuntimeCreateResult.error());
-    }
-    Node->RuntimeNode(*RuntimeCreateResult);
-    m_rootNodes.push_back(Handle);
-    return Handle;
+    m_rootNodes.push_back(*HandleResult);
+    return *HandleResult;
 }
 
 TExpected<NodeHandle> World::CreateNodeWithId(const TypeId& Type, std::string Name, const Uuid& Id)
@@ -530,105 +436,60 @@ TExpected<NodeHandle> World::CreateNodeWithId(const TypeId& Type, std::string Na
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Type is not a node type"));
     }
+    (void)Info;
 
-    const ConstructorInfo* Ctor = nullptr;
-    for (const auto& Candidate : Info->Constructors)
+    if (const Result EnsureStorageResult = NodeStorageFactoryRegistry::Instance().EnsureStorage(Type, m_ecsRuntime);
+        !EnsureStorageResult)
     {
-        if (Candidate.ParamTypes.empty())
-        {
-            Ctor = &Candidate;
-            break;
-        }
-    }
-    if (!Ctor)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "No default constructor registered"));
+        return std::unexpected(EnsureStorageResult.error());
     }
 
-    std::span<const Variant> EmptyArgs;
-    auto InstanceResult = Ctor->Construct(EmptyArgs);
-    if (!InstanceResult)
-    {
-        return std::unexpected(InstanceResult.error());
-    }
-
-    auto BasePtr = std::static_pointer_cast<BaseNode>(InstanceResult.value());
-    if (!BasePtr)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Node type mismatch"));
-    }
-
-    if (!m_nodePool)
-    {
-        m_nodePool = std::make_shared<TObjectPool<BaseNode>>();
-    }
-
-    auto HandleResult = m_nodePool->CreateFromSharedWithId(std::move(BasePtr), Id);
+    ScopedComponentOnCreateSuppression SuppressOnCreate{};
+    auto HandleResult = m_ecsRuntime.CreateNode(*this, Type, std::move(Name), &Id);
     if (!HandleResult)
     {
         return std::unexpected(HandleResult.error());
     }
 
-    const NodeHandle Handle = *HandleResult;
-    BaseNode* Node = m_nodePool->Borrowed(Handle);
-    if (!Node)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Created node could not be resolved"));
-    }
-
-    Node->Handle(Handle);
-    Node->Name(std::move(Name));
-    Node->World(this);
-    Node->RuntimeNode({});
-    Node->PendingDestroy(false);
-    Node->Parent({});
-    Node->TypeKey(Type);
-
-    ObjectRegistry::Instance().RegisterNode(
-        Node->Id(),
-        Node,
-        Handle.RuntimePoolToken,
-        Handle.RuntimeIndex,
-        Handle.RuntimeGeneration);
-
-    auto RuntimeCreateResult = m_ecsRuntime.Nodes().CreateNodeWithId(*this, Node->Id(), Node->Name(), Node->TypeKey());
-    if (!RuntimeCreateResult)
-    {
-        ObjectRegistry::Instance().Unregister(Node->Id());
-        (void)m_nodePool->DestroyLater(Handle);
-        m_nodePool->EndFrame();
-        return std::unexpected(RuntimeCreateResult.error());
-    }
-    Node->RuntimeNode(*RuntimeCreateResult);
-    m_rootNodes.push_back(Handle);
-    return Handle;
+    m_rootNodes.push_back(*HandleResult);
+    return *HandleResult;
 }
 
-Result World::DestroyNode(const NodeHandle& Handle)
+BaseNode* World::BorrowedNode(NodeHandle& InOutHandle)
 {
-    if (Handle.IsNull())
+    return InOutHandle.Borrowed();
+}
+
+const BaseNode* World::BorrowedNode(NodeHandle& InOutHandle) const
+{
+    return InOutHandle.Borrowed();
+}
+
+Result World::DestroyNode(NodeHandle& InOutHandle)
+{
+    if (InOutHandle.IsNull())
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is null"));
     }
-    if (!m_nodePool)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node storage is not initialized"));
-    }
 
-    BaseNode* RootNode = m_nodePool->Borrowed(Handle);
+    BaseNode* RootNode = ResolveNodeIncludingPendingDestroy(m_ecsRuntime, InOutHandle);
     if (!RootNode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
     }
+    if (RootNode->PendingDestroy())
+    {
+        return Ok();
+    }
 
     std::vector<NodeHandle> Stack{};
-    Stack.push_back(Handle);
+    Stack.push_back(InOutHandle);
     while (!Stack.empty())
     {
         const NodeHandle CurrentHandle = Stack.back();
         Stack.pop_back();
 
-        BaseNode* CurrentNode = m_nodePool->Borrowed(CurrentHandle);
+        BaseNode* CurrentNode = ResolveNodeIncludingPendingDestroy(m_ecsRuntime, CurrentHandle);
         if (!CurrentNode || CurrentNode->PendingDestroy())
         {
             continue;
@@ -639,10 +500,9 @@ Result World::DestroyNode(const NodeHandle& Handle)
             Stack.push_back(Child);
         }
 
-        auto DestroyLaterResult = m_nodePool->DestroyLater(CurrentHandle);
-        if (!DestroyLaterResult)
+        if (!m_ecsRuntime.DestroyNodeLater(CurrentHandle))
         {
-            return std::unexpected(DestroyLaterResult.error());
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Node could not be scheduled for destroy"));
         }
 
         CurrentNode->PendingDestroy(true);
@@ -652,15 +512,10 @@ Result World::DestroyNode(const NodeHandle& Handle)
     return Ok();
 }
 
-Result World::AttachChild(const NodeHandle& Parent, const NodeHandle& Child)
+Result World::AttachChild(NodeHandle& InOutParent, NodeHandle& InOutChild)
 {
-    if (!m_nodePool)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node storage is not initialized"));
-    }
-
-    BaseNode* ParentNode = m_nodePool->Borrowed(Parent);
-    BaseNode* ChildNode = m_nodePool->Borrowed(Child);
+    BaseNode* ParentNode = BorrowedNode(InOutParent);
+    BaseNode* ChildNode = BorrowedNode(InOutChild);
     if (!ParentNode || !ChildNode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Parent or child not found"));
@@ -670,40 +525,18 @@ Result World::AttachChild(const NodeHandle& Parent, const NodeHandle& Child)
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Child already has a parent"));
     }
 
-    ParentNode->AddChildResolved(Child, ChildNode);
-    ChildNode->Parent(Parent);
+    ParentNode->AddChild(InOutChild);
+    ChildNode->Parent(InOutParent);
     ChildNode->World(this);
 
-    m_rootNodes.erase(std::remove(m_rootNodes.begin(), m_rootNodes.end(), Child), m_rootNodes.end());
-
-    const RuntimeNodeHandle ParentRuntime = ResolveRuntimeOwnerHandle(*this, *ParentNode);
-    const RuntimeNodeHandle ChildRuntime = ResolveRuntimeOwnerHandle(*this, *ChildNode);
-    if (!ParentRuntime.IsNull() && !ChildRuntime.IsNull())
-    {
-        auto AttachRuntimeResult = m_ecsRuntime.Nodes().AttachChild(ParentRuntime, ChildRuntime);
-        if (!AttachRuntimeResult)
-        {
-            ParentNode->RemoveChild(Child);
-            ChildNode->Parent({});
-            if (std::find(m_rootNodes.begin(), m_rootNodes.end(), Child) == m_rootNodes.end())
-            {
-                m_rootNodes.push_back(Child);
-            }
-            return std::unexpected(AttachRuntimeResult.error());
-        }
-    }
+    m_rootNodes.erase(std::remove(m_rootNodes.begin(), m_rootNodes.end(), InOutChild), m_rootNodes.end());
 
     return Ok();
 }
 
-Result World::DetachChild(const NodeHandle& Child)
+Result World::DetachChild(NodeHandle& InOutChild)
 {
-    if (!m_nodePool)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node storage is not initialized"));
-    }
-
-    BaseNode* ChildNode = m_nodePool->Borrowed(Child);
+    BaseNode* ChildNode = BorrowedNode(InOutChild);
     if (!ChildNode)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Child not found"));
@@ -711,43 +544,33 @@ Result World::DetachChild(const NodeHandle& Child)
 
     if (!ChildNode->Parent().IsNull())
     {
-        if (BaseNode* ParentNode = m_nodePool->Borrowed(ChildNode->Parent()))
+        NodeHandle ParentHandle = ChildNode->Parent();
+        if (BaseNode* ParentNode = BorrowedNode(ParentHandle))
         {
-            ParentNode->RemoveChild(Child);
+            ParentNode->RemoveChild(InOutChild);
         }
         ChildNode->Parent({});
     }
 
-    const RuntimeNodeHandle ChildRuntime = ResolveRuntimeOwnerHandle(*this, *ChildNode);
-    if (!ChildRuntime.IsNull())
+    if (std::find(m_rootNodes.begin(), m_rootNodes.end(), InOutChild) == m_rootNodes.end())
     {
-        auto DetachRuntimeResult = m_ecsRuntime.Nodes().DetachChild(ChildRuntime);
-        if (!DetachRuntimeResult)
-        {
-            return std::unexpected(DetachRuntimeResult.error());
-        }
-    }
-
-    if (std::find(m_rootNodes.begin(), m_rootNodes.end(), Child) == m_rootNodes.end())
-    {
-        m_rootNodes.push_back(Child);
+        m_rootNodes.push_back(InOutChild);
     }
     return Ok();
 }
 
-void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type)
+void* World::BorrowedComponent(NodeHandle& InOutOwner, const TypeId& Type)
 {
     NodeHandle ResolvedOwner{};
-    BaseNode* Node = ResolveComponentOwnerNode(*this, Owner, ResolvedOwner);
+    BaseNode* Node = ResolveComponentOwnerNode(*this, InOutOwner, ResolvedOwner);
     if (!Node)
     {
         return nullptr;
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeOwnerHandle(*this, *Node);
-    if (!OwnerRuntime.IsNull())
+    if (!ResolvedOwner.IsNull())
     {
-        if (void* RuntimeComponent = ResolveRuntimeRawFromStorage(m_ecsRuntime, OwnerRuntime, Type))
+        if (void* RuntimeComponent = ResolveRuntimeRawFromStorage(m_ecsRuntime, ResolvedOwner, Type))
         {
             return RuntimeComponent;
         }
@@ -755,31 +578,18 @@ void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type)
     return nullptr;
 }
 
-const void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type) const
+const void* World::BorrowedComponent(NodeHandle& InOutOwner, const TypeId& Type) const
 {
     NodeHandle ResolvedOwner{};
-    const BaseNode* Node = ResolveComponentOwnerNode(*this, Owner, ResolvedOwner);
+    const BaseNode* Node = ResolveComponentOwnerNode(*this, InOutOwner, ResolvedOwner);
     if (!Node)
     {
         return nullptr;
     }
 
-    RuntimeNodeHandle OwnerRuntime = Node->RuntimeNode();
-    if (OwnerRuntime.IsNull() || !m_ecsRuntime.Nodes().Resolve(OwnerRuntime))
+    if (!ResolvedOwner.IsNull())
     {
-        auto RuntimeHandleResult = RuntimeNodeById(Node->Id());
-        if (RuntimeHandleResult)
-        {
-            OwnerRuntime = RuntimeHandleResult.value();
-        }
-        else
-        {
-            OwnerRuntime = {};
-        }
-    }
-    if (!OwnerRuntime.IsNull())
-    {
-        if (const void* RuntimeComponent = ResolveRuntimeRawFromStorage(m_ecsRuntime, OwnerRuntime, Type))
+        if (const void* RuntimeComponent = ResolveRuntimeRawFromStorage(m_ecsRuntime, ResolvedOwner, Type))
         {
             return RuntimeComponent;
         }
@@ -787,27 +597,36 @@ const void* World::BorrowedComponent(const NodeHandle& Owner, const TypeId& Type
     return nullptr;
 }
 
-Result World::RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type)
+BaseComponent* World::BorrowedComponent(ComponentHandle& InOutHandle)
 {
-    BaseNode* Node = NodePool().Borrowed(Owner);
+    return InOutHandle.Borrowed();
+}
+
+const BaseComponent* World::BorrowedComponent(ComponentHandle& InOutHandle) const
+{
+    return InOutHandle.Borrowed();
+}
+
+Result World::RemoveComponentByType(NodeHandle& InOutOwner, const TypeId& Type)
+{
+    BaseNode* Node = BorrowedNode(InOutOwner);
     if (!Node)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeOwnerHandle(*this, *Node);
-    if (OwnerRuntime.IsNull())
+    if (InOutOwner.IsNull())
     {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime owner node was not found"));
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node handle was not found"));
     }
 
-    auto RuntimeComponentHandle = m_ecsRuntime.ComponentHandle(OwnerRuntime, Type);
+    auto RuntimeComponentHandle = m_ecsRuntime.ComponentHandle(InOutOwner, Type);
     if (!RuntimeComponentHandle)
     {
         return std::unexpected(RuntimeComponentHandle.error());
     }
 
-    auto RemoveRuntimeResult = m_ecsRuntime.RemoveComponent(*this, OwnerRuntime, Type);
+    auto RemoveRuntimeResult = m_ecsRuntime.RemoveComponent(*this, InOutOwner, Type);
     if (!RemoveRuntimeResult)
     {
         return std::unexpected(RemoveRuntimeResult.error());
@@ -817,24 +636,24 @@ Result World::RemoveComponentByType(const NodeHandle& Owner, const TypeId& Type)
     return Ok();
 }
 
-TExpected<void*> World::CreateComponent(const NodeHandle& Owner, const TypeId& Type)
+TExpected<void*> World::CreateComponent(NodeHandle& InOutOwner, const TypeId& Type)
 {
-    return ComponentSerializationRegistry::Instance().Create(*this, Owner, Type);
+    return ComponentSerializationRegistry::Instance().Create(*this, InOutOwner, Type);
 }
 
-TExpected<void*> World::CreateComponentWithId(const NodeHandle& Owner, const TypeId& Type, const Uuid& Id)
+TExpected<void*> World::CreateComponentWithId(NodeHandle& InOutOwner, const TypeId& Type, const Uuid& Id)
 {
-    return ComponentSerializationRegistry::Instance().CreateWithId(*this, Owner, Type, Id);
+    return ComponentSerializationRegistry::Instance().CreateWithId(*this, InOutOwner, Type, Id);
 }
 
-Result World::RequestNodeOnCreate(const NodeHandle& Handle)
+Result World::RequestNodeOnCreate(NodeHandle& InOutHandle)
 {
-    if (Handle.IsNull())
+    if (InOutHandle.IsNull())
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node handle is null"));
     }
 
-    BaseNode* Node = Handle.Borrowed();
+    BaseNode* Node = BorrowedNode(InOutHandle);
     if (!Node)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
@@ -842,14 +661,16 @@ Result World::RequestNodeOnCreate(const NodeHandle& Handle)
 
     if (m_deferNodeOnCreateCallbacks)
     {
-        if (std::find(m_pendingNodeOnCreate.begin(), m_pendingNodeOnCreate.end(), Handle) == m_pendingNodeOnCreate.end())
+        if (std::find(m_pendingNodeOnCreate.begin(), m_pendingNodeOnCreate.end(), InOutHandle) == m_pendingNodeOnCreate.end())
         {
-            m_pendingNodeOnCreate.push_back(Handle);
+            m_pendingNodeOnCreate.push_back(InOutHandle);
         }
         return Ok();
     }
 
-    return InvokeNodeOnCreateCallback(*this, *Node);
+    (void)Node;
+    (void)m_ecsRuntime.FlushPendingNodeOnCreate(*this, InOutHandle);
+    return Ok();
 }
 
 bool World::AreNodeOnCreateCallbacksDeferred() const
@@ -913,16 +734,13 @@ Result World::FlushDeferredNodeOnCreate()
 
     for (const NodeHandle& Handle : Pending)
     {
-        BaseNode* Node = Handle.Borrowed();
-        if (!Node)
+        NodeHandle ResolvedHandle = Handle;
+        if (!BorrowedNode(ResolvedHandle))
         {
             continue;
         }
 
-        if (const Result InvokeResult = InvokeNodeOnCreateCallback(*this, *Node); !InvokeResult)
-        {
-            return InvokeResult;
-        }
+        (void)m_ecsRuntime.FlushPendingNodeOnCreate(*this, ResolvedHandle);
     }
 
     return Ok();
@@ -1050,7 +868,7 @@ void World::EndFrame()
     {
         for (const NodeHandle& Handle : m_pendingDestroy)
         {
-            BaseNode* Node = ResolveNodeIncludingPendingDestroy(m_nodePool, Handle);
+            BaseNode* Node = ResolveNodeIncludingPendingDestroy(m_ecsRuntime, Handle);
             if (!Node)
             {
                 continue;
@@ -1058,7 +876,7 @@ void World::EndFrame()
 
             if (!Node->Parent().IsNull())
             {
-                if (BaseNode* ParentNode = ResolveNodeIncludingPendingDestroy(m_nodePool, Node->Parent()))
+                if (BaseNode* ParentNode = ResolveNodeIncludingPendingDestroy(m_ecsRuntime, Node->Parent()))
                 {
                     ParentNode->RemoveChild(Handle);
                 }
@@ -1068,20 +886,11 @@ void World::EndFrame()
                 m_rootNodes.erase(std::remove(m_rootNodes.begin(), m_rootNodes.end(), Handle), m_rootNodes.end());
             }
 
-            const RuntimeNodeHandle RuntimeHandle = Node->RuntimeNode();
-            if (!RuntimeHandle.IsNull())
-            {
-                (void)m_ecsRuntime.DestroyRuntimeNode(*this, RuntimeHandle);
-                Node->RuntimeNode({});
-            }
-
+            m_ecsRuntime.DestroyComponentsOnNode(*this, Handle);
             ObjectRegistry::Instance().Unregister(Handle.Id);
         }
 
-        if (m_nodePool)
-        {
-            m_nodePool->EndFrame();
-        }
+        m_ecsRuntime.EndFrame(*this);
         m_pendingDestroy.clear();
     }
 #if defined(SNAPI_GF_ENABLE_RENDERER)
@@ -1136,15 +945,6 @@ void World::Clear()
 {
     m_pendingNodeOnCreate.clear();
     m_deferNodeOnCreateCallbacks = false;
-    if (m_nodePool)
-    {
-        m_nodePool->ForEachAll([&](const NodeHandle& Handle, BaseNode& Node) {
-            (void)Node;
-            ObjectRegistry::Instance().Unregister(Handle.Id);
-        });
-        m_nodePool->Clear();
-    }
-
     m_rootNodes.clear();
     m_pendingDestroy.clear();
     m_ecsRuntime.Clear(*this);
@@ -1178,10 +978,9 @@ TExpected<NodeHandle> World::CreateLevel(std::string Name)
     return CreateNode<Level>(std::move(Name));
 }
 
-TExpectedRef<Level> World::LevelRef(const NodeHandle& Handle)
+TExpectedRef<Level> World::LevelRef(NodeHandle& InOutHandle)
 {
-    
-    if (auto* Node = Handle.Borrowed())
+    if (auto* Node = BorrowedNode(InOutHandle))
     {
         if (TypeRegistry::Instance().IsA(Node->TypeKey(), StaticTypeId<Level>()))
         {
@@ -1191,92 +990,32 @@ TExpectedRef<Level> World::LevelRef(const NodeHandle& Handle)
     return std::unexpected(MakeError(EErrorCode::NotFound, "Level not found"));
 }
 
-TExpected<RuntimeNodeHandle> World::CreateRuntimeNode(std::string Name, const TypeId& Type)
+TExpected<RuntimeComponentHandle> World::AddRuntimeComponent(NodeHandle& InOutOwner, const TypeId& Type)
 {
-    return m_ecsRuntime.Nodes().CreateNode(*this, std::move(Name), Type);
+    return m_ecsRuntime.AddComponent(*this, InOutOwner, Type);
 }
 
-TExpected<RuntimeNodeHandle> World::CreateRuntimeNodeWithId(const Uuid& Id, std::string Name, const TypeId& Type)
-{
-    return m_ecsRuntime.Nodes().CreateNodeWithId(*this, Id, std::move(Name), Type);
-}
-
-Result World::DestroyRuntimeNode(const RuntimeNodeHandle Handle)
-{
-    return m_ecsRuntime.DestroyRuntimeNode(*this, Handle);
-}
-
-Result World::AttachRuntimeChild(const RuntimeNodeHandle Parent, const RuntimeNodeHandle Child)
-{
-    return m_ecsRuntime.Nodes().AttachChild(Parent, Child);
-}
-
-Result World::DetachRuntimeChild(const RuntimeNodeHandle Child)
-{
-    return m_ecsRuntime.Nodes().DetachChild(Child);
-}
-
-TExpected<RuntimeNodeHandle> World::RuntimeNodeById(const Uuid& Id) const
-{
-    return m_ecsRuntime.Nodes().HandleById(Id);
-}
-
-RuntimeNodeHandle World::RuntimeParent(const RuntimeNodeHandle Child) const
-{
-    return m_ecsRuntime.Nodes().Parent(Child);
-}
-
-std::vector<RuntimeNodeHandle> World::RuntimeChildren(const RuntimeNodeHandle Parent) const
-{
-    return m_ecsRuntime.Nodes().Children(Parent);
-}
-
-void World::ForEachRuntimeChild(const RuntimeNodeHandle Parent,
-                                const RuntimeChildVisitor Visitor,
-                                void* const UserData) const
-{
-    if (!Visitor)
-    {
-        return;
-    }
-
-    m_ecsRuntime.Nodes().ForEachChild(Parent, [&](const RuntimeNodeHandle Child) {
-        Visitor(UserData, Child);
-    });
-}
-
-std::vector<RuntimeNodeHandle> World::RuntimeRoots() const
-{
-    const auto& Roots = m_ecsRuntime.Nodes().Roots();
-    return {Roots.begin(), Roots.end()};
-}
-
-TExpected<RuntimeComponentHandle> World::AddRuntimeComponent(const RuntimeNodeHandle Owner, const TypeId& Type)
-{
-    return m_ecsRuntime.AddComponent(*this, Owner, Type);
-}
-
-TExpected<RuntimeComponentHandle> World::AddRuntimeComponentWithId(const RuntimeNodeHandle Owner,
+TExpected<RuntimeComponentHandle> World::AddRuntimeComponentWithId(NodeHandle& InOutOwner,
                                                                    const TypeId& Type,
                                                                    const Uuid& Id)
 {
-    return m_ecsRuntime.AddComponentWithId(*this, Owner, Type, Id);
+    return m_ecsRuntime.AddComponentWithId(*this, InOutOwner, Type, Id);
 }
 
-Result World::RemoveRuntimeComponent(const RuntimeNodeHandle Owner, const TypeId& Type)
+Result World::RemoveRuntimeComponent(NodeHandle& InOutOwner, const TypeId& Type)
 {
-    return m_ecsRuntime.RemoveComponent(*this, Owner, Type);
+    return m_ecsRuntime.RemoveComponent(*this, InOutOwner, Type);
 }
 
-bool World::HasRuntimeComponent(const RuntimeNodeHandle Owner, const TypeId& Type) const
+bool World::HasRuntimeComponent(NodeHandle& InOutOwner, const TypeId& Type) const
 {
-    return m_ecsRuntime.HasComponent(Owner, Type);
+    return m_ecsRuntime.HasComponent(InOutOwner, Type);
 }
 
-TExpected<RuntimeComponentHandle> World::RuntimeComponentByType(const RuntimeNodeHandle Owner,
+TExpected<RuntimeComponentHandle> World::RuntimeComponentByType(NodeHandle& InOutOwner,
                                                                 const TypeId& Type) const
 {
-    return m_ecsRuntime.ComponentHandle(Owner, Type);
+    return m_ecsRuntime.ComponentHandle(InOutOwner, Type);
 }
 
 void* World::ResolveRuntimeComponentRaw(const RuntimeComponentHandle Handle, const TypeId& Type)
@@ -1291,14 +1030,14 @@ const void* World::ResolveRuntimeComponentRaw(const RuntimeComponentHandle Handl
 
 std::vector<NodeHandle> World::Levels() const
 {
-    
     std::vector<NodeHandle> Result;
-    NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    const_cast<WorldEcsRuntime&>(m_ecsRuntime).ForEachNode([](void* UserData, const NodeHandle& Handle, BaseNode& Node) {
+        auto& OutLevels = *static_cast<std::vector<NodeHandle>*>(UserData);
         if (TypeRegistry::Instance().IsA(Node.TypeKey(), StaticTypeId<Level>()))
         {
-            Result.push_back(Handle);
+            OutLevels.push_back(Handle);
         }
-    });
+    }, &Result);
     return Result;
 }
 

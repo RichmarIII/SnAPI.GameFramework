@@ -15,7 +15,7 @@ It gives you one coherent model for:
 The framework is built around explicit ownership and stable identities:
 
 - `GameRuntime` owns a `World`
-- `World` owns nodes, runtime component storage, and subsystem instances
+- `World` owns nodes, components, dense runtime storage, and subsystem instances
 - `NodeHandle` / `ComponentHandle` are the stable public identity boundary
 - raw pointers are borrowed views, not ownership
 
@@ -56,7 +56,7 @@ A `World` is the authoritative root of one gameplay/editor session.
 It owns:
 
 - node storage
-- runtime component storage
+- dense component storage
 - subsystem adapters
 - frame execution policy
 - task dispatch and script runtime integration
@@ -96,7 +96,7 @@ A handle is the stable reference you use across frames and systems.
 Handles are:
 
 - non-owning
-- UUID-backed
+- UUID-backed with an optional runtime-key cache
 - safe to serialize/replicate/store
 - able to resolve to borrowed pointers while the target is alive
 
@@ -141,9 +141,16 @@ Typical runtime lifecycle:
 Typical object lifecycle:
 
 1. Create or deserialize a node.
-2. Attach runtime components.
+2. Attach components.
 3. World dispatches lifecycle callbacks such as `OnCreate`, `Tick`, and `OnDestroy`.
 4. Destruction is typically flushed during `World::EndFrame()` to preserve frame-stable identity.
+
+Runtime storage details that matter:
+
+- nodes and components live in page-backed dense storages
+- live objects keep a stable address until destroy
+- handles keep the same public shape; the runtime index is decoded internally as page plus slot
+- constructors/destructors should stay side-effect free, with world/backend work in `OnCreate()` / `OnDestroy()`
 
 ## Threading Rules
 
@@ -227,9 +234,9 @@ Do not store it as a long-term reference.
 The UUID-backed identity used by handles, serialization, replication, and registry lookup.
 Stable identity outlives any particular raw pointer value.
 
-### Runtime component
+### Dense runtime storage
 
-A component instance stored in world-managed runtime storage and attached to a node.
+The per-type page-backed ECS storage used for nodes and components. It gives hot traversal and stable addresses until destroy.
 
 ### Execution profile
 
@@ -255,6 +262,8 @@ Play-In-Editor. A world mode that uses runtime-like simulation behavior while st
   Base component type for attachable behavior/data.
 - `include/Handle.h`
   Stable non-owning typed handles.
+- `include/WorldEcsRuntime.h`
+  Dense per-type storage, phase scheduling, and page-size policy hooks.
 - `include/Handles.h`
   Common aliases such as `NodeHandle` and `ComponentHandle`.
 - `include/GameplayHost.h`

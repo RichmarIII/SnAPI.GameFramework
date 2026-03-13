@@ -65,11 +65,11 @@ public:
      * @return Non-owning pointer to the selected node, or `nullptr` when the selection no longer resolves.
      * @remarks
      * Resolution order is:
-     * 1. direct `NodeHandle::Borrowed()`
-     * 2. `World::NodeHandleById()` lookup using the stored object id
+     * 1. direct handle resolution
+     * 2. `World::NodeHandleById()` followed by `World::BorrowedNode()`
      * 3. `NodeHandle::BorrowedSlowByUuid()`
      */
-    [[nodiscard]] BaseNode* ResolveSelectedNode(World& WorldRef) const;
+    [[nodiscard]] BaseNode* ResolveSelectedNode(World& WorldRef);
     /**
      * @brief Resolve the selected node against a const world.
      * @param WorldRef World used for id-based fallback resolution.

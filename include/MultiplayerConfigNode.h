@@ -20,7 +20,7 @@ namespace SnAPI::GameFramework
  * @see GameplayHost
  * @see LocalPlayer
  */
-class SNAPI_GAMEFRAMEWORK_API MultiplayerConfigNode : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API MultiplayerConfigNode : public BaseNode, public NodeCRTP<MultiplayerConfigNode>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::MultiplayerConfigNode";

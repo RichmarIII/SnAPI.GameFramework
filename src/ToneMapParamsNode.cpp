@@ -39,6 +39,30 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetToneMapPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto DefaultParams = SnAPI::Graphics::ToneMapContract::DefaultParams();
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::ToneMap);
+        auto* ToneMap = dynamic_cast<SnAPI::Graphics::ToneMapPass*>(Pass);
+        if (!ToneMap)
+        {
+            continue;
+        }
+
+        ToneMap->SetParams(DefaultParams);
+        ToneMap->SetFeatures(SnAPI::Graphics::ToneMapPass::Feature::ACES);
+    }
+}
 } // namespace
 
 ToneMapParamsNode::ToneMapParamsNode()
@@ -101,6 +125,26 @@ void ToneMapParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void ToneMapParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetToneMapPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void ToneMapParamsNode::Tick(const float DeltaSeconds)

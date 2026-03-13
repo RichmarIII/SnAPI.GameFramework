@@ -97,7 +97,7 @@ private:
                                                                         const SnAPI::Physics::BodyHandle& TargetBody)
 {
     std::optional<NodeHandle> ResolvedHandle{};
-    WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    WorldRef.ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
         if (ResolvedHandle.has_value())
         {
             return;
@@ -128,7 +128,7 @@ private:
     }
 
     std::optional<NodeHandle> ResolvedHandle{};
-    WorldRef.NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    WorldRef.ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
         if (ResolvedHandle.has_value() || Node.EditorTransient())
         {
             return;

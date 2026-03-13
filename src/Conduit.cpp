@@ -64,7 +64,7 @@ TExpected<ResolvedTarget> ResolveTypedHandleFamily(const TypeInfo& ExpectedType,
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit handle payload is null"));
     }
 
-    const auto& Handle = *static_cast<const THandle*>(HandleValue);
+    THandle Handle = *static_cast<const THandle*>(HandleValue);
     TObject* Instance = Handle.Borrowed();
     if (!Instance)
     {

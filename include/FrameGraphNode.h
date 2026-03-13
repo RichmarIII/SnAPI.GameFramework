@@ -32,7 +32,7 @@ namespace SnAPI::GameFramework
  * Threading model:
  * - Main-thread only.
  */
-class SNAPI_GAMEFRAMEWORK_API FrameGraphNode final : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API FrameGraphNode final : public BaseNode, public NodeCRTP<FrameGraphNode>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::FrameGraphNode";

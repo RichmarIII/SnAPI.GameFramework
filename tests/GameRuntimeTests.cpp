@@ -7,7 +7,7 @@ using namespace SnAPI::GameFramework;
 namespace
 {
 
-struct RuntimeTickNode final : BaseNode
+struct RuntimeTickNode final : BaseNode, NodeCRTP<RuntimeTickNode>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::RuntimeTickNode";
 

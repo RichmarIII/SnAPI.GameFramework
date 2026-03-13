@@ -57,7 +57,17 @@ class BaseComponent
 {
 public:
     /**
+     * @brief Construct a component in an inert default state.
+     * @remarks Constructors must stay side-effect free; world/backend setup belongs in `OnCreate()`.
+     */
+    BaseComponent() = default;
+    BaseComponent(const BaseComponent&) = delete;
+    BaseComponent& operator=(const BaseComponent&) = delete;
+    BaseComponent(BaseComponent&&) noexcept = default;
+    BaseComponent& operator=(BaseComponent&&) noexcept = default;
+    /**
      * @brief Destructor.
+     * @remarks Runtime/backend teardown belongs in `OnDestroy()`, not here.
      */
     ~BaseComponent() = default;
 
@@ -119,7 +129,6 @@ public:
     void Owner(const NodeHandle& InOwner)
     {
         m_owner = InOwner;
-        m_ownerNode = InOwner.IsNull() ? nullptr : InOwner.Borrowed();
     }
 
     /**
@@ -237,7 +246,7 @@ public:
     /**
      * @brief Resolve the owning node pointer.
      * @return Owning BaseNode pointer or nullptr.
-     * @remarks Uses cached owner pointer and falls back to handle resolution if needed.
+     * @remarks Resolves through the stored owner handle each time and may rehydrate it back to the fast path.
      */
     BaseNode* OwnerNode() const;
 
@@ -286,7 +295,6 @@ public:
 
 private:
     NodeHandle m_owner{}; /**< @brief Owning node identity; resolved via ObjectRegistry when needed. */
-    mutable BaseNode* m_ownerNode = nullptr; /**< @brief Cached owner node pointer to avoid repeated registry resolution. */
     Uuid m_id{}; /**< @brief Stable component identity used for handles/replication/serialization. */
     uint32_t m_runtimePoolToken = ComponentHandle::kInvalidRuntimePoolToken; /**< @brief Runtime pool token for fast handle resolution. */
     uint32_t m_runtimeIndex = ComponentHandle::kInvalidRuntimeIndex; /**< @brief Runtime pool slot index for fast handle resolution. */

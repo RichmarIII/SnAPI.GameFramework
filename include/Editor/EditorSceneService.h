@@ -26,6 +26,7 @@ public:
     void Shutdown(EditorServiceContext& Context) override;
     Result EnsureEditorCamera(EditorServiceContext& Context);
 
+    [[nodiscard]] ComponentHandle ActiveCameraHandle() const;
     [[nodiscard]] CameraComponent* ActiveCameraComponent() const;
     [[nodiscard]] SnAPI::Graphics::ICamera* ActiveRenderCamera() const;
 

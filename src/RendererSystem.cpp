@@ -425,6 +425,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     m_passGraphRegistered = Other.m_passGraphRegistered;
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
+    m_activeCamera = std::move(Other.m_activeCamera);
     m_defaultGBufferMaterialInstance = std::move(Other.m_defaultGBufferMaterialInstance);
     m_defaultShadowMaterialInstance = std::move(Other.m_defaultShadowMaterialInstance);
     m_defaultFont = Other.m_defaultFont;
@@ -483,6 +484,7 @@ RendererSystem::RendererSystem(RendererSystem&& Other) noexcept
     Other.m_graphics = nullptr;
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
+    Other.m_activeCamera.reset();
     Other.m_defaultGBufferMaterialInstance.reset();
     Other.m_defaultShadowMaterialInstance.reset();
     Other.m_defaultFont = nullptr;
@@ -553,6 +555,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     m_passGraphRegistered = Other.m_passGraphRegistered;
     m_defaultGBufferMaterial = std::move(Other.m_defaultGBufferMaterial);
     m_defaultShadowMaterial = std::move(Other.m_defaultShadowMaterial);
+    m_activeCamera = std::move(Other.m_activeCamera);
     m_defaultGBufferMaterialInstance = std::move(Other.m_defaultGBufferMaterialInstance);
     m_defaultShadowMaterialInstance = std::move(Other.m_defaultShadowMaterialInstance);
     m_defaultFont = Other.m_defaultFont;
@@ -611,6 +614,7 @@ RendererSystem& RendererSystem::operator=(RendererSystem&& Other) noexcept
     Other.m_graphics = nullptr;
     Other.ResetPassPointers();
     Other.m_passGraphRegistered = false;
+    Other.m_activeCamera.reset();
     Other.m_defaultGBufferMaterialInstance.reset();
     Other.m_defaultShadowMaterialInstance.reset();
     Other.m_defaultFont = nullptr;
@@ -994,9 +998,25 @@ bool RendererSystem::HasOpenWindow() const
     return m_window && m_window->IsOpen();
 }
 
+bool RendererSystem::SetActiveCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera)
+{
+    GameLockGuard Lock(m_mutex);
+    m_activeCamera = Camera;
+    if (!m_graphics)
+    {
+        return false;
+    }
+    m_graphics->ActiveCamera(m_activeCamera.get());
+    return true;
+}
+
 bool RendererSystem::SetActiveCamera(SnAPI::Graphics::ICamera* Camera)
 {
     GameLockGuard Lock(m_mutex);
+    if (Camera == nullptr)
+    {
+        m_activeCamera.reset();
+    }
     if (!m_graphics)
     {
         return false;
@@ -1008,7 +1028,13 @@ bool RendererSystem::SetActiveCamera(SnAPI::Graphics::ICamera* Camera)
 SnAPI::Graphics::ICamera* RendererSystem::ActiveCamera() const
 {
     GameLockGuard Lock(m_mutex);
-    return m_graphics ? m_graphics->ActiveCamera() : nullptr;
+    return m_activeCamera.get();
+}
+
+std::shared_ptr<SnAPI::Graphics::ICamera> RendererSystem::ActiveCameraShared() const
+{
+    GameLockGuard Lock(m_mutex);
+    return m_activeCamera;
 }
 
 bool RendererSystem::SetProjectShaderSearchRoot(const std::filesystem::path& AssetRoot)
@@ -2590,6 +2616,8 @@ void RendererSystem::EndFrame()
         return;
     }
 
+    m_graphics->ActiveCamera(m_activeCamera.get());
+
     if (m_window && m_window->IsOpen())
     {
         if (m_settings.AutoHandleSwapChainResize)
@@ -2713,6 +2741,7 @@ void RendererSystem::EndFrame()
 void RendererSystem::ShutdownUnlocked()
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
+    m_activeCamera.reset();
     if (m_graphics)
     {
         m_graphics->ActiveCamera(nullptr);

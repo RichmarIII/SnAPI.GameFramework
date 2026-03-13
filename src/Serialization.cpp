@@ -809,7 +809,7 @@ ComponentSerializationRegistry& ComponentSerializationRegistry::Instance()
     return Instance;
 }
 
-TExpected<void*> ComponentSerializationRegistry::Create(IWorld& WorldRef, const NodeHandle& Owner, const TypeId& Type) const
+TExpected<void*> ComponentSerializationRegistry::Create(IWorld& WorldRef, NodeHandle& InOutOwner, const TypeId& Type) const
 {
     CreateFn CreateValue;
     {
@@ -834,10 +834,13 @@ TExpected<void*> ComponentSerializationRegistry::Create(IWorld& WorldRef, const 
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No component factory registered"));
     }
-    return CreateValue(WorldRef, Owner);
+    return CreateValue(WorldRef, InOutOwner);
 }
 
-TExpected<void*> ComponentSerializationRegistry::CreateWithId(IWorld& WorldRef, const NodeHandle& Owner, const TypeId& Type, const Uuid& Id) const
+TExpected<void*> ComponentSerializationRegistry::CreateWithId(IWorld& WorldRef,
+                                                              NodeHandle& InOutOwner,
+                                                              const TypeId& Type,
+                                                              const Uuid& Id) const
 {
     CreateWithIdFn CreateValue;
     {
@@ -862,7 +865,7 @@ TExpected<void*> ComponentSerializationRegistry::CreateWithId(IWorld& WorldRef, 
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No component factory registered"));
     }
-    return CreateValue(WorldRef, Owner, Id);
+    return CreateValue(WorldRef, InOutOwner, Id);
 }
 
 TExpected<void> ComponentSerializationRegistry::Serialize(const TypeId& Type, const void* Instance, std::vector<uint8_t>& OutBytes, const TSerializationContext& Context) const
@@ -1151,25 +1154,24 @@ struct TObjectIdRemap
     std::unordered_map<Uuid, Uuid, UuidHash> ComponentIds{};
 };
 
-[[nodiscard]] BaseNode* ResolveNodeForPayload(const NodeHandle& Handle, const IWorld* WorldRef)
+[[nodiscard]] const BaseNode* ResolveNodeForPayload(NodeHandle Handle, const IWorld* WorldRef)
 {
-    if (BaseNode* Node = Handle.Borrowed())
+    if (WorldRef)
+    {
+        if (const BaseNode* Node = WorldRef->BorrowedNode(Handle))
+        {
+            return Node;
+        }
+    }
+
+    if (const BaseNode* Node = Handle.Borrowed())
     {
         return Node;
     }
 
-    if (WorldRef && !Handle.Id.is_nil())
-    {
-        auto WorldHandle = WorldRef->NodeHandleById(Handle.Id);
-        if (WorldHandle)
-        {
-            return WorldHandle->Borrowed();
-        }
-    }
-
     if (!Handle.Id.is_nil())
     {
-        if (BaseNode* Node = Handle.BorrowedSlowByUuid())
+        if (const BaseNode* Node = Handle.BorrowedSlowByUuid())
         {
             return Node;
         }
@@ -1268,7 +1270,7 @@ TExpected<NodePayload> SerializeNodePayloadRecursive(const BaseNode& NodeRef, co
         NodeData.HasNodeData = true;
     }
 
-    const NodeHandle NodeSelfHandle = NodeRef.Handle();
+    NodeHandle NodeSelfHandle = NodeRef.Handle();
     NodeData.Components.reserve(NodeRef.ComponentTypes().size());
     for (const auto& Type : NodeRef.ComponentTypes())
     {
@@ -1278,12 +1280,18 @@ TExpected<NodePayload> SerializeNodePayloadRecursive(const BaseNode& NodeRef, co
             ComponentPtr = Context.World->BorrowedComponent(NodeSelfHandle, Type);
             if (!ComponentPtr && !NodeSelfHandle.Id.is_nil())
             {
-                ComponentPtr = Context.World->BorrowedComponent(NodeHandle{NodeSelfHandle.Id}, Type);
+                NodeHandle UuidOnlyHandle{NodeSelfHandle.Id};
+                ComponentPtr = Context.World->BorrowedComponent(UuidOnlyHandle, Type);
             }
         }
-        if (!ComponentPtr && Context.Graph && !NodeSelfHandle.IsNull())
+        if (!ComponentPtr && !Context.GraphHandle.IsNull() && !NodeSelfHandle.IsNull())
         {
-            ComponentPtr = Context.Graph->BorrowedComponent(NodeSelfHandle, Type);
+            NodeHandle GraphHandle = Context.GraphHandle;
+            if (BaseNode* GraphNode = GraphHandle.Borrowed())
+            {
+                auto* GraphLevel = static_cast<Level*>(GraphNode);
+                ComponentPtr = GraphLevel->BorrowedComponent(NodeSelfHandle, Type);
+            }
         }
 
         if (!ComponentPtr)
@@ -1308,7 +1316,7 @@ TExpected<NodePayload> SerializeNodePayloadRecursive(const BaseNode& NodeRef, co
     NodeData.Children.reserve(NodeRef.Children().size());
     for (const NodeHandle& ChildHandle : NodeRef.Children())
     {
-        BaseNode* ChildNode = ResolveNodeForPayload(ChildHandle, Context.World);
+        const BaseNode* ChildNode = ResolveNodeForPayload(ChildHandle, Context.World);
         if (!ChildNode)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Child node could not be resolved during serialization"));
@@ -1363,7 +1371,8 @@ TExpected<NodeHandle> CreateNodePayloadRecursive(const NodePayload& Payload,
     NodeHandle CreatedNode = CreateResult.value();
     if (!Parent.IsNull())
     {
-        auto AttachResult = WorldRef.AttachChild(Parent, CreatedNode);
+        NodeHandle ParentHandle = Parent;
+        auto AttachResult = WorldRef.AttachChild(ParentHandle, CreatedNode);
         if (!AttachResult)
         {
             (void)WorldRef.DestroyNode(CreatedNode);
@@ -1501,7 +1510,8 @@ TExpected<void> DeserializeNodePayloadData(const PendingNodeDeserialize& Pending
 
     if (BaseNode* Node = Owner.Borrowed())
     {
-        if (const Result NodeOnCreateResult = WorldRef.RequestNodeOnCreate(Node->Handle()); !NodeOnCreateResult)
+        NodeHandle NodeHandleValue = Node->Handle();
+        if (const Result NodeOnCreateResult = WorldRef.RequestNodeOnCreate(NodeHandleValue); !NodeOnCreateResult)
         {
             return std::unexpected(NodeOnCreateResult.error());
         }
@@ -1519,12 +1529,15 @@ std::vector<NodeHandle> LevelRootNodes(const Level& LevelRef)
         return Roots;
     }
 
-    LevelRef.NodePool().ForEach([&Roots](const NodeHandle& Handle, BaseNode& Node) {
-        if (Node.Parent().IsNull())
-        {
-            Roots.push_back(Handle);
-        }
-    });
+    if (IWorld* WorldRef = LevelRef.World())
+    {
+        WorldRef->ForEachNode([&Roots](const NodeHandle& Handle, BaseNode& Node) {
+            if (Node.Parent().IsNull())
+            {
+                Roots.push_back(Handle);
+            }
+        });
+    }
 
     return Roots;
 }
@@ -1532,7 +1545,7 @@ std::vector<NodeHandle> LevelRootNodes(const Level& LevelRef)
 std::vector<NodeHandle> WorldRootNodes(const World& WorldRef)
 {
     std::vector<NodeHandle> Roots{};
-    WorldRef.NodePool().ForEach([&Roots](const NodeHandle& Handle, BaseNode& Node) {
+    const_cast<World&>(WorldRef).ForEachNode([&Roots](const NodeHandle& Handle, BaseNode& Node) {
         if (Node.Parent().IsNull())
         {
             Roots.push_back(Handle);
@@ -1552,7 +1565,8 @@ TExpected<void> DestroyChildrenAndFlush(Level& LevelRef)
     std::vector<NodeHandle> Children = LevelRef.Children();
     for (const NodeHandle& Child : Children)
     {
-        auto DestroyResult = WorldRef->DestroyNode(Child);
+        NodeHandle ChildHandle = Child;
+        auto DestroyResult = WorldRef->DestroyNode(ChildHandle);
         if (!DestroyResult)
         {
             return std::unexpected(DestroyResult.error());
@@ -1570,7 +1584,7 @@ TExpected<void> DestroyChildrenAndFlush(Level& LevelRef)
 TExpected<NodeHandle> DeserializeNodePayloadImpl(const NodePayload& Payload,
                                                  IWorld& WorldRef,
                                                  const NodeHandle& Parent,
-                                                 const Level* GraphContext,
+                                                 const NodeHandle& GraphContext,
                                                  const std::unordered_map<Uuid, Uuid, UuidHash>* NodeIdRemap,
                                                  const std::unordered_map<Uuid, Uuid, UuidHash>* ComponentIdRemap)
 {
@@ -1584,7 +1598,7 @@ TExpected<NodeHandle> DeserializeNodePayloadImpl(const NodePayload& Payload,
 
     TSerializationContext Context{};
     Context.World = &WorldRef;
-    Context.Graph = GraphContext;
+    Context.GraphHandle = GraphContext;
     Context.NodeIdRemap = NodeIdRemap;
     Context.ComponentIdRemap = ComponentIdRemap;
     for (const PendingNodeDeserialize& PendingData : PendingNodes)
@@ -1606,7 +1620,7 @@ TExpected<NodePayload> NodeSerializer::Serialize(const BaseNode& NodeRef)
     Context.World = NodeRef.World();
     if (const auto* OwningLevel = NodeCast<Level>(&NodeRef))
     {
-        Context.Graph = OwningLevel;
+        Context.GraphHandle = OwningLevel->Handle();
     }
     return SerializeNodePayloadRecursive(NodeRef, Context);
 }
@@ -1626,7 +1640,7 @@ TExpected<NodeHandle> NodeSerializer::Deserialize(const NodePayload& Payload,
         ComponentIdRemap = &IdRemap.ComponentIds;
     }
 
-    return DeserializeNodePayloadImpl(Payload, WorldRef, Parent, nullptr, NodeIdRemap, ComponentIdRemap);
+    return DeserializeNodePayloadImpl(Payload, WorldRef, Parent, {}, NodeIdRemap, ComponentIdRemap);
 }
 
 TExpected<NodeHandle> NodeSerializer::Deserialize(const NodePayload& Payload,
@@ -1645,6 +1659,7 @@ TExpected<NodeHandle> NodeSerializer::Deserialize(const NodePayload& Payload,
     {
         AttachParent = LevelRef.Handle();
     }
+    const NodeHandle GraphHandle = LevelRef.Handle();
 
     TObjectIdRemap IdRemap{};
     const std::unordered_map<Uuid, Uuid, UuidHash>* NodeIdRemap = nullptr;
@@ -1656,7 +1671,7 @@ TExpected<NodeHandle> NodeSerializer::Deserialize(const NodePayload& Payload,
         ComponentIdRemap = &IdRemap.ComponentIds;
     }
 
-    return DeserializeNodePayloadImpl(Payload, *WorldRef, AttachParent, &LevelRef, NodeIdRemap, ComponentIdRemap);
+    return DeserializeNodePayloadImpl(Payload, *WorldRef, AttachParent, GraphHandle, NodeIdRemap, ComponentIdRemap);
 }
 
 TExpected<LevelPayload> LevelSerializer::Serialize(const Level& LevelRef)
@@ -1668,7 +1683,7 @@ TExpected<LevelPayload> LevelSerializer::Serialize(const Level& LevelRef)
     Payload.Nodes.reserve(Roots.size());
     for (const NodeHandle& Root : Roots)
     {
-        BaseNode* Node = ResolveNodeForPayload(Root, LevelRef.World());
+        const BaseNode* Node = ResolveNodeForPayload(Root, LevelRef.World());
         if (!Node)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Level root node could not be resolved"));
@@ -1711,6 +1726,7 @@ TExpected<void> LevelSerializer::Deserialize(const LevelPayload& Payload,
     {
         AttachParent = LevelRef.Handle();
     }
+    const NodeHandle GraphHandle = LevelRef.Handle();
 
     TObjectIdRemap IdRemap{};
     const std::unordered_map<Uuid, Uuid, UuidHash>* NodeIdRemap = nullptr;
@@ -1732,7 +1748,7 @@ TExpected<void> LevelSerializer::Deserialize(const LevelPayload& Payload,
             NodeData,
             *WorldRef,
             AttachParent,
-            &LevelRef,
+            GraphHandle,
             NodeIdRemap,
             ComponentIdRemap);
         if (!NodeResult)
@@ -1752,7 +1768,7 @@ TExpected<WorldPayload> WorldSerializer::Serialize(const World& WorldRef)
     Payload.Nodes.reserve(Roots.size());
     for (const NodeHandle& Root : Roots)
     {
-        BaseNode* Node = ResolveNodeForPayload(Root, &WorldRef);
+        const BaseNode* Node = ResolveNodeForPayload(Root, &WorldRef);
         if (!Node)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "World root node could not be resolved"));
@@ -1800,7 +1816,7 @@ TExpected<void> WorldSerializer::Deserialize(const WorldPayload& Payload,
             NodeData,
             static_cast<IWorld&>(WorldRef),
             {},
-            nullptr,
+            {},
             NodeIdRemap,
             ComponentIdRemap);
         if (!NodeResult)

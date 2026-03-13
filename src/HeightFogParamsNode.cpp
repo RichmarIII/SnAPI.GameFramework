@@ -64,6 +64,37 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetHeightFogPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto DefaultParams = SnAPI::Graphics::HeightFogContract::DefaultParams();
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        for (std::uint32_t Index = 0;; ++Index)
+        {
+            auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::FullScreen, Index);
+            if (!Pass)
+            {
+                break;
+            }
+
+            auto* HeightFogPass = dynamic_cast<SnAPI::Graphics::HeightFogPass*>(Pass);
+            if (!HeightFogPass)
+            {
+                continue;
+            }
+
+            HeightFogPass->SetParams(DefaultParams);
+        }
+    }
+}
 } // namespace
 
 HeightFogParamsNode::HeightFogParamsNode()
@@ -141,6 +172,26 @@ void HeightFogParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void HeightFogParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetHeightFogPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void HeightFogParamsNode::Tick(const float DeltaSeconds)

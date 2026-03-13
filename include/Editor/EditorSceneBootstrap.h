@@ -39,7 +39,7 @@ namespace SnAPI::GameFramework::Editor
  * - In non-renderer builds the methods degrade to inert or no-op behavior.
  *
  * Ownership and lifetime:
- * - The class stores only non-owning handles and pointers into the runtime world.
+ * - The class stores only non-owning handles into the runtime world.
  * - Tracked handles become invalid when the world is cleared, the nodes are destroyed,
  *   or `Shutdown()` is called.
  *
@@ -81,6 +81,11 @@ public:
     void SyncActiveCamera(World& WorldRef);
 
     /**
+     * @brief Access the currently tracked active camera handle.
+     * @return Cached camera-component handle, or null when none is known.
+     */
+    [[nodiscard]] ComponentHandle ActiveCameraHandle() const { return m_cameraComponent; }
+    /**
      * @brief Access the currently tracked active camera component.
      * @return Non-owning pointer or `nullptr` when no active camera component is known.
      */
@@ -97,7 +102,7 @@ private:
     NodeHandle m_levelNode{};
     NodeHandle m_cameraNode{};
     std::vector<NodeHandle> m_sceneNodes{};
-    CameraComponent* m_cameraComponent = nullptr;
+    ComponentHandle m_cameraComponent{};
 };
 
 } // namespace SnAPI::GameFramework::Editor

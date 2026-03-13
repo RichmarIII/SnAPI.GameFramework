@@ -58,8 +58,8 @@ Representative coverage in `tests/` includes:
   - sleep/wake activity changes
 - `WorldEcsRuntimeTests.cpp`
   - storage priority ordering
-  - runtime component attach/remove
-  - runtime hierarchy correctness
+  - dense node/component storage behavior
+  - page-backed stability and teardown correctness
   - execution-profile gating
 
 ## 3. Use Tests As Documentation Of Contracts

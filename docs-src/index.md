@@ -33,7 +33,7 @@ title: SnAPI.GameFramework
       <strong>What the current framework actually looks like</strong>
       <ul>
         <li><code>GameRuntime</code> owns one <code>World</code> and drives init, frame update, and shutdown.</li>
-        <li><code>World</code> owns the node hierarchy, runtime ECS mirror, script runtime, and optional subsystems.</li>
+        <li><code>World</code> owns the node hierarchy, dense node/component storage, script runtime, and optional subsystems.</li>
         <li><code>Level</code> is a convenience node type for grouping content. Nested partitions are built with child <code>Level</code> nodes, not a separate public <code>NodeGraph</code> type.</li>
         <li><code>BaseNode</code> and <code>BaseComponent</code> are the main gameplay building blocks users derive from.</li>
         <li>Handles are durable identity. Borrowed pointers are short-lived views into world-owned storage.</li>
@@ -65,7 +65,7 @@ The biggest conceptual change is this:
 - Old docs talked about `World -> Level -> NodeGraph -> Node -> Component`.
 - The current public model is `GameRuntime -> World -> Level -> BaseNode/BaseComponent`.
 - If you want nested content partitions, create child `Level` nodes.
-- If you want pure runtime ECS data, use runtime components through `WorldEcsRuntime` and the `BaseNode::AddRuntimeComponent<T>()` helpers.
+- Dense storage is now the default runtime model for both nodes and components; `WorldEcsRuntime` is the scheduling/storage layer behind the normal API, not a separate user-facing mirror.
 
 ## Recommended First Reads
 
@@ -115,5 +115,5 @@ These are the fun, guided tutorials added for this docs refresh:
 
 - [Start Here](tutorials.md): guided learning order and tutorial catalog
 - [Architecture](architecture.md): frame order, init order, ownership, and subsystem model
-- [API Reference](api/index.md): generated from the current public headers
+- [API Reference](api/index.md): generated from the public headers; regenerate it after major API refactors if stale legacy types still appear
 - `Docs/GameFramework/README.md` in the repository: module overview used as the contract-writing baseline for the API contract pass

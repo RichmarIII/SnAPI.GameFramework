@@ -1386,7 +1386,8 @@ void PushReflectedObject(lua_State* L, void* Instance, const TypeId& Type)
         return 1;
     }
 
-    void* ComponentInstance = WorldRef->BorrowedComponent(Node->Handle(), *ComponentType);
+    NodeHandle OwnerHandle = Node->Handle();
+    void* ComponentInstance = WorldRef->BorrowedComponent(OwnerHandle, *ComponentType);
     if (!ComponentInstance)
     {
         lua_pushnil(L);

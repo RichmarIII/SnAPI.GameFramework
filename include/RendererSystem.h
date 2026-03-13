@@ -21,6 +21,7 @@
 namespace SnAPI::Graphics
 {
 class ICamera;
+class CameraBase;
 class IRenderObject;
 class Material;
 class MaterialInstance;
@@ -279,9 +280,21 @@ public:
 
     /**
      * @brief Set the active camera used by the renderer.
+     * @param Camera Shared camera reference, or empty to clear the active camera.
+     * @return `true` if the renderer is initialized and the assignment was applied.
+     * @remarks
+     * The renderer retains a strong reference while the camera is active so process-global
+     * backend state cannot dangle across deferred destroy or editor/world rebinding.
+     */
+    bool SetActiveCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera);
+
+    /**
+     * @brief Set the active camera used by the renderer.
      * @param Camera Borrowed camera pointer, or `nullptr` to clear the active camera.
      * @return `true` if the renderer is initialized and the assignment was applied.
-     * @warning The renderer does not take ownership of @p Camera.
+     * @remarks
+     * Passing `nullptr` clears any retained active-camera reference. Non-null raw pointers are
+     * forwarded to the backend for compatibility, but do not extend camera lifetime.
      */
     bool SetActiveCamera(SnAPI::Graphics::ICamera* Camera);
 
@@ -290,6 +303,12 @@ public:
      * @return Camera pointer or nullptr.
      */
     SnAPI::Graphics::ICamera* ActiveCamera() const;
+
+    /**
+     * @brief Access the renderer-retained active camera.
+     * @return Shared camera reference, or empty when no retained active camera exists.
+     */
+    std::shared_ptr<SnAPI::Graphics::ICamera> ActiveCameraShared() const;
 
     /**
      * @brief Configure project shader search root for runtime Slang compilation.
@@ -1012,6 +1031,7 @@ private:
     bool m_passGraphRegistered = false; /**< @brief True once default pass DAG has been registered. */
     std::shared_ptr<SnAPI::Graphics::Material> m_defaultGBufferMaterial{}; /**< @brief Default material assigned by mesh components. */
     std::shared_ptr<SnAPI::Graphics::Material> m_defaultShadowMaterial{}; /**< @brief Default shadow material assigned by mesh components. */
+    std::shared_ptr<SnAPI::Graphics::ICamera> m_activeCamera{}; /**< @brief Strongly retained active camera for this world-facing renderer facade. */
     std::weak_ptr<SnAPI::Graphics::MaterialInstance> m_defaultGBufferMaterialInstance{}; /**< @brief Cached default GBuffer material instance used when assigning fallback materials. */
     std::weak_ptr<SnAPI::Graphics::MaterialInstance> m_defaultShadowMaterialInstance{}; /**< @brief Cached default shadow material instance used when assigning fallback materials. */
     SnAPI::Graphics::FontFace* m_defaultFont = nullptr; /**< @brief Non-owning default font pointer managed by FontLibrary cache. */

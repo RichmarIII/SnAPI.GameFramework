@@ -85,11 +85,13 @@ bool InvokeLocal(void* Instance, const MethodInfo& Method, std::span<const Varia
 
 BaseNode* BaseComponent::OwnerNode() const
 {
-    if (!m_ownerNode && !m_owner.IsNull())
+    if (m_owner.IsNull())
     {
-        m_ownerNode = m_owner.Borrowed();
+        return nullptr;
     }
-    return m_ownerNode;
+
+    NodeHandle& InOutOwner = const_cast<NodeHandle&>(m_owner);
+    return InOutOwner.Borrowed();
 }
 
 IWorld* BaseComponent::World() const

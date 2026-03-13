@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 #include "NetSession.h"
 #include "Services/ReplicationService.h"
@@ -70,7 +71,7 @@ private:
 /**
  * @brief Replicated test node type for spawn/update verification.
  */
-struct ReplicatedNode final : public BaseNode
+struct ReplicatedNode final : public BaseNode, public NodeCRTP<ReplicatedNode>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ReplicatedNode";
 
@@ -213,7 +214,7 @@ TEST_CASE("NetReplicationBridge spawns nodes and components")
 
     auto* ClientNodeBase = ObjectRegistry::Instance().Resolve<BaseNode>(NodeId);
     REQUIRE(ClientNodeBase != nullptr);
-    auto* ClientNode = dynamic_cast<ReplicatedNode*>(ClientNodeBase);
+    auto* ClientNode = NodeCast<ReplicatedNode>(ClientNodeBase);
     REQUIRE(ClientNode != nullptr);
     REQUIRE(ClientNode->Health == 12);
 
@@ -284,7 +285,7 @@ TEST_CASE("NetReplicationBridge updates replicated fields")
 
     auto* ClientNodeBase = ObjectRegistry::Instance().Resolve<BaseNode>(NodeId);
     REQUIRE(ClientNodeBase != nullptr);
-    auto* ClientNode = dynamic_cast<ReplicatedNode*>(ClientNodeBase);
+    auto* ClientNode = NodeCast<ReplicatedNode>(ClientNodeBase);
     REQUIRE(ClientNode != nullptr);
     REQUIRE(ClientNode->Health == 9);
 
@@ -307,7 +308,9 @@ TEST_CASE("NetReplicationBridge resolves pending parents and components")
     auto ChildResult = ServerWorld.CreateNode<ReplicatedNode>("Child");
     REQUIRE(ParentResult);
     REQUIRE(ChildResult);
-    REQUIRE(ServerWorld.AttachChild(ParentResult.value(), ChildResult.value()));
+    NodeHandle ParentHandle = ParentResult.value();
+    NodeHandle ChildHandle = ChildResult.value();
+    REQUIRE(ServerWorld.AttachChild(ParentHandle, ChildHandle));
 
     auto* ParentNode = static_cast<ReplicatedNode*>(ParentResult->Borrowed());
     auto* ChildNode = static_cast<ReplicatedNode*>(ChildResult->Borrowed());
@@ -393,7 +396,7 @@ TEST_CASE("NetReplicationBridge resolves pending parents and components")
     REQUIRE(ClientParentBase != nullptr);
     REQUIRE(ClientChildBase != nullptr);
 
-    auto* ClientChild = dynamic_cast<ReplicatedNode*>(ClientChildBase);
+    auto* ClientChild = NodeCast<ReplicatedNode>(ClientChildBase);
     REQUIRE(ClientChild != nullptr);
     REQUIRE(ClientChild->Parent().Id == ParentId);
 
@@ -472,7 +475,7 @@ TEST_CASE("ReplicationService replicates node/component snapshots over a session
     REQUIRE(ClientNodeBase != nullptr);
     REQUIRE(ClientComponentBase != nullptr);
 
-    auto* ClientNode = dynamic_cast<ReplicatedNode*>(ClientNodeBase);
+    auto* ClientNode = NodeCast<ReplicatedNode>(ClientNodeBase);
     auto* ClientComponent = static_cast<ReplicatedComponent*>(ClientComponentBase);
     REQUIRE(ClientNode != nullptr);
     REQUIRE(ClientComponent != nullptr);

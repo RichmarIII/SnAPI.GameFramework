@@ -93,6 +93,10 @@ public:
 
     /** @brief Construct the component with default body settings. */
     RigidBodyComponent() = default;
+    RigidBodyComponent(const RigidBodyComponent&) = delete;
+    RigidBodyComponent& operator=(const RigidBodyComponent&) = delete;
+    RigidBodyComponent(RigidBodyComponent&&) noexcept = default;
+    RigidBodyComponent& operator=(RigidBodyComponent&&) noexcept = default;
     /** @brief Default destructor. Backend teardown happens through `OnDestroy()`. */
     ~RigidBodyComponent() = default;
     /**

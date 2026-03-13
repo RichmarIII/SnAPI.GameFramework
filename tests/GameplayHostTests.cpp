@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "GameFramework.hpp"
+#include "NodeCast.h"
 
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
 #include "NetSession.h"
@@ -314,7 +315,7 @@ TEST_CASE("GameplayHost uses game possession selector for newly joined players")
 
     auto PawnResult = Runtime.World().CreateNode("PossessionPawn");
     REQUIRE(PawnResult);
-    const NodeHandle PawnHandle = PawnResult.value();
+    NodeHandle PawnHandle = PawnResult.value();
 
     auto Game = std::make_unique<TestPolicyGame>();
     auto* GamePtr = Game.get();
@@ -325,8 +326,8 @@ TEST_CASE("GameplayHost uses game possession selector for newly joined players")
     REQUIRE(Host->LocalPlayers().size() == 1);
     REQUIRE(GamePtr->SelectPossessionCalls >= 1);
 
-    const NodeHandle PlayerHandle = Host->LocalPlayers().front();
-    auto* Player = dynamic_cast<LocalPlayer*>(PlayerHandle.Borrowed());
+    NodeHandle PlayerHandle = Host->LocalPlayers().front();
+    auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
     REQUIRE(Player != nullptr);
     REQUIRE_FALSE(Player->GetPossessedNode().IsNull());
     REQUIRE(Player->GetPossessedNode().Id == PawnHandle.Id);

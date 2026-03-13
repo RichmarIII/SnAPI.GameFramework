@@ -56,7 +56,7 @@ namespace SnAPI::GameFramework
  * @see TAAParamsNode
  * @see BloomParamsNode
  */
-class SNAPI_GAMEFRAMEWORK_API WorldRenderSettings : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API WorldRenderSettings : public BaseNode, public NodeCRTP<WorldRenderSettings>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::WorldRenderSettings";

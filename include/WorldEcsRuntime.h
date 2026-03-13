@@ -1,20 +1,21 @@
 #pragma once
 
 #include <algorithm>
-#include <cmath>
+#include <bit>
 #include <concepts>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "Expected.h"
-#include "Math.h"
+#include "Handles.h"
 #include "ObjectRegistry.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
@@ -24,6 +25,8 @@ namespace SnAPI::GameFramework
 {
 
 class IWorld;
+class BaseNode;
+class BaseComponent;
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -133,12 +136,17 @@ inline constexpr bool kUsesRuntimeTickCRTP = std::is_base_of_v<TRuntimeTickCRTP<
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Marker CRTP base for dense runtime node records.
+ * @brief Marker CRTP base for dense runtime node types.
  * @tparam TDerived Concrete runtime node type.
  */
 template<typename TDerived>
 struct NodeCRTP
 {
+    NodeCRTP() = default;
+    NodeCRTP(const NodeCRTP&) = delete;
+    NodeCRTP& operator=(const NodeCRTP&) = delete;
+    NodeCRTP(NodeCRTP&&) noexcept = default;
+    NodeCRTP& operator=(NodeCRTP&&) noexcept = default;
 };
 
 /**
@@ -149,6 +157,11 @@ struct NodeCRTP
 template<typename TDerived>
 struct ComponentCRTP
 {
+    ComponentCRTP() = default;
+    ComponentCRTP(const ComponentCRTP&) = delete;
+    ComponentCRTP& operator=(const ComponentCRTP&) = delete;
+    ComponentCRTP(ComponentCRTP&&) noexcept = default;
+    ComponentCRTP& operator=(ComponentCRTP&&) noexcept = default;
 };
 
 /**
@@ -167,6 +180,38 @@ inline constexpr bool kUsesComponentCRTP = std::is_base_of_v<ComponentCRTP<T>, T
 
 /**
  * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` is safe to relocate inside dense ECS storage by move.
+ *
+ * Node/component runtime types are expected to be move-only value wrappers whose runtime
+ * side effects are driven explicitly through `OnCreate()` / `OnDestroy()`, not through copy
+ * semantics or heavy destructor work during container relocation.
+ */
+template<typename T>
+concept DenseRuntimeRelocatableType =
+    std::is_move_constructible_v<T> &&
+    std::is_nothrow_move_constructible_v<T> &&
+    std::is_move_assignable_v<T> &&
+    std::is_nothrow_move_assignable_v<T> &&
+    std::is_nothrow_destructible_v<T> &&
+    !std::is_copy_constructible_v<T> &&
+    !std::is_copy_assignable_v<T>;
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` is a dense ECS node type with the required relocation contract.
+ */
+template<typename T>
+concept DenseRuntimeNodeType = kUsesNodeCRTP<T> && DenseRuntimeRelocatableType<T>;
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief `true` when `T` is a dense ECS component type with the required relocation contract.
+ */
+template<typename T>
+concept DenseRuntimeComponentType = kUsesComponentCRTP<T> && DenseRuntimeRelocatableType<T>;
+
+/**
+ * @ingroup SnAPI_GameFramework
  * @brief Compile-time contract for types eligible to live in `TDenseRuntimeStorage`.
  *
  * A valid runtime type must satisfy `NonPolymorphicRuntimeType` and opt into one of the
@@ -176,7 +221,7 @@ inline constexpr bool kUsesComponentCRTP = std::is_base_of_v<ComponentCRTP<T>, T
 template<typename T>
 concept RuntimeTickType =
     NonPolymorphicRuntimeType<T> &&
-    (kUsesRuntimeTickCRTP<T> || kUsesNodeCRTP<T> || kUsesComponentCRTP<T>);
+    (kUsesRuntimeTickCRTP<T> || DenseRuntimeNodeType<T> || DenseRuntimeComponentType<T>);
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -398,6 +443,22 @@ concept HasRuntimeEditorTickPhase = DeclaresEditorTickWithWorld<T> || DeclaresEd
 
 /**
  * @ingroup SnAPI_GameFramework
+ * @brief Runtime tick phases that can carry independent class-level priorities.
+ */
+enum class ERuntimeTickPhase : std::uint8_t
+{
+    PreTick,
+    Tick,
+    FixedTick,
+    LateTick,
+    PostTick,
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    EditorTick,
+#endif
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
  * @brief Read a runtime type's compile-time tick priority.
  * @tparam TObject Runtime object type.
  * @return `TObject::kTickPriority` when present, otherwise `0`.
@@ -405,16 +466,78 @@ concept HasRuntimeEditorTickPhase = DeclaresEditorTickWithWorld<T> || DeclaresEd
  * Lower values execute earlier because `WorldEcsRuntime` sorts tick entries in ascending
  * priority order.
  */
-template<typename TObject>
-consteval int RuntimeTickPriority()
+template<typename TObject, ERuntimeTickPhase Phase>
+consteval int RuntimePhasePriority()
 {
+    if constexpr (Phase == ERuntimeTickPhase::PreTick)
+    {
+        if constexpr (requires { TObject::kPreTickPriority; })
+        {
+            return static_cast<int>(TObject::kPreTickPriority);
+        }
+    }
+    else if constexpr (Phase == ERuntimeTickPhase::Tick)
+    {
+        if constexpr (requires { TObject::kTickPriority; })
+        {
+            return static_cast<int>(TObject::kTickPriority);
+        }
+    }
+    else if constexpr (Phase == ERuntimeTickPhase::FixedTick)
+    {
+        if constexpr (requires { TObject::kFixedTickPriority; })
+        {
+            return static_cast<int>(TObject::kFixedTickPriority);
+        }
+    }
+    else if constexpr (Phase == ERuntimeTickPhase::LateTick)
+    {
+        if constexpr (requires { TObject::kLateTickPriority; })
+        {
+            return static_cast<int>(TObject::kLateTickPriority);
+        }
+    }
+    else if constexpr (Phase == ERuntimeTickPhase::PostTick)
+    {
+        if constexpr (requires { TObject::kPostTickPriority; })
+        {
+            return static_cast<int>(TObject::kPostTickPriority);
+        }
+    }
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    else if constexpr (Phase == ERuntimeTickPhase::EditorTick)
+    {
+        if constexpr (requires { TObject::kEditorTickPriority; })
+        {
+            return static_cast<int>(TObject::kEditorTickPriority);
+        }
+    }
+#endif
+
     if constexpr (requires { TObject::kTickPriority; })
     {
         return static_cast<int>(TObject::kTickPriority);
     }
+
+    return 0;
+}
+
+template<typename TObject>
+consteval int RuntimeTickPriority()
+{
+    return RuntimePhasePriority<TObject, ERuntimeTickPhase::Tick>();
+}
+
+template<typename TObject>
+consteval std::size_t TStoragePageSize()
+{
+    if constexpr (requires { TObject::kStoragePageSize; })
+    {
+        return static_cast<std::size_t>(TObject::kStoragePageSize);
+    }
     else
     {
-        return 0;
+        return 1024u;
     }
 }
 
@@ -471,19 +594,22 @@ struct TDenseRuntimeHandle
  * @tparam TObject Non-polymorphic runtime object type.
  *
  * `TDenseRuntimeStorage` is the hot-path container behind the ECS refactor. Objects are
- * stored contiguously in `m_denseObjects`, while stable identity is tracked through a
- * slot table plus generation-safe handles.
+ * stored in fixed-capacity pages so addresses remain stable for the lifetime of each
+ * object, while stable identity is tracked through a slot table plus generation-safe handles.
  *
  * Core semantics:
- * - Dense order is unstable and may change on destroy via swap-pop compaction.
+ * - Runtime addresses remain stable until the object is destroyed.
+ * - Create never relocates existing objects; new pages are allocated instead.
+ * - Iteration order is unstable and may change on destroy because the active-runtime-index list
+ *   uses swap-pop compaction.
  * - UUID identity is unique within the storage.
  * - `OnCreate` may run immediately or be deferred via `PendingOnCreate`.
  * - `OnDestroy` runs synchronously during destroy/clear, not at a later frame boundary.
  *
  * Ownership and lifetime:
- * - The storage owns all contained `TObject` instances by value.
- * - Resolved pointers are borrowed and invalidated by any destroy or clear that moves or
- *   erases the underlying dense array.
+ * - The storage owns all contained `TObject` instances by value inside fixed pages.
+ * - Resolved pointers are borrowed and remain valid across unrelated creates/destroys until the
+ *   specific object is destroyed or the storage is cleared.
  *
  * Threading:
  * - Main-thread only.
@@ -491,7 +617,7 @@ struct TDenseRuntimeHandle
  * Performance:
  * - Handle resolution is O(1).
  * - UUID fallback resolution is O(1) average through `m_idToSlot`.
- * - Tick phases iterate linearly over contiguous storage.
+ * - Tick phases iterate linearly over the active-runtime-index list and page slots.
  */
 template<RuntimeTickType TObject>
 class TDenseRuntimeStorage final
@@ -510,6 +636,12 @@ public:
 #if defined(WITH_EDITOR) && WITH_EDITOR
     static constexpr bool kHasEditorTickPhase = HasRuntimeEditorTickPhase<TObject>;
 #endif
+    static constexpr uint32_t kPageSize = static_cast<uint32_t>(TStoragePageSize<TObject>());
+    static_assert(kPageSize > 0u, "Dense runtime storage page size must be greater than zero");
+    static_assert((kPageSize & (kPageSize - 1u)) == 0u,
+                  "Dense runtime storage page size must be a power of two");
+    static constexpr uint32_t kPageShift = std::countr_zero(kPageSize);
+    static constexpr uint32_t kPageMask = kPageSize - 1u;
 
     using Handle = TDenseRuntimeHandle<TObject>;
 
@@ -523,6 +655,11 @@ public:
     {
     }
 
+    ~TDenseRuntimeStorage()
+    {
+        DestroyAllObjectsWithoutLifecycle();
+    }
+
     /** @brief Get the stable token that identifies this storage instance in handles. */
     [[nodiscard]] uint32_t StorageToken() const noexcept
     {
@@ -532,13 +669,14 @@ public:
     /** @brief Get the current number of live runtime objects in dense storage. */
     [[nodiscard]] std::size_t Size() const noexcept
     {
-        return m_denseObjects.size();
+        return m_activeRuntimeIndices.size()
+            - std::min<std::size_t>(m_activeRuntimeIndices.size(), m_pendingDestroyCount);
     }
 
     /** @brief Return `true` when the storage contains no live objects. */
     [[nodiscard]] bool Empty() const noexcept
     {
-        return m_denseObjects.empty();
+        return Size() == 0u;
     }
 
     /**
@@ -581,11 +719,11 @@ public:
 
         const uint32_t SlotIndex = AcquireSlot(Id);
         SlotMeta& Slot = m_slots[SlotIndex];
-        const uint32_t DenseIndex = static_cast<uint32_t>(m_denseObjects.size());
+        TObject* Object = ObjectByRuntimeIndex(SlotIndex);
 
         try
         {
-            m_denseObjects.emplace_back(std::forward<TArgs>(Args)...);
+            std::construct_at(Object, std::forward<TArgs>(Args)...);
         }
         catch (...)
         {
@@ -593,15 +731,15 @@ public:
             return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to construct runtime object"));
         }
 
-        m_denseSlotIndices.push_back(SlotIndex);
         Slot.Alive = true;
-        Slot.DenseIndex = DenseIndex;
+        Slot.ActiveIndex = static_cast<uint32_t>(m_activeRuntimeIndices.size());
+        m_activeRuntimeIndices.push_back(SlotIndex);
 
         if constexpr (kHasOnCreatePhase)
         {
             if (!IsComponentOnCreateSuppressed())
             {
-                InvokeOnCreate(m_denseObjects.back(), WorldRef);
+                InvokeOnCreate(*Object, WorldRef);
                 Slot.PendingOnCreate = false;
             }
             else
@@ -629,13 +767,33 @@ public:
     bool Destroy(IWorld& WorldRef, const Handle& InHandle)
     {
         uint32_t SlotIndex = Handle::kInvalidIndex;
-        if (!ResolveSlot(InHandle, SlotIndex))
+        if (!ResolveSlot(InHandle, SlotIndex, true))
         {
             return false;
         }
 
         DestroyBySlot(WorldRef, SlotIndex);
         return true;
+    }
+
+    /**
+     * @brief Schedule a runtime object for deferred destruction at `EndFrame()`.
+     * @param InHandle Handle to destroy later.
+     * @return `true` when the handle resolved to a live object.
+     *
+     * Public resolve APIs stop returning the object immediately after it enters
+     * pending-destroy state, but already-borrowed pointers remain valid until the
+     * deferred destroy flush runs.
+     */
+    bool DestroyLater(const Handle& InHandle)
+    {
+        uint32_t SlotIndex = Handle::kInvalidIndex;
+        if (!ResolveSlot(InHandle, SlotIndex, true))
+        {
+            return false;
+        }
+
+        return MarkPendingDestroy(SlotIndex);
     }
 
     /**
@@ -663,6 +821,28 @@ public:
     }
 
     /**
+     * @brief Schedule a runtime object for deferred destruction by UUID fallback lookup.
+     * @param Id UUID to destroy later.
+     * @return `true` when the UUID resolved to a live object.
+     */
+    bool DestroySlowLater(const Uuid& Id)
+    {
+        auto It = m_idToSlot.find(Id);
+        if (It == m_idToSlot.end())
+        {
+            return false;
+        }
+
+        const uint32_t SlotIndex = It->second;
+        if (SlotIndex >= m_slots.size() || !m_slots[SlotIndex].Alive)
+        {
+            return false;
+        }
+
+        return MarkPendingDestroy(SlotIndex);
+    }
+
+    /**
      * @brief Resolve a handle to a borrowed mutable object pointer.
      * @param InHandle Handle to resolve.
      * @return Borrowed pointer to the live object, or `nullptr` if the handle is stale.
@@ -674,9 +854,7 @@ public:
         {
             return nullptr;
         }
-
-        const SlotMeta& Slot = m_slots[SlotIndex];
-        return &m_denseObjects[Slot.DenseIndex];
+        return ObjectByRuntimeIndex(SlotIndex);
     }
 
     /** @brief Const overload of `Resolve(const Handle&)`. */
@@ -687,9 +865,29 @@ public:
         {
             return nullptr;
         }
+        return ObjectByRuntimeIndex(SlotIndex);
+    }
 
-        const SlotMeta& Slot = m_slots[SlotIndex];
-        return &m_denseObjects[Slot.DenseIndex];
+    /** @brief Resolve a handle while including objects already pending destroy. */
+    TObject* ResolveIncludingPendingDestroy(const Handle& InHandle)
+    {
+        uint32_t SlotIndex = Handle::kInvalidIndex;
+        if (!ResolveSlot(InHandle, SlotIndex, true))
+        {
+            return nullptr;
+        }
+        return ObjectByRuntimeIndex(SlotIndex);
+    }
+
+    /** @brief Const overload of `ResolveIncludingPendingDestroy(const Handle&)`. */
+    const TObject* ResolveIncludingPendingDestroy(const Handle& InHandle) const
+    {
+        uint32_t SlotIndex = Handle::kInvalidIndex;
+        if (!ResolveSlot(InHandle, SlotIndex, true))
+        {
+            return nullptr;
+        }
+        return ObjectByRuntimeIndex(SlotIndex);
     }
 
     /**
@@ -713,12 +911,12 @@ public:
         }
 
         const SlotMeta& Slot = m_slots[SlotIndex];
-        if (!Slot.Alive || Slot.DenseIndex >= m_denseObjects.size())
+        if (!Slot.Alive || Slot.PendingDestroy)
         {
             return nullptr;
         }
 
-        return &m_denseObjects[Slot.DenseIndex];
+        return ObjectByRuntimeIndex(SlotIndex);
     }
 
     /** @brief Const overload of `ResolveSlowById(const Uuid&)`. */
@@ -737,12 +935,12 @@ public:
         }
 
         const SlotMeta& Slot = m_slots[SlotIndex];
-        if (!Slot.Alive || Slot.DenseIndex >= m_denseObjects.size())
+        if (!Slot.Alive || Slot.PendingDestroy)
         {
             return nullptr;
         }
 
-        return &m_denseObjects[Slot.DenseIndex];
+        return ObjectByRuntimeIndex(SlotIndex);
     }
 
     /**
@@ -765,12 +963,78 @@ public:
         }
 
         const SlotMeta& Slot = m_slots[SlotIndex];
-        if (!Slot.Alive)
+        if (!Slot.Alive || Slot.PendingDestroy)
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime object not alive"));
         }
 
         return MakeHandle(SlotIndex);
+    }
+
+    template<typename Visitor>
+    void ForEach(Visitor&& VisitorFn)
+    {
+        for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
+        {
+            if (!IsRuntimeIndexVisible(RuntimeIndex))
+            {
+                continue;
+            }
+            VisitorFn(MakeHandle(RuntimeIndex), *ObjectByRuntimeIndex(RuntimeIndex));
+        }
+    }
+
+    template<typename Visitor>
+    void ForEach(Visitor&& VisitorFn) const
+    {
+        for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
+        {
+            if (!IsRuntimeIndexVisible(RuntimeIndex))
+            {
+                continue;
+            }
+            VisitorFn(MakeHandle(RuntimeIndex), *ObjectByRuntimeIndex(RuntimeIndex));
+        }
+    }
+
+    template<typename Visitor>
+    void ForEachAll(Visitor&& VisitorFn)
+    {
+        for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
+        {
+            if (RuntimeIndex >= m_slots.size())
+            {
+                continue;
+            }
+
+            const SlotMeta& Slot = m_slots[RuntimeIndex];
+            if (!Slot.Alive)
+            {
+                continue;
+            }
+
+            VisitorFn(MakeHandle(RuntimeIndex), *ObjectByRuntimeIndex(RuntimeIndex));
+        }
+    }
+
+    template<typename Visitor>
+    void ForEachAll(Visitor&& VisitorFn) const
+    {
+        for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
+        {
+            if (RuntimeIndex >= m_slots.size())
+            {
+                continue;
+            }
+
+            const SlotMeta& Slot = m_slots[RuntimeIndex];
+            if (!Slot.Alive)
+            {
+                continue;
+            }
+
+            VisitorFn(MakeHandle(RuntimeIndex), *ObjectByRuntimeIndex(RuntimeIndex));
+        }
     }
 
     /**
@@ -782,9 +1046,13 @@ public:
     {
         if constexpr (kHasPreTickPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokePreTick(Object, WorldRef, DeltaSeconds);
+                if (!IsRuntimeIndexVisible(RuntimeIndex))
+                {
+                    continue;
+                }
+                InvokePreTick(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef, DeltaSeconds);
             }
         }
         else
@@ -803,9 +1071,13 @@ public:
     {
         if constexpr (kHasTickPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokeTick(Object, WorldRef, DeltaSeconds);
+                if (!IsRuntimeIndexVisible(RuntimeIndex))
+                {
+                    continue;
+                }
+                InvokeTick(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef, DeltaSeconds);
             }
         }
         else
@@ -824,9 +1096,13 @@ public:
     {
         if constexpr (kHasFixedTickPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokeFixedTick(Object, WorldRef, DeltaSeconds);
+                if (!IsRuntimeIndexVisible(RuntimeIndex))
+                {
+                    continue;
+                }
+                InvokeFixedTick(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef, DeltaSeconds);
             }
         }
         else
@@ -845,9 +1121,13 @@ public:
     {
         if constexpr (kHasLateTickPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokeLateTick(Object, WorldRef, DeltaSeconds);
+                if (!IsRuntimeIndexVisible(RuntimeIndex))
+                {
+                    continue;
+                }
+                InvokeLateTick(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef, DeltaSeconds);
             }
         }
         else
@@ -866,9 +1146,13 @@ public:
     {
         if constexpr (kHasPostTickPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokePostTick(Object, WorldRef, DeltaSeconds);
+                if (!IsRuntimeIndexVisible(RuntimeIndex))
+                {
+                    continue;
+                }
+                InvokePostTick(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef, DeltaSeconds);
             }
         }
         else
@@ -888,9 +1172,13 @@ public:
     {
         if constexpr (kHasEditorTickPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokeEditorTick(Object, WorldRef, DeltaSeconds);
+                if (!IsRuntimeIndexVisible(RuntimeIndex))
+                {
+                    continue;
+                }
+                InvokeEditorTick(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef, DeltaSeconds);
             }
         }
         else
@@ -916,15 +1204,79 @@ public:
             return;
         }
 
-        for (SlotMeta& Slot : m_slots)
+        for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
         {
-            if (!Slot.Alive || !Slot.PendingOnCreate || Slot.DenseIndex >= m_denseObjects.size())
+            if (RuntimeIndex >= m_slots.size())
             {
                 continue;
             }
 
-            InvokeOnCreate(m_denseObjects[Slot.DenseIndex], WorldRef);
+            SlotMeta& Slot = m_slots[RuntimeIndex];
+            if (!Slot.Alive || Slot.PendingDestroy || !Slot.PendingOnCreate)
+            {
+                continue;
+            }
+
+            InvokeOnCreate(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef);
             Slot.PendingOnCreate = false;
+        }
+    }
+
+    /**
+     * @brief Flush a specific pending `OnCreate` hook by handle.
+     * @param WorldRef Owning world passed through to `OnCreate`.
+     * @param InHandle Handle whose pending create hook should run.
+     * @return `true` when the handle resolved and the hook was invoked.
+     */
+    bool FlushPendingOnCreate(IWorld& WorldRef, const Handle& InHandle)
+    {
+        if constexpr (!kHasOnCreatePhase)
+        {
+            (void)WorldRef;
+            (void)InHandle;
+            return false;
+        }
+
+        uint32_t SlotIndex = Handle::kInvalidIndex;
+        if (!ResolveSlot(InHandle, SlotIndex, true))
+        {
+            return false;
+        }
+
+        SlotMeta& Slot = m_slots[SlotIndex];
+        if (!Slot.PendingOnCreate || Slot.PendingDestroy)
+        {
+            return false;
+        }
+
+        InvokeOnCreate(*ObjectByRuntimeIndex(SlotIndex), WorldRef);
+        Slot.PendingOnCreate = false;
+        return true;
+    }
+
+    /**
+     * @brief Flush all deferred destroys that were scheduled earlier in the frame.
+     * @param WorldRef Owning world passed through to `OnDestroy`.
+     */
+    void EndFrame(IWorld& WorldRef)
+    {
+        std::vector<uint32_t> PendingDestroy = std::move(m_pendingDestroySlots);
+        m_pendingDestroySlots.clear();
+
+        for (const uint32_t SlotIndex : PendingDestroy)
+        {
+            if (SlotIndex >= m_slots.size())
+            {
+                continue;
+            }
+
+            const SlotMeta& Slot = m_slots[SlotIndex];
+            if (!Slot.Alive || !Slot.PendingDestroy)
+            {
+                continue;
+            }
+
+            DestroyBySlot(WorldRef, SlotIndex);
         }
     }
 
@@ -938,29 +1290,43 @@ public:
     {
         if constexpr (kHasOnDestroyPhase)
         {
-            for (TObject& Object : m_denseObjects)
+            for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
             {
-                InvokeOnDestroy(Object, WorldRef);
+                if (RuntimeIndex >= m_slots.size())
+                {
+                    continue;
+                }
+
+                SlotMeta& Slot = m_slots[RuntimeIndex];
+                if (!Slot.Alive)
+                {
+                    continue;
+                }
+
+                InvokeOnDestroy(*ObjectByRuntimeIndex(RuntimeIndex), WorldRef);
+                std::destroy_at(ObjectByRuntimeIndex(RuntimeIndex));
             }
         }
         else
         {
             (void)WorldRef;
+            DestroyAllObjectsWithoutLifecycle();
         }
 
-        m_denseObjects.clear();
-        m_denseSlotIndices.clear();
         m_idToSlot.clear();
         m_freeSlotIndices.clear();
-
+        m_pendingDestroySlots.clear();
+        m_pendingDestroyCount = 0u;
+        m_activeRuntimeIndices.clear();
         m_freeSlotIndices.reserve(m_slots.size());
         for (uint32_t SlotIndex = 0; SlotIndex < m_slots.size(); ++SlotIndex)
         {
             SlotMeta& Slot = m_slots[SlotIndex];
             Slot.Id = {};
             Slot.Alive = false;
-            Slot.DenseIndex = Handle::kInvalidIndex;
+            Slot.ActiveIndex = Handle::kInvalidIndex;
             Slot.PendingOnCreate = false;
+            Slot.PendingDestroy = false;
             Slot.Generation = (Slot.Generation == std::numeric_limits<uint32_t>::max()) ? 1u : (Slot.Generation + 1u);
             if (Slot.Generation == 0u)
             {
@@ -1119,9 +1485,10 @@ private:
     {
         Uuid Id{};
         uint32_t Generation = 1;
-        uint32_t DenseIndex = Handle::kInvalidIndex;
+        uint32_t ActiveIndex = Handle::kInvalidIndex;
         bool Alive = false;
         bool PendingOnCreate = false;
+        bool PendingDestroy = false;
     };
 
     Handle MakeHandle(const uint32_t SlotIndex) const
@@ -1134,7 +1501,7 @@ private:
             .Generation = Slot.Generation};
     }
 
-    bool ResolveSlot(const Handle& InHandle, uint32_t& OutSlotIndex) const
+    bool ResolveSlot(const Handle& InHandle, uint32_t& OutSlotIndex, const bool IncludePendingDestroy = false) const
     {
         if (InHandle.StorageToken != m_storageToken || InHandle.Index == Handle::kInvalidIndex)
         {
@@ -1146,7 +1513,8 @@ private:
         }
 
         const SlotMeta& Slot = m_slots[InHandle.Index];
-        if (!Slot.Alive || Slot.Generation != InHandle.Generation || Slot.Id != InHandle.Id)
+        if (!Slot.Alive || (!IncludePendingDestroy && Slot.PendingDestroy) || Slot.Generation != InHandle.Generation
+            || Slot.Id != InHandle.Id)
         {
             return false;
         }
@@ -1157,23 +1525,20 @@ private:
 
     uint32_t AcquireSlot(const Uuid& Id)
     {
-        uint32_t SlotIndex = Handle::kInvalidIndex;
-        if (!m_freeSlotIndices.empty())
+        if (m_freeSlotIndices.empty())
         {
-            SlotIndex = m_freeSlotIndices.back();
-            m_freeSlotIndices.pop_back();
+            AllocatePage();
         }
-        else
-        {
-            SlotIndex = static_cast<uint32_t>(m_slots.size());
-            m_slots.emplace_back();
-        }
+
+        const uint32_t SlotIndex = m_freeSlotIndices.back();
+        m_freeSlotIndices.pop_back();
 
         SlotMeta& Slot = m_slots[SlotIndex];
         Slot.Id = Id;
         Slot.Alive = false;
-        Slot.DenseIndex = Handle::kInvalidIndex;
+        Slot.ActiveIndex = Handle::kInvalidIndex;
         Slot.PendingOnCreate = false;
+        Slot.PendingDestroy = false;
         if (Slot.Generation == 0u)
         {
             Slot.Generation = 1u;
@@ -1192,10 +1557,46 @@ private:
         SlotMeta& Slot = m_slots[SlotIndex];
         m_idToSlot.erase(Slot.Id);
         Slot.Id = {};
-        Slot.DenseIndex = Handle::kInvalidIndex;
+        Slot.ActiveIndex = Handle::kInvalidIndex;
         Slot.Alive = false;
         Slot.PendingOnCreate = false;
+        Slot.PendingDestroy = false;
         m_freeSlotIndices.push_back(SlotIndex);
+    }
+
+    bool MarkPendingDestroy(const uint32_t SlotIndex)
+    {
+        if (SlotIndex >= m_slots.size())
+        {
+            return false;
+        }
+
+        SlotMeta& Slot = m_slots[SlotIndex];
+        if (!Slot.Alive)
+        {
+            return false;
+        }
+        if (Slot.PendingDestroy)
+        {
+            return true;
+        }
+
+        Slot.PendingDestroy = true;
+        Slot.PendingOnCreate = false;
+        m_pendingDestroySlots.push_back(SlotIndex);
+        ++m_pendingDestroyCount;
+        return true;
+    }
+
+    bool IsRuntimeIndexVisible(const uint32_t RuntimeIndex) const
+    {
+        if (RuntimeIndex >= m_slots.size())
+        {
+            return false;
+        }
+
+        const SlotMeta& Slot = m_slots[RuntimeIndex];
+        return Slot.Alive && !Slot.PendingDestroy;
     }
 
     void DestroyBySlot(IWorld& WorldRef, const uint32_t SlotIndex)
@@ -1206,40 +1607,47 @@ private:
         }
 
         SlotMeta& Slot = m_slots[SlotIndex];
-        if (!Slot.Alive || Slot.DenseIndex == Handle::kInvalidIndex || Slot.DenseIndex >= m_denseObjects.size())
+        if (!Slot.Alive)
         {
             return;
         }
 
-        const uint32_t DenseIndex = Slot.DenseIndex;
-        const uint32_t LastDenseIndex = static_cast<uint32_t>(m_denseObjects.size() - 1u);
+        if (Slot.PendingDestroy && m_pendingDestroyCount > 0u)
+        {
+            --m_pendingDestroyCount;
+        }
+
+        TObject* Object = ObjectByRuntimeIndex(SlotIndex);
 
         if constexpr (kHasOnDestroyPhase)
         {
-            InvokeOnDestroy(m_denseObjects[DenseIndex], WorldRef);
+            InvokeOnDestroy(*Object, WorldRef);
         }
         else
         {
             (void)WorldRef;
         }
 
-        if (DenseIndex != LastDenseIndex)
+        std::destroy_at(Object);
+
+        if (Slot.ActiveIndex != Handle::kInvalidIndex && !m_activeRuntimeIndices.empty())
         {
-            std::swap(m_denseObjects[DenseIndex], m_denseObjects[LastDenseIndex]);
-
-            const uint32_t MovedSlotIndex = m_denseSlotIndices[LastDenseIndex];
-            m_denseSlotIndices[DenseIndex] = MovedSlotIndex;
-            m_slots[MovedSlotIndex].DenseIndex = DenseIndex;
+            const uint32_t ActiveIndex = Slot.ActiveIndex;
+            const uint32_t LastRuntimeIndex = m_activeRuntimeIndices.back();
+            if (ActiveIndex + 1u != m_activeRuntimeIndices.size())
+            {
+                m_activeRuntimeIndices[ActiveIndex] = LastRuntimeIndex;
+                m_slots[LastRuntimeIndex].ActiveIndex = ActiveIndex;
+            }
+            m_activeRuntimeIndices.pop_back();
         }
-
-        m_denseObjects.pop_back();
-        m_denseSlotIndices.pop_back();
 
         m_idToSlot.erase(Slot.Id);
         Slot.Id = {};
         Slot.Alive = false;
-        Slot.DenseIndex = Handle::kInvalidIndex;
+        Slot.ActiveIndex = Handle::kInvalidIndex;
         Slot.PendingOnCreate = false;
+        Slot.PendingDestroy = false;
         Slot.Generation = (Slot.Generation == std::numeric_limits<uint32_t>::max()) ? 1u : (Slot.Generation + 1u);
         if (Slot.Generation == 0u)
         {
@@ -1248,37 +1656,99 @@ private:
         m_freeSlotIndices.push_back(SlotIndex);
     }
 
+    struct Page
+    {
+        Page()
+            : Objects(std::allocator<TObject>{}.allocate(kPageSize))
+        {
+        }
+
+        ~Page()
+        {
+            if (Objects)
+            {
+                std::allocator<TObject>{}.deallocate(Objects, kPageSize);
+            }
+        }
+
+        TObject* Objects = nullptr;
+    };
+
+    static constexpr uint32_t PageIndexFromRuntimeIndex(const uint32_t RuntimeIndex) noexcept
+    {
+        return RuntimeIndex >> kPageShift;
+    }
+
+    static constexpr uint32_t SlotOffsetFromRuntimeIndex(const uint32_t RuntimeIndex) noexcept
+    {
+        return RuntimeIndex & kPageMask;
+    }
+
+    static constexpr uint32_t PackRuntimeIndex(const uint32_t PageIndex, const uint32_t SlotOffset) noexcept
+    {
+        return (PageIndex << kPageShift) | SlotOffset;
+    }
+
+    TObject* ObjectByRuntimeIndex(const uint32_t RuntimeIndex)
+    {
+        const uint32_t PageIndex = PageIndexFromRuntimeIndex(RuntimeIndex);
+        const uint32_t SlotOffset = SlotOffsetFromRuntimeIndex(RuntimeIndex);
+        return m_pages[PageIndex]->Objects + SlotOffset;
+    }
+
+    const TObject* ObjectByRuntimeIndex(const uint32_t RuntimeIndex) const
+    {
+        const uint32_t PageIndex = PageIndexFromRuntimeIndex(RuntimeIndex);
+        const uint32_t SlotOffset = SlotOffsetFromRuntimeIndex(RuntimeIndex);
+        return m_pages[PageIndex]->Objects + SlotOffset;
+    }
+
+    void AllocatePage()
+    {
+        const uint32_t PageIndex = static_cast<uint32_t>(m_pages.size());
+        auto NewPage = std::make_unique<Page>();
+        m_pages.push_back(NewPage.get());
+        m_pageOwners.push_back(std::move(NewPage));
+
+        const std::size_t OldSlotCount = m_slots.size();
+        m_slots.resize(OldSlotCount + kPageSize);
+        m_freeSlotIndices.reserve(m_freeSlotIndices.size() + kPageSize);
+        for (uint32_t SlotOffset = kPageSize; SlotOffset > 0u; --SlotOffset)
+        {
+            m_freeSlotIndices.push_back(PackRuntimeIndex(PageIndex, SlotOffset - 1u));
+        }
+    }
+
+    void DestroyAllObjectsWithoutLifecycle()
+    {
+        for (const uint32_t RuntimeIndex : m_activeRuntimeIndices)
+        {
+            if (RuntimeIndex >= m_slots.size())
+            {
+                continue;
+            }
+
+            const SlotMeta& Slot = m_slots[RuntimeIndex];
+            if (!Slot.Alive)
+            {
+                continue;
+            }
+
+            std::destroy_at(ObjectByRuntimeIndex(RuntimeIndex));
+        }
+        m_activeRuntimeIndices.clear();
+    }
+
     uint32_t m_storageToken = 1;
-    std::vector<TObject> m_denseObjects{};
-    std::vector<uint32_t> m_denseSlotIndices{};
+    std::vector<Page*> m_pages{};
+    std::vector<std::unique_ptr<Page>> m_pageOwners{};
     std::vector<SlotMeta> m_slots{};
+    std::vector<uint32_t> m_activeRuntimeIndices{};
     std::vector<uint32_t> m_freeSlotIndices{};
+    std::vector<uint32_t> m_pendingDestroySlots{};
+    std::size_t m_pendingDestroyCount = 0u;
     std::unordered_map<Uuid, uint32_t, UuidHash> m_idToSlot{};
 };
-
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Minimal runtime-owned metadata stored for each ECS runtime node.
- *
- * This is the compact node-side record tracked by `WorldNodeRuntime`. Higher-level node
- * behavior may still live elsewhere; this struct only carries the identity and flags
- * needed by the dense runtime layer itself.
- */
-struct RuntimeNodeRecord final : NodeCRTP<RuntimeNodeRecord>
-{
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::RuntimeNodeRecord";
-
-    std::string Name{"Node"}; /**< @brief Debug/editor-facing node label. */
-    TypeId Type{}; /**< @brief Reflected runtime node type. */
-    bool Active = true; /**< @brief Runtime active flag available to higher-level systems. */
-    bool Replicated = false; /**< @brief Replication intent flag for networking layers. */
-};
-
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Typed handle alias for runtime nodes stored in `WorldNodeRuntime`.
- */
-using RuntimeNodeHandle = TDenseRuntimeHandle<RuntimeNodeRecord>;
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -1312,6 +1782,16 @@ RuntimeComponentHandle ToRuntimeComponentHandle(const TDenseRuntimeHandle<TObjec
         .Generation = InHandle.Generation};
 }
 
+template<typename TObject>
+NodeHandle ToNodeHandle(const TDenseRuntimeHandle<TObject>& InHandle)
+{
+    return NodeHandle{
+        InHandle.Id,
+        InHandle.StorageToken,
+        InHandle.Index,
+        InHandle.Generation};
+}
+
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Reinterpret a generic runtime-component handle as a typed dense handle.
@@ -1332,845 +1812,29 @@ TDenseRuntimeHandle<TObject> ToTypedRuntimeHandle(const RuntimeComponentHandle& 
         .Generation = InHandle.Generation};
 }
 
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Local or world transform used by the dense runtime node hierarchy.
- *
- * Units and coordinate space:
- * - `Position` uses the same world-space units as the rest of GameFramework.
- * - `Rotation` is a quaternion.
- * - `Scale` is component-wise relative scale.
- */
-struct RuntimeNodeTransform
+template<typename TObject>
+TDenseRuntimeHandle<TObject> ToTypedNodeRuntimeHandle(const NodeHandle& InHandle)
 {
-    Vec3 Position{}; /**< @brief Translation in local or world space, depending on the API. */
-    Quat Rotation = Quat::Identity(); /**< @brief Orientation quaternion. */
-    Vec3 Scale{1.0f, 1.0f, 1.0f}; /**< @brief Component-wise scale. */
-};
+    return TDenseRuntimeHandle<TObject>{
+        .Id = InHandle.Id,
+        .StorageToken = InHandle.RuntimePoolToken,
+        .Index = InHandle.RuntimeIndex,
+        .Generation = InHandle.RuntimeGeneration};
+}
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Dense hierarchy runtime that owns runtime nodes, parent/child links, and cached transforms.
- *
- * `WorldNodeRuntime` is the node-side half of the ECS runtime refactor. It centralizes:
- * - runtime node identity and metadata
- * - parent/child hierarchy links
- * - root tracking
- * - local and cached world transforms
- *
- * Core semantics:
- * - Handles are generation-safe and become invalid once a node slot is reused.
- * - Root membership is maintained automatically by attach/detach operations.
- * - World transforms are cached and recomputed lazily when a subtree is marked dirty.
- * - Destroying a node destroys its entire subtree iteratively in child-first order.
- *
- * Threading:
- * - Main-thread only.
- */
-class WorldNodeRuntime final
-{
-public:
-    using Handle = RuntimeNodeHandle;
-
-    /**
-     * @brief Create a runtime node with a generated UUID.
-     * @param WorldRef Owning world passed to runtime lifecycle hooks.
-     * @param Name Debug/editor-facing node name.
-     * @param Type Reflected runtime node type.
-     * @return Handle to the new node, or an error on failure.
-     */
-    TExpected<Handle> CreateNode(IWorld& WorldRef, std::string Name, const TypeId& Type)
-    {
-        return CreateNodeWithId(WorldRef, NewUuid(), std::move(Name), Type);
-    }
-
-    /**
-     * @brief Create a runtime node with an explicit UUID.
-     * @param WorldRef Owning world passed to runtime lifecycle hooks.
-     * @param Id Stable node identity.
-     * @param Name Debug/editor-facing node name.
-     * @param Type Reflected runtime node type.
-     * @return Handle to the new node, or an error when creation fails.
-     *
-     * Newly created nodes start as roots with no parent and no explicit local transform.
-     */
-    TExpected<Handle> CreateNodeWithId(IWorld& WorldRef, const Uuid& Id, std::string Name, const TypeId& Type)
-    {
-        if (Type == TypeId{})
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Runtime node type is null"));
-        }
-
-        RuntimeNodeRecord Record{};
-        Record.Name = std::move(Name);
-        Record.Type = Type;
-
-        auto HandleResult = m_nodes.CreateWithId(WorldRef, Id, std::move(Record));
-        if (!HandleResult)
-        {
-            return std::unexpected(HandleResult.error());
-        }
-
-        const Handle CreatedHandle = *HandleResult;
-        if (CreatedHandle.Index == Handle::kInvalidIndex)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, "Runtime node slot index is invalid"));
-        }
-
-        EnsureHierarchySlot(CreatedHandle.Index);
-        HierarchyEntry& Entry = m_hierarchyBySlot[CreatedHandle.Index];
-        Entry = {};
-        Entry.Generation = CreatedHandle.Generation;
-        Entry.Alive = true;
-
-        AddRootIfMissing(CreatedHandle);
-        return CreatedHandle;
-    }
-
-    /**
-     * @brief Destroy a runtime node and all descendants.
-     * @param WorldRef Owning world passed to runtime lifecycle hooks.
-     * @param NodeHandle Root of the subtree to destroy.
-     * @return Success or an error when the handle is invalid.
-     */
-    Result DestroyNode(IWorld& WorldRef, const Handle NodeHandle)
-    {
-        if (NodeHandle.IsNull())
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Runtime node handle is null"));
-        }
-
-        return DestroyNodeIterative(WorldRef, NodeHandle);
-    }
-
-    /**
-     * @brief Attach a child node under a parent node.
-     * @param ParentHandle Parent runtime node.
-     * @param ChildHandle Child runtime node.
-     * @return Success or an error when handles are invalid, the child already has a
-     *         parent, or the operation would create a cycle.
-     */
-    Result AttachChild(const Handle ParentHandle, const Handle ChildHandle)
-    {
-        if (ParentHandle.IsNull() || ChildHandle.IsNull())
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Parent/child handle is null"));
-        }
-        if (ParentHandle == ChildHandle)
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node cannot be parent of itself"));
-        }
-        if (!m_nodes.Resolve(ParentHandle))
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Parent runtime node not found"));
-        }
-        if (!m_nodes.Resolve(ChildHandle))
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Child runtime node not found"));
-        }
-
-        HierarchyEntry* ParentState = EntryForHandle(ParentHandle);
-        HierarchyEntry* ChildState = EntryForHandle(ChildHandle);
-        if (!ParentState || !ChildState)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, "Runtime hierarchy state missing"));
-        }
-
-        if (!ChildState->Parent.IsNull())
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Child already has a parent"));
-        }
-
-        for (Handle Cursor = ParentHandle; !Cursor.IsNull();)
-        {
-            if (Cursor == ChildHandle)
-            {
-                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Hierarchy cycle detected"));
-            }
-
-            const HierarchyEntry* CursorState = EntryForHandle(Cursor);
-            if (!CursorState)
-            {
-                break;
-            }
-            Cursor = CursorState->Parent;
-        }
-
-        auto& ParentChildren = ParentState->Children;
-        if (std::find(ParentChildren.begin(), ParentChildren.end(), ChildHandle) == ParentChildren.end())
-        {
-            ParentChildren.push_back(ChildHandle);
-        }
-
-        ChildState->Parent = ParentHandle;
-        RemoveRootIfPresent(ChildHandle);
-        MarkSubtreeDirty(ChildHandle);
-        return Ok();
-    }
-
-    /**
-     * @brief Detach a node from its current parent, promoting it to a root.
-     * @param ChildHandle Child runtime node to detach.
-     * @return Success or an error when the handle is invalid.
-     */
-    Result DetachChild(const Handle ChildHandle)
-    {
-        if (ChildHandle.IsNull())
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Child handle is null"));
-        }
-        if (!m_nodes.Resolve(ChildHandle))
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Child runtime node not found"));
-        }
-
-        HierarchyEntry* ChildState = EntryForHandle(ChildHandle);
-        if (!ChildState)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, "Child hierarchy state missing"));
-        }
-
-        const Handle ParentHandle = ChildState->Parent;
-        if (!ParentHandle.IsNull())
-        {
-            if (HierarchyEntry* ParentState = EntryForHandle(ParentHandle))
-            {
-                RemoveChildLink(*ParentState, ChildHandle);
-            }
-        }
-        ChildState->Parent = {};
-        AddRootIfMissing(ChildHandle);
-        MarkSubtreeDirty(ChildHandle);
-        return Ok();
-    }
-
-    /** @brief Resolve a runtime node handle to borrowed mutable node metadata. */
-    [[nodiscard]] RuntimeNodeRecord* Resolve(const Handle NodeHandle)
-    {
-        return m_nodes.Resolve(NodeHandle);
-    }
-
-    /** @brief Const overload of `Resolve(const Handle)`. */
-    [[nodiscard]] const RuntimeNodeRecord* Resolve(const Handle NodeHandle) const
-    {
-        return m_nodes.Resolve(NodeHandle);
-    }
-
-    /** @brief Rebuild a current runtime node handle from a UUID. */
-    [[nodiscard]] TExpected<Handle> HandleById(const Uuid& Id) const
-    {
-        return m_nodes.HandleById(Id);
-    }
-
-    /**
-     * @brief Get the parent handle of a runtime node.
-     * @param ChildHandle Child runtime node.
-     * @return Parent handle when the link is valid, otherwise a null handle.
-     */
-    [[nodiscard]] Handle Parent(const Handle ChildHandle) const
-    {
-        const HierarchyEntry* ChildState = EntryForHandle(ChildHandle);
-        if (!ChildState)
-        {
-            return {};
-        }
-
-        const Handle ParentHandle = ChildState->Parent;
-        return EntryForHandle(ParentHandle) ? ParentHandle : Handle{};
-    }
-
-    /**
-     * @brief Collect the current live children of a parent node.
-     * @param ParentHandle Parent runtime node.
-     * @return Vector of live child handles in stored child order.
-     */
-    [[nodiscard]] std::vector<Handle> Children(const Handle ParentHandle) const
-    {
-        const HierarchyEntry* ParentState = EntryForHandle(ParentHandle);
-        if (!ParentState)
-        {
-            return {};
-        }
-
-        std::vector<Handle> Result{};
-        Result.reserve(ParentState->Children.size());
-        ForEachChild(ParentHandle, [&](const Handle ChildHandle) {
-            Result.push_back(ChildHandle);
-        });
-        return Result;
-    }
-
-    /**
-     * @brief Visit each live child handle of a parent node.
-     * @tparam TVisitor Callable invocable as `Visitor(Handle)`.
-     * @param ParentHandle Parent runtime node.
-     * @param Visitor Callback invoked for each currently live child.
-     */
-    template<typename TVisitor>
-        requires std::invocable<TVisitor, Handle>
-    void ForEachChild(const Handle ParentHandle, TVisitor&& Visitor) const
-    {
-        const HierarchyEntry* ParentState = EntryForHandle(ParentHandle);
-        if (!ParentState)
-        {
-            return;
-        }
-
-        for (const Handle ChildHandle : ParentState->Children)
-        {
-            if (EntryForHandle(ChildHandle))
-            {
-                Visitor(ChildHandle);
-            }
-        }
-    }
-
-    /** @brief Borrow the current root-handle list. */
-    [[nodiscard]] const std::vector<Handle>& Roots() const
-    {
-        return m_roots;
-    }
-
-    /** @brief Get the number of live runtime nodes. */
-    [[nodiscard]] std::size_t Size() const
-    {
-        return m_nodes.Size();
-    }
-
-    /**
-     * @brief Assign an explicit local transform to a runtime node.
-     * @param NodeHandle Target runtime node.
-     * @param LocalTransform Local transform relative to the parent.
-     * @return `true` when the node exists and the transform was stored.
-     *
-     * The input rotation is normalized before storage. The entire subtree is marked dirty
-     * so cached world transforms will be recomputed lazily.
-     */
-    bool SetLocalTransform(const Handle NodeHandle, const RuntimeNodeTransform& LocalTransform)
-    {
-        if (!m_nodes.Resolve(NodeHandle))
-        {
-            return false;
-        }
-
-        HierarchyEntry* Entry = EntryForHandle(NodeHandle);
-        if (!Entry)
-        {
-            return false;
-        }
-
-        Entry->LocalTransform = NormalizeTransformRotation(LocalTransform);
-        Entry->HasLocalTransform = true;
-        MarkSubtreeDirty(NodeHandle);
-        return true;
-    }
-
-    /**
-     * @brief Remove a node's explicit local transform.
-     * @param NodeHandle Target runtime node.
-     * @return `true` when the node exists.
-     *
-     * Clearing a local transform means the node contributes no authored transform of its
-     * own; world transform queries may then inherit only ancestor transforms.
-     */
-    bool ClearLocalTransform(const Handle NodeHandle)
-    {
-        if (!m_nodes.Resolve(NodeHandle))
-        {
-            return false;
-        }
-
-        HierarchyEntry* Entry = EntryForHandle(NodeHandle);
-        if (!Entry)
-        {
-            return false;
-        }
-
-        if (!Entry->HasLocalTransform)
-        {
-            return true;
-        }
-
-        Entry->LocalTransform = IdentityTransform();
-        Entry->HasLocalTransform = false;
-        MarkSubtreeDirty(NodeHandle);
-        return true;
-    }
-
-    /**
-     * @brief Read the stored local transform for a node.
-     * @param NodeHandle Target runtime node.
-     * @param OutTransform Receives the local transform on success. Reset to identity on entry.
-     * @return `true` when the node has an explicit local transform.
-     */
-    bool TryGetLocalTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform) const
-    {
-        OutTransform = IdentityTransform();
-
-        if (!m_nodes.Resolve(NodeHandle))
-        {
-            return false;
-        }
-
-        const HierarchyEntry* Entry = EntryForHandle(NodeHandle);
-        if (!Entry || !Entry->HasLocalTransform)
-        {
-            return false;
-        }
-
-        OutTransform = Entry->LocalTransform;
-        return true;
-    }
-
-    /**
-     * @brief Compute or fetch the cached world transform for a node.
-     * @param NodeHandle Target runtime node.
-     * @param OutTransform Receives the computed world transform. Reset to identity on entry.
-     * @return `true` when the node has a world transform to report.
-     *
-     * Returns `false` both for invalid nodes and for valid nodes that neither define a
-     * local transform nor inherit one from an ancestor.
-     */
-    bool TryGetWorldTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform)
-    {
-        OutTransform = IdentityTransform();
-        bool HasTransform = false;
-        if (!ComputeWorldTransform(NodeHandle, OutTransform, HasTransform))
-        {
-            return false;
-        }
-        return HasTransform;
-    }
-
-    /**
-     * @brief Compute the world transform of a node's parent.
-     * @param NodeHandle Child runtime node.
-     * @param OutTransform Receives the parent world transform.
-     * @return `true` when the node has a parent and that parent has a world transform.
-     */
-    bool TryGetParentWorldTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform)
-    {
-        OutTransform = IdentityTransform();
-        if (NodeHandle.IsNull() || !m_nodes.Resolve(NodeHandle))
-        {
-            return false;
-        }
-
-        const Handle ParentHandle = Parent(NodeHandle);
-        if (ParentHandle.IsNull())
-        {
-            return false;
-        }
-
-        bool HasTransform = false;
-        if (!ComputeWorldTransform(ParentHandle, OutTransform, HasTransform))
-        {
-            return false;
-        }
-        return HasTransform;
-    }
-
-    /**
-     * @brief Set a node's world transform by converting it into local space relative to the parent.
-     * @param NodeHandle Target runtime node.
-     * @param WorldTransform Desired world-space transform.
-     * @return `true` when the node exists and the local transform was updated.
-     *
-     * Parent scale is inverted with a safety threshold, so near-zero parent scale axes
-     * collapse to `0` rather than producing infinities.
-     */
-    bool TrySetWorldTransform(const Handle NodeHandle, const RuntimeNodeTransform& WorldTransform)
-    {
-        if (NodeHandle.IsNull() || !m_nodes.Resolve(NodeHandle))
-        {
-            return false;
-        }
-
-        RuntimeNodeTransform ParentWorld = IdentityTransform();
-        const bool HasParentWorld = TryGetParentWorldTransform(NodeHandle, ParentWorld);
-
-        const RuntimeNodeTransform NormalizedWorld = NormalizeTransformRotation(WorldTransform);
-        const RuntimeNodeTransform Local = HasParentWorld
-            ? LocalTransformFromWorld(ParentWorld, NormalizedWorld)
-            : NormalizedWorld;
-
-        return SetLocalTransform(NodeHandle, Local);
-    }
-
-    /**
-     * @brief Destroy all runtime nodes and reset the hierarchy runtime to empty.
-     * @param WorldRef Owning world passed to runtime lifecycle hooks.
-     */
-    void Clear(IWorld& WorldRef)
-    {
-        m_hierarchyBySlot.clear();
-        m_roots.clear();
-        m_nodes.Clear(WorldRef);
-    }
-
-private:
-    struct HierarchyEntry
-    {
-        Handle Parent{};
-        std::vector<Handle> Children{};
-        RuntimeNodeTransform LocalTransform{};
-        RuntimeNodeTransform CachedWorldTransform{};
-        uint32_t Generation = 0;
-        bool HasLocalTransform = false;
-        bool CachedHasWorldTransform = false;
-        bool Dirty = true;
-        bool Alive = false;
-    };
-
-    static void RemoveChildLink(HierarchyEntry& ParentEntry, const Handle ChildHandle)
-    {
-        auto It = std::remove(ParentEntry.Children.begin(), ParentEntry.Children.end(), ChildHandle);
-        if (It != ParentEntry.Children.end())
-        {
-            ParentEntry.Children.erase(It, ParentEntry.Children.end());
-        }
-    }
-
-    void EnsureHierarchySlot(const uint32_t SlotIndex)
-    {
-        if (SlotIndex >= m_hierarchyBySlot.size())
-        {
-            m_hierarchyBySlot.resize(static_cast<std::size_t>(SlotIndex) + 1u);
-        }
-    }
-
-    HierarchyEntry* EntryForHandle(const Handle NodeHandle)
-    {
-        if (NodeHandle.IsNull() || NodeHandle.Index == Handle::kInvalidIndex)
-        {
-            return nullptr;
-        }
-        if (NodeHandle.Index >= m_hierarchyBySlot.size())
-        {
-            return nullptr;
-        }
-
-        HierarchyEntry& Entry = m_hierarchyBySlot[NodeHandle.Index];
-        if (!Entry.Alive || Entry.Generation != NodeHandle.Generation)
-        {
-            return nullptr;
-        }
-        return &Entry;
-    }
-
-    const HierarchyEntry* EntryForHandle(const Handle NodeHandle) const
-    {
-        if (NodeHandle.IsNull() || NodeHandle.Index == Handle::kInvalidIndex)
-        {
-            return nullptr;
-        }
-        if (NodeHandle.Index >= m_hierarchyBySlot.size())
-        {
-            return nullptr;
-        }
-
-        const HierarchyEntry& Entry = m_hierarchyBySlot[NodeHandle.Index];
-        if (!Entry.Alive || Entry.Generation != NodeHandle.Generation)
-        {
-            return nullptr;
-        }
-        return &Entry;
-    }
-
-    void AddRootIfMissing(const Handle NodeHandle)
-    {
-        if (std::find(m_roots.begin(), m_roots.end(), NodeHandle) == m_roots.end())
-        {
-            m_roots.push_back(NodeHandle);
-        }
-    }
-
-    void RemoveRootIfPresent(const Handle NodeHandle)
-    {
-        auto It = std::find(m_roots.begin(), m_roots.end(), NodeHandle);
-        if (It != m_roots.end())
-        {
-            m_roots.erase(It);
-        }
-    }
-
-    static RuntimeNodeTransform IdentityTransform()
-    {
-        return {};
-    }
-
-    static RuntimeNodeTransform NormalizeTransformRotation(const RuntimeNodeTransform& InTransform)
-    {
-        RuntimeNodeTransform Out = InTransform;
-        Out.Rotation = NormalizeQuatOrIdentity(Out.Rotation);
-        return Out;
-    }
-
-    static Quat NormalizeQuatOrIdentity(const Quat& Rotation)
-    {
-        Quat Out = Rotation;
-        if (Out.squaredNorm() > static_cast<Quat::Scalar>(0))
-        {
-            Out.normalize();
-        }
-        else
-        {
-            Out = Quat::Identity();
-        }
-        return Out;
-    }
-
-    static Vec3 SafeScaleDivide(const Vec3& Numerator, const Vec3& Denominator)
-    {
-        constexpr Vec3::Scalar kMinScaleMagnitude = static_cast<Vec3::Scalar>(1.0e-6);
-        Vec3 Out{};
-        const auto DivideAxis = [&](const Vec3::Scalar Value, const Vec3::Scalar Divisor) -> Vec3::Scalar {
-            if (std::abs(Divisor) <= kMinScaleMagnitude)
-            {
-                return static_cast<Vec3::Scalar>(0);
-            }
-            return Value / Divisor;
-        };
-
-        Out.x() = DivideAxis(Numerator.x(), Denominator.x());
-        Out.y() = DivideAxis(Numerator.y(), Denominator.y());
-        Out.z() = DivideAxis(Numerator.z(), Denominator.z());
-        return Out;
-    }
-
-    static RuntimeNodeTransform ComposeTransform(const RuntimeNodeTransform& ParentWorld, const RuntimeNodeTransform& Local)
-    {
-        const RuntimeNodeTransform NormalizedParent = NormalizeTransformRotation(ParentWorld);
-        const RuntimeNodeTransform NormalizedLocal = NormalizeTransformRotation(Local);
-
-        RuntimeNodeTransform Out = IdentityTransform();
-        Out.Position = NormalizedParent.Position
-                     + (NormalizedParent.Rotation * NormalizedParent.Scale.cwiseProduct(NormalizedLocal.Position));
-        Out.Rotation = NormalizeQuatOrIdentity(NormalizedParent.Rotation * NormalizedLocal.Rotation);
-        Out.Scale = NormalizedParent.Scale.cwiseProduct(NormalizedLocal.Scale);
-        return Out;
-    }
-
-    static RuntimeNodeTransform LocalTransformFromWorld(const RuntimeNodeTransform& ParentWorld, const RuntimeNodeTransform& World)
-    {
-        const RuntimeNodeTransform NormalizedParent = NormalizeTransformRotation(ParentWorld);
-        const RuntimeNodeTransform NormalizedWorld = NormalizeTransformRotation(World);
-
-        const Quat ParentInverse = NormalizedParent.Rotation.conjugate();
-        const Vec3 ParentSpacePosition = ParentInverse * (NormalizedWorld.Position - NormalizedParent.Position);
-
-        RuntimeNodeTransform Out = IdentityTransform();
-        Out.Position = SafeScaleDivide(ParentSpacePosition, NormalizedParent.Scale);
-        Out.Rotation = NormalizeQuatOrIdentity(ParentInverse * NormalizedWorld.Rotation);
-        Out.Scale = SafeScaleDivide(NormalizedWorld.Scale, NormalizedParent.Scale);
-        return Out;
-    }
-
-    void MarkSubtreeDirty(const Handle NodeHandle)
-    {
-        if (NodeHandle.IsNull())
-        {
-            return;
-        }
-
-        m_dirtyTraversalScratch.clear();
-        m_dirtyTraversalScratch.push_back(NodeHandle);
-        while (!m_dirtyTraversalScratch.empty())
-        {
-            const Handle Current = m_dirtyTraversalScratch.back();
-            m_dirtyTraversalScratch.pop_back();
-
-            HierarchyEntry* Entry = EntryForHandle(Current);
-            if (!Entry)
-            {
-                continue;
-            }
-
-            Entry->Dirty = true;
-            for (const Handle ChildHandle : Entry->Children)
-            {
-                m_dirtyTraversalScratch.push_back(ChildHandle);
-            }
-        }
-    }
-
-    bool ComputeWorldTransform(const Handle NodeHandle, RuntimeNodeTransform& OutTransform, bool& OutHasTransform)
-    {
-        OutTransform = IdentityTransform();
-        OutHasTransform = false;
-
-        if (NodeHandle.IsNull() || !m_nodes.Resolve(NodeHandle))
-        {
-            return false;
-        }
-
-        std::vector<Handle> Ancestry{};
-        Ancestry.reserve(16);
-
-        Handle Cursor = NodeHandle;
-        std::size_t Depth = 0;
-        const std::size_t MaxDepth = m_hierarchyBySlot.size() + 1u;
-        while (true)
-        {
-            if (Depth++ > MaxDepth)
-            {
-                return false;
-            }
-
-            HierarchyEntry* Entry = EntryForHandle(Cursor);
-            if (!Entry)
-            {
-                return false;
-            }
-
-            Ancestry.push_back(Cursor);
-            if (!Entry->Dirty)
-            {
-                OutTransform = Entry->CachedWorldTransform;
-                OutHasTransform = Entry->CachedHasWorldTransform;
-                break;
-            }
-
-            if (Entry->Parent.IsNull())
-            {
-                OutTransform = IdentityTransform();
-                OutHasTransform = false;
-                break;
-            }
-
-            Cursor = Entry->Parent;
-            if (!m_nodes.Resolve(Cursor))
-            {
-                return false;
-            }
-        }
-
-        for (auto It = Ancestry.rbegin(); It != Ancestry.rend(); ++It)
-        {
-            HierarchyEntry* Entry = EntryForHandle(*It);
-            if (!Entry)
-            {
-                return false;
-            }
-
-            if (!Entry->Dirty)
-            {
-                OutTransform = Entry->CachedWorldTransform;
-                OutHasTransform = Entry->CachedHasWorldTransform;
-                continue;
-            }
-
-            RuntimeNodeTransform ComputedWorld = IdentityTransform();
-            bool ComputedHasWorldTransform = false;
-            if (Entry->HasLocalTransform)
-            {
-                ComputedWorld = OutHasTransform ? ComposeTransform(OutTransform, Entry->LocalTransform) : Entry->LocalTransform;
-                ComputedHasWorldTransform = true;
-            }
-            else if (OutHasTransform)
-            {
-                ComputedWorld = OutTransform;
-                ComputedHasWorldTransform = true;
-            }
-
-            Entry->CachedWorldTransform = ComputedWorld;
-            Entry->CachedHasWorldTransform = ComputedHasWorldTransform;
-            Entry->Dirty = false;
-
-            OutTransform = ComputedWorld;
-            OutHasTransform = ComputedHasWorldTransform;
-        }
-
-        return true;
-    }
-
-    Result DestroyNodeIterative(IWorld& WorldRef, const Handle RootHandle)
-    {
-        if (RootHandle.IsNull() || !m_nodes.Resolve(RootHandle))
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime node not found"));
-        }
-
-        m_destroyTraversalScratch.clear();
-        m_destroyTraversalScratch.emplace_back(RootHandle, false);
-
-        while (!m_destroyTraversalScratch.empty())
-        {
-            const auto [CurrentHandle, Expanded] = m_destroyTraversalScratch.back();
-            m_destroyTraversalScratch.pop_back();
-
-            if (!Expanded)
-            {
-                if (!m_nodes.Resolve(CurrentHandle))
-                {
-                    continue;
-                }
-
-                HierarchyEntry* Entry = EntryForHandle(CurrentHandle);
-                if (!Entry)
-                {
-                    return std::unexpected(MakeError(EErrorCode::InternalError, "Runtime hierarchy state missing"));
-                }
-
-                m_destroyTraversalScratch.emplace_back(CurrentHandle, true);
-                for (const Handle ChildHandle : Entry->Children)
-                {
-                    if (m_nodes.Resolve(ChildHandle))
-                    {
-                        m_destroyTraversalScratch.emplace_back(ChildHandle, false);
-                    }
-                }
-                continue;
-            }
-
-            HierarchyEntry* Entry = EntryForHandle(CurrentHandle);
-            if (!Entry)
-            {
-                continue;
-            }
-
-            const Handle ParentHandle = Entry->Parent;
-            if (!ParentHandle.IsNull())
-            {
-                if (HierarchyEntry* ParentEntry = EntryForHandle(ParentHandle))
-                {
-                    RemoveChildLink(*ParentEntry, CurrentHandle);
-                }
-            }
-
-            RemoveRootIfPresent(CurrentHandle);
-            *Entry = HierarchyEntry{};
-
-            if (!m_nodes.Destroy(WorldRef, CurrentHandle))
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to destroy runtime node"));
-            }
-        }
-
-        return Ok();
-    }
-
-    TDenseRuntimeStorage<RuntimeNodeRecord> m_nodes{};
-    std::vector<HierarchyEntry> m_hierarchyBySlot{};
-    std::vector<Handle> m_roots{};
-    std::vector<Handle> m_dirtyTraversalScratch{};
-    std::vector<std::pair<Handle, bool>> m_destroyTraversalScratch{};
-};
-
-/**
- * @ingroup SnAPI_GameFramework
- * @brief World-owned orchestration layer for dense runtime nodes and typed runtime component storages.
+ * @brief World-owned orchestration layer for typed runtime component storages.
  *
  * `WorldEcsRuntime` is the top-level container that ties together:
- * - `WorldNodeRuntime` for runtime node identity and hierarchy
  * - lazily created `TDenseRuntimeStorage<T>` instances for concrete runtime types
- * - one-component-per-type attachments from runtime nodes to runtime components
+ * - one-component-per-type attachments from real node handles to runtime components
  * - globally ordered tick dispatch by compile-time priority
  *
  * Core semantics:
  * - Typed `Storage<T>()` creation is lazy and also registers tick dispatch for `T` when
  *   it exposes any runtime tick phase.
- * - Tick order is ascending `RuntimeTickPriority<T>()`; ties keep storage creation order.
+ * - Tick order is phase-specific and uses ascending compile-time priorities per phase.
  * - The typed `AddComponent<T>()` path can create storage on demand.
  * - The dynamic `AddComponent(TypeId)` path only works for types whose storage model has
  *   already been created.
@@ -2182,6 +1846,13 @@ private:
  */
 class WorldEcsRuntime final
 {
+    class INodeStorageModel;
+    template<RuntimeTickType TObject>
+    class TNodeStorageModel;
+    class IStorageModel;
+    template<RuntimeTickType TObject>
+    class TStorageModel;
+
 public:
     /**
      * @brief Minimal cold-path interface for type-erased runtime storages.
@@ -2205,6 +1876,228 @@ public:
         /** @brief Destroy an object by UUID. */
         virtual bool DestroyById(IWorld& WorldRef, const Uuid& Id) = 0;
     };
+
+    class IErasedNodeStorage
+    {
+    public:
+        virtual ~IErasedNodeStorage() = default;
+        [[nodiscard]] virtual TypeId Type() const = 0;
+        [[nodiscard]] virtual std::size_t Size() const = 0;
+        [[nodiscard]] virtual BaseNode* ResolveRaw(const Uuid& Id) = 0;
+        [[nodiscard]] virtual const BaseNode* ResolveRaw(const Uuid& Id) const = 0;
+    };
+
+    template<typename TNode>
+    requires (std::is_base_of_v<BaseNode, TNode> && RuntimeTickType<TNode>)
+    TDenseRuntimeStorage<TNode>& NodeStorage()
+    {
+        const TypeId& Type = StaticTypeId<TNode>();
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            auto* Model = static_cast<TNodeStorageModel<TNode>*>(It->second.get());
+            return Model->TypedStorage;
+        }
+
+        const uint32_t StorageToken = AcquireStorageToken();
+        auto Model = std::make_unique<TNodeStorageModel<TNode>>(StorageToken);
+        auto* ModelPtr = Model.get();
+        auto* TypedStorage = &Model->TypedStorage;
+
+        RegisterTickEntry<TNode>(TypedStorage);
+        m_nodeStorages.emplace(Type, std::move(Model));
+        m_nodeStorageByToken[ModelPtr->StorageToken()] = ModelPtr;
+        return *TypedStorage;
+    }
+
+    template<typename TNode>
+    requires (std::is_base_of_v<BaseNode, TNode> && RuntimeTickType<TNode>)
+    TDenseRuntimeStorage<TNode>* FindNodeStorage()
+    {
+        const TypeId& Type = StaticTypeId<TNode>();
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            auto* Model = static_cast<TNodeStorageModel<TNode>*>(It->second.get());
+            return &Model->TypedStorage;
+        }
+        return nullptr;
+    }
+
+    template<typename TNode>
+    requires (std::is_base_of_v<BaseNode, TNode> && RuntimeTickType<TNode>)
+    const TDenseRuntimeStorage<TNode>* FindNodeStorage() const
+    {
+        const TypeId& Type = StaticTypeId<TNode>();
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            const auto* Model = static_cast<const TNodeStorageModel<TNode>*>(It->second.get());
+            return &Model->TypedStorage;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] IErasedNodeStorage* FindErasedNodeStorage(const TypeId& Type)
+    {
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            return It->second.get();
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const IErasedNodeStorage* FindErasedNodeStorage(const TypeId& Type) const
+    {
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            return It->second.get();
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] TExpected<NodeHandle> CreateNode(IWorld& WorldRef,
+                                                   const TypeId& Type,
+                                                   std::string Name,
+                                                   const Uuid* ExplicitId = nullptr)
+    {
+        INodeStorageModel* StorageModel = FindNodeStorageModel(Type);
+        if (!StorageModel)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Node storage was not registered"));
+        }
+        return StorageModel->CreateDefault(WorldRef, std::move(Name), ExplicitId);
+    }
+
+    [[nodiscard]] BaseNode* ResolveNode(const NodeHandle& Handle)
+    {
+        if (Handle.IsNull() || !Handle.HasRuntimeKey())
+        {
+            return nullptr;
+        }
+
+        if (INodeStorageModel* StorageModel = FindNodeStorageModelByToken(Handle.RuntimePoolToken))
+        {
+            return StorageModel->ResolveRawByRuntimeHandle(Handle);
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const BaseNode* ResolveNode(const NodeHandle& Handle) const
+    {
+        if (Handle.IsNull() || !Handle.HasRuntimeKey())
+        {
+            return nullptr;
+        }
+
+        if (const INodeStorageModel* StorageModel = FindNodeStorageModelByToken(Handle.RuntimePoolToken))
+        {
+            return StorageModel->ResolveRawByRuntimeHandle(Handle);
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] BaseNode* ResolveNodeIncludingPendingDestroy(const NodeHandle& Handle)
+    {
+        if (Handle.IsNull() || !Handle.HasRuntimeKey())
+        {
+            return nullptr;
+        }
+
+        if (INodeStorageModel* StorageModel = FindNodeStorageModelByToken(Handle.RuntimePoolToken))
+        {
+            return StorageModel->ResolveIncludingPendingDestroyByRuntimeHandle(Handle);
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const BaseNode* ResolveNodeIncludingPendingDestroy(const NodeHandle& Handle) const
+    {
+        if (Handle.IsNull() || !Handle.HasRuntimeKey())
+        {
+            return nullptr;
+        }
+
+        if (const INodeStorageModel* StorageModel = FindNodeStorageModelByToken(Handle.RuntimePoolToken))
+        {
+            return StorageModel->ResolveIncludingPendingDestroyByRuntimeHandle(Handle);
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] TExpected<NodeHandle> NodeHandleById(const Uuid& Id) const
+    {
+        if (Id.is_nil())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node UUID is nil"));
+        }
+
+        for (const auto& [_, StorageModel] : m_nodeStorages)
+        {
+            if (!StorageModel)
+            {
+                continue;
+            }
+
+            if (auto HandleResult = StorageModel->HandleById(Id); HandleResult)
+            {
+                return *HandleResult;
+            }
+        }
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node not found"));
+    }
+
+    [[nodiscard]] bool DestroyNodeLater(const NodeHandle& Handle)
+    {
+        if (Handle.IsNull() || !Handle.HasRuntimeKey())
+        {
+            return false;
+        }
+
+        if (INodeStorageModel* StorageModel = FindNodeStorageModelByToken(Handle.RuntimePoolToken))
+        {
+            return StorageModel->DestroyLaterByRuntimeHandle(Handle);
+        }
+        return false;
+    }
+
+    void FlushPendingNodeOnCreate(IWorld& WorldRef)
+    {
+        for (auto& [_, StorageModel] : m_nodeStorages)
+        {
+            if (StorageModel)
+            {
+                StorageModel->FlushPendingOnCreate(WorldRef);
+            }
+        }
+    }
+
+    [[nodiscard]] bool FlushPendingNodeOnCreate(IWorld& WorldRef, const NodeHandle& Handle)
+    {
+        if (Handle.IsNull() || !Handle.HasRuntimeKey())
+        {
+            return false;
+        }
+
+        if (INodeStorageModel* StorageModel = FindNodeStorageModelByToken(Handle.RuntimePoolToken))
+        {
+            return StorageModel->FlushPendingOnCreate(WorldRef, Handle);
+        }
+        return false;
+    }
+
+    void ForEachNode(void (*Visitor)(void*, const NodeHandle&, BaseNode&), void* UserData)
+    {
+        if (!Visitor)
+        {
+            return;
+        }
+
+        for (auto& [_, StorageModel] : m_nodeStorages)
+        {
+            if (StorageModel)
+            {
+                StorageModel->ForEachNode(Visitor, UserData);
+            }
+        }
+    }
 
     /**
      * @brief Get or lazily create the typed storage for `TObject`.
@@ -2288,36 +2181,25 @@ public:
     }
 
     /** @brief Access the world-owned runtime node hierarchy. */
-    [[nodiscard]] WorldNodeRuntime& Nodes()
-    {
-        return m_nodeRuntime;
-    }
-
-    /** @brief Const access to the world-owned runtime node hierarchy. */
-    [[nodiscard]] const WorldNodeRuntime& Nodes() const
-    {
-        return m_nodeRuntime;
-    }
-
     /**
-     * @brief Create and attach a typed runtime component to a runtime node.
+     * @brief Create and attach a typed runtime component to a node.
      * @tparam TObject Runtime component type.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param Owner Runtime node that will own the component.
+     * @param Owner Owner node handle.
      * @param Args Constructor arguments for `TObject`.
      * @return Typed runtime-component handle, or an error when the node is invalid or
      *         already owns that component type.
      */
     template<RuntimeTickType TObject, typename... TArgs>
     TExpected<TDenseRuntimeHandle<TObject>> AddComponent(IWorld& WorldRef,
-                                                         const RuntimeNodeHandle Owner,
+                                                         const NodeHandle& Owner,
                                                          TArgs&&... Args)
     {
         const TypeId& Type = StaticTypeId<TObject>();
         NodeComponentAttachment* Attachment = EnsureNodeAttachment(Owner);
         if (!Attachment)
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime owner node not found"));
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
         }
         if (FindNodeComponentIndex(*Attachment, Type).has_value())
         {
@@ -2341,14 +2223,14 @@ public:
      * @brief Create and attach a typed runtime component under an explicit UUID.
      * @tparam TObject Runtime component type.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param Owner Runtime node that will own the component.
+     * @param Owner Owner node handle.
      * @param Id Stable component identity.
      * @param Args Constructor arguments for `TObject`.
      * @return Typed runtime-component handle, or an error on failure.
      */
     template<RuntimeTickType TObject, typename... TArgs>
     TExpected<TDenseRuntimeHandle<TObject>> AddComponentWithId(IWorld& WorldRef,
-                                                               const RuntimeNodeHandle Owner,
+                                                               const NodeHandle& Owner,
                                                                const Uuid& Id,
                                                                TArgs&&... Args)
     {
@@ -2356,7 +2238,7 @@ public:
         NodeComponentAttachment* Attachment = EnsureNodeAttachment(Owner);
         if (!Attachment)
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime owner node not found"));
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
         }
         if (FindNodeComponentIndex(*Attachment, Type).has_value())
         {
@@ -2378,7 +2260,7 @@ public:
 
     /** @brief Resolve a typed runtime component attached to a node. */
     template<RuntimeTickType TObject>
-    TObject* Component(const RuntimeNodeHandle Owner)
+    TObject* Component(const NodeHandle& Owner)
     {
         const TypeId& Type = StaticTypeId<TObject>();
         NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
@@ -2405,7 +2287,7 @@ public:
 
     /** @brief Const overload of `Component<TObject>(...)`. */
     template<RuntimeTickType TObject>
-    const TObject* Component(const RuntimeNodeHandle Owner) const
+    const TObject* Component(const NodeHandle& Owner) const
     {
         const TypeId& Type = StaticTypeId<TObject>();
         const NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
@@ -2434,15 +2316,16 @@ public:
      * @brief Remove a typed runtime component from a node.
      * @tparam TObject Runtime component type.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param Owner Runtime node that owns the component.
+     * @param Owner Owner node handle.
      * @return `true` when the underlying typed storage destroyed the component.
      *
      * @warning Current behavior removes the node-to-component attachment record once it
      *          is found, even if the typed storage destroy path reports failure.
      */
     template<RuntimeTickType TObject>
-    bool RemoveComponent(IWorld& WorldRef, const RuntimeNodeHandle Owner)
+    bool RemoveComponent(IWorld& WorldRef, const NodeHandle& Owner)
     {
+        (void)WorldRef;
         const TypeId& Type = StaticTypeId<TObject>();
         NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
         if (!Attachment)
@@ -2460,7 +2343,7 @@ public:
         bool Destroyed = false;
         if (auto* TypedStorage = FindStorage<TObject>())
         {
-            Destroyed = TypedStorage->Destroy(WorldRef, ToTypedRuntimeHandle<TObject>(GenericHandle));
+            Destroyed = TypedStorage->DestroyLater(ToTypedRuntimeHandle<TObject>(GenericHandle));
         }
         RemoveNodeComponentAt(*Attachment, *LinkIndex);
         return Destroyed;
@@ -2469,7 +2352,7 @@ public:
     /**
      * @brief Dynamically create and attach a runtime component by reflected type id.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param Owner Runtime node that will own the component.
+     * @param Owner Owner node handle.
      * @param Type Reflected component type.
      * @return Generic runtime-component handle, or an error on failure.
      *
@@ -2478,7 +2361,7 @@ public:
      * earlier for that runtime type.
      */
     TExpected<RuntimeComponentHandle> AddComponent(IWorld& WorldRef,
-                                                   const RuntimeNodeHandle Owner,
+                                                   const NodeHandle& Owner,
                                                    const TypeId& Type)
     {
         return AddComponentWithId(WorldRef, Owner, Type, {});
@@ -2487,13 +2370,13 @@ public:
     /**
      * @brief Dynamic overload of `AddComponent(...)` with explicit component UUID.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param Owner Runtime node that will own the component.
+     * @param Owner Owner node handle.
      * @param Type Reflected component type.
      * @param Id Explicit component UUID. A nil UUID requests auto-generation.
      * @return Generic runtime-component handle, or an error on failure.
      */
     TExpected<RuntimeComponentHandle> AddComponentWithId(IWorld& WorldRef,
-                                                         const RuntimeNodeHandle Owner,
+                                                         const NodeHandle& Owner,
                                                          const TypeId& Type,
                                                          const Uuid& Id)
     {
@@ -2505,7 +2388,7 @@ public:
         NodeComponentAttachment* Attachment = EnsureNodeAttachment(Owner);
         if (!Attachment)
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime owner node not found"));
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
         }
         if (FindNodeComponentIndex(*Attachment, Type).has_value())
         {
@@ -2533,7 +2416,7 @@ public:
     /**
      * @brief Remove a dynamically addressed runtime component from a node.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param Owner Runtime node that owns the component.
+     * @param Owner Owner node handle.
      * @param Type Reflected component type.
      * @return Success when the backing storage destroy path succeeded, otherwise an error.
      *
@@ -2541,7 +2424,7 @@ public:
      *          the underlying storage destroy path fails.
      */
     Result RemoveComponent(IWorld& WorldRef,
-                           const RuntimeNodeHandle Owner,
+                           const NodeHandle& Owner,
                            const TypeId& Type)
     {
         if (Type == TypeId{})
@@ -2552,7 +2435,7 @@ public:
         NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
         if (!Attachment)
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime owner node not found"));
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
         }
 
         const auto LinkIndex = FindNodeComponentIndex(*Attachment, Type);
@@ -2565,23 +2448,19 @@ public:
         bool Destroyed = false;
         if (IStorageModel* StorageModel = FindStorageModelByToken(GenericHandle.StorageToken))
         {
-            Destroyed = StorageModel->DestroyByRuntimeHandle(WorldRef, GenericHandle);
+            Destroyed = StorageModel->DestroyLaterByRuntimeHandle(GenericHandle);
         }
         else if (IStorageModel* TypeStorageModel = FindStorageModel(Type))
         {
-            Destroyed = TypeStorageModel->DestroyByRuntimeHandle(WorldRef, GenericHandle);
+            Destroyed = TypeStorageModel->DestroyLaterByRuntimeHandle(GenericHandle);
         }
 
         RemoveNodeComponentAt(*Attachment, *LinkIndex);
-        if (!GenericHandle.Id.is_nil())
-        {
-            ObjectRegistry::Instance().Unregister(GenericHandle.Id);
-        }
         return Destroyed ? Ok() : std::unexpected(MakeError(EErrorCode::NotFound, "Runtime component not found"));
     }
 
-    /** @brief Return `true` when a runtime node currently owns a component of the given reflected type. */
-    [[nodiscard]] bool HasComponent(const RuntimeNodeHandle Owner, const TypeId& Type) const
+    /** @brief Return `true` when a node currently owns a component of the given reflected type. */
+    [[nodiscard]] bool HasComponent(const NodeHandle& Owner, const TypeId& Type) const
     {
         const NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
         return Attachment && FindNodeComponentIndex(*Attachment, Type).has_value();
@@ -2589,17 +2468,17 @@ public:
 
     /**
      * @brief Fetch the generic runtime-component handle attached to a node for a specific reflected type.
-     * @param Owner Runtime node owner.
+     * @param Owner Owner node handle.
      * @param Type Reflected component type.
      * @return Generic runtime-component handle, or an error when the attachment is absent.
      */
-    [[nodiscard]] TExpected<RuntimeComponentHandle> ComponentHandle(const RuntimeNodeHandle Owner,
+    [[nodiscard]] TExpected<RuntimeComponentHandle> ComponentHandle(const NodeHandle& Owner,
                                                                     const TypeId& Type) const
     {
         const NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
         if (!Attachment)
         {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime owner node not found"));
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Owner node not found"));
         }
 
         const auto LinkIndex = FindNodeComponentIndex(*Attachment, Type);
@@ -2662,49 +2541,14 @@ public:
     }
 
     /**
-     * @brief Destroy a runtime node subtree and all runtime components attached within that subtree.
+     * @brief Schedule destruction of all runtime components attached to a node.
      * @param WorldRef Owning world passed to lifecycle hooks.
-     * @param RootHandle Root of the subtree to destroy.
-     * @return Success or an error when the root handle is invalid.
-     *
-     * Components are destroyed child-first before the node hierarchy itself is removed.
+     * @param Owner Owner node handle.
      */
-    Result DestroyRuntimeNode(IWorld& WorldRef, const RuntimeNodeHandle RootHandle)
+    void DestroyComponentsOnNode(IWorld& WorldRef, const NodeHandle& Owner)
     {
-        if (RootHandle.IsNull())
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Runtime node handle is null"));
-        }
-        if (!m_nodeRuntime.Resolve(RootHandle))
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime node not found"));
-        }
-
-        m_componentDestroyScratch.clear();
-        m_componentDestroyScratch.push_back(RootHandle);
-        for (std::size_t Index = 0; Index < m_componentDestroyScratch.size(); ++Index)
-        {
-            const RuntimeNodeHandle Current = m_componentDestroyScratch[Index];
-            if (!m_nodeRuntime.Resolve(Current))
-            {
-                continue;
-            }
-
-            m_nodeRuntime.ForEachChild(Current, [&](const RuntimeNodeHandle Child) {
-                if (m_nodeRuntime.Resolve(Child))
-                {
-                    m_componentDestroyScratch.push_back(Child);
-                }
-            });
-        }
-
-        for (auto It = m_componentDestroyScratch.rbegin(); It != m_componentDestroyScratch.rend(); ++It)
-        {
-            RemoveAllComponentsOnNode(WorldRef, *It);
-            ClearNodeAttachment(*It);
-        }
-
-        return m_nodeRuntime.DestroyNode(WorldRef, RootHandle);
+        RemoveAllComponentsOnNode(WorldRef, Owner);
+        ClearNodeAttachment(Owner);
     }
 
     /**
@@ -2718,20 +2562,17 @@ public:
      */
     void Tick(IWorld& WorldRef, const float DeltaSeconds)
     {
-        for (const TickEntry& Entry : m_tickEntries)
+        for (const PhaseEntry& Entry : m_preTickEntries)
         {
-            if (Entry.PreTick)
-            {
-                Entry.PreTick(Entry.Storage, WorldRef, DeltaSeconds);
-            }
-            if (Entry.Tick)
-            {
-                Entry.Tick(Entry.Storage, WorldRef, DeltaSeconds);
-            }
-            if (Entry.PostTick)
-            {
-                Entry.PostTick(Entry.Storage, WorldRef, DeltaSeconds);
-            }
+            Entry.Invoke(Entry.Storage, WorldRef, DeltaSeconds);
+        }
+        for (const PhaseEntry& Entry : m_tickEntries)
+        {
+            Entry.Invoke(Entry.Storage, WorldRef, DeltaSeconds);
+        }
+        for (const PhaseEntry& Entry : m_postTickEntries)
+        {
+            Entry.Invoke(Entry.Storage, WorldRef, DeltaSeconds);
         }
     }
 
@@ -2743,12 +2584,9 @@ public:
      */
     void EditorTick(IWorld& WorldRef, const float DeltaSeconds)
     {
-        for (const TickEntry& Entry : m_tickEntries)
+        for (const PhaseEntry& Entry : m_editorTickEntries)
         {
-            if (Entry.EditorTick)
-            {
-                Entry.EditorTick(Entry.Storage, WorldRef, DeltaSeconds);
-            }
+            Entry.Invoke(Entry.Storage, WorldRef, DeltaSeconds);
         }
     }
 #endif
@@ -2760,12 +2598,9 @@ public:
      */
     void FixedTick(IWorld& WorldRef, const float DeltaSeconds)
     {
-        for (const TickEntry& Entry : m_tickEntries)
+        for (const PhaseEntry& Entry : m_fixedTickEntries)
         {
-            if (Entry.FixedTick)
-            {
-                Entry.FixedTick(Entry.Storage, WorldRef, DeltaSeconds);
-            }
+            Entry.Invoke(Entry.Storage, WorldRef, DeltaSeconds);
         }
     }
 
@@ -2776,11 +2611,30 @@ public:
      */
     void LateTick(IWorld& WorldRef, const float DeltaSeconds)
     {
-        for (const TickEntry& Entry : m_tickEntries)
+        for (const PhaseEntry& Entry : m_lateTickEntries)
         {
-            if (Entry.LateTick)
+            Entry.Invoke(Entry.Storage, WorldRef, DeltaSeconds);
+        }
+    }
+
+    /**
+     * @brief Flush deferred destroys across all runtime storages.
+     * @param WorldRef Owning world passed to lifecycle hooks.
+     */
+    void EndFrame(IWorld& WorldRef)
+    {
+        for (auto& [_, StorageModel] : m_storages)
+        {
+            if (StorageModel)
             {
-                Entry.LateTick(Entry.Storage, WorldRef, DeltaSeconds);
+                StorageModel->EndFrame(WorldRef);
+            }
+        }
+        for (auto& [_, StorageModel] : m_nodeStorages)
+        {
+            if (StorageModel)
+            {
+                StorageModel->EndFrame(WorldRef);
             }
         }
     }
@@ -2794,6 +2648,13 @@ public:
      */
     void FlushPendingOnCreate(IWorld& WorldRef)
     {
+        for (auto& [_, StorageModel] : m_nodeStorages)
+        {
+            if (StorageModel)
+            {
+                StorageModel->FlushPendingOnCreate(WorldRef);
+            }
+        }
         for (auto& [_, StorageModel] : m_storages)
         {
             if (StorageModel)
@@ -2804,23 +2665,26 @@ public:
     }
 
     /**
-     * @brief Destroy all runtime components and nodes and reset the ECS runtime to empty.
+     * @brief Destroy all runtime components and reset the ECS runtime to empty.
      * @param WorldRef Owning world passed to lifecycle hooks.
      */
     void Clear(IWorld& WorldRef)
     {
-        for (const NodeComponentAttachment& Attachment : m_nodeComponentsBySlot)
+        for (auto& [_, Attachments] : m_nodeComponentsByStorageToken)
         {
-            if (!Attachment.Alive)
+            for (const NodeComponentAttachment& Attachment : Attachments)
             {
-                continue;
-            }
-
-            for (const NodeComponentLink& Link : Attachment.Components)
-            {
-                if (!Link.Handle.Id.is_nil())
+                if (!Attachment.Alive)
                 {
-                    ObjectRegistry::Instance().Unregister(Link.Handle.Id);
+                    continue;
+                }
+
+                for (const NodeComponentLink& Link : Attachment.Components)
+                {
+                    if (!Link.Handle.Id.is_nil())
+                    {
+                        ObjectRegistry::Instance().Unregister(Link.Handle.Id);
+                    }
                 }
             }
         }
@@ -2830,14 +2694,30 @@ public:
             (void)Type;
             Storage->Clear(WorldRef);
         }
-        m_nodeComponentsBySlot.clear();
-        m_componentDestroyScratch.clear();
-        m_nodeRuntime.Clear(WorldRef);
+
+        for (auto& [Type, Storage] : m_nodeStorages)
+        {
+            (void)Type;
+            Storage->Clear(WorldRef);
+        }
+
+        m_nodeStorages.clear();
+        m_nodeStorageByToken.clear();
+        m_storages.clear();
+        m_storageByToken.clear();
+        m_nodeComponentsByStorageToken.clear();
+        m_preTickEntries.clear();
+        m_tickEntries.clear();
+        m_fixedTickEntries.clear();
+        m_lateTickEntries.clear();
+        m_postTickEntries.clear();
+#if defined(WITH_EDITOR) && WITH_EDITOR
+        m_editorTickEntries.clear();
+#endif
+        m_nextTickSequence = 0;
     }
 
 private:
-    class IStorageModel;
-
     struct NodeComponentLink
     {
         TypeId Type{};
@@ -2851,48 +2731,99 @@ private:
         std::vector<NodeComponentLink> Components{};
     };
 
-    [[nodiscard]] NodeComponentAttachment* EnsureNodeAttachment(const RuntimeNodeHandle Owner)
+    [[nodiscard]] static std::vector<NodeComponentAttachment>* FindNodeAttachmentBucket(
+        std::unordered_map<uint32_t, std::vector<NodeComponentAttachment>>& Buckets,
+        const uint32_t StorageToken)
     {
-        if (Owner.IsNull() || Owner.Index == RuntimeNodeHandle::kInvalidIndex || !m_nodeRuntime.Resolve(Owner))
+        if (auto It = Buckets.find(StorageToken); It != Buckets.end())
+        {
+            return &It->second;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] static const std::vector<NodeComponentAttachment>* FindNodeAttachmentBucket(
+        const std::unordered_map<uint32_t, std::vector<NodeComponentAttachment>>& Buckets,
+        const uint32_t StorageToken)
+    {
+        if (auto It = Buckets.find(StorageToken); It != Buckets.end())
+        {
+            return &It->second;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] NodeComponentAttachment* EnsureNodeAttachment(const NodeHandle& Owner)
+    {
+        NodeHandle ResolvedOwner = Owner;
+        if (ResolvedOwner.IsNull())
         {
             return nullptr;
         }
 
-        if (Owner.Index >= m_nodeComponentsBySlot.size())
+        if (!ResolvedOwner.HasRuntimeKey())
         {
-            m_nodeComponentsBySlot.resize(static_cast<std::size_t>(Owner.Index) + 1u);
+            (void)ResolvedOwner.Borrowed();
         }
 
-        NodeComponentAttachment& Attachment = m_nodeComponentsBySlot[Owner.Index];
-        if (!Attachment.Alive || Attachment.Generation != Owner.Generation)
+        if (!ResolvedOwner.HasRuntimeKey())
+        {
+            return nullptr;
+        }
+
+        auto& Attachments = m_nodeComponentsByStorageToken[ResolvedOwner.RuntimePoolToken];
+        if (ResolvedOwner.RuntimeIndex >= Attachments.size())
+        {
+            Attachments.resize(static_cast<std::size_t>(ResolvedOwner.RuntimeIndex) + 1u);
+        }
+
+        NodeComponentAttachment& Attachment = Attachments[ResolvedOwner.RuntimeIndex];
+        if (!Attachment.Alive || Attachment.Generation != ResolvedOwner.RuntimeGeneration)
         {
             Attachment = NodeComponentAttachment{};
-            Attachment.Generation = Owner.Generation;
+            Attachment.Generation = ResolvedOwner.RuntimeGeneration;
             Attachment.Alive = true;
         }
         return &Attachment;
     }
 
-    [[nodiscard]] const NodeComponentAttachment* FindNodeAttachment(const RuntimeNodeHandle Owner) const
+    [[nodiscard]] const NodeComponentAttachment* FindNodeAttachment(const NodeHandle& Owner) const
     {
-        if (Owner.IsNull() || Owner.Index == RuntimeNodeHandle::kInvalidIndex || !m_nodeRuntime.Resolve(Owner))
-        {
-            return nullptr;
-        }
-        if (Owner.Index >= m_nodeComponentsBySlot.size())
+        NodeHandle ResolvedOwner = Owner;
+        if (ResolvedOwner.IsNull())
         {
             return nullptr;
         }
 
-        const NodeComponentAttachment& Attachment = m_nodeComponentsBySlot[Owner.Index];
-        if (!Attachment.Alive || Attachment.Generation != Owner.Generation)
+        if (!ResolvedOwner.HasRuntimeKey())
+        {
+            (void)ResolvedOwner.Borrowed();
+        }
+
+        if (!ResolvedOwner.HasRuntimeKey())
+        {
+            return nullptr;
+        }
+        const auto* Attachments = FindNodeAttachmentBucket(m_nodeComponentsByStorageToken, ResolvedOwner.RuntimePoolToken);
+        if (!Attachments)
+        {
+            return nullptr;
+        }
+
+        if (ResolvedOwner.RuntimeIndex >= Attachments->size())
+        {
+            return nullptr;
+        }
+
+        const NodeComponentAttachment& Attachment = (*Attachments)[ResolvedOwner.RuntimeIndex];
+        if (!Attachment.Alive || Attachment.Generation != ResolvedOwner.RuntimeGeneration)
         {
             return nullptr;
         }
         return &Attachment;
     }
 
-    [[nodiscard]] NodeComponentAttachment* FindNodeAttachment(const RuntimeNodeHandle Owner)
+    [[nodiscard]] NodeComponentAttachment* FindNodeAttachment(const NodeHandle& Owner)
     {
         return const_cast<NodeComponentAttachment*>(
             static_cast<const WorldEcsRuntime*>(this)->FindNodeAttachment(Owner));
@@ -2925,22 +2856,30 @@ private:
         Attachment.Components.pop_back();
     }
 
-    void ClearNodeAttachment(const RuntimeNodeHandle Owner)
+    void ClearNodeAttachment(const NodeHandle& Owner)
     {
-        if (Owner.IsNull() || Owner.Index == RuntimeNodeHandle::kInvalidIndex)
+        NodeHandle ResolvedOwner = Owner;
+        if (ResolvedOwner.IsNull() || !ResolvedOwner.HasRuntimeKey())
         {
             return;
         }
-        if (Owner.Index >= m_nodeComponentsBySlot.size())
+        auto* Attachments = FindNodeAttachmentBucket(m_nodeComponentsByStorageToken, ResolvedOwner.RuntimePoolToken);
+        if (!Attachments)
         {
             return;
         }
 
-        m_nodeComponentsBySlot[Owner.Index] = NodeComponentAttachment{};
+        if (ResolvedOwner.RuntimeIndex >= Attachments->size())
+        {
+            return;
+        }
+
+        (*Attachments)[ResolvedOwner.RuntimeIndex] = NodeComponentAttachment{};
     }
 
-    void RemoveAllComponentsOnNode(IWorld& WorldRef, const RuntimeNodeHandle Owner)
+    void RemoveAllComponentsOnNode(IWorld& WorldRef, const NodeHandle& Owner)
     {
+        (void)WorldRef;
         NodeComponentAttachment* Attachment = FindNodeAttachment(Owner);
         if (!Attachment)
         {
@@ -2951,33 +2890,237 @@ private:
         {
             if (IStorageModel* StorageModel = FindStorageModelByToken(Link.Handle.StorageToken))
             {
-                (void)StorageModel->DestroyByRuntimeHandle(WorldRef, Link.Handle);
+                (void)StorageModel->DestroyLaterByRuntimeHandle(Link.Handle);
             }
             else if (IStorageModel* TypeStorageModel = FindStorageModel(Link.Type))
             {
-                (void)TypeStorageModel->DestroyByRuntimeHandle(WorldRef, Link.Handle);
-            }
-
-            if (!Link.Handle.Id.is_nil())
-            {
-                ObjectRegistry::Instance().Unregister(Link.Handle.Id);
+                (void)TypeStorageModel->DestroyLaterByRuntimeHandle(Link.Handle);
             }
         }
     }
 
-    struct TickEntry
+    struct PhaseEntry
     {
         int Priority = 0;
         uint64_t Sequence = 0;
+        std::string_view TypeName{};
         void* Storage = nullptr;
-        void (*PreTick)(void*, IWorld&, float) = nullptr;
-        void (*Tick)(void*, IWorld&, float) = nullptr;
-        void (*FixedTick)(void*, IWorld&, float) = nullptr;
-        void (*LateTick)(void*, IWorld&, float) = nullptr;
-        void (*PostTick)(void*, IWorld&, float) = nullptr;
+        void (*Invoke)(void*, IWorld&, float) = nullptr;
 #if defined(WITH_EDITOR) && WITH_EDITOR
-        void (*EditorTick)(void*, IWorld&, float) = nullptr;
+        ERuntimeTickPhase Phase = ERuntimeTickPhase::Tick;
+#else
+        ERuntimeTickPhase Phase = ERuntimeTickPhase::Tick;
 #endif
+    };
+
+    class INodeStorageModel : public IErasedNodeStorage
+    {
+    public:
+        [[nodiscard]] virtual uint32_t StorageToken() const = 0;
+        [[nodiscard]] virtual TExpected<NodeHandle> CreateDefault(IWorld& WorldRef,
+                                                                  std::string Name,
+                                                                  const Uuid* ExplicitId) = 0;
+        [[nodiscard]] virtual BaseNode* ResolveRawByRuntimeHandle(const NodeHandle& Handle) = 0;
+        [[nodiscard]] virtual const BaseNode* ResolveRawByRuntimeHandle(const NodeHandle& Handle) const = 0;
+        [[nodiscard]] virtual BaseNode* ResolveIncludingPendingDestroyByRuntimeHandle(const NodeHandle& Handle) = 0;
+        [[nodiscard]] virtual const BaseNode* ResolveIncludingPendingDestroyByRuntimeHandle(const NodeHandle& Handle) const = 0;
+        [[nodiscard]] virtual TExpected<NodeHandle> HandleById(const Uuid& Id) const = 0;
+        virtual void FlushPendingOnCreate(IWorld& WorldRef) = 0;
+        virtual bool FlushPendingOnCreate(IWorld& WorldRef, const NodeHandle& Handle) = 0;
+        virtual void EndFrame(IWorld& WorldRef) = 0;
+        virtual bool DestroyLaterByRuntimeHandle(const NodeHandle& Handle) = 0;
+        virtual void Clear(IWorld& WorldRef) = 0;
+        virtual void ForEachNode(void (*Visitor)(void*, const NodeHandle&, BaseNode&), void* UserData) = 0;
+    };
+
+    template<RuntimeTickType TObject>
+    class TNodeStorageModel final : public INodeStorageModel
+    {
+    public:
+        explicit TNodeStorageModel(const uint32_t StorageToken)
+            : TypedStorage(StorageToken)
+        {
+        }
+
+        ~TNodeStorageModel() override
+        {
+            ObjectRegistry::Instance().ReleaseRuntimePoolToken(TypedStorage.StorageToken());
+        }
+
+        [[nodiscard]] TypeId Type() const override
+        {
+            return StaticTypeId<TObject>();
+        }
+
+        [[nodiscard]] std::size_t Size() const override
+        {
+            return TypedStorage.Size();
+        }
+
+        [[nodiscard]] uint32_t StorageToken() const override
+        {
+            return TypedStorage.StorageToken();
+        }
+
+        [[nodiscard]] BaseNode* ResolveRaw(const Uuid& Id) override
+        {
+            return TypedStorage.ResolveSlowById(Id);
+        }
+
+        [[nodiscard]] const BaseNode* ResolveRaw(const Uuid& Id) const override
+        {
+            return TypedStorage.ResolveSlowById(Id);
+        }
+
+        [[nodiscard]] TExpected<NodeHandle> CreateDefault(IWorld& WorldRef,
+                                                          std::string Name,
+                                                          const Uuid* ExplicitId) override
+        {
+            if constexpr (!std::is_default_constructible_v<TObject>)
+            {
+                (void)WorldRef;
+                (void)Name;
+                (void)ExplicitId;
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                                 "Node type is not default constructible"));
+            }
+            else
+            {
+                auto CreateResult = ExplicitId
+                    ? TypedStorage.CreateWithId(WorldRef, *ExplicitId)
+                    : TypedStorage.Create(WorldRef);
+                if (!CreateResult)
+                {
+                    return std::unexpected(CreateResult.error());
+                }
+
+                TObject* Node = TypedStorage.ResolveIncludingPendingDestroy(*CreateResult);
+                if (!Node)
+                {
+                    return std::unexpected(MakeError(EErrorCode::InternalError, "Created node could not be resolved"));
+                }
+
+                InitializeNode(*Node, ToNodeHandle(*CreateResult), WorldRef, std::move(Name));
+                SyncLiveRegistry(WorldRef);
+                return ToNodeHandle(*CreateResult);
+            }
+        }
+
+        [[nodiscard]] BaseNode* ResolveRawByRuntimeHandle(const NodeHandle& Handle) override
+        {
+            return TypedStorage.Resolve(ToTypedNodeRuntimeHandle<TObject>(Handle));
+        }
+
+        [[nodiscard]] const BaseNode* ResolveRawByRuntimeHandle(const NodeHandle& Handle) const override
+        {
+            return TypedStorage.Resolve(ToTypedNodeRuntimeHandle<TObject>(Handle));
+        }
+
+        [[nodiscard]] BaseNode* ResolveIncludingPendingDestroyByRuntimeHandle(const NodeHandle& Handle) override
+        {
+            return TypedStorage.ResolveIncludingPendingDestroy(ToTypedNodeRuntimeHandle<TObject>(Handle));
+        }
+
+        [[nodiscard]] const BaseNode* ResolveIncludingPendingDestroyByRuntimeHandle(const NodeHandle& Handle) const override
+        {
+            return TypedStorage.ResolveIncludingPendingDestroy(ToTypedNodeRuntimeHandle<TObject>(Handle));
+        }
+
+        [[nodiscard]] TExpected<NodeHandle> HandleById(const Uuid& Id) const override
+        {
+            auto HandleResult = TypedStorage.HandleById(Id);
+            if (!HandleResult)
+            {
+                return std::unexpected(HandleResult.error());
+            }
+            return ToNodeHandle(*HandleResult);
+        }
+
+        void FlushPendingOnCreate(IWorld& WorldRef) override
+        {
+            TypedStorage.FlushPendingOnCreate(WorldRef);
+        }
+
+        bool FlushPendingOnCreate(IWorld& WorldRef, const NodeHandle& Handle) override
+        {
+            return TypedStorage.FlushPendingOnCreate(WorldRef, ToTypedNodeRuntimeHandle<TObject>(Handle));
+        }
+
+        void EndFrame(IWorld& WorldRef) override
+        {
+            TypedStorage.EndFrame(WorldRef);
+            SyncLiveRegistry(WorldRef);
+        }
+
+        bool DestroyLaterByRuntimeHandle(const NodeHandle& Handle) override
+        {
+            TObject* Node = TypedStorage.ResolveIncludingPendingDestroy(ToTypedNodeRuntimeHandle<TObject>(Handle));
+            if (!Node)
+            {
+                return false;
+            }
+
+            const bool Destroyed = TypedStorage.DestroyLater(ToTypedNodeRuntimeHandle<TObject>(Handle));
+            if (Destroyed)
+            {
+                Node->PendingDestroy(true);
+            }
+            return Destroyed;
+        }
+
+        void Clear(IWorld& WorldRef) override
+        {
+            TypedStorage.ForEachAll([](const auto&, TObject& Node) {
+                if (!Node.Id().is_nil())
+                {
+                    ObjectRegistry::Instance().Unregister(Node.Id());
+                }
+            });
+            TypedStorage.Clear(WorldRef);
+        }
+
+        void ForEachNode(void (*Visitor)(void*, const NodeHandle&, BaseNode&), void* UserData) override
+        {
+            TypedStorage.ForEach([Visitor, UserData](const auto& Handle, TObject& Node) {
+                Visitor(UserData, ToNodeHandle(Handle), Node);
+            });
+        }
+
+        TDenseRuntimeStorage<TObject> TypedStorage;
+
+    private:
+        static void InitializeNode(TObject& Node, const NodeHandle& Handle, IWorld& WorldRef, std::string Name)
+        {
+            Node.Handle(Handle);
+            Node.Name(std::move(Name));
+            Node.World(&WorldRef);
+            Node.PendingDestroy(false);
+            Node.Parent({});
+            Node.TypeKey(StaticTypeId<TObject>());
+            ObjectRegistry::Instance().RegisterNode(
+                Handle.Id,
+                &Node,
+                Handle.RuntimePoolToken,
+                Handle.RuntimeIndex,
+                Handle.RuntimeGeneration);
+        }
+
+        void SyncLiveRegistry(IWorld& WorldRef)
+        {
+            TypedStorage.ForEach([&WorldRef](const auto& Handle, TObject& Node) {
+                const NodeHandle NodeHandleValue = ToNodeHandle(Handle);
+                Node.Handle(NodeHandleValue);
+                Node.World(&WorldRef);
+                Node.PendingDestroy(false);
+                Node.TypeKey(StaticTypeId<TObject>());
+                ObjectRegistry::Instance().RegisterNode(
+                    NodeHandleValue.Id,
+                    &Node,
+                    NodeHandleValue.RuntimePoolToken,
+                    NodeHandleValue.RuntimeIndex,
+                    NodeHandleValue.RuntimeGeneration);
+            });
+        }
     };
 
     class IStorageModel : public IErasedStorage
@@ -2986,6 +3129,8 @@ private:
         [[nodiscard]] virtual uint32_t StorageToken() const = 0;
         [[nodiscard]] virtual TExpected<RuntimeComponentHandle> CreateDefault(IWorld& WorldRef, const Uuid* ExplicitId) = 0;
         virtual void FlushPendingOnCreate(IWorld& WorldRef) = 0;
+        virtual void EndFrame(IWorld& WorldRef) = 0;
+        virtual bool DestroyLaterByRuntimeHandle(RuntimeComponentHandle Handle) = 0;
         virtual bool DestroyByRuntimeHandle(IWorld& WorldRef, RuntimeComponentHandle Handle) = 0;
         [[nodiscard]] virtual void* ResolveRawByRuntimeHandle(RuntimeComponentHandle Handle) = 0;
         [[nodiscard]] virtual const void* ResolveRawByRuntimeHandle(RuntimeComponentHandle Handle) const = 0;
@@ -3054,6 +3199,7 @@ private:
                 {
                     return std::unexpected(CreateResult.error());
                 }
+                SyncLiveRegistry();
                 return ToRuntimeComponentHandle(*CreateResult);
             }
         }
@@ -3063,9 +3209,25 @@ private:
             TypedStorage.FlushPendingOnCreate(WorldRef);
         }
 
+        void EndFrame(IWorld& WorldRef) override
+        {
+            TypedStorage.EndFrame(WorldRef);
+            SyncLiveRegistry();
+        }
+
+        bool DestroyLaterByRuntimeHandle(const RuntimeComponentHandle Handle) override
+        {
+            return TypedStorage.DestroyLater(ToTypedRuntimeHandle<TObject>(Handle));
+        }
+
         bool DestroyByRuntimeHandle(IWorld& WorldRef, const RuntimeComponentHandle Handle) override
         {
-            return TypedStorage.Destroy(WorldRef, ToTypedRuntimeHandle<TObject>(Handle));
+            const bool Destroyed = TypedStorage.Destroy(WorldRef, ToTypedRuntimeHandle<TObject>(Handle));
+            if (Destroyed)
+            {
+                SyncLiveRegistry();
+            }
+            return Destroyed;
         }
 
         [[nodiscard]] void* ResolveRawByRuntimeHandle(const RuntimeComponentHandle Handle) override
@@ -3084,7 +3246,66 @@ private:
         }
 
         TDenseRuntimeStorage<TObject> TypedStorage;
+
+    private:
+        void SyncLiveRegistry()
+        {
+            if constexpr (std::is_base_of_v<BaseComponent, TObject>)
+            {
+                TypedStorage.ForEach([](const auto& Handle, TObject& Component) {
+                    const RuntimeComponentHandle GenericHandle = ToRuntimeComponentHandle(Handle);
+                    Component.TypeKey(StaticTypeId<TObject>());
+                    Component.Id(GenericHandle.Id);
+                    Component.RuntimeIdentity(
+                        GenericHandle.StorageToken,
+                        GenericHandle.Index,
+                        GenericHandle.Generation);
+                    ObjectRegistry::Instance().RegisterComponent(
+                        GenericHandle.Id,
+                        &Component,
+                        GenericHandle.StorageToken,
+                        GenericHandle.Index,
+                        GenericHandle.Generation);
+                });
+            }
+        }
     };
+
+    [[nodiscard]] INodeStorageModel* FindNodeStorageModel(const TypeId& Type)
+    {
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            return It->second.get();
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const INodeStorageModel* FindNodeStorageModel(const TypeId& Type) const
+    {
+        if (auto It = m_nodeStorages.find(Type); It != m_nodeStorages.end())
+        {
+            return It->second.get();
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] INodeStorageModel* FindNodeStorageModelByToken(const uint32_t StorageToken)
+    {
+        if (auto It = m_nodeStorageByToken.find(StorageToken); It != m_nodeStorageByToken.end())
+        {
+            return It->second;
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const INodeStorageModel* FindNodeStorageModelByToken(const uint32_t StorageToken) const
+    {
+        if (auto It = m_nodeStorageByToken.find(StorageToken); It != m_nodeStorageByToken.end())
+        {
+            return It->second;
+        }
+        return nullptr;
+    }
 
     [[nodiscard]] IStorageModel* FindStorageModel(const TypeId& Type)
     {
@@ -3166,6 +3387,25 @@ private:
     }
 #endif
 
+    void InsertPhaseEntry(std::vector<PhaseEntry>& Entries, PhaseEntry Entry)
+    {
+        const auto It = std::lower_bound(Entries.begin(),
+                                         Entries.end(),
+                                         Entry,
+                                         [](const PhaseEntry& Left, const PhaseEntry& Right) {
+                                             if (Left.Priority != Right.Priority)
+                                             {
+                                                 return Left.Priority < Right.Priority;
+                                             }
+                                             if (Left.TypeName != Right.TypeName)
+                                             {
+                                                 return Left.TypeName < Right.TypeName;
+                                             }
+                                             return Left.Sequence < Right.Sequence;
+                                         });
+        Entries.insert(It, Entry);
+    }
+
     template<RuntimeTickType TObject>
     void RegisterTickEntry(TDenseRuntimeStorage<TObject>* Storage)
     {
@@ -3184,69 +3424,133 @@ private:
             return;
         }
 
-        const int Priority = RuntimeTickPriority<TObject>();
         const uint64_t Sequence = m_nextTickSequence++;
-
-        TickEntry Entry{};
-        Entry.Priority = Priority;
-        Entry.Sequence = Sequence;
-        Entry.Storage = Storage;
+        const std::string_view TypeName = TTypeNameV<TObject>;
         if constexpr (TDenseRuntimeStorage<TObject>::kHasPreTickPhase)
         {
-            Entry.PreTick = &DispatchPreTick<TObject>;
+            InsertPhaseEntry(
+                m_preTickEntries,
+                PhaseEntry{
+                    .Priority = RuntimePhasePriority<TObject, ERuntimeTickPhase::PreTick>(),
+                    .Sequence = Sequence,
+                    .TypeName = TypeName,
+                    .Storage = Storage,
+                    .Invoke = &DispatchPreTick<TObject>,
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                    .Phase = ERuntimeTickPhase::PreTick,
+#else
+                    .Phase = ERuntimeTickPhase::PreTick,
+#endif
+                });
         }
         if constexpr (TDenseRuntimeStorage<TObject>::kHasTickPhase)
         {
-            Entry.Tick = &DispatchTick<TObject>;
+            InsertPhaseEntry(
+                m_tickEntries,
+                PhaseEntry{
+                    .Priority = RuntimePhasePriority<TObject, ERuntimeTickPhase::Tick>(),
+                    .Sequence = Sequence,
+                    .TypeName = TypeName,
+                    .Storage = Storage,
+                    .Invoke = &DispatchTick<TObject>,
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                    .Phase = ERuntimeTickPhase::Tick,
+#else
+                    .Phase = ERuntimeTickPhase::Tick,
+#endif
+                });
         }
         if constexpr (TDenseRuntimeStorage<TObject>::kHasFixedTickPhase)
         {
-            Entry.FixedTick = &DispatchFixedTick<TObject>;
+            InsertPhaseEntry(
+                m_fixedTickEntries,
+                PhaseEntry{
+                    .Priority = RuntimePhasePriority<TObject, ERuntimeTickPhase::FixedTick>(),
+                    .Sequence = Sequence,
+                    .TypeName = TypeName,
+                    .Storage = Storage,
+                    .Invoke = &DispatchFixedTick<TObject>,
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                    .Phase = ERuntimeTickPhase::FixedTick,
+#else
+                    .Phase = ERuntimeTickPhase::FixedTick,
+#endif
+                });
         }
         if constexpr (TDenseRuntimeStorage<TObject>::kHasLateTickPhase)
         {
-            Entry.LateTick = &DispatchLateTick<TObject>;
+            InsertPhaseEntry(
+                m_lateTickEntries,
+                PhaseEntry{
+                    .Priority = RuntimePhasePriority<TObject, ERuntimeTickPhase::LateTick>(),
+                    .Sequence = Sequence,
+                    .TypeName = TypeName,
+                    .Storage = Storage,
+                    .Invoke = &DispatchLateTick<TObject>,
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                    .Phase = ERuntimeTickPhase::LateTick,
+#else
+                    .Phase = ERuntimeTickPhase::LateTick,
+#endif
+                });
         }
         if constexpr (TDenseRuntimeStorage<TObject>::kHasPostTickPhase)
         {
-            Entry.PostTick = &DispatchPostTick<TObject>;
+            InsertPhaseEntry(
+                m_postTickEntries,
+                PhaseEntry{
+                    .Priority = RuntimePhasePriority<TObject, ERuntimeTickPhase::PostTick>(),
+                    .Sequence = Sequence,
+                    .TypeName = TypeName,
+                    .Storage = Storage,
+                    .Invoke = &DispatchPostTick<TObject>,
+#if defined(WITH_EDITOR) && WITH_EDITOR
+                    .Phase = ERuntimeTickPhase::PostTick,
+#else
+                    .Phase = ERuntimeTickPhase::PostTick,
+#endif
+                });
         }
 #if defined(WITH_EDITOR) && WITH_EDITOR
         if constexpr (TDenseRuntimeStorage<TObject>::kHasEditorTickPhase)
         {
-            Entry.EditorTick = &DispatchEditorTick<TObject>;
+            InsertPhaseEntry(
+                m_editorTickEntries,
+                PhaseEntry{
+                    .Priority = RuntimePhasePriority<TObject, ERuntimeTickPhase::EditorTick>(),
+                    .Sequence = Sequence,
+                    .TypeName = TypeName,
+                    .Storage = Storage,
+                    .Invoke = &DispatchEditorTick<TObject>,
+                    .Phase = ERuntimeTickPhase::EditorTick,
+                });
         }
 #endif
-
-        const auto It = std::lower_bound(m_tickEntries.begin(),
-                                         m_tickEntries.end(),
-                                         Entry,
-                                         [](const TickEntry& Left, const TickEntry& Right) {
-                                             if (Left.Priority != Right.Priority)
-                                             {
-                                                 return Left.Priority < Right.Priority;
-                                             }
-                                             return Left.Sequence < Right.Sequence;
-                                         });
-        m_tickEntries.insert(It, Entry);
     }
 
     uint32_t AcquireStorageToken()
     {
         const uint32_t Token = ObjectRegistry::Instance().AcquireRuntimePoolToken();
-        if (Token == TDenseRuntimeHandle<RuntimeNodeRecord>::kInvalidStorageToken)
+        if (Token == RuntimeComponentHandle::kInvalidStorageToken)
         {
             DEBUG_ASSERT(false, "Failed to acquire runtime storage token");
         }
         return Token;
     }
 
+    std::unordered_map<TypeId, std::unique_ptr<INodeStorageModel>, UuidHash> m_nodeStorages{};
+    std::unordered_map<uint32_t, INodeStorageModel*> m_nodeStorageByToken{};
     std::unordered_map<TypeId, std::unique_ptr<IStorageModel>, UuidHash> m_storages{};
     std::unordered_map<uint32_t, IStorageModel*> m_storageByToken{};
-    WorldNodeRuntime m_nodeRuntime{};
-    std::vector<NodeComponentAttachment> m_nodeComponentsBySlot{};
-    std::vector<RuntimeNodeHandle> m_componentDestroyScratch{};
-    std::vector<TickEntry> m_tickEntries{};
+    std::unordered_map<uint32_t, std::vector<NodeComponentAttachment>> m_nodeComponentsByStorageToken{};
+    std::vector<PhaseEntry> m_preTickEntries{};
+    std::vector<PhaseEntry> m_tickEntries{};
+    std::vector<PhaseEntry> m_fixedTickEntries{};
+    std::vector<PhaseEntry> m_lateTickEntries{};
+    std::vector<PhaseEntry> m_postTickEntries{};
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    std::vector<PhaseEntry> m_editorTickEntries{};
+#endif
     uint64_t m_nextTickSequence = 0;
 };
 

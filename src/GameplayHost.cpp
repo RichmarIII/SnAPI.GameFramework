@@ -36,6 +36,52 @@ namespace SnAPI::GameFramework
 
 namespace
 {
+[[nodiscard]] BaseNode* ResolveNodeInWorld(IWorld& WorldRef, const NodeHandle& Handle)
+{
+    NodeHandle ResolvedHandle = Handle;
+    return WorldRef.BorrowedNode(ResolvedHandle);
+}
+
+[[nodiscard]] BaseNode* ResolveNodeInWorld(IWorld& WorldRef, NodeHandle& InOutHandle)
+{
+    return WorldRef.BorrowedNode(InOutHandle);
+}
+
+[[nodiscard]] const BaseNode* ResolveNodeInWorld(const IWorld& WorldRef, const NodeHandle& Handle)
+{
+    NodeHandle ResolvedHandle = Handle;
+    return WorldRef.BorrowedNode(ResolvedHandle);
+}
+
+[[nodiscard]] const BaseNode* ResolveNodeInWorld(const IWorld& WorldRef, NodeHandle& InOutHandle)
+{
+    return WorldRef.BorrowedNode(InOutHandle);
+}
+
+template<typename TNode>
+[[nodiscard]] TNode* ResolveNodeCastInWorld(IWorld& WorldRef, const NodeHandle& Handle)
+{
+    return NodeCast<TNode>(ResolveNodeInWorld(WorldRef, Handle));
+}
+
+template<typename TNode>
+[[nodiscard]] TNode* ResolveNodeCastInWorld(IWorld& WorldRef, NodeHandle& InOutHandle)
+{
+    return NodeCast<TNode>(ResolveNodeInWorld(WorldRef, InOutHandle));
+}
+
+template<typename TNode>
+[[nodiscard]] const TNode* ResolveNodeCastInWorld(const IWorld& WorldRef, const NodeHandle& Handle)
+{
+    return NodeCast<TNode>(ResolveNodeInWorld(WorldRef, Handle));
+}
+
+template<typename TNode>
+[[nodiscard]] const TNode* ResolveNodeCastInWorld(const IWorld& WorldRef, NodeHandle& InOutHandle)
+{
+    return NodeCast<TNode>(ResolveNodeInWorld(WorldRef, InOutHandle));
+}
+
 [[nodiscard]] bool HasComponentType(const BaseNode& Node, const TypeId& ComponentType)
 {
     const auto& Types = Node.ComponentTypes();
@@ -75,15 +121,15 @@ namespace
     return Score;
 }
 
-[[nodiscard]] bool IsValidPossessionTargetForPlayer(const LocalPlayer& Player, const NodeHandle& Target)
+[[nodiscard]] bool IsValidPossessionTargetForPlayer(const LocalPlayer& Player, NodeHandle& InOutTarget)
 {
-    if (Target.IsNull())
+    if (InOutTarget.IsNull())
     {
         return true;
     }
 
     const auto* PlayerWorld = Player.World();
-    auto* TargetNode = Target.Borrowed();
+    const auto* TargetNode = PlayerWorld ? ResolveNodeInWorld(*PlayerWorld, InOutTarget) : nullptr;
     if (!PlayerWorld || !TargetNode)
     {
         return false;
@@ -92,15 +138,15 @@ namespace
     return TargetNode->World() == PlayerWorld;
 }
 
-[[nodiscard]] bool IsValidPlayerStartForPlayer(const LocalPlayer& Player, const NodeHandle& Candidate)
+[[nodiscard]] bool IsValidPlayerStartForPlayer(const LocalPlayer& Player, NodeHandle& InOutCandidate)
 {
-    if (Candidate.IsNull())
+    if (InOutCandidate.IsNull())
     {
         return true;
     }
 
     const auto* PlayerWorld = Player.World();
-    auto* StartNode = Candidate.Borrowed();
+    const auto* StartNode = PlayerWorld ? ResolveNodeInWorld(*PlayerWorld, InOutCandidate) : nullptr;
     if (!PlayerWorld || !StartNode)
     {
         return false;
@@ -300,6 +346,7 @@ void GameplayHost::Shutdown()
     m_knownLevelIds.clear();
     m_knownLocalPlayerIds.clear();
     m_knownConnectionIds.clear();
+    m_rpcGatewayNode = {};
     m_settings = {};
     m_initialized = false;
     m_runtime = nullptr;
@@ -511,7 +558,7 @@ TExpected<GameFramework::NodeHandle> GameplayHost::CreateLocalPlayer(std::string
     }
 
     NodeHandle Handle = CreateResult.value();
-    auto* Player = NodeCast<LocalPlayer>(Handle.Borrowed());
+    auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), Handle);
     if (!Player)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, "Created local-player node type mismatch"));
@@ -549,10 +596,10 @@ TExpected<GameFramework::NodeHandle> GameplayHost::JoinPlayer(const std::uint64_
         PlayerIndex = *AvailableIndex;
     }
 
-    const NodeHandle Existing = FindLocalPlayerByOwnerAndIndex(OwnerConnectionId, PlayerIndex);
+    NodeHandle Existing = FindLocalPlayerByOwnerAndIndex(OwnerConnectionId, PlayerIndex);
     if (!Existing.IsNull())
     {
-        if (auto* ExistingPlayer = NodeCast<LocalPlayer>(Existing.Borrowed()))
+        if (auto* ExistingPlayer = ResolveNodeCastInWorld<LocalPlayer>(World(), Existing))
         {
             EnsurePlayerHasPossession(*ExistingPlayer);
         }
@@ -579,7 +626,7 @@ TExpected<GameFramework::NodeHandle> GameplayHost::JoinPlayer(const std::uint64_
         return std::unexpected(CreateResult.error());
     }
 
-    if (auto* Player = NodeCast<LocalPlayer>(CreateResult.value().Borrowed()))
+    if (auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), CreateResult.value()))
     {
         EnsurePlayerHasPossession(*Player);
     }
@@ -598,7 +645,8 @@ Result GameplayHost::LeavePlayer(const NodeHandle& PlayerHandle)
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "LeavePlayer is server-authoritative"));
     }
 
-    auto* Node = PlayerHandle.Borrowed();
+    NodeHandle ResolvedPlayerHandle = PlayerHandle;
+    auto* Node = ResolveNodeInWorld(World(), ResolvedPlayerHandle);
     if (!Node)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Local-player node not found"));
@@ -610,13 +658,13 @@ Result GameplayHost::LeavePlayer(const NodeHandle& PlayerHandle)
     }
 
     Player->SetPossessedNode({});
-    return World().DestroyNode(PlayerHandle);
+    return World().DestroyNode(ResolvedPlayerHandle);
 }
 
 Result GameplayHost::LeavePlayer(const Uuid& PlayerId)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    for (const NodeHandle PlayerHandle : LocalPlayers())
+    for (NodeHandle PlayerHandle : LocalPlayers())
     {
         if (PlayerHandle.Id == PlayerId)
         {
@@ -636,7 +684,7 @@ Result GameplayHost::LeavePlayersForConnection(const std::uint64_t OwnerConnecti
 
     Result LastResult = Ok();
     bool FoundAny = false;
-    for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
+    for (NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
         FoundAny = true;
         if (const Result RemoveResult = LeavePlayer(PlayerHandle); !RemoveResult)
@@ -697,9 +745,9 @@ Result GameplayHost::HandleLeavePlayerRequest(const std::uint64_t OwnerConnectio
         return LeavePlayersForConnection(OwnerConnectionId);
     }
 
-    for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
+    for (NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
-        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
+        const auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), PlayerHandle);
         if (!Player)
         {
             continue;
@@ -907,7 +955,7 @@ std::vector<GameFramework::NodeHandle> GameplayHost::LocalPlayers() const
         return Handles;
     }
 
-    World().NodePool().ForEach([&Handles](const NodeHandle& Handle, BaseNode& Node) {
+    World().ForEachNode([&Handles](const NodeHandle& Handle, BaseNode& Node) {
         if (NodeCast<LocalPlayer>(&Node))
         {
             Handles.push_back(Handle);
@@ -920,9 +968,9 @@ std::vector<GameFramework::NodeHandle> GameplayHost::LocalPlayersForConnection(c
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
     std::vector<NodeHandle> Matches{};
-    for (const NodeHandle PlayerHandle : LocalPlayers())
+    for (NodeHandle PlayerHandle : LocalPlayers())
     {
-        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
+        const auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), PlayerHandle);
         if (!Player)
         {
             continue;
@@ -963,7 +1011,8 @@ Result GameplayHost::UnloadLevel(const NodeHandle& LevelHandle)
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "UnloadLevel is server-authoritative"));
     }
 
-    auto* Node = LevelHandle.Borrowed();
+    NodeHandle ResolvedLevelHandle = LevelHandle;
+    auto* Node = ResolveNodeInWorld(World(), ResolvedLevelHandle);
     if (!Node)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Level node not found"));
@@ -972,13 +1021,13 @@ Result GameplayHost::UnloadLevel(const NodeHandle& LevelHandle)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Node is not a Level"));
     }
-    return World().DestroyNode(LevelHandle);
+    return World().DestroyNode(ResolvedLevelHandle);
 }
 
 Result GameplayHost::UnloadLevel(const Uuid& LevelId)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    for (const NodeHandle LevelHandle : World().Levels())
+    for (NodeHandle LevelHandle : World().Levels())
     {
         if (LevelHandle.Id == LevelId)
         {
@@ -1569,10 +1618,30 @@ void GameplayHost::NotifyConnectionRemoved(const std::uint64_t OwnerConnectionId
 
 Result GameplayHost::EnsureRpcGatewayNode()
 {
+    if (!m_rpcGatewayNode.IsNull())
+    {
+        if (auto* Existing = ResolveNodeCastInWorld<GameplayRpcGateway>(World(), m_rpcGatewayNode))
+        {
+            return Ok();
+        }
+        m_rpcGatewayNode = {};
+    }
+
+    if (auto HandleResult = World().NodeHandleById(GameplayRpcGateway::GatewayNodeId()); HandleResult)
+    {
+        m_rpcGatewayNode = *HandleResult;
+        if (auto* Existing = ResolveNodeCastInWorld<GameplayRpcGateway>(World(), m_rpcGatewayNode))
+        {
+            return Ok();
+        }
+        m_rpcGatewayNode = {};
+    }
+
     NodeHandle LookupHandle{GameplayRpcGateway::GatewayNodeId()};
     if (auto* Existing = NodeCast<GameplayRpcGateway>(LookupHandle.BorrowedSlowByUuid());
         Existing != nullptr && Existing->World() == &World())
     {
+        m_rpcGatewayNode = Existing->Handle();
         return Ok();
     }
 
@@ -1583,27 +1652,45 @@ Result GameplayHost::EnsureRpcGatewayNode()
         return std::unexpected(CreateResult.error());
     }
 
-    auto* Gateway = NodeCast<GameplayRpcGateway>(CreateResult.value().Borrowed());
+    m_rpcGatewayNode = CreateResult.value();
+    auto* Gateway = ResolveNodeCastInWorld<GameplayRpcGateway>(World(), m_rpcGatewayNode);
     if (!Gateway)
     {
+        m_rpcGatewayNode = {};
         return std::unexpected(MakeError(EErrorCode::InternalError, "Created gameplay RPC gateway type mismatch"));
     }
     Gateway->Replicated(false);
     return Ok();
 }
 
-GameplayRpcGateway* GameplayHost::ResolveRpcGatewayNode() const
+GameplayRpcGateway* GameplayHost::ResolveRpcGatewayNode()
 {
+    if (!m_rpcGatewayNode.IsNull())
+    {
+        if (auto* Gateway = ResolveNodeCastInWorld<GameplayRpcGateway>(World(), m_rpcGatewayNode))
+        {
+            return Gateway;
+        }
+        m_rpcGatewayNode = {};
+    }
+
+    if (auto HandleResult = World().NodeHandleById(GameplayRpcGateway::GatewayNodeId()); HandleResult)
+    {
+        m_rpcGatewayNode = *HandleResult;
+        if (auto* Gateway = ResolveNodeCastInWorld<GameplayRpcGateway>(World(), m_rpcGatewayNode))
+        {
+            return Gateway;
+        }
+        m_rpcGatewayNode = {};
+    }
+
     NodeHandle LookupHandle{GameplayRpcGateway::GatewayNodeId()};
     auto* Gateway = NodeCast<GameplayRpcGateway>(LookupHandle.BorrowedSlowByUuid());
-    if (!Gateway)
+    if (!Gateway || Gateway->World() != &World())
     {
         return nullptr;
     }
-    if (Gateway->World() != &World())
-    {
-        return nullptr;
-    }
+    m_rpcGatewayNode = Gateway->Handle();
     return Gateway;
 }
 
@@ -1755,9 +1842,9 @@ Result GameplayHost::EvaluateUnloadLevelRequestPolicy(const std::uint64_t OwnerC
 
 void GameplayHost::SyncLocalPlayerPossessionCallbacks()
 {
-    for (const NodeHandle PlayerHandle : LocalPlayers())
+    for (NodeHandle PlayerHandle : LocalPlayers())
     {
-        if (auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed()))
+        if (auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), PlayerHandle))
         {
             Player->SyncPossessionCallbacks();
         }
@@ -1791,7 +1878,7 @@ NodeHandle GameplayHost::ResolvePlayerStart(LocalPlayer& Player)
         return SelectedStart;
     }
 
-    World().NodePool().ForEach([&SelectedStart, &Player](const NodeHandle& Handle, BaseNode& Node) {
+    World().ForEachNode([&SelectedStart, &Player](const NodeHandle& Handle, BaseNode& Node) {
         if (!SelectedStart.IsNull())
         {
             return;
@@ -1802,25 +1889,26 @@ NodeHandle GameplayHost::ResolvePlayerStart(LocalPlayer& Player)
             return;
         }
 
-        if (!IsValidPlayerStartForPlayer(Player, Handle))
+        NodeHandle CandidateHandle = Handle;
+        if (!IsValidPlayerStartForPlayer(Player, CandidateHandle))
         {
             return;
         }
 
-        SelectedStart = Handle;
+        SelectedStart = CandidateHandle;
     });
 
     return SelectedStart;
 }
 
-NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& PlayerStartHandle)
+NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, NodeHandle PlayerStartHandle)
 {
     TypeId PawnType = StaticTypeId<PawnBase>();
     bool SpawnReplicated = true;
     bool AttemptSpawnFromAsset = false;
     const TAssetRef<PawnBase>* SpawnAssetRef = nullptr;
 
-    if (const auto* PlayerStartNodeTyped = NodeCast<PlayerStart>(PlayerStartHandle.Borrowed()))
+    if (const auto* PlayerStartNodeTyped = ResolveNodeCastInWorld<PlayerStart>(World(), PlayerStartHandle))
     {
         SpawnAssetRef = &PlayerStartNodeTyped->GetSpawnPawnAsset();
         AttemptSpawnFromAsset = SpawnAssetRef != nullptr && !SpawnAssetRef->IsNull();
@@ -1860,7 +1948,7 @@ NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& 
     if (AttemptSpawnFromAsset && SpawnAssetRef != nullptr)
     {
         NodeHandle ParentHandle{};
-        if (auto* PlayerStartNode = PlayerStartHandle.Borrowed();
+        if (auto* PlayerStartNode = ResolveNodeInWorld(World(), PlayerStartHandle);
             PlayerStartNode && !PlayerStartNode->Parent().IsNull())
         {
             ParentHandle = PlayerStartNode->Parent();
@@ -1888,7 +1976,7 @@ NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& 
         PawnHandle = SpawnResult.value();
     }
 
-    auto* PawnNode = PawnHandle.Borrowed();
+    auto* PawnNode = ResolveNodeInWorld(World(), PawnHandle);
     if (!PawnNode)
     {
         if (!PawnHandle.IsNull())
@@ -1909,7 +1997,7 @@ NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& 
             return {};
         }
         PawnHandle = *SpawnFallback;
-        PawnNode = PawnHandle.Borrowed();
+        PawnNode = ResolveNodeInWorld(World(), PawnHandle);
         if (!PawnNode)
         {
             (void)World().DestroyNode(PawnHandle);
@@ -1919,10 +2007,11 @@ NodeHandle GameplayHost::SpawnPlayerPawn(LocalPlayer& Player, const NodeHandle& 
 
     PawnNode->Replicated(SpawnReplicated);
 
-    auto* PlayerStartNode = PlayerStartHandle.Borrowed();
+    auto* PlayerStartNode = ResolveNodeInWorld(World(), PlayerStartHandle);
     if (PlayerStartNode && !PlayerStartNode->Parent().IsNull() && PawnNode->Parent() != PlayerStartNode->Parent())
     {
-        if (const Result AttachResult = World().AttachChild(PlayerStartNode->Parent(), PawnHandle); !AttachResult)
+        NodeHandle ParentHandle = PlayerStartNode->Parent();
+        if (const Result AttachResult = World().AttachChild(ParentHandle, PawnHandle); !AttachResult)
         {
             (void)World().DestroyNode(PawnHandle);
             return {};
@@ -1959,15 +2048,15 @@ NodeHandle GameplayHost::FindAutoPossessTarget(const std::uint64_t OwnerConnecti
     (void)OwnerConnectionId;
 
     std::unordered_set<Uuid, UuidHash> ClaimedTargets{};
-    for (const NodeHandle PlayerHandle : LocalPlayers())
+    for (NodeHandle PlayerHandle : LocalPlayers())
     {
-        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
+        const auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), PlayerHandle);
         if (!Player)
         {
             continue;
         }
 
-        const NodeHandle Possessed = Player->GetPossessedNode();
+        NodeHandle Possessed = Player->GetPossessedNode();
         if (!Possessed.IsNull())
         {
             ClaimedTargets.insert(Possessed.Id);
@@ -1976,7 +2065,7 @@ NodeHandle GameplayHost::FindAutoPossessTarget(const std::uint64_t OwnerConnecti
 
     NodeHandle BestTarget{};
     int BestScore = -1;
-    World().NodePool().ForEach([&](const NodeHandle& Handle, BaseNode& Node) {
+    World().ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
         if (ClaimedTargets.contains(Handle.Id))
         {
             return;
@@ -1999,15 +2088,21 @@ NodeHandle GameplayHost::FindAutoPossessTarget(const std::uint64_t OwnerConnecti
 
 void GameplayHost::EnsurePlayerHasPossession(LocalPlayer& Player)
 {
-    if (!Player.GetPossessedNode().IsNull())
+    NodeHandle& ExistingPossessed = Player.EditPossessedNode();
+    if (!ExistingPossessed.IsNull())
     {
-        return;
+        if (IsValidPossessionTargetForPlayer(Player, ExistingPossessed))
+        {
+            return;
+        }
+
+        Player.SetPossessedNode({});
     }
 
     if (IsServer())
     {
         const NodeHandle PlayerStartHandle = ResolvePlayerStart(Player);
-        const NodeHandle SpawnedPawn = SpawnPlayerPawn(Player, PlayerStartHandle);
+        NodeHandle SpawnedPawn = SpawnPlayerPawn(Player, PlayerStartHandle);
         if (!SpawnedPawn.IsNull() && IsValidPossessionTargetForPlayer(Player, SpawnedPawn))
         {
             Player.SetPossessedNode(SpawnedPawn);
@@ -2092,7 +2187,7 @@ Result GameplayHost::AutoCreateConfiguredLocalPlayer()
         return std::unexpected(CreateResult.error());
     }
 
-    if (auto* Player = NodeCast<LocalPlayer>(CreateResult.value().Borrowed()))
+    if (auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), CreateResult.value()))
     {
         EnsurePlayerHasPossession(*Player);
     }
@@ -2102,9 +2197,9 @@ Result GameplayHost::AutoCreateConfiguredLocalPlayer()
 std::optional<unsigned int> GameplayHost::FirstAvailablePlayerIndexForOwner(const std::uint64_t OwnerConnectionId) const
 {
     std::unordered_set<unsigned int> UsedIndices{};
-    for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
+    for (NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
-        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
+        const auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), PlayerHandle);
         if (Player)
         {
             UsedIndices.insert(Player->GetPlayerIndex());
@@ -2125,9 +2220,9 @@ std::optional<unsigned int> GameplayHost::FirstAvailablePlayerIndexForOwner(cons
 NodeHandle GameplayHost::FindLocalPlayerByOwnerAndIndex(const std::uint64_t OwnerConnectionId,
                                                         const unsigned int PlayerIndex) const
 {
-    for (const NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
+    for (NodeHandle PlayerHandle : LocalPlayersForConnection(OwnerConnectionId))
     {
-        const auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
+        const auto* Player = ResolveNodeCastInWorld<LocalPlayer>(World(), PlayerHandle);
         if (!Player)
         {
             continue;

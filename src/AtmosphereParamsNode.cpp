@@ -72,6 +72,30 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetAtmospherePasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto DefaultParams = SnAPI::Graphics::AtmosphereContract::DefaultParams();
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::Atmosphere);
+        auto* Atmosphere = dynamic_cast<SnAPI::Graphics::AtmospherePass*>(Pass);
+        if (!Atmosphere)
+        {
+            continue;
+        }
+
+        Atmosphere->SetParams(DefaultParams);
+        Atmosphere->SetFeatures(SnAPI::Graphics::AtmospherePass::Feature::None);
+    }
+}
 } // namespace
 
 AtmosphereParamsNode::AtmosphereParamsNode()
@@ -146,6 +170,26 @@ void AtmosphereParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void AtmosphereParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetAtmospherePasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void AtmosphereParamsNode::Tick(const float DeltaSeconds)

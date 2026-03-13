@@ -5,13 +5,46 @@
 #include "IWorld.h"
 #include "NodeCast.h"
 
+#include <vector>
+
 namespace SnAPI::GameFramework
 {
 namespace
 {
 template<typename TNodeType>
+std::vector<NodeHandle> FindReferencedChildNodes(IWorld& WorldRef, NodeHandle& InOutParent)
+{
+    std::vector<NodeHandle> Matches{};
+    BaseNode* ParentNode = WorldRef.BorrowedNode(InOutParent);
+    if (!ParentNode)
+    {
+        return Matches;
+    }
+
+    Matches.reserve(ParentNode->Children().size());
+    for (const NodeHandle& ChildRef : ParentNode->Children())
+    {
+        NodeHandle ChildHandle = ChildRef;
+        BaseNode* ChildNode = WorldRef.BorrowedNode(ChildHandle);
+        if (!ChildNode)
+        {
+            continue;
+        }
+
+        if (NodeCast<TNodeType>(ChildNode) == nullptr)
+        {
+            continue;
+        }
+
+        Matches.push_back(ChildHandle);
+    }
+
+    return Matches;
+}
+
+template<typename TNodeType>
 void EnsureReferencedNode(IWorld& WorldRef,
-                          const NodeHandle Parent,
+                          NodeHandle& InOutParent,
                           const TAssetRef<TNodeType>& Asset,
                           NodeHandle& InOutSpawned)
 {
@@ -22,22 +55,52 @@ void EnsureReferencedNode(IWorld& WorldRef,
             (void)WorldRef.DestroyNode(InOutSpawned);
             InOutSpawned = {};
         }
-        return;
-    }
 
-    if (!InOutSpawned.IsNull() && InOutSpawned.Borrowed() != nullptr)
-    {
-        if (auto* ExistingNode = InOutSpawned.Borrowed(); NodeCast<TNodeType>(ExistingNode) != nullptr)
+        std::vector<NodeHandle> ExistingChildren = FindReferencedChildNodes<TNodeType>(WorldRef, InOutParent);
+        for (NodeHandle& ExistingChild : ExistingChildren)
         {
-            (void)WorldRef.RequestNodeOnCreate(InOutSpawned);
+            (void)WorldRef.DestroyNode(ExistingChild);
         }
         return;
     }
 
+    if (!InOutSpawned.IsNull() && WorldRef.BorrowedNode(InOutSpawned) != nullptr)
+    {
+        if (auto* ExistingNode = WorldRef.BorrowedNode(InOutSpawned); NodeCast<TNodeType>(ExistingNode) != nullptr)
+        {
+            ExistingNode->EditorTransient(true);
+            (void)WorldRef.RequestNodeOnCreate(InOutSpawned);
+            return;
+        }
+    }
+
+    std::vector<NodeHandle> ExistingChildren = FindReferencedChildNodes<TNodeType>(WorldRef, InOutParent);
+    if (!ExistingChildren.empty())
+    {
+        InOutSpawned = ExistingChildren.front();
+        if (BaseNode* ExistingNode = WorldRef.BorrowedNode(InOutSpawned))
+        {
+            ExistingNode->EditorTransient(true);
+        }
+
+        for (std::size_t Index = 1; Index < ExistingChildren.size(); ++Index)
+        {
+            NodeHandle Duplicate = ExistingChildren[Index];
+            (void)WorldRef.DestroyNode(Duplicate);
+        }
+
+        (void)WorldRef.RequestNodeOnCreate(InOutSpawned);
+        return;
+    }
+
     InOutSpawned = {};
-    if (auto SpawnResult = Asset.Instantiate(WorldRef, Parent, true); SpawnResult)
+    if (auto SpawnResult = Asset.Instantiate(WorldRef, InOutParent, true); SpawnResult)
     {
         InOutSpawned = *SpawnResult;
+        if (BaseNode* SpawnedNode = WorldRef.BorrowedNode(InOutSpawned))
+        {
+            SpawnedNode->EditorTransient(true);
+        }
     }
 }
 } // namespace
@@ -117,7 +180,7 @@ void WorldRenderSettings::ApplyReferencedSettings()
         return;
     }
 
-    const NodeHandle ParentHandle = Handle();
+    NodeHandle ParentHandle = Handle();
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssaoParams, m_spawnedSSAO);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssgiParams, m_spawnedSSGI);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssrParams, m_spawnedSSR);

@@ -14,7 +14,7 @@
 #include <type_traits>
 
 #include "Assert.h"
-#include "ComponentStorage.h"
+#include "ComponentTypeRegistry.h"
 #include "Expected.h"
 #include "BaseComponent.h"
 #include "IWorld.h"
@@ -31,8 +31,8 @@ namespace
  * @param Type Reflected component type.
  * @param ComponentPtr Borrowed component pointer for special-case cache updates.
  *
- * This updates the node-side component bit mask, reflected type list, storage-cache
- * slots, and relevance pointer when the component is a `RelevanceComponent`.
+ * This updates the node-side component bit mask, reflected type list, and relevance
+ * pointer when the component is a `RelevanceComponent`.
  */
 inline void RegisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type, void* ComponentPtr)
 {
@@ -53,17 +53,10 @@ inline void RegisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type, v
     Node.ComponentMask()[Word] |= (1ull << Bit);
 
     auto& Types = Node.ComponentTypes();
-    auto& Storages = Node.ComponentStorages();
-    if (Storages.size() < Types.size())
-    {
-        Storages.resize(Types.size(), nullptr);
-    }
-
     for (std::size_t Index = 0; Index < Types.size(); ++Index)
     {
         if (Types[Index] == Type)
         {
-            Storages[Index] = nullptr;
             static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
             if (Type == RelevanceType)
             {
@@ -74,7 +67,6 @@ inline void RegisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type, v
     }
 
     Types.push_back(Type);
-    Storages.push_back(nullptr);
 
     static const TypeId RelevanceType = StaticTypeId<RelevanceComponent>();
     if (Type == RelevanceType)
@@ -88,8 +80,8 @@ inline void RegisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type, v
  * @param Node Owning node to update.
  * @param Type Reflected component type being detached.
  *
- * This clears the component mask bit, removes the reflected type entry, erases the
- * parallel storage-cache entry, and resets the relevance cache when applicable.
+ * This clears the component mask bit, removes the reflected type entry, and resets
+ * the relevance cache when applicable.
  */
 inline void UnregisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type)
 {
@@ -102,7 +94,6 @@ inline void UnregisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type)
     }
 
     auto& Types = Node.ComponentTypes();
-    auto& Storages = Node.ComponentStorages();
     for (std::size_t Index = 0; Index < Types.size(); ++Index)
     {
         if (Types[Index] != Type)
@@ -112,11 +103,6 @@ inline void UnregisterRuntimeComponentOnNode(BaseNode& Node, const TypeId& Type)
 
         auto TypeIt = Types.begin() + static_cast<std::vector<TypeId>::difference_type>(Index);
         Types.erase(TypeIt);
-        if (Index < Storages.size())
-        {
-            auto StorageIt = Storages.begin() + static_cast<std::vector<ComponentStorageView*>::difference_type>(Index);
-            Storages.erase(StorageIt);
-        }
         break;
     }
 
@@ -164,7 +150,8 @@ void InitializeRuntimeComponentState(BaseNode& Node,
 template<typename T, typename... Args>
 TExpectedRef<T> BaseNode::Add(Args&&... args)
 {
-    static_assert(RuntimeTickType<T>, "BaseNode::Add<T> requires ECS runtime-compatible component types");
+    static_assert(RuntimeTickType<T> && std::is_base_of_v<BaseComponent, T>,
+                  "BaseNode::Add<T> requires ECS runtime-compatible BaseComponent types");
     static_assert(std::is_move_constructible_v<T>,
                   "BaseNode::Add<T> requires move-constructible runtime component types");
 
@@ -190,7 +177,8 @@ TExpectedRef<T> BaseNode::Add(Args&&... args)
 template<typename T>
 TExpectedRef<T> BaseNode::Component()
 {
-    static_assert(RuntimeTickType<T>, "BaseNode::Component<T> requires ECS runtime-compatible component types");
+    static_assert(RuntimeTickType<T> && std::is_base_of_v<BaseComponent, T>,
+                  "BaseNode::Component<T> requires ECS runtime-compatible BaseComponent types");
 
     if (!m_world)
     {
@@ -208,7 +196,8 @@ TExpectedRef<T> BaseNode::Component()
 template<typename T>
 bool BaseNode::Has() const
 {
-    static_assert(RuntimeTickType<T>, "BaseNode::Has<T> requires ECS runtime-compatible component types");
+    static_assert(RuntimeTickType<T> && std::is_base_of_v<BaseComponent, T>,
+                  "BaseNode::Has<T> requires ECS runtime-compatible BaseComponent types");
 
     if (!m_world)
     {
@@ -221,7 +210,8 @@ bool BaseNode::Has() const
 template<typename T>
 void BaseNode::Remove()
 {
-    static_assert(RuntimeTickType<T>, "BaseNode::Remove<T> requires ECS runtime-compatible component types");
+    static_assert(RuntimeTickType<T> && std::is_base_of_v<BaseComponent, T>,
+                  "BaseNode::Remove<T> requires ECS runtime-compatible BaseComponent types");
 
     if (!m_world)
     {
@@ -242,22 +232,22 @@ TExpected<TDenseRuntimeHandle<T>> BaseNode::AddRuntimeComponent(Args&&... args)
         return std::unexpected(MakeError(EErrorCode::NotReady, "Node is not bound to a world"));
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeNodeHandleAndCache();
-    if (OwnerRuntime.IsNull())
+    NodeHandle OwnerHandle = Handle();
+    if (OwnerHandle.IsNull())
     {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node runtime handle was not found"));
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node handle was not found"));
     }
 
-    auto AddResult = m_world->EcsRuntime().AddComponent<T>(*m_world, OwnerRuntime, std::forward<Args>(args)...);
+    auto AddResult = m_world->EcsRuntime().AddComponent<T>(*m_world, OwnerHandle, std::forward<Args>(args)...);
     if (!AddResult)
     {
         return std::unexpected(AddResult.error());
     }
 
-    T* ComponentPtr = m_world->EcsRuntime().Component<T>(OwnerRuntime);
+    T* ComponentPtr = m_world->EcsRuntime().Component<T>(OwnerHandle);
     if (!ComponentPtr)
     {
-        (void)m_world->EcsRuntime().RemoveComponent<T>(*m_world, OwnerRuntime);
+        (void)m_world->EcsRuntime().RemoveComponent<T>(*m_world, OwnerHandle);
         return std::unexpected(MakeError(EErrorCode::InternalError, "Runtime component creation returned null"));
     }
 
@@ -276,22 +266,22 @@ TExpected<TDenseRuntimeHandle<T>> BaseNode::AddRuntimeComponentWithId(const Uuid
         return std::unexpected(MakeError(EErrorCode::NotReady, "Node is not bound to a world"));
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeNodeHandleAndCache();
-    if (OwnerRuntime.IsNull())
+    NodeHandle OwnerHandle = Handle();
+    if (OwnerHandle.IsNull())
     {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node runtime handle was not found"));
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node handle was not found"));
     }
 
-    auto AddResult = m_world->EcsRuntime().AddComponentWithId<T>(*m_world, OwnerRuntime, Id, std::forward<Args>(args)...);
+    auto AddResult = m_world->EcsRuntime().AddComponentWithId<T>(*m_world, OwnerHandle, Id, std::forward<Args>(args)...);
     if (!AddResult)
     {
         return std::unexpected(AddResult.error());
     }
 
-    T* ComponentPtr = m_world->EcsRuntime().Component<T>(OwnerRuntime);
+    T* ComponentPtr = m_world->EcsRuntime().Component<T>(OwnerHandle);
     if (!ComponentPtr)
     {
-        (void)m_world->EcsRuntime().RemoveComponent<T>(*m_world, OwnerRuntime);
+        (void)m_world->EcsRuntime().RemoveComponent<T>(*m_world, OwnerHandle);
         return std::unexpected(MakeError(EErrorCode::InternalError, "Runtime component creation returned null"));
     }
 
@@ -307,13 +297,13 @@ TExpectedRef<T> BaseNode::RuntimeComponent()
         return std::unexpected(MakeError(EErrorCode::NotReady, "Node is not bound to a world"));
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeNodeHandleAndCache();
-    if (OwnerRuntime.IsNull())
+    NodeHandle OwnerHandle = Handle();
+    if (OwnerHandle.IsNull())
     {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node runtime handle was not found"));
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node handle was not found"));
     }
 
-    T* ComponentPtr = m_world->EcsRuntime().Component<T>(OwnerRuntime);
+    T* ComponentPtr = m_world->EcsRuntime().Component<T>(OwnerHandle);
     if (!ComponentPtr)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Runtime component was not found on node"));
@@ -330,13 +320,13 @@ bool BaseNode::HasRuntimeComponent() const
         return false;
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeNodeHandle();
-    if (OwnerRuntime.IsNull())
+    NodeHandle OwnerHandle = Handle();
+    if (OwnerHandle.IsNull())
     {
         return false;
     }
 
-    return m_world->HasRuntimeComponent(OwnerRuntime, StaticTypeId<T>());
+    return m_world->HasRuntimeComponent(OwnerHandle, StaticTypeId<T>());
 }
 
 template<RuntimeTickType T>
@@ -347,13 +337,13 @@ Result BaseNode::RemoveRuntimeComponent()
         return std::unexpected(MakeError(EErrorCode::NotReady, "Node is not bound to a world"));
     }
 
-    const RuntimeNodeHandle OwnerRuntime = ResolveRuntimeNodeHandleAndCache();
-    if (OwnerRuntime.IsNull())
+    NodeHandle OwnerHandle = Handle();
+    if (OwnerHandle.IsNull())
     {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Node runtime handle was not found"));
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Node handle was not found"));
     }
 
-    auto RemoveResult = m_world->RemoveRuntimeComponent(OwnerRuntime, StaticTypeId<T>());
+    auto RemoveResult = m_world->RemoveRuntimeComponent(OwnerHandle, StaticTypeId<T>());
     if (!RemoveResult)
     {
         return std::unexpected(RemoveResult.error());

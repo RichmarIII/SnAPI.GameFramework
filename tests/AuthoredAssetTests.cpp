@@ -568,7 +568,9 @@ TEST_CASE("Prefab capture resolves subtree components from UUID-only live node h
     REQUIRE(RootHandleResult);
     auto ChildHandleResult = SourceWorld.CreateNode("PrefabChild");
     REQUIRE(ChildHandleResult);
-    REQUIRE(SourceWorld.AttachChild(*RootHandleResult, *ChildHandleResult));
+    NodeHandle RootHandle = *RootHandleResult;
+    NodeHandle ChildHandle = *ChildHandleResult;
+    REQUIRE(SourceWorld.AttachChild(RootHandle, ChildHandle));
 
     auto* RootNode = RootHandleResult->Borrowed();
     REQUIRE(RootNode != nullptr);

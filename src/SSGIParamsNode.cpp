@@ -50,7 +50,7 @@ std::uint64_t ViewportSelectionKey(const std::int64_t ViewportID)
 }
 
 std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Graphics::IGraphicsAPI& Graphics,
-                                                                      const std::int64_t ViewportID)
+                                                                       const std::int64_t ViewportID)
 {
     if (ViewportID >= 0)
     {
@@ -58,6 +58,29 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
     }
 
     return Graphics.RenderViewportIDs();
+}
+
+void ResetSSGIPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::SSGI);
+        auto* SSGI = dynamic_cast<SnAPI::Graphics::SSGIPass*>(Pass);
+        if (!SSGI)
+        {
+            continue;
+        }
+
+        SSGI->SetParams(SnAPI::Graphics::SSGIContract::DefaultParams());
+        SSGI->SetTemporalParams(SnAPI::Graphics::SSGITemporalContract::DefaultParams());
+    }
 }
 } // namespace
 
@@ -130,6 +153,26 @@ void SSGIParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void SSGIParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetSSGIPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void SSGIParamsNode::Tick(const float DeltaSeconds)

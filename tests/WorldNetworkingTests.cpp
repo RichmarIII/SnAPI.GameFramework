@@ -10,7 +10,7 @@ using namespace SnAPI::Networking;
 namespace
 {
 
-struct RpcTestNode final : BaseNode
+struct RpcTestNode final : BaseNode, NodeCRTP<RpcTestNode>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::RpcTestNode";
 

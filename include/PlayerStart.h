@@ -22,7 +22,7 @@ namespace SnAPI::GameFramework
  * @see GameplayHost
  * @see PawnBase
  */
-class SNAPI_GAMEFRAMEWORK_API PlayerStart : public BaseNode
+class SNAPI_GAMEFRAMEWORK_API PlayerStart : public BaseNode, public NodeCRTP<PlayerStart>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::PlayerStart";

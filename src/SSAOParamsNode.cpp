@@ -44,6 +44,30 @@ std::vector<SnAPI::Graphics::RenderViewportID> ResolveTargetViewports(SnAPI::Gra
 
     return Graphics.RenderViewportIDs();
 }
+
+void ResetSSAOPasses(RendererSystem& Renderer, const std::int64_t ViewportID)
+{
+    auto* Graphics = Renderer.Graphics();
+    if (!Graphics)
+    {
+        return;
+    }
+
+    const auto TargetViewports = ResolveTargetViewports(*Graphics, ViewportID);
+    for (const auto ViewportId : TargetViewports)
+    {
+        auto* Pass = Graphics->GetRenderPass(ViewportId, SnAPI::Graphics::ERenderPassType::SSAO);
+        auto* SSAO = dynamic_cast<SnAPI::Graphics::SSAOPass*>(Pass);
+        if (!SSAO)
+        {
+            continue;
+        }
+
+        SSAO->SetParams(SnAPI::Graphics::SSAOContract::DefaultParams());
+        SSAO->SetTemporalParams(SnAPI::Graphics::SSAOTemporalContract::DefaultParams());
+        SSAO->SetDenoiseBlurBeta(SnAPI::Graphics::SSAODenoiseContract::DefaultPushConstants().DenoiseBlurBeta);
+    }
+}
 } // namespace
 
 SSAOParamsNode::SSAOParamsNode()
@@ -106,6 +130,26 @@ void SSAOParamsNode::OnCreate()
 {
     m_applyPending = true;
     ApplyIfNeeded();
+}
+
+void SSAOParamsNode::OnDestroy()
+{
+    auto* WorldPtr = World();
+    if (!WorldPtr)
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    auto& Renderer = WorldPtr->Renderer();
+    if (!Renderer.IsInitialized())
+    {
+        InvalidatePassCache();
+        return;
+    }
+
+    ResetSSAOPasses(Renderer, m_viewportID);
+    InvalidatePassCache();
 }
 
 void SSAOParamsNode::Tick(const float DeltaSeconds)

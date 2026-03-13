@@ -5,7 +5,6 @@
 
 #include "Profiling.h"
 
-#include "ComponentStorage.h"
 #include "BaseComponent.h"
 #include "ObjectRegistry.h"
 #include "Serialization.h"
@@ -581,11 +580,12 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
         while (Current)
         {
             AddNodeEntity(*Current);
-            if (Current->Parent().IsNull())
+            NodeHandle ParentHandle = Current->Parent();
+            if (ParentHandle.IsNull())
             {
                 break;
             }
-            Current = Current->Parent().Borrowed();
+            Current = m_world->BorrowedNode(ParentHandle);
         }
     };
 
@@ -628,11 +628,12 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
             while (Current)
             {
                 AddNodeEntity(*Current);
-                if (Current->Parent().IsNull())
+                NodeHandle ParentHandle = Current->Parent();
+                if (ParentHandle.IsNull())
                 {
                     break;
                 }
-                Current = Current->Parent().Borrowed();
+                Current = Context->Bridge->m_world->BorrowedNode(ParentHandle);
             }
         };
 
@@ -640,7 +641,8 @@ void NetReplicationBridge::GatherEntities(std::vector<ReplicationEntityState>& O
         bool HasReplicatedComponent = false;
         for (const auto& Type : Node.ComponentTypes())
         {
-            void* ComponentPtr = Context->Bridge->m_world->BorrowedComponent(Handle, Type);
+            NodeHandle OwnerHandle = Handle;
+            void* ComponentPtr = Context->Bridge->m_world->BorrowedComponent(OwnerHandle, Type);
             auto* Component = static_cast<BaseComponent*>(ComponentPtr);
             if (Component && Component->Replicated())
             {
@@ -829,7 +831,8 @@ void NetReplicationBridge::OnDespawn(NetConnectionHandle,
         auto* Node = ObjectRegistry::Instance().Resolve<BaseNode>(Info.ObjectId);
         if (Node)
         {
-            (void)m_world->DestroyNode(Node->Handle());
+            NodeHandle NodeHandleValue = Node->Handle();
+            (void)m_world->DestroyNode(NodeHandleValue);
         }
     }
     else
@@ -909,9 +912,12 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
                 {
                     if (!Node->Parent().IsNull())
                     {
-                        (void)m_world->DetachChild(Node->Handle());
+                        NodeHandle NodeHandleValue = Node->Handle();
+                        (void)m_world->DetachChild(NodeHandleValue);
                     }
-                    (void)m_world->AttachChild(Parent->Handle(), Node->Handle());
+                    NodeHandle ParentHandle = Parent->Handle();
+                    NodeHandle NodeHandleValue = Node->Handle();
+                    (void)m_world->AttachChild(ParentHandle, NodeHandleValue);
                 }
             }
             else
@@ -921,7 +927,8 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
         }
         else if (Node && !Node->Parent().IsNull())
         {
-            (void)m_world->DetachChild(Node->Handle());
+            NodeHandle NodeHandleValue = Node->Handle();
+            (void)m_world->DetachChild(NodeHandleValue);
         }
 
         if (Node && FieldSize > 0)
@@ -957,7 +964,8 @@ bool NetReplicationBridge::ApplyPayload(EntityId EntityIdValue,
                 return true;
             }
 
-            auto CreateResult = m_world->CreateComponentWithId(OwnerNode->Handle(), Header.ObjectType, Header.ObjectId);
+            NodeHandle OwnerHandle = OwnerNode->Handle();
+            auto CreateResult = m_world->CreateComponentWithId(OwnerHandle, Header.ObjectType, Header.ObjectId);
             if (!CreateResult)
             {
                 return false;
@@ -1004,9 +1012,12 @@ void NetReplicationBridge::ResolvePendingAttachments()
         {
             if (!Child->Parent().IsNull())
             {
-                (void)m_world->DetachChild(Child->Handle());
+                NodeHandle ChildHandle = Child->Handle();
+                (void)m_world->DetachChild(ChildHandle);
             }
-            (void)m_world->AttachChild(Parent->Handle(), Child->Handle());
+            NodeHandle ParentHandle = Parent->Handle();
+            NodeHandle ChildHandle = Child->Handle();
+            (void)m_world->AttachChild(ParentHandle, ChildHandle);
         }
         It = m_pendingParents.erase(It);
     }
@@ -1030,7 +1041,8 @@ void NetReplicationBridge::ResolvePendingComponents()
             continue;
         }
 
-        auto CreateResult = m_world->CreateComponentWithId(OwnerNode->Handle(), It->ComponentType, It->ComponentId);
+        NodeHandle OwnerHandle = OwnerNode->Handle();
+        auto CreateResult = m_world->CreateComponentWithId(OwnerHandle, It->ComponentType, It->ComponentId);
         if (!CreateResult)
         {
             ++It;

@@ -71,6 +71,43 @@ constexpr std::uint32_t kProjectConfigVersion = 1u;
     return true;
 }
 
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+struct WorldRenderSettingsRootSet
+{
+    std::vector<NodeHandle> AuthoredRoots{};
+    std::vector<NodeHandle> TransientRoots{};
+};
+
+[[nodiscard]] WorldRenderSettingsRootSet CollectWorldRenderSettingsRoots(World& WorldRef)
+{
+    WorldRenderSettingsRootSet Result{};
+    WorldRef.ForEachNode([&Result](const NodeHandle& Handle, BaseNode& Node) {
+        if (NodeCast<WorldRenderSettings>(&Node) == nullptr)
+        {
+            return;
+        }
+
+        if (Node.EditorTransient())
+        {
+            Result.TransientRoots.push_back(Handle);
+        }
+        else
+        {
+            Result.AuthoredRoots.push_back(Handle);
+        }
+    });
+    return Result;
+}
+
+void DestroyNodes(World& WorldRef, std::vector<NodeHandle>& Handles)
+{
+    for (NodeHandle& Handle : Handles)
+    {
+        (void)WorldRef.DestroyNode(Handle);
+    }
+}
+#endif
+
 [[nodiscard]] std::expected<std::string, std::string> JsonParseString(const std::string& Text, std::size_t& Position)
 {
     if (Position >= Text.size() || Text[Position] != '"')
@@ -780,8 +817,10 @@ Result GameProjectRuntime::LoadStartupLevel()
     // into the AssetManager loading api
 
     // Create a default camera and enable it
-    const auto Lvl = NodeCast<Level>(LoadParams.TargetWorld->Levels()[0].Borrowed());
-    const auto CameraNode = Lvl->CreateNode<BaseNode>("DefaultCamera")->Borrowed();
+    NodeHandle LevelHandle = LoadParams.TargetWorld->Levels()[0];
+    const auto Lvl = NodeCast<Level>(LoadParams.TargetWorld->BorrowedNode(LevelHandle));
+    NodeHandle CameraHandle = *Lvl->CreateNode<BaseNode>("DefaultCamera");
+    const auto CameraNode = LoadParams.TargetWorld->BorrowedNode(CameraHandle);
     auto CameraComp = CameraNode->Add<CameraComponent>();
     CameraComp->SetActive(true);
 
@@ -797,16 +836,40 @@ Result GameProjectRuntime::LoadDefaultRenderSettings()
         return Ok();
     }
 
-    if (!m_defaultRenderSettingsNode.IsNull())
-    {
-        (void)WorldPtr->DestroyNode(m_defaultRenderSettingsNode);
-        m_defaultRenderSettingsNode = {};
-    }
-
     const std::string DefaultSettingsAssetId = TrimCopy(m_project.DefaultRenderSettingsAssetId);
     if (DefaultSettingsAssetId.empty())
     {
+        WorldRenderSettingsRootSet ExistingRoots = CollectWorldRenderSettingsRoots(*WorldPtr);
+        DestroyNodes(*WorldPtr, ExistingRoots.TransientRoots);
+        m_defaultRenderSettingsNode = {};
         return Ok();
+    }
+
+    WorldRenderSettingsRootSet ExistingRoots = CollectWorldRenderSettingsRoots(*WorldPtr);
+    if (!ExistingRoots.AuthoredRoots.empty())
+    {
+        DestroyNodes(*WorldPtr, ExistingRoots.TransientRoots);
+        m_defaultRenderSettingsNode = {};
+        return Ok();
+    }
+
+    if (!ExistingRoots.TransientRoots.empty())
+    {
+        m_defaultRenderSettingsNode = ExistingRoots.TransientRoots.front();
+        for (std::size_t Index = 1; Index < ExistingRoots.TransientRoots.size(); ++Index)
+        {
+            NodeHandle Duplicate = ExistingRoots.TransientRoots[Index];
+            (void)WorldPtr->DestroyNode(Duplicate);
+        }
+
+        if (auto* ExistingNode = WorldPtr->BorrowedNode(m_defaultRenderSettingsNode);
+            NodeCast<WorldRenderSettings>(ExistingNode) != nullptr)
+        {
+            ExistingNode->EditorTransient(true);
+            return Ok();
+        }
+
+        m_defaultRenderSettingsNode = {};
     }
 
     TAssetRef<WorldRenderSettings> SettingsRef{};
@@ -819,9 +882,10 @@ Result GameProjectRuntime::LoadDefaultRenderSettings()
     }
 
     m_defaultRenderSettingsNode = *InstantiateResult;
-    if (auto* CreatedNode = m_defaultRenderSettingsNode.Borrowed();
+    if (auto* CreatedNode = WorldPtr->BorrowedNode(m_defaultRenderSettingsNode);
         NodeCast<WorldRenderSettings>(CreatedNode) != nullptr)
     {
+        CreatedNode->EditorTransient(true);
         (void)WorldPtr->RequestNodeOnCreate(m_defaultRenderSettingsNode);
         return Ok();
     }

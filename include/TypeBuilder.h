@@ -10,6 +10,7 @@
 
 #include "BaseComponent.h"
 #include "BaseNode.h"
+#include "NodeStorageFactoryRegistry.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TypeName.h"
@@ -1140,7 +1141,22 @@ public:
      */
     TExpected<TypeInfo*> Register()
     {
+        if constexpr (std::is_base_of_v<BaseNode, T>)
+        {
+            static_assert(DenseRuntimeNodeType<T>,
+                          "Reflected ECS node types must inherit NodeCRTP<Derived>, be move-only, and be noexcept movable");
+        }
+        if constexpr (std::is_base_of_v<BaseComponent, T>)
+        {
+            static_assert(DenseRuntimeComponentType<T>,
+                          "Reflected ECS component types must inherit ComponentCRTP<Derived>, be move-only, and be noexcept movable");
+        }
+
         auto Result = TypeRegistry::Instance().Register(std::move(m_info));
+        if constexpr (std::is_base_of_v<BaseNode, T>)
+        {
+            NodeStorageFactoryRegistry::Instance().Register<T>();
+        }
         if constexpr (std::is_base_of_v<BaseComponent, T>)
         {
             ComponentSerializationRegistry::Instance().Register<T>();

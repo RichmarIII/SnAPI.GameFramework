@@ -606,7 +606,10 @@ private:
     [[nodiscard]] ::SnAPI::AssetPipeline::AssetImportSettingsPtr BuildTypedImportSettingsForRecord(
         const AssetImportMetadataEntry& Record) const;
     void ClearAssetEditorImportSettingsBinding();
-    [[nodiscard]] BaseNode* ResolveAssetEditorNode(const NodeHandle& Node) const;
+    [[nodiscard]] BaseNode* ResolveAssetEditorNode(NodeHandle& InOutNode);
+    [[nodiscard]] const BaseNode* ResolveAssetEditorNode(const NodeHandle& Node) const;
+    [[nodiscard]] void* ResolveAssetEditorRuntimeTargetObject() const;
+    [[nodiscard]] bool HasAssetEditorRuntimeTarget() const;
     void RefreshAssetEditorHierarchy();
     void ClearAssetEditorState();
     void MaybeReportStatusMessageToStdout() const;
