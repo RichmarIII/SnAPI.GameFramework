@@ -15,6 +15,9 @@
 #if defined(SNAPI_GF_ENABLE_INPUT)
 #include <Input.h>
 #endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include <NetCommon.h>
+#endif
 #if defined(SNAPI_GF_ENABLE_UI)
 #include <UILayout.h>
 #endif
@@ -27,9 +30,12 @@ class TSubClassOf;
 template<typename TBase, typename TNameTag>
 class TAssetRef;
 class PawnBase;
+struct MaterialAssetRuntime;
 struct StaticMeshAssetRuntime;
 struct SkeletalMeshAssetRuntime;
 struct MaterialInstanceAssetRuntime;
+struct SkeletonAssetRuntime;
+struct AnimationAssetRuntime;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 class SSAOParamsNode;
 class SSGIParamsNode;
@@ -140,11 +146,18 @@ SNAPI_DEFINE_TYPE_NAME(double, "double")
 SNAPI_DEFINE_TYPE_NAME(std::string, "std::string")
 SNAPI_DEFINE_TYPE_NAME(std::vector<uint8_t>, "std::vector<uint8_t>")
 SNAPI_DEFINE_TYPE_NAME(Uuid, "SnAPI::GameFramework::Uuid")
+SNAPI_DEFINE_TYPE_NAME(TypeId, "SnAPI::GameFramework::TypeId")
 SNAPI_DEFINE_TYPE_NAME(Vec2, "SnAPI::GameFramework::Vec2")
 SNAPI_DEFINE_TYPE_NAME(Vec3, "SnAPI::GameFramework::Vec3")
 SNAPI_DEFINE_TYPE_NAME(Vec4, "SnAPI::GameFramework::Vec4")
 SNAPI_DEFINE_TYPE_NAME(Quat, "SnAPI::GameFramework::Quat")
 SNAPI_DEFINE_TYPE_NAME(TSubClassOf<PawnBase>, "SnAPI::GameFramework::TSubClassOf<SnAPI::GameFramework::PawnBase>")
+SNAPI_DEFINE_TYPE_NAME(MaterialAssetRuntime, "SnAPI::GameFramework::MaterialAssetRuntime")
+SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRuntime, "SnAPI::GameFramework::StaticMeshAssetRuntime")
+SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRuntime, "SnAPI::GameFramework::SkeletalMeshAssetRuntime")
+SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRuntime, "SnAPI::GameFramework::MaterialInstanceAssetRuntime")
+SNAPI_DEFINE_TYPE_NAME(SkeletonAssetRuntime, "SnAPI::GameFramework::SkeletonAssetRuntime")
+SNAPI_DEFINE_TYPE_NAME(AnimationAssetRuntime, "SnAPI::GameFramework::AnimationAssetRuntime")
 SNAPI_DEFINE_TYPE_NAME(PawnBaseAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::PawnBase>")
 SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::StaticMeshAssetRuntime>")
 SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalMeshAssetRuntime>")
@@ -174,10 +187,14 @@ SNAPI_DEFINE_TYPE_NAME(SnAPI::Physics::EBodyType, "SnAPI::Physics::EBodyType")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Physics::EShapeType, "SnAPI::Physics::EShapeType")
 #endif
 #if defined(SNAPI_GF_ENABLE_INPUT)
+SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EInputBackend, "SnAPI::Input::EInputBackend")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EKey, "SnAPI::Input::EKey")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EGamepadAxis, "SnAPI::Input::EGamepadAxis")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::EGamepadButton, "SnAPI::Input::EGamepadButton")
 SNAPI_DEFINE_TYPE_NAME(SnAPI::Input::DeviceId, "SnAPI::Input::DeviceId")
+#endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+SNAPI_DEFINE_TYPE_NAME(SnAPI::Networking::ESessionRole, "SnAPI::Networking::ESessionRole")
 #endif
 
 } // namespace SnAPI::GameFramework

@@ -16,6 +16,9 @@
 #include "GameFramework.hpp"
 #include "PathResolver.h"
 #include "TypeAutoRegistry.h"
+#include "UIAccordion.h"
+#include "UICheckbox.h"
+#include "UIComboBox.h"
 #include "UIContext.h"
 #include "UINumberField.h"
 #include "UIPropertyPanel.h"
@@ -87,6 +90,20 @@ struct SourceAssetEditorCameraNode : BaseNode, NodeCRTP<SourceAssetEditorCameraN
             (void)Add<CameraComponent>();
         }
     }
+};
+
+struct SourceAssetEditorFlagsComponent : BaseComponent, ComponentCRTP<SourceAssetEditorFlagsComponent>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorFlagsComponent";
+
+    MethodFlags Flags = MethodFlags(EMethodFlagBits::RpcReliable) | EMethodFlagBits::RpcNetServer;
+};
+
+struct SourceAssetEditorTypeIdComponent : BaseComponent, ComponentCRTP<SourceAssetEditorTypeIdComponent>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::SourceAssetEditorTypeIdComponent";
+
+    TypeId SelectedType = StaticTypeId<BaseNode>();
 };
 
 void EnsureSourceAssetEditorNodeHostRegistered()
@@ -170,6 +187,39 @@ void EnsureSourceAssetEditorCameraNodeRegistered()
 
     auto RegisterResult = TTypeBuilder<SourceAssetEditorCameraNode>(SourceAssetEditorCameraNode::kTypeName)
         .Base<BaseNode>()
+        .Constructor<>()
+        .Register();
+    REQUIRE(RegisterResult);
+}
+
+void EnsureSourceAssetEditorFlagsComponentRegistered()
+{
+    RegisterBuiltinTypes();
+
+    if (TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorFlagsComponent>()))
+    {
+        return;
+    }
+
+    auto RegisterResult = TTypeBuilder<SourceAssetEditorFlagsComponent>(SourceAssetEditorFlagsComponent::kTypeName)
+        .Field("Flags", &SourceAssetEditorFlagsComponent::Flags)
+        .Constructor<>()
+        .Register();
+    REQUIRE(RegisterResult);
+}
+
+void EnsureSourceAssetEditorTypeIdComponentRegistered()
+{
+    RegisterBuiltinTypes();
+    EnsureSourceAssetEditorNodeHostRegistered();
+
+    if (TypeRegistry::Instance().Find(StaticTypeId<SourceAssetEditorTypeIdComponent>()))
+    {
+        return;
+    }
+
+    auto RegisterResult = TTypeBuilder<SourceAssetEditorTypeIdComponent>(SourceAssetEditorTypeIdComponent::kTypeName)
+        .Field("SelectedType", &SourceAssetEditorTypeIdComponent::SelectedType)
         .Constructor<>()
         .Register();
     REQUIRE(RegisterResult);
@@ -361,6 +411,60 @@ std::vector<SnAPI::UI::UINumberField*> FindNumberFieldsUnder(SnAPI::UI::UIContex
         if (auto* NumberField = dynamic_cast<SnAPI::UI::UINumberField*>(&Context.GetElement(Id)))
         {
             Result.push_back(NumberField);
+        }
+    }
+
+    return Result;
+}
+
+std::vector<SnAPI::UI::UIComboBox*> FindComboBoxesUnder(SnAPI::UI::UIContext& Context,
+                                                        const SnAPI::UI::ElementId Root)
+{
+    std::vector<SnAPI::UI::ElementId> Elements{};
+    CollectElementAndDescendants(Context, Root, Elements);
+
+    std::vector<SnAPI::UI::UIComboBox*> Result{};
+    for (const SnAPI::UI::ElementId Id : Elements)
+    {
+        if (auto* ComboBox = dynamic_cast<SnAPI::UI::UIComboBox*>(&Context.GetElement(Id)))
+        {
+            Result.push_back(ComboBox);
+        }
+    }
+
+    return Result;
+}
+
+std::vector<SnAPI::UI::UICheckbox*> FindCheckboxesUnder(SnAPI::UI::UIContext& Context,
+                                                        const SnAPI::UI::ElementId Root)
+{
+    std::vector<SnAPI::UI::ElementId> Elements{};
+    CollectElementAndDescendants(Context, Root, Elements);
+
+    std::vector<SnAPI::UI::UICheckbox*> Result{};
+    for (const SnAPI::UI::ElementId Id : Elements)
+    {
+        if (auto* Checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&Context.GetElement(Id)))
+        {
+            Result.push_back(Checkbox);
+        }
+    }
+
+    return Result;
+}
+
+std::vector<SnAPI::UI::UIAccordion*> FindAccordionsUnder(SnAPI::UI::UIContext& Context,
+                                                         const SnAPI::UI::ElementId Root)
+{
+    std::vector<SnAPI::UI::ElementId> Elements{};
+    CollectElementAndDescendants(Context, Root, Elements);
+
+    std::vector<SnAPI::UI::UIAccordion*> Result{};
+    for (const SnAPI::UI::ElementId Id : Elements)
+    {
+        if (auto* Accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&Context.GetElement(Id)))
+        {
+            Result.push_back(Accordion);
         }
     }
 
@@ -1148,4 +1252,261 @@ TEST_CASE("Editor asset service routes Conduit class source assets through the C
     CHECK(SavedClass.Name == "EnemyController");
     CHECK(SavedClass.HostType == StaticTypeId<SourceAssetEditorNodeHost>());
     CHECK(SavedClass.Graph.GetAssetName() == "Conduit/EnemyGraph.conduitgraph");
+}
+
+TEST_CASE("UI property panel uses the asset picker for Conduit class refs",
+          "[Assets][Editor][Source][Conduit]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.CreateSourceAssetByType(
+        Context,
+        StaticTypeId<Conduit::GraphAsset>(),
+        "EnemyGraph",
+        "Conduit"));
+    REQUIRE(Host.AssetService.CreateSourceAssetByType(
+        Context,
+        StaticTypeId<Conduit::ClassAsset>(),
+        "EnemyClass",
+        "Conduit"));
+
+    World WorldInstance("ConduitClassRefPropertyPanel");
+    auto NodeHandleResult = WorldInstance.CreateNode<BaseNode>("ConduitHost");
+    REQUIRE(NodeHandleResult);
+
+    auto* Node = NodeHandleResult->Borrowed();
+    REQUIRE(Node != nullptr);
+
+    auto ComponentResult = Node->Add<Conduit::ClassComponent>();
+    REQUIRE(ComponentResult);
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindNode(Node));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    const auto LabelId = FindTextElementByText(*UiContext, PanelBuilder.Handle().Id, "Class");
+    REQUIRE(LabelId.has_value());
+
+    const SnAPI::UI::ElementId RowId = UiContext->GetParent(*LabelId);
+    REQUIRE(RowId.Value != 0);
+
+    auto ComboBoxes = FindComboBoxesUnder(*UiContext, RowId);
+    REQUIRE(ComboBoxes.size() == 1);
+
+    const auto& Items = ComboBoxes.front()->Items();
+    REQUIRE_FALSE(Items.empty());
+    CHECK(Items.front() == "<None>");
+}
+
+TEST_CASE("UI property panel renders TFlags fields as accordion checkbox groups",
+          "[Assets][Editor][Source]")
+{
+    RegisterBuiltinTypes();
+    EnsureSourceAssetEditorFlagsComponentRegistered();
+
+    World WorldInstance("FlagsPropertyPanelWorld");
+    auto NodeHandleResult = WorldInstance.CreateNode<BaseNode>("FlagsHost");
+    REQUIRE(NodeHandleResult);
+
+    auto* Node = NodeHandleResult->Borrowed();
+    REQUIRE(Node != nullptr);
+
+    auto ComponentResult = Node->Add<SourceAssetEditorFlagsComponent>();
+    REQUIRE(ComponentResult);
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindNode(Node));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    const auto LabelId = FindTextElementByText(*UiContext, PanelBuilder.Handle().Id, "Flags");
+    REQUIRE(LabelId.has_value());
+
+    const SnAPI::UI::ElementId RowId = UiContext->GetParent(*LabelId);
+    REQUIRE(RowId.Value != 0);
+
+    auto Accordions = FindAccordionsUnder(*UiContext, RowId);
+    REQUIRE(Accordions.size() == 1);
+
+    auto Checkboxes = FindCheckboxesUnder(*UiContext, RowId);
+    REQUIRE(Checkboxes.size() >= 3);
+
+    bool FoundReliable = false;
+    bool FoundServer = false;
+    SnAPI::UI::UICheckbox* ClientCheckbox = nullptr;
+    for (auto* Checkbox : Checkboxes)
+    {
+        const std::string Label =
+            Checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::LabelKey, std::string{});
+        if (Label == "RpcReliable")
+        {
+            FoundReliable = Checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false);
+        }
+        else if (Label == "RpcNetServer")
+        {
+            FoundServer = Checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false);
+        }
+        else if (Label == "RpcNetClient")
+        {
+            ClientCheckbox = Checkbox;
+        }
+    }
+
+    CHECK(FoundReliable);
+    CHECK(FoundServer);
+    REQUIRE(ClientCheckbox != nullptr);
+
+    ClientCheckbox->Checked().Set(true);
+    CHECK(ComponentResult->Flags.Has(EMethodFlagBits::RpcNetClient));
+}
+
+TEST_CASE("UI property panel renders TypeId fields as reflected-type combo boxes",
+          "[Assets][Editor][Source]")
+{
+    RegisterBuiltinTypes();
+    EnsureSourceAssetEditorNodeHostRegistered();
+    EnsureSourceAssetEditorTypeIdComponentRegistered();
+    REQUIRE(TypeAutoRegistry::Instance().Ensure(StaticTypeId<TSubClassOf<PawnBase>>()));
+    REQUIRE(TypeRegistry::Instance().Find(StaticTypeId<TSubClassOf<PawnBase>>()) != nullptr);
+
+    World WorldInstance("TypeIdPropertyPanelWorld");
+    auto NodeHandleResult = WorldInstance.CreateNode<BaseNode>("TypeIdHost");
+    REQUIRE(NodeHandleResult);
+
+    auto* Node = NodeHandleResult->Borrowed();
+    REQUIRE(Node != nullptr);
+
+    auto ComponentResult = Node->Add<SourceAssetEditorTypeIdComponent>();
+    REQUIRE(ComponentResult);
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindNode(Node));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    const auto LabelId = FindTextElementByText(*UiContext, PanelBuilder.Handle().Id, "Selected Type");
+    REQUIRE(LabelId.has_value());
+
+    const SnAPI::UI::ElementId RowId = UiContext->GetParent(*LabelId);
+    REQUIRE(RowId.Value != 0);
+
+    auto ComboBoxes = FindComboBoxesUnder(*UiContext, RowId);
+    REQUIRE(ComboBoxes.size() == 1);
+
+    SnAPI::UI::UIComboBox* Combo = ComboBoxes.front();
+    REQUIRE(Combo != nullptr);
+
+    const auto& Items = Combo->Items();
+    REQUIRE_FALSE(Items.empty());
+    CHECK(Items.front() == "<None>");
+    CHECK(std::find(Items.begin(), Items.end(), "BaseNode") != Items.end());
+    CHECK(std::find(Items.begin(), Items.end(), "SourceAssetEditorNodeHost") != Items.end());
+    CHECK(std::find(Items.begin(), Items.end(), "TSubClassOf<PawnBase>") != Items.end());
+    CHECK(Combo->SelectedText() == "BaseNode");
+
+    REQUIRE(Combo->SelectByText("SourceAssetEditorNodeHost", true));
+    CHECK(ComponentResult->SelectedType == StaticTypeId<SourceAssetEditorNodeHost>());
+
+    ComponentResult->SelectedType = StaticTypeId<TSubClassOf<PawnBase>>();
+    Panel.RefreshFromModel();
+    CHECK(Combo->SelectedText() == "TSubClassOf<PawnBase>");
+}
+
+TEST_CASE("Typed prefabs with Conduit class components reopen in the asset editor",
+          "[Assets][Editor][Source][Conduit]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.CreatePrefabSourceAssetByNodeType(
+        Context,
+        StaticTypeId<BaseNode>(),
+        "ConduitHost",
+        "Gameplay"));
+
+    const auto* Created = Host.AssetService.SelectedAsset();
+    REQUIRE(Created != nullptr);
+    const std::string CreatedKey = Created->Key;
+    REQUIRE(CreatedKey == "Gameplay/ConduitHost.prefab");
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+    auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+
+    auto* RootNode = static_cast<BaseNode*>(Session.TargetObject);
+    REQUIRE(RootNode != nullptr);
+
+    auto ComponentResult = RootNode->Add<Conduit::ClassComponent>();
+    REQUIRE(ComponentResult);
+    ComponentResult->Class.EditAssetName() = "Conduit/TestClass.conduitclass";
+
+    Host.AssetService.TickAssetEditorSession(0.0f);
+    REQUIRE(Host.AssetService.AssetEditorSession().RuntimeDirty);
+    REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    Host.AssetService.CloseAssetEditor();
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+
+    Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+
+    auto* ReopenedNode = static_cast<BaseNode*>(Session.TargetObject);
+    REQUIRE(ReopenedNode != nullptr);
+    auto ReopenedComponent = ReopenedNode->Component<Conduit::ClassComponent>();
+    REQUIRE(ReopenedComponent);
+    CHECK(ReopenedComponent->Class.GetAssetName() == "Conduit/TestClass.conduitclass");
 }

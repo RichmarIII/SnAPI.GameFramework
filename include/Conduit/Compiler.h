@@ -295,7 +295,7 @@ private:
      * @param Slot Slot metadata.
      * @return Success or error.
      */
-    Result ValidateInstanceSlot(const SlotDesc& Slot) const;
+    Result ValidateInstanceSlot(const SlotDesc& Slot, const TypeInfo& OwnerType, bool RequireMutable) const;
     /**
      * @brief Validate that a slot is a bool value slot suitable for branching.
      * @param Condition Slot id.

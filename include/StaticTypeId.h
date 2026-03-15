@@ -22,7 +22,7 @@ namespace SnAPI::GameFramework
 template<typename T>
 inline const TypeId& StaticTypeId()
 {
-    static const TypeId Id = TypeIdFromName(TTypeNameV<T>);
+    static const TypeId Id = TypeIdFromName(ReflectedTypeName<T>());
     return Id;
 }
 

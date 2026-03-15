@@ -8,6 +8,7 @@
 
 #include "Expected.h"
 #include "GameThreading.h"
+#include "TypeName.h"
 
 #include <Input.h>
 
@@ -271,6 +272,9 @@ private:
     std::unique_ptr<SnAPI::Input::InputContext> m_context{}; /**< @brief Active input context instance. */
     bool m_initialized = false; /**< @brief True when context has been initialized and can be pumped. */
 };
+
+SNAPI_DEFINE_TYPE_NAME(InputSystem, "SnAPI::GameFramework::InputSystem")
+SNAPI_DEFINE_TYPE_NAME(InputBootstrapSettings, "SnAPI::GameFramework::InputBootstrapSettings")
 
 } // namespace SnAPI::GameFramework
 

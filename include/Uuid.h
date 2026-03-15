@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -20,13 +21,76 @@ namespace SnAPI::GameFramework
  * Backed by the `stduuid` library.
  */
 using Uuid = uuids::uuid;
+
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Alias used for reflected type ids.
+ * @brief Distinct wrapper used for reflected type ids.
  *
- * `TypeId` values are deterministic UUIDv5 identifiers derived from stable reflected type names.
+ * `TypeId` stays UUID-backed, but it is intentionally a separate reflected type so tooling can
+ * distinguish generic UUID values from "pick one reflected type" values.
  */
-using TypeId = Uuid;
+struct TypeId
+{
+    Uuid Value{};
+
+    constexpr TypeId() = default;
+    constexpr TypeId(const Uuid& InValue)
+        : Value(InValue)
+    {
+    }
+    constexpr TypeId(Uuid&& InValue)
+        : Value(std::move(InValue))
+    {
+    }
+
+    [[nodiscard]] bool is_nil() const noexcept
+    {
+        return Value.is_nil();
+    }
+
+    [[nodiscard]] auto as_bytes() const noexcept
+    {
+        return Value.as_bytes();
+    }
+
+    [[nodiscard]] std::string ToString() const
+    {
+        return uuids::to_string(Value);
+    }
+
+    constexpr operator const Uuid&() const noexcept
+    {
+        return Value;
+    }
+
+    constexpr operator Uuid&() noexcept
+    {
+        return Value;
+    }
+
+    friend bool operator==(const TypeId&, const TypeId&) = default;
+    friend bool operator<(const TypeId& Left, const TypeId& Right) noexcept
+    {
+        const auto LeftBytes = Left.Value.as_bytes();
+        const auto RightBytes = Right.Value.as_bytes();
+        return std::lexicographical_compare(
+            LeftBytes.begin(),
+            LeftBytes.end(),
+            RightBytes.begin(),
+            RightBytes.end(),
+            [] (const auto LeftByte, const auto RightByte) {
+                return std::to_integer<std::uint8_t>(LeftByte) < std::to_integer<std::uint8_t>(RightByte);
+            });
+    }
+    friend bool operator==(const TypeId& Left, const Uuid& Right) noexcept
+    {
+        return Left.Value == Right;
+    }
+    friend bool operator==(const Uuid& Left, const TypeId& Right) noexcept
+    {
+        return Left == Right.Value;
+    }
+};
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -68,7 +132,7 @@ inline const Uuid& TypeIdNamespace()
 inline TypeId TypeIdFromName(std::string_view Name)
 {
     uuids::uuid_name_generator Generator(TypeIdNamespace());
-    return Generator(std::string(Name));
+    return TypeId{Generator(std::string(Name))};
 }
 
 /**
@@ -97,6 +161,15 @@ inline std::string ToString(const Uuid& Id)
 
 /**
  * @ingroup SnAPI_GameFramework
+ * @brief Convert a reflected type id to its canonical lowercase string form.
+ */
+inline std::string ToString(const TypeId& Id)
+{
+    return uuids::to_string(Id.Value);
+}
+
+/**
+ * @ingroup SnAPI_GameFramework
  * @brief Convert a UUID to its split high/low representation.
  * @param Id UUID to split.
  * @return `UuidParts` containing the high and low 64-bit values.
@@ -115,6 +188,15 @@ inline UuidParts ToParts(const Uuid& Id)
         Low = (Low << 8) | static_cast<uint64_t>(std::to_integer<uint8_t>(Bytes[i]));
     }
     return {High, Low};
+}
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Convert a reflected type id to its split high/low representation.
+ */
+inline UuidParts ToParts(const TypeId& Id)
+{
+    return ToParts(Id.Value);
 }
 
 /**
@@ -161,6 +243,11 @@ struct UuidHash
     {
         const auto Parts = ToParts(Id);
         return static_cast<std::size_t>(Parts.High ^ (Parts.Low + 0x9e3779b97f4a7c15ULL + (Parts.High << 6) + (Parts.High >> 2)));
+    }
+
+    std::size_t operator()(const TypeId& Id) const noexcept
+    {
+        return (*this)(Id.Value);
     }
 };
 

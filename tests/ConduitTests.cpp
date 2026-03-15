@@ -87,6 +87,51 @@ struct ConduitComponentHarness : BaseComponent, ComponentCRTP<ConduitComponentHa
     }
 };
 
+struct ConduitPointerBase
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitPointerBase";
+
+    int Value = 0;
+
+    [[nodiscard]] int ReadValue() const
+    {
+        return Value;
+    }
+};
+
+struct ConduitPointerDerived : ConduitPointerBase
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitPointerDerived";
+};
+
+struct ConduitPointerEmitter
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitPointerEmitter";
+
+    ConduitPointerDerived* Target = nullptr;
+    ConduitPointerDerived OwnedTarget{};
+
+    [[nodiscard]] ConduitPointerDerived* GetTarget() const
+    {
+        return Target;
+    }
+
+    [[nodiscard]] ConduitPointerDerived& GetOwnedTarget()
+    {
+        return OwnedTarget;
+    }
+
+    [[nodiscard]] const ConduitPointerBase& GetOwnedTargetBase() const
+    {
+        return OwnedTarget;
+    }
+
+    [[nodiscard]] int ReadPeerValue(const ConduitPointerBase* Peer) const
+    {
+        return Peer ? Peer->ReadValue() : -1;
+    }
+};
+
 struct HandleResolverState
 {
     std::unordered_map<int, ConduitHarness*> Harnesses;
@@ -191,6 +236,38 @@ void EnsureConduitHarnessRegistered()
             .Constructor<>()
             .Register();
         REQUIRE(ComponentRegisterResult);
+    }
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerBase>()))
+    {
+        auto BaseRegisterResult = TTypeBuilder<ConduitPointerBase>(ConduitPointerBase::kTypeName)
+            .Field("Value", &ConduitPointerBase::Value)
+            .Method("ReadValue", &ConduitPointerBase::ReadValue)
+            .Constructor<>()
+            .Register();
+        REQUIRE(BaseRegisterResult);
+    }
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerDerived>()))
+    {
+        auto DerivedRegisterResult = TTypeBuilder<ConduitPointerDerived>(ConduitPointerDerived::kTypeName)
+            .Base<ConduitPointerBase>()
+            .Constructor<>()
+            .Register();
+        REQUIRE(DerivedRegisterResult);
+    }
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerEmitter>()))
+    {
+        auto EmitterRegisterResult = TTypeBuilder<ConduitPointerEmitter>(ConduitPointerEmitter::kTypeName)
+            .Field("Target", &ConduitPointerEmitter::Target)
+            .Method("GetTarget", &ConduitPointerEmitter::GetTarget)
+            .Method("GetOwnedTarget", &ConduitPointerEmitter::GetOwnedTarget)
+            .Method("GetOwnedTargetBase", &ConduitPointerEmitter::GetOwnedTargetBase)
+            .Method("ReadPeerValue", &ConduitPointerEmitter::ReadPeerValue)
+            .Constructor<>()
+            .Register();
+        REQUIRE(EmitterRegisterResult);
     }
 }
 
@@ -792,6 +869,125 @@ TEST_CASE("Conduit resolves ComponentHandle automatically for reflected componen
     REQUIRE(ReadCharge->get() == 4);
 }
 
+TEST_CASE("Conduit resolves reflected pointer values as instance targets")
+{
+    EnsureConduitHarnessRegistered();
+
+    const TypeInfo* EmitterType = TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerEmitter>());
+    const TypeInfo* BaseType = TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerBase>());
+    REQUIRE(EmitterType != nullptr);
+    REQUIRE(BaseType != nullptr);
+
+    GraphBuilder Builder(*EmitterType);
+
+    auto TargetSlot = Builder.AddSlot(StaticTypeId<ConduitPointerDerived*>());
+    auto ReadValueSlot = Builder.AddSlot(StaticTypeId<int>());
+    REQUIRE(TargetSlot);
+    REQUIRE(ReadValueSlot);
+
+    REQUIRE(Builder.AddSelfMethodCall("GetTarget", {}, *TargetSlot));
+    REQUIRE(Builder.AddMethodCall(*BaseType, *TargetSlot, "ReadValue", {}, *ReadValueSlot));
+
+    auto GraphResult = std::move(Builder).Build();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitPointerDerived Target{};
+    Target.Value = 33;
+
+    ConduitPointerEmitter Emitter{};
+    Emitter.Target = &Target;
+
+    ExecutionContext Context{
+        .Self = &Emitter,
+        .SelfType = EmitterType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    auto ReadValue = Instance.Frame().AsConstRef<int>(*ReadValueSlot);
+    REQUIRE(ReadValue);
+    CHECK(ReadValue->get() == 33);
+}
+
+TEST_CASE("Conduit matches derived reflected pointers to base pointer params")
+{
+    EnsureConduitHarnessRegistered();
+
+    const TypeInfo* EmitterType = TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerEmitter>());
+    REQUIRE(EmitterType != nullptr);
+
+    GraphBuilder Builder(*EmitterType);
+
+    auto TargetSlot = Builder.AddSlot(StaticTypeId<ConduitPointerDerived*>());
+    auto ReadValueSlot = Builder.AddSlot(StaticTypeId<int>());
+    REQUIRE(TargetSlot);
+    REQUIRE(ReadValueSlot);
+
+    REQUIRE(Builder.AddSelfMethodCall("GetTarget", {}, *TargetSlot));
+    const std::array<SlotId, 1> Args{*TargetSlot};
+    REQUIRE(Builder.AddSelfMethodCall("ReadPeerValue", Args, *ReadValueSlot));
+
+    auto GraphResult = std::move(Builder).Build();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitPointerDerived Target{};
+    Target.Value = 91;
+
+    ConduitPointerEmitter Emitter{};
+    Emitter.Target = &Target;
+
+    ExecutionContext Context{
+        .Self = &Emitter,
+        .SelfType = EmitterType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    auto ReadValue = Instance.Frame().AsConstRef<int>(*ReadValueSlot);
+    REQUIRE(ReadValue);
+    CHECK(ReadValue->get() == 91);
+}
+
+TEST_CASE("Conduit treats reflected reference returns as pointer-valued outputs")
+{
+    EnsureConduitHarnessRegistered();
+
+    const TypeInfo* EmitterType = TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerEmitter>());
+    const TypeInfo* BaseType = TypeRegistry::Instance().Find(StaticTypeId<ConduitPointerBase>());
+    REQUIRE(EmitterType != nullptr);
+    REQUIRE(BaseType != nullptr);
+
+    GraphBuilder Builder(*EmitterType);
+
+    auto TargetSlot = Builder.AddSlot(StaticTypeId<const ConduitPointerBase*>());
+    auto ReadValueSlot = Builder.AddSlot(StaticTypeId<int>());
+    REQUIRE(TargetSlot);
+    REQUIRE(ReadValueSlot);
+
+    REQUIRE(Builder.AddSelfMethodCall("GetOwnedTargetBase", {}, *TargetSlot));
+    REQUIRE(Builder.AddMethodCall(*BaseType, *TargetSlot, "ReadValue", {}, *ReadValueSlot));
+
+    auto GraphResult = std::move(Builder).Build();
+    REQUIRE(GraphResult);
+
+    const auto* ReadMethod = std::get<InstanceMethodCallNodeData>(GraphResult->Nodes.back().Data).Method;
+    REQUIRE(ReadMethod != nullptr);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitPointerEmitter Emitter{};
+    Emitter.OwnedTarget.Value = 47;
+
+    ExecutionContext Context{
+        .Self = &Emitter,
+        .SelfType = EmitterType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    auto ReadValue = Instance.Frame().AsConstRef<int>(*ReadValueSlot);
+    REQUIRE(ReadValue);
+    CHECK(ReadValue->get() == 47);
+}
+
 TEST_CASE("Conduit graph asset payload serializer roundtrips authored data")
 {
     EnsureConduitHarnessRegistered();
@@ -1123,6 +1319,251 @@ TEST_CASE("Conduit graph variables initialize defaults and persist across entryp
     Output = Instance.Frame().AsConstRef<int>(SlotId{3});
     REQUIRE(Output);
     REQUIRE(Output->get() == 7);
+}
+
+TEST_CASE("Conduit graph assets compile explicit exec targets and run pure producers before impure consumers")
+{
+    EnsureConduitHarnessRegistered();
+
+    const Uuid EntryId = NewUuid();
+    const Uuid ConstantId = NewUuid();
+    const Uuid SetId = NewUuid();
+    const Uuid CounterId = NewUuid();
+
+    GraphAsset Authored{};
+    Authored.Name = "ExplicitExecFlow";
+    Authored.SelfType = StaticTypeId<ConduitHarness>();
+    Authored.Slots = {
+        GraphSlotAsset{.Name = "Value", .Type = StaticTypeId<int>(), .Kind = ESlotKind::Value},
+    };
+    Authored.Variables = {
+        GraphVariableAsset{
+            .Id = CounterId,
+            .Name = "Counter",
+            .Type = StaticTypeId<int>(),
+            .DefaultValue = MakeSerializedValue(1),
+        },
+    };
+    Authored.Nodes = {
+        GraphNodeAsset{
+            .Id = EntryId,
+            .Kind = EGraphAssetNodeKind::EntryPoint,
+            .EntryPointName = "AddOnce",
+            .ExecTargetNodeId = SetId,
+        },
+        GraphNodeAsset{
+            .Id = ConstantId,
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(9),
+            .Output = SlotId{0},
+        },
+        GraphNodeAsset{
+            .Id = SetId,
+            .Kind = EGraphAssetNodeKind::VariableSet,
+            .VariableId = CounterId,
+            .Input = SlotId{0},
+        },
+    };
+
+    auto GraphResult = Authored.Compile();
+    REQUIRE(GraphResult);
+    const CompiledGraphVariable* CounterVariable = GraphResult->FindVariable("Counter");
+    REQUIRE(CounterVariable != nullptr);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    REQUIRE(Instance.ExecuteEntry("AddOnce", Context));
+
+    auto CounterValue = Instance.Frame().AsConstRef<int>(CounterVariable->Slot);
+    REQUIRE(CounterValue);
+    CHECK(CounterValue->get() == 9);
+}
+
+TEST_CASE("Conduit explicit exec branches consume pure string equality producers before branching")
+{
+    EnsureConduitHarnessRegistered();
+
+    const Uuid EntryId = NewUuid();
+    const Uuid EqualId = NewUuid();
+    const Uuid BranchId = NewUuid();
+    const Uuid TrueSetId = NewUuid();
+    const Uuid FalseSetId = NewUuid();
+
+    GraphAsset Authored{};
+    Authored.Name = "ExplicitBranchStringEqual";
+    Authored.SelfType = StaticTypeId<ConduitHarness>();
+    Authored.Slots = {
+        GraphSlotAsset{.Name = "Left", .Type = StaticTypeId<std::string>(), .Kind = ESlotKind::Value},
+        GraphSlotAsset{.Name = "Right", .Type = StaticTypeId<std::string>(), .Kind = ESlotKind::Value},
+        GraphSlotAsset{.Name = "Condition", .Type = StaticTypeId<bool>(), .Kind = ESlotKind::Value},
+        GraphSlotAsset{.Name = "TrueValue", .Type = StaticTypeId<int>(), .Kind = ESlotKind::Value},
+        GraphSlotAsset{.Name = "FalseValue", .Type = StaticTypeId<int>(), .Kind = ESlotKind::Value},
+    };
+    Authored.Nodes = {
+        GraphNodeAsset{
+            .Id = EntryId,
+            .Kind = EGraphAssetNodeKind::EntryPoint,
+            .EntryPointName = "ChoosePath",
+            .ExecTargetNodeId = BranchId,
+        },
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(std::string("Alpha")),
+            .Output = SlotId{0},
+        },
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(std::string("Alpha")),
+            .Output = SlotId{1},
+        },
+        GraphNodeAsset{
+            .Id = EqualId,
+            .Kind = EGraphAssetNodeKind::BinaryIntrinsic,
+            .BinaryOp = EBinaryIntrinsicOp::Equal,
+            .Left = SlotId{0},
+            .Right = SlotId{1},
+            .Output = SlotId{2},
+        },
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(11),
+            .Output = SlotId{3},
+        },
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(27),
+            .Output = SlotId{4},
+        },
+        GraphNodeAsset{
+            .Id = BranchId,
+            .Kind = EGraphAssetNodeKind::Branch,
+            .ExecTargetNodeId = TrueSetId,
+            .FalseExecTargetNodeId = FalseSetId,
+            .Condition = SlotId{2},
+        },
+        GraphNodeAsset{
+            .Id = TrueSetId,
+            .Kind = EGraphAssetNodeKind::SelfFieldWrite,
+            .MemberName = "Health",
+            .Input = SlotId{3},
+        },
+        GraphNodeAsset{
+            .Id = FalseSetId,
+            .Kind = EGraphAssetNodeKind::SelfFieldWrite,
+            .MemberName = "Health",
+            .Input = SlotId{4},
+        },
+    };
+
+    auto GraphResult = Authored.Compile();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    const Result ExecuteResult = Instance.ExecuteEntry("ChoosePath", Context);
+    REQUIRE(ExecuteResult);
+    CHECK(Harness.Health == 11);
+}
+
+TEST_CASE("Conduit explicit exec branches honor literal true conditions")
+{
+    EnsureConduitHarnessRegistered();
+
+    const Uuid EntryId = NewUuid();
+    const Uuid ConditionId = NewUuid();
+    const Uuid BranchId = NewUuid();
+    const Uuid TrueValueId = NewUuid();
+    const Uuid FalseValueId = NewUuid();
+    const Uuid TrueSetId = NewUuid();
+    const Uuid FalseSetId = NewUuid();
+
+    GraphAsset Authored{};
+    Authored.Name = "ExplicitBranchLiteralTrue";
+    Authored.SelfType = StaticTypeId<ConduitHarness>();
+    Authored.Slots = {
+        GraphSlotAsset{.Name = "Condition", .Type = StaticTypeId<bool>(), .Kind = ESlotKind::Value},
+        GraphSlotAsset{.Name = "TrueValue", .Type = StaticTypeId<int>(), .Kind = ESlotKind::Value},
+        GraphSlotAsset{.Name = "FalseValue", .Type = StaticTypeId<int>(), .Kind = ESlotKind::Value},
+    };
+    Authored.Nodes = {
+        GraphNodeAsset{
+            .Id = EntryId,
+            .Kind = EGraphAssetNodeKind::EntryPoint,
+            .EntryPointName = "ChoosePath",
+            .ExecTargetNodeId = BranchId,
+        },
+        GraphNodeAsset{
+            .Id = ConditionId,
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(true),
+            .Output = SlotId{0},
+        },
+        GraphNodeAsset{
+            .Id = TrueValueId,
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(11),
+            .Output = SlotId{1},
+        },
+        GraphNodeAsset{
+            .Id = FalseValueId,
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(27),
+            .Output = SlotId{2},
+        },
+        GraphNodeAsset{
+            .Id = BranchId,
+            .Kind = EGraphAssetNodeKind::Branch,
+            .ExecTargetNodeId = TrueSetId,
+            .FalseExecTargetNodeId = FalseSetId,
+            .Condition = SlotId{0},
+        },
+        GraphNodeAsset{
+            .Id = TrueSetId,
+            .Kind = EGraphAssetNodeKind::SelfFieldWrite,
+            .MemberName = "Health",
+            .Input = SlotId{1},
+        },
+        GraphNodeAsset{
+            .Id = FalseSetId,
+            .Kind = EGraphAssetNodeKind::SelfFieldWrite,
+            .MemberName = "Health",
+            .Input = SlotId{2},
+        },
+    };
+
+    auto GraphResult = CompileGraphAsset(Authored);
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    REQUIRE(Instance.ExecuteEntry("ChoosePath", Context));
+    REQUIRE(Harness.Health == 11);
 }
 
 TEST_CASE("Conduit class assets serialize load and compile against host nodes")

@@ -166,6 +166,27 @@ private:
     return std::unexpected(MakeError(EErrorCode::NotFound, "Field does not expose a readable reflected value path"));
 }
 
+[[nodiscard]] bool CanAuthorField(const FieldInfo& Field)
+{
+    if (Field.IsConst)
+    {
+        return false;
+    }
+
+    if (Field.Setter || Field.RawSetter || Field.MutablePointer)
+    {
+        return true;
+    }
+
+    // Non-const view getters can still expose mutable backing storage.
+    if (Field.ViewGetter)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 Result AssignConstructedValue(const TypeInfo& ValueType, const void* SourceValue, void* DestValue)
 {
     if (!DestValue)
@@ -269,6 +290,10 @@ TExpected<std::vector<NodeFieldAsset>> CaptureFields(const TypeId& OwnerType, co
     for (const ReflectedFieldRef& Ref : TypeRegistry::Instance().CollectFields(OwnerType, true))
     {
         if (!Ref.Field)
+        {
+            continue;
+        }
+        if (!CanAuthorField(*Ref.Field))
         {
             continue;
         }

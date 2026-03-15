@@ -613,3 +613,160 @@ TEST_CASE("Prefab capture resolves subtree components from UUID-only live node h
     REQUIRE(RoundTripped.Nodes.front().Children.front().Components.size() == 1);
     CHECK(RoundTripped.Nodes.front().Children.front().Components.front().Type == StaticTypeId<TransformComponent>());
 }
+
+TEST_CASE("Prefab capture skips read-only Conduit class component diagnostics", "[Assets][Source][Conduit]")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("ConduitPrefabCaptureWorld");
+    auto RootHandleResult = SourceWorld.CreateNode("ConduitRoot");
+    REQUIRE(RootHandleResult);
+
+    BaseNode* RootNode = RootHandleResult->Borrowed();
+    REQUIRE(RootNode != nullptr);
+
+    auto ComponentResult = RootNode->Add<Conduit::ClassComponent>();
+    REQUIRE(ComponentResult);
+    ComponentResult->Class.EditAssetName() = "Conduit/TestClass.conduitclass";
+
+    auto CaptureResult = CaptureNodeAsset(*RootNode);
+    REQUIRE(CaptureResult);
+    REQUIRE(CaptureResult->Nodes.size() == 1);
+    REQUIRE(CaptureResult->Nodes.front().Components.size() == 1);
+
+    const auto& Fields = CaptureResult->Nodes.front().Components.front().Fields;
+    CHECK(std::any_of(Fields.begin(), Fields.end(), [](const NodeFieldAsset& Field) {
+        return Field.Name == "Class";
+    }));
+    CHECK(std::none_of(Fields.begin(), Fields.end(), [](const NodeFieldAsset& Field) {
+        return Field.Name == "Bound" || Field.Name == "LastError";
+    }));
+
+    auto JsonResult = SerializeAuthoredAssetToJson(*CaptureResult);
+    REQUIRE(JsonResult);
+}
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+
+TEST_CASE("Authored asset JSON saves collider enum and flags fields semantically", "[Assets][Source][Physics]")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("ColliderSemanticSaveWorld");
+    auto NodeHandleResult = SourceWorld.CreateNode("ColliderNode");
+    REQUIRE(NodeHandleResult);
+
+    BaseNode* Node = NodeHandleResult->Borrowed();
+    REQUIRE(Node != nullptr);
+
+    auto ColliderResult = Node->Add<ColliderComponent>();
+    REQUIRE(ColliderResult);
+
+    auto& Settings = ColliderResult->EditSettings();
+    Settings.Shape = SnAPI::Physics::EShapeType::Sphere;
+    Settings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+    Settings.Mask = CollisionMaskFlags(ECollisionFilterBits::WorldStatic)
+                  | CollisionMaskFlags(ECollisionFilterBits::WorldDynamic);
+
+    auto CaptureResult = CaptureNodeAsset(*Node);
+    REQUIRE(CaptureResult);
+
+    auto JsonResult = SerializeAuthoredAssetToJson(*CaptureResult);
+    REQUIRE(JsonResult);
+
+    const nlohmann::json Root = nlohmann::json::parse(*JsonResult);
+    const auto& SettingsJson = Root["Asset"]["Nodes"][0]["Components"][0]["Fields"][0]["Value"]["Value"];
+
+    REQUIRE(SettingsJson.contains("Shape"));
+    CHECK(SettingsJson["Shape"] == "Sphere");
+
+    REQUIRE(SettingsJson.contains("Layer"));
+    REQUIRE(SettingsJson["Layer"].is_array());
+    REQUIRE(SettingsJson["Layer"].size() == 1);
+    CHECK(SettingsJson["Layer"][0] == "WorldStatic");
+
+    REQUIRE(SettingsJson.contains("Mask"));
+    REQUIRE(SettingsJson["Mask"].is_array());
+    REQUIRE(SettingsJson["Mask"].size() == 2);
+    CHECK(std::find(SettingsJson["Mask"].begin(), SettingsJson["Mask"].end(), "WorldStatic") != SettingsJson["Mask"].end());
+    CHECK(std::find(SettingsJson["Mask"].begin(), SettingsJson["Mask"].end(), "WorldDynamic") != SettingsJson["Mask"].end());
+
+    CHECK(JsonResult->find("\"$type\":\"SnAPI::Physics::EShapeType\"") == std::string::npos);
+    CHECK(JsonResult->find("\"$type\":\"SnAPI::GameFramework::CollisionFilterFlags\"") == std::string::npos);
+}
+
+TEST_CASE("Asset manager loads legacy opaque collider enum and flags JSON from authored levels", "[Assets][Source][Physics]")
+{
+    RegisterBuiltinTypes();
+
+    World SourceWorld("LegacyOpaqueColliderLevelSourceWorld");
+    auto NodeHandleResult = SourceWorld.CreateNode("LegacyOpaqueColliderNode");
+    REQUIRE(NodeHandleResult);
+
+    BaseNode* Node = NodeHandleResult->Borrowed();
+    REQUIRE(Node != nullptr);
+
+    auto ColliderResult = Node->Add<ColliderComponent>();
+    REQUIRE(ColliderResult);
+
+    auto& Settings = ColliderResult->EditSettings();
+    Settings.Shape = SnAPI::Physics::EShapeType::Box;
+    Settings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+    Settings.Mask = kCollisionMaskAll;
+
+    auto CaptureResult = CaptureNodeAsset(*Node);
+    REQUIRE(CaptureResult);
+
+    LevelAsset LevelSource{};
+    LevelSource.Name = "LegacyOpaqueLevel";
+    LevelSource.Nodes = CaptureResult->Nodes;
+
+    auto JsonResult = SerializeAuthoredAssetToJson(LevelSource);
+    REQUIRE(JsonResult);
+
+    nlohmann::json Root = nlohmann::json::parse(*JsonResult);
+    auto& SettingsJson = Root["Asset"]["Nodes"][0]["Components"][0]["Fields"][0]["Value"]["Value"];
+    SettingsJson["Shape"] = {
+        {"$bytes", nlohmann::json::array({1})},
+        {"$type", "SnAPI::Physics::EShapeType"},
+    };
+    SettingsJson["Layer"] = {
+        {"$bytes", nlohmann::json::array({2, 0, 0, 0})},
+        {"$type", "SnAPI::GameFramework::CollisionFilterFlags"},
+    };
+    SettingsJson["Mask"] = {
+        {"$bytes", nlohmann::json::array({255, 255, 255, 255})},
+        {"$type", "SnAPI::GameFramework::CollisionFilterFlags"},
+    };
+
+    TempDir RootDir{};
+    WriteTextFile(RootDir.Path / "Levels" / "LegacyOpaque.level", Root.dump(2));
+
+    auto Manager = MakeSourceOnlyManager(RootDir.Path);
+
+    World LevelWorld("LegacyOpaqueColliderLevelWorld");
+    NodeHandle LoadedLevelHandle{};
+    LevelAssetLoadParams LevelParams{};
+    LevelParams.TargetWorld = &LevelWorld;
+    LevelParams.OutCreatedLevel = &LoadedLevelHandle;
+
+    auto LevelLoad = Manager->Load<Level>("Levels/LegacyOpaque.level", LevelParams);
+    REQUIRE(LevelLoad);
+    REQUIRE(*LevelLoad);
+
+    Level* LoadedLevel = NodeCast<Level>(LoadedLevelHandle.Borrowed());
+    REQUIRE(LoadedLevel != nullptr);
+    REQUIRE(LoadedLevel->Children().size() == 1);
+
+    NodeHandle LoadedChildHandle = LoadedLevel->Children().front();
+    BaseNode* LoadedChild = LoadedChildHandle.Borrowed();
+    REQUIRE(LoadedChild != nullptr);
+
+    auto LoadedCollider = LoadedChild->Component<ColliderComponent>();
+    REQUIRE(LoadedCollider);
+    CHECK(LoadedCollider->GetSettings().Shape == SnAPI::Physics::EShapeType::Box);
+    CHECK(LoadedCollider->GetSettings().Layer == CollisionLayerFlags(ECollisionFilterBits::WorldDynamic));
+    CHECK(LoadedCollider->GetSettings().Mask == kCollisionMaskAll);
+}
+
+#endif // SNAPI_GF_ENABLE_PHYSICS

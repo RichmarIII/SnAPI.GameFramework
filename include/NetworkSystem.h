@@ -11,6 +11,7 @@
 
 #include "Expected.h"
 #include "GameThreading.h"
+#include "TypeName.h"
 #include "NetSession.h"
 #include "Services/ReplicationService.h"
 #include "Services/RpcService.h"
@@ -240,6 +241,9 @@ private:
     std::unique_ptr<NetRpcBridge> m_rpcBridge{}; /**< @brief Graph RPC adapter owned by subsystem. */
     SnAPI::Networking::RpcTargetId m_rpcTargetId = 1; /**< @brief RPC target namespace/channel id used for bridge binding. */
 };
+
+SNAPI_DEFINE_TYPE_NAME(NetworkSystem, "SnAPI::GameFramework::NetworkSystem")
+SNAPI_DEFINE_TYPE_NAME(NetworkBootstrapSettings, "SnAPI::GameFramework::NetworkBootstrapSettings")
 
 } // namespace SnAPI::GameFramework
 

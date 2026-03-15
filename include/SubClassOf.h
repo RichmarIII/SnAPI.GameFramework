@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "StaticTypeId.h"
+#include "TypeName.h"
 #include "TypeRegistry.h"
 
 namespace SnAPI::GameFramework
@@ -264,19 +265,76 @@ private:
             return true;
         }
 
-        const size_t Separator = CandidateName.rfind("::");
-        if (Separator == std::string::npos)
-        {
-            return false;
-        }
-
-        const std::string_view ShortName(CandidateName.c_str() + Separator + 2,
-                                         CandidateName.size() - (Separator + 2));
-        return ShortName == Query;
+        return PrettyReflectedTypeName(CandidateName) == Query;
     }
 
     std::string m_typeName{};
     TypeId m_typeId{};
+};
+
+template<typename TBase>
+struct TEditorValueFamilyTraits<TSubClassOf<TBase>>
+{
+    static constexpr EEditorValueFamily Family = EEditorValueFamily::SubClassOf;
+
+    static TypeId TargetType()
+    {
+        return StaticTypeId<TBase>();
+    }
+
+    static void PopulateOptions(std::vector<std::string>& OutOptions)
+    {
+        const auto Entries = TSubClassOf<TBase>::EnumerateTypes();
+        OutOptions.reserve(OutOptions.size() + Entries.size() + 1);
+        OutOptions.emplace_back("<None>");
+        for (const auto& Entry : Entries)
+        {
+            OutOptions.push_back(PrettyReflectedTypeName(Entry.Name));
+        }
+    }
+
+    static bool ReadSelectionLabel(const void* Value, std::string& OutText)
+    {
+        const auto* SubClassValue = static_cast<const TSubClassOf<TBase>*>(Value);
+        if (!SubClassValue)
+        {
+            return false;
+        }
+
+        OutText = PrettyReflectedTypeName(SubClassValue->ResolvedTypeName());
+        if (OutText.empty())
+        {
+            OutText = "<None>";
+        }
+        return true;
+    }
+
+    static bool WriteSelection(void* Value, std::string_view Selected)
+    {
+        auto* SubClassValue = static_cast<TSubClassOf<TBase>*>(Value);
+        if (!SubClassValue)
+        {
+            return false;
+        }
+
+        if (Selected.empty() || Selected == "<None>")
+        {
+            SubClassValue->Clear();
+            return true;
+        }
+
+        return SubClassValue->SetTypeByName(Selected);
+    }
+
+    static const EditorValueAdapterOps& Adapter()
+    {
+        static const EditorValueAdapterOps Ops{
+            .PopulateOptions = &PopulateOptions,
+            .ReadSelectionLabel = &ReadSelectionLabel,
+            .WriteSelection = &WriteSelection,
+        };
+        return Ops;
+    }
 };
 
 } // namespace SnAPI::GameFramework

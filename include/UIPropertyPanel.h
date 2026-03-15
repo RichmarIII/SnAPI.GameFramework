@@ -176,8 +176,10 @@ private:
     Vec4,
     Quat,
     Color,
+    TypeId,
     Uuid,
     Enum,
+    Flags,
     SubClass,
     AssetRef,
     Unsupported
@@ -193,9 +195,12 @@ private:
     bool ReadOnly = false;
     std::uint64_t Generation = 0;
     SnAPI::UI::ElementId EditorId{};
+    SnAPI::UI::ElementId AuxiliaryContainerId{};
+    std::vector<SnAPI::UI::ElementId> AuxiliaryEditorIds{};
     std::array<SnAPI::UI::ElementId, 4> ComponentEditorIds{};
     std::uint8_t ComponentCount = 0;
     std::size_t EditorHookHandle = 0;
+    std::vector<std::size_t> AuxiliaryHookHandles{};
     std::array<std::size_t, 4> ComponentHookHandles{};
     bool UsesFilesystemPicker = false;
     bool PathSelectsDirectories = false;
@@ -284,10 +289,17 @@ private:
     const FieldBinding& Binding,
     std::string& OutText,
     bool& OutBool) const;
+  [[nodiscard]] bool ReadFlagsBits(
+    const FieldBinding& Binding,
+    std::uint64_t& OutBits,
+    const TypeInfo*& OutEnumInfo) const;
   bool WriteFieldValue(
     const FieldBinding& Binding,
     std::string_view TextValue,
     bool BoolValue);
+  bool WriteFlagsBits(
+    const FieldBinding& Binding,
+    std::uint64_t Bits);
 
   [[nodiscard]] bool ParseBool(std::string_view Text, bool& OutValue) const;
   [[nodiscard]] bool ParseSigned(std::string_view Text, std::int64_t& OutValue) const;

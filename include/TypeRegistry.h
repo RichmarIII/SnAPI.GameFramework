@@ -4,10 +4,12 @@
 #include "GameThreading.h"
 #include <concepts>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -18,8 +20,8 @@
 
 #include "Expected.h"
 #include "Flags.h"
-#include "Invoker.h"
 #include "Variant.h"
+#include "Invoker.h"
 
 namespace SnAPI::GameFramework
 {
@@ -84,6 +86,9 @@ enum class EFieldFlagBits : uint32_t
 {
     None = 0, /**< @brief No special field behavior flags. */
     Replication = 1u << 0, /**< @brief Field is eligible for replication payload traversal. */
+    Serialized = 1u << 1, /**< @brief Field is explicitly intended for authored/runtime serialization flows. */
+    ReplicationReliable = 1u << 2, /**< @brief Replication prefers reliable delivery when explicitly requested. */
+    ReplicationUnreliable = 1u << 3, /**< @brief Replication prefers unreliable delivery when explicitly requested. */
 };
 
 /**
@@ -121,6 +126,83 @@ using MethodFlags = TFlags<EMethodFlagBits>;
 template<>
 struct EnableFlags<EMethodFlagBits> : std::true_type
 {
+};
+
+SNAPI_DEFINE_TYPE_NAME(EFieldFlagBits, "SnAPI::GameFramework::EFieldFlagBits")
+SNAPI_DEFINE_TYPE_NAME(FieldFlags, "SnAPI::GameFramework::FieldFlags")
+SNAPI_DEFINE_TYPE_NAME(EMethodFlagBits, "SnAPI::GameFramework::EMethodFlagBits")
+SNAPI_DEFINE_TYPE_NAME(MethodFlags, "SnAPI::GameFramework::MethodFlags")
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Editor-facing value-family classification for reflected types.
+ *
+ * This metadata allows generic tooling such as `UIPropertyPanel` to recognize template
+ * families like `TAssetRef<>`, `TSubClassOf<>`, and `TFlags<>` without hardcoding exact
+ * reflected `TypeId` values.
+ */
+enum class EEditorValueFamily : std::uint8_t
+{
+    None = 0, /**< @brief No special editor family handling. */
+    Flags, /**< @brief `TFlags<Enum>`-style bitflag wrapper. */
+    AssetRef, /**< @brief `TAssetRef<T>`-style typed asset reference. */
+    SubClassOf /**< @brief `TSubClassOf<T>`-style reflected subclass selector. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Generic editor adapter callbacks for value-template families.
+ *
+ * These callbacks are intentionally optional. Families like `TFlags<>` only need the
+ * family kind plus a target enum type, while families like `TAssetRef<>` and
+ * `TSubClassOf<>` also need option enumeration and two-way selection writeback.
+ */
+struct EditorValueAdapterOps
+{
+    void (*PopulateOptions)(std::vector<std::string>& OutOptions) = nullptr; /**< @brief Optional option enumerator used by combo-box style editors. */
+    bool (*ReadSelectionLabel)(const void* Value, std::string& OutText) = nullptr; /**< @brief Optional label reader for the current selection. */
+    bool (*WriteSelection)(void* Value, std::string_view Selected) = nullptr; /**< @brief Optional selection writer used by combo-box style editors. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Primary trait used to describe editor-family metadata for reflected value types.
+ *
+ * Template families can specialize this trait to expose editor-family behavior automatically
+ * whenever the type is registered with `TypeRegistry`.
+ */
+template<typename T>
+struct TEditorValueFamilyTraits
+{
+    static constexpr EEditorValueFamily Family = EEditorValueFamily::None;
+
+    static TypeId TargetType()
+    {
+        return {};
+    }
+
+    static const EditorValueAdapterOps& Adapter()
+    {
+        static const EditorValueAdapterOps Ops{};
+        return Ops;
+    }
+};
+
+template<typename Enum>
+struct TEditorValueFamilyTraits<TFlags<Enum>>
+{
+    static constexpr EEditorValueFamily Family = EEditorValueFamily::Flags;
+
+    static TypeId TargetType()
+    {
+        return StaticTypeId<Enum>();
+    }
+
+    static const EditorValueAdapterOps& Adapter()
+    {
+        static const EditorValueAdapterOps Ops{};
+        return Ops;
+    }
 };
 
 /**
@@ -231,6 +313,33 @@ const TypeRuntimeOps& GetTypeRuntimeOps()
     return Ops;
 }
 
+inline const TypeRuntimeOps& GetPointerTypeRuntimeOps()
+{
+    static const TypeRuntimeOps Ops{
+        .DefaultConstruct = [] (void* Storage) {
+            const void* NullPointer = nullptr;
+            std::memcpy(Storage, &NullPointer, sizeof(NullPointer));
+        },
+        .Destroy = [] (void*) noexcept {},
+        .CopyConstruct = [] (const void* Source, void* Dest) {
+            std::memcpy(Dest, Source, sizeof(void*));
+        },
+        .MoveConstruct = [] (void* Source, void* Dest) noexcept {
+            std::memcpy(Dest, Source, sizeof(void*));
+        },
+        .CopyAssign = [] (const void* Source, void* Dest) {
+            std::memcpy(Dest, Source, sizeof(void*));
+        },
+        .MoveAssign = [] (void* Source, void* Dest) noexcept {
+            std::memcpy(Dest, Source, sizeof(void*));
+        },
+        .Equals = [] (const void* Left, const void* Right) -> bool {
+            return std::memcmp(Left, Right, sizeof(void*)) == 0;
+        }
+    };
+    return Ops;
+}
+
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Reflection metadata for one field-like property.
@@ -246,9 +355,20 @@ const TypeRuntimeOps& GetTypeRuntimeOps()
  */
 struct FieldInfo
 {
+    struct NumericValueInfo
+    {
+        std::optional<double> Min{}; /**< @brief Optional editor/runtime minimum value hint. */
+        std::optional<double> Max{}; /**< @brief Optional editor/runtime maximum value hint. */
+        std::optional<double> Step{}; /**< @brief Optional editor/runtime stepping hint. */
+    };
+
     std::string Name; /**< @brief Field name as registered. */
+    std::string DisplayName; /**< @brief Optional UI-facing display label. Falls back to `Name` when empty. */
+    std::string Category; /**< @brief Optional category/path string for tooling surfaces. */
+    std::string Doc; /**< @brief Optional documentation text harvested from source comments or generators. */
     TypeId FieldType; /**< @brief TypeId of the field. */
     FieldFlags Flags{}; /**< @brief Field flags (replication, etc.). */
+    NumericValueInfo Value{}; /**< @brief Optional numeric range/step metadata for editor tooling. */
     std::function<TExpected<Variant>(void* Instance)> Getter; /**< @brief Getter callback. */
     std::function<Result(void* Instance, const Variant& Value)> Setter; /**< @brief Setter callback. */
     std::function<TExpected<VariantView>(void* Instance)> ViewGetter; /**< @brief Non-owning getter. */
@@ -256,6 +376,18 @@ struct FieldInfo
     std::function<const void*(const void* Instance)> ConstPointer; /**< @brief Direct const pointer accessor. */
     std::function<void*(void* Instance)> MutablePointer; /**< @brief Direct mutable pointer accessor. */
     bool IsConst = false; /**< @brief True if field is const-qualified. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Metadata for one callable parameter on a reflected method or constructor.
+ */
+struct CallableParamInfo
+{
+    TypeId Type{}; /**< @brief Reflected type id for the parameter. */
+    EMethodParamPassKind PassKind = EMethodParamPassKind::Value; /**< @brief Raw fast-path passing mode for the parameter. */
+    std::string Name; /**< @brief Optional stable parameter name harvested from source or generation metadata. */
+    std::string Doc; /**< @brief Optional parameter documentation text. */
 };
 
 /**
@@ -268,9 +400,13 @@ struct FieldInfo
 struct MethodInfo
 {
     std::string Name; /**< @brief Method name as registered. */
+    std::string DisplayName; /**< @brief Optional UI-facing display label. Falls back to `Name` when empty. */
+    std::string Category; /**< @brief Optional category/path string for tooling surfaces. */
+    std::string Doc; /**< @brief Optional documentation text harvested from source comments or generators. */
     TypeId ReturnType; /**< @brief Return type id. */
     std::vector<TypeId> ParamTypes; /**< @brief Parameter type ids. */
     std::vector<EMethodParamPassKind> ParamPassKinds; /**< @brief Raw fast-path argument passing modes. */
+    std::vector<CallableParamInfo> Params; /**< @brief Optional per-parameter metadata aligned with `ParamTypes`. */
     MethodInvoker Invoke; /**< @brief Invocation callback. */
     RawMethodInvoker RawInvoke = nullptr; /**< @brief Optional fast-path raw invoker used by Conduit. */
     std::shared_ptr<const void> RawInvokeUserData{}; /**< @brief Opaque payload captured for `RawInvoke`. */
@@ -288,6 +424,8 @@ struct MethodInfo
 struct ConstructorInfo
 {
     std::vector<TypeId> ParamTypes; /**< @brief Parameter type ids. */
+    std::vector<CallableParamInfo> Params; /**< @brief Optional per-parameter metadata aligned with `ParamTypes`. */
+    std::string Doc; /**< @brief Optional constructor documentation text. */
     std::function<TExpected<std::shared_ptr<void>>(std::span<const Variant> Args)> Construct; /**< @brief Construction callback. */
 };
 
@@ -297,7 +435,25 @@ struct ConstructorInfo
  */
 struct EnumValueInfo
 {
+    EnumValueInfo() = default;
+
+    EnumValueInfo(std::string InName, std::uint64_t InValue)
+        : Name(std::move(InName))
+        , Value(InValue)
+    {
+    }
+
+    EnumValueInfo(std::string InName, std::string InDisplayName, std::string InDoc, std::uint64_t InValue)
+        : Name(std::move(InName))
+        , DisplayName(std::move(InDisplayName))
+        , Doc(std::move(InDoc))
+        , Value(InValue)
+    {
+    }
+
     std::string Name; /**< @brief Symbolic enum entry name (e.g. "Dynamic"). */
+    std::string DisplayName; /**< @brief Optional UI-facing display label. Falls back to `Name` when empty. */
+    std::string Doc; /**< @brief Optional documentation text harvested from source comments or generators. */
     std::uint64_t Value = 0; /**< @brief Raw underlying-value bits (zero-extended to 64-bit). */
 };
 
@@ -328,6 +484,9 @@ struct TypeInfo
 
     TypeId Id; /**< @brief Deterministic type id. */
     std::string Name; /**< @brief Fully qualified stable reflected type name. */
+    std::string DisplayName; /**< @brief Optional UI-facing display label. Falls back to `Name` when empty. */
+    std::string Category; /**< @brief Optional category/path string for tooling surfaces. */
+    std::string Doc; /**< @brief Optional documentation text harvested from source comments or generators. */
     size_t Size = 0; /**< @brief `sizeof(T)` for plain reflected types, or `0` for synthetic marker types like `void`. */
     size_t Align = 0; /**< @brief `alignof(T)` for plain reflected types, or `0` for synthetic marker types like `void`. */
     std::vector<TypeId> BaseTypes; /**< @brief Direct reflected base types. Transitive relationships are derived by traversal at query time. */
@@ -337,6 +496,12 @@ struct TypeInfo
     std::vector<MethodInfo> Methods; /**< @brief Method metadata declared directly on this type. */
     std::vector<ConstructorInfo> Constructors; /**< @brief Reflected constructors available for type-erased creation. */
     const TypeRuntimeOps* RuntimeOps = nullptr; /**< @brief Runtime lifecycle hooks for owning values of this type. */
+    bool IsPointer = false; /**< @brief `true` when this record represents an auto-generated raw-pointer companion. */
+    TypeId PointeeType{}; /**< @brief Reflected pointee type when `IsPointer` is true. */
+    bool PointerPointeeConst = false; /**< @brief `true` when the raw-pointer companion points at a const pointee type. */
+    EEditorValueFamily EditorValueFamily = EEditorValueFamily::None; /**< @brief Generic editor-facing type family used by automatic UI generation. */
+    TypeId EditorValueTargetType{}; /**< @brief Family-specific target type (for example `TFlags<Enum>` -> `Enum`, `TAssetRef<T>` -> `T`). */
+    EditorValueAdapterOps EditorValueAdapter{}; /**< @brief Optional family-specific editor callbacks. */
     bool IsAbstract = false; /**< @brief `true` when the reflected C++ type is abstract/non-constructible. */
     bool IsInterface = false; /**< @brief `true` when the reflected type is intended to act as an interface contract. */
     bool IsEnum = false; /**< @brief `true` when this type record represents an enum. */
@@ -347,6 +512,16 @@ struct TypeInfo
     EditorPropertyChangedInvoker EditorPropertyChanged = nullptr; /**< @brief Optional editor-only property-changed callback used by reflected field setters. */
 #endif
 };
+
+template<typename T>
+void ApplyEditorValueFamilyMetadata(TypeInfo& Info)
+{
+    using TValue = std::remove_cvref_t<T>;
+
+    Info.EditorValueFamily = TEditorValueFamilyTraits<TValue>::Family;
+    Info.EditorValueTargetType = TEditorValueFamilyTraits<TValue>::TargetType();
+    Info.EditorValueAdapter = TEditorValueFamilyTraits<TValue>::Adapter();
+}
 
 /**
  * @ingroup SnAPI_GameFramework

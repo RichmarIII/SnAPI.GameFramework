@@ -54,6 +54,7 @@ public:
         std::size_t WarningCount = 0; /**< @brief Number of warning diagnostics in the cached compile output. */
         std::size_t ErrorCount = 0; /**< @brief Number of error diagnostics in the cached compile output. */
         std::uint64_t Revision = 0; /**< @brief Monotonic UI-invalidating revision for this active-document view. */
+        std::uint64_t CanvasRevision = 0; /**< @brief Monotonic graph-canvas revision for this active graph document. */
     };
 
     [[nodiscard]] std::string_view Name() const override;
@@ -97,12 +98,16 @@ public:
     [[nodiscard]] ClassInspectorView ActiveClassInspectorView() const;
     /** @brief Access the current active-document schema-backed palette entries. */
     [[nodiscard]] std::vector<PaletteEntryView> ActivePaletteEntries() const;
+    /** @brief Build context-menu spawn entries for the current graph canvas request. */
+    [[nodiscard]] std::vector<SpawnMenuEntryView> BuildSpawnMenuEntries(const GraphSpawnMenuRequest& Request) const;
     /** @brief Access the current active-document authored node outline. */
     [[nodiscard]] std::vector<NodeEntryView> ActiveNodeEntries() const;
     /** @brief Access the current active-document graph-canvas view state. */
     [[nodiscard]] GraphCanvasView ActiveCanvasView() const;
     /** @brief Enumerate reflected types eligible for authored graph variables. */
     [[nodiscard]] std::vector<VariableTypeOption> AvailableVariableTypes() const;
+    /** @brief Enumerate reflected node types eligible as authored graph self types. */
+    [[nodiscard]] std::vector<GraphSelfTypeOption> AvailableGraphSelfTypes() const;
     /** @brief Enumerate reflected types eligible as Conduit class host node types. */
     [[nodiscard]] std::vector<ClassHostTypeOption> AvailableClassHostTypes() const;
     /** @brief Enumerate discovered Conduit graph assets eligible for Conduit class binding. */
@@ -179,14 +184,23 @@ public:
     TExpected<GraphVariableAsset*> CreateVariable(std::string_view Name, const TypeId& Type);
     /** @brief Spawn and select one new authored node from one schema/template id. */
     TExpected<GraphNodeAsset*> SpawnNode(std::string_view StableId);
+    /** @brief Spawn and select one authored node at one explicit graph-space position. */
+    TExpected<GraphNodeAsset*> SpawnNode(std::string_view StableId, float X, float Y);
     /** @brief Remove the currently selected graph variable from the active document. */
     bool RemoveSelectedVariable();
     /** @brief Remove the currently selected authored graph node from the active document. */
     bool RemoveSelectedNode();
     /** @brief Update the authored graph-space position of one node on the active document. */
     Result MoveNode(const Uuid& NodeId, float X, float Y);
+    /** @brief Connect one source pin to one target pin on the active document. */
+    Result ConnectPins(const Uuid& SourceNodeId,
+                       std::string_view SourcePin,
+                       const Uuid& TargetNodeId,
+                       std::string_view TargetPin);
     /** @brief Update the authored graph-canvas viewport state on the active document. */
     Result SetViewport(float PanX, float PanY, float Zoom);
+    /** @brief Change the authored self type on the active graph document. */
+    Result SetActiveGraphSelfType(const TypeId& Type);
     /** @brief Rename the currently selected graph variable. */
     Result RenameSelectedVariable(std::string_view Name);
     /** @brief Change the reflected type of the currently selected graph variable. */

@@ -67,6 +67,18 @@ void load(Archive& ArchiveRef, SnAPI::GameFramework::Uuid& Id)
     Id = SnAPI::GameFramework::Uuid(Data);
 }
 
+template <class Archive>
+void save(Archive& ArchiveRef, const SnAPI::GameFramework::TypeId& Id)
+{
+    save(ArchiveRef, Id.Value);
+}
+
+template <class Archive>
+void load(Archive& ArchiveRef, SnAPI::GameFramework::TypeId& Id)
+{
+    load(ArchiveRef, Id.Value);
+}
+
 } // namespace cereal
 
 namespace SnAPI::GameFramework
@@ -297,6 +309,27 @@ struct SerializableField
     bool HasNested = false; /**< @brief True when nested reflected traversal is required. */
 };
 
+[[nodiscard]] bool CanRoundTripSerializableField(const FieldInfo& Field, const SerializableField& Entry)
+{
+    const bool HasReadablePath = Field.ConstPointer || Field.ViewGetter || Field.Getter;
+    if (!HasReadablePath || Field.IsConst)
+    {
+        return false;
+    }
+
+    if (Field.MutablePointer || Field.ViewGetter)
+    {
+        return true;
+    }
+
+    if (Field.Setter && Entry.Codec)
+    {
+        return true;
+    }
+
+    return false;
+}
+
 struct SerializableFieldCacheEntry
 {
     uint32_t CodecVersion = 0; /**< @brief Value-codec registry version used to build this cache. */
@@ -365,6 +398,10 @@ void BuildSerializableFields(
                 Entry.NestedType = Field.FieldType;
                 Entry.HasNested = true;
             }
+        }
+        if (!CanRoundTripSerializableField(Field, Entry))
+        {
+            continue;
         }
         Out.push_back(Entry);
     }
@@ -657,6 +694,10 @@ TExpected<void> SerializeReflectedValueArchive(const TypeId& Type,
     }
 
     (void)TypeAutoRegistry::Instance().Ensure(Type);
+    if (const TypeInfo* Info = TypeRegistry::Instance().Find(Type); Info && Info->IsPointer)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Pointer types are not serializable"));
+    }
     if (const auto* Codec = ValueCodecRegistry::Instance().FindEntry(Type);
         Codec && Codec->Encode)
     {
@@ -678,6 +719,10 @@ TExpected<void> DeserializeReflectedValueIntoArchive(const TypeId& Type,
     }
 
     (void)TypeAutoRegistry::Instance().Ensure(Type);
+    if (const TypeInfo* Info = TypeRegistry::Instance().Find(Type); Info && Info->IsPointer)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Pointer types are not deserializable"));
+    }
     if (const auto* Codec = ValueCodecRegistry::Instance().FindEntry(Type);
         Codec && Codec->DecodeInto)
     {
@@ -703,6 +748,10 @@ TExpected<void> ConstructReflectedValueArchive(const TypeId& Type,
     if (!Info)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Reflected value type is not registered"));
+    }
+    if (Info->IsPointer)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Pointer types are not deserializable"));
     }
     if (!Info->RuntimeOps)
     {
@@ -1955,6 +2004,7 @@ void RegisterSerializationDefaults()
     ValueRegistry.Register<std::string>();
     ValueRegistry.Register<std::vector<uint8_t>>();
     ValueRegistry.Register<Uuid>();
+    ValueRegistry.Register<TypeId>();
     ValueRegistry.Register<Vec3>();
     ValueRegistry.Register<Quat>();
     ValueRegistry.Register<NodeHandle>();

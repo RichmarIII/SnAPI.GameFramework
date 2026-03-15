@@ -84,6 +84,8 @@ private:
     std::string m_pendingConduitVariableRenameValue{};
     bool m_hasPendingConduitVariableTypeRequest = false;
     TypeId m_pendingConduitVariableType{};
+    bool m_hasPendingConduitGraphSelfTypeRequest = false;
+    TypeId m_pendingConduitGraphSelfType{};
     bool m_hasPendingConduitVariableDefaultBoolRequest = false;
     bool m_pendingConduitVariableDefaultBool = false;
     bool m_hasPendingConduitVariableDefaultTextRequest = false;
@@ -102,6 +104,17 @@ private:
     Uuid m_pendingConduitNodeMoveId{};
     float m_pendingConduitNodeMoveX = 0.0f;
     float m_pendingConduitNodeMoveY = 0.0f;
+    bool m_hasPendingConduitSpawnMenuOpenRequest = false;
+    SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest m_pendingConduitSpawnMenuOpenRequest{};
+    bool m_hasPendingConduitSpawnMenuSelectionRequest = false;
+    SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest m_pendingConduitSpawnMenuSelectionRequest{};
+    SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView m_pendingConduitSpawnSelectionEntry{};
+    bool m_hasPendingConduitPinConnectRequest = false;
+    Uuid m_pendingConduitConnectSourceNode{};
+    std::string m_pendingConduitConnectSourcePin{};
+    Uuid m_pendingConduitConnectTargetNode{};
+    std::string m_pendingConduitConnectTargetPin{};
+    bool m_hasPendingConduitCompileRequest = false;
     bool m_hasPendingConduitNodePrimaryTextRequest = false;
     std::string m_pendingConduitNodePrimaryText{};
     bool m_hasPendingConduitNodeSecondaryTextRequest = false;
@@ -122,6 +135,7 @@ private:
     std::uint64_t m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     std::uint64_t m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     std::uint64_t m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
+    std::uint64_t m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
 };
 
 } // namespace SnAPI::GameFramework::Editor

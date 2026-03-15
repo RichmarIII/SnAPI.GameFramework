@@ -113,12 +113,28 @@ public:
         } \
         void SNAPI_DETAIL_CONCAT(SnAPI_RegisterAutoType_, Id)() \
         { \
-            const ::SnAPI::GameFramework::TypeId TypeKey = ::SnAPI::GameFramework::TypeIdFromName(::SnAPI::GameFramework::TTypeNameV<Type>); \
-            ::SnAPI::GameFramework::TypeAutoRegistry::Instance().Register(TypeKey, ::SnAPI::GameFramework::TTypeNameV<Type>, &SNAPI_DETAIL_CONCAT(SnAPI_EnsureType_, Id)); \
+            const ::SnAPI::GameFramework::TypeId TypeKey = ::SnAPI::GameFramework::StaticTypeId<Type>(); \
+            ::SnAPI::GameFramework::TypeAutoRegistry::Instance().Register(TypeKey, ::SnAPI::GameFramework::ReflectedTypeName<Type>(), &SNAPI_DETAIL_CONCAT(SnAPI_EnsureType_, Id)); \
+            const ::SnAPI::GameFramework::TypeId MutablePointerKey = ::SnAPI::GameFramework::StaticTypeId<Type*>(); \
+            ::SnAPI::GameFramework::TypeAutoRegistry::Instance().Register(MutablePointerKey, ::SnAPI::GameFramework::ReflectedTypeName<Type*>(), &SNAPI_DETAIL_CONCAT(SnAPI_EnsureType_, Id)); \
+            const ::SnAPI::GameFramework::TypeId ConstPointerKey = ::SnAPI::GameFramework::StaticTypeId<const Type*>(); \
+            ::SnAPI::GameFramework::TypeAutoRegistry::Instance().Register(ConstPointerKey, ::SnAPI::GameFramework::ReflectedTypeName<const Type*>(), &SNAPI_DETAIL_CONCAT(SnAPI_EnsureType_, Id)); \
         } \
         SNAPI_DETAIL_USED const ::SnAPI::GameFramework::TTypeRegistrar SNAPI_DETAIL_CONCAT(SnAPI_TypeRegistrar_, Id)( \
             &SNAPI_DETAIL_CONCAT(SnAPI_RegisterAutoType_, Id)); \
     }
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Register a reflected type through a lazy `TypeAutoRegistry` ensure callback.
+ * @param Type C++ type being registered.
+ * @param RegistrationExpr Expression that registers and/or mutates the type metadata, returning `TExpected<TypeInfo*>` or compatible.
+ *
+ * This is the generic lazy auto-registration entry point used by both handwritten and generated
+ * reflection code. Most call sites should prefer `SNAPI_REFLECT_TYPE`, but generators can use this
+ * macro directly for enum records or other metadata that does not flow through `TTypeBuilder<T>`.
+ */
+#define SNAPI_REFLECT_METADATA(Type, RegistrationExpr) SNAPI_REFLECT_TYPE_IMPL(Type, RegistrationExpr, __COUNTER__)
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -129,7 +145,7 @@ public:
  * Place this in exactly one translation unit per type. The first use of the type's `TypeId` or type
  * name can then trigger actual `TypeRegistry` registration on demand.
  */
-#define SNAPI_REFLECT_TYPE(Type, BuilderExpr) SNAPI_REFLECT_TYPE_IMPL(Type, BuilderExpr, __COUNTER__)
+#define SNAPI_REFLECT_TYPE(Type, BuilderExpr) SNAPI_REFLECT_METADATA(Type, BuilderExpr)
 
 /**
  * @ingroup SnAPI_GameFramework

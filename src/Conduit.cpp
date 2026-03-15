@@ -2,6 +2,8 @@
 #include "Conduit/Resolvers.h"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <new>
 #include <unordered_map>
 
@@ -183,6 +185,160 @@ TExpected<ResolvedTarget> ResolveHandleTarget(const FrameStorage& Frame,
     return Target;
 }
 
+[[nodiscard]] bool IsPointerTypeAssignableTo(const TypeInfo& SourceType,
+                                             const TypeInfo& ExpectedType,
+                                             const bool RequireMutable = false)
+{
+    if (!SourceType.IsPointer || !ExpectedType.IsPointer ||
+        SourceType.PointeeType == TypeId{} || ExpectedType.PointeeType == TypeId{})
+    {
+        return false;
+    }
+    if (!TypeRegistry::Instance().IsA(SourceType.PointeeType, ExpectedType.PointeeType))
+    {
+        return false;
+    }
+    if ((RequireMutable || !ExpectedType.PointerPointeeConst) && SourceType.PointerPointeeConst && !ExpectedType.PointerPointeeConst)
+    {
+        return false;
+    }
+    if (RequireMutable && SourceType.PointerPointeeConst)
+    {
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] const TypeInfo* ResolvePointerActualType(const TypeInfo& PointerType, void* const Instance)
+{
+    const TypeInfo* ActualType = TypeRegistry::Instance().Find(PointerType.PointeeType);
+    if (!ActualType || !Instance)
+    {
+        return ActualType;
+    }
+
+    if (TypeRegistry::Instance().IsA(ActualType->Id, StaticTypeId<BaseNode>()))
+    {
+        if (const TypeInfo* DynamicType = TypeRegistry::Instance().Find(static_cast<BaseNode*>(Instance)->TypeKey()))
+        {
+            return DynamicType;
+        }
+    }
+    if (ComponentSerializationRegistry::Instance().Has(ActualType->Id))
+    {
+        if (const TypeInfo* DynamicType = TypeRegistry::Instance().Find(static_cast<BaseComponent*>(Instance)->TypeKey()))
+        {
+            return DynamicType;
+        }
+    }
+
+    return ActualType;
+}
+
+TExpected<ResolvedTarget> ResolvePointerTarget(const FrameStorage& Frame,
+                                               const SlotId InstanceSlot,
+                                               const TypeInfo& ExpectedType,
+                                               const bool RequireMutable)
+{
+    const SlotDesc* Slot = Frame.Layout().FindSlot(InstanceSlot);
+    if (!Slot)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit instance slot was not found"));
+    }
+    if (Slot->Kind != ESlotKind::Value)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit pointer instance slot must use value storage"));
+    }
+    if (!Slot->Type || !Slot->Type->IsPointer)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance slot must store a reflected pointer value"));
+    }
+
+    auto PointerValueResult = Frame.ReadSlot(InstanceSlot);
+    if (!PointerValueResult)
+    {
+        return std::unexpected(PointerValueResult.error());
+    }
+
+    if (RequireMutable && Slot->Type->PointerPointeeConst)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit const pointer target cannot bind to a mutable instance node"));
+    }
+
+    void* Instance = nullptr;
+    std::memcpy(&Instance, PointerValueResult.value(), sizeof(Instance));
+    if (!Instance)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit pointer target is null"));
+    }
+
+    const TypeInfo* ActualType = ResolvePointerActualType(*Slot->Type, Instance);
+    if (!ActualType)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit pointer target type is not registered"));
+    }
+    if (!TypeRegistry::Instance().IsA(ActualType->Id, ExpectedType.Id))
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit pointer target type mismatch"));
+    }
+
+    return ResolvedTarget{
+        .Instance = Instance,
+        .Type = ActualType,
+    };
+}
+
+TExpected<ResolvedTarget> ResolveInstanceTarget(const FrameStorage& Frame,
+                                                const ExecutionContext& Context,
+                                                const SlotId InstanceSlot,
+                                                const TypeInfo& ExpectedType,
+                                                const bool RequireMutable)
+{
+    const SlotDesc* Slot = Frame.Layout().FindSlot(InstanceSlot);
+    if (!Slot)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit instance slot was not found"));
+    }
+    if (Slot->Kind == ESlotKind::Handle)
+    {
+        return ResolveHandleTarget(Frame, Context, InstanceSlot, ExpectedType);
+    }
+    if (Slot->Kind == ESlotKind::Value)
+    {
+        return ResolvePointerTarget(Frame, InstanceSlot, ExpectedType, RequireMutable);
+    }
+    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance slot has unsupported storage kind"));
+}
+
+[[nodiscard]] bool IsSlotTypeCompatibleWithExpected(const TypeInfo& SlotType,
+                                                    const TypeId& ExpectedType,
+                                                    const bool RequireMutablePointer = false)
+{
+    if (SlotType.Id == ExpectedType)
+    {
+        return true;
+    }
+    const TypeInfo* ExpectedInfo = TypeRegistry::Instance().Find(ExpectedType);
+    return ExpectedInfo && IsPointerTypeAssignableTo(SlotType, *ExpectedInfo, RequireMutablePointer);
+}
+
+[[nodiscard]] bool IsSlotTypeCompatibleWithMethodParam(const TypeInfo& SlotType,
+                                                       const TypeId& ExpectedType,
+                                                       const EMethodParamPassKind PassKind)
+{
+    if (SlotType.Id == ExpectedType)
+    {
+        return true;
+    }
+    if (PassKind == EMethodParamPassKind::MutableRef)
+    {
+        return false;
+    }
+
+    const TypeInfo* ExpectedInfo = TypeRegistry::Instance().Find(ExpectedType);
+    return ExpectedInfo && IsPointerTypeAssignableTo(SlotType, *ExpectedInfo, false);
+}
+
 Result ExecuteFieldReadValue(const FieldInfo& Field, void* const Instance, const SlotId Output, FrameStorage& Frame)
 {
     if (Field.ConstPointer)
@@ -274,14 +430,63 @@ Result ExecuteMethodCallValue(const MethodInfo& Method,
         return std::unexpected(MakeError(EErrorCode::OutOfRange, "Conduit scratch argument buffer is too small"));
     }
 
+    constexpr std::size_t kInlinePointerScratch = 8;
+    std::array<std::uintptr_t, kInlinePointerScratch> InlinePointerScratch{};
+    std::vector<std::uintptr_t> HeapPointerScratch{};
+    if (Inputs.size() > InlinePointerScratch.size())
+    {
+        HeapPointerScratch.resize(Inputs.size());
+    }
+
     for (std::size_t Index = 0; Index < Inputs.size(); ++Index)
     {
-        auto ArgResult = Frame.BorrowMutableSlot(Inputs[Index]);
-        if (!ArgResult)
+        const SlotDesc* Slot = Frame.Layout().FindSlot(Inputs[Index]);
+        if (!Slot || !Slot->Type)
         {
-            return std::unexpected(ArgResult.error());
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit method input slot was not found"));
         }
-        ScratchArgs[Index] = ArgResult.value();
+
+        const TypeId ExpectedType = Index < Method.ParamTypes.size() ? Method.ParamTypes[Index] : TypeId{};
+        const EMethodParamPassKind PassKind = Index < Method.ParamPassKinds.size()
+            ? Method.ParamPassKinds[Index]
+            : EMethodParamPassKind::Value;
+
+        if (Slot->Type->Id == ExpectedType)
+        {
+            auto ArgResult = Frame.BorrowMutableSlot(Inputs[Index]);
+            if (!ArgResult)
+            {
+                return std::unexpected(ArgResult.error());
+            }
+            ScratchArgs[Index] = ArgResult.value();
+            continue;
+        }
+
+        const TypeInfo* ExpectedInfo = TypeRegistry::Instance().Find(ExpectedType);
+        if (ExpectedInfo && IsPointerTypeAssignableTo(*Slot->Type, *ExpectedInfo, false))
+        {
+            if (PassKind == EMethodParamPassKind::MutableRef)
+            {
+                return std::unexpected(MakeError(EErrorCode::TypeMismatch,
+                                                 "Conduit mutable-ref pointer params require exact slot type matches"));
+            }
+
+            auto PointerValueResult = Frame.ReadSlot(Inputs[Index]);
+            if (!PointerValueResult)
+            {
+                return std::unexpected(PointerValueResult.error());
+            }
+
+            std::uintptr_t* PointerScratch = Index < InlinePointerScratch.size()
+                ? &InlinePointerScratch[Index]
+                : &HeapPointerScratch[Index];
+            *PointerScratch = 0;
+            std::memcpy(PointerScratch, PointerValueResult.value(), sizeof(void*));
+            ScratchArgs[Index] = PointerScratch;
+            continue;
+        }
+
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit method input slot type is incompatible with the reflected parameter type"));
     }
 
     void* ReturnStorage = nullptr;
@@ -1146,7 +1351,7 @@ NodeExecuteResult ExecuteInstanceFieldReadNode(const NodeData& Data,
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance field binding is missing"));
     }
 
-    auto TargetResult = ResolveHandleTarget(Frame, Context, Node.Instance, *Node.OwnerType);
+    auto TargetResult = ResolveInstanceTarget(Frame, Context, Node.Instance, *Node.OwnerType, false);
     if (!TargetResult)
     {
         return std::unexpected(TargetResult.error());
@@ -1172,7 +1377,7 @@ NodeExecuteResult ExecuteInstanceFieldWriteNode(const NodeData& Data,
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance field binding is missing"));
     }
 
-    auto TargetResult = ResolveHandleTarget(Frame, Context, Node.Instance, *Node.OwnerType);
+    auto TargetResult = ResolveInstanceTarget(Frame, Context, Node.Instance, *Node.OwnerType, true);
     if (!TargetResult)
     {
         return std::unexpected(TargetResult.error());
@@ -1196,7 +1401,7 @@ NodeExecuteResult ExecuteInstanceMethodCallNode(const NodeData& Data,
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance method binding is missing"));
     }
 
-    auto TargetResult = ResolveHandleTarget(Frame, Context, Node.Instance, *Node.OwnerType);
+    auto TargetResult = ResolveInstanceTarget(Frame, Context, Node.Instance, *Node.OwnerType, !Node.Method->IsConst);
     if (!TargetResult)
     {
         return std::unexpected(TargetResult.error());
@@ -1906,7 +2111,7 @@ Result GraphBuilder::AddFieldRead(const TypeInfo& OwnerType,
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit instance slot was not found"));
     }
-    auto InstanceSlotResult = ValidateInstanceSlot(*InstanceSlot);
+    auto InstanceSlotResult = ValidateInstanceSlot(*InstanceSlot, *StableOwnerType, false);
     if (!InstanceSlotResult)
     {
         return std::unexpected(InstanceSlotResult.error());
@@ -1979,7 +2184,7 @@ Result GraphBuilder::AddFieldWrite(const TypeInfo& OwnerType,
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit instance slot was not found"));
     }
-    auto InstanceSlotResult = ValidateInstanceSlot(*InstanceSlot);
+    auto InstanceSlotResult = ValidateInstanceSlot(*InstanceSlot, *StableOwnerType, true);
     if (!InstanceSlotResult)
     {
         return std::unexpected(InstanceSlotResult.error());
@@ -1990,7 +2195,7 @@ Result GraphBuilder::AddFieldWrite(const TypeInfo& OwnerType,
     {
         return std::unexpected(FieldResult.error());
     }
-    if ((*FieldResult)->FieldType != InputSlot->Type->Id)
+    if (!IsSlotTypeCompatibleWithExpected(*InputSlot->Type, (*FieldResult)->FieldType, false))
     {
         return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit field write slot type mismatch"));
     }
@@ -2045,12 +2250,6 @@ Result GraphBuilder::AddMethodCall(const TypeInfo& OwnerType,
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit instance slot was not found"));
     }
-    auto InstanceSlotResult = ValidateInstanceSlot(*InstanceSlot);
-    if (!InstanceSlotResult)
-    {
-        return std::unexpected(InstanceSlotResult.error());
-    }
-
     auto MethodResult = BindMethod(*StableOwnerType, Name, Inputs);
     if (!MethodResult)
     {
@@ -2058,6 +2257,11 @@ Result GraphBuilder::AddMethodCall(const TypeInfo& OwnerType,
     }
 
     const MethodInfo* Method = *MethodResult;
+    auto InstanceSlotResult = ValidateInstanceSlot(*InstanceSlot, *StableOwnerType, !Method->IsConst);
+    if (!InstanceSlotResult)
+    {
+        return std::unexpected(InstanceSlotResult.error());
+    }
     if (Method->ReturnType == StaticTypeId<void>())
     {
         if (Output)
@@ -2173,17 +2377,30 @@ TExpected<const TypeInfo*> GraphBuilder::ResolveType(const TypeId& Type) const
     return Info;
 }
 
-Result GraphBuilder::ValidateInstanceSlot(const SlotDesc& Slot) const
+Result GraphBuilder::ValidateInstanceSlot(const SlotDesc& Slot,
+                                          const TypeInfo& OwnerType,
+                                          const bool RequireMutable) const
 {
-    if (Slot.Kind != ESlotKind::Handle)
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance slot must use handle storage"));
-    }
     if (!Slot.Type)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance slot type is missing"));
     }
-    return Ok();
+    if (Slot.Kind == ESlotKind::Handle)
+    {
+        return Ok();
+    }
+    if (Slot.Kind == ESlotKind::Value &&
+        Slot.Type->IsPointer &&
+        Slot.Type->PointeeType != TypeId{} &&
+        TypeRegistry::Instance().IsA(Slot.Type->PointeeType, OwnerType.Id))
+    {
+        if (RequireMutable && Slot.Type->PointerPointeeConst)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit const pointer instance slot is not mutable"));
+        }
+        return Ok();
+    }
+    return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit instance slot must use handle storage or a compatible reflected pointer value"));
 }
 
 Result GraphBuilder::ValidateConditionSlot(const SlotId Condition) const
@@ -2340,7 +2557,10 @@ TExpected<const MethodInfo*> GraphBuilder::BindMethod(const TypeInfo& OwnerType,
         for (std::size_t Index = 0; Index < Inputs.size(); ++Index)
         {
             const SlotDesc* Slot = FindSlot(Inputs[Index]);
-            if (!Slot || !Slot->Type || Slot->Type->Id != Method->ParamTypes[Index])
+            const EMethodParamPassKind PassKind = Index < Method->ParamPassKinds.size()
+                ? Method->ParamPassKinds[Index]
+                : EMethodParamPassKind::Value;
+            if (!Slot || !Slot->Type || !IsSlotTypeCompatibleWithMethodParam(*Slot->Type, Method->ParamTypes[Index], PassKind))
             {
                 TypesMatch = false;
                 break;

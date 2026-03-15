@@ -5,9 +5,12 @@
 #include <functional>
 #include <memory>
 #include "GameThreading.h"
+#include "TypeName.h"
 #include <mutex>
 
 #include <AudioEngine.h>
+
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Audio
 {
@@ -43,6 +46,11 @@ namespace SnAPI::GameFramework
  *
  * @see World
  */
+
+SnType(
+    SnName("Audio System"),
+    SnCategory("Audio")
+)
 class AudioSystem final : public ITaskDispatcher
 {
 public:
@@ -52,7 +60,7 @@ public:
     /** @brief Construct an uninitialized audio system. */
     AudioSystem() = default;
     /** @brief Destructor; shuts down engine if initialized. */
-    ~AudioSystem();
+    ~AudioSystem() override;
     /** @brief Non-copyable due to engine ownership/mutex state. */
     AudioSystem(const AudioSystem&) = delete;
     /** @brief Non-copyable due to engine ownership/mutex state. */
@@ -66,6 +74,7 @@ public:
      * @brief Initialize the shared audio engine with default device settings.
      * @return `true` if initialization succeeds or was already complete.
      */
+    SnFunction(SnCategory("Management"))
     bool Initialize();
     /**
      * @brief Initialize the shared audio engine with an explicit device specification.
@@ -73,18 +82,21 @@ public:
      * @return `true` if initialization succeeds or was already complete.
      * @remarks Allows caller-provided backend device/sample configuration.
      */
+    SnFunction(SnCategory("Management"))
     bool Initialize(const SnAPI::Audio::AudioDeviceSpec& Spec);
 
     /**
      * @brief Shut down the shared audio engine.
      * @remarks Safe to call repeatedly. Borrowed pointers from `Engine()` become invalid after shutdown.
      */
+    SnFunction(SnCategory("Management"))
     void Shutdown();
 
     /**
      * @brief Check whether the audio engine is initialized.
      * @return True if initialized.
      */
+    SnFunction(SnCategory("Management"))
     bool IsInitialized() const;
 
     /**
@@ -92,12 +104,14 @@ public:
      * @return Non-owning pointer to `AudioEngine` or `nullptr`.
      * @warning Do not retain the pointer across `Shutdown()` or subsystem destruction.
      */
+    SnFunction(SnCategory("Access"))
     SnAPI::Audio::AudioEngine* Engine();
     /**
      * @brief Access the shared audio engine (const).
      * @return Non-owning pointer to `AudioEngine` or `nullptr`.
      * @warning Do not retain the pointer across `Shutdown()` or subsystem destruction.
      */
+    SnFunction(SnCategory("Access"))
     const SnAPI::Audio::AudioEngine* Engine() const;
 
     /**
@@ -105,6 +119,7 @@ public:
      * @param DeltaSeconds Time since last update in seconds.
      * @remarks No-op when the engine is absent or not initialized.
      */
+    SnFunction(SnCategory("Management"))
     void Update(float DeltaSeconds);
 
     /**
@@ -113,17 +128,20 @@ public:
      * @param OnComplete Optional completion callback marshaled to caller dispatcher.
      * @return Task handle for wait/cancel polling.
      */
+    SnFunction(SnCategory("Tasks"))
     TaskHandle EnqueueTask(WorkTask InTask, CompletionTask OnComplete = {});
 
     /**
      * @brief Enqueue a generic thread task for dispatcher marshalling.
      * @param InTask Callback to execute on this system thread.
      */
+    SnFunction(SnCategory("Tasks"))
     void EnqueueThreadTask(std::function<void()> InTask) override;
 
     /**
      * @brief Execute all queued tasks on the audio thread.
      */
+    SnFunction(SnCategory("Tasks"))
     void ExecuteQueuedTasks();
 
 private:
@@ -131,6 +149,8 @@ private:
     TSystemTaskQueue<AudioSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
     std::unique_ptr<SnAPI::Audio::AudioEngine> m_engine; /**< @brief Owned backend audio engine instance (null until initialized). */
 };
+
+SNAPI_DEFINE_TYPE_NAME(AudioSystem, "SnAPI::GameFramework::AudioSystem")
 
 } // namespace SnAPI::GameFramework
 

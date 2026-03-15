@@ -46,6 +46,7 @@ constexpr float kBorderThickness = 1.0f;
 constexpr float kSelectedBorderThickness = 2.0f;
 constexpr float kPanStrokeFactor = 1.0f / 120.0f;
 constexpr float kZoomWheelMagnitude = 100.0f;
+constexpr float kRightClickPanThreshold = 6.0f;
 
 [[nodiscard]] SnAPI::UI::ScissorRect ToScissorRect(const SnAPI::UI::UIRect& Rect)
 {
@@ -237,6 +238,14 @@ void DrawWireArrow(SnAPI::UI::PacketWriter& Packets,
                          Color,
                          SnAPI::UI::MaterialHandle{});
 }
+
+void ReleaseCanvasCaptureIfOwned(SnAPI::UI::UIContext* const Context, const SnAPI::UI::ElementId Id)
+{
+    if (Context && Context->GetCapture() == Id)
+    {
+        Context->ReleaseCapture();
+    }
+}
 } // namespace
 
 UIConduitGraphCanvas::UIConduitGraphCanvas()
@@ -264,6 +273,16 @@ void UIConduitGraphCanvas::SetViewState(GraphCanvasView View)
         m_dragNodeId = {};
     }
 
+    const bool DragWireNodeStillExists = std::find_if(m_view.Nodes.begin(), m_view.Nodes.end(), [this](const CanvasNodeView& Node) {
+        return Node.Id == m_dragWireNodeId;
+    }) != m_view.Nodes.end();
+    if (!DragWireNodeStillExists)
+    {
+        m_isDraggingWire = false;
+        m_dragWireNodeId = {};
+        m_dragWirePinName.clear();
+    }
+
     Invalidate(SnAPI::UI::EInvalidation::Paint);
 }
 
@@ -275,6 +294,16 @@ void UIConduitGraphCanvas::SetNodeSelectionHandler(NodeSelectionHandler Handler)
 void UIConduitGraphCanvas::SetNodeMovedHandler(NodeMovedHandler Handler)
 {
     m_onNodeMoved = std::move(Handler);
+}
+
+void UIConduitGraphCanvas::SetPinConnectedHandler(PinConnectedHandler Handler)
+{
+    m_onPinConnected = std::move(Handler);
+}
+
+void UIConduitGraphCanvas::SetSpawnMenuRequestedHandler(SpawnMenuRequestedHandler Handler)
+{
+    m_onSpawnMenuRequested = std::move(Handler);
 }
 
 void UIConduitGraphCanvas::SetViewportChangedHandler(ViewportChangedHandler Handler)
@@ -470,6 +499,47 @@ void UIConduitGraphCanvas::Paint(SnAPI::UI::UIPaintContext& Context) const
                       WireColor);
     }
 
+    if (m_isDraggingWire && !m_dragWirePinName.empty())
+    {
+        const auto SourceNodeIt = std::find_if(m_view.Nodes.begin(), m_view.Nodes.end(), [this](const CanvasNodeView& Node) {
+            return Node.Id == m_dragWireNodeId;
+        });
+        if (SourceNodeIt != m_view.Nodes.end())
+        {
+            const auto SourcePinIt = std::find_if(SourceNodeIt->OutputPins.begin(),
+                                                  SourceNodeIt->OutputPins.end(),
+                                                  [this](const CanvasPinView& Pin) {
+                                                      return Pin.Name == m_dragWirePinName;
+                                                  });
+            if (SourcePinIt != SourceNodeIt->OutputPins.end())
+            {
+                const std::size_t SourceIndex =
+                    static_cast<std::size_t>(std::distance(SourceNodeIt->OutputPins.begin(), SourcePinIt));
+                const NodeVisual SourceVisual = ComputeNodeVisual(*SourceNodeIt);
+                const PinVisual SourcePin = ComputePinVisual(*SourceNodeIt, SourceVisual, false, SourceIndex);
+                const SnAPI::UI::Color WireColor = PinColor(*SourcePinIt);
+                const float Thickness = std::max(1.5f, kWireThickness * Dpi * std::clamp(Zoom, 0.75f, 1.25f));
+                const float HorizontalLead = std::max(28.0f * Dpi, 42.0f * Dpi * std::clamp(Zoom, 0.8f, 1.2f));
+                const float MidX = std::max(SourcePin.Center.X + HorizontalLead,
+                                            std::min(m_dragWirePointer.X - HorizontalLead,
+                                                     (SourcePin.Center.X + m_dragWirePointer.X) * 0.5f));
+
+                const SnAPI::UI::UIPoint P0 = SourcePin.Center;
+                const SnAPI::UI::UIPoint P1{MidX, SourcePin.Center.Y};
+                const SnAPI::UI::UIPoint P2{MidX, m_dragWirePointer.Y};
+                const SnAPI::UI::UIPoint P3 = m_dragWirePointer;
+                DrawWireSegment(Context.Packets, P0, P1, Thickness, WireColor);
+                DrawWireSegment(Context.Packets, P1, P2, Thickness, WireColor);
+                DrawWireSegment(Context.Packets, P2, P3, Thickness, WireColor);
+                DrawWireArrow(Context.Packets,
+                              m_dragWirePointer,
+                              m_dragWirePointer.X <= P2.X,
+                              std::max(5.0f, kWireArrowSize * Dpi),
+                              WireColor);
+            }
+        }
+    }
+
     if (m_view.Nodes.empty())
     {
         static constexpr std::string_view kEmptyText =
@@ -642,8 +712,11 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
     if (TypeId == SnAPI::UI::RoutedEventTypes::PointerLeave.Id)
     {
         SetHovered(false);
-        SetPressed(false);
-        ClearInteractionState();
+        if (!m_isDraggingNode && !m_isDraggingWire && !m_isPanning && !m_isPendingContextMenu)
+        {
+            SetPressed(false);
+            ClearInteractionState();
+        }
         return;
     }
 
@@ -682,7 +755,7 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
         return;
     }
 
-    auto* Pointer = static_cast<SnAPI::UI::PointerEvent*>(Context.Payload());
+    const auto* Pointer = static_cast<SnAPI::UI::PointerEvent*>(Context.Payload());
     if (!Pointer)
     {
         return;
@@ -692,10 +765,32 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
     {
         SetHovered(m_Rect.Contains(Pointer->Position));
 
+        if (m_isPendingContextMenu)
+        {
+            const float DeltaX = Pointer->Position.X - m_dragStartPointer.X;
+            const float DeltaY = Pointer->Position.Y - m_dragStartPointer.Y;
+            const float DistanceSq = (DeltaX * DeltaX) + (DeltaY * DeltaY);
+            if (!Pointer->RightDown)
+            {
+                RequestSpawnMenu(Pointer->Position, false);
+                SetPressed(false);
+                ClearInteractionState();
+                Context.SetHandled(true);
+                return;
+            }
+            if (DistanceSq >= (kRightClickPanThreshold * kRightClickPanThreshold))
+            {
+                m_isPendingContextMenu = false;
+                m_isPanning = true;
+                SetPressed(true);
+            }
+        }
+
         if (!m_isDraggingNode &&
+            !m_isPendingContextMenu &&
             !m_isPanning &&
             m_Rect.Contains(Pointer->Position) &&
-            (Pointer->RightDown || Pointer->MiddleDown))
+            Pointer->MiddleDown)
         {
             m_isPanning = true;
             m_dragStartPointer = Pointer->Position;
@@ -708,27 +803,31 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
         {
             if (!Pointer->LeftDown)
             {
+                UpdateDraggedNodePosition(Pointer->Position);
+                SetPressed(false);
                 ClearInteractionState();
+                Context.SetHandled(true);
                 return;
             }
 
-            const SnAPI::UI::UIPoint GraphPoint = ScreenToGraph(Pointer->Position);
-            const float NewX = GraphPoint.X - m_dragNodeOffsetGraph.X;
-            const float NewY = GraphPoint.Y - m_dragNodeOffsetGraph.Y;
-            for (CanvasNodeView& Node : m_view.Nodes)
+            UpdateDraggedNodePosition(Pointer->Position);
+            Context.SetHandled(true);
+            return;
+        }
+
+        if (m_isDraggingWire)
+        {
+            if (!Pointer->LeftDown)
             {
-                if (Node.Id == m_dragNodeId)
-                {
-                    Node.X = NewX;
-                    Node.Y = NewY;
-                    break;
-                }
+                CompleteWireDrag(Pointer->Position);
+                SetPressed(false);
+                ClearInteractionState();
+                Context.SetHandled(true);
+                return;
             }
+
+            m_dragWirePointer = Pointer->Position;
             Invalidate(SnAPI::UI::EInvalidation::Paint);
-            if (m_onNodeMoved)
-            {
-                m_onNodeMoved(m_dragNodeId, NewX, NewY);
-            }
             Context.SetHandled(true);
             return;
         }
@@ -737,20 +836,14 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
         {
             if (!Pointer->RightDown && !Pointer->MiddleDown)
             {
+                UpdatePanPosition(Pointer->Position);
+                SetPressed(false);
                 ClearInteractionState();
+                Context.SetHandled(true);
                 return;
             }
 
-            const float Scale = DpiScale() * EffectiveZoom();
-            const float DeltaX = (Pointer->Position.X - m_dragStartPointer.X) / Scale;
-            const float DeltaY = (Pointer->Position.Y - m_dragStartPointer.Y) / Scale;
-            m_view.Viewport.PanX = m_dragStartPanX - DeltaX;
-            m_view.Viewport.PanY = m_dragStartPanY - DeltaY;
-            Invalidate(SnAPI::UI::EInvalidation::Paint);
-            if (m_onViewportChanged)
-            {
-                m_onViewportChanged(m_view.Viewport.PanX, m_view.Viewport.PanY, EffectiveZoom());
-            }
+            UpdatePanPosition(Pointer->Position);
             Context.SetHandled(true);
             return;
         }
@@ -765,12 +858,31 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
             return;
         }
 
-        if (Pointer->RightDown || Pointer->MiddleDown)
+        if (Pointer->RightDown)
+        {
+            m_isPendingContextMenu = true;
+            m_dragStartPointer = Pointer->Position;
+            m_dragStartPanX = m_view.Viewport.PanX;
+            m_dragStartPanY = m_view.Viewport.PanY;
+            if (m_Context)
+            {
+                m_Context->SetCapture(m_Id);
+            }
+            SetPressed(true);
+            Context.SetHandled(true);
+            return;
+        }
+
+        if (Pointer->MiddleDown)
         {
             m_isPanning = true;
             m_dragStartPointer = Pointer->Position;
             m_dragStartPanX = m_view.Viewport.PanX;
             m_dragStartPanY = m_view.Viewport.PanY;
+            if (m_Context)
+            {
+                m_Context->SetCapture(m_Id);
+            }
             SetPressed(true);
             Context.SetHandled(true);
             return;
@@ -778,6 +890,31 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 
         if (!Pointer->LeftDown)
         {
+            return;
+        }
+
+        if (const auto HitOutputPin = HitTestPin(Pointer->Position, true); HitOutputPin.has_value())
+        {
+            const CanvasNodeView& HitNode = m_view.Nodes[HitOutputPin->NodeIndex];
+            const CanvasPinView& HitPin = HitNode.OutputPins[HitOutputPin->PinIndex];
+            SetSelectedNodeLocal(HitNode.Id);
+            if (m_onNodeSelected)
+            {
+                m_onNodeSelected(HitNode.Id);
+            }
+
+            m_isDraggingWire = true;
+            m_dragWireNodeId = HitNode.Id;
+            m_dragWirePinName = HitPin.Name;
+            m_dragWireKind = HitPin.Kind;
+            m_dragWireIsExec = HitPin.IsExec;
+            m_dragWirePointer = Pointer->Position;
+            if (m_Context)
+            {
+                m_Context->SetCapture(m_Id);
+            }
+            SetPressed(true);
+            Context.SetHandled(true);
             return;
         }
 
@@ -794,6 +931,10 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
             m_dragNodeId = HitNode.Id;
             const SnAPI::UI::UIPoint GraphPoint = ScreenToGraph(Pointer->Position);
             m_dragNodeOffsetGraph = SnAPI::UI::UIPoint{GraphPoint.X - HitNode.X, GraphPoint.Y - HitNode.Y};
+            if (m_Context)
+            {
+                m_Context->SetCapture(m_Id);
+            }
             SetPressed(true);
             Context.SetHandled(true);
             return;
@@ -806,8 +947,27 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 
     if (TypeId == SnAPI::UI::RoutedEventTypes::PointerUp.Id)
     {
-        const bool WasInteracting = m_isDraggingNode || m_isPanning || IsPressed();
+        const bool WasDraggingWire = m_isDraggingWire;
+        const bool WasPendingContextMenu = m_isPendingContextMenu;
+        const bool WasInteracting =
+            m_isDraggingNode || m_isDraggingWire || m_isPanning || m_isPendingContextMenu || IsPressed();
         SetPressed(false);
+        if (m_isDraggingNode)
+        {
+            UpdateDraggedNodePosition(Pointer->Position);
+        }
+        if (m_isPanning)
+        {
+            UpdatePanPosition(Pointer->Position);
+        }
+        if (WasDraggingWire)
+        {
+            CompleteWireDrag(Pointer->Position);
+        }
+        if (WasPendingContextMenu)
+        {
+            RequestSpawnMenu(Pointer->Position, false);
+        }
         ClearInteractionState();
         if (WasInteracting)
         {
@@ -820,7 +980,14 @@ void UIConduitGraphCanvas::Invalidate(const SnAPI::UI::EInvalidation Flags) cons
 {
     if (m_Context)
     {
-        m_Context->InvalidateElement(m_Id, Flags);
+        if (Flags == SnAPI::UI::EInvalidation::Paint)
+        {
+            m_Context->InvalidateElementLocal(m_Id, Flags);
+        }
+        else
+        {
+            m_Context->InvalidateElement(m_Id, Flags);
+        }
     }
 }
 
@@ -922,6 +1089,65 @@ std::optional<std::size_t> UIConduitGraphCanvas::HitTestNode(const SnAPI::UI::UI
     return std::nullopt;
 }
 
+std::optional<UIConduitGraphCanvas::HitPinResult> UIConduitGraphCanvas::HitTestPin(const SnAPI::UI::UIPoint& ScreenPosition,
+                                                                                   const bool OutputsOnly) const
+{
+    const float Scale = DpiScale() * EffectiveZoom();
+    const float HitRadius = std::max(10.0f, kNodePinRowHeight * Scale * 0.75f);
+    const float HitRadiusSq = HitRadius * HitRadius;
+    const float InputRowHalfHeight = std::max(HitRadius, ((kNodePinRowHeight + kNodePinRowGap) * Scale) * 0.5f);
+
+    for (std::size_t Index = m_view.Nodes.size(); Index > 0; --Index)
+    {
+        const std::size_t NodeIndex = Index - 1;
+        const CanvasNodeView& Node = m_view.Nodes[NodeIndex];
+        const NodeVisual Visual = ComputeNodeVisual(Node);
+
+        if (!OutputsOnly)
+        {
+            for (std::size_t PinIndex = 0; PinIndex < Node.InputPins.size(); ++PinIndex)
+            {
+                const PinVisual Pin = ComputePinVisual(Node, Visual, true, PinIndex);
+                const float InputHitWidth = std::max(HitRadius * 2.0f, Visual.Rect.W);
+                const SnAPI::UI::UIRect HitRect{
+                    Visual.Rect.X,
+                    Pin.Center.Y - InputRowHalfHeight,
+                    InputHitWidth,
+                    InputRowHalfHeight * 2.0f,
+                };
+                if (HitRect.Contains(ScreenPosition))
+                {
+                    return HitPinResult{
+                        .NodeIndex = NodeIndex,
+                        .IsInput = true,
+                        .PinIndex = PinIndex,
+                    };
+                }
+            }
+        }
+
+        if (OutputsOnly)
+        {
+            for (std::size_t PinIndex = 0; PinIndex < Node.OutputPins.size(); ++PinIndex)
+            {
+                const PinVisual Pin = ComputePinVisual(Node, Visual, false, PinIndex);
+                const float DeltaX = ScreenPosition.X - Pin.Center.X;
+                const float DeltaY = ScreenPosition.Y - Pin.Center.Y;
+                if ((DeltaX * DeltaX) + (DeltaY * DeltaY) <= HitRadiusSq)
+                {
+                    return HitPinResult{
+                        .NodeIndex = NodeIndex,
+                        .IsInput = false,
+                        .PinIndex = PinIndex,
+                    };
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
 SnAPI::UI::Color UIConduitGraphCanvas::DecodeColor(const std::uint32_t Rgba, const std::uint8_t DefaultAlpha)
 {
     const std::uint8_t R = static_cast<std::uint8_t>((Rgba >> 24u) & 0xFFu);
@@ -929,6 +1155,82 @@ SnAPI::UI::Color UIConduitGraphCanvas::DecodeColor(const std::uint32_t Rgba, con
     const std::uint8_t B = static_cast<std::uint8_t>((Rgba >> 8u) & 0xFFu);
     const std::uint8_t A = static_cast<std::uint8_t>(Rgba & 0xFFu);
     return SnAPI::UI::Color{R, G, B, A == 0 ? DefaultAlpha : A};
+}
+
+void UIConduitGraphCanvas::UpdateDraggedNodePosition(const SnAPI::UI::UIPoint& ScreenPosition)
+{
+    const SnAPI::UI::UIPoint GraphPoint = ScreenToGraph(ScreenPosition);
+    const float NewX = GraphPoint.X - m_dragNodeOffsetGraph.X;
+    const float NewY = GraphPoint.Y - m_dragNodeOffsetGraph.Y;
+    for (CanvasNodeView& Node : m_view.Nodes)
+    {
+        if (Node.Id == m_dragNodeId)
+        {
+            Node.X = NewX;
+            Node.Y = NewY;
+            break;
+        }
+    }
+    Invalidate(SnAPI::UI::EInvalidation::Paint);
+    if (m_onNodeMoved)
+    {
+        m_onNodeMoved(m_dragNodeId, NewX, NewY);
+    }
+}
+
+void UIConduitGraphCanvas::UpdatePanPosition(const SnAPI::UI::UIPoint& ScreenPosition)
+{
+    const float Scale = DpiScale() * EffectiveZoom();
+    const float DeltaX = (ScreenPosition.X - m_dragStartPointer.X) / Scale;
+    const float DeltaY = (ScreenPosition.Y - m_dragStartPointer.Y) / Scale;
+    m_view.Viewport.PanX = m_dragStartPanX - DeltaX;
+    m_view.Viewport.PanY = m_dragStartPanY - DeltaY;
+    Invalidate(SnAPI::UI::EInvalidation::Paint);
+    if (m_onViewportChanged)
+    {
+        m_onViewportChanged(m_view.Viewport.PanX, m_view.Viewport.PanY, EffectiveZoom());
+    }
+}
+
+void UIConduitGraphCanvas::CompleteWireDrag(const SnAPI::UI::UIPoint& ScreenPosition)
+{
+    const Uuid SourceNodeId = m_dragWireNodeId;
+    const std::string SourcePinName = m_dragWirePinName;
+    if (const auto HitInputPin = HitTestPin(ScreenPosition, false); HitInputPin.has_value())
+    {
+        const CanvasNodeView& TargetNode = m_view.Nodes[HitInputPin->NodeIndex];
+        const CanvasPinView& TargetPin = TargetNode.InputPins[HitInputPin->PinIndex];
+        if (m_onPinConnected && !SourcePinName.empty())
+        {
+            m_onPinConnected(SourceNodeId, SourcePinName, TargetNode.Id, TargetPin.Name);
+        }
+        return;
+    }
+
+    RequestSpawnMenu(ScreenPosition, true);
+}
+
+void UIConduitGraphCanvas::RequestSpawnMenu(const SnAPI::UI::UIPoint& ScreenPosition, const bool FromPinDrag)
+{
+    if (!m_onSpawnMenuRequested || !m_Rect.Contains(ScreenPosition))
+    {
+        return;
+    }
+
+    GraphSpawnMenuRequest Request{};
+    Request.ScreenX = ScreenPosition.X;
+    Request.ScreenY = ScreenPosition.Y;
+    const SnAPI::UI::UIPoint GraphPoint = ScreenToGraph(ScreenPosition);
+    Request.GraphX = GraphPoint.X;
+    Request.GraphY = GraphPoint.Y;
+    Request.FromPinDrag = FromPinDrag;
+    if (FromPinDrag)
+    {
+        Request.SourceNodeId = m_dragWireNodeId;
+        Request.SourcePin = m_dragWirePinName;
+    }
+
+    m_onSpawnMenuRequested(Request);
 }
 
 void UIConduitGraphCanvas::SetSelectedNodeLocal(const Uuid& NodeId)
@@ -942,9 +1244,16 @@ void UIConduitGraphCanvas::SetSelectedNodeLocal(const Uuid& NodeId)
 
 void UIConduitGraphCanvas::ClearInteractionState()
 {
+    m_isPendingContextMenu = false;
     m_isPanning = false;
     m_isDraggingNode = false;
+    m_isDraggingWire = false;
     m_dragNodeId = {};
+    m_dragWireNodeId = {};
+    m_dragWirePinName.clear();
+    m_dragWireKind = ESlotKind::Value;
+    m_dragWireIsExec = false;
+    ReleaseCanvasCaptureIfOwned(m_Context, m_Id);
 }
 
 } // namespace SnAPI::GameFramework::Conduit::Editor

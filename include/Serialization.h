@@ -148,7 +148,14 @@ struct TValueCodec
      */
     static TExpected<void> Encode(const T& Value, cereal::BinaryOutputArchive& Archive, const TSerializationContext& Context)
     {
-        if constexpr (std::is_same_v<T, std::string>)
+        if constexpr (std::is_pointer_v<T>)
+        {
+            (void)Value;
+            (void)Archive;
+            (void)Context;
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Pointer types are not serializable"));
+        }
+        else if constexpr (std::is_same_v<T, std::string>)
         {
             Archive(Value);
             return Ok();
@@ -219,7 +226,13 @@ struct TValueCodec
      */
     static TExpected<T> Decode(cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)
     {
-        if constexpr (std::is_same_v<T, std::string>)
+        if constexpr (std::is_pointer_v<T>)
+        {
+            (void)Archive;
+            (void)Context;
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Pointer types are not deserializable"));
+        }
+        else if constexpr (std::is_same_v<T, std::string>)
         {
             std::string Value;
             Archive(Value);
@@ -376,7 +389,14 @@ struct TValueCodec
      */
     static TExpected<void> DecodeInto(T& Value, cereal::BinaryInputArchive& Archive, const TSerializationContext& Context)
     {
-        if constexpr (std::is_same_v<T, std::string>)
+        if constexpr (std::is_pointer_v<T>)
+        {
+            (void)Value;
+            (void)Archive;
+            (void)Context;
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Pointer types are not deserializable"));
+        }
+        else if constexpr (std::is_same_v<T, std::string>)
         {
             Archive(Value);
             return Ok();

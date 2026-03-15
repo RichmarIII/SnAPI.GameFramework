@@ -52,6 +52,10 @@ public:
     [[nodiscard]] const GraphSelection& Selection() const { return m_selection; }
     /** @brief Access the current document revision. */
     [[nodiscard]] std::uint64_t Revision() const { return m_revision; }
+    /** @brief Access the current non-canvas workspace revision. */
+    [[nodiscard]] std::uint64_t WorkspaceRevision() const { return m_workspaceRevision; }
+    /** @brief Access the current graph-canvas revision. */
+    [[nodiscard]] std::uint64_t CanvasRevision() const { return m_canvasRevision; }
     /** @brief Access the current dirty flag. */
     [[nodiscard]] bool IsDirty() const { return m_dirty; }
     /** @brief Access the last compile result, if any. */
@@ -154,6 +158,18 @@ public:
      */
     Result SetNodePosition(const Uuid& Id, float X, float Y);
     /**
+     * @brief Connect one authored source pin to one authored target pin.
+     * @param SourceNodeId Stable authored source node id.
+     * @param SourcePin Source output pin label.
+     * @param TargetNodeId Stable authored target node id.
+     * @param TargetPin Target input pin label.
+     * @return Success or an error.
+     */
+    Result ConnectPins(const Uuid& SourceNodeId,
+                       std::string_view SourcePin,
+                       const Uuid& TargetNodeId,
+                       std::string_view TargetPin);
+    /**
      * @brief Update the authored graph-canvas viewport state.
      * @param PanX New graph-space horizontal pan.
      * @param PanY New graph-space vertical pan.
@@ -161,6 +177,12 @@ public:
      * @return Success or an error.
      */
     Result SetViewport(float PanX, float PanY, float Zoom);
+    /**
+     * @brief Change the authored self type used for self field/method nodes.
+     * @param Type New reflected self type. Empty clears the authored self type.
+     * @return Success or an error.
+     */
+    Result SetSelfType(const TypeId& Type);
 
     /**
      * @brief Rename the UI-facing document title.
@@ -178,6 +200,22 @@ public:
     {
         m_dirty = true;
         ++m_revision;
+        ++m_workspaceRevision;
+    }
+
+    /**
+     * @brief Mark only graph-canvas authored state dirty and advance its revisions.
+     */
+    void TouchCanvas()
+    {
+        const bool WasDirty = m_dirty;
+        m_dirty = true;
+        ++m_revision;
+        ++m_canvasRevision;
+        if (!WasDirty)
+        {
+            ++m_workspaceRevision;
+        }
     }
 
     /**
@@ -187,6 +225,7 @@ public:
     {
         m_dirty = false;
         ++m_revision;
+        ++m_workspaceRevision;
     }
 
     /**
@@ -208,6 +247,7 @@ public:
 
 private:
     void MarkMutated();
+    void MarkCanvasMutated();
 
     std::string m_assetKey{};
     std::string m_title{};
@@ -215,6 +255,8 @@ private:
     GraphSelection m_selection{};
     bool m_dirty = false;
     std::uint64_t m_revision = 0;
+    std::uint64_t m_workspaceRevision = 0;
+    std::uint64_t m_canvasRevision = 0;
     std::optional<CompileOutput> m_lastCompile{};
 };
 

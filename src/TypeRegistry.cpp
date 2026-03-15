@@ -9,6 +9,50 @@
 namespace SnAPI::GameFramework
 {
 
+namespace
+{
+TypeInfo MakePointerTypeInfo(const TypeInfo& Pointee, const bool IsConstPointee)
+{
+    TypeInfo Info;
+    Info.Name = IsConstPointee ? "const " + Pointee.Name + "*" : Pointee.Name + "*";
+    Info.Id = TypeIdFromName(Info.Name);
+    Info.Size = sizeof(void*);
+    Info.Align = alignof(void*);
+    Info.RuntimeOps = &GetPointerTypeRuntimeOps();
+    Info.IsPointer = true;
+    Info.PointeeType = Pointee.Id;
+    Info.PointerPointeeConst = IsConstPointee;
+    return Info;
+}
+
+TExpected<void> RegisterCompanionUnlocked(std::unordered_map<TypeId, TypeInfo, UuidHash>& Types,
+                                          std::unordered_map<std::string, TypeId, TransparentStringHash, TransparentStringEqual>& NameToId,
+                                          TypeInfo Info)
+{
+    if (const auto Existing = Types.find(Info.Id); Existing != Types.end())
+    {
+        if (Existing->second.Name != Info.Name)
+        {
+            return std::unexpected(MakeError(EErrorCode::AlreadyExists, "Type id already registered with a different name"));
+        }
+        return Ok();
+    }
+
+    if (const auto ExistingName = NameToId.find(Info.Name); ExistingName != NameToId.end())
+    {
+        if (ExistingName->second != Info.Id)
+        {
+            return std::unexpected(MakeError(EErrorCode::AlreadyExists, "Type name already registered with a different id"));
+        }
+        return Ok();
+    }
+
+    auto Inserted = Types.emplace(Info.Id, std::move(Info));
+    NameToId.emplace(Inserted.first->second.Name, Inserted.first->first);
+    return Ok();
+}
+} // namespace
+
 TypeRegistry& TypeRegistry::Instance()
 {
     static TypeRegistry Instance;
@@ -29,6 +73,28 @@ TExpected<TypeInfo*> TypeRegistry::Register(TypeInfo Info)
     }
     auto Inserted = m_types.emplace(Info.Id, std::move(Info));
     m_nameToId.emplace(Inserted.first->second.Name, Inserted.first->first);
+
+    if (!Inserted.first->second.IsPointer)
+    {
+        auto RegisterMutablePointer = RegisterCompanionUnlocked(
+            m_types,
+            m_nameToId,
+            MakePointerTypeInfo(Inserted.first->second, false));
+        if (!RegisterMutablePointer)
+        {
+            return std::unexpected(RegisterMutablePointer.error());
+        }
+
+        auto RegisterConstPointer = RegisterCompanionUnlocked(
+            m_types,
+            m_nameToId,
+            MakePointerTypeInfo(Inserted.first->second, true));
+        if (!RegisterConstPointer)
+        {
+            return std::unexpected(RegisterConstPointer.error());
+        }
+    }
+
     return &Inserted.first->second;
 }
 

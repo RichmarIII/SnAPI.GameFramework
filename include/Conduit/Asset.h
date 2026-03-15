@@ -174,6 +174,8 @@ struct GraphNodeAsset
     std::string LabelName{}; /**< @brief Label name for `Label` nodes and jump/branch targets. */
     std::string FalseLabelName{}; /**< @brief False-target label used by `Branch`. */
     std::string MemberName{}; /**< @brief Reflected field or method name used by member-access nodes. */
+    Uuid ExecTargetNodeId{}; /**< @brief Explicit exec target for `Out`/`True` flow pins. Empty means unconnected or legacy-label-only. */
+    Uuid FalseExecTargetNodeId{}; /**< @brief Explicit false-branch exec target. Used only by `Branch`. */
 
     SerializedValue ConstantValue{}; /**< @brief Constant payload for `Constant` nodes. */
 
@@ -201,7 +203,7 @@ struct GraphNodeAsset
 struct GraphAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Conduit::GraphAsset";
-    static constexpr std::uint32_t kSchemaVersion = 4;
+    static constexpr std::uint32_t kSchemaVersion = 5;
 
     std::string Name{}; /**< @brief Optional authored graph name. */
     TypeId SelfType{}; /**< @brief Reflected self type used by `Self*` nodes. `TypeId{}` defaults to `void`. */

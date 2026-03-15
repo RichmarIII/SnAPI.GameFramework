@@ -2,8 +2,10 @@ add_executable(GameFrameworkTests
     AuthoredAssetTests.cpp
     ConduitTests.cpp
     EcsOnlyWorldTests.cpp
+    GeneratedReflectionFixture.h
     GameProjectRuntimeTests.cpp
     HandleTests.cpp
+    ReflectionTests.cpp
     WorldEcsRuntimeTests.cpp
     SerializationTests.cpp
     LevelWorldSerializationTests.cpp
@@ -18,6 +20,20 @@ if (SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR)
     target_include_directories(GameFrameworkTests PRIVATE ${SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR})
 endif()
 
+if (SNAPI_GF_BUILD_REFLECTION_GEN)
+    snapi_add_reflection_codegen(
+        TARGET GameFrameworkTests
+        OUTPUT GameFrameworkTests.reflection.generated.cpp
+        BUILD_DIR "${CMAKE_BINARY_DIR}"
+        SEED_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/ReflectionTests.cpp"
+        PROJECT_ROOT "${CMAKE_SOURCE_DIR}"
+        EXTRA_ARGS
+            "-I${CMAKE_SOURCE_DIR}/include"
+            "-I${CMAKE_CURRENT_SOURCE_DIR}"
+        HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/GeneratedReflectionFixture.h"
+    )
+endif()
+
 include(CTest)
 include(Catch)
 catch_discover_tests(GameFrameworkTests)
@@ -28,6 +44,7 @@ add_executable(GameFrameworkEditorTests
     ../src/Editor/EditorAssetService.cpp
     ../src/Editor/EditorPieService.cpp
     ../src/Editor/ConduitEditor.cpp
+    ../src/Editor/ConduitGraphCanvas.cpp
 )
 
 target_link_libraries(GameFrameworkEditorTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)

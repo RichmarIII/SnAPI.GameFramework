@@ -31,6 +31,9 @@ class SNAPI_GAMEFRAMEWORK_EDITOR_API UIConduitGraphCanvas final : public SnAPI::
 public:
     using NodeSelectionHandler = SnAPI::UI::TDelegate<void(const Uuid&)>;
     using NodeMovedHandler = SnAPI::UI::TDelegate<void(const Uuid&, float, float)>;
+    using PinConnectedHandler =
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)>;
+    using SpawnMenuRequestedHandler = SnAPI::UI::TDelegate<void(const GraphSpawnMenuRequest&)>;
     using ViewportChangedHandler = SnAPI::UI::TDelegate<void(float, float, float)>;
 
     UIConduitGraphCanvas();
@@ -43,6 +46,8 @@ public:
 
     void SetNodeSelectionHandler(NodeSelectionHandler Handler);
     void SetNodeMovedHandler(NodeMovedHandler Handler);
+    void SetPinConnectedHandler(PinConnectedHandler Handler);
+    void SetSpawnMenuRequestedHandler(SpawnMenuRequestedHandler Handler);
     void SetViewportChangedHandler(ViewportChangedHandler Handler);
 
     void Measure(const SnAPI::UI::UIConstraints& Constraints, SnAPI::UI::UISize& OutDesired) override;
@@ -62,6 +67,13 @@ private:
         SnAPI::UI::UIPoint Center{};
     };
 
+    struct HitPinResult
+    {
+        std::size_t NodeIndex = 0;
+        bool IsInput = true;
+        std::size_t PinIndex = 0;
+    };
+
     struct CommentVisual
     {
         SnAPI::UI::UIRect Rect{};
@@ -76,20 +88,34 @@ private:
     [[nodiscard]] CommentVisual ComputeCommentVisual(const CanvasCommentView& Comment) const;
     [[nodiscard]] SnAPI::UI::UIPoint ScreenToGraph(const SnAPI::UI::UIPoint& ScreenPosition) const;
     [[nodiscard]] std::optional<std::size_t> HitTestNode(const SnAPI::UI::UIPoint& ScreenPosition) const;
+    [[nodiscard]] std::optional<HitPinResult> HitTestPin(const SnAPI::UI::UIPoint& ScreenPosition, bool OutputsOnly) const;
     [[nodiscard]] static SnAPI::UI::Color DecodeColor(std::uint32_t Rgba, std::uint8_t DefaultAlpha = 255);
+    void UpdateDraggedNodePosition(const SnAPI::UI::UIPoint& ScreenPosition);
+    void UpdatePanPosition(const SnAPI::UI::UIPoint& ScreenPosition);
+    void CompleteWireDrag(const SnAPI::UI::UIPoint& ScreenPosition);
+    void RequestSpawnMenu(const SnAPI::UI::UIPoint& ScreenPosition, bool FromPinDrag);
     void SetSelectedNodeLocal(const Uuid& NodeId);
     void ClearInteractionState();
 
     GraphCanvasView m_view{};
     NodeSelectionHandler m_onNodeSelected{};
     NodeMovedHandler m_onNodeMoved{};
+    PinConnectedHandler m_onPinConnected{};
+    SpawnMenuRequestedHandler m_onSpawnMenuRequested{};
     ViewportChangedHandler m_onViewportChanged{};
 
+    bool m_isPendingContextMenu = false;
     bool m_isPanning = false;
     bool m_isDraggingNode = false;
+    bool m_isDraggingWire = false;
     Uuid m_dragNodeId{};
+    Uuid m_dragWireNodeId{};
+    std::string m_dragWirePinName{};
+    ESlotKind m_dragWireKind = ESlotKind::Value;
+    bool m_dragWireIsExec = false;
     SnAPI::UI::UIPoint m_dragStartPointer{};
     SnAPI::UI::UIPoint m_dragNodeOffsetGraph{};
+    SnAPI::UI::UIPoint m_dragWirePointer{};
     float m_dragStartPanX = 0.0f;
     float m_dragStartPanY = 0.0f;
 };

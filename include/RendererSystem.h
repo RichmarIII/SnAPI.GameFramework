@@ -18,6 +18,8 @@
 #include <utility>
 #include <vector>
 
+#include "TypeName.h"
+
 namespace SnAPI::Graphics
 {
 class ICamera;
@@ -143,6 +145,7 @@ enum class ERenderViewportPassGraphPreset : uint8_t
     EditorWorld /**< @brief Register editor world stack (default world + editor id/overlay passes). */
 #endif
 };
+SNAPI_DEFINE_TYPE_NAME(ERenderViewportPassGraphPreset, "SnAPI::GameFramework::ERenderViewportPassGraphPreset")
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -250,6 +253,15 @@ public:
      * @return `true` when the subsystem currently has a usable graphics backend pointer.
      */
     bool IsInitialized() const;
+
+    /**
+     * @brief Access the active renderer bootstrap settings snapshot.
+     * @return Borrowed reference to the subsystem-owned settings copy.
+     */
+    const RendererBootstrapSettings& Settings() const
+    {
+        return m_settings;
+    }
 
     /**
      * @brief Access active graphics backend.
@@ -1086,6 +1098,9 @@ private:
     std::uint64_t m_taaFrameIndex = 0; /**< @brief Monotonic TAA jitter sample index advanced on rendered frames. */
     bool m_initialized = false; /**< @brief True when backend lifecycle is active through this subsystem. */
 };
+
+SNAPI_DEFINE_TYPE_NAME(RendererSystem, "SnAPI::GameFramework::RendererSystem")
+SNAPI_DEFINE_TYPE_NAME(RendererBootstrapSettings, "SnAPI::GameFramework::RendererBootstrapSettings")
 
 } // namespace SnAPI::GameFramework
 

@@ -101,8 +101,76 @@ SNAPI_REFLECT_TYPE(IAsset, (TTypeBuilder<IAsset>(IAsset::kTypeName)
     .AsInterface()
     .Register()));
 
+SNAPI_REFLECT_TYPE(IWorld, (TTypeBuilder<IWorld>(TTypeNameV<IWorld>)
+    .AsInterface()
+    .Method("Kind", &IWorld::Kind)
+    .Method("ShouldRunGameplay", &IWorld::ShouldRunGameplay)
+    .Method("ShouldTickInput", &IWorld::ShouldTickInput)
+    .Method("ShouldTickUI", &IWorld::ShouldTickUI)
+    .Method("ShouldPumpNetworking", &IWorld::ShouldPumpNetworking)
+    .Method("ShouldSimulatePhysics", &IWorld::ShouldSimulatePhysics)
+    .Method("ShouldAllowPhysicsQueries", &IWorld::ShouldAllowPhysicsQueries)
+    .Method("ShouldTickAudio", &IWorld::ShouldTickAudio)
+    .Method("ShouldRunNodeEndFrame", &IWorld::ShouldRunNodeEndFrame)
+    .Method("ShouldBuildUiRenderPackets", &IWorld::ShouldBuildUiRenderPackets)
+    .Method("ShouldRenderFrame", &IWorld::ShouldRenderFrame)
+    .Method("FixedTickEnabled", &IWorld::FixedTickEnabled)
+    .Method("FixedTickDeltaSeconds", &IWorld::FixedTickDeltaSeconds)
+    .Method("FixedTickInterpolationAlpha", &IWorld::FixedTickInterpolationAlpha)
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    .Method("Input", static_cast<InputSystem& (IWorld::*)()>(&IWorld::Input))
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    .Method("UI", static_cast<UISystem& (IWorld::*)()>(&IWorld::UI))
+#endif
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    .Method("Audio", static_cast<AudioSystem& (IWorld::*)()>(&IWorld::Audio))
+#endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    .Method("Networking", static_cast<NetworkSystem& (IWorld::*)()>(&IWorld::Networking))
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    .Method("Physics", static_cast<PhysicsSystem& (IWorld::*)()>(&IWorld::Physics))
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    .Method("Renderer", static_cast<RendererSystem& (IWorld::*)()>(&IWorld::Renderer))
+#endif
+    .Register()));
+
+SNAPI_REFLECT_TYPE(BaseComponent, (TTypeBuilder<BaseComponent>(BaseComponent::kTypeName)
+    .Method("Owner", static_cast<NodeHandle (BaseComponent::*)() const>(&BaseComponent::Owner))
+    .Method("Handle", &BaseComponent::Handle)
+    .Method("Id", static_cast<const Uuid& (BaseComponent::*)() const>(&BaseComponent::Id))
+    .Method("TypeKey", static_cast<const TypeId& (BaseComponent::*)() const>(&BaseComponent::TypeKey))
+    .Method("Active", static_cast<bool (BaseComponent::*)() const>(&BaseComponent::Active))
+    .Method("SetActive", static_cast<void (BaseComponent::*)(bool)>(&BaseComponent::Active))
+    .Method("Replicated", static_cast<bool (BaseComponent::*)() const>(&BaseComponent::Replicated))
+    .Method("SetReplicated", static_cast<void (BaseComponent::*)(bool)>(&BaseComponent::Replicated))
+    .Method("OwnerNode", &BaseComponent::OwnerNode)
+    .Method("World", static_cast<IWorld* (BaseComponent::*)() const>(&BaseComponent::World))
+    .Method("IsServer", &BaseComponent::IsServer)
+    .Method("IsClient", &BaseComponent::IsClient)
+    .Method("IsListenServer", &BaseComponent::IsListenServer)
+    .Constructor<>()
+    .Register()));
+
 SNAPI_REFLECT_TYPE(BaseNode, (TTypeBuilder<BaseNode>(BaseNode::kTypeName)
     .Field("Name", &BaseNode::Name, &BaseNode::Name)
+    .Method("Handle", static_cast<NodeHandle (BaseNode::*)() const>(&BaseNode::Handle))
+    .Method("Id", static_cast<const Uuid& (BaseNode::*)() const>(&BaseNode::Id))
+    .Method("TypeKey", static_cast<const TypeId& (BaseNode::*)() const>(&BaseNode::TypeKey))
+    .Method("Parent", static_cast<NodeHandle (BaseNode::*)() const>(&BaseNode::Parent))
+    .Method("Active", static_cast<bool (BaseNode::*)() const>(&BaseNode::Active))
+    .Method("SetActive", static_cast<void (BaseNode::*)(bool)>(&BaseNode::Active))
+    .Method("Replicated", static_cast<bool (BaseNode::*)() const>(&BaseNode::Replicated))
+    .Method("SetReplicated", static_cast<void (BaseNode::*)(bool)>(&BaseNode::Replicated))
+    .Method("PendingDestroy", static_cast<bool (BaseNode::*)() const>(&BaseNode::PendingDestroy))
+    .Method("EditorTransient", static_cast<bool (BaseNode::*)() const>(&BaseNode::EditorTransient))
+    .Method("SetEditorTransient", static_cast<void (BaseNode::*)(bool)>(&BaseNode::EditorTransient))
+    .Method("World", static_cast<IWorld* (BaseNode::*)() const>(&BaseNode::World))
+    .Method("IsServer", &BaseNode::IsServer)
+    .Method("IsClient", &BaseNode::IsClient)
+    .Method("IsListenServer", &BaseNode::IsListenServer)
     .Method("OnPossess", &BaseNode::OnPossess)
     .Method("OnUnpossess", &BaseNode::OnUnpossess)
     .Constructor<>()
@@ -114,8 +182,146 @@ SNAPI_REFLECT_TYPE(Level, (TTypeBuilder<Level>(Level::kTypeName)
     .Register()));
 
 SNAPI_REFLECT_TYPE(World, (TTypeBuilder<World>(World::kTypeName)
+    .Base<IWorld>()
     .Constructor<>()
     .Register()));
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+SNAPI_REFLECT_TYPE(InputBootstrapSettings, (TTypeBuilder<InputBootstrapSettings>(TTypeNameV<InputBootstrapSettings>)
+    .Field("Backend", &InputBootstrapSettings::Backend)
+    .Field("RegisterSdl3Backend", &InputBootstrapSettings::RegisterSdl3Backend)
+    .Field("RegisterHidApiBackend", &InputBootstrapSettings::RegisterHidApiBackend)
+    .Field("RegisterLibUsbBackend", &InputBootstrapSettings::RegisterLibUsbBackend)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(InputSystem, (TTypeBuilder<InputSystem>(TTypeNameV<InputSystem>)
+    .Method("IsInitialized", &InputSystem::IsInitialized)
+    .Method("Settings", static_cast<const InputBootstrapSettings& (InputSystem::*)() const>(&InputSystem::Settings))
+    .Register()));
+#endif
+
+#if defined(SNAPI_GF_ENABLE_UI)
+SNAPI_REFLECT_TYPE(UIBootstrapSettings, (TTypeBuilder<UIBootstrapSettings>(TTypeNameV<UIBootstrapSettings>)
+    .Field("ViewportWidth", &UIBootstrapSettings::ViewportWidth)
+    .Field("ViewportHeight", &UIBootstrapSettings::ViewportHeight)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(UISystem, (TTypeBuilder<UISystem>(TTypeNameV<UISystem>)
+    .Method("IsInitialized", &UISystem::IsInitialized)
+    .Method("RootContextId", &UISystem::RootContextId)
+    .Method("Settings", static_cast<const UIBootstrapSettings& (UISystem::*)() const>(&UISystem::Settings))
+    .Register()));
+#endif
+
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+SNAPI_REFLECT_TYPE(AudioSystem, (TTypeBuilder<AudioSystem>(TTypeNameV<AudioSystem>)
+    .Method("IsInitialized", &AudioSystem::IsInitialized)
+    .Method("Update", &AudioSystem::Update)
+    .Register()));
+#endif
+
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+SNAPI_REFLECT_TYPE(NetworkSystem, (TTypeBuilder<NetworkSystem>(TTypeNameV<NetworkSystem>)
+    .Method("IsServer", &NetworkSystem::IsServer)
+    .Method("IsClient", &NetworkSystem::IsClient)
+    .Method("IsListenServer", &NetworkSystem::IsListenServer)
+    .Register()));
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+SNAPI_REFLECT_TYPE(PhysicsBootstrapSettings, (TTypeBuilder<PhysicsBootstrapSettings>(TTypeNameV<PhysicsBootstrapSettings>)
+    .Field("ThreadCount", &PhysicsBootstrapSettings::ThreadCount)
+    .Field("TickInFixedTick", &PhysicsBootstrapSettings::TickInFixedTick)
+    .Field("TickInVariableTick", &PhysicsBootstrapSettings::TickInVariableTick)
+    .Field("EnableFloatingOrigin", &PhysicsBootstrapSettings::EnableFloatingOrigin)
+    .Field("AutoRebaseFloatingOrigin", &PhysicsBootstrapSettings::AutoRebaseFloatingOrigin)
+    .Field("FloatingOriginRebaseDistance", &PhysicsBootstrapSettings::FloatingOriginRebaseDistance)
+    .Field("InitializeFloatingOriginFromFirstBody", &PhysicsBootstrapSettings::InitializeFloatingOriginFromFirstBody)
+    .Field("InitialFloatingOrigin", &PhysicsBootstrapSettings::InitialFloatingOrigin)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(PhysicsSystem, (TTypeBuilder<PhysicsSystem>(TTypeNameV<PhysicsSystem>)
+    .Method("IsInitialized", &PhysicsSystem::IsInitialized)
+    .Method("Settings", static_cast<const PhysicsBootstrapSettings& (PhysicsSystem::*)() const>(&PhysicsSystem::Settings))
+    .Method("TickInFixedTick", &PhysicsSystem::TickInFixedTick)
+    .Method("TickInVariableTick", &PhysicsSystem::TickInVariableTick)
+    .Method("WorldToPhysicsPosition", &PhysicsSystem::WorldToPhysicsPosition)
+    .Method("PhysicsToWorldPosition", &PhysicsSystem::PhysicsToWorldPosition)
+    .Method("EnsureFloatingOriginNear", &PhysicsSystem::EnsureFloatingOriginNear)
+    .Method("RebaseFloatingOrigin", &PhysicsSystem::RebaseFloatingOrigin)
+    .Method("FloatingOriginWorld", &PhysicsSystem::FloatingOriginWorld)
+    .Method("HasFloatingOrigin", &PhysicsSystem::HasFloatingOrigin)
+    .Register()));
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+SNAPI_REFLECT_TYPE(RendererBootstrapSettings, (TTypeBuilder<RendererBootstrapSettings>(TTypeNameV<RendererBootstrapSettings>)
+    .Field("CreateGraphicsApi", &RendererBootstrapSettings::CreateGraphicsApi)
+    .Field("CreateWindow", &RendererBootstrapSettings::CreateWindow)
+    .Field("WindowTitle", &RendererBootstrapSettings::WindowTitle)
+    .Field("WindowWidth", &RendererBootstrapSettings::WindowWidth)
+    .Field("WindowHeight", &RendererBootstrapSettings::WindowHeight)
+    .Field("FullScreen", &RendererBootstrapSettings::FullScreen)
+    .Field("Resizable", &RendererBootstrapSettings::Resizable)
+    .Field("Borderless", &RendererBootstrapSettings::Borderless)
+    .Field("Visible", &RendererBootstrapSettings::Visible)
+    .Field("Maximized", &RendererBootstrapSettings::Maximized)
+    .Field("Minimized", &RendererBootstrapSettings::Minimized)
+    .Field("Closeable", &RendererBootstrapSettings::Closeable)
+    .Field("AllowTransparency", &RendererBootstrapSettings::AllowTransparency)
+    .Field("CreateDefaultLighting", &RendererBootstrapSettings::CreateDefaultLighting)
+    .Field("RegisterDefaultPassGraph", &RendererBootstrapSettings::RegisterDefaultPassGraph)
+    .Field("EnableSsao", &RendererBootstrapSettings::EnableSsao)
+    .Field("EnableSsgi", &RendererBootstrapSettings::EnableSsgi)
+    .Field("EnableSsr", &RendererBootstrapSettings::EnableSsr)
+    .Field("EnableTaa", &RendererBootstrapSettings::EnableTaa)
+    .Field("EnableBloom", &RendererBootstrapSettings::EnableBloom)
+    .Field("EnableAtmosphere", &RendererBootstrapSettings::EnableAtmosphere)
+    .Field("EnableHeightFog", &RendererBootstrapSettings::EnableHeightFog)
+    .Field("AtmosphereWorldMode", &RendererBootstrapSettings::AtmosphereWorldMode)
+    .Field("AutoHandleSwapChainResize", &RendererBootstrapSettings::AutoHandleSwapChainResize)
+    .Field("AutoFallbackOnOutOfMemory", &RendererBootstrapSettings::AutoFallbackOnOutOfMemory)
+    .Field("OutOfMemoryFallbackWindowWidth", &RendererBootstrapSettings::OutOfMemoryFallbackWindowWidth)
+    .Field("OutOfMemoryFallbackWindowHeight", &RendererBootstrapSettings::OutOfMemoryFallbackWindowHeight)
+    .Field("ForceWindowedOnOutOfMemory", &RendererBootstrapSettings::ForceWindowedOnOutOfMemory)
+    .Field("DisableTransparencyOnOutOfMemory", &RendererBootstrapSettings::DisableTransparencyOnOutOfMemory)
+    .Field("DisableExpensivePassesOnOutOfMemory", &RendererBootstrapSettings::DisableExpensivePassesOnOutOfMemory)
+    .Field("DisableEnvironmentProbeOnOutOfMemory", &RendererBootstrapSettings::DisableEnvironmentProbeOnOutOfMemory)
+    .Field("CreateDefaultEnvironmentProbe", &RendererBootstrapSettings::CreateDefaultEnvironmentProbe)
+    .Field("DefaultEnvironmentProbeX", &RendererBootstrapSettings::DefaultEnvironmentProbeX)
+    .Field("DefaultEnvironmentProbeY", &RendererBootstrapSettings::DefaultEnvironmentProbeY)
+    .Field("DefaultEnvironmentProbeZ", &RendererBootstrapSettings::DefaultEnvironmentProbeZ)
+    .Field("PreloadDefaultFont", &RendererBootstrapSettings::PreloadDefaultFont)
+    .Field("DefaultFontPath", &RendererBootstrapSettings::DefaultFontPath)
+    .Field("DefaultFontSize", &RendererBootstrapSettings::DefaultFontSize)
+    .Field("CreateDefaultMaterials", &RendererBootstrapSettings::CreateDefaultMaterials)
+    .Constructor<>()
+    .Register()));
+
+SNAPI_REFLECT_TYPE(RendererSystem, (TTypeBuilder<RendererSystem>(TTypeNameV<RendererSystem>)
+    .Method("IsInitialized", &RendererSystem::IsInitialized)
+    .Method("Settings", static_cast<const RendererBootstrapSettings& (RendererSystem::*)() const>(&RendererSystem::Settings))
+    .Method("HasOpenWindow", &RendererSystem::HasOpenWindow)
+    .Method("UseDefaultRenderViewport", &RendererSystem::UseDefaultRenderViewport)
+    .Method("IsUsingDefaultRenderViewport", &RendererSystem::IsUsingDefaultRenderViewport)
+    .Method("DestroyRenderViewport", &RendererSystem::DestroyRenderViewport)
+    .Method("HasRenderViewport", &RendererSystem::HasRenderViewport)
+    .Method("ResizeSwapChain", &RendererSystem::ResizeSwapChain)
+    .Method("DestroySwapChain", &RendererSystem::DestroySwapChain)
+    .Method("AssignSwapChainToRenderViewport", &RendererSystem::AssignSwapChainToRenderViewport)
+    .Method("RegisterRenderViewportPassGraph", &RendererSystem::RegisterRenderViewportPassGraph)
+    .Method("RenderViewportPassGraphRevision", &RendererSystem::RenderViewportPassGraphRevision)
+    .Method("SetDefaultTaaJitterScale", &RendererSystem::SetDefaultTaaJitterScale)
+    .Method("SetViewportTaaJitterScale", &RendererSystem::SetViewportTaaJitterScale)
+    .Method("RecreateSwapChain", &RendererSystem::RecreateSwapChain)
+    .Method("LoadDefaultFont", &RendererSystem::LoadDefaultFont)
+    .Method("QueueText", &RendererSystem::QueueText)
+    .Method("HasDefaultFont", &RendererSystem::HasDefaultFont)
+    .Register()));
+#endif
 
 SNAPI_REFLECT_TYPE(LocalPlayer, (TTypeBuilder<LocalPlayer>(LocalPlayer::kTypeName)
     .Base<BaseNode>()
@@ -252,6 +458,8 @@ SNAPI_REFLECT_TYPE(Conduit::GraphNodeAsset, (TTypeBuilder<Conduit::GraphNodeAsse
     .Field("LabelName", &Conduit::GraphNodeAsset::LabelName)
     .Field("FalseLabelName", &Conduit::GraphNodeAsset::FalseLabelName)
     .Field("MemberName", &Conduit::GraphNodeAsset::MemberName)
+    .Field("ExecTargetNodeId", &Conduit::GraphNodeAsset::ExecTargetNodeId)
+    .Field("FalseExecTargetNodeId", &Conduit::GraphNodeAsset::FalseExecTargetNodeId)
     .Field("ConstantValue", &Conduit::GraphNodeAsset::ConstantValue)
     .Field("UnaryOp", &Conduit::GraphNodeAsset::UnaryOp)
     .Field("BinaryOp", &Conduit::GraphNodeAsset::BinaryOp)
@@ -1038,6 +1246,7 @@ SNAPI_REFLECT_TYPE(WorldRenderSettings, (TTypeBuilder<WorldRenderSettings>(World
 #endif // SNAPI_GF_ENABLE_RENDERER
 
 SNAPI_REFLECT_TYPE(TransformComponent, (TTypeBuilder<TransformComponent>(TransformComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Position", &TransformComponent::Position, EFieldFlagBits::Replication)
     .Field("Rotation", &TransformComponent::Rotation, EFieldFlagBits::Replication)
     .Field("Scale", &TransformComponent::Scale, EFieldFlagBits::Replication)
@@ -1045,6 +1254,7 @@ SNAPI_REFLECT_TYPE(TransformComponent, (TTypeBuilder<TransformComponent>(Transfo
     .Register()));
 
 SNAPI_REFLECT_TYPE(InputIntentComponent, (TTypeBuilder<InputIntentComponent>(InputIntentComponent::kTypeName)
+    .Base<BaseComponent>()
     .Constructor<>()
     .Register()));
 
@@ -1061,6 +1271,7 @@ SNAPI_REFLECT_TYPE(FollowTargetComponent::Settings, (TTypeBuilder<FollowTargetCo
     .Register()));
 
 SNAPI_REFLECT_TYPE(FollowTargetComponent, (TTypeBuilder<FollowTargetComponent>(FollowTargetComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &FollowTargetComponent::EditSettings,
            &FollowTargetComponent::GetSettings,
@@ -1069,10 +1280,12 @@ SNAPI_REFLECT_TYPE(FollowTargetComponent, (TTypeBuilder<FollowTargetComponent>(F
     .Register()));
 
 SNAPI_REFLECT_TYPE(RelevanceComponent, (TTypeBuilder<RelevanceComponent>(RelevanceComponent::kTypeName)
+    .Base<BaseComponent>()
     .Constructor<>()
     .Register()));
 
 SNAPI_REFLECT_TYPE(ScriptComponent, (TTypeBuilder<ScriptComponent>(ScriptComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("ScriptModule", &ScriptComponent::ScriptModule)
     .Field("ScriptType", &ScriptComponent::ScriptType)
     .Field("Instance", &ScriptComponent::Instance)
@@ -1080,6 +1293,7 @@ SNAPI_REFLECT_TYPE(ScriptComponent, (TTypeBuilder<ScriptComponent>(ScriptCompone
     .Register()));
 
 SNAPI_REFLECT_TYPE(Conduit::ClassComponent, (TTypeBuilder<Conduit::ClassComponent>(Conduit::ClassComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Class", &Conduit::ClassComponent::Class)
     .Field("Bound", &Conduit::ClassComponent::IsBound)
     .Field("LastError", &Conduit::ClassComponent::LastError)
@@ -1102,6 +1316,7 @@ SNAPI_REFLECT_TYPE(AudioSourceComponent::Settings, (TTypeBuilder<AudioSourceComp
     .Register()));
 
 SNAPI_REFLECT_TYPE(AudioSourceComponent, (TTypeBuilder<AudioSourceComponent>(AudioSourceComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &AudioSourceComponent::EditSettings,
            &AudioSourceComponent::GetSettings,
@@ -1122,6 +1337,7 @@ SNAPI_REFLECT_TYPE(AudioSourceComponent, (TTypeBuilder<AudioSourceComponent>(Aud
     .Register()));
 
 SNAPI_REFLECT_TYPE(AudioListenerComponent, (TTypeBuilder<AudioListenerComponent>(AudioListenerComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Active", &AudioListenerComponent::EditActive, &AudioListenerComponent::GetActive)
     .Method("SetActiveServer",
             &AudioListenerComponent::SetActiveServer,
@@ -1153,6 +1369,7 @@ SNAPI_REFLECT_TYPE(ColliderComponent::Settings, (TTypeBuilder<ColliderComponent:
     .Register()));
 
 SNAPI_REFLECT_TYPE(ColliderComponent, (TTypeBuilder<ColliderComponent>(ColliderComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &ColliderComponent::EditSettings,
            &ColliderComponent::GetSettings,
@@ -1177,6 +1394,7 @@ SNAPI_REFLECT_TYPE(RigidBodyComponent::Settings, (TTypeBuilder<RigidBodyComponen
     .Register()));
 
 SNAPI_REFLECT_TYPE(RigidBodyComponent, (TTypeBuilder<RigidBodyComponent>(RigidBodyComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &RigidBodyComponent::EditSettings,
            &RigidBodyComponent::GetSettings,
@@ -1196,6 +1414,7 @@ SNAPI_REFLECT_TYPE(CharacterMovementController::Settings, (TTypeBuilder<Characte
     .Register()));
 
 SNAPI_REFLECT_TYPE(CharacterMovementController, (TTypeBuilder<CharacterMovementController>(CharacterMovementController::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &CharacterMovementController::EditSettings,
            &CharacterMovementController::GetSettings)
@@ -1242,6 +1461,7 @@ SNAPI_REFLECT_TYPE(InputComponent::Settings, (TTypeBuilder<InputComponent::Setti
     .Register()));
 
 SNAPI_REFLECT_TYPE(InputComponent, (TTypeBuilder<InputComponent>(InputComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &InputComponent::EditSettings,
            &InputComponent::GetSettings)
@@ -1280,6 +1500,7 @@ SNAPI_REFLECT_TYPE(SprintArmComponent::Settings, (TTypeBuilder<SprintArmComponen
     .Register()));
 
 SNAPI_REFLECT_TYPE(SprintArmComponent, (TTypeBuilder<SprintArmComponent>(SprintArmComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &SprintArmComponent::EditSettings,
            &SprintArmComponent::GetSettings,
@@ -1290,6 +1511,7 @@ SNAPI_REFLECT_TYPE(SprintArmComponent, (TTypeBuilder<SprintArmComponent>(SprintA
     .Register()));
 
 SNAPI_REFLECT_TYPE(CameraComponent, (TTypeBuilder<CameraComponent>(CameraComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &CameraComponent::EditSettings,
            &CameraComponent::GetSettings,
@@ -1316,6 +1538,7 @@ SNAPI_REFLECT_TYPE(DirectionalLightComponent::Settings, (TTypeBuilder<Directiona
     .Register()));
 
 SNAPI_REFLECT_TYPE(DirectionalLightComponent, (TTypeBuilder<DirectionalLightComponent>(DirectionalLightComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &DirectionalLightComponent::EditSettings,
            &DirectionalLightComponent::GetSettings,
@@ -1336,6 +1559,7 @@ SNAPI_REFLECT_TYPE(EnvironmentCaptureComponent::Settings, (TTypeBuilder<Environm
     .Register()));
 
 SNAPI_REFLECT_TYPE(EnvironmentCaptureComponent, (TTypeBuilder<EnvironmentCaptureComponent>(EnvironmentCaptureComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &EnvironmentCaptureComponent::EditSettings,
            &EnvironmentCaptureComponent::GetSettings)
@@ -1358,6 +1582,7 @@ SNAPI_REFLECT_TYPE(StaticMeshComponent::Settings, (TTypeBuilder<StaticMeshCompon
     .Register()));
 
 SNAPI_REFLECT_TYPE(StaticMeshComponent, (TTypeBuilder<StaticMeshComponent>(StaticMeshComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &StaticMeshComponent::EditSettings,
            &StaticMeshComponent::GetSettings,
@@ -1380,6 +1605,7 @@ SNAPI_REFLECT_TYPE(SkeletalMeshComponent::Settings, (TTypeBuilder<SkeletalMeshCo
     .Register()));
 
 SNAPI_REFLECT_TYPE(SkeletalMeshComponent, (TTypeBuilder<SkeletalMeshComponent>(SkeletalMeshComponent::kTypeName)
+    .Base<BaseComponent>()
     .Field("Settings",
            &SkeletalMeshComponent::EditSettings,
            &SkeletalMeshComponent::GetSettings,
@@ -1409,6 +1635,7 @@ void RegisterBuiltinTypes()
         Info.Size = sizeof(T);
         Info.Align = alignof(T);
         Info.RuntimeOps = &GetTypeRuntimeOps<T>();
+        ApplyEditorValueFamilyMetadata<T>(Info);
         (void)TypeRegistry::Instance().Register(std::move(Info));
     };
     auto RegisterEnum = []<typename T>(const char* Name,
@@ -1436,12 +1663,45 @@ void RegisterBuiltinTypes()
     RegisterPlain.operator()<std::string>(TTypeNameV<std::string>);
     RegisterPlain.operator()<std::vector<uint8_t>>(TTypeNameV<std::vector<uint8_t>>);
     RegisterPlain.operator()<Uuid>(TTypeNameV<Uuid>);
+    RegisterPlain.operator()<TypeId>(TTypeNameV<TypeId>);
     RegisterPlain.operator()<Vec2>(TTypeNameV<Vec2>);
     RegisterPlain.operator()<Vec3>(TTypeNameV<Vec3>);
     RegisterPlain.operator()<Vec4>(TTypeNameV<Vec4>);
     RegisterPlain.operator()<Quat>(TTypeNameV<Quat>);
     RegisterPlain.operator()<NodeHandle>(TTypeNameV<NodeHandle>);
     RegisterPlain.operator()<ComponentHandle>(TTypeNameV<ComponentHandle>);
+    RegisterEnum.operator()<EWorldKind>(
+        TTypeNameV<EWorldKind>,
+        false,
+        {
+            EnumValueInfo{"Runtime", static_cast<std::uint64_t>(EWorldKind::Runtime)},
+            EnumValueInfo{"Editor", static_cast<std::uint64_t>(EWorldKind::Editor)},
+            EnumValueInfo{"PIE", static_cast<std::uint64_t>(EWorldKind::PIE)},
+        });
+    RegisterEnum.operator()<EFieldFlagBits>(
+        TTypeNameV<EFieldFlagBits>,
+        false,
+        {
+            EnumValueInfo{"None", static_cast<std::uint64_t>(EFieldFlagBits::None)},
+            EnumValueInfo{"Replication", static_cast<std::uint64_t>(EFieldFlagBits::Replication)},
+            EnumValueInfo{"Serialized", static_cast<std::uint64_t>(EFieldFlagBits::Serialized)},
+            EnumValueInfo{"ReplicationReliable", static_cast<std::uint64_t>(EFieldFlagBits::ReplicationReliable)},
+            EnumValueInfo{"ReplicationUnreliable", static_cast<std::uint64_t>(EFieldFlagBits::ReplicationUnreliable)},
+        });
+    RegisterPlain.operator()<FieldFlags>(TTypeNameV<FieldFlags>);
+    RegisterEnum.operator()<EMethodFlagBits>(
+        TTypeNameV<EMethodFlagBits>,
+        false,
+        {
+            EnumValueInfo{"None", static_cast<std::uint64_t>(EMethodFlagBits::None)},
+            EnumValueInfo{"RpcReliable", static_cast<std::uint64_t>(EMethodFlagBits::RpcReliable)},
+            EnumValueInfo{"RpcUnreliable", static_cast<std::uint64_t>(EMethodFlagBits::RpcUnreliable)},
+            EnumValueInfo{"RpcNetServer", static_cast<std::uint64_t>(EMethodFlagBits::RpcNetServer)},
+            EnumValueInfo{"RpcNetClient", static_cast<std::uint64_t>(EMethodFlagBits::RpcNetClient)},
+            EnumValueInfo{"RpcNetMulticast", static_cast<std::uint64_t>(EMethodFlagBits::RpcNetMulticast)},
+            EnumValueInfo{"EditorAction", static_cast<std::uint64_t>(EMethodFlagBits::EditorAction)},
+        });
+    RegisterPlain.operator()<MethodFlags>(TTypeNameV<MethodFlags>);
     RegisterEnum.operator()<Conduit::EBuiltinEntryPoint>(
         TTypeNameV<Conduit::EBuiltinEntryPoint>,
         false,
@@ -1510,7 +1770,45 @@ void RegisterBuiltinTypes()
     RegisterPlain.operator()<SnAPI::UI::Color>(TTypeNameV<SnAPI::UI::Color>);
 #endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
-    RegisterPlain.operator()<ECollisionFilterBits>(TTypeNameV<ECollisionFilterBits>);
+    RegisterEnum.operator()<ECollisionFilterBits>(
+        TTypeNameV<ECollisionFilterBits>,
+        false,
+        {
+            EnumValueInfo{"None", static_cast<std::uint64_t>(ECollisionFilterBits::None)},
+            EnumValueInfo{"WorldStatic", static_cast<std::uint64_t>(ECollisionFilterBits::WorldStatic)},
+            EnumValueInfo{"WorldDynamic", static_cast<std::uint64_t>(ECollisionFilterBits::WorldDynamic)},
+            EnumValueInfo{"Character", static_cast<std::uint64_t>(ECollisionFilterBits::Character)},
+            EnumValueInfo{"Player", static_cast<std::uint64_t>(ECollisionFilterBits::Player)},
+            EnumValueInfo{"Npc", static_cast<std::uint64_t>(ECollisionFilterBits::Npc)},
+            EnumValueInfo{"Vehicle", static_cast<std::uint64_t>(ECollisionFilterBits::Vehicle)},
+            EnumValueInfo{"Projectile", static_cast<std::uint64_t>(ECollisionFilterBits::Projectile)},
+            EnumValueInfo{"TriggerVolume", static_cast<std::uint64_t>(ECollisionFilterBits::TriggerVolume)},
+            EnumValueInfo{"Pickup", static_cast<std::uint64_t>(ECollisionFilterBits::Pickup)},
+            EnumValueInfo{"Debris", static_cast<std::uint64_t>(ECollisionFilterBits::Debris)},
+            EnumValueInfo{"Sensor", static_cast<std::uint64_t>(ECollisionFilterBits::Sensor)},
+            EnumValueInfo{"Cloth", static_cast<std::uint64_t>(ECollisionFilterBits::Cloth)},
+            EnumValueInfo{"Terrain", static_cast<std::uint64_t>(ECollisionFilterBits::Terrain)},
+            EnumValueInfo{"Water", static_cast<std::uint64_t>(ECollisionFilterBits::Water)},
+            EnumValueInfo{"Foliage", static_cast<std::uint64_t>(ECollisionFilterBits::Foliage)},
+            EnumValueInfo{"Effect", static_cast<std::uint64_t>(ECollisionFilterBits::Effect)},
+            EnumValueInfo{"Weapon", static_cast<std::uint64_t>(ECollisionFilterBits::Weapon)},
+            EnumValueInfo{"Hitbox", static_cast<std::uint64_t>(ECollisionFilterBits::Hitbox)},
+            EnumValueInfo{"Hurtbox", static_cast<std::uint64_t>(ECollisionFilterBits::Hurtbox)},
+            EnumValueInfo{"Ragdoll", static_cast<std::uint64_t>(ECollisionFilterBits::Ragdoll)},
+            EnumValueInfo{"Interactable", static_cast<std::uint64_t>(ECollisionFilterBits::Interactable)},
+            EnumValueInfo{"Door", static_cast<std::uint64_t>(ECollisionFilterBits::Door)},
+            EnumValueInfo{"Buildable", static_cast<std::uint64_t>(ECollisionFilterBits::Buildable)},
+            EnumValueInfo{"Destructible", static_cast<std::uint64_t>(ECollisionFilterBits::Destructible)},
+            EnumValueInfo{"PhysicsProxy", static_cast<std::uint64_t>(ECollisionFilterBits::PhysicsProxy)},
+            EnumValueInfo{"Ghost", static_cast<std::uint64_t>(ECollisionFilterBits::Ghost)},
+            EnumValueInfo{"SpawnPoint", static_cast<std::uint64_t>(ECollisionFilterBits::SpawnPoint)},
+            EnumValueInfo{"Camera", static_cast<std::uint64_t>(ECollisionFilterBits::Camera)},
+            EnumValueInfo{"TeamA", static_cast<std::uint64_t>(ECollisionFilterBits::TeamA)},
+            EnumValueInfo{"TeamB", static_cast<std::uint64_t>(ECollisionFilterBits::TeamB)},
+            EnumValueInfo{"TeamC", static_cast<std::uint64_t>(ECollisionFilterBits::TeamC)},
+            EnumValueInfo{"TeamD", static_cast<std::uint64_t>(ECollisionFilterBits::TeamD)},
+            EnumValueInfo{"All", static_cast<std::uint64_t>(ECollisionFilterBits::All)},
+        });
     RegisterPlain.operator()<CollisionFilterFlags>(TTypeNameV<CollisionFilterFlags>);
     RegisterEnum.operator()<SnAPI::Physics::EBodyType>(
         TTypeNameV<SnAPI::Physics::EBodyType>,
@@ -1520,13 +1818,56 @@ void RegisterBuiltinTypes()
             EnumValueInfo{"Kinematic", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Kinematic)},
             EnumValueInfo{"Dynamic", static_cast<std::uint64_t>(SnAPI::Physics::EBodyType::Dynamic)},
         });
-    RegisterPlain.operator()<SnAPI::Physics::EShapeType>(TTypeNameV<SnAPI::Physics::EShapeType>);
+    RegisterEnum.operator()<SnAPI::Physics::EShapeType>(
+        TTypeNameV<SnAPI::Physics::EShapeType>,
+        false,
+        {
+            EnumValueInfo{"Sphere", static_cast<std::uint64_t>(SnAPI::Physics::EShapeType::Sphere)},
+            EnumValueInfo{"Box", static_cast<std::uint64_t>(SnAPI::Physics::EShapeType::Box)},
+            EnumValueInfo{"Capsule", static_cast<std::uint64_t>(SnAPI::Physics::EShapeType::Capsule)},
+            EnumValueInfo{"ConvexHull", static_cast<std::uint64_t>(SnAPI::Physics::EShapeType::ConvexHull)},
+            EnumValueInfo{"TriangleMesh", static_cast<std::uint64_t>(SnAPI::Physics::EShapeType::TriangleMesh)},
+            EnumValueInfo{"HeightField", static_cast<std::uint64_t>(SnAPI::Physics::EShapeType::HeightField)},
+        });
 #endif
 #if defined(SNAPI_GF_ENABLE_INPUT)
+    RegisterEnum.operator()<SnAPI::Input::EInputBackend>(
+        TTypeNameV<SnAPI::Input::EInputBackend>,
+        false,
+        {
+            EnumValueInfo{"Invalid", static_cast<std::uint64_t>(SnAPI::Input::EInputBackend::Invalid)},
+            EnumValueInfo{"SDL3", static_cast<std::uint64_t>(SnAPI::Input::EInputBackend::SDL3)},
+            EnumValueInfo{"HIDAPI", static_cast<std::uint64_t>(SnAPI::Input::EInputBackend::HIDAPI)},
+            EnumValueInfo{"LIBUSB", static_cast<std::uint64_t>(SnAPI::Input::EInputBackend::LIBUSB)},
+            EnumValueInfo{"Custom0", static_cast<std::uint64_t>(SnAPI::Input::EInputBackend::Custom0)},
+        });
     RegisterPlain.operator()<SnAPI::Input::EKey>(TTypeNameV<SnAPI::Input::EKey>);
     RegisterPlain.operator()<SnAPI::Input::EGamepadAxis>(TTypeNameV<SnAPI::Input::EGamepadAxis>);
     RegisterPlain.operator()<SnAPI::Input::EGamepadButton>(TTypeNameV<SnAPI::Input::EGamepadButton>);
     RegisterPlain.operator()<SnAPI::Input::DeviceId>(TTypeNameV<SnAPI::Input::DeviceId>);
+#endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    RegisterEnum.operator()<SnAPI::Networking::ESessionRole>(
+        TTypeNameV<SnAPI::Networking::ESessionRole>,
+        false,
+        {
+            EnumValueInfo{"Client", static_cast<std::uint64_t>(SnAPI::Networking::ESessionRole::Client)},
+            EnumValueInfo{"Server", static_cast<std::uint64_t>(SnAPI::Networking::ESessionRole::Server)},
+            EnumValueInfo{"ServerAndClient", static_cast<std::uint64_t>(SnAPI::Networking::ESessionRole::ServerAndClient)},
+        });
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    RegisterEnum.operator()<ERenderViewportPassGraphPreset>(
+        TTypeNameV<ERenderViewportPassGraphPreset>,
+        false,
+        {
+            EnumValueInfo{"None", static_cast<std::uint64_t>(ERenderViewportPassGraphPreset::None)},
+            EnumValueInfo{"UiPresentOnly", static_cast<std::uint64_t>(ERenderViewportPassGraphPreset::UiPresentOnly)},
+            EnumValueInfo{"DefaultWorld", static_cast<std::uint64_t>(ERenderViewportPassGraphPreset::DefaultWorld)},
+#if defined(WITH_EDITOR) && WITH_EDITOR
+            EnumValueInfo{"EditorWorld", static_cast<std::uint64_t>(ERenderViewportPassGraphPreset::EditorWorld)},
+#endif
+        });
 #endif
 
     RegisterSerializationDefaults();

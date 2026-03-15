@@ -6,6 +6,7 @@
 
 #include "Editor/GameFrameworkEditor.hpp"
 #include "GameFramework.hpp"
+#include <UIEvents.h>
 
 using namespace SnAPI::GameFramework;
 using namespace SnAPI::GameFramework::Conduit;
@@ -17,11 +18,63 @@ namespace
 struct ConduitEditorNodeHost : BaseNode, NodeCRTP<ConduitEditorNodeHost>
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitEditorNodeHost";
+
+    int Score = 0;
+
+    void AddScore(const int Delta)
+    {
+        Score += Delta;
+    }
+
+    [[nodiscard]] int GetScore() const
+    {
+        return Score;
+    }
+
+    [[nodiscard]] ConduitEditorNodeHost& GetSelfReference()
+    {
+        return *this;
+    }
+
+    [[nodiscard]] ConduitEditorNodeHost* GetSelfPointer() const
+    {
+        return const_cast<ConduitEditorNodeHost*>(this);
+    }
 };
 
 struct ConduitEditorDotNamedHost : BaseNode, NodeCRTP<ConduitEditorDotNamedHost>
 {
     static constexpr const char* kTypeName = "SnAPI.GameFramework.Tests.ConduitEditorDotNamedHost";
+};
+
+struct ConduitEditorComponentHost : BaseComponent, ComponentCRTP<ConduitEditorComponentHost>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitEditorComponentHost";
+
+    int Charge = 0;
+
+    void AddCharge(const int Delta)
+    {
+        Charge += Delta;
+    }
+};
+
+struct ConduitPaletteBaseNode : BaseNode, NodeCRTP<ConduitPaletteBaseNode>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitPaletteBaseNode";
+
+    int BaseValue = 0;
+
+    void BasePing() {}
+};
+
+struct ConduitPaletteDerivedNode : ConduitPaletteBaseNode, NodeCRTP<ConduitPaletteDerivedNode>
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::Tests::ConduitPaletteDerivedNode";
+
+    int DerivedValue = 0;
+
+    void DerivedPing() {}
 };
 
 void EnsureConduitEditorNodeHostRegistered()
@@ -36,6 +89,11 @@ void EnsureConduitEditorNodeHostRegistered()
     auto RegisterResult = TTypeBuilder<ConduitEditorNodeHost>(ConduitEditorNodeHost::kTypeName)
         .Base<BaseNode>()
         .Constructor<>()
+        .Field("Score", &ConduitEditorNodeHost::Score)
+        .Method("AddScore", &ConduitEditorNodeHost::AddScore)
+        .Method("GetScore", &ConduitEditorNodeHost::GetScore)
+        .Method("GetSelfReference", &ConduitEditorNodeHost::GetSelfReference)
+        .Method("GetSelfPointer", &ConduitEditorNodeHost::GetSelfPointer)
         .Register();
     REQUIRE(RegisterResult);
 
@@ -46,6 +104,43 @@ void EnsureConduitEditorNodeHostRegistered()
             .Constructor<>()
             .Register();
         REQUIRE(DotRegisterResult);
+    }
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitEditorComponentHost>()))
+    {
+        auto ComponentRegisterResult = TTypeBuilder<ConduitEditorComponentHost>(ConduitEditorComponentHost::kTypeName)
+            .Constructor<>()
+            .Field("Charge", &ConduitEditorComponentHost::Charge)
+            .Method("AddCharge", &ConduitEditorComponentHost::AddCharge)
+            .Register();
+        REQUIRE(ComponentRegisterResult);
+    }
+}
+
+void EnsureConduitPaletteHierarchyRegistered()
+{
+    RegisterBuiltinTypes();
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitPaletteBaseNode>()))
+    {
+        auto BaseRegisterResult = TTypeBuilder<ConduitPaletteBaseNode>(ConduitPaletteBaseNode::kTypeName)
+            .Base<BaseNode>()
+            .Constructor<>()
+            .Field("BaseValue", &ConduitPaletteBaseNode::BaseValue)
+            .Method("BasePing", &ConduitPaletteBaseNode::BasePing)
+            .Register();
+        REQUIRE(BaseRegisterResult);
+    }
+
+    if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitPaletteDerivedNode>()))
+    {
+        auto DerivedRegisterResult = TTypeBuilder<ConduitPaletteDerivedNode>(ConduitPaletteDerivedNode::kTypeName)
+            .Base<ConduitPaletteBaseNode>()
+            .Constructor<>()
+            .Field("DerivedValue", &ConduitPaletteDerivedNode::DerivedValue)
+            .Method("DerivedPing", &ConduitPaletteDerivedNode::DerivedPing)
+            .Register();
+        REQUIRE(DerivedRegisterResult);
     }
 }
 
@@ -315,6 +410,9 @@ TEST_CASE("Conduit editor service manages Conduit class documents", "[Conduit][E
     CHECK(Service.ActiveClassDocument()->Asset().Name == "EnemyLogic");
 
     const auto HostTypes = Service.AvailableClassHostTypes();
+    CHECK(std::find_if(HostTypes.begin(), HostTypes.end(), [](const ClassHostTypeOption& Entry) {
+              return Entry.Type == StaticTypeId<BaseNode>() && Entry.Label == "BaseNode";
+          }) != HostTypes.end());
     CHECK(std::find_if(HostTypes.begin(), HostTypes.end(), [](const ClassHostTypeOption& Entry) {
               return Entry.Type == StaticTypeId<ConduitEditorNodeHost>() && Entry.Label == "ConduitEditorNodeHost";
           }) != HostTypes.end());
@@ -597,4 +695,821 @@ TEST_CASE("Conduit editor service exposes and persists graph canvas state", "[Co
     CHECK(Document->Asset().EditorState.Viewport.PanX == Catch::Approx(-32.0f));
     CHECK(Document->Asset().EditorState.Viewport.PanY == Catch::Approx(144.0f));
     CHECK(Document->Asset().EditorState.Viewport.Zoom == Catch::Approx(1.65f));
+}
+
+TEST_CASE("Conduit editor service isolates canvas-only revisions from workspace revisions", "[Conduit][Editor]")
+{
+    RegisterBuiltinTypes();
+
+    const Uuid LabelId = NewUuid();
+
+    GraphAsset Asset{};
+    Asset.Name = "CanvasRevisionDoc";
+    Asset.Nodes = {
+        GraphNodeAsset{
+            .Id = LabelId,
+            .Kind = EGraphAssetNodeKind::Label,
+            .LabelName = "Start",
+        },
+    };
+    Asset.EditorState.Nodes = {
+        GraphNodeEditorAsset{
+            .NodeId = LabelId,
+            .X = 32.0f,
+            .Y = 64.0f,
+        },
+    };
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/CanvasRevisionDoc", "CanvasRevisionDoc", Asset);
+    REQUIRE(OpenResult);
+
+    GraphDocument* Document = Service.ActiveDocument();
+    REQUIRE(Document != nullptr);
+    Document->SetLastCompile(CompileOutput{
+        .Diagnostics = {
+            CompileDiagnostic{
+                .Severity = ECompileDiagnosticSeverity::Warning,
+                .Message = "cached warning",
+            },
+        },
+    });
+
+    const std::uint64_t InitialDocumentRevision = Document->Revision();
+    const auto InitialWorkspace = Service.ActiveWorkspaceView();
+    CHECK(InitialWorkspace.CanvasRevision == 0);
+
+    REQUIRE(Service.MoveNode(LabelId, 64.0f, 96.0f));
+    const auto AfterFirstMove = Service.ActiveWorkspaceView();
+    CHECK(Document->Revision() == InitialDocumentRevision + 1);
+    CHECK(AfterFirstMove.IsDirty);
+    CHECK(AfterFirstMove.Revision > InitialWorkspace.Revision);
+    CHECK(AfterFirstMove.CanvasRevision > InitialWorkspace.CanvasRevision);
+    CHECK(Document->LastCompile().has_value());
+
+    const std::uint64_t WorkspaceRevisionAfterFirstMove = AfterFirstMove.Revision;
+    const std::uint64_t CanvasRevisionAfterFirstMove = AfterFirstMove.CanvasRevision;
+
+    REQUIRE(Service.MoveNode(LabelId, 96.0f, 144.0f));
+    const auto AfterSecondMove = Service.ActiveWorkspaceView();
+    CHECK(Document->Revision() == InitialDocumentRevision + 2);
+    CHECK(AfterSecondMove.Revision == WorkspaceRevisionAfterFirstMove);
+    CHECK(AfterSecondMove.CanvasRevision > CanvasRevisionAfterFirstMove);
+    CHECK(Document->LastCompile().has_value());
+
+    const std::uint64_t CanvasRevisionAfterSecondMove = AfterSecondMove.CanvasRevision;
+
+    REQUIRE(Service.SetViewport(12.0f, -18.0f, 1.25f));
+    const auto AfterViewport = Service.ActiveWorkspaceView();
+    CHECK(Document->Revision() == InitialDocumentRevision + 3);
+    CHECK(AfterViewport.Revision == WorkspaceRevisionAfterFirstMove);
+    CHECK(AfterViewport.CanvasRevision > CanvasRevisionAfterSecondMove);
+    CHECK(Document->LastCompile().has_value());
+}
+
+TEST_CASE("Conduit editor service exposes reflected method call nodes for self and instance contexts", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    GraphAsset Asset{};
+    Asset.Name = "MethodPaletteDoc";
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/MethodPaletteDoc", "MethodPaletteDoc", Asset);
+    REQUIRE(OpenResult);
+
+    const auto SelfTypes = Service.AvailableGraphSelfTypes();
+    CHECK(std::find_if(SelfTypes.begin(), SelfTypes.end(), [](const GraphSelfTypeOption& Entry) {
+              return Entry.Type == StaticTypeId<ConduitEditorNodeHost>() && Entry.Label == "ConduitEditorNodeHost";
+          }) != SelfTypes.end());
+
+    const auto PaletteBefore = Service.ActivePaletteEntries();
+    CHECK(std::find_if(PaletteBefore.begin(), PaletteBefore.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "self.method.ConduitEditorNodeHost.AddScore";
+          }) == PaletteBefore.end());
+    CHECK(std::find_if(PaletteBefore.begin(), PaletteBefore.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.method.ConduitEditorNodeHost.AddScore" &&
+                     Entry.DisplayName == "Call ConduitEditorNodeHost::AddScore";
+          }) != PaletteBefore.end());
+    CHECK(std::find_if(PaletteBefore.begin(), PaletteBefore.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.method.ConduitEditorComponentHost.AddCharge" &&
+                     Entry.DisplayName == "Call ConduitEditorComponentHost::AddCharge";
+          }) != PaletteBefore.end());
+
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+    {
+        const auto Workspace = Service.ActiveWorkspaceView();
+        CHECK(Workspace.SelfTypeLabel == "ConduitEditorNodeHost");
+    }
+
+    const auto PaletteAfter = Service.ActivePaletteEntries();
+    CHECK(std::find_if(PaletteAfter.begin(), PaletteAfter.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "self.method.ConduitEditorNodeHost.AddScore" &&
+                     Entry.DisplayName == "Call AddScore";
+          }) != PaletteAfter.end());
+    CHECK(std::find_if(PaletteAfter.begin(), PaletteAfter.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "self.method.ConduitEditorNodeHost.GetScore" &&
+                     Entry.DisplayName == "Call GetScore";
+          }) != PaletteAfter.end());
+
+    auto CallNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.AddScore");
+    REQUIRE(CallNodeResult);
+    CHECK((*CallNodeResult)->Kind == EGraphAssetNodeKind::SelfMethodCall);
+    CHECK((*CallNodeResult)->OwnerType == StaticTypeId<ConduitEditorNodeHost>());
+    CHECK((*CallNodeResult)->MemberName == "AddScore");
+
+    const auto Canvas = Service.ActiveCanvasView();
+    const auto CanvasNodeIt = std::find_if(Canvas.Nodes.begin(), Canvas.Nodes.end(), [&CallNodeResult](const CanvasNodeView& Node) {
+        return Node.Id == (*CallNodeResult)->Id;
+    });
+    REQUIRE(CanvasNodeIt != Canvas.Nodes.end());
+    REQUIRE(CanvasNodeIt->InputPins.size() == 2);
+    CHECK(CanvasNodeIt->InputPins[0].Name == "In");
+    CHECK(CanvasNodeIt->InputPins[0].IsExec);
+    CHECK(CanvasNodeIt->InputPins[1].Name == "Arg0");
+    CHECK_FALSE(CanvasNodeIt->InputPins[1].IsExec);
+    REQUIRE(CanvasNodeIt->OutputPins.size() == 1);
+    CHECK(CanvasNodeIt->OutputPins[0].Name == "Out");
+    CHECK(CanvasNodeIt->OutputPins[0].IsExec);
+}
+
+TEST_CASE("Conduit editor palette groups reflected members by declaring type and dedups inherited instance entries",
+          "[Conduit][Editor]")
+{
+    EnsureConduitPaletteHierarchyRegistered();
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/PaletteHierarchyDoc", "PaletteHierarchyDoc", GraphAsset{});
+    REQUIRE(OpenResult);
+
+    const auto Palette = Service.ActivePaletteEntries();
+    CHECK(std::count_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.method.ConduitPaletteBaseNode.BasePing";
+          }) == 1);
+    CHECK(std::count_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.field.read.ConduitPaletteBaseNode.BaseValue";
+          }) == 1);
+
+    const auto BaseMethodIt = std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+        return Entry.StableId == "instance.method.ConduitPaletteBaseNode.BasePing";
+    });
+    REQUIRE(BaseMethodIt != Palette.end());
+    CHECK(BaseMethodIt->Category == "Reflection/Instance/Methods/ConduitPaletteBaseNode");
+
+    const auto DerivedMethodIt = std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+        return Entry.StableId == "instance.method.ConduitPaletteDerivedNode.DerivedPing";
+    });
+    REQUIRE(DerivedMethodIt != Palette.end());
+    CHECK(DerivedMethodIt->Category == "Reflection/Instance/Methods/ConduitPaletteDerivedNode");
+
+    const auto BaseFieldIt = std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+        return Entry.StableId == "instance.field.read.ConduitPaletteBaseNode.BaseValue";
+    });
+    REQUIRE(BaseFieldIt != Palette.end());
+    CHECK(BaseFieldIt->Category == "Reflection/Instance/Fields/ConduitPaletteBaseNode");
+
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitPaletteDerivedNode>()));
+    const auto SelfPalette = Service.ActivePaletteEntries();
+
+    const auto SelfBaseMethodIt = std::find_if(SelfPalette.begin(), SelfPalette.end(), [](const PaletteEntryView& Entry) {
+        return Entry.StableId == "self.method.ConduitPaletteBaseNode.BasePing";
+    });
+    REQUIRE(SelfBaseMethodIt != SelfPalette.end());
+    CHECK(SelfBaseMethodIt->Category == "Reflection/Self/Methods/ConduitPaletteBaseNode");
+
+    const auto SelfDerivedFieldIt = std::find_if(SelfPalette.begin(), SelfPalette.end(), [](const PaletteEntryView& Entry) {
+        return Entry.StableId == "self.field.read.ConduitPaletteDerivedNode.DerivedValue";
+    });
+    REQUIRE(SelfDerivedFieldIt != SelfPalette.end());
+    CHECK(SelfDerivedFieldIt->Category == "Reflection/Self/Fields/ConduitPaletteDerivedNode");
+}
+
+TEST_CASE("Conduit editor palette includes reflected world and subsystem instance methods", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/SystemPaletteDoc", "SystemPaletteDoc", GraphAsset{});
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    const auto Palette = Service.ActivePaletteEntries();
+    CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.method.IWorld.Renderer";
+          }) != Palette.end());
+    CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.method.RendererSystem.IsInitialized";
+          }) != Palette.end());
+    CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.method.RendererSystem.Settings";
+          }) != Palette.end());
+    CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.field.read.RendererBootstrapSettings.CreateGraphicsApi";
+          }) != Palette.end());
+    CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "instance.field.write.RendererBootstrapSettings.CreateGraphicsApi";
+          }) != Palette.end());
+}
+
+TEST_CASE("Conduit editor service connects data pins into authored slots and visible wires", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    const Uuid VariableId = NewUuid();
+
+    GraphAsset Asset{};
+    Asset.Name = "MethodWireDoc";
+    Asset.Variables = {
+        GraphVariableAsset{
+            .Id = VariableId,
+            .Name = "Delta",
+            .Type = StaticTypeId<int>(),
+        },
+    };
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/MethodWireDoc", "MethodWireDoc", Asset);
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    const std::string VariableGetStableId = "variable.get." + ToString(VariableId);
+    auto VariableNodeResult = Service.SpawnNode(VariableGetStableId);
+    REQUIRE(VariableNodeResult);
+    const Uuid VariableNodeId = (*VariableNodeResult)->Id;
+
+    auto MethodNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.AddScore");
+    REQUIRE(MethodNodeResult);
+    const Uuid MethodNodeId = (*MethodNodeResult)->Id;
+
+    const Result ConnectResult = Service.ConnectPins(VariableNodeId, "Value", MethodNodeId, "Arg0");
+    const std::string ConnectMessage = ConnectResult ? std::string("connect ok") : ConnectResult.error().Message;
+    INFO(ConnectMessage);
+    REQUIRE(ConnectResult);
+
+    const GraphDocument* Document = Service.ActiveDocument();
+    REQUIRE(Document != nullptr);
+
+    const GraphNodeAsset* VariableNode = Document->FindNode(VariableNodeId);
+    const GraphNodeAsset* MethodNode = Document->FindNode(MethodNodeId);
+    REQUIRE(VariableNode != nullptr);
+    REQUIRE(MethodNode != nullptr);
+    REQUIRE(VariableNode->Output.IsValid());
+    REQUIRE(MethodNode->Inputs.size() == 1);
+    REQUIRE(MethodNode->Inputs[0].IsValid());
+    CHECK(MethodNode->Inputs[0].Value == VariableNode->Output.Value);
+    REQUIRE(Document->Asset().Slots.size() == 1);
+
+    const auto Canvas = Service.ActiveCanvasView();
+    const auto WireIt = std::find_if(Canvas.Wires.begin(), Canvas.Wires.end(), [VariableNodeId, MethodNodeId](const CanvasWireView& Wire) {
+        return Wire.SourceNodeId == VariableNodeId &&
+               Wire.SourcePin == "Value" &&
+               Wire.TargetNodeId == MethodNodeId &&
+               Wire.TargetPin == "Arg0";
+    });
+    REQUIRE(WireIt != Canvas.Wires.end());
+    CHECK_FALSE(WireIt->IsExec);
+    CHECK(WireIt->Kind == ESlotKind::Value);
+}
+
+TEST_CASE("Conduit editor service connects pointer outputs into instance target pins", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    GraphAsset Asset{};
+    Asset.Name = "PointerTargetDoc";
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/PointerTargetDoc", "PointerTargetDoc", Asset);
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    auto PointerNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.GetSelfPointer");
+    REQUIRE(PointerNodeResult);
+    const Uuid PointerNodeId = (*PointerNodeResult)->Id;
+
+    auto TargetMethodNodeResult = Service.SpawnNode("instance.method.ConduitEditorNodeHost.AddScore");
+    REQUIRE(TargetMethodNodeResult);
+    const Uuid TargetMethodNodeId = (*TargetMethodNodeResult)->Id;
+
+    const Result ConnectResult = Service.ConnectPins(PointerNodeId, "Return", TargetMethodNodeId, "Target");
+    const std::string ConnectMessage = ConnectResult ? std::string("connect ok") : ConnectResult.error().Message;
+    INFO(ConnectMessage);
+    REQUIRE(ConnectResult);
+
+    const GraphDocument* Document = Service.ActiveDocument();
+    REQUIRE(Document != nullptr);
+
+    const GraphNodeAsset* PointerNode = Document->FindNode(PointerNodeId);
+    const GraphNodeAsset* TargetMethodNode = Document->FindNode(TargetMethodNodeId);
+    REQUIRE(PointerNode != nullptr);
+    REQUIRE(TargetMethodNode != nullptr);
+    REQUIRE(PointerNode->ReturnSlot.IsValid());
+    REQUIRE(TargetMethodNode->Instance.IsValid());
+    CHECK(TargetMethodNode->Instance.Value == PointerNode->ReturnSlot.Value);
+
+    const auto Canvas = Service.ActiveCanvasView();
+    const auto WireIt = std::find_if(Canvas.Wires.begin(), Canvas.Wires.end(), [PointerNodeId, TargetMethodNodeId](const CanvasWireView& Wire) {
+        return Wire.SourceNodeId == PointerNodeId &&
+               Wire.SourcePin == "Return" &&
+               Wire.TargetNodeId == TargetMethodNodeId &&
+               Wire.TargetPin == "Target";
+    });
+    REQUIRE(WireIt != Canvas.Wires.end());
+    CHECK_FALSE(WireIt->IsExec);
+    CHECK(WireIt->Kind == ESlotKind::Value);
+}
+
+TEST_CASE("Conduit editor service exposes reference-return methods as pointer outputs for instance targets", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/ReferenceTargetDoc", "ReferenceTargetDoc", GraphAsset{});
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    const auto Palette = Service.ActivePaletteEntries();
+    CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
+              return Entry.StableId == "self.method.ConduitEditorNodeHost.GetSelfReference";
+          }) != Palette.end());
+
+    auto SourceNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.GetSelfReference");
+    REQUIRE(SourceNodeResult);
+    const Uuid SourceNodeId = (*SourceNodeResult)->Id;
+
+    auto TargetNodeResult = Service.SpawnNode("instance.method.ConduitEditorNodeHost.AddScore");
+    REQUIRE(TargetNodeResult);
+    const Uuid TargetNodeId = (*TargetNodeResult)->Id;
+
+    const Result ConnectResult = Service.ConnectPins(SourceNodeId, "Return", TargetNodeId, "Target");
+    const std::string ConnectMessage = ConnectResult ? std::string("connect ok") : ConnectResult.error().Message;
+    INFO(ConnectMessage);
+    REQUIRE(ConnectResult);
+
+    const GraphDocument* Document = Service.ActiveDocument();
+    REQUIRE(Document != nullptr);
+
+    const GraphNodeAsset* SourceNode = Document->FindNode(SourceNodeId);
+    const GraphNodeAsset* TargetNode = Document->FindNode(TargetNodeId);
+    REQUIRE(SourceNode != nullptr);
+    REQUIRE(TargetNode != nullptr);
+    REQUIRE(SourceNode->ReturnSlot.IsValid());
+    REQUIRE(TargetNode->Instance.IsValid());
+    CHECK(TargetNode->Instance.Value == SourceNode->ReturnSlot.Value);
+}
+
+TEST_CASE("Conduit editor service connects exec pins into authored node targets and visible wires", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    const Uuid VariableId = NewUuid();
+
+    GraphAsset Asset{};
+    Asset.Name = "ExecWireDoc";
+    Asset.Variables = {
+        GraphVariableAsset{
+            .Id = VariableId,
+            .Name = "Score",
+            .Type = StaticTypeId<int>(),
+        },
+    };
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/ExecWireDoc", "ExecWireDoc", Asset);
+    REQUIRE(OpenResult);
+
+    auto TickNodeResult = Service.SpawnNode("entry.Tick");
+    REQUIRE(TickNodeResult);
+    const Uuid TickNodeId = (*TickNodeResult)->Id;
+
+    const std::string VariableSetStableId = "variable.set." + ToString(VariableId);
+    auto SetNodeResult = Service.SpawnNode(VariableSetStableId);
+    REQUIRE(SetNodeResult);
+    const Uuid SetNodeId = (*SetNodeResult)->Id;
+
+    const Result ConnectResult = Service.ConnectPins(TickNodeId, "Out", SetNodeId, "In");
+    REQUIRE(ConnectResult);
+
+    const GraphDocument* Document = Service.ActiveDocument();
+    REQUIRE(Document != nullptr);
+
+    const GraphNodeAsset* TickNode = Document->FindNode(TickNodeId);
+    REQUIRE(TickNode != nullptr);
+    CHECK(TickNode->ExecTargetNodeId == SetNodeId);
+
+    const auto Canvas = Service.ActiveCanvasView();
+    const auto WireIt = std::find_if(Canvas.Wires.begin(), Canvas.Wires.end(), [TickNodeId, SetNodeId](const CanvasWireView& Wire) {
+        return Wire.SourceNodeId == TickNodeId &&
+               Wire.SourcePin == "Out" &&
+               Wire.TargetNodeId == SetNodeId &&
+               Wire.TargetPin == "In" &&
+               Wire.IsExec;
+    });
+    REQUIRE(WireIt != Canvas.Wires.end());
+}
+
+TEST_CASE("Conduit editor service builds compatible spawn-menu entries from a dragged output pin", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    const Uuid VariableId = NewUuid();
+
+    GraphAsset Asset{};
+    Asset.Name = "SpawnMenuDoc";
+    Asset.Variables = {
+        GraphVariableAsset{
+            .Id = VariableId,
+            .Name = "Delta",
+            .Type = StaticTypeId<int>(),
+        },
+    };
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/SpawnMenuDoc", "SpawnMenuDoc", Asset);
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    const std::string VariableGetStableId = "variable.get." + ToString(VariableId);
+    auto VariableNodeResult = Service.SpawnNode(VariableGetStableId);
+    REQUIRE(VariableNodeResult);
+
+    GraphSpawnMenuRequest Request{};
+    Request.GraphX = 512.0f;
+    Request.GraphY = 224.0f;
+    Request.SourceNodeId = (*VariableNodeResult)->Id;
+    Request.SourcePin = "Value";
+    Request.FromPinDrag = true;
+
+    const auto Entries = Service.BuildSpawnMenuEntries(Request);
+    CHECK_FALSE(Entries.empty());
+    CHECK(std::find_if(Entries.begin(), Entries.end(), [](const SpawnMenuEntryView& Entry) {
+              return Entry.StableId == "self.method.ConduitEditorNodeHost.AddScore" && Entry.TargetPin == "Arg0";
+          }) != Entries.end());
+    CHECK(std::find_if(Entries.begin(), Entries.end(), [VariableId](const SpawnMenuEntryView& Entry) {
+              return Entry.StableId == ("variable.set." + ToString(VariableId)) && Entry.TargetPin == "Value";
+          }) != Entries.end());
+    CHECK(std::find_if(Entries.begin(), Entries.end(), [](const SpawnMenuEntryView& Entry) {
+              return Entry.StableId == "entry.Tick";
+          }) == Entries.end());
+}
+
+TEST_CASE("Conduit editor service builds compatible spawn-menu entries from pointer outputs into instance targets", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/PointerSpawnMenuDoc", "PointerSpawnMenuDoc", GraphAsset{});
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    auto SourceNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.GetSelfReference");
+    REQUIRE(SourceNodeResult);
+
+    GraphSpawnMenuRequest Request{};
+    Request.GraphX = 320.0f;
+    Request.GraphY = 192.0f;
+    Request.SourceNodeId = (*SourceNodeResult)->Id;
+    Request.SourcePin = "Return";
+    Request.FromPinDrag = true;
+
+    const auto Entries = Service.BuildSpawnMenuEntries(Request);
+    CHECK_FALSE(Entries.empty());
+    CHECK(std::find_if(Entries.begin(), Entries.end(), [](const SpawnMenuEntryView& Entry) {
+              return Entry.StableId == "instance.method.ConduitEditorNodeHost.AddScore" &&
+                     Entry.TargetPin == "Target";
+          }) != Entries.end());
+    CHECK(std::find_if(Entries.begin(), Entries.end(), [](const SpawnMenuEntryView& Entry) {
+              return Entry.StableId == "instance.method.ConduitEditorNodeHost.GetScore" &&
+                     Entry.TargetPin == "Target";
+          }) != Entries.end());
+}
+
+TEST_CASE("Conduit graph canvas connects when dropped on the input row label area", "[Conduit][Editor]")
+{
+    UIConduitGraphCanvas Canvas{};
+    Canvas.Initialize(nullptr, {});
+    Canvas.Arrange(SnAPI::UI::UIRect{0.0f, 0.0f, 900.0f, 700.0f});
+
+    GraphCanvasView View{};
+    View.Viewport.PanX = 0.0f;
+    View.Viewport.PanY = 0.0f;
+    View.Viewport.Zoom = 1.0f;
+    View.Nodes = {
+        CanvasNodeView{
+            .Id = NewUuid(),
+            .Title = "Source",
+            .Detail = {},
+            .X = 100.0f,
+            .Y = 100.0f,
+            .Width = 240.0f,
+            .IsCollapsed = false,
+            .Selected = false,
+            .InputPins = {},
+            .OutputPins = {
+                CanvasPinView{
+                    .Name = "Value",
+                    .TypeLabel = "int",
+                    .Kind = ESlotKind::Value,
+                    .IsInput = false,
+                    .IsExec = false,
+                },
+            },
+        },
+        CanvasNodeView{
+            .Id = NewUuid(),
+            .Title = "Target",
+            .Detail = {},
+            .X = 450.0f,
+            .Y = 100.0f,
+            .Width = 240.0f,
+            .IsCollapsed = false,
+            .Selected = false,
+            .InputPins = {
+                CanvasPinView{
+                    .Name = "Arg0",
+                    .TypeLabel = "int",
+                    .Kind = ESlotKind::Value,
+                    .IsInput = true,
+                    .IsExec = false,
+                },
+            },
+            .OutputPins = {},
+        },
+    };
+    Canvas.SetViewState(std::move(View));
+
+    bool Connected = false;
+    Uuid ConnectedSourceNode{};
+    std::string ConnectedSourcePin{};
+    Uuid ConnectedTargetNode{};
+    std::string ConnectedTargetPin{};
+    Canvas.SetPinConnectedHandler(
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)>::Bind(
+            [&](const Uuid& SourceNodeId,
+                const std::string& SourcePin,
+                const Uuid& TargetNodeId,
+                const std::string& TargetPin) {
+                Connected = true;
+                ConnectedSourceNode = SourceNodeId;
+                ConnectedSourcePin = SourcePin;
+                ConnectedTargetNode = TargetNodeId;
+                ConnectedTargetPin = TargetPin;
+            }));
+
+    SnAPI::UI::PointerEvent Pointer{};
+    Pointer.Position = SnAPI::UI::UIPoint{328.0f, 160.0f};
+    Pointer.LeftDown = true;
+    SnAPI::UI::RoutedEventContext PointerDown(
+        SnAPI::UI::RoutedEventTypes::PointerDown.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerDown.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerDown);
+    REQUIRE(PointerDown.Handled());
+
+    Pointer.Position = SnAPI::UI::UIPoint{620.0f, 160.0f};
+    Pointer.LeftDown = true;
+    SnAPI::UI::RoutedEventContext PointerMove(
+        SnAPI::UI::RoutedEventTypes::PointerMove.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerMove.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerMove);
+    REQUIRE(PointerMove.Handled());
+
+    Pointer.Position = SnAPI::UI::UIPoint{620.0f, 160.0f};
+    Pointer.LeftDown = false;
+    SnAPI::UI::RoutedEventContext PointerUp(
+        SnAPI::UI::RoutedEventTypes::PointerUp.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerUp.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerUp);
+
+    REQUIRE(Connected);
+    CHECK(ConnectedSourceNode == Canvas.ViewState().Nodes[0].Id);
+    CHECK(ConnectedSourcePin == "Value");
+    CHECK(ConnectedTargetNode == Canvas.ViewState().Nodes[1].Id);
+    CHECK(ConnectedTargetPin == "Arg0");
+}
+
+TEST_CASE("Conduit graph canvas connects when button release is observed on pointer move before pointer up", "[Conduit][Editor]")
+{
+    UIConduitGraphCanvas Canvas{};
+    Canvas.Initialize(nullptr, {});
+    Canvas.Arrange(SnAPI::UI::UIRect{0.0f, 0.0f, 900.0f, 700.0f});
+
+    GraphCanvasView View{};
+    View.Viewport.PanX = 0.0f;
+    View.Viewport.PanY = 0.0f;
+    View.Viewport.Zoom = 1.0f;
+    View.Nodes = {
+        CanvasNodeView{
+            .Id = NewUuid(),
+            .Title = "Source",
+            .Detail = {},
+            .X = 100.0f,
+            .Y = 100.0f,
+            .Width = 240.0f,
+            .IsCollapsed = false,
+            .Selected = false,
+            .InputPins = {},
+            .OutputPins = {
+                CanvasPinView{
+                    .Name = "Value",
+                    .TypeLabel = "int",
+                    .Kind = ESlotKind::Value,
+                    .IsInput = false,
+                    .IsExec = false,
+                },
+            },
+        },
+        CanvasNodeView{
+            .Id = NewUuid(),
+            .Title = "Target",
+            .Detail = {},
+            .X = 450.0f,
+            .Y = 100.0f,
+            .Width = 240.0f,
+            .IsCollapsed = false,
+            .Selected = false,
+            .InputPins = {
+                CanvasPinView{
+                    .Name = "Arg0",
+                    .TypeLabel = "int",
+                    .Kind = ESlotKind::Value,
+                    .IsInput = true,
+                    .IsExec = false,
+                },
+            },
+            .OutputPins = {},
+        },
+    };
+    Canvas.SetViewState(std::move(View));
+
+    bool Connected = false;
+    Canvas.SetPinConnectedHandler(
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)>::Bind(
+            [&](const Uuid&, const std::string&, const Uuid&, const std::string&) { Connected = true; }));
+
+    SnAPI::UI::PointerEvent Pointer{};
+    Pointer.Position = SnAPI::UI::UIPoint{328.0f, 160.0f};
+    Pointer.LeftDown = true;
+    SnAPI::UI::RoutedEventContext PointerDown(
+        SnAPI::UI::RoutedEventTypes::PointerDown.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerDown.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerDown);
+    REQUIRE(PointerDown.Handled());
+
+    Pointer.Position = SnAPI::UI::UIPoint{620.0f, 160.0f};
+    Pointer.LeftDown = true;
+    SnAPI::UI::RoutedEventContext PointerMoveDrag(
+        SnAPI::UI::RoutedEventTypes::PointerMove.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerMoveDrag.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerMoveDrag);
+    REQUIRE(PointerMoveDrag.Handled());
+
+    Pointer.Position = SnAPI::UI::UIPoint{620.0f, 160.0f};
+    Pointer.LeftDown = false;
+    SnAPI::UI::RoutedEventContext PointerMoveRelease(
+        SnAPI::UI::RoutedEventTypes::PointerMove.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerMoveRelease.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerMoveRelease);
+    REQUIRE(PointerMoveRelease.Handled());
+    REQUIRE(Connected);
+
+    SnAPI::UI::RoutedEventContext PointerUp(
+        SnAPI::UI::RoutedEventTypes::PointerUp.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerUp.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerUp);
+}
+
+TEST_CASE("Conduit graph canvas requests a spawn menu when a dragged output pin is released on empty canvas", "[Conduit][Editor]")
+{
+    UIConduitGraphCanvas Canvas{};
+    Canvas.Initialize(nullptr, {});
+    Canvas.Arrange(SnAPI::UI::UIRect{0.0f, 0.0f, 900.0f, 700.0f});
+
+    GraphCanvasView View{};
+    View.Viewport.PanX = 0.0f;
+    View.Viewport.PanY = 0.0f;
+    View.Viewport.Zoom = 1.0f;
+    View.Nodes = {
+        CanvasNodeView{
+            .Id = NewUuid(),
+            .Title = "Source",
+            .X = 100.0f,
+            .Y = 100.0f,
+            .Width = 240.0f,
+            .OutputPins = {
+                CanvasPinView{
+                    .Name = "Value",
+                    .TypeLabel = "int",
+                    .Kind = ESlotKind::Value,
+                    .IsInput = false,
+                    .IsExec = false,
+                },
+            },
+        },
+    };
+    Canvas.SetViewState(std::move(View));
+
+    bool Requested = false;
+    GraphSpawnMenuRequest Request{};
+    Canvas.SetSpawnMenuRequestedHandler(
+        SnAPI::UI::TDelegate<void(const GraphSpawnMenuRequest&)>::Bind([&](const GraphSpawnMenuRequest& InRequest) {
+            Requested = true;
+            Request = InRequest;
+        }));
+
+    SnAPI::UI::PointerEvent Pointer{};
+    Pointer.Position = SnAPI::UI::UIPoint{328.0f, 160.0f};
+    Pointer.LeftDown = true;
+    SnAPI::UI::RoutedEventContext PointerDown(
+        SnAPI::UI::RoutedEventTypes::PointerDown.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerDown.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerDown);
+    REQUIRE(PointerDown.Handled());
+
+    Pointer.Position = SnAPI::UI::UIPoint{720.0f, 340.0f};
+    Pointer.LeftDown = true;
+    SnAPI::UI::RoutedEventContext PointerMove(
+        SnAPI::UI::RoutedEventTypes::PointerMove.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerMove.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerMove);
+    REQUIRE(PointerMove.Handled());
+
+    Pointer.LeftDown = false;
+    SnAPI::UI::RoutedEventContext PointerUp(
+        SnAPI::UI::RoutedEventTypes::PointerUp.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerUp.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerUp);
+
+    REQUIRE(Requested);
+    CHECK(Request.FromPinDrag);
+    CHECK(Request.SourceNodeId == Canvas.ViewState().Nodes[0].Id);
+    CHECK(Request.SourcePin == "Value");
+    CHECK(Request.GraphX == Catch::Approx(720.0f));
+    CHECK(Request.GraphY == Catch::Approx(340.0f));
+}
+
+TEST_CASE("Conduit graph canvas requests a spawn menu on right click release over empty canvas", "[Conduit][Editor]")
+{
+    UIConduitGraphCanvas Canvas{};
+    Canvas.Initialize(nullptr, {});
+    Canvas.Arrange(SnAPI::UI::UIRect{0.0f, 0.0f, 900.0f, 700.0f});
+
+    GraphCanvasView View{};
+    View.Viewport.PanX = 32.0f;
+    View.Viewport.PanY = 48.0f;
+    View.Viewport.Zoom = 1.0f;
+    Canvas.SetViewState(std::move(View));
+
+    bool Requested = false;
+    GraphSpawnMenuRequest Request{};
+    Canvas.SetSpawnMenuRequestedHandler(
+        SnAPI::UI::TDelegate<void(const GraphSpawnMenuRequest&)>::Bind([&](const GraphSpawnMenuRequest& InRequest) {
+            Requested = true;
+            Request = InRequest;
+        }));
+
+    SnAPI::UI::PointerEvent Pointer{};
+    Pointer.Position = SnAPI::UI::UIPoint{400.0f, 240.0f};
+    Pointer.RightDown = true;
+    SnAPI::UI::RoutedEventContext PointerDown(
+        SnAPI::UI::RoutedEventTypes::PointerDown.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerDown.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerDown);
+    REQUIRE(PointerDown.Handled());
+
+    Pointer.RightDown = false;
+    SnAPI::UI::RoutedEventContext PointerUp(
+        SnAPI::UI::RoutedEventTypes::PointerUp.Id,
+        SnAPI::UI::EEventRoutePhase::Target,
+        {});
+    PointerUp.SetPayload(&Pointer);
+    Canvas.OnRoutedEvent(PointerUp);
+
+    REQUIRE(Requested);
+    CHECK_FALSE(Request.FromPinDrag);
+    CHECK(Request.SourceNodeId == Uuid{});
+    CHECK(Request.SourcePin.empty());
+    CHECK(Request.GraphX == Catch::Approx(432.0f));
+    CHECK(Request.GraphY == Catch::Approx(288.0f));
 }

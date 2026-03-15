@@ -64,7 +64,7 @@ template<typename T>
 inline void EnsureReflectionRegistered()
 {
     auto Result = StaticType<T>();
-    DEBUG_ASSERT(Result.has_value(), "Failed to ensure reflection registration for type: {}", std::string(TTypeNameV<T>));
+    DEBUG_ASSERT(Result.has_value(), "Failed to ensure reflection registration for type: {}", ReflectedTypeName<T>());
 }
 
 /**

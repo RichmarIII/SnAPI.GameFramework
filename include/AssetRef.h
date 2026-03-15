@@ -959,4 +959,114 @@ private:
     std::string m_assetId{};
 };
 
+template<typename TBase, typename TNameTag>
+struct TEditorValueFamilyTraits<TAssetRef<TBase, TNameTag>>
+{
+    static constexpr EEditorValueFamily Family = EEditorValueFamily::AssetRef;
+
+    static std::string Trimmed(std::string_view Text)
+    {
+        std::string Result(Text);
+        auto NotSpace = [](unsigned char Character) {
+            return std::isspace(Character) == 0;
+        };
+
+        Result.erase(Result.begin(), std::find_if(Result.begin(), Result.end(), NotSpace));
+        Result.erase(std::find_if(Result.rbegin(), Result.rend(), NotSpace).base(), Result.end());
+        return Result;
+    }
+
+    static TypeId TargetType()
+    {
+        if constexpr (CHasReflectedTypeName<TBase>)
+        {
+            return StaticTypeId<TBase>();
+        }
+        else
+        {
+            return {};
+        }
+    }
+
+    static void PopulateOptions(std::vector<std::string>& OutOptions)
+    {
+        const auto Entries = TAssetRef<TBase, TNameTag>::EnumerateCompatibleAssets();
+        OutOptions.reserve(OutOptions.size() + Entries.size() + 1);
+        OutOptions.emplace_back("<None>");
+        for (const auto& Entry : Entries)
+        {
+            OutOptions.push_back(Entry.Label);
+        }
+    }
+
+    static bool ReadSelectionLabel(const void* Value, std::string& OutText)
+    {
+        const auto* AssetRefValue = static_cast<const TAssetRef<TBase, TNameTag>*>(Value);
+        if (!AssetRefValue)
+        {
+            return false;
+        }
+
+        const std::string SelectedName = AssetRefValue->ResolvedAssetName();
+        const std::string SelectedId = Trimmed(AssetRefValue->GetAssetId());
+        if (SelectedName.empty() && SelectedId.empty())
+        {
+            OutText = "<None>";
+            return true;
+        }
+
+        const auto Entries = TAssetRef<TBase, TNameTag>::EnumerateCompatibleAssets();
+        const auto It = std::ranges::find_if(Entries, [&](const typename TAssetRef<TBase, TNameTag>::TEntry& Entry) {
+            if (!SelectedId.empty())
+            {
+                return Entry.AssetId == SelectedId;
+            }
+            return Entry.Name == SelectedName;
+        });
+
+        OutText = (It != Entries.end()) ? It->Label : AssetRefValue->DisplayLabel();
+        return true;
+    }
+
+    static bool WriteSelection(void* Value, std::string_view Selected)
+    {
+        auto* AssetRefValue = static_cast<TAssetRef<TBase, TNameTag>*>(Value);
+        if (!AssetRefValue)
+        {
+            return false;
+        }
+
+        const std::string SelectedText = Trimmed(Selected);
+        if (SelectedText.empty() || SelectedText == "<None>")
+        {
+            AssetRefValue->Clear();
+            return true;
+        }
+
+        const auto Entries = TAssetRef<TBase, TNameTag>::EnumerateCompatibleAssets();
+        const auto It = std::ranges::find_if(Entries, [&](const typename TAssetRef<TBase, TNameTag>::TEntry& Entry) {
+            return Entry.Label == SelectedText || Entry.Name == SelectedText || Entry.AssetId == SelectedText;
+        });
+
+        if (It == Entries.end())
+        {
+            AssetRefValue->SetAsset(SelectedText, {});
+            return true;
+        }
+
+        AssetRefValue->SetAsset(It->Name, It->AssetId);
+        return true;
+    }
+
+    static const EditorValueAdapterOps& Adapter()
+    {
+        static const EditorValueAdapterOps Ops{
+            .PopulateOptions = &PopulateOptions,
+            .ReadSelectionLabel = &ReadSelectionLabel,
+            .WriteSelection = &WriteSelection,
+        };
+        return Ops;
+    }
+};
+
 } // namespace SnAPI::GameFramework

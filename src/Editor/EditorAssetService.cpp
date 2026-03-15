@@ -2294,12 +2294,7 @@ void AppendUniquePath(std::vector<std::string>& Paths,
 
 [[nodiscard]] std::string ShortTypeName(std::string_view QualifiedTypeName)
 {
-    const std::size_t Delimiter = QualifiedTypeName.rfind("::");
-    if (Delimiter == std::string_view::npos)
-    {
-        return std::string(QualifiedTypeName);
-    }
-    return std::string(QualifiedTypeName.substr(Delimiter + 2));
+    return PrettyReflectedTypeName(QualifiedTypeName);
 }
 
 [[nodiscard]] std::string LeafLogicalName(std::string Value)

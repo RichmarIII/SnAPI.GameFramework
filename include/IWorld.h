@@ -6,6 +6,7 @@
 
 #include "Expected.h"
 #include "Handles.h"
+#include "TypeName.h"
 #include "Uuid.h"
 
 namespace SnAPI::GameFramework
@@ -25,6 +26,8 @@ enum class EWorldKind : std::uint8_t
     Editor,  /**< @brief Tool-time editor context where gameplay simulation may be disabled. */
     PIE      /**< @brief Play-In-Editor context using runtime-like simulation rules. */
 };
+
+SNAPI_DEFINE_TYPE_NAME(EWorldKind, "SnAPI::GameFramework::EWorldKind")
 
 class Level;
 class BaseNode;
@@ -513,5 +516,7 @@ public:
      */
     virtual const ScriptRuntimeService& Scripts() const = 0;
 };
+
+SNAPI_DEFINE_TYPE_NAME(IWorld, "SnAPI::GameFramework::IWorld")
 
 } // namespace SnAPI::GameFramework

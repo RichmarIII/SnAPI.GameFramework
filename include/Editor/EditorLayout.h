@@ -2,6 +2,7 @@
 
 #include "Expected.h"
 #include "Conduit/Types.h"
+#include "Conduit/Editor/Types.h"
 #include "Editor/EditorImportSettings.h"
 #include "Handles.h"
 #include "IAssetImportSettings.h"
@@ -37,6 +38,7 @@ class UIImage;
 class UIBadge;
 class UIBreadcrumbs;
 class UIListView;
+class UIScrollContainer;
 class UISwitch;
 class UITreeView;
 class ITreeItemSource;
@@ -240,6 +242,12 @@ public:
             std::string Label{};
         };
 
+        struct GraphSelfTypeOption
+        {
+            TypeId Type{};
+            std::string Label{};
+        };
+
         struct ClassHostTypeOption
         {
             TypeId Type{};
@@ -379,6 +387,8 @@ public:
         float CanvasPanY = 0.0f;
         float CanvasZoom = 1.0f;
         std::vector<VariableTypeOption> VariableTypeOptions{};
+        std::vector<GraphSelfTypeOption> GraphSelfTypeOptions{};
+        TypeId SelectedSelfType{};
         VariableInspector SelectedVariable{};
         NodeInspector SelectedNode{};
         std::vector<ClassHostTypeOption> ClassHostTypeOptions{};
@@ -534,6 +544,8 @@ public:
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
     /** @brief Install the callback invoked for project create/open/save-settings flows. */
     void SetProjectActionHandler(SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> Handler);
+    /** @brief Record a successfully opened or created project in the welcome-screen recent list. */
+    void RememberRecentProject(const ProjectActionRequest& Request);
     /** @brief Replace the loaded-project view state shown across project-sensitive UI. */
     void SetProjectState(ProjectState State);
     /** @brief Control whether the shell should force the user through project selection before normal editing. */
@@ -572,6 +584,8 @@ public:
     void SetContentAssetInspectorState(ContentAssetInspectorState State);
     /** @brief Replace the docked Conduit workspace state. */
     void SetConduitWorkspaceState(ConduitWorkspaceState State);
+    /** @brief Replace only the active Conduit graph-canvas payload. */
+    void SetConduitCanvasView(SnAPI::GameFramework::Conduit::Editor::GraphCanvasView View);
     /** @brief Install the callback invoked when the user selects one Conduit graph variable. */
     void SetConduitVariableSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)> Handler);
     /** @brief Install the callback invoked when the user creates one Conduit graph variable. */
@@ -582,6 +596,8 @@ public:
     void SetConduitVariableRenameHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     /** @brief Install the callback invoked when the user changes the selected Conduit graph variable type. */
     void SetConduitVariableTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler);
+    /** @brief Install the callback invoked when the user changes the active Conduit graph self type. */
+    void SetConduitGraphSelfTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler);
     /** @brief Install the callback invoked when the user changes the selected bool default. */
     void SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)> Handler);
     /** @brief Install the callback invoked when the user submits a text-encoded selected-variable default. */
@@ -602,6 +618,21 @@ public:
     void SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()> Handler);
     /** @brief Install the callback invoked when the user drags one authored Conduit node on the canvas. */
     void SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)> Handler);
+    /** @brief Install the callback invoked when the user connects one authored Conduit source pin to one target pin. */
+    void SetConduitPinConnectedHandler(
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)> Handler);
+    /** @brief Install the callback invoked when the graph canvas requests one spawn context menu. */
+    void SetConduitSpawnMenuRequestHandler(
+        SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&)> Handler);
+    /** @brief Install the callback invoked when the user chooses one Conduit spawn-menu entry. */
+    void SetConduitSpawnMenuSelectionHandler(
+        SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&,
+                                  const SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView&)> Handler);
+    /** @brief Install the callback invoked when the user compiles the active authored Conduit graph. */
+    void SetConduitCompileHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Open one Conduit graph-canvas spawn menu at the requested screen position. */
+    void OpenConduitSpawnMenu(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest& Request,
+                              std::vector<SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView> Entries);
     /** @brief Install the callback invoked when the user edits the primary text field for the selected authored Conduit node. */
     void SetConduitNodePrimaryTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     /** @brief Install the callback invoked when the user edits the secondary text field for the selected authored Conduit node. */
@@ -731,7 +762,6 @@ private:
     void RefreshProjectModalOkButtonState();
     void RefreshProjectSettingsModalVisibility();
     void RefreshProjectSettingsModalSaveButtonState();
-    void RememberRecentProject(const ProjectActionRequest& Request);
     void RememberRecentProjectFile(std::string ProjectFilePath, std::string ProjectName = {});
     void CloseContentAssetInspectorModal(bool NotifyHandler);
     void RefreshContentAssetInspectorModalVisibility();
@@ -745,6 +775,7 @@ private:
     void RefreshContentBrowserPath();
     void RefreshContentAssetCardSelectionStyles();
     void RefreshContentAssetDetailsViewModel();
+    void RefreshConduitCanvasView();
     void RefreshConduitWorkspaceView();
     [[nodiscard]] std::size_t ResolveSelectedContentAssetIndex() const;
     [[nodiscard]] UIPropertyPanel* ResolveConduitVariableDefaultPanel() const;
@@ -810,9 +841,11 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitWorkspaceTitleText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitWorkspaceStatusText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitWorkspaceSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitCompileButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_conduitVariablesTree{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitPaletteSearchInput{};
-    SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_conduitPaletteTree{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIScrollContainer> m_conduitPaletteScroll{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitPaletteContentPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitPaletteAddNodeButton{};
     SnAPI::UI::ElementHandle<Conduit::Editor::UIConduitGraphCanvas> m_conduitGraphCanvas{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_conduitNodesTree{};
@@ -828,6 +861,7 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitInspectorTitleText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitVariableCreateNameInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitVariableCreateTypeCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitGraphSelfTypeCombo{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_conduitVariableCreateButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitVariableNameInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitVariableTypeCombo{};
@@ -962,6 +996,7 @@ private:
     SnAPI::UI::TDelegate<void()> m_onConduitVariableRemoveRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitVariableRenameRequested{};
     SnAPI::UI::TDelegate<void(const TypeId&)> m_onConduitVariableTypeRequested{};
+    SnAPI::UI::TDelegate<void(const TypeId&)> m_onConduitGraphSelfTypeRequested{};
     SnAPI::UI::TDelegate<void(bool)> m_onConduitVariableDefaultBoolRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitVariableDefaultTextRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitVariableDefaultEnumRequested{};
@@ -972,6 +1007,11 @@ private:
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodeCreateRequested{};
     SnAPI::UI::TDelegate<void()> m_onConduitNodeRemoveRequested{};
     SnAPI::UI::TDelegate<void(const Uuid&, float, float)> m_onConduitNodeMoveRequested{};
+    SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)> m_onConduitPinConnectedRequested{};
+    SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&)> m_onConduitSpawnMenuRequest{};
+    SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&,
+                              const SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView&)> m_onConduitSpawnMenuSelectionRequested{};
+    SnAPI::UI::TDelegate<void()> m_onConduitCompileRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodePrimaryTextRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodeSecondaryTextRequested{};
     SnAPI::UI::TDelegate<void(float, float, float)> m_onConduitViewportRequested{};
@@ -989,6 +1029,7 @@ private:
         ContentBrowser,
         ContentInspectorHierarchyItem,
         ContentInspectorComponent,
+        ConduitCanvasSpawn,
     };
     enum class EPendingHierarchyMenu : std::uint8_t
     {
@@ -1008,6 +1049,8 @@ private:
     TypeId m_contextMenuComponentType{};
     std::vector<TypeId> m_contextMenuNodeTypes{};
     std::vector<TypeId> m_contextMenuComponentTypes{};
+    SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest m_contextMenuConduitSpawnRequest{};
+    std::vector<SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView> m_contextMenuConduitSpawnEntries{};
     SnAPI::UI::UIPoint m_contextMenuOpenPosition{};
     std::vector<NodeHandle> m_hierarchyVisibleNodes{};
     std::uint64_t m_hierarchySignature = 0;

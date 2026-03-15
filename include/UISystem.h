@@ -11,6 +11,7 @@
 
 #include "Expected.h"
 #include "GameThreading.h"
+#include "TypeName.h"
 
 #include <UIContext.h>
 
@@ -445,6 +446,9 @@ private:
 
     bool m_initialized = false;
 };
+
+SNAPI_DEFINE_TYPE_NAME(UISystem, "SnAPI::GameFramework::UISystem")
+SNAPI_DEFINE_TYPE_NAME(UIBootstrapSettings, "SnAPI::GameFramework::UIBootstrapSettings")
 
 } // namespace SnAPI::GameFramework
 

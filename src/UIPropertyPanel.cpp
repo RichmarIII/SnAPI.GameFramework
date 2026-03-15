@@ -11,7 +11,6 @@
 #include "IWorld.h"
 #include "PathResolver.h"
 #include "RenderAssetPayloads.h"
-#include "PawnBase.h"
 #include "RenderAssetRuntime.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "AtmosphereCompositeParamsNode.h"
@@ -30,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cctype>
 #include <cmath>
 #include <cstring>
@@ -43,6 +43,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -178,6 +179,115 @@ bool TryWriteAssetRefSelection(void* MutablePointer, const std::string& Selected
 
   value->SetAsset(it->Name, it->AssetId);
   return true;
+}
+
+void PopulateEditorValueOptions(const TypeInfo& ValueType, std::vector<std::string>& OutOptions)
+{
+  if (ValueType.EditorValueAdapter.PopulateOptions)
+  {
+    ValueType.EditorValueAdapter.PopulateOptions(OutOptions);
+  }
+}
+
+bool TryReadEditorValueSelectionLabel(const TypeInfo& ValueType, const void* ConstPointer, std::string& OutText)
+{
+  return ValueType.EditorValueAdapter.ReadSelectionLabel
+      && ValueType.EditorValueAdapter.ReadSelectionLabel(ConstPointer, OutText);
+}
+
+bool TryWriteEditorValueSelection(const TypeInfo& ValueType, void* MutablePointer, std::string_view Selected)
+{
+  return ValueType.EditorValueAdapter.WriteSelection
+      && ValueType.EditorValueAdapter.WriteSelection(MutablePointer, Selected);
+}
+
+[[nodiscard]] std::string ShortEnumValueName(std::string_view Name)
+{
+  return PrettyReflectedTypeName(Name);
+}
+
+struct FlagEditorEntry
+{
+  std::string Label{};
+  std::uint64_t Value = 0;
+};
+
+[[nodiscard]] std::vector<FlagEditorEntry> BuildFlagEditorEntries(const TypeInfo& EnumInfo)
+{
+  std::vector<FlagEditorEntry> SingleBitEntries{};
+  std::vector<FlagEditorEntry> FallbackEntries{};
+
+  for (const EnumValueInfo& EnumValue : EnumInfo.EnumValues)
+  {
+    if (EnumValue.Value == 0)
+    {
+      continue;
+    }
+
+    FlagEditorEntry Entry{
+      .Label = ShortEnumValueName(EnumValue.Name),
+      .Value = EnumValue.Value,
+    };
+
+    FallbackEntries.push_back(Entry);
+    if (std::has_single_bit(EnumValue.Value))
+    {
+      SingleBitEntries.push_back(std::move(Entry));
+    }
+  }
+
+  auto SortEntries = [](std::vector<FlagEditorEntry>& Entries) {
+    std::ranges::sort(Entries, [](const FlagEditorEntry& Left, const FlagEditorEntry& Right) {
+      if (Left.Value != Right.Value)
+      {
+        return Left.Value < Right.Value;
+      }
+      return Left.Label < Right.Label;
+    });
+  };
+
+  SortEntries(SingleBitEntries);
+  SortEntries(FallbackEntries);
+  return !SingleBitEntries.empty() ? SingleBitEntries : FallbackEntries;
+}
+
+[[nodiscard]] std::string FormatFlagsSummary(const std::uint64_t Bits, const TypeInfo& EnumInfo)
+{
+  if (Bits == 0)
+  {
+    return "None";
+  }
+
+  const auto Entries = BuildFlagEditorEntries(EnumInfo);
+  std::vector<std::string> Enabled{};
+  for (const FlagEditorEntry& Entry : Entries)
+  {
+    if ((Bits & Entry.Value) != 0)
+    {
+      Enabled.push_back(Entry.Label);
+    }
+  }
+
+  if (Enabled.empty())
+  {
+    return std::to_string(Bits);
+  }
+
+  if (Enabled.size() <= 3)
+  {
+    std::string Summary{};
+    for (size_t Index = 0; Index < Enabled.size(); ++Index)
+    {
+      if (Index > 0)
+      {
+        Summary += ", ";
+      }
+      Summary += Enabled[Index];
+    }
+    return Summary;
+  }
+
+  return Enabled.front() + ", " + Enabled[1] + ", +" + std::to_string(Enabled.size() - 2);
 }
 
 struct GenericAssetRefEntry
@@ -418,6 +528,143 @@ bool TryWriteAssetRefPayloadSelection(
 
   value->AssetName = it->Name;
   value->AssetId = it->AssetId;
+  return true;
+}
+
+void PopulateTypeIdOptions(std::vector<std::string>& OutOptions)
+{
+  const auto Types = TypeRegistry::Instance().All();
+  OutOptions.reserve(OutOptions.size() + Types.size() + 1);
+  OutOptions.emplace_back("<None>");
+
+  auto MakeShortTypeLabel = [] (const TypeInfo& Info) {
+    return PrettyReflectedTypeName(Info.Name);
+  };
+
+  std::unordered_map<std::string, std::size_t> LabelCounts{};
+  LabelCounts.reserve(Types.size());
+  for (const TypeInfo* Info : Types)
+  {
+    if (!Info || Info->Id == TypeId{})
+    {
+      continue;
+    }
+
+    ++LabelCounts[MakeShortTypeLabel(*Info)];
+  }
+
+  std::vector<std::string> Labels{};
+  Labels.reserve(Types.size());
+  for (const TypeInfo* Info : Types)
+  {
+    if (!Info || Info->Id == TypeId{})
+    {
+      continue;
+    }
+
+    std::string Label = MakeShortTypeLabel(*Info);
+    if (LabelCounts[Label] > 1)
+    {
+      Label = Info->Name;
+    }
+    Labels.push_back(std::move(Label));
+  }
+
+  std::ranges::sort(Labels);
+  Labels.erase(std::unique(Labels.begin(), Labels.end()), Labels.end());
+  for (std::string& Label : Labels)
+  {
+    OutOptions.push_back(std::move(Label));
+  }
+}
+
+bool TryReadTypeIdSelectionLabel(const void* ConstPointer, std::string& OutText)
+{
+  const auto* Id = static_cast<const TypeId*>(ConstPointer);
+  if (!Id)
+  {
+    return false;
+  }
+
+  if (Id->is_nil())
+  {
+    OutText = "<None>";
+    return true;
+  }
+
+  if (const TypeInfo* Info = TypeRegistry::Instance().Find(*Id))
+  {
+    OutText = PrettyReflectedTypeName(Info->Name);
+  }
+  else
+  {
+    OutText = ToString(*Id);
+  }
+  return true;
+}
+
+bool TryWriteTypeIdSelection(void* MutablePointer, std::string_view Selected)
+{
+  auto* Id = static_cast<TypeId*>(MutablePointer);
+  if (!Id)
+  {
+    return false;
+  }
+
+  const std::string Trimmed = TrimCopy(Selected);
+  if (Trimmed.empty() || Trimmed == "<None>")
+  {
+    *Id = TypeId{};
+    return true;
+  }
+
+  if (const TypeInfo* Info = TypeRegistry::Instance().FindByName(Trimmed))
+  {
+    *Id = Info->Id;
+    return true;
+  }
+
+  const auto Types = TypeRegistry::Instance().All();
+  std::unordered_map<std::string, std::size_t> LabelCounts{};
+  LabelCounts.reserve(Types.size());
+  for (const TypeInfo* Info : Types)
+  {
+    if (!Info || Info->Id == TypeId{})
+    {
+      continue;
+    }
+
+    std::string Label = PrettyReflectedTypeName(Info->Name);
+    ++LabelCounts[Label];
+  }
+
+  for (const TypeInfo* Info : Types)
+  {
+    if (!Info || Info->Id == TypeId{})
+    {
+      continue;
+    }
+
+    std::string Label = PrettyReflectedTypeName(Info->Name);
+    if (LabelCounts[Label] > 1)
+    {
+      Label = Info->Name;
+    }
+
+    if (Label == Trimmed)
+    {
+      *Id = Info->Id;
+      return true;
+    }
+  }
+
+  const auto Parsed = Uuid::from_string(Trimmed);
+  if (!Parsed)
+  {
+    return false;
+  }
+
+  *Id = TypeId(*Parsed);
   return true;
 }
 
@@ -1715,6 +1962,7 @@ void UIPropertyPanel::AddFieldEditor(
   }
 
   const EEditorKind editorKind = ResolveEditorKind(Field.FieldType);
+  const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(Field.FieldType);
   const bool readOnly = pathConst || Field.IsConst || !Field.Setter;
   const bool isPathField = editorKind == EEditorKind::String && IsPathLikeField(Field);
   const bool pathSelectsDirectories = isPathField && IsDirectoryLikeField(Field);
@@ -1767,136 +2015,191 @@ void UIPropertyPanel::AddFieldEditor(
     }
   }
   else if (editorKind == EEditorKind::Enum ||
+           editorKind == EEditorKind::TypeId ||
+           editorKind == EEditorKind::Flags ||
            editorKind == EEditorKind::SubClass ||
            editorKind == EEditorKind::AssetRef)
   {
-    const auto comboHandle = m_Context->CreateElement<SnAPI::UI::UIComboBox>();
-    if (comboHandle.Id.Value == 0)
+    if (editorKind == EEditorKind::Flags)
     {
-      return;
-    }
-    m_Context->AddChild(valueHostHandle.Id, comboHandle.Id);
-    binding.EditorId = comboHandle.Id;
-
-    if (auto* combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboHandle.Id)))
-    {
-      combo->ReadOnly().Set(readOnly);
-      combo->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-      combo->Height().Set(SnAPI::UI::Sizing::Auto());
-      combo->VAlign().Set(SnAPI::UI::EAlignment::Center);
-      combo->MaxDropdownHeight().Set(220.0f);
-      combo->Placeholder().Set(PrettyTypeName(Field.FieldType));
-      combo->BackgroundColor().Set(kValueBg);
-      combo->HoverColor().Set(Color{26, 30, 39, 252});
-      combo->PressedColor().Set(Color{31, 36, 46, 252});
-      combo->BorderColor().Set(kValueBorder);
-      combo->BorderThickness().Set(1.0f);
-      combo->CornerRadius().Set(3.0f);
-      combo->TextColor().Set(Color{224, 229, 237, 255});
-      combo->PlaceholderColor().Set(Color{138, 147, 163, 255});
-      combo->ArrowColor().Set(Color{185, 193, 205, 255});
-      combo->Padding().Set(6.0f);
-      combo->RowHeight().Set(24.0f);
-
-      std::vector<std::string> options;
-      if (editorKind == EEditorKind::Enum)
+      const TypeInfo* enumInfo =
+        (fieldTypeInfo && !fieldTypeInfo->EditorValueTargetType.is_nil())
+          ? TypeRegistry::Instance().Find(fieldTypeInfo->EditorValueTargetType)
+          : nullptr;
+      if (!enumInfo || !enumInfo->IsEnum)
       {
-        if (const TypeInfo* enumInfo = TypeRegistry::Instance().Find(Field.FieldType);
-            enumInfo && enumInfo->IsEnum)
+        const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("<unsupported flags>");
+        if (textHandle.Id.Value != 0)
         {
-          options.reserve(enumInfo->EnumValues.size());
-          for (const EnumValueInfo& enumValue : enumInfo->EnumValues)
+          m_Context->AddChild(valueHostHandle.Id, textHandle.Id);
+        }
+        return;
+      }
+
+      const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+      if (accordionHandle.Id.Value == 0)
+      {
+        return;
+      }
+      m_Context->AddChild(valueHostHandle.Id, accordionHandle.Id);
+      binding.EditorId = accordionHandle.Id;
+
+      auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id));
+      if (!accordion)
+      {
+        return;
+      }
+
+      accordion->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+      accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+      accordion->AllowMultipleExpanded().Set(true);
+      accordion->DefaultExpanded().Set(true);
+      accordion->Gap().Set(4.0f);
+      accordion->Padding().Set(0.0f);
+      accordion->HeaderHeight().Set(24.0f);
+      accordion->HeaderPadding().Set(6.0f);
+      accordion->ContentPadding().Set(4.0f);
+      accordion->BackgroundColor().Set(kValueBg);
+      accordion->BorderColor().Set(kValueBorder);
+      accordion->BorderThickness().Set(1.0f);
+      accordion->CornerRadius().Set(4.0f);
+      accordion->HeaderColor().Set(Color{22, 26, 34, 252});
+      accordion->HeaderHoverColor().Set(Color{26, 30, 39, 252});
+      accordion->HeaderExpandedColor().Set(Color{31, 36, 46, 252});
+      accordion->HeaderTextColor().Set(Color{224, 229, 237, 255});
+      accordion->HeaderTextExpandedColor().Set(Color{224, 229, 237, 255});
+      accordion->HeaderBorderColor().Set(kValueBorder);
+      accordion->HeaderBorderThickness().Set(1.0f);
+      accordion->ArrowSize().Set(18.0f);
+      accordion->ArrowGap().Set(6.0f);
+
+      const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.FlagsBody");
+      if (bodyHandle.Id.Value == 0)
+      {
+        return;
+      }
+      m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+      binding.AuxiliaryContainerId = bodyHandle.Id;
+
+      if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
+      {
+        body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        body->Padding().Set(2.0f);
+        body->Gap().Set(2.0f);
+        body->Width().Set(SnAPI::UI::Sizing::Fill());
+        body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        body->Background().Set(Color::Transparent());
+        body->BorderColor().Set(Color::Transparent());
+        body->BorderThickness().Set(0.0f);
+      }
+
+      std::uint64_t initialBits = 0;
+      const TypeInfo* liveEnumInfo = nullptr;
+      (void)ReadFlagsBits(binding, initialBits, liveEnumInfo);
+      if (!liveEnumInfo)
+      {
+        liveEnumInfo = enumInfo;
+      }
+
+      accordion->SetSectionHeading(bodyHandle.Id, FormatFlagsSummary(initialBits, *liveEnumInfo));
+      accordion->SetSectionExpanded(bodyHandle.Id, true);
+
+      const auto entries = BuildFlagEditorEntries(*liveEnumInfo);
+      if (entries.empty())
+      {
+        const auto textHandle = m_Context->CreateElement<SnAPI::UI::UIText>("No flag entries");
+        if (textHandle.Id.Value != 0)
+        {
+          m_Context->AddChild(bodyHandle.Id, textHandle.Id);
+        }
+      }
+      else
+      {
+        binding.AuxiliaryEditorIds.reserve(entries.size());
+        binding.AuxiliaryHookHandles.resize(entries.size(), 0);
+        for (const FlagEditorEntry& entry : entries)
+        {
+          const auto checkboxHandle = m_Context->CreateElement<SnAPI::UI::UICheckbox>(entry.Label);
+          if (checkboxHandle.Id.Value == 0)
           {
-            options.push_back(enumValue.Name);
+            continue;
+          }
+
+          m_Context->AddChild(bodyHandle.Id, checkboxHandle.Id);
+          binding.AuxiliaryEditorIds.push_back(checkboxHandle.Id);
+
+          if (auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxHandle.Id)))
+          {
+            checkbox->Width().Set(SnAPI::UI::Sizing::Fill());
+            checkbox->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+            checkbox->VAlign().Set(SnAPI::UI::EAlignment::Center);
+            checkbox->LabelColor().Set(kLabelColor);
+            checkbox->BoxSize().Set(12.0f);
+            checkbox->CheckInset().Set(2.0f);
+            checkbox->ElementStyle().Apply("editor.checkbox");
+            checkbox->Checked().Set((initialBits & entry.Value) != 0);
+            checkbox->SetDisabled(readOnly);
           }
         }
       }
-      else if (editorKind == EEditorKind::SubClass && Field.FieldType == StaticTypeId<TSubClassOf<PawnBase>>())
+    }
+    else
+    {
+      const auto comboHandle = m_Context->CreateElement<SnAPI::UI::UIComboBox>();
+      if (comboHandle.Id.Value == 0)
       {
-        const auto entries = TSubClassOf<PawnBase>::EnumerateTypes();
-        options.reserve(entries.size());
-        for (const auto& entry : entries)
+        return;
+      }
+      m_Context->AddChild(valueHostHandle.Id, comboHandle.Id);
+      binding.EditorId = comboHandle.Id;
+
+      if (auto* combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_Context->GetElement(comboHandle.Id)))
+      {
+        combo->ReadOnly().Set(readOnly);
+        combo->Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        combo->Height().Set(SnAPI::UI::Sizing::Auto());
+        combo->VAlign().Set(SnAPI::UI::EAlignment::Center);
+        combo->MaxDropdownHeight().Set(220.0f);
+        combo->Placeholder().Set(PrettyTypeName(Field.FieldType));
+        combo->BackgroundColor().Set(kValueBg);
+        combo->HoverColor().Set(Color{26, 30, 39, 252});
+        combo->PressedColor().Set(Color{31, 36, 46, 252});
+        combo->BorderColor().Set(kValueBorder);
+        combo->BorderThickness().Set(1.0f);
+        combo->CornerRadius().Set(3.0f);
+        combo->TextColor().Set(Color{224, 229, 237, 255});
+        combo->PlaceholderColor().Set(Color{138, 147, 163, 255});
+        combo->ArrowColor().Set(Color{185, 193, 205, 255});
+        combo->Padding().Set(6.0f);
+        combo->RowHeight().Set(24.0f);
+
+        std::vector<std::string> options;
+        if (editorKind == EEditorKind::Enum)
         {
-          options.push_back(entry.Name);
+          if (fieldTypeInfo && fieldTypeInfo->IsEnum)
+          {
+            options.reserve(fieldTypeInfo->EnumValues.size());
+            for (const EnumValueInfo& enumValue : fieldTypeInfo->EnumValues)
+            {
+              options.push_back(enumValue.Name);
+            }
+          }
         }
+        else if (editorKind == EEditorKind::TypeId)
+        {
+          PopulateTypeIdOptions(options);
+        }
+        else if (editorKind == EEditorKind::AssetRef && Field.FieldType == StaticTypeId<AssetRefPayload>())
+        {
+          PopulateAssetRefPayloadOptions(options, AssetRefPayloadKindFilterFromField(Field));
+        }
+        else if (fieldTypeInfo)
+        {
+          PopulateEditorValueOptions(*fieldTypeInfo, options);
+        }
+
+        combo->SetItems(std::move(options));
       }
-      else if (editorKind == EEditorKind::AssetRef && Field.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<PawnBase>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<StaticMeshAssetRuntime>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<SkeletalMeshAssetRuntime>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<MaterialInstanceAssetRuntime>>(options);
-      }
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<SSAOParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<SSGIParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<SSGIParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<SSRParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<TAAParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<TAAParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<BloomParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<BloomParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<AtmosphereParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<AtmosphereCompositeParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<HeightFogParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<ToneMapParamsNode>>(options);
-      }
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<TAssetRef<WorldRenderSettings>>())
-      {
-        PopulateAssetRefOptions<TAssetRef<WorldRenderSettings>>(options);
-      }
-#endif
-      else if (editorKind == EEditorKind::AssetRef &&
-               Field.FieldType == StaticTypeId<AssetRefPayload>())
-      {
-        PopulateAssetRefPayloadOptions(options, AssetRefPayloadKindFilterFromField(Field));
-      }
-      combo->SetItems(std::move(options));
     }
   }
   else if ((editorKind == EEditorKind::Signed || editorKind == EEditorKind::Unsigned ||
@@ -3373,81 +3676,40 @@ UIPropertyPanel::EEditorKind UIPropertyPanel::ResolveEditorKind(const TypeId& Ty
   {
     return EEditorKind::Color;
   }
+  if (Type == StaticTypeId<TypeId>())
+  {
+    return EEditorKind::TypeId;
+  }
   if (Type == StaticTypeId<Uuid>())
   {
     return EEditorKind::Uuid;
   }
-  if (Type == StaticTypeId<TSubClassOf<PawnBase>>())
-  {
-    return EEditorKind::SubClass;
-  }
-  if (Type == StaticTypeId<TAssetRef<PawnBase>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-  if (Type == StaticTypeId<TAssetRef<SSAOParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<SSGIParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<SSRParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<TAAParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<BloomParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-  if (Type == StaticTypeId<TAssetRef<WorldRenderSettings>>())
-  {
-    return EEditorKind::AssetRef;
-  }
-#endif
   if (Type == StaticTypeId<AssetRefPayload>())
   {
     return EEditorKind::AssetRef;
   }
-  if (const TypeInfo* typeInfo = TypeRegistry::Instance().Find(Type);
-      typeInfo && typeInfo->IsEnum)
+
+  if (const TypeInfo* TypeInfo = TypeRegistry::Instance().Find(Type); TypeInfo)
   {
-    return EEditorKind::Enum;
+    switch (TypeInfo->EditorValueFamily)
+    {
+    case EEditorValueFamily::Flags:
+      return EEditorKind::Flags;
+    case EEditorValueFamily::AssetRef:
+      return EEditorKind::AssetRef;
+    case EEditorValueFamily::SubClassOf:
+      return EEditorKind::SubClass;
+    case EEditorValueFamily::None:
+    default:
+      break;
+    }
+
+    if (TypeInfo->IsEnum)
+    {
+      return EEditorKind::Enum;
+    }
   }
+
   return EEditorKind::Unsupported;
 }
 
@@ -3466,13 +3728,7 @@ std::string UIPropertyPanel::PrettyTypeName(const TypeId& Type) const
 {
   if (const TypeInfo* typeInfo = TypeRegistry::Instance().Find(Type))
   {
-    std::string name = typeInfo->Name;
-    const size_t sep = name.rfind("::");
-    if (sep != std::string::npos)
-    {
-      name = name.substr(sep + 2);
-    }
-    return name;
+    return PrettyReflectedTypeName(typeInfo->Name);
   }
 
   return ToString(Type);
@@ -3685,20 +3941,52 @@ bool UIPropertyPanel::ReadFieldValue(
     return false;
   }
 
+  const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(Binding.FieldType);
+
   if (Binding.EditorKind == EEditorKind::SubClass)
   {
-    if (Binding.FieldType != StaticTypeId<TSubClassOf<PawnBase>>() || !field->ConstPointer)
+    if (!fieldTypeInfo || !field->ConstPointer)
     {
       return false;
     }
 
-    const auto* subClassValue = static_cast<const TSubClassOf<PawnBase>*>(field->ConstPointer(owner));
-    if (!subClassValue)
+    const void* constPointer = field->ConstPointer(owner);
+    if (!constPointer || !TryReadEditorValueSelectionLabel(*fieldTypeInfo, constPointer, OutText))
     {
       return false;
     }
 
-    OutText = subClassValue->ResolvedTypeName();
+    OutBool = false;
+    return true;
+  }
+
+  if (Binding.EditorKind == EEditorKind::Flags)
+  {
+    const TypeInfo* enumInfo = nullptr;
+    std::uint64_t bits = 0;
+    if (!ReadFlagsBits(Binding, bits, enumInfo) || !enumInfo)
+    {
+      return false;
+    }
+
+    OutText = FormatFlagsSummary(bits, *enumInfo);
+    OutBool = false;
+    return true;
+  }
+
+  if (Binding.EditorKind == EEditorKind::TypeId)
+  {
+    if (!field->ConstPointer)
+    {
+      return false;
+    }
+
+    const void* constPointer = field->ConstPointer(owner);
+    if (!constPointer || !TryReadTypeIdSelectionLabel(constPointer, OutText))
+    {
+      return false;
+    }
+
     OutBool = false;
     return true;
   }
@@ -3716,134 +4004,6 @@ bool UIPropertyPanel::ReadFieldValue(
       return false;
     }
 
-    if (Binding.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<PawnBase>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<StaticMeshAssetRuntime>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<SkeletalMeshAssetRuntime>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<MaterialInstanceAssetRuntime>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    if (Binding.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<SSAOParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<SSGIParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<SSGIParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<SSRParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<TAAParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<TAAParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<BloomParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<BloomParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<AtmosphereParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<AtmosphereCompositeParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<HeightFogParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<ToneMapParamsNode>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-    if (Binding.FieldType == StaticTypeId<TAssetRef<WorldRenderSettings>>())
-    {
-      if (!TryReadAssetRefSelectionLabel<TAssetRef<WorldRenderSettings>>(constPointer, OutText))
-      {
-        return false;
-      }
-      OutBool = false;
-      return true;
-    }
-#endif
     if (Binding.FieldType == StaticTypeId<AssetRefPayload>())
     {
       if (!TryReadAssetRefPayloadSelectionLabel(constPointer, OutText))
@@ -3854,7 +4014,13 @@ bool UIPropertyPanel::ReadFieldValue(
       return true;
     }
 
-    return false;
+    if (!fieldTypeInfo || !TryReadEditorValueSelectionLabel(*fieldTypeInfo, constPointer, OutText))
+    {
+      return false;
+    }
+
+    OutBool = false;
+    return true;
   }
 
   if (Binding.EditorKind == EEditorKind::Enum)
@@ -4040,6 +4206,16 @@ bool UIPropertyPanel::ReadFieldValue(
       OutText = FormatColor(ref->get());
       return true;
     }
+  case EEditorKind::TypeId:
+    {
+      const auto ref = value.AsConstRef<TypeId>();
+      if (!ref)
+      {
+        return false;
+      }
+      OutText = ToString(ref->get());
+      return true;
+    }
   case EEditorKind::Uuid:
     {
       const auto ref = value.AsConstRef<Uuid>();
@@ -4051,6 +4227,7 @@ bool UIPropertyPanel::ReadFieldValue(
       return true;
     }
   case EEditorKind::Enum:
+  case EEditorKind::Flags:
   case EEditorKind::SubClass:
   case EEditorKind::AssetRef:
     return false;
@@ -4058,6 +4235,48 @@ bool UIPropertyPanel::ReadFieldValue(
   default:
     return false;
   }
+}
+
+bool UIPropertyPanel::ReadFlagsBits(
+  const FieldBinding& Binding,
+  std::uint64_t& OutBits,
+  const TypeInfo*& OutEnumInfo) const
+{
+  OutBits = 0;
+  OutEnumInfo = nullptr;
+
+  if (!Binding.RootInstance)
+  {
+    return false;
+  }
+
+  void* owner = nullptr;
+  const FieldInfo* field = nullptr;
+  if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || !field->ConstPointer)
+  {
+    return false;
+  }
+
+  const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(Binding.FieldType);
+  if (!fieldTypeInfo || fieldTypeInfo->EditorValueFamily != EEditorValueFamily::Flags ||
+      fieldTypeInfo->EditorValueTargetType.is_nil())
+  {
+    return false;
+  }
+
+  const TypeInfo* enumInfo = TypeRegistry::Instance().Find(fieldTypeInfo->EditorValueTargetType);
+  if (!enumInfo || !enumInfo->IsEnum)
+  {
+    return false;
+  }
+
+  if (!ReadUnsignedBits(field->ConstPointer(owner), fieldTypeInfo->Size, OutBits))
+  {
+    return false;
+  }
+
+  OutEnumInfo = enumInfo;
+  return true;
 }
 
 bool UIPropertyPanel::WriteFieldValue(
@@ -4074,6 +4293,8 @@ bool UIPropertyPanel::WriteFieldValue(
   const FieldInfo* field = nullptr;
   const bool requiresSetter =
     Binding.EditorKind != EEditorKind::Enum &&
+    Binding.EditorKind != EEditorKind::Flags &&
+    Binding.EditorKind != EEditorKind::TypeId &&
     Binding.EditorKind != EEditorKind::SubClass &&
     Binding.EditorKind != EEditorKind::AssetRef;
   if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || field->IsConst ||
@@ -4081,6 +4302,24 @@ bool UIPropertyPanel::WriteFieldValue(
   {
     return false;
   }
+
+  const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(Binding.FieldType);
+
+  const auto notifyRootEditorPropertyChanged = [&]() {
+#if defined(WITH_EDITOR) && WITH_EDITOR
+    if (Binding.Path.empty())
+    {
+      return;
+    }
+
+    const FieldPathEntry& rootEntry = Binding.Path.front();
+    if (const TypeInfo* rootType = TypeRegistry::Instance().Find(rootEntry.OwnerType);
+        rootType && rootType->EditorPropertyChanged)
+    {
+      rootType->EditorPropertyChanged(Binding.RootInstance, Binding.Path.back().FieldName);
+    }
+#endif
+  };
 
   const auto finalizeWrite = [&](const bool Success) {
     if (!Success)
@@ -4090,14 +4329,14 @@ bool UIPropertyPanel::WriteFieldValue(
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
     // Nested settings fields mutate sub-objects directly; forward a root-level editor change callback.
-    if (Binding.Path.size() > 1)
+    if (Binding.Path.size() > 1 &&
+        Binding.EditorKind != EEditorKind::Enum &&
+        Binding.EditorKind != EEditorKind::Flags &&
+        Binding.EditorKind != EEditorKind::TypeId &&
+        Binding.EditorKind != EEditorKind::SubClass &&
+        Binding.EditorKind != EEditorKind::AssetRef)
     {
-      const FieldPathEntry& rootEntry = Binding.Path.front();
-      if (const TypeInfo* rootType = TypeRegistry::Instance().Find(rootEntry.OwnerType);
-          rootType && rootType->EditorPropertyChanged)
-      {
-        rootType->EditorPropertyChanged(Binding.RootInstance, Binding.Path.back().FieldName);
-      }
+      notifyRootEditorPropertyChanged();
     }
 #endif
 
@@ -4232,6 +4471,26 @@ bool UIPropertyPanel::WriteFieldValue(
       }
       return finalizeWrite(static_cast<bool>(field->Setter(owner, Variant::FromValue(parsed))));
     }
+  case EEditorKind::TypeId:
+    {
+      if (!field->MutablePointer)
+      {
+        return false;
+      }
+
+      void* mutablePointer = field->MutablePointer(owner);
+      if (!mutablePointer)
+      {
+        return false;
+      }
+
+      const bool success = TryWriteTypeIdSelection(mutablePointer, TextValue);
+      if (success)
+      {
+        notifyRootEditorPropertyChanged();
+      }
+      return finalizeWrite(success);
+    }
   case EEditorKind::Uuid:
     {
       Uuid parsed{};
@@ -4301,17 +4560,24 @@ bool UIPropertyPanel::WriteFieldValue(
       }
 
       void* destination = field->MutablePointer(owner);
-      return finalizeWrite(WriteUnsignedBits(destination, enumInfo->Size, enumBits));
+      const bool success = WriteUnsignedBits(destination, enumInfo->Size, enumBits);
+      if (success)
+      {
+        notifyRootEditorPropertyChanged();
+      }
+      return finalizeWrite(success);
     }
+  case EEditorKind::Flags:
+    return false;
   case EEditorKind::SubClass:
     {
-      if (Binding.FieldType != StaticTypeId<TSubClassOf<PawnBase>>() || !field->MutablePointer)
+      if (!fieldTypeInfo || !field->MutablePointer)
       {
         return false;
       }
 
-      auto* value = static_cast<TSubClassOf<PawnBase>*>(field->MutablePointer(owner));
-      if (!value)
+      void* mutablePointer = field->MutablePointer(owner);
+      if (!mutablePointer)
       {
         return false;
       }
@@ -4319,11 +4585,20 @@ bool UIPropertyPanel::WriteFieldValue(
       const std::string selected = TrimCopy(TextValue);
       if (selected.empty())
       {
-        value->Clear();
-        return finalizeWrite(true);
+        const bool success = TryWriteEditorValueSelection(*fieldTypeInfo, mutablePointer, selected);
+        if (success)
+        {
+          notifyRootEditorPropertyChanged();
+        }
+        return finalizeWrite(success);
       }
 
-      return finalizeWrite(value->SetTypeByName(selected));
+      const bool success = TryWriteEditorValueSelection(*fieldTypeInfo, mutablePointer, selected);
+      if (success)
+      {
+        notifyRootEditorPropertyChanged();
+      }
+      return finalizeWrite(success);
     }
   case EEditorKind::AssetRef:
     {
@@ -4339,74 +4614,61 @@ bool UIPropertyPanel::WriteFieldValue(
       }
 
       const std::string selected = TrimCopy(TextValue);
-      if (Binding.FieldType == StaticTypeId<TAssetRef<PawnBase>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<PawnBase>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<StaticMeshAssetRuntime>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<StaticMeshAssetRuntime>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<SkeletalMeshAssetRuntime>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SkeletalMeshAssetRuntime>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<MaterialInstanceAssetRuntime>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<MaterialInstanceAssetRuntime>>(mutablePointer, selected));
-      }
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-      if (Binding.FieldType == StaticTypeId<TAssetRef<SSAOParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSAOParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<SSGIParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSGIParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<SSRParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<SSRParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<TAAParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<TAAParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<BloomParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<BloomParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<AtmosphereParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<AtmosphereCompositeParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<AtmosphereCompositeParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<HeightFogParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<HeightFogParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<ToneMapParamsNode>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<ToneMapParamsNode>>(mutablePointer, selected));
-      }
-      if (Binding.FieldType == StaticTypeId<TAssetRef<WorldRenderSettings>>())
-      {
-        return finalizeWrite(TryWriteAssetRefSelection<TAssetRef<WorldRenderSettings>>(mutablePointer, selected));
-      }
-#endif
       if (Binding.FieldType == StaticTypeId<AssetRefPayload>())
       {
-        return finalizeWrite(TryWriteAssetRefPayloadSelection(mutablePointer, selected));
+        const bool success = TryWriteAssetRefPayloadSelection(mutablePointer, selected);
+        if (success)
+        {
+          notifyRootEditorPropertyChanged();
+        }
+        return finalizeWrite(success);
       }
-      return false;
+      if (!fieldTypeInfo)
+      {
+        return false;
+      }
+      const bool success = TryWriteEditorValueSelection(*fieldTypeInfo, mutablePointer, selected);
+      if (success)
+      {
+        notifyRootEditorPropertyChanged();
+      }
+      return finalizeWrite(success);
     }
   case EEditorKind::Unsupported:
   default:
     return false;
   }
+}
+
+bool UIPropertyPanel::WriteFlagsBits(
+  const FieldBinding& Binding,
+  const std::uint64_t Bits)
+{
+  if (!Binding.RootInstance || Binding.ReadOnly)
+  {
+    return false;
+  }
+
+  void* owner = nullptr;
+  const FieldInfo* field = nullptr;
+  if (!ResolveLeafPath(Binding.RootInstance, Binding.Path, owner, field) || !field || field->IsConst || !field->MutablePointer)
+  {
+    return false;
+  }
+
+  const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(Binding.FieldType);
+  if (!fieldTypeInfo || fieldTypeInfo->EditorValueFamily != EEditorValueFamily::Flags)
+  {
+    return false;
+  }
+
+  void* destination = field->MutablePointer(owner);
+  if (!destination)
+  {
+    return false;
+  }
+
+  return WriteUnsignedBits(destination, fieldTypeInfo->Size, Bits);
 }
 
 bool UIPropertyPanel::ParseBool(std::string_view Text, bool& OutValue) const
@@ -4661,7 +4923,26 @@ bool UIPropertyPanel::IsEditorFocused(const FieldBinding& Binding) const
     return false;
   }
 
+  if (Binding.EditorKind == EEditorKind::Flags)
+  {
+    for (const SnAPI::UI::ElementId checkboxId : Binding.AuxiliaryEditorIds)
+    {
+      if (checkboxId.Value == 0)
+      {
+        continue;
+      }
+
+      auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxId));
+      if (checkbox && checkbox->IsFocused())
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+
   if (Binding.EditorKind == EEditorKind::Enum ||
+      Binding.EditorKind == EEditorKind::TypeId ||
       Binding.EditorKind == EEditorKind::SubClass ||
       Binding.EditorKind == EEditorKind::AssetRef)
   {
@@ -4714,7 +4995,117 @@ void UIPropertyPanel::AttachEditorHooks(const std::size_t BindingIndex)
     return;
   }
 
+  if (binding.EditorKind == EEditorKind::Flags)
+  {
+    const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(binding.FieldType);
+    const TypeInfo* enumInfo =
+      (fieldTypeInfo && !fieldTypeInfo->EditorValueTargetType.is_nil())
+        ? TypeRegistry::Instance().Find(fieldTypeInfo->EditorValueTargetType)
+        : nullptr;
+    if (!enumInfo)
+    {
+      return;
+    }
+
+    const auto entries = BuildFlagEditorEntries(*enumInfo);
+    if (entries.empty())
+    {
+      return;
+    }
+
+    if (binding.AuxiliaryHookHandles.size() < binding.AuxiliaryEditorIds.size())
+    {
+      binding.AuxiliaryHookHandles.resize(binding.AuxiliaryEditorIds.size(), 0);
+    }
+
+    for (std::size_t index = 0; index < binding.AuxiliaryEditorIds.size() && index < entries.size(); ++index)
+    {
+      const SnAPI::UI::ElementId checkboxId = binding.AuxiliaryEditorIds[index];
+      if (checkboxId.Value == 0)
+      {
+        continue;
+      }
+
+      auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxId));
+      if (!checkbox)
+      {
+        continue;
+      }
+
+      binding.AuxiliaryHookHandles[index] = checkbox->Checked().AddSetHook(
+        [this, BindingIndex, generation](const bool /*Value*/) {
+          if (!m_Context || m_SyncingModelToEditors || m_CommittingEditorToModel)
+          {
+            return;
+          }
+
+          RefreshBoundSectionInstances();
+
+          FieldBinding* liveBinding = ResolveLiveBinding(BindingIndex, generation);
+          if (!liveBinding || liveBinding->ReadOnly)
+          {
+            return;
+          }
+
+          const TypeInfo* liveFieldTypeInfo = TypeRegistry::Instance().Find(liveBinding->FieldType);
+          const TypeInfo* liveEnumInfo =
+            (liveFieldTypeInfo && !liveFieldTypeInfo->EditorValueTargetType.is_nil())
+              ? TypeRegistry::Instance().Find(liveFieldTypeInfo->EditorValueTargetType)
+              : nullptr;
+          if (!liveEnumInfo)
+          {
+            return;
+          }
+
+          const auto liveEntries = BuildFlagEditorEntries(*liveEnumInfo);
+          std::uint64_t bits = 0;
+          for (std::size_t liveIndex = 0;
+               liveIndex < liveBinding->AuxiliaryEditorIds.size() && liveIndex < liveEntries.size();
+               ++liveIndex)
+          {
+            const SnAPI::UI::ElementId liveCheckboxId = liveBinding->AuxiliaryEditorIds[liveIndex];
+            if (liveCheckboxId.Value == 0)
+            {
+              continue;
+            }
+
+            auto* liveCheckbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(liveCheckboxId));
+            if (liveCheckbox && liveCheckbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false))
+            {
+              bits |= liveEntries[liveIndex].Value;
+            }
+          }
+
+          ScopedFlag guard(m_CommittingEditorToModel);
+          if (!WriteFlagsBits(*liveBinding, bits))
+          {
+            if (!IsEditorFocused(*liveBinding))
+            {
+              SyncBindingToEditor(*liveBinding);
+            }
+            return;
+          }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+          if (!liveBinding->Path.empty())
+          {
+            const FieldPathEntry& rootEntry = liveBinding->Path.front();
+            if (const TypeInfo* rootType = TypeRegistry::Instance().Find(rootEntry.OwnerType);
+                rootType && rootType->EditorPropertyChanged)
+            {
+              rootType->EditorPropertyChanged(liveBinding->RootInstance, liveBinding->Path.back().FieldName);
+            }
+          }
+#endif
+
+          SyncBindingToEditor(*liveBinding);
+        });
+    }
+    return;
+  }
+
   if (binding.EditorKind == EEditorKind::Enum ||
+      binding.EditorKind == EEditorKind::TypeId ||
       binding.EditorKind == EEditorKind::SubClass ||
       binding.EditorKind == EEditorKind::AssetRef)
   {
@@ -4813,6 +5204,25 @@ void UIPropertyPanel::ClearBindingHooks()
 
   for (FieldBinding& binding : m_Bindings)
   {
+    if (binding.EditorKind == EEditorKind::Flags)
+    {
+      for (std::size_t index = 0; index < binding.AuxiliaryEditorIds.size() && index < binding.AuxiliaryHookHandles.size(); ++index)
+      {
+        const SnAPI::UI::ElementId checkboxId = binding.AuxiliaryEditorIds[index];
+        const std::size_t handle = binding.AuxiliaryHookHandles[index];
+        if (checkboxId.Value == 0 || handle == 0)
+        {
+          continue;
+        }
+
+        if (auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxId)))
+        {
+          (void)checkbox->Checked().RemoveSetHook(handle);
+        }
+        binding.AuxiliaryHookHandles[index] = 0;
+      }
+    }
+
     if (binding.EditorHookHandle != 0 && binding.EditorId.Value != 0)
     {
       if (binding.EditorKind == EEditorKind::Bool)
@@ -4823,6 +5233,7 @@ void UIPropertyPanel::ClearBindingHooks()
         }
       }
       else if (binding.EditorKind == EEditorKind::Enum ||
+               binding.EditorKind == EEditorKind::TypeId ||
                binding.EditorKind == EEditorKind::SubClass ||
                binding.EditorKind == EEditorKind::AssetRef)
       {
@@ -5010,7 +5421,54 @@ void UIPropertyPanel::SyncBindingToEditor(FieldBinding& Binding)
     return;
   }
 
+  if (Binding.EditorKind == EEditorKind::Flags)
+  {
+    const TypeInfo* enumInfo = nullptr;
+    std::uint64_t bits = 0;
+    if (!ReadFlagsBits(Binding, bits, enumInfo) || !enumInfo)
+    {
+      return;
+    }
+
+    if (Binding.EditorId.Value != 0)
+    {
+      if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(Binding.EditorId)))
+      {
+        accordion->SetSectionHeading(Binding.AuxiliaryContainerId, FormatFlagsSummary(bits, *enumInfo));
+      }
+    }
+
+    if (IsEditorFocused(Binding))
+    {
+      return;
+    }
+
+    const auto entries = BuildFlagEditorEntries(*enumInfo);
+    for (std::size_t index = 0; index < Binding.AuxiliaryEditorIds.size() && index < entries.size(); ++index)
+    {
+      const SnAPI::UI::ElementId checkboxId = Binding.AuxiliaryEditorIds[index];
+      if (checkboxId.Value == 0)
+      {
+        continue;
+      }
+
+      auto* checkbox = dynamic_cast<SnAPI::UI::UICheckbox*>(&m_Context->GetElement(checkboxId));
+      if (!checkbox)
+      {
+        continue;
+      }
+
+      const bool expected = (bits & entries[index].Value) != 0;
+      if (checkbox->Properties().GetPropertyOr(SnAPI::UI::UICheckbox::CheckedKey, false) != expected)
+      {
+        checkbox->Checked().Set(expected);
+      }
+    }
+    return;
+  }
+
   if (Binding.EditorKind == EEditorKind::Enum ||
+      Binding.EditorKind == EEditorKind::TypeId ||
       Binding.EditorKind == EEditorKind::SubClass ||
       Binding.EditorKind == EEditorKind::AssetRef)
   {

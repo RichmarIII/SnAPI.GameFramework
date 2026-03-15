@@ -325,6 +325,149 @@ private:
                           });
     }
 
+    template<typename TFlagsType, typename TEnum>
+    void RegisterFlags()
+    {
+        using Underlying = typename TFlagsType::Underlying;
+
+        m_entries.emplace(StaticTypeId<TFlagsType>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null JSON flags value"));
+                                  }
+
+                                  const auto& FlagsValue = *static_cast<const TFlagsType*>(Value);
+                                  const Underlying RawValue = FlagsValue.Value();
+                                  const TypeInfo* EnumInfo = TypeRegistry::Instance().Find(StaticTypeId<TEnum>());
+                                  if (!EnumInfo || !EnumInfo->IsEnum)
+                                  {
+                                      return Json(static_cast<std::uint64_t>(RawValue));
+                                  }
+
+                                  if (RawValue == static_cast<Underlying>(0))
+                                  {
+                                      const auto It = std::find_if(EnumInfo->EnumValues.begin(),
+                                                                   EnumInfo->EnumValues.end(),
+                                                                   [] (const EnumValueInfo& Entry) {
+                                                                       return Entry.Value == 0u;
+                                                                   });
+                                      if (It != EnumInfo->EnumValues.end())
+                                      {
+                                          return Json(It->Name);
+                                      }
+                                      return Json(static_cast<std::uint64_t>(0));
+                                  }
+
+                                  Json Out = Json::array();
+                                  Underlying CoveredBits = static_cast<Underlying>(0);
+                                  for (const EnumValueInfo& Entry : EnumInfo->EnumValues)
+                                  {
+                                      const Underlying EntryValue = static_cast<Underlying>(Entry.Value);
+                                      if (EntryValue == static_cast<Underlying>(0))
+                                      {
+                                          continue;
+                                      }
+                                      if ((RawValue & EntryValue) == EntryValue)
+                                      {
+                                          Out.push_back(Entry.Name);
+                                          CoveredBits = static_cast<Underlying>(CoveredBits | EntryValue);
+                                      }
+                                  }
+
+                                  if (!Out.empty() && CoveredBits == RawValue)
+                                  {
+                                      return Out;
+                                  }
+
+                                  return Json(static_cast<std::uint64_t>(RawValue));
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null JSON flags destination"));
+                                  }
+
+                                  if (Source.is_object() && Source.contains(std::string(kOpaqueJsonBytesField)))
+                                  {
+                                      return DeserializeOpaqueValueFromJsonInto(StaticTypeId<TFlagsType>(), Value, Source);
+                                  }
+
+                                  const TypeInfo* EnumInfo = TypeRegistry::Instance().Find(StaticTypeId<TEnum>());
+                                  const auto ParseFlagName = [EnumInfo](const std::string& Name,
+                                                                        Underlying& InOutRaw) -> Result {
+                                      if (!EnumInfo || !EnumInfo->IsEnum)
+                                      {
+                                          return std::unexpected(
+                                              MakeError(EErrorCode::InvalidArgument, "Flag enum type is not registered"));
+                                      }
+
+                                      const auto It = std::find_if(EnumInfo->EnumValues.begin(),
+                                                                   EnumInfo->EnumValues.end(),
+                                                                   [&Name] (const EnumValueInfo& Entry) {
+                                                                       return Entry.Name == Name;
+                                                                   });
+                                      if (It == EnumInfo->EnumValues.end())
+                                      {
+                                          return std::unexpected(
+                                              MakeError(EErrorCode::InvalidArgument, "Unknown flag value: " + Name));
+                                      }
+
+                                      InOutRaw = static_cast<Underlying>(InOutRaw | static_cast<Underlying>(It->Value));
+                                      return Ok();
+                                  };
+
+                                  Underlying RawValue = static_cast<Underlying>(0);
+                                  if (Source.is_string())
+                                  {
+                                      auto ParseResult = ParseFlagName(Source.get<std::string>(), RawValue);
+                                      if (!ParseResult)
+                                      {
+                                          return ParseResult;
+                                      }
+                                  }
+                                  else if (Source.is_number_integer())
+                                  {
+                                      RawValue = static_cast<Underlying>(Source.get<std::int64_t>());
+                                  }
+                                  else if (Source.is_number_unsigned())
+                                  {
+                                      RawValue = static_cast<Underlying>(Source.get<std::uint64_t>());
+                                  }
+                                  else if (Source.is_array())
+                                  {
+                                      for (const Json& EntryValue : Source)
+                                      {
+                                          if (!EntryValue.is_string())
+                                          {
+                                              return std::unexpected(
+                                                  MakeError(EErrorCode::InvalidArgument,
+                                                            "Flags JSON array values must be strings"));
+                                          }
+
+                                          auto ParseResult = ParseFlagName(EntryValue.get<std::string>(), RawValue);
+                                          if (!ParseResult)
+                                          {
+                                              return ParseResult;
+                                          }
+                                      }
+                                  }
+                                  else
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument,
+                                                    "Flags JSON value must be a string, integer, or string array"));
+                                  }
+
+                                  *static_cast<TFlagsType*>(Value) = TFlagsType::FromRaw(RawValue);
+                                  return Ok();
+                              },
+                          });
+    }
+
     void RegisterVec2()
     {
         m_entries.emplace(StaticTypeId<Vec2>(),
@@ -561,6 +704,9 @@ private:
         RegisterScalar<float>();
         RegisterScalar<double>();
         RegisterScalar<std::string>();
+        RegisterFlags<FieldFlags, EFieldFlagBits>();
+        RegisterFlags<MethodFlags, EMethodFlagBits>();
+        RegisterFlags<CollisionFilterFlags, ECollisionFilterBits>();
         RegisterVec2();
         RegisterVec3();
         RegisterVec4();
@@ -649,7 +795,7 @@ private:
                                   const std::string Text = Source.get<std::string>();
                                   if (const auto* Info = TypeRegistry::Instance().FindByName(Text))
                                   {
-                                      *static_cast<Uuid*>(Value) = Info->Id;
+                                      *static_cast<Uuid*>(Value) = Info->Id.Value;
                                       return Ok();
                                   }
 
@@ -661,6 +807,53 @@ private:
                                   }
 
                                   *static_cast<Uuid*>(Value) = *Parsed;
+                                  return Ok();
+                              },
+                          });
+
+        m_entries.emplace(StaticTypeId<TypeId>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null TypeId JSON value"));
+                                  }
+
+                                  const TypeId& Id = *static_cast<const TypeId*>(Value);
+                                  if (const auto* Info = TypeRegistry::Instance().Find(Id))
+                                  {
+                                      return Json(Info->Name);
+                                  }
+                                  return Json(ToString(Id));
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null TypeId JSON destination"));
+                                  }
+                                  if (!Source.is_string())
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "TypeId JSON value must be a string"));
+                                  }
+
+                                  const std::string Text = Source.get<std::string>();
+                                  if (const auto* Info = TypeRegistry::Instance().FindByName(Text))
+                                  {
+                                      *static_cast<TypeId*>(Value) = Info->Id;
+                                      return Ok();
+                                  }
+
+                                  const auto Parsed = Uuid::from_string(Text);
+                                  if (!Parsed)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Invalid UUID/type string: " + Text));
+                                  }
+
+                                  *static_cast<TypeId*>(Value) = TypeId(*Parsed);
                                   return Ok();
                               },
                           });
@@ -968,6 +1161,11 @@ Result DeserializeEnumFromJsonInto(const TypeInfo& Info, void* Value, const Json
     if (!Value)
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null enum JSON destination"));
+    }
+
+    if (Source.is_object() && Source.contains(std::string(kOpaqueJsonBytesField)))
+    {
+        return DeserializeOpaqueValueFromJsonInto(Info.Id, Value, Source);
     }
 
     if (Source.is_string())

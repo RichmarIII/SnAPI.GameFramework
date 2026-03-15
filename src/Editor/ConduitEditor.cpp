@@ -1,8 +1,29 @@
 #include "Conduit/Editor.h"
 
 #include "Editor/EditorAssetService.h"
+#include "BaseComponent.h"
 #include "Editor/EditorCoreServices.h"
 #include "BaseNode.h"
+#include "IWorld.h"
+#if defined(SNAPI_GF_ENABLE_INPUT)
+#include "InputSystem.h"
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+#include "UISystem.h"
+#endif
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+#include "AudioSystem.h"
+#endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+#include "NetworkSystem.h"
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+#include "PhysicsSystem.h"
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "RendererSystem.h"
+#endif
+#include "Serialization.h"
 #include "Uuid.h"
 
 #include <algorithm>
@@ -34,6 +55,93 @@ namespace
     return !Field.IsConst && (static_cast<bool>(Field.RawSetter) || static_cast<bool>(Field.MutablePointer) || static_cast<bool>(Field.Setter));
 }
 
+[[nodiscard]] bool IsHandleCarrierType(const TypeId& Type)
+{
+    return Type == StaticTypeId<NodeHandle>() || Type == StaticTypeId<ComponentHandle>();
+}
+
+[[nodiscard]] ESlotKind ResolveSlotKindForType(const TypeId& Type)
+{
+    return IsHandleCarrierType(Type) ? ESlotKind::Handle : ESlotKind::Value;
+}
+
+[[nodiscard]] TypeId ResolveExpectedHandleStorageType(const TypeId& ExpectedTargetType)
+{
+    if (ExpectedTargetType == TypeId{})
+    {
+        return {};
+    }
+    if (IsHandleCarrierType(ExpectedTargetType))
+    {
+        return ExpectedTargetType;
+    }
+    if (TypeRegistry::Instance().IsA(ExpectedTargetType, StaticTypeId<BaseNode>()))
+    {
+        return StaticTypeId<NodeHandle>();
+    }
+    if (ComponentSerializationRegistry::Instance().Has(ExpectedTargetType))
+    {
+        return StaticTypeId<ComponentHandle>();
+    }
+    return {};
+}
+
+[[nodiscard]] bool IsPointerStorageAssignableToExpected(const TypeId& StorageType,
+                                                        const TypeId& ExpectedPointerType)
+{
+    const TypeInfo* StorageInfo = TypeRegistry::Instance().Find(StorageType);
+    const TypeInfo* ExpectedInfo = TypeRegistry::Instance().Find(ExpectedPointerType);
+    if (!StorageInfo || !ExpectedInfo || !StorageInfo->IsPointer || !ExpectedInfo->IsPointer)
+    {
+        return false;
+    }
+    if (StorageInfo->PointeeType == TypeId{} || ExpectedInfo->PointeeType == TypeId{})
+    {
+        return false;
+    }
+    if (!TypeRegistry::Instance().IsA(StorageInfo->PointeeType, ExpectedInfo->PointeeType))
+    {
+        return false;
+    }
+    if (StorageInfo->PointerPointeeConst && !ExpectedInfo->PointerPointeeConst)
+    {
+        return false;
+    }
+    return true;
+}
+
+[[nodiscard]] bool IsInstanceTargetStorageCompatible(const TypeId& StorageType,
+                                                     const TypeId& ExpectedTargetType,
+                                                     const bool RequireMutableInstance)
+{
+    if (StorageType == ResolveExpectedHandleStorageType(ExpectedTargetType))
+    {
+        return true;
+    }
+
+    const TypeInfo* StorageInfo = TypeRegistry::Instance().Find(StorageType);
+    if (!StorageInfo || !StorageInfo->IsPointer || StorageInfo->PointeeType == TypeId{})
+    {
+        return false;
+    }
+    if (!TypeRegistry::Instance().IsA(StorageInfo->PointeeType, ExpectedTargetType))
+    {
+        return false;
+    }
+    if (RequireMutableInstance && StorageInfo->PointerPointeeConst)
+    {
+        return false;
+    }
+    return true;
+}
+
+std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
+                                                  bool SelfContext,
+                                                  const std::unordered_set<TypeId, UuidHash>* AvailableInstanceTypes = nullptr);
+
+[[nodiscard]] const SchemaNodeDescriptor* FindSchemaDescriptorForNode(const std::vector<SchemaNodeDescriptor>& Descriptors,
+                                                                      const GraphNodeAsset& Node);
+
 [[nodiscard]] SchemaPinDescriptor MakeExecPin(const std::string_view Name, const ESchemaPinDirection Direction)
 {
     SchemaPinDescriptor Pin{};
@@ -52,7 +160,7 @@ namespace
     Pin.Name = std::string(Name);
     Pin.Direction = Direction;
     Pin.Type.Type = Type;
-    Pin.Type.Kind = ESlotKind::Value;
+    Pin.Type.Kind = ResolveSlotKindForType(Type);
     Pin.SupportsLiteral = SupportsLiteral;
     return Pin;
 }
@@ -156,6 +264,111 @@ namespace
     return It->LabelName;
 }
 
+[[nodiscard]] const GraphNodeAsset* FindLabelNodeByName(const GraphAsset& Asset, const std::string_view LabelName)
+{
+    if (LabelName.empty())
+    {
+        return nullptr;
+    }
+
+    const auto It = std::find_if(Asset.Nodes.begin(), Asset.Nodes.end(), [LabelName](const GraphNodeAsset& Node) {
+        return Node.Kind == EGraphAssetNodeKind::Label && Node.LabelName == LabelName;
+    });
+    return It != Asset.Nodes.end() ? &(*It) : nullptr;
+}
+
+[[nodiscard]] Uuid* ResolveMutableExecTargetNodeId(GraphNodeAsset& Node, const std::string_view SourcePin)
+{
+    if (SourcePin == "Out" || SourcePin == "True")
+    {
+        return &Node.ExecTargetNodeId;
+    }
+    if (SourcePin == "False")
+    {
+        return &Node.FalseExecTargetNodeId;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] const Uuid* ResolveConstExecTargetNodeId(const GraphNodeAsset& Node, const std::string_view SourcePin)
+{
+    if (SourcePin == "Out" || SourcePin == "True")
+    {
+        return &Node.ExecTargetNodeId;
+    }
+    if (SourcePin == "False")
+    {
+        return &Node.FalseExecTargetNodeId;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] Uuid ResolveExecTargetNodeId(const GraphAsset& Asset,
+                                           const GraphNodeAsset& Node,
+                                           const std::string_view SourcePin)
+{
+    if (const Uuid* ExplicitTarget = ResolveConstExecTargetNodeId(Node, SourcePin);
+        ExplicitTarget && *ExplicitTarget != Uuid{})
+    {
+        return *ExplicitTarget;
+    }
+
+    if (SourcePin == "Out" && Node.Kind == EGraphAssetNodeKind::Jump)
+    {
+        if (const GraphNodeAsset* LabelNode = FindLabelNodeByName(Asset, Node.LabelName))
+        {
+            return LabelNode->Id;
+        }
+    }
+    if (Node.Kind == EGraphAssetNodeKind::Branch)
+    {
+        if (SourcePin == "True")
+        {
+            if (const GraphNodeAsset* LabelNode = FindLabelNodeByName(Asset, Node.LabelName))
+            {
+                return LabelNode->Id;
+            }
+        }
+        else if (SourcePin == "False")
+        {
+            if (const GraphNodeAsset* LabelNode = FindLabelNodeByName(Asset, Node.FalseLabelName))
+            {
+                return LabelNode->Id;
+            }
+        }
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::string ResolveExecInputPinName(const SchemaNodeDescriptor& Descriptor)
+{
+    const auto It = std::find_if(Descriptor.Pins.begin(), Descriptor.Pins.end(), [](const SchemaPinDescriptor& Pin) {
+        return Pin.Direction == ESchemaPinDirection::Input && Pin.Type.IsExec;
+    });
+    return It != Descriptor.Pins.end() ? It->Name : std::string("In");
+}
+
+void DisconnectExecConnectionsToNode(GraphAsset& Asset, const std::unordered_set<Uuid, UuidHash>& RemovedNodeIds)
+{
+    if (RemovedNodeIds.empty())
+    {
+        return;
+    }
+
+    for (GraphNodeAsset& Node : Asset.Nodes)
+    {
+        if (RemovedNodeIds.contains(Node.ExecTargetNodeId))
+        {
+            Node.ExecTargetNodeId = {};
+        }
+        if (RemovedNodeIds.contains(Node.FalseExecTargetNodeId))
+        {
+            Node.FalseExecTargetNodeId = {};
+        }
+    }
+}
+
 void NormalizeEditorState(GraphAsset& Asset)
 {
     std::unordered_set<Uuid, UuidHash> LiveNodeIds{};
@@ -242,6 +455,18 @@ void NormalizeEditorState(GraphAsset& Asset)
             Variable.Id = NewUuid();
         }
     }
+
+    for (GraphNodeAsset& Node : Asset.Nodes)
+    {
+        if (Node.ExecTargetNodeId != Uuid{} && !LiveNodeIds.contains(Node.ExecTargetNodeId))
+        {
+            Node.ExecTargetNodeId = {};
+        }
+        if (Node.FalseExecTargetNodeId != Uuid{} && !LiveNodeIds.contains(Node.FalseExecTargetNodeId))
+        {
+            Node.FalseExecTargetNodeId = {};
+        }
+    }
 }
 
 [[nodiscard]] std::string ResolveTypeLabel(const TypeId& Type)
@@ -253,19 +478,7 @@ void NormalizeEditorState(GraphAsset& Asset)
 
     if (const TypeInfo* Info = TypeRegistry::Instance().Find(Type))
     {
-        const std::string_view QualifiedName = Info->Name;
-        const std::size_t CppScope = QualifiedName.rfind("::");
-        const std::size_t DotScope = QualifiedName.rfind('.');
-        std::size_t Start = 0;
-        if (CppScope != std::string_view::npos)
-        {
-            Start = CppScope + 2;
-        }
-        if (DotScope != std::string_view::npos)
-        {
-            Start = std::max(Start, DotScope + 1);
-        }
-        return std::string(QualifiedName.substr(Start));
+        return PrettyReflectedTypeName(Info->Name);
     }
 
     return ToString(Type);
@@ -337,6 +550,77 @@ void NormalizeEditorState(GraphAsset& Asset)
         }
     }
 
+    std::vector<TypeId> InstanceTypes{};
+    if (const TypeInfo* BaseNodeType = TypeRegistry::Instance().Find(StaticTypeId<BaseNode>()))
+    {
+        InstanceTypes.push_back(BaseNodeType->Id);
+    }
+
+    const auto NodeTypes = TypeRegistry::Instance().Derived(StaticTypeId<BaseNode>());
+    InstanceTypes.reserve(InstanceTypes.size() + NodeTypes.size() + ComponentSerializationRegistry::Instance().Types().size());
+    for (const TypeInfo* Type : NodeTypes)
+    {
+        if (Type)
+        {
+            InstanceTypes.push_back(Type->Id);
+        }
+    }
+
+    const auto ComponentTypes = ComponentSerializationRegistry::Instance().Types();
+    InstanceTypes.insert(InstanceTypes.end(), ComponentTypes.begin(), ComponentTypes.end());
+
+    const auto AppendInstanceTypeIfReflected = [&InstanceTypes]() {
+        auto AppendOne = [&InstanceTypes]<typename T>(std::type_identity<T>) {
+            if (const TypeInfo* Info = TypeRegistry::Instance().Find(StaticTypeId<T>()))
+            {
+                InstanceTypes.push_back(Info->Id);
+            }
+        };
+
+        AppendOne(std::type_identity<IWorld>{});
+#if defined(SNAPI_GF_ENABLE_INPUT)
+        AppendOne(std::type_identity<InputSystem>{});
+        AppendOne(std::type_identity<InputBootstrapSettings>{});
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+        AppendOne(std::type_identity<UISystem>{});
+        AppendOne(std::type_identity<UIBootstrapSettings>{});
+#endif
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+        AppendOne(std::type_identity<AudioSystem>{});
+#endif
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+        AppendOne(std::type_identity<NetworkSystem>{});
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+        AppendOne(std::type_identity<PhysicsSystem>{});
+        AppendOne(std::type_identity<PhysicsBootstrapSettings>{});
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        AppendOne(std::type_identity<RendererSystem>{});
+        AppendOne(std::type_identity<RendererBootstrapSettings>{});
+#endif
+    };
+    AppendInstanceTypeIfReflected();
+
+    std::sort(InstanceTypes.begin(), InstanceTypes.end());
+    InstanceTypes.erase(std::unique(InstanceTypes.begin(), InstanceTypes.end()), InstanceTypes.end());
+    const std::unordered_set<TypeId, UuidHash> InstanceTypeLookup(InstanceTypes.begin(), InstanceTypes.end());
+
+    for (const TypeId& InstanceTypeId : InstanceTypes)
+    {
+        const TypeInfo* InstanceType = TypeRegistry::Instance().Find(InstanceTypeId);
+        if (!InstanceType)
+        {
+            continue;
+        }
+
+        auto InstanceNodes = DescribeMembers(*InstanceType, false, &InstanceTypeLookup);
+        Result.insert(Result.end(),
+                      std::make_move_iterator(InstanceNodes.begin()),
+                      std::make_move_iterator(InstanceNodes.end()));
+    }
+
     auto VariableNodes = Schema.DescribeVariables(Asset);
     Result.insert(Result.end(),
                   std::make_move_iterator(VariableNodes.begin()),
@@ -355,6 +639,650 @@ void NormalizeEditorState(GraphAsset& Asset)
     });
 
     return Result;
+}
+
+template<typename TNode>
+void VisitAllNodeSlotRefs(TNode& Node, const auto& Visitor)
+{
+    Visitor(Node.Input);
+    Visitor(Node.Left);
+    Visitor(Node.Right);
+    Visitor(Node.Output);
+    Visitor(Node.Condition);
+    Visitor(Node.Instance);
+    Visitor(Node.ReturnSlot);
+    for (auto& Input : Node.Inputs)
+    {
+        Visitor(Input);
+    }
+}
+
+template<typename TNode>
+void VisitConsumerNodeSlotRefs(TNode& Node, const auto& Visitor)
+{
+    Visitor(Node.Input);
+    Visitor(Node.Left);
+    Visitor(Node.Right);
+    Visitor(Node.Condition);
+    Visitor(Node.Instance);
+    for (auto& Input : Node.Inputs)
+    {
+        Visitor(Input);
+    }
+}
+
+template<typename TNode>
+void VisitProducerNodeSlotRefs(TNode& Node, const auto& Visitor)
+{
+    switch (Node.Kind)
+    {
+    case EGraphAssetNodeKind::EntryPoint:
+        if (BuiltinEntryPointUsesDeltaSeconds(Node.BuiltinEntryPoint))
+        {
+            Visitor(Node.Output);
+        }
+        break;
+    case EGraphAssetNodeKind::Constant:
+    case EGraphAssetNodeKind::VariableGet:
+    case EGraphAssetNodeKind::UnaryIntrinsic:
+    case EGraphAssetNodeKind::BinaryIntrinsic:
+    case EGraphAssetNodeKind::SelfFieldRead:
+    case EGraphAssetNodeKind::InstanceFieldRead:
+        Visitor(Node.Output);
+        break;
+    case EGraphAssetNodeKind::SelfMethodCall:
+    case EGraphAssetNodeKind::InstanceMethodCall:
+        Visitor(Node.ReturnSlot);
+        break;
+    case EGraphAssetNodeKind::VariableSet:
+    case EGraphAssetNodeKind::Jump:
+    case EGraphAssetNodeKind::Branch:
+    case EGraphAssetNodeKind::Label:
+    case EGraphAssetNodeKind::SelfFieldWrite:
+    case EGraphAssetNodeKind::InstanceFieldWrite:
+        break;
+    }
+}
+
+void CompactAuthoredSlots(GraphAsset& Asset)
+{
+    std::vector<bool> Used{};
+    Used.resize(Asset.Slots.size(), false);
+
+    for (GraphNodeAsset& Node : Asset.Nodes)
+    {
+        VisitAllNodeSlotRefs(Node, [&Used](SlotId& Ref) {
+            if (!Ref.IsValid())
+            {
+                return;
+            }
+            if (Ref.Value >= Used.size())
+            {
+                Ref = {};
+                return;
+            }
+            Used[Ref.Value] = true;
+        });
+    }
+
+    std::vector<std::uint32_t> Remap(Asset.Slots.size(), SlotId::InvalidValue);
+    std::vector<GraphSlotAsset> CompactedSlots{};
+    CompactedSlots.reserve(Asset.Slots.size());
+    for (std::uint32_t Index = 0; Index < static_cast<std::uint32_t>(Asset.Slots.size()); ++Index)
+    {
+        if (!Used[Index])
+        {
+            continue;
+        }
+
+        Remap[Index] = static_cast<std::uint32_t>(CompactedSlots.size());
+        CompactedSlots.push_back(Asset.Slots[Index]);
+    }
+
+    for (GraphNodeAsset& Node : Asset.Nodes)
+    {
+        VisitAllNodeSlotRefs(Node, [&Remap](SlotId& Ref) {
+            if (!Ref.IsValid())
+            {
+                return;
+            }
+            if (Ref.Value >= Remap.size() || Remap[Ref.Value] == SlotId::InvalidValue)
+            {
+                Ref = {};
+                return;
+            }
+            Ref.Value = Remap[Ref.Value];
+        });
+    }
+
+    Asset.Slots = std::move(CompactedSlots);
+}
+
+void DisconnectConsumersOfProducedSlots(GraphAsset& Asset, const std::unordered_set<std::uint32_t>& ProducedSlots)
+{
+    if (ProducedSlots.empty())
+    {
+        return;
+    }
+
+    for (GraphNodeAsset& Node : Asset.Nodes)
+    {
+        VisitConsumerNodeSlotRefs(Node, [&ProducedSlots](SlotId& Ref) {
+            if (Ref.IsValid() && ProducedSlots.contains(Ref.Value))
+            {
+                Ref = {};
+            }
+        });
+    }
+}
+
+[[nodiscard]] bool TryParseArgPinIndex(const std::string_view PinName, std::size_t& OutIndex)
+{
+    if (!PinName.starts_with("Arg"))
+    {
+        return false;
+    }
+
+    const std::string_view Suffix = PinName.substr(3);
+    if (Suffix.empty())
+    {
+        return false;
+    }
+
+    std::size_t Parsed = 0;
+    const char* Begin = Suffix.data();
+    const char* End = Suffix.data() + Suffix.size();
+    const auto [Ptr, Error] = std::from_chars(Begin, End, Parsed);
+    if (Error != std::errc{} || Ptr != End)
+    {
+        return false;
+    }
+
+    OutIndex = Parsed;
+    return true;
+}
+
+[[nodiscard]] SlotId* ResolveMutableNodePinSlot(GraphNodeAsset& Node, const std::string_view PinName)
+{
+    switch (Node.Kind)
+    {
+    case EGraphAssetNodeKind::EntryPoint:
+        return PinName == "DeltaSeconds" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::Constant:
+    case EGraphAssetNodeKind::VariableGet:
+    case EGraphAssetNodeKind::SelfFieldRead:
+    case EGraphAssetNodeKind::InstanceFieldRead:
+        return PinName == "Value" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::VariableSet:
+    case EGraphAssetNodeKind::SelfFieldWrite:
+    case EGraphAssetNodeKind::InstanceFieldWrite:
+        if (PinName == "Target")
+        {
+            return &Node.Instance;
+        }
+        return PinName == "Value" ? &Node.Input : nullptr;
+    case EGraphAssetNodeKind::UnaryIntrinsic:
+        if (PinName == "Input")
+        {
+            return &Node.Input;
+        }
+        return PinName == "Value" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::BinaryIntrinsic:
+        if (PinName == "Left")
+        {
+            return &Node.Left;
+        }
+        if (PinName == "Right")
+        {
+            return &Node.Right;
+        }
+        return PinName == "Value" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::Branch:
+        return PinName == "Condition" ? &Node.Condition : nullptr;
+    case EGraphAssetNodeKind::SelfMethodCall:
+    case EGraphAssetNodeKind::InstanceMethodCall:
+        if (PinName == "Target")
+        {
+            return &Node.Instance;
+        }
+        if (PinName == "Return")
+        {
+            return &Node.ReturnSlot;
+        }
+        {
+            std::size_t ArgIndex = 0;
+            if (!TryParseArgPinIndex(PinName, ArgIndex))
+            {
+                return nullptr;
+            }
+            if (Node.Inputs.size() <= ArgIndex)
+            {
+                Node.Inputs.resize(ArgIndex + 1);
+            }
+            return &Node.Inputs[ArgIndex];
+        }
+    case EGraphAssetNodeKind::Jump:
+    case EGraphAssetNodeKind::Label:
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+[[nodiscard]] const SlotId* ResolveConstNodePinSlot(const GraphNodeAsset& Node, const std::string_view PinName)
+{
+    switch (Node.Kind)
+    {
+    case EGraphAssetNodeKind::EntryPoint:
+        return PinName == "DeltaSeconds" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::Constant:
+    case EGraphAssetNodeKind::VariableGet:
+    case EGraphAssetNodeKind::SelfFieldRead:
+    case EGraphAssetNodeKind::InstanceFieldRead:
+        return PinName == "Value" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::VariableSet:
+    case EGraphAssetNodeKind::SelfFieldWrite:
+    case EGraphAssetNodeKind::InstanceFieldWrite:
+        if (PinName == "Target")
+        {
+            return &Node.Instance;
+        }
+        return PinName == "Value" ? &Node.Input : nullptr;
+    case EGraphAssetNodeKind::UnaryIntrinsic:
+        if (PinName == "Input")
+        {
+            return &Node.Input;
+        }
+        return PinName == "Value" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::BinaryIntrinsic:
+        if (PinName == "Left")
+        {
+            return &Node.Left;
+        }
+        if (PinName == "Right")
+        {
+            return &Node.Right;
+        }
+        return PinName == "Value" ? &Node.Output : nullptr;
+    case EGraphAssetNodeKind::Branch:
+        return PinName == "Condition" ? &Node.Condition : nullptr;
+    case EGraphAssetNodeKind::SelfMethodCall:
+    case EGraphAssetNodeKind::InstanceMethodCall:
+        if (PinName == "Target")
+        {
+            return &Node.Instance;
+        }
+        if (PinName == "Return")
+        {
+            return &Node.ReturnSlot;
+        }
+        {
+            std::size_t ArgIndex = 0;
+            if (!TryParseArgPinIndex(PinName, ArgIndex) || ArgIndex >= Node.Inputs.size())
+            {
+                return nullptr;
+            }
+            return &Node.Inputs[ArgIndex];
+        }
+    case EGraphAssetNodeKind::Jump:
+    case EGraphAssetNodeKind::Label:
+        return nullptr;
+    }
+
+    return nullptr;
+}
+
+struct NodePinBinding
+{
+    const SchemaPinDescriptor* Pin = nullptr;
+    SlotId* MutableSlot = nullptr;
+    const SlotId* Slot = nullptr;
+    TypeId DisplayType{};
+    TypeId StorageType{};
+    bool IsInstanceTarget = false;
+    bool RequiresMutableInstance = false;
+};
+
+template<typename TNode>
+TExpected<NodePinBinding> ResolveNodePinBindingImpl(const GraphAsset& Asset,
+                                                    TNode& Node,
+                                                    const SchemaNodeDescriptor& Descriptor,
+                                                    const std::string_view PinName,
+                                                    const ESchemaPinDirection Direction)
+{
+    const auto PinIt = std::find_if(Descriptor.Pins.begin(), Descriptor.Pins.end(), [PinName, Direction](const SchemaPinDescriptor& Pin) {
+        return Pin.Name == PinName && Pin.Direction == Direction;
+    });
+    if (PinIt == Descriptor.Pins.end())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit pin was not found on the authored node schema"));
+    }
+
+    NodePinBinding Binding{};
+    Binding.Pin = &(*PinIt);
+    Binding.DisplayType = PinIt->Type.Type;
+    Binding.StorageType = PinIt->Type.Kind == ESlotKind::Handle
+        ? ResolveExpectedHandleStorageType(PinIt->Type.Type)
+        : PinIt->Type.Type;
+    Binding.IsInstanceTarget = Direction == ESchemaPinDirection::Input &&
+                               PinName == "Target" &&
+                               (Node.Kind == EGraphAssetNodeKind::InstanceFieldRead ||
+                                Node.Kind == EGraphAssetNodeKind::InstanceFieldWrite ||
+                                Node.Kind == EGraphAssetNodeKind::InstanceMethodCall);
+    Binding.RequiresMutableInstance = Direction == ESchemaPinDirection::Input &&
+                                      PinName == "Target" &&
+                                      (Node.Kind == EGraphAssetNodeKind::InstanceFieldWrite ||
+                                       (Node.Kind == EGraphAssetNodeKind::InstanceMethodCall && !Descriptor.IsPure));
+
+    if constexpr (std::is_const_v<TNode>)
+    {
+        Binding.Slot = ResolveConstNodePinSlot(Node, PinName);
+    }
+    else
+    {
+        Binding.MutableSlot = ResolveMutableNodePinSlot(Node, PinName);
+        Binding.Slot = Binding.MutableSlot;
+    }
+
+    if (!PinIt->Type.IsExec && !Binding.Slot)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit pin does not map to authored slot data"));
+    }
+
+    if (Binding.Slot && Binding.Slot->IsValid() && Binding.Slot->Value < Asset.Slots.size())
+    {
+        Binding.StorageType = Asset.Slots[Binding.Slot->Value].Type;
+        if (Binding.DisplayType == TypeId{} || PinIt->Type.IsPolymorphic)
+        {
+            Binding.DisplayType = Binding.StorageType;
+        }
+    }
+    else if (Node.Kind == EGraphAssetNodeKind::Constant &&
+             PinName == "Value" &&
+             Direction == ESchemaPinDirection::Output &&
+             Node.ConstantValue.Type != TypeId{})
+    {
+        Binding.StorageType = Node.ConstantValue.Type;
+        if (Binding.DisplayType == TypeId{} || PinIt->Type.IsPolymorphic)
+        {
+            Binding.DisplayType = Node.ConstantValue.Type;
+        }
+    }
+
+    return Binding;
+}
+
+TExpected<NodePinBinding> ResolveNodePinBinding(const GraphAsset& Asset,
+                                                GraphNodeAsset& Node,
+                                                const SchemaNodeDescriptor& Descriptor,
+                                                const std::string_view PinName,
+                                                const ESchemaPinDirection Direction)
+{
+    return ResolveNodePinBindingImpl(Asset, Node, Descriptor, PinName, Direction);
+}
+
+TExpected<NodePinBinding> ResolveNodePinBinding(const GraphAsset& Asset,
+                                                const GraphNodeAsset& Node,
+                                                const SchemaNodeDescriptor& Descriptor,
+                                                const std::string_view PinName,
+                                                const ESchemaPinDirection Direction)
+{
+    return ResolveNodePinBindingImpl(Asset, Node, Descriptor, PinName, Direction);
+}
+
+[[nodiscard]] bool IsBindingCompatibleWithStorageType(const NodePinBinding& Binding, const TypeId& StorageType)
+{
+    if (!Binding.Pin)
+    {
+        return false;
+    }
+    if (Binding.Pin->Type.IsExec)
+    {
+        return true;
+    }
+    if (Binding.IsInstanceTarget)
+    {
+        return IsInstanceTargetStorageCompatible(StorageType, Binding.DisplayType, Binding.RequiresMutableInstance);
+    }
+    if (ResolveSlotKindForType(StorageType) != Binding.Pin->Type.Kind)
+    {
+        return false;
+    }
+    if (Binding.StorageType == TypeId{})
+    {
+        return true;
+    }
+    if (Binding.StorageType == StorageType)
+    {
+        return true;
+    }
+    return IsPointerStorageAssignableToExpected(StorageType, Binding.StorageType);
+}
+
+TExpected<TypeId> ResolveConnectionStorageType(const NodePinBinding& Source, const NodePinBinding& Target)
+{
+    if (!Source.Pin || !Target.Pin)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit pin binding is incomplete"));
+    }
+    if (Source.Pin->Type.IsExec || Target.Pin->Type.IsExec)
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit slot connections cannot be created from exec pins"));
+    }
+    const bool AllowsValueToInstanceTarget = Source.Pin->Type.Kind == ESlotKind::Value && Target.IsInstanceTarget;
+    if (Source.Pin->Type.Kind != Target.Pin->Type.Kind && !AllowsValueToInstanceTarget)
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit pin kinds do not match"));
+    }
+
+    TypeId StorageType = Source.StorageType != TypeId{} ? Source.StorageType : Target.StorageType;
+    if (StorageType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit polymorphic pins need one concrete typed endpoint before they can connect"));
+    }
+
+    if (!IsBindingCompatibleWithStorageType(Source, StorageType) ||
+        !IsBindingCompatibleWithStorageType(Target, StorageType))
+    {
+        const TypeId AlternateStorageType = Target.StorageType != TypeId{} ? Target.StorageType : Source.StorageType;
+        if (AlternateStorageType == TypeId{} ||
+            !IsBindingCompatibleWithStorageType(Source, AlternateStorageType) ||
+            !IsBindingCompatibleWithStorageType(Target, AlternateStorageType))
+        {
+            return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit pin storage type is incompatible with one endpoint"));
+        }
+        StorageType = AlternateStorageType;
+    }
+    return StorageType;
+}
+
+[[nodiscard]] SpawnMenuEntryView MakeSpawnMenuEntry(const SchemaNodeDescriptor& Descriptor, std::string TargetPin = {})
+{
+    return SpawnMenuEntryView{
+        .StableId = Descriptor.StableId,
+        .DisplayName = Descriptor.DisplayName,
+        .Category = Descriptor.Category,
+        .Tooltip = Descriptor.Tooltip,
+        .TargetPin = std::move(TargetPin),
+    };
+}
+
+[[nodiscard]] NodePinBinding BuildProspectiveInputBinding(const SchemaNodeDescriptor& Descriptor,
+                                                          const SchemaPinDescriptor& Pin)
+{
+    NodePinBinding Binding{};
+    Binding.Pin = &Pin;
+    Binding.DisplayType = Pin.Type.Type;
+    Binding.StorageType = Pin.Type.Kind == ESlotKind::Handle
+        ? ResolveExpectedHandleStorageType(Pin.Type.Type)
+        : Pin.Type.Type;
+    const auto LoweredKind = Descriptor.LoweredKind.value_or(EGraphAssetNodeKind::Constant);
+    Binding.IsInstanceTarget = Pin.Direction == ESchemaPinDirection::Input &&
+                               Pin.Name == "Target" &&
+                               (LoweredKind == EGraphAssetNodeKind::InstanceFieldRead ||
+                                LoweredKind == EGraphAssetNodeKind::InstanceFieldWrite ||
+                                LoweredKind == EGraphAssetNodeKind::InstanceMethodCall);
+    Binding.RequiresMutableInstance = Pin.Direction == ESchemaPinDirection::Input &&
+                                      Pin.Name == "Target" &&
+                                      (LoweredKind == EGraphAssetNodeKind::InstanceFieldWrite ||
+                                       (LoweredKind == EGraphAssetNodeKind::InstanceMethodCall && !Descriptor.IsPure));
+    return Binding;
+}
+
+[[nodiscard]] std::optional<SpawnMenuEntryView> BuildCompatibleSpawnEntry(const NodePinBinding& SourceBinding,
+                                                                          const SchemaNodeDescriptor& Descriptor)
+{
+    if (!SourceBinding.Pin || !Descriptor.LoweredKind.has_value())
+    {
+        return std::nullopt;
+    }
+
+    for (const SchemaPinDescriptor& Pin : Descriptor.Pins)
+    {
+        if (Pin.Direction != ESchemaPinDirection::Input)
+        {
+            continue;
+        }
+
+        if (SourceBinding.Pin->Type.IsExec || Pin.Type.IsExec)
+        {
+            if (SourceBinding.Pin->Type.IsExec && Pin.Type.IsExec)
+            {
+                return MakeSpawnMenuEntry(Descriptor, Pin.Name);
+            }
+            continue;
+        }
+
+        NodePinBinding TargetBinding = BuildProspectiveInputBinding(Descriptor, Pin);
+        if (ResolveConnectionStorageType(SourceBinding, TargetBinding))
+        {
+            return MakeSpawnMenuEntry(Descriptor, Pin.Name);
+        }
+    }
+
+    return std::nullopt;
+}
+
+void SortSpawnMenuEntries(std::vector<SpawnMenuEntryView>& Entries)
+{
+    std::sort(Entries.begin(), Entries.end(), [](const SpawnMenuEntryView& Left, const SpawnMenuEntryView& Right) {
+        if (Left.Category != Right.Category)
+        {
+            return Left.Category < Right.Category;
+        }
+        if (Left.DisplayName != Right.DisplayName)
+        {
+            return Left.DisplayName < Right.DisplayName;
+        }
+        if (Left.TargetPin != Right.TargetPin)
+        {
+            return Left.TargetPin < Right.TargetPin;
+        }
+        return Left.StableId < Right.StableId;
+    });
+
+    Entries.erase(std::unique(Entries.begin(),
+                              Entries.end(),
+                              [](const SpawnMenuEntryView& Left, const SpawnMenuEntryView& Right) {
+                                  return Left.StableId == Right.StableId && Left.TargetPin == Right.TargetPin;
+                              }),
+                 Entries.end());
+}
+
+[[nodiscard]] SlotId AppendAuthoredSlot(GraphAsset& Asset,
+                                        const std::string_view Name,
+                                        const TypeId& Type,
+                                        const ESlotKind Kind)
+{
+    Asset.Slots.push_back(GraphSlotAsset{
+        .Name = std::string(Name),
+        .Type = Type,
+        .Kind = Kind,
+    });
+    return SlotId{static_cast<std::uint32_t>(Asset.Slots.size() - 1)};
+}
+
+struct SlotProducerView
+{
+    Uuid NodeId{};
+    std::string PinName{};
+    ESlotKind Kind = ESlotKind::Value;
+};
+
+void AppendDataCanvasWires(const GraphAsset& Asset,
+                           const std::vector<SchemaNodeDescriptor>& Descriptors,
+                           std::vector<CanvasWireView>& OutWires)
+{
+    std::unordered_map<std::uint32_t, SlotProducerView> Producers{};
+    Producers.reserve(Asset.Slots.size());
+
+    for (const GraphNodeAsset& Node : Asset.Nodes)
+    {
+        const SchemaNodeDescriptor* Descriptor = FindSchemaDescriptorForNode(Descriptors, Node);
+        if (!Descriptor)
+        {
+            continue;
+        }
+
+        for (const SchemaPinDescriptor& Pin : Descriptor->Pins)
+        {
+            if (Pin.Direction != ESchemaPinDirection::Output || Pin.Type.IsExec)
+            {
+                continue;
+            }
+
+            auto BindingResult = ResolveNodePinBinding(Asset, Node, *Descriptor, Pin.Name, ESchemaPinDirection::Output);
+            if (!BindingResult || !BindingResult->Slot || !BindingResult->Slot->IsValid())
+            {
+                continue;
+            }
+
+            Producers.emplace(BindingResult->Slot->Value,
+                              SlotProducerView{
+                                  .NodeId = Node.Id,
+                                  .PinName = Pin.Name,
+                                  .Kind = Pin.Type.Kind,
+                              });
+        }
+    }
+
+    for (const GraphNodeAsset& Node : Asset.Nodes)
+    {
+        const SchemaNodeDescriptor* Descriptor = FindSchemaDescriptorForNode(Descriptors, Node);
+        if (!Descriptor)
+        {
+            continue;
+        }
+
+        for (const SchemaPinDescriptor& Pin : Descriptor->Pins)
+        {
+            if (Pin.Direction != ESchemaPinDirection::Input || Pin.Type.IsExec)
+            {
+                continue;
+            }
+
+            auto BindingResult = ResolveNodePinBinding(Asset, Node, *Descriptor, Pin.Name, ESchemaPinDirection::Input);
+            if (!BindingResult || !BindingResult->Slot || !BindingResult->Slot->IsValid())
+            {
+                continue;
+            }
+
+            const auto ProducerIt = Producers.find(BindingResult->Slot->Value);
+            if (ProducerIt == Producers.end())
+            {
+                continue;
+            }
+
+            OutWires.push_back(CanvasWireView{
+                .SourceNodeId = ProducerIt->second.NodeId,
+                .SourcePin = ProducerIt->second.PinName,
+                .TargetNodeId = Node.Id,
+                .TargetPin = Pin.Name,
+                .Kind = ProducerIt->second.Kind,
+                .IsExec = false,
+            });
+        }
+    }
 }
 
 [[nodiscard]] std::string ResolveVariableLabel(const GraphAsset& Asset, const Uuid& VariableId)
@@ -394,13 +1322,13 @@ void NormalizeEditorState(GraphAsset& Asset)
         case EGraphAssetNodeKind::SelfFieldWrite:
             return "Set " + Node.MemberName;
         case EGraphAssetNodeKind::SelfMethodCall:
-            return Node.MemberName;
+            return "Call " + Node.MemberName;
         case EGraphAssetNodeKind::InstanceFieldRead:
             return "Get " + Node.MemberName;
         case EGraphAssetNodeKind::InstanceFieldWrite:
             return "Set " + Node.MemberName;
         case EGraphAssetNodeKind::InstanceMethodCall:
-            return Node.MemberName;
+            return "Call " + Node.MemberName;
     }
 
     return "Node";
@@ -424,8 +1352,16 @@ void NormalizeEditorState(GraphAsset& Asset)
         case EGraphAssetNodeKind::BinaryIntrinsic:
             return "Intrinsic";
         case EGraphAssetNodeKind::Jump:
+            if (Node.ExecTargetNodeId != Uuid{})
+            {
+                return "Connected Jump";
+            }
             return Node.LabelName.empty() ? std::string("Target label pending") : "To " + Node.LabelName;
         case EGraphAssetNodeKind::Branch:
+            if (Node.ExecTargetNodeId != Uuid{} || Node.FalseExecTargetNodeId != Uuid{})
+            {
+                return "Connected True/False flow";
+            }
             if (Node.LabelName.empty() && Node.FalseLabelName.empty())
             {
                 return "True/False labels pending";
@@ -436,12 +1372,12 @@ void NormalizeEditorState(GraphAsset& Asset)
         case EGraphAssetNodeKind::SelfFieldWrite:
             return "Self Field";
         case EGraphAssetNodeKind::SelfMethodCall:
-            return "Self Method";
+            return "Self Method Call";
         case EGraphAssetNodeKind::InstanceFieldRead:
         case EGraphAssetNodeKind::InstanceFieldWrite:
             return ResolveTypeLabel(Node.OwnerType);
         case EGraphAssetNodeKind::InstanceMethodCall:
-            return ResolveTypeLabel(Node.OwnerType);
+            return "Call on " + ResolveTypeLabel(Node.OwnerType);
     }
 
     return {};
@@ -509,52 +1445,20 @@ void NormalizeEditorState(GraphAsset& Asset)
 [[nodiscard]] std::optional<CanvasWireView> BuildCanvasWire(const GraphAsset& Asset,
                                                             const GraphNodeAsset& SourceNode,
                                                             const GraphNodeAsset& TargetNode,
-                                                            const std::string_view SourcePin)
+                                                            const std::string_view SourcePin,
+                                                            const std::string_view TargetPin)
 {
-    const auto HasLabelTarget = [&TargetNode](const std::string_view LabelName) {
-        return !LabelName.empty() && TargetNode.Kind == EGraphAssetNodeKind::Label && TargetNode.LabelName == LabelName;
-    };
-
-    if (SourceNode.Kind == EGraphAssetNodeKind::Jump)
+    const Uuid TargetNodeId = ResolveExecTargetNodeId(Asset, SourceNode, SourcePin);
+    if (TargetNodeId != Uuid{} && TargetNodeId == TargetNode.Id)
     {
-        if (HasLabelTarget(SourceNode.LabelName))
-        {
-            return CanvasWireView{
-                .SourceNodeId = SourceNode.Id,
-                .SourcePin = std::string(SourcePin),
-                .TargetNodeId = TargetNode.Id,
-                .TargetPin = "In",
-                .Kind = ESlotKind::Value,
-                .IsExec = true,
-            };
-        }
-        return std::nullopt;
-    }
-
-    if (SourceNode.Kind == EGraphAssetNodeKind::Branch)
-    {
-        if (SourcePin == "True" && HasLabelTarget(SourceNode.LabelName))
-        {
-            return CanvasWireView{
-                .SourceNodeId = SourceNode.Id,
-                .SourcePin = "True",
-                .TargetNodeId = TargetNode.Id,
-                .TargetPin = "In",
-                .Kind = ESlotKind::Value,
-                .IsExec = true,
-            };
-        }
-        if (SourcePin == "False" && HasLabelTarget(SourceNode.FalseLabelName))
-        {
-            return CanvasWireView{
-                .SourceNodeId = SourceNode.Id,
-                .SourcePin = "False",
-                .TargetNodeId = TargetNode.Id,
-                .TargetPin = "In",
-                .Kind = ESlotKind::Value,
-                .IsExec = true,
-            };
-        }
+        return CanvasWireView{
+            .SourceNodeId = SourceNode.Id,
+            .SourcePin = std::string(SourcePin),
+            .TargetNodeId = TargetNode.Id,
+            .TargetPin = std::string(TargetPin),
+            .Kind = ESlotKind::Value,
+            .IsExec = true,
+        };
     }
 
     return std::nullopt;
@@ -973,7 +1877,35 @@ template<typename T>
     return Count;
 }
 
-std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, const bool SelfContext)
+[[nodiscard]] bool ShouldDescribeMemberOnCurrentInstanceType(
+    const TypeId& InstanceType,
+    const TypeId& DeclaringType,
+    const std::unordered_set<TypeId, UuidHash>* AvailableInstanceTypes)
+{
+    return !AvailableInstanceTypes || !AvailableInstanceTypes->contains(DeclaringType) || InstanceType == DeclaringType;
+}
+
+[[nodiscard]] TypeId ResolveInstancePaletteType(const TypeId& InstanceType,
+                                                const TypeId& DeclaringType,
+                                                const std::unordered_set<TypeId, UuidHash>* AvailableInstanceTypes)
+{
+    return (AvailableInstanceTypes && AvailableInstanceTypes->contains(DeclaringType)) ? DeclaringType : InstanceType;
+}
+
+[[nodiscard]] std::string BuildReflectionPaletteCategory(const bool SelfContext,
+                                                         const std::string_view MemberKind,
+                                                         const std::string_view TypeLabel)
+{
+    std::string Category = SelfContext ? "Reflection/Self/" : "Reflection/Instance/";
+    Category += MemberKind;
+    Category += "/";
+    Category += TypeLabel;
+    return Category;
+}
+
+std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
+                                                  const bool SelfContext,
+                                                  const std::unordered_set<TypeId, UuidHash>* AvailableInstanceTypes)
 {
     std::vector<SchemaNodeDescriptor> Result{};
 
@@ -985,16 +1917,24 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, con
             continue;
         }
 
-        const TypeInfo* DeclaringType = TypeRegistry::Instance().Find(Ref.OwnerType);
-        const std::string OwnerLabel = DeclaringType ? ResolveTypeLabel(DeclaringType->Id) : ResolveTypeLabel(Ref.OwnerType);
         const std::string ContextPrefix = SelfContext ? "self" : "instance";
+        const TypeId PaletteType = SelfContext
+            ? Ref.OwnerType
+            : ResolveInstancePaletteType(OwnerType.Id, Ref.OwnerType, AvailableInstanceTypes);
+        if (!SelfContext &&
+            !ShouldDescribeMemberOnCurrentInstanceType(OwnerType.Id, Ref.OwnerType, AvailableInstanceTypes))
+        {
+            continue;
+        }
+        const TypeInfo* PaletteTypeInfo = TypeRegistry::Instance().Find(PaletteType);
+        const std::string PaletteTypeLabel = PaletteTypeInfo ? ResolveTypeLabel(PaletteTypeInfo->Id) : ResolveTypeLabel(PaletteType);
 
         if (CanConduitReadField(*Ref.Field))
         {
             SchemaNodeDescriptor Descriptor{};
-            Descriptor.StableId = ContextPrefix + std::string(".field.read.") + OwnerLabel + "." + Ref.Field->Name;
+            Descriptor.StableId = ContextPrefix + std::string(".field.read.") + PaletteTypeLabel + "." + Ref.Field->Name;
             Descriptor.DisplayName = "Get " + Ref.Field->Name;
-            Descriptor.Category = SelfContext ? "Reflection/Self/Fields" : "Reflection/Instance/Fields";
+            Descriptor.Category = BuildReflectionPaletteCategory(SelfContext, "Fields", PaletteTypeLabel);
             Descriptor.Tooltip = "Read reflected field '" + Ref.Field->Name + "' from " + (SelfContext ? std::string("self") : std::string("a resolved instance")) + ".";
             Descriptor.Family = ESchemaNodeFamily::FieldRead;
             Descriptor.IsPure = true;
@@ -1003,7 +1943,7 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, con
             Descriptor.LoweredKind = SelfContext ? EGraphAssetNodeKind::SelfFieldRead : EGraphAssetNodeKind::InstanceFieldRead;
             if (!SelfContext)
             {
-                Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, OwnerType.Id));
+                Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType));
             }
             Descriptor.Pins.push_back(MakeValuePin("Value", ESchemaPinDirection::Output, Ref.Field->FieldType));
             Result.push_back(std::move(Descriptor));
@@ -1012,9 +1952,9 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, con
         if (CanConduitWriteField(*Ref.Field))
         {
             SchemaNodeDescriptor Descriptor{};
-            Descriptor.StableId = ContextPrefix + std::string(".field.write.") + OwnerLabel + "." + Ref.Field->Name;
+            Descriptor.StableId = ContextPrefix + std::string(".field.write.") + PaletteTypeLabel + "." + Ref.Field->Name;
             Descriptor.DisplayName = "Set " + Ref.Field->Name;
-            Descriptor.Category = SelfContext ? "Reflection/Self/Fields" : "Reflection/Instance/Fields";
+            Descriptor.Category = BuildReflectionPaletteCategory(SelfContext, "Fields", PaletteTypeLabel);
             Descriptor.Tooltip = "Write reflected field '" + Ref.Field->Name + "'.";
             Descriptor.Family = ESchemaNodeFamily::FieldWrite;
             Descriptor.IsPure = false;
@@ -1024,7 +1964,7 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, con
             Descriptor.Pins.push_back(MakeExecPin("In", ESchemaPinDirection::Input));
             if (!SelfContext)
             {
-                Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, OwnerType.Id));
+                Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType));
             }
             Descriptor.Pins.push_back(MakeValuePin("Value", ESchemaPinDirection::Input, Ref.Field->FieldType, true));
             Descriptor.Pins.push_back(MakeExecPin("Out", ESchemaPinDirection::Output));
@@ -1040,14 +1980,24 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, con
             continue;
         }
 
-        const TypeInfo* DeclaringType = TypeRegistry::Instance().Find(Ref.OwnerType);
-        const std::string OwnerLabel = DeclaringType ? ResolveTypeLabel(DeclaringType->Id) : ResolveTypeLabel(Ref.OwnerType);
         const std::string ContextPrefix = SelfContext ? "self" : "instance";
+        const TypeId PaletteType = SelfContext
+            ? Ref.OwnerType
+            : ResolveInstancePaletteType(OwnerType.Id, Ref.OwnerType, AvailableInstanceTypes);
+        if (!SelfContext &&
+            !ShouldDescribeMemberOnCurrentInstanceType(OwnerType.Id, Ref.OwnerType, AvailableInstanceTypes))
+        {
+            continue;
+        }
+        const TypeInfo* PaletteTypeInfo = TypeRegistry::Instance().Find(PaletteType);
+        const std::string PaletteTypeLabel = PaletteTypeInfo ? ResolveTypeLabel(PaletteTypeInfo->Id) : ResolveTypeLabel(PaletteType);
 
         SchemaNodeDescriptor Descriptor{};
-        Descriptor.StableId = ContextPrefix + std::string(".method.") + OwnerLabel + "." + Ref.Method->Name;
-        Descriptor.DisplayName = Ref.Method->Name;
-        Descriptor.Category = SelfContext ? "Reflection/Self/Methods" : "Reflection/Instance/Methods";
+        Descriptor.StableId = ContextPrefix + std::string(".method.") + PaletteTypeLabel + "." + Ref.Method->Name;
+        Descriptor.DisplayName = SelfContext
+            ? "Call " + Ref.Method->Name
+            : "Call " + PaletteTypeLabel + "::" + Ref.Method->Name;
+        Descriptor.Category = BuildReflectionPaletteCategory(SelfContext, "Methods", PaletteTypeLabel);
         Descriptor.Tooltip = "Invoke reflected method '" + Ref.Method->Name + "'.";
         Descriptor.Family = ESchemaNodeFamily::MethodCall;
         Descriptor.IsPure = Ref.Method->IsConst;
@@ -1062,7 +2012,7 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType, con
 
         if (!SelfContext)
         {
-            Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, OwnerType.Id));
+            Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType));
         }
 
         for (std::size_t Index = 0; Index < Ref.Method->ParamTypes.size(); ++Index)
@@ -1259,6 +2209,20 @@ TExpected<GraphNodeAsset*> GraphDocument::AddNode(const SchemaNodeDescriptor& De
             break;
     }
 
+    if (Node.Kind == EGraphAssetNodeKind::SelfMethodCall || Node.Kind == EGraphAssetNodeKind::InstanceMethodCall)
+    {
+        std::size_t ArgCount = 0;
+        for (const SchemaPinDescriptor& Pin : Descriptor.Pins)
+        {
+            std::size_t ArgIndex = 0;
+            if (Pin.Direction == ESchemaPinDirection::Input && TryParseArgPinIndex(Pin.Name, ArgIndex))
+            {
+                ArgCount = std::max(ArgCount, ArgIndex + 1);
+            }
+        }
+        Node.Inputs.resize(ArgCount);
+    }
+
     const std::size_t Index = m_asset.Nodes.size();
     m_asset.Nodes.push_back(std::move(Node));
     m_asset.EditorState.Nodes.push_back(GraphNodeEditorAsset{
@@ -1281,11 +2245,18 @@ bool GraphDocument::RemoveVariable(const Uuid& Id)
     }
 
     std::unordered_set<Uuid, UuidHash> RemovedNodeIds{};
+    std::unordered_set<std::uint32_t> RemovedProducedSlots{};
     for (const GraphNodeAsset& Node : m_asset.Nodes)
     {
         if (Node.VariableId == Id && IsVariableNodeKind(Node.Kind) && Node.Id != Uuid{})
         {
             RemovedNodeIds.insert(Node.Id);
+            VisitProducerNodeSlotRefs(Node, [&RemovedProducedSlots](const SlotId& Ref) {
+                if (Ref.IsValid())
+                {
+                    RemovedProducedSlots.insert(Ref.Value);
+                }
+            });
         }
     }
 
@@ -1298,6 +2269,8 @@ bool GraphDocument::RemoveVariable(const Uuid& Id)
 
     if (!RemovedNodeIds.empty())
     {
+        DisconnectConsumersOfProducedSlots(m_asset, RemovedProducedSlots);
+        DisconnectExecConnectionsToNode(m_asset, RemovedNodeIds);
         m_asset.EditorState.Nodes.erase(
             std::remove_if(m_asset.EditorState.Nodes.begin(),
                            m_asset.EditorState.Nodes.end(),
@@ -1327,6 +2300,7 @@ bool GraphDocument::RemoveVariable(const Uuid& Id)
     m_selection.VariableIds.erase(std::remove(m_selection.VariableIds.begin(), m_selection.VariableIds.end(), Id),
                                   m_selection.VariableIds.end());
     m_asset.Variables.erase(VariableIt);
+    CompactAuthoredSlots(m_asset);
     MarkMutated();
     return true;
 }
@@ -1341,7 +2315,19 @@ bool GraphDocument::RemoveNode(const Uuid& Id)
         return false;
     }
 
+    std::unordered_set<std::uint32_t> ProducedSlots{};
+    VisitProducerNodeSlotRefs(*NodeIt, [&ProducedSlots](const SlotId& Ref) {
+        if (Ref.IsValid())
+        {
+            ProducedSlots.insert(Ref.Value);
+        }
+    });
+
     m_asset.Nodes.erase(NodeIt);
+    DisconnectConsumersOfProducedSlots(m_asset, ProducedSlots);
+    std::unordered_set<Uuid, UuidHash> RemovedNodeIds{};
+    RemovedNodeIds.insert(Id);
+    DisconnectExecConnectionsToNode(m_asset, RemovedNodeIds);
     m_asset.EditorState.Nodes.erase(
         std::remove_if(m_asset.EditorState.Nodes.begin(),
                        m_asset.EditorState.Nodes.end(),
@@ -1356,6 +2342,7 @@ bool GraphDocument::RemoveNode(const Uuid& Id)
     }
 
     m_selection.NodeIds.erase(std::remove(m_selection.NodeIds.begin(), m_selection.NodeIds.end(), Id), m_selection.NodeIds.end());
+    CompactAuthoredSlots(m_asset);
     MarkMutated();
     return true;
 }
@@ -1567,7 +2554,7 @@ Result GraphDocument::SetNodePosition(const Uuid& Id, const float X, const float
             .X = X,
             .Y = Y,
         });
-        MarkMutated();
+        MarkCanvasMutated();
         return Ok();
     }
 
@@ -1578,6 +2565,111 @@ Result GraphDocument::SetNodePosition(const Uuid& Id, const float X, const float
 
     NodeState->X = X;
     NodeState->Y = Y;
+    MarkCanvasMutated();
+    return Ok();
+}
+
+Result GraphDocument::ConnectPins(const Uuid& SourceNodeId,
+                                  const std::string_view SourcePin,
+                                  const Uuid& TargetNodeId,
+                                  const std::string_view TargetPin)
+{
+    if (SourcePin.empty() || TargetPin.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit pin names are empty"));
+    }
+
+    GraphNodeAsset* SourceNode = FindNode(SourceNodeId);
+    GraphNodeAsset* TargetNode = FindNode(TargetNodeId);
+    if (!SourceNode || !TargetNode)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit source or target node was not found"));
+    }
+
+    SchemaRegistry Schema{};
+    Schema.RebuildBuiltins();
+    const auto Descriptors = BuildActiveSchemaDescriptors(Schema, m_asset);
+    const SchemaNodeDescriptor* SourceDescriptor = FindSchemaDescriptorForNode(Descriptors, *SourceNode);
+    const SchemaNodeDescriptor* TargetDescriptor = FindSchemaDescriptorForNode(Descriptors, *TargetNode);
+    if (!SourceDescriptor || !TargetDescriptor)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit schema node descriptor was not found"));
+    }
+
+    auto SourceBindingResult = ResolveNodePinBinding(m_asset, *SourceNode, *SourceDescriptor, SourcePin, ESchemaPinDirection::Output);
+    if (!SourceBindingResult)
+    {
+        return std::unexpected(SourceBindingResult.error());
+    }
+    auto TargetBindingResult = ResolveNodePinBinding(m_asset, *TargetNode, *TargetDescriptor, TargetPin, ESchemaPinDirection::Input);
+    if (!TargetBindingResult)
+    {
+        return std::unexpected(TargetBindingResult.error());
+    }
+
+    NodePinBinding& SourceBinding = *SourceBindingResult;
+    NodePinBinding& TargetBinding = *TargetBindingResult;
+    if (SourceBinding.Pin->Type.IsExec || TargetBinding.Pin->Type.IsExec)
+    {
+        if (!(SourceBinding.Pin->Type.IsExec && TargetBinding.Pin->Type.IsExec))
+        {
+            return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit exec pins can only connect to exec pins"));
+        }
+        Uuid* MutableExecTarget = ResolveMutableExecTargetNodeId(*SourceNode, SourcePin);
+        if (!MutableExecTarget)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit exec pin cannot author an outgoing exec target"));
+        }
+        if (*MutableExecTarget == TargetNode->Id)
+        {
+            return Ok();
+        }
+
+        *MutableExecTarget = TargetNode->Id;
+        if (TargetNode->Kind == EGraphAssetNodeKind::Label && !TargetNode->LabelName.empty())
+        {
+            if (SourceNode->Kind == EGraphAssetNodeKind::Jump && SourcePin == "Out")
+            {
+                SourceNode->LabelName = TargetNode->LabelName;
+            }
+            else if (SourceNode->Kind == EGraphAssetNodeKind::Branch && SourcePin == "True")
+            {
+                SourceNode->LabelName = TargetNode->LabelName;
+            }
+            else if (SourceNode->Kind == EGraphAssetNodeKind::Branch && SourcePin == "False")
+            {
+                SourceNode->FalseLabelName = TargetNode->LabelName;
+            }
+        }
+        MarkMutated();
+        return Ok();
+    }
+
+    auto StorageTypeResult = ResolveConnectionStorageType(SourceBinding, TargetBinding);
+    if (!StorageTypeResult)
+    {
+        return std::unexpected(StorageTypeResult.error());
+    }
+    if (!SourceBinding.MutableSlot || !TargetBinding.MutableSlot)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit pin connection does not map to mutable authored slot refs"));
+    }
+
+    const ESlotKind SlotKind = SourceBinding.Pin->Type.Kind;
+    if (!SourceBinding.MutableSlot->IsValid())
+    {
+        *SourceBinding.MutableSlot = AppendAuthoredSlot(m_asset, SourcePin, *StorageTypeResult, SlotKind);
+    }
+
+    const bool AlreadyConnected = TargetBinding.MutableSlot->IsValid() &&
+                                  TargetBinding.MutableSlot->Value == SourceBinding.MutableSlot->Value;
+    if (AlreadyConnected)
+    {
+        return Ok();
+    }
+
+    *TargetBinding.MutableSlot = *SourceBinding.MutableSlot;
+    CompactAuthoredSlots(m_asset);
     MarkMutated();
     return Ok();
 }
@@ -1599,6 +2691,22 @@ Result GraphDocument::SetViewport(const float PanX, const float PanY, const floa
     m_asset.EditorState.Viewport.PanX = PanX;
     m_asset.EditorState.Viewport.PanY = PanY;
     m_asset.EditorState.Viewport.Zoom = Zoom;
+    MarkCanvasMutated();
+    return Ok();
+}
+
+Result GraphDocument::SetSelfType(const TypeId& Type)
+{
+    if (Type != TypeId{} && !TypeRegistry::Instance().Find(Type))
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit graph self type is not registered"));
+    }
+    if (m_asset.SelfType == Type)
+    {
+        return Ok();
+    }
+
+    m_asset.SelfType = Type;
     MarkMutated();
     return Ok();
 }
@@ -1607,6 +2715,12 @@ void GraphDocument::MarkMutated()
 {
     ClearLastCompile();
     Touch();
+}
+
+void GraphDocument::MarkCanvasMutated()
+{
+    // Canvas layout edits are persisted authoring metadata, not compile-affecting graph changes.
+    TouchCanvas();
 }
 
 void SchemaRegistry::RebuildBuiltins()
@@ -1896,7 +3010,8 @@ ConduitEditorService::WorkspaceView ConduitEditorService::ActiveWorkspaceView() 
         View.CompileSucceeded = Document->LastCompile().has_value() && Document->LastCompile()->Succeeded();
         View.WarningCount = CountDiagnostics(Document->LastCompile(), ECompileDiagnosticSeverity::Warning);
         View.ErrorCount = CountDiagnostics(Document->LastCompile(), ECompileDiagnosticSeverity::Error);
-        View.Revision = m_workspaceRevision + Document->Revision();
+        View.Revision = m_workspaceRevision + Document->WorkspaceRevision();
+        View.CanvasRevision = Document->CanvasRevision();
         return View;
     }
 
@@ -2241,6 +3356,68 @@ std::vector<PaletteEntryView> ConduitEditorService::ActivePaletteEntries() const
     return Result;
 }
 
+std::vector<SpawnMenuEntryView> ConduitEditorService::BuildSpawnMenuEntries(const GraphSpawnMenuRequest& Request) const
+{
+    const GraphDocument* Document = ActiveDocument();
+    if (!Document)
+    {
+        return {};
+    }
+
+    const auto Descriptors = BuildActiveSchemaDescriptors(m_schema, Document->Asset());
+    std::vector<SpawnMenuEntryView> Result{};
+    Result.reserve(Descriptors.size());
+
+    if (!Request.FromPinDrag || Request.SourceNodeId == Uuid{} || Request.SourcePin.empty())
+    {
+        for (const SchemaNodeDescriptor& Descriptor : Descriptors)
+        {
+            if (!Descriptor.LoweredKind.has_value())
+            {
+                continue;
+            }
+            Result.push_back(MakeSpawnMenuEntry(Descriptor));
+        }
+
+        SortSpawnMenuEntries(Result);
+        return Result;
+    }
+
+    const GraphNodeAsset* SourceNode = Document->FindNode(Request.SourceNodeId);
+    if (!SourceNode)
+    {
+        return {};
+    }
+
+    const SchemaNodeDescriptor* SourceDescriptor = FindSchemaDescriptorForNode(Descriptors, *SourceNode);
+    if (!SourceDescriptor)
+    {
+        return {};
+    }
+
+    auto SourceBindingResult = ResolveNodePinBinding(
+        Document->Asset(),
+        *SourceNode,
+        *SourceDescriptor,
+        Request.SourcePin,
+        ESchemaPinDirection::Output);
+    if (!SourceBindingResult)
+    {
+        return {};
+    }
+
+    for (const SchemaNodeDescriptor& Descriptor : Descriptors)
+    {
+        if (auto Entry = BuildCompatibleSpawnEntry(*SourceBindingResult, Descriptor); Entry.has_value())
+        {
+            Result.push_back(std::move(*Entry));
+        }
+    }
+
+    SortSpawnMenuEntries(Result);
+    return Result;
+}
+
 std::vector<NodeEntryView> ConduitEditorService::ActiveNodeEntries() const
 {
     const GraphDocument* Document = ActiveDocument();
@@ -2338,31 +3515,37 @@ GraphCanvasView ConduitEditorService::ActiveCanvasView() const
         });
     }
 
+    AppendDataCanvasWires(Document->Asset(), Descriptors, Result.Wires);
+
     for (const GraphNodeAsset& Node : Document->Asset().Nodes)
     {
-        if (Node.Kind != EGraphAssetNodeKind::Jump && Node.Kind != EGraphAssetNodeKind::Branch)
+        const SchemaNodeDescriptor* SourceDescriptor = FindSchemaDescriptorForNode(Descriptors, Node);
+        if (!SourceDescriptor)
         {
             continue;
         }
 
         for (const GraphNodeAsset& CandidateTarget : Document->Asset().Nodes)
         {
-            if (Node.Kind == EGraphAssetNodeKind::Jump)
+            const SchemaNodeDescriptor* TargetDescriptor = FindSchemaDescriptorForNode(Descriptors, CandidateTarget);
+            if (!TargetDescriptor)
             {
-                if (auto Wire = BuildCanvasWire(Document->Asset(), Node, CandidateTarget, "Out"); Wire.has_value())
-                {
-                    Result.Wires.push_back(std::move(*Wire));
-                }
                 continue;
             }
 
-            if (auto Wire = BuildCanvasWire(Document->Asset(), Node, CandidateTarget, "True"); Wire.has_value())
+            const std::string TargetExecPin = ResolveExecInputPinName(*TargetDescriptor);
+            for (const SchemaPinDescriptor& Pin : SourceDescriptor->Pins)
             {
-                Result.Wires.push_back(std::move(*Wire));
-            }
-            if (auto Wire = BuildCanvasWire(Document->Asset(), Node, CandidateTarget, "False"); Wire.has_value())
-            {
-                Result.Wires.push_back(std::move(*Wire));
+                if (Pin.Direction != ESchemaPinDirection::Output || !Pin.Type.IsExec)
+                {
+                    continue;
+                }
+
+                if (auto Wire = BuildCanvasWire(Document->Asset(), Node, CandidateTarget, Pin.Name, TargetExecPin);
+                    Wire.has_value())
+                {
+                    Result.Wires.push_back(std::move(*Wire));
+                }
             }
         }
     }
@@ -2537,11 +3720,68 @@ std::vector<VariableTypeOption> ConduitEditorService::AvailableVariableTypes() c
     return Result;
 }
 
+std::vector<GraphSelfTypeOption> ConduitEditorService::AvailableGraphSelfTypes() const
+{
+    std::vector<GraphSelfTypeOption> Result{};
+    Result.push_back(GraphSelfTypeOption{
+        .Type = {},
+        .Label = "None",
+    });
+
+    if (const TypeInfo* BaseNodeType = TypeRegistry::Instance().Find(StaticTypeId<BaseNode>()))
+    {
+        Result.push_back(GraphSelfTypeOption{
+            .Type = BaseNodeType->Id,
+            .Label = ResolveTypeLabel(BaseNodeType->Id),
+        });
+    }
+
+    const auto Types = TypeRegistry::Instance().Derived(StaticTypeId<BaseNode>());
+    for (const TypeInfo* Type : Types)
+    {
+        if (!Type || Type->IsAbstract || Type->IsInterface)
+        {
+            continue;
+        }
+
+        Result.push_back(GraphSelfTypeOption{
+            .Type = Type->Id,
+            .Label = ResolveTypeLabel(Type->Id),
+        });
+    }
+
+    std::sort(Result.begin() + 1, Result.end(), [](const GraphSelfTypeOption& Left, const GraphSelfTypeOption& Right) {
+        if (Left.Label != Right.Label)
+        {
+            return Left.Label < Right.Label;
+        }
+        return Left.Type < Right.Type;
+    });
+    Result.erase(std::unique(Result.begin() + 1,
+                             Result.end(),
+                             [](const GraphSelfTypeOption& Left, const GraphSelfTypeOption& Right) {
+                                 return Left.Type == Right.Type;
+                             }),
+                 Result.end());
+    return Result;
+}
+
 std::vector<ClassHostTypeOption> ConduitEditorService::AvailableClassHostTypes() const
 {
     std::vector<ClassHostTypeOption> Result{};
+    if (const TypeInfo* BaseNodeType = TypeRegistry::Instance().Find(StaticTypeId<BaseNode>()))
+    {
+        if (!BaseNodeType->IsAbstract && !BaseNodeType->IsInterface && BaseNodeType->Id != TypeId{})
+        {
+            Result.push_back(ClassHostTypeOption{
+                .Type = BaseNodeType->Id,
+                .Label = ResolveTypeLabel(BaseNodeType->Id),
+            });
+        }
+    }
+
     const auto Types = TypeRegistry::Instance().Derived(StaticTypeId<BaseNode>());
-    Result.reserve(Types.size());
+    Result.reserve(Result.size() + Types.size());
 
     for (const TypeInfo* Type : Types)
     {
@@ -2557,8 +3797,18 @@ std::vector<ClassHostTypeOption> ConduitEditorService::AvailableClassHostTypes()
     }
 
     std::sort(Result.begin(), Result.end(), [](const ClassHostTypeOption& Left, const ClassHostTypeOption& Right) {
-        return Left.Label < Right.Label;
+        if (Left.Label != Right.Label)
+        {
+            return Left.Label < Right.Label;
+        }
+        return Left.Type < Right.Type;
     });
+    Result.erase(std::unique(Result.begin(),
+                             Result.end(),
+                             [](const ClassHostTypeOption& Left, const ClassHostTypeOption& Right) {
+                                 return Left.Type == Right.Type;
+                             }),
+                 Result.end());
     return Result;
 }
 
@@ -2690,6 +3940,22 @@ TExpected<GraphNodeAsset*> ConduitEditorService::SpawnNode(const std::string_vie
     return *AddResult;
 }
 
+TExpected<GraphNodeAsset*> ConduitEditorService::SpawnNode(const std::string_view StableId, const float X, const float Y)
+{
+    auto SpawnResult = SpawnNode(StableId);
+    if (!SpawnResult)
+    {
+        return std::unexpected(SpawnResult.error());
+    }
+
+    if (const Result MoveResult = MoveNode((*SpawnResult)->Id, X, Y); !MoveResult)
+    {
+        return std::unexpected(MoveResult.error());
+    }
+
+    return *SpawnResult;
+}
+
 bool ConduitEditorService::RemoveSelectedVariable()
 {
     GraphDocument* Document = ActiveDocument();
@@ -2734,11 +4000,25 @@ Result ConduitEditorService::MoveNode(const Uuid& NodeId, const float X, const f
         return std::unexpected(MakeError(EErrorCode::NotFound, "No active Conduit document is open"));
     }
 
-    const std::uint64_t RevisionBefore = Document->Revision();
-    const Result MoveResult = Document->SetNodePosition(NodeId, X, Y);
-    if (!MoveResult)
+    return Document->SetNodePosition(NodeId, X, Y);
+}
+
+Result ConduitEditorService::ConnectPins(const Uuid& SourceNodeId,
+                                         const std::string_view SourcePin,
+                                         const Uuid& TargetNodeId,
+                                         const std::string_view TargetPin)
+{
+    GraphDocument* Document = ActiveDocument();
+    if (!Document)
     {
-        return MoveResult;
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No active Conduit document is open"));
+    }
+
+    const std::uint64_t RevisionBefore = Document->Revision();
+    const Result ConnectResult = Document->ConnectPins(SourceNodeId, SourcePin, TargetNodeId, TargetPin);
+    if (!ConnectResult)
+    {
+        return ConnectResult;
     }
 
     if (Document->Revision() != RevisionBefore)
@@ -2756,18 +4036,36 @@ Result ConduitEditorService::SetViewport(const float PanX, const float PanY, con
         return std::unexpected(MakeError(EErrorCode::NotFound, "No active Conduit document is open"));
     }
 
-    const std::uint64_t RevisionBefore = Document->Revision();
-    const Result ViewportResult = Document->SetViewport(PanX, PanY, Zoom);
-    if (!ViewportResult)
+    return Document->SetViewport(PanX, PanY, Zoom);
+}
+
+Result ConduitEditorService::SetActiveGraphSelfType(const TypeId& Type)
+{
+    GraphDocument* Document = ActiveDocument();
+    if (!Document)
     {
-        return ViewportResult;
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No active Conduit document is open"));
+    }
+    if (Type != TypeId{})
+    {
+        const TypeInfo* Info = TypeRegistry::Instance().Find(Type);
+        if (!Info)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound, "Selected Conduit self type is not registered"));
+        }
+        if (Info->IsAbstract || Info->IsInterface || !TypeRegistry::Instance().IsA(Type, StaticTypeId<BaseNode>()))
+        {
+            return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Selected Conduit self type is not a concrete node type"));
+        }
     }
 
-    if (Document->Revision() != RevisionBefore)
+    const Result SetResult = Document->SetSelfType(Type);
+    if (SetResult)
     {
+        InvalidateVariableScratch();
         BumpWorkspaceRevision();
     }
-    return Ok();
+    return SetResult;
 }
 
 Result ConduitEditorService::RenameSelectedVariable(const std::string_view Name)

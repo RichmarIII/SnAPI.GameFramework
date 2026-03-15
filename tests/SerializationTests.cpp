@@ -139,6 +139,22 @@ struct ReflectionNotifyNode : public BaseNode, public NodeCRTP<ReflectionNotifyN
     }
 };
 
+struct PointerReflectionHost
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::PointerReflectionHost";
+    int Value = 0;
+
+    PointerReflectionHost* SelfMutable()
+    {
+        return this;
+    }
+
+    const PointerReflectionHost* SelfConst() const
+    {
+        return this;
+    }
+};
+
 NodeHandle FindNodeByName(const World& WorldRef, const std::string& Name)
 {
     NodeHandle Found{};
@@ -214,6 +230,67 @@ SNAPI_REFLECT_TYPE(ReflectionNotifyNode, (TTypeBuilder<ReflectionNotifyNode>(Ref
     .Field("Value", &ReflectionNotifyNode::Value)
     .Constructor<>()
     .Register()));
+
+SNAPI_REFLECT_TYPE(PointerReflectionHost, (TTypeBuilder<PointerReflectionHost>(PointerReflectionHost::kTypeName)
+    .Field("Value", &PointerReflectionHost::Value)
+    .Method("SelfMutable", &PointerReflectionHost::SelfMutable)
+    .Method("SelfConst", &PointerReflectionHost::SelfConst)
+    .Constructor<>()
+    .Register()));
+
+TEST_CASE("Pointer companion types auto-register with reflected pointee types")
+{
+    RegisterBuiltinTypes();
+
+    const auto* MutablePointerInfo = TypeRegistry::Instance().FindByName(ReflectedTypeName<PointerReflectionHost*>());
+    REQUIRE(MutablePointerInfo != nullptr);
+    CHECK(MutablePointerInfo->IsPointer);
+    CHECK(MutablePointerInfo->PointeeType == StaticTypeId<PointerReflectionHost>());
+    CHECK_FALSE(MutablePointerInfo->PointerPointeeConst);
+    CHECK(MutablePointerInfo->Size == sizeof(void*));
+    CHECK(MutablePointerInfo->Align == alignof(void*));
+    CHECK(MutablePointerInfo->RuntimeOps == &GetPointerTypeRuntimeOps());
+
+    const auto* ConstPointerInfo = TypeRegistry::Instance().Find(StaticTypeId<const PointerReflectionHost*>());
+    REQUIRE(ConstPointerInfo != nullptr);
+    CHECK(ConstPointerInfo->IsPointer);
+    CHECK(ConstPointerInfo->PointeeType == StaticTypeId<PointerReflectionHost>());
+    CHECK(ConstPointerInfo->PointerPointeeConst);
+
+    auto StaticTypeResult = StaticType<PointerReflectionHost*>();
+    REQUIRE(StaticTypeResult);
+    CHECK(*StaticTypeResult.value() == StaticTypeId<PointerReflectionHost*>());
+}
+
+TEST_CASE("Variant preserves reflected pointer payloads")
+{
+    RegisterBuiltinTypes();
+
+    PointerReflectionHost Instance{};
+    Instance.Value = 77;
+    PointerReflectionHost* Ptr = &Instance;
+
+    Variant Value = Variant::FromValue(Ptr);
+    REQUIRE(Value.Is<PointerReflectionHost*>());
+
+    auto RefResult = Value.AsConstRef<PointerReflectionHost*>();
+    REQUIRE(RefResult);
+    CHECK(RefResult->get() == &Instance);
+    CHECK(RefResult->get()->Value == 77);
+}
+
+TEST_CASE("Pointer reflected values are not serializable")
+{
+    RegisterBuiltinTypes();
+
+    PointerReflectionHost Instance{};
+    PointerReflectionHost* Ptr = &Instance;
+    std::vector<uint8_t> Bytes{};
+
+    auto SerializeResult = SerializeReflectedValue(StaticTypeId<PointerReflectionHost*>(), &Ptr, Bytes);
+    REQUIRE_FALSE(SerializeResult);
+    CHECK(SerializeResult.error().Message.find("Pointer types are not serializable") != std::string::npos);
+}
 
 TEST_CASE("Node serialization round-trips subtree with components and handles")
 {
@@ -538,6 +615,46 @@ TEST_CASE("Node deserialization accepts legacy float32 Vec3/Quat component paylo
     REQUIRE(LoadedComponent->Rotation.y() == Catch::Approx(kRotY));
     REQUIRE(LoadedComponent->Rotation.z() == Catch::Approx(kRotZ));
     REQUIRE(LoadedComponent->Rotation.w() == Catch::Approx(kRotW));
+}
+
+TEST_CASE("Component deserialization ignores legacy read-only Conduit diagnostics", "[Serialization][Conduit]")
+{
+    RegisterBuiltinTypes();
+
+    Conduit::ClassComponent Source{};
+    Source.Class.EditAssetName() = "Conduit/TestClass.conduitclass";
+
+    std::vector<uint8_t> Bytes{};
+    REQUIRE(ComponentSerializationRegistry::Instance().Serialize(
+        StaticTypeId<Conduit::ClassComponent>(),
+        &Source,
+        Bytes,
+        {}));
+
+    const bool LegacyBound = true;
+    std::vector<uint8_t> LegacyBoundBytes{};
+    REQUIRE(SerializeReflectedValue(StaticTypeId<bool>(), &LegacyBound, LegacyBoundBytes));
+    Bytes.insert(Bytes.end(), LegacyBoundBytes.begin(), LegacyBoundBytes.end());
+
+    const std::string LegacyLastError = "Legacy bind failure";
+    std::vector<uint8_t> LegacyLastErrorBytes{};
+    REQUIRE(SerializeReflectedValue(StaticTypeId<std::string>(), &LegacyLastError, LegacyLastErrorBytes));
+    Bytes.insert(Bytes.end(), LegacyLastErrorBytes.begin(), LegacyLastErrorBytes.end());
+
+    Conduit::ClassComponent Loaded{};
+    auto DeserializeResult = ComponentSerializationRegistry::Instance().Deserialize(
+        StaticTypeId<Conduit::ClassComponent>(),
+        &Loaded,
+        Bytes.data(),
+        Bytes.size(),
+        {});
+    if (!DeserializeResult)
+    {
+        INFO("ClassComponent legacy deserialize error: " << DeserializeResult.error().Message);
+    }
+    REQUIRE(DeserializeResult);
+    CHECK(Loaded.Class.GetAssetName() == "Conduit/TestClass.conduitclass");
+    CHECK_FALSE(Loaded.IsBound());
 }
 
 TEST_CASE("Cross-world node handles use explicit UUID slow resolve after deserialization")

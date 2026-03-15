@@ -1,8 +1,10 @@
+#include <algorithm>
 #include <array>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "GameFramework.hpp"
+#include "GeneratedReflectionFixture.h"
 #include "TypeRegistration.h"
 
 using namespace SnAPI::GameFramework;
@@ -40,6 +42,26 @@ struct TestDerived : public TestBase
         return m_value + m_extra + Add;
     }
 };
+
+namespace
+{
+
+[[nodiscard]] bool HasReflectedMethod(const TypeId& Type, const std::string_view Name)
+{
+    const auto Methods = TypeRegistry::Instance().CollectMethods(Type, true);
+    return std::any_of(Methods.begin(), Methods.end(), [Name](const ReflectedMethodRef& Entry) {
+        return Entry.Method != nullptr && Entry.Method->Name == Name;
+    });
+}
+
+[[nodiscard]] bool HasReflectedField(const TypeInfo& Type, const std::string_view Name)
+{
+    return std::any_of(Type.Fields.begin(), Type.Fields.end(), [Name](const FieldInfo& Entry) {
+        return Entry.Name == Name;
+    });
+}
+
+} // namespace
 
 TEST_CASE("Reflection registers types and supports inheritance")
 {
@@ -115,6 +137,249 @@ TEST_CASE("Reflection records field and method flags")
     REQUIRE(Info->Fields[0].Flags.Has(EFieldFlagBits::Replication));
     REQUIRE(Info->Methods[0].Flags.Has(EMethodFlagBits::RpcReliable));
     REQUIRE(Info->Methods[0].Flags.Has(EMethodFlagBits::RpcNetServer));
+}
+
+TEST_CASE("Generated reflection codegen captures docs and parameter metadata")
+{
+    RegisterBuiltinTypes();
+
+    auto FixtureTypeResult = StaticType<Tests::GeneratedReflectionFixture>();
+    REQUIRE(FixtureTypeResult);
+
+    const TypeInfo* FixtureInfo = TypeRegistry::Instance().Find(StaticTypeId<Tests::GeneratedReflectionFixture>());
+    REQUIRE(FixtureInfo != nullptr);
+    CHECK(FixtureInfo->DisplayName == "Generated Fixture");
+    CHECK(FixtureInfo->Category == "Tests|Generated");
+    CHECK(FixtureInfo->Doc == "Annotated fixture type used to validate libclang-driven reflection generation.");
+
+    REQUIRE(FixtureInfo->Fields.size() == 1);
+    CHECK(HasReflectedField(*FixtureInfo, "Value"));
+    CHECK_FALSE(HasReflectedField(*FixtureInfo, "Unsupported"));
+    CHECK(FixtureInfo->Fields[0].DisplayName == "Value");
+    CHECK(FixtureInfo->Fields[0].Category == "Tests|Generated|Fields");
+    CHECK(FixtureInfo->Fields[0].Doc == "Current value carried by the generated fixture.");
+    CHECK(FixtureInfo->Fields[0].Flags.Has(EFieldFlagBits::Replication));
+    CHECK(FixtureInfo->Fields[0].Flags.Has(EFieldFlagBits::Serialized));
+    CHECK(FixtureInfo->Fields[0].Flags.Has(EFieldFlagBits::ReplicationUnreliable));
+    REQUIRE(FixtureInfo->Fields[0].Value.Min.has_value());
+    REQUIRE(FixtureInfo->Fields[0].Value.Max.has_value());
+    REQUIRE(FixtureInfo->Fields[0].Value.Step.has_value());
+    CHECK(*FixtureInfo->Fields[0].Value.Min == -16.0);
+    CHECK(*FixtureInfo->Fields[0].Value.Max == 16.0);
+    CHECK(*FixtureInfo->Fields[0].Value.Step == 1.0);
+
+    REQUIRE(FixtureInfo->Methods.size() == 1);
+    CHECK(HasReflectedMethod(StaticTypeId<Tests::GeneratedReflectionFixture>(), "AddValue"));
+    CHECK_FALSE(HasReflectedMethod(StaticTypeId<Tests::GeneratedReflectionFixture>(), "UnsupportedCall"));
+    CHECK(FixtureInfo->Methods[0].DisplayName == "Add Value");
+    CHECK(FixtureInfo->Methods[0].Category == "Tests|Generated|Methods");
+    CHECK(FixtureInfo->Methods[0].Doc == "Add a delta to the fixture value.");
+    CHECK(FixtureInfo->Methods[0].Flags.Has(EMethodFlagBits::RpcReliable));
+    CHECK(FixtureInfo->Methods[0].Flags.Has(EMethodFlagBits::RpcNetServer));
+    REQUIRE(FixtureInfo->Methods[0].Params.size() == 1);
+    CHECK(FixtureInfo->Methods[0].Params[0].Name == "Delta");
+    CHECK(FixtureInfo->Methods[0].Params[0].Doc == "Signed amount to add to the current value.");
+
+    REQUIRE(FixtureInfo->Constructors.size() == 1);
+
+    auto EnumTypeResult = StaticType<Tests::GeneratedReflectionMode>();
+    REQUIRE(EnumTypeResult);
+
+    const TypeInfo* EnumInfo = TypeRegistry::Instance().Find(StaticTypeId<Tests::GeneratedReflectionMode>());
+    REQUIRE(EnumInfo != nullptr);
+    CHECK(EnumInfo->IsEnum);
+    CHECK(EnumInfo->DisplayName == "Generated Mode");
+    CHECK(EnumInfo->Category == "Tests|Generated");
+    CHECK(EnumInfo->Doc == "Example generated enum used to validate reflection codegen.");
+    REQUIRE(EnumInfo->EnumValues.size() == 2);
+    CHECK(EnumInfo->EnumValues[0].DisplayName == "Idle");
+    CHECK(EnumInfo->EnumValues[0].Doc == "Idle state for the generated enum fixture.");
+    CHECK(EnumInfo->EnumValues[1].DisplayName == "Active");
+    CHECK(EnumInfo->EnumValues[1].Doc == "Active state for the generated enum fixture.");
+}
+
+TEST_CASE("Reflected template families expose editor metadata automatically")
+{
+    RegisterBuiltinTypes();
+
+    const TypeInfo* FieldFlagsInfo = TypeRegistry::Instance().Find(StaticTypeId<FieldFlags>());
+    REQUIRE(FieldFlagsInfo != nullptr);
+    CHECK(FieldFlagsInfo->EditorValueFamily == EEditorValueFamily::Flags);
+    CHECK(FieldFlagsInfo->EditorValueTargetType == StaticTypeId<EFieldFlagBits>());
+
+    const TypeInfo* MethodFlagsInfo = TypeRegistry::Instance().Find(StaticTypeId<MethodFlags>());
+    REQUIRE(MethodFlagsInfo != nullptr);
+    CHECK(MethodFlagsInfo->EditorValueFamily == EEditorValueFamily::Flags);
+    CHECK(MethodFlagsInfo->EditorValueTargetType == StaticTypeId<EMethodFlagBits>());
+
+    const TypeInfo* SubClassInfo = TypeRegistry::Instance().Find(StaticTypeId<TSubClassOf<PawnBase>>());
+    REQUIRE(SubClassInfo != nullptr);
+    CHECK(SubClassInfo->EditorValueFamily == EEditorValueFamily::SubClassOf);
+    CHECK(SubClassInfo->EditorValueTargetType == StaticTypeId<PawnBase>());
+    REQUIRE(SubClassInfo->EditorValueAdapter.PopulateOptions != nullptr);
+    REQUIRE(SubClassInfo->EditorValueAdapter.ReadSelectionLabel != nullptr);
+    REQUIRE(SubClassInfo->EditorValueAdapter.WriteSelection != nullptr);
+
+    const TypeInfo* AssetRefInfo = TypeRegistry::Instance().Find(StaticTypeId<TAssetRef<PawnBase>>());
+    REQUIRE(AssetRefInfo != nullptr);
+    CHECK(AssetRefInfo->EditorValueFamily == EEditorValueFamily::AssetRef);
+    CHECK(AssetRefInfo->EditorValueTargetType == StaticTypeId<PawnBase>());
+    REQUIRE(AssetRefInfo->EditorValueAdapter.PopulateOptions != nullptr);
+    REQUIRE(AssetRefInfo->EditorValueAdapter.ReadSelectionLabel != nullptr);
+    REQUIRE(AssetRefInfo->EditorValueAdapter.WriteSelection != nullptr);
+}
+
+TEST_CASE("Builtins expose enum metadata for editor-facing engine enums")
+{
+    RegisterBuiltinTypes();
+
+    const TypeInfo* WorldKindInfo = TypeRegistry::Instance().Find(StaticTypeId<EWorldKind>());
+    REQUIRE(WorldKindInfo != nullptr);
+    CHECK(WorldKindInfo->IsEnum);
+    CHECK(WorldKindInfo->EnumValues.size() == 3);
+
+    const TypeInfo* FieldFlagBitsInfo = TypeRegistry::Instance().Find(StaticTypeId<EFieldFlagBits>());
+    REQUIRE(FieldFlagBitsInfo != nullptr);
+    CHECK(FieldFlagBitsInfo->IsEnum);
+
+    const TypeInfo* MethodFlagBitsInfo = TypeRegistry::Instance().Find(StaticTypeId<EMethodFlagBits>());
+    REQUIRE(MethodFlagBitsInfo != nullptr);
+    CHECK(MethodFlagBitsInfo->IsEnum);
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    const TypeInfo* CollisionBitsInfo = TypeRegistry::Instance().Find(StaticTypeId<ECollisionFilterBits>());
+    REQUIRE(CollisionBitsInfo != nullptr);
+    CHECK(CollisionBitsInfo->IsEnum);
+
+    const TypeInfo* ShapeTypeInfo = TypeRegistry::Instance().Find(StaticTypeId<SnAPI::Physics::EShapeType>());
+    REQUIRE(ShapeTypeInfo != nullptr);
+    CHECK(ShapeTypeInfo->IsEnum);
+#endif
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    const TypeInfo* InputBackendInfo = TypeRegistry::Instance().Find(StaticTypeId<SnAPI::Input::EInputBackend>());
+    REQUIRE(InputBackendInfo != nullptr);
+    CHECK(InputBackendInfo->IsEnum);
+#endif
+
+#if defined(SNAPI_GF_ENABLE_NETWORKING)
+    const TypeInfo* SessionRoleInfo = TypeRegistry::Instance().Find(StaticTypeId<SnAPI::Networking::ESessionRole>());
+    REQUIRE(SessionRoleInfo != nullptr);
+    CHECK(SessionRoleInfo->IsEnum);
+#endif
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    const TypeInfo* ViewportPresetInfo = TypeRegistry::Instance().Find(StaticTypeId<ERenderViewportPassGraphPreset>());
+    REQUIRE(ViewportPresetInfo != nullptr);
+    CHECK(ViewportPresetInfo->IsEnum);
+#endif
+}
+
+TEST_CASE("TypeId is a distinct reflected type from Uuid")
+{
+    RegisterBuiltinTypes();
+
+    CHECK(StaticTypeId<TypeId>() != StaticTypeId<Uuid>());
+
+    const TypeInfo* TypeIdInfo = TypeRegistry::Instance().Find(StaticTypeId<TypeId>());
+    REQUIRE(TypeIdInfo != nullptr);
+    CHECK(TypeIdInfo->Id == StaticTypeId<TypeId>());
+    CHECK(TypeIdInfo->Name == TTypeNameV<TypeId>);
+
+    const TypeInfo* UuidInfo = TypeRegistry::Instance().Find(StaticTypeId<Uuid>());
+    REQUIRE(UuidInfo != nullptr);
+    CHECK(UuidInfo->Id == StaticTypeId<Uuid>());
+    CHECK(UuidInfo->Name == TTypeNameV<Uuid>);
+}
+
+TEST_CASE("Framework reflection exposes Conduit-facing node, component, and system methods")
+{
+    RegisterBuiltinTypes();
+
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "Handle"));
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "Parent"));
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "PendingDestroy"));
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "SetActive"));
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "SetReplicated"));
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "IsServer"));
+    CHECK(HasReflectedMethod(StaticTypeId<BaseNode>(), "World"));
+
+    CHECK(HasReflectedMethod(StaticTypeId<TransformComponent>(), "Owner"));
+    CHECK(HasReflectedMethod(StaticTypeId<TransformComponent>(), "OwnerNode"));
+    CHECK(HasReflectedMethod(StaticTypeId<TransformComponent>(), "World"));
+    CHECK(HasReflectedMethod(StaticTypeId<TransformComponent>(), "Handle"));
+    CHECK(HasReflectedMethod(StaticTypeId<TransformComponent>(), "SetActive"));
+    CHECK(HasReflectedMethod(StaticTypeId<TransformComponent>(), "SetReplicated"));
+
+    CHECK(HasReflectedMethod(StaticTypeId<IWorld>(), "FixedTickEnabled"));
+    CHECK(HasReflectedMethod(StaticTypeId<IWorld>(), "FixedTickDeltaSeconds"));
+    CHECK(HasReflectedMethod(StaticTypeId<IWorld>(), "FixedTickInterpolationAlpha"));
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    CHECK(HasReflectedMethod(StaticTypeId<InputSystem>(), "Settings"));
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    CHECK(HasReflectedMethod(StaticTypeId<UISystem>(), "Settings"));
+#endif
+#if defined(SNAPI_GF_ENABLE_AUDIO)
+    CHECK(HasReflectedMethod(StaticTypeId<AudioSystem>(), "Update"));
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    CHECK(HasReflectedMethod(StaticTypeId<PhysicsSystem>(), "Settings"));
+    CHECK(HasReflectedMethod(StaticTypeId<PhysicsSystem>(), "WorldToPhysicsPosition"));
+    CHECK(HasReflectedMethod(StaticTypeId<PhysicsSystem>(), "PhysicsToWorldPosition"));
+    CHECK(HasReflectedMethod(StaticTypeId<PhysicsSystem>(), "EnsureFloatingOriginNear"));
+    CHECK(HasReflectedMethod(StaticTypeId<PhysicsSystem>(), "FloatingOriginWorld"));
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "Settings"));
+    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "UseDefaultRenderViewport"));
+    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "RegisterRenderViewportPassGraph"));
+    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "QueueText"));
+    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "HasDefaultFont"));
+#endif
+}
+
+TEST_CASE("Framework bootstrap settings types are reflected for Conduit chaining")
+{
+    RegisterBuiltinTypes();
+
+#if defined(SNAPI_GF_ENABLE_INPUT)
+    {
+        const TypeInfo* Info = TypeRegistry::Instance().Find(StaticTypeId<InputBootstrapSettings>());
+        REQUIRE(Info != nullptr);
+        CHECK(Info->Fields.size() >= 4);
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_UI)
+    {
+        const TypeInfo* Info = TypeRegistry::Instance().Find(StaticTypeId<UIBootstrapSettings>());
+        REQUIRE(Info != nullptr);
+        CHECK(Info->Fields.size() >= 2);
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+    {
+        const TypeInfo* Info = TypeRegistry::Instance().Find(StaticTypeId<PhysicsBootstrapSettings>());
+        REQUIRE(Info != nullptr);
+        CHECK(Info->Fields.size() >= 8);
+    }
+#endif
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    {
+        const TypeInfo* Info = TypeRegistry::Instance().Find(StaticTypeId<RendererBootstrapSettings>());
+        REQUIRE(Info != nullptr);
+        CHECK(Info->Fields.size() >= 10);
+    }
+#endif
+}
+
+TEST_CASE("PrettyReflectedTypeName strips namespaces recursively for template spellings")
+{
+    CHECK(PrettyReflectedTypeName("SnAPI::GameFramework::Vec3") == "Vec3");
+    CHECK(PrettyReflectedTypeName("SnAPI::GameFramework::TSubClassOf<SnAPI::GameFramework::PawnBase>") == "TSubClassOf<PawnBase>");
+    CHECK(PrettyReflectedTypeName("const SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::Vec3>*")
+          == "const TAssetRef<Vec3>*");
 }
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)

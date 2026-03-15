@@ -296,6 +296,8 @@ constexpr std::string_view kContextMenuItemContentInspectorAddComponentTypePrefi
 constexpr std::string_view kContextMenuItemFileNewProjectId = "menu.file.new_project";
 constexpr std::string_view kContextMenuItemFileOpenProjectId = "menu.file.open_project";
 constexpr std::string_view kContextMenuItemFileProjectSettingsId = "menu.file.project_settings";
+constexpr std::string_view kContextMenuItemConduitSpawnPrefix = "conduit.spawn.";
+constexpr std::string_view kContextMenuItemConduitSpawnNoMatchesId = "conduit.spawn.no_matches";
 
 constexpr std::array<std::string_view, 14> kImportModelExtensions{
     ".fbx", ".gltf", ".glb", ".obj", ".dae", ".blend", ".3ds", ".ply",
@@ -331,12 +333,190 @@ void ApplyHierarchyRowIcon(SnAPI::UI::UIImage& Icon,
 
 [[nodiscard]] std::string ShortTypeLabel(std::string_view QualifiedName)
 {
-    const std::size_t Delimiter = QualifiedName.rfind("::");
-    if (Delimiter == std::string_view::npos)
+    return PrettyReflectedTypeName(QualifiedName);
+}
+
+[[nodiscard]] std::vector<std::string> SplitCategoryPath(std::string_view Path)
+{
+    std::vector<std::string> Segments{};
+    std::size_t SegmentStart = 0;
+    while (SegmentStart < Path.size())
     {
-        return std::string(QualifiedName);
+        const std::size_t SegmentEnd = Path.find('/', SegmentStart);
+        const std::size_t Count = SegmentEnd == std::string_view::npos
+            ? Path.size() - SegmentStart
+            : SegmentEnd - SegmentStart;
+        std::string Segment = std::string(Path.substr(SegmentStart, Count));
+        Segment.erase(
+            std::remove_if(Segment.begin(), Segment.end(), [](const unsigned char Character) {
+                return Character == '\t' || Character == '\n' || Character == '\r';
+            }),
+            Segment.end());
+        if (!Segment.empty())
+        {
+            Segments.push_back(std::move(Segment));
+        }
+        if (SegmentEnd == std::string_view::npos)
+        {
+            break;
+        }
+        SegmentStart = SegmentEnd + 1;
     }
-    return std::string(QualifiedName.substr(Delimiter + 2));
+    return Segments;
+}
+
+[[nodiscard]] SnAPI::UI::UIContextMenuItem* FindContextMenuGroup(
+    std::vector<SnAPI::UI::UIContextMenuItem>& Items,
+    std::string_view Label)
+{
+    auto It = std::find_if(Items.begin(), Items.end(), [Label](const SnAPI::UI::UIContextMenuItem& Item) {
+        return !Item.IsSeparator && Item.Label == Label && !Item.Children.empty();
+    });
+    return It == Items.end() ? nullptr : &(*It);
+}
+
+[[nodiscard]] std::vector<SnAPI::UI::UIContextMenuItem> BuildConduitSpawnMenuItems(
+    const Conduit::Editor::GraphSpawnMenuRequest& Request,
+    const std::vector<Conduit::Editor::SpawnMenuEntryView>& Entries)
+{
+    std::vector<SnAPI::UI::UIContextMenuItem> Items{};
+    if (Entries.empty())
+    {
+        Items.push_back(SnAPI::UI::UIContextMenuItem{
+            .Id = std::string(kContextMenuItemConduitSpawnNoMatchesId),
+            .Label = Request.FromPinDrag ? "No compatible nodes" : "No nodes available",
+            .Enabled = false,
+        });
+        return Items;
+    }
+
+    for (std::size_t Index = 0; Index < Entries.size(); ++Index)
+    {
+        const auto& Entry = Entries[Index];
+        std::vector<SnAPI::UI::UIContextMenuItem>* ParentItems = &Items;
+        std::string CategoryPath{};
+        for (const std::string& Segment : SplitCategoryPath(Entry.Category))
+        {
+            CategoryPath = CategoryPath.empty() ? Segment : CategoryPath + "/" + Segment;
+            SnAPI::UI::UIContextMenuItem* Group = FindContextMenuGroup(*ParentItems, Segment);
+            if (!Group)
+            {
+                ParentItems->push_back(SnAPI::UI::UIContextMenuItem{
+                    .Id = "conduit.spawn.group." + CategoryPath,
+                    .Label = Segment,
+                });
+                Group = &ParentItems->back();
+            }
+            ParentItems = &Group->Children;
+        }
+
+        ParentItems->push_back(SnAPI::UI::UIContextMenuItem{
+            .Id = std::string(kContextMenuItemConduitSpawnPrefix) + std::to_string(Index),
+            .Label = Entry.DisplayName,
+            .Shortcut = Entry.TargetPin.empty() ? std::optional<std::string>{} : std::make_optional(Entry.TargetPin),
+        });
+    }
+
+    return Items;
+}
+
+struct ConduitPaletteCategoryNode
+{
+    std::string Label{};
+    std::vector<const EditorLayout::ConduitWorkspaceState::PaletteEntry*> Entries{};
+    std::vector<ConduitPaletteCategoryNode> Children{};
+};
+
+[[nodiscard]] ConduitPaletteCategoryNode* FindOrAddPaletteChild(
+    std::vector<ConduitPaletteCategoryNode>& Children,
+    std::string_view Label)
+{
+    auto It = std::find_if(Children.begin(), Children.end(), [Label](const ConduitPaletteCategoryNode& Node) {
+        return Node.Label == Label;
+    });
+    if (It != Children.end())
+    {
+        return &(*It);
+    }
+
+    Children.push_back(ConduitPaletteCategoryNode{.Label = std::string(Label)});
+    return &Children.back();
+}
+
+[[nodiscard]] ConduitPaletteCategoryNode BuildConduitPaletteTree(
+    const std::vector<EditorLayout::ConduitWorkspaceState::PaletteEntry>& Entries,
+    std::string_view FilterText)
+{
+    ConduitPaletteCategoryNode Root{};
+    std::string FilterLower = std::string(FilterText);
+    std::transform(FilterLower.begin(), FilterLower.end(), FilterLower.begin(), [](const unsigned char Character) {
+        return static_cast<char>(std::tolower(Character));
+    });
+
+    for (const auto& Entry : Entries)
+    {
+        std::string SearchText = Entry.DisplayName + " " + Entry.Category + " " + Entry.Tooltip;
+        std::transform(SearchText.begin(), SearchText.end(), SearchText.begin(), [](const unsigned char Character) {
+            return static_cast<char>(std::tolower(Character));
+        });
+
+        if (!FilterLower.empty() && SearchText.find(FilterLower) == std::string::npos)
+        {
+            continue;
+        }
+
+        ConduitPaletteCategoryNode* Current = &Root;
+        for (const std::string& Segment : SplitCategoryPath(Entry.Category))
+        {
+            Current = FindOrAddPaletteChild(Current->Children, Segment);
+        }
+        Current->Entries.push_back(&Entry);
+    }
+
+    const auto SortTree = [](const auto& Self, ConduitPaletteCategoryNode& Node) -> void {
+        std::sort(Node.Entries.begin(), Node.Entries.end(), [](const auto* Left, const auto* Right) {
+            if (!Left || !Right)
+            {
+                return Left < Right;
+            }
+            if (Left->DisplayName != Right->DisplayName)
+            {
+                return Left->DisplayName < Right->DisplayName;
+            }
+            return Left->StableId < Right->StableId;
+        });
+        std::sort(Node.Children.begin(), Node.Children.end(), [](const ConduitPaletteCategoryNode& Left,
+                                                                 const ConduitPaletteCategoryNode& Right) {
+            return Left.Label < Right.Label;
+        });
+        for (ConduitPaletteCategoryNode& Child : Node.Children)
+        {
+            Self(Self, Child);
+        }
+    };
+    SortTree(SortTree, Root);
+    return Root;
+}
+
+void DestroyDirectChildren(SnAPI::UI::UIContext& Context, const SnAPI::UI::ElementId ParentId)
+{
+    if (ParentId.Value == 0)
+    {
+        return;
+    }
+
+    std::vector<SnAPI::UI::ElementId> Children{};
+    UI::IUIElement& Parent = Context.GetElement(ParentId);
+    Children.reserve(Parent.ChildCount());
+    for (uint32_t Index = 0; Index < Parent.ChildCount(); ++Index)
+    {
+        Children.push_back(Parent.ChildAt(Index).GetId());
+    }
+
+    for (const SnAPI::UI::ElementId ChildId : Children)
+    {
+        Context.DestroyElement(ChildId);
+    }
 }
 
 [[nodiscard]] std::optional<std::size_t> TryParsePrefixedIndex(std::string_view Value, std::string_view Prefix)
@@ -980,9 +1160,12 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_conduitWorkspaceTitleText = {};
     m_conduitWorkspaceStatusText = {};
     m_conduitWorkspaceSummaryText = {};
+    m_conduitCompileButton = {};
     m_conduitVariablesTree = {};
+    m_conduitGraphSelfTypeCombo = {};
     m_conduitPaletteSearchInput = {};
-    m_conduitPaletteTree = {};
+    m_conduitPaletteScroll = {};
+    m_conduitPaletteContentPanel = {};
     m_conduitPaletteAddNodeButton = {};
     m_conduitGraphCanvas = {};
     m_conduitNodesTree = {};
@@ -3467,6 +3650,89 @@ void EditorLayout::SetConduitWorkspaceState(ConduitWorkspaceState State)
     RefreshConduitWorkspaceView();
 }
 
+void EditorLayout::SetConduitCanvasView(SnAPI::GameFramework::Conduit::Editor::GraphCanvasView View)
+{
+    m_conduitWorkspaceState.CanvasPanX = View.Viewport.PanX;
+    m_conduitWorkspaceState.CanvasPanY = View.Viewport.PanY;
+    m_conduitWorkspaceState.CanvasZoom = View.Viewport.Zoom;
+
+    m_conduitWorkspaceState.CanvasNodes.clear();
+    m_conduitWorkspaceState.CanvasNodes.reserve(View.Nodes.size());
+    for (auto& Node : View.Nodes)
+    {
+        std::vector<ConduitWorkspaceState::CanvasNode::Pin> InputPins{};
+        InputPins.reserve(Node.InputPins.size());
+        for (auto& Pin : Node.InputPins)
+        {
+            InputPins.push_back(ConduitWorkspaceState::CanvasNode::Pin{
+                .Name = std::move(Pin.Name),
+                .TypeLabel = std::move(Pin.TypeLabel),
+                .Kind = Pin.Kind,
+                .IsInput = Pin.IsInput,
+                .IsExec = Pin.IsExec,
+            });
+        }
+
+        std::vector<ConduitWorkspaceState::CanvasNode::Pin> OutputPins{};
+        OutputPins.reserve(Node.OutputPins.size());
+        for (auto& Pin : Node.OutputPins)
+        {
+            OutputPins.push_back(ConduitWorkspaceState::CanvasNode::Pin{
+                .Name = std::move(Pin.Name),
+                .TypeLabel = std::move(Pin.TypeLabel),
+                .Kind = Pin.Kind,
+                .IsInput = Pin.IsInput,
+                .IsExec = Pin.IsExec,
+            });
+        }
+
+        m_conduitWorkspaceState.CanvasNodes.push_back(ConduitWorkspaceState::CanvasNode{
+            .Id = Node.Id,
+            .Title = std::move(Node.Title),
+            .Detail = std::move(Node.Detail),
+            .X = Node.X,
+            .Y = Node.Y,
+            .Width = Node.Width,
+            .IsCollapsed = Node.IsCollapsed,
+            .Selected = Node.Selected,
+            .InputPins = std::move(InputPins),
+            .OutputPins = std::move(OutputPins),
+        });
+    }
+
+    m_conduitWorkspaceState.CanvasComments.clear();
+    m_conduitWorkspaceState.CanvasComments.reserve(View.Comments.size());
+    for (auto& Comment : View.Comments)
+    {
+        m_conduitWorkspaceState.CanvasComments.push_back(ConduitWorkspaceState::CanvasComment{
+            .Id = Comment.Id,
+            .Title = std::move(Comment.Title),
+            .X = Comment.X,
+            .Y = Comment.Y,
+            .Width = Comment.Width,
+            .Height = Comment.Height,
+            .ColorRgba = Comment.ColorRgba,
+            .Selected = Comment.Selected,
+        });
+    }
+
+    m_conduitWorkspaceState.CanvasWires.clear();
+    m_conduitWorkspaceState.CanvasWires.reserve(View.Wires.size());
+    for (auto& Wire : View.Wires)
+    {
+        m_conduitWorkspaceState.CanvasWires.push_back(ConduitWorkspaceState::CanvasWire{
+            .SourceNodeId = Wire.SourceNodeId,
+            .SourcePin = std::move(Wire.SourcePin),
+            .TargetNodeId = Wire.TargetNodeId,
+            .TargetPin = std::move(Wire.TargetPin),
+            .Kind = Wire.Kind,
+            .IsExec = Wire.IsExec,
+        });
+    }
+
+    RefreshConduitCanvasView();
+}
+
 void EditorLayout::SetConduitVariableSelectionHandler(SnAPI::UI::TDelegate<void(const Uuid&)> Handler)
 {
     m_onConduitVariableSelected = std::move(Handler);
@@ -3490,6 +3756,11 @@ void EditorLayout::SetConduitVariableRenameHandler(SnAPI::UI::TDelegate<void(con
 void EditorLayout::SetConduitVariableTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler)
 {
     m_onConduitVariableTypeRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitGraphSelfTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)> Handler)
+{
+    m_onConduitGraphSelfTypeRequested = std::move(Handler);
 }
 
 void EditorLayout::SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)> Handler)
@@ -3540,6 +3811,30 @@ void EditorLayout::SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()> Hand
 void EditorLayout::SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)> Handler)
 {
     m_onConduitNodeMoveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitPinConnectedHandler(
+    SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)> Handler)
+{
+    m_onConduitPinConnectedRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitSpawnMenuRequestHandler(
+    SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&)> Handler)
+{
+    m_onConduitSpawnMenuRequest = std::move(Handler);
+}
+
+void EditorLayout::SetConduitSpawnMenuSelectionHandler(
+    SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&,
+                              const SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView&)> Handler)
+{
+    m_onConduitSpawnMenuSelectionRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitCompileHandler(SnAPI::UI::TDelegate<void()> Handler)
+{
+    m_onConduitCompileRequested = std::move(Handler);
 }
 
 void EditorLayout::SetConduitNodePrimaryTextHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
@@ -3706,6 +4001,8 @@ void EditorLayout::RefreshConduitWorkspaceView()
 
     const bool IsClassMode = m_conduitWorkspaceState.Open &&
                              m_conduitWorkspaceState.Kind == ConduitWorkspaceState::EDocumentKind::Class;
+    const bool CanCompileActiveConduitGraph = m_conduitWorkspaceState.Open &&
+                                              m_conduitWorkspaceState.Kind == ConduitWorkspaceState::EDocumentKind::Graph;
     const bool ShowNodeInspector = m_conduitWorkspaceState.SelectedNode.HasSelection;
     const bool ShowVariableInspector = !ShowNodeInspector && m_conduitWorkspaceState.SelectedVariable.HasSelection;
     SetVisibility(m_conduitGraphWorkspaceHost,
@@ -3740,6 +4037,13 @@ void EditorLayout::RefreshConduitWorkspaceView()
             ShowVariableInspector ? std::string("Selected Variable")
                                   : (ShowNodeInspector ? std::string("Selected Node")
                                                        : std::string("Selection Inspector")));
+    if (m_conduitCompileButton.Id.Value != 0)
+    {
+        if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_conduitCompileButton.Id)))
+        {
+            Button->SetDisabled(!CanCompileActiveConduitGraph);
+        }
+    }
 
     if (m_conduitVariablesTree.Id.Value != 0)
     {
@@ -3768,6 +4072,26 @@ void EditorLayout::RefreshConduitWorkspaceView()
         }
     }
 
+    if (m_conduitGraphSelfTypeCombo.Id.Value != 0)
+    {
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(m_conduitGraphSelfTypeCombo.Id)))
+        {
+            std::vector<std::string> Labels{};
+            Labels.reserve(m_conduitWorkspaceState.GraphSelfTypeOptions.size());
+            int32_t SelectedIndex = -1;
+            for (std::size_t Index = 0; Index < m_conduitWorkspaceState.GraphSelfTypeOptions.size(); ++Index)
+            {
+                Labels.push_back(m_conduitWorkspaceState.GraphSelfTypeOptions[Index].Label);
+                if (m_conduitWorkspaceState.GraphSelfTypeOptions[Index].Type == m_conduitWorkspaceState.SelectedSelfType)
+                {
+                    SelectedIndex = static_cast<int32_t>(Index);
+                }
+            }
+            Combo->SetItems(std::move(Labels));
+            (void)Combo->SetSelectedIndex(SelectedIndex, false);
+        }
+    }
+
     if (m_conduitPaletteSearchInput.Id.Value != 0)
     {
         if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_conduitPaletteSearchInput.Id)))
@@ -3776,134 +4100,126 @@ void EditorLayout::RefreshConduitWorkspaceView()
         }
     }
 
-    if (m_conduitPaletteTree.Id.Value != 0)
+    if (m_conduitPaletteContentPanel.Id.Value != 0)
     {
-        if (auto* Tree = dynamic_cast<SnAPI::UI::UITreeView*>(&m_context->GetElement(m_conduitPaletteTree.Id)))
+        DestroyDirectChildren(*m_context, m_conduitPaletteContentPanel.Id);
+        m_conduitVisiblePaletteStableIds.clear();
+
+        const ConduitPaletteCategoryNode PaletteRoot =
+            BuildConduitPaletteTree(m_conduitWorkspaceState.PaletteEntries, m_conduitPaletteFilterText);
+
+        if (!PaletteRoot.Entries.empty() || !PaletteRoot.Children.empty())
         {
-            std::vector<SnAPI::UI::UITreeItem> Items{};
-            m_conduitVisiblePaletteStableIds.clear();
+            SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel> PaletteRootBuilder(m_context, m_conduitPaletteContentPanel);
 
-            std::string FilterLower = m_conduitPaletteFilterText;
-            std::transform(FilterLower.begin(), FilterLower.end(), FilterLower.begin(), [](const unsigned char Character) {
-                return static_cast<char>(std::tolower(Character));
-            });
-
-            int32_t SelectedIndex = -1;
-            for (const auto& Entry : m_conduitWorkspaceState.PaletteEntries)
-            {
-                std::string SearchText = Entry.DisplayName + " " + Entry.Category + " " + Entry.Tooltip;
-                std::transform(SearchText.begin(), SearchText.end(), SearchText.begin(), [](const unsigned char Character) {
-                    return static_cast<char>(std::tolower(Character));
-                });
-
-                if (!FilterLower.empty() && SearchText.find(FilterLower) == std::string::npos)
+            const auto AddPaletteEntryButton = [this](auto& ParentBuilder,
+                                                      const ConduitWorkspaceState::PaletteEntry& Entry,
+                                                      const float Indent) {
+                auto ButtonBuilder = ParentBuilder.Add(SnAPI::UI::UIButton{});
+                if (ButtonBuilder.Handle().Id.Value == 0)
                 {
-                    continue;
+                    return;
                 }
-
-                SnAPI::UI::UITreeItem Item{};
-                Item.Label = Entry.Category.empty()
-                    ? Entry.DisplayName
-                    : Entry.Category + " :: " + Entry.DisplayName + (Entry.RequiresSpecialization ? " *" : "");
-                Items.push_back(std::move(Item));
-                m_conduitVisiblePaletteStableIds.push_back(Entry.StableId);
+                auto& Button = ButtonBuilder.Element();
+                Button.ElementStyle().Apply("editor.toolbar_button");
+                Button.Width().Set(SnAPI::UI::Sizing::Fill());
+                Button.ElementPadding().Set(SnAPI::UI::Padding{8.0f + Indent, 4.0f, 8.0f, 4.0f});
                 if (Entry.StableId == m_conduitSelectedPaletteStableId)
                 {
-                    SelectedIndex = static_cast<int32_t>(m_conduitVisiblePaletteStableIds.size() - 1);
+                    Button.Background().Set(SnAPI::UI::Color::RGBA(74, 93, 126, 255));
                 }
-            }
+                Button.OnClick([this, StableId = Entry.StableId]() {
+                    m_conduitSelectedPaletteStableId = StableId;
+                    RefreshConduitWorkspaceView();
+                });
 
-            if (SelectedIndex < 0 && !m_conduitVisiblePaletteStableIds.empty())
-            {
-                SelectedIndex = 0;
-                m_conduitSelectedPaletteStableId = m_conduitVisiblePaletteStableIds.front();
-            }
+                std::string Label = Entry.DisplayName;
+                if (Entry.RequiresSpecialization)
+                {
+                    Label += " *";
+                }
+                auto TextBuilder = ButtonBuilder.Add(SnAPI::UI::UIText(Label));
+                TextBuilder.Element().ElementStyle().Apply("editor.menu_item");
 
-            Tree->SetItems(std::move(Items));
-            Tree->SetSelectedIndex(SelectedIndex, false);
+                m_conduitVisiblePaletteStableIds.push_back(Entry.StableId);
+            };
+
+            const auto BuildPaletteGroup = [&](const auto& Self,
+                                               auto& ParentBuilder,
+                                               const ConduitPaletteCategoryNode& Node,
+                                               const int Depth) -> void {
+                for (const auto* Entry : Node.Entries)
+                {
+                    if (Entry)
+                    {
+                        AddPaletteEntryButton(ParentBuilder, *Entry, Depth > 0 ? 4.0f : 0.0f);
+                    }
+                }
+
+                if (Node.Children.empty())
+                {
+                    return;
+                }
+
+                auto AccordionBuilder = ParentBuilder.Add(SnAPI::UI::UIAccordion{});
+                auto& Accordion = AccordionBuilder.Element();
+                Accordion.Width().Set(SnAPI::UI::Sizing::Fill());
+                Accordion.Height().Set(SnAPI::UI::Sizing::Auto());
+                Accordion.AllowMultipleExpanded().Set(true);
+                Accordion.DefaultExpanded().Set(m_conduitPaletteFilterText.empty() ? Depth == 0 : true);
+                Accordion.Padding().Set(0.0f);
+                Accordion.Gap().Set(6.0f);
+                Accordion.ContentPadding().Set(6.0f);
+
+                for (const ConduitPaletteCategoryNode& Child : Node.Children)
+                {
+                    auto SectionBuilder = AccordionBuilder.Add(SnAPI::UI::UIPanel("Editor.ConduitPaletteCategory"));
+                    if (SectionBuilder.Handle().Id.Value == 0)
+                    {
+                        continue;
+                    }
+                    auto& Section = SectionBuilder.Element();
+                    Section.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+                    Section.Width().Set(SnAPI::UI::Sizing::Fill());
+                    Section.Height().Set(SnAPI::UI::Sizing::Auto());
+                    Section.Padding().Set(0.0f);
+                    Section.Gap().Set(4.0f);
+
+                    Accordion.SetSectionHeading(SectionBuilder.Handle().Id, Child.Label);
+                    Accordion.SetSectionExpanded(SectionBuilder.Handle().Id, m_conduitPaletteFilterText.empty() ? Depth == 0 : true);
+                    Self(Self, SectionBuilder, Child, Depth + 1);
+                }
+            };
+
+            BuildPaletteGroup(BuildPaletteGroup, PaletteRootBuilder, PaletteRoot, 0);
         }
-    }
-
-    if (m_conduitGraphCanvas.Id.Value != 0)
-    {
-        if (auto* Canvas =
-                dynamic_cast<Conduit::Editor::UIConduitGraphCanvas*>(&m_context->GetElement(m_conduitGraphCanvas.Id)))
+        else
         {
-            Conduit::Editor::GraphCanvasView CanvasView{};
-            CanvasView.Viewport.PanX = m_conduitWorkspaceState.CanvasPanX;
-            CanvasView.Viewport.PanY = m_conduitWorkspaceState.CanvasPanY;
-            CanvasView.Viewport.Zoom = m_conduitWorkspaceState.CanvasZoom;
-            CanvasView.Nodes.reserve(m_conduitWorkspaceState.CanvasNodes.size());
-            for (const auto& Node : m_conduitWorkspaceState.CanvasNodes)
-            {
-                std::vector<Conduit::Editor::CanvasPinView> InputPins{};
-                InputPins.reserve(Node.InputPins.size());
-                for (const auto& Pin : Node.InputPins)
-                {
-                    InputPins.push_back(Conduit::Editor::CanvasPinView{
-                        .Name = Pin.Name,
-                        .TypeLabel = Pin.TypeLabel,
-                        .Kind = Pin.Kind,
-                        .IsInput = Pin.IsInput,
-                        .IsExec = Pin.IsExec,
-                    });
-                }
+            SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel> PaletteRootBuilder(m_context, m_conduitPaletteContentPanel);
+            auto HintBuilder = PaletteRootBuilder.Add(
+                SnAPI::UI::UIText(m_conduitPaletteFilterText.empty() ? "No nodes available." : "No nodes match the current filter."));
+            auto& Hint = HintBuilder.Element();
+            Hint.ElementStyle().Apply("editor.panel_subtitle");
+            Hint.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+        }
 
-                std::vector<Conduit::Editor::CanvasPinView> OutputPins{};
-                OutputPins.reserve(Node.OutputPins.size());
-                for (const auto& Pin : Node.OutputPins)
-                {
-                    OutputPins.push_back(Conduit::Editor::CanvasPinView{
-                        .Name = Pin.Name,
-                        .TypeLabel = Pin.TypeLabel,
-                        .Kind = Pin.Kind,
-                        .IsInput = Pin.IsInput,
-                        .IsExec = Pin.IsExec,
-                    });
-                }
-
-                CanvasView.Nodes.push_back(Conduit::Editor::CanvasNodeView{
-                    .Id = Node.Id,
-                    .Title = Node.Title,
-                    .Detail = Node.Detail,
-                    .X = Node.X,
-                    .Y = Node.Y,
-                    .Width = Node.Width,
-                    .IsCollapsed = Node.IsCollapsed,
-                    .Selected = Node.Selected,
-                    .InputPins = std::move(InputPins),
-                    .OutputPins = std::move(OutputPins),
-                });
-            }
-            CanvasView.Comments.reserve(m_conduitWorkspaceState.CanvasComments.size());
-            for (const auto& Comment : m_conduitWorkspaceState.CanvasComments)
-            {
-                CanvasView.Comments.push_back(Conduit::Editor::CanvasCommentView{
-                    .Id = Comment.Id,
-                    .Title = Comment.Title,
-                    .X = Comment.X,
-                    .Y = Comment.Y,
-                    .Width = Comment.Width,
-                    .Height = Comment.Height,
-                    .ColorRgba = Comment.ColorRgba,
-                    .Selected = Comment.Selected,
-                });
-            }
-            CanvasView.Wires.reserve(m_conduitWorkspaceState.CanvasWires.size());
-            for (const auto& Wire : m_conduitWorkspaceState.CanvasWires)
-            {
-                CanvasView.Wires.push_back(Conduit::Editor::CanvasWireView{
-                    .SourceNodeId = Wire.SourceNodeId,
-                    .SourcePin = Wire.SourcePin,
-                    .TargetNodeId = Wire.TargetNodeId,
-                    .TargetPin = Wire.TargetPin,
-                    .Kind = Wire.Kind,
-                    .IsExec = Wire.IsExec,
-                });
-            }
-            Canvas->SetViewState(std::move(CanvasView));
+        if (m_conduitSelectedPaletteStableId.empty() && !m_conduitVisiblePaletteStableIds.empty())
+        {
+            m_conduitSelectedPaletteStableId = m_conduitVisiblePaletteStableIds.front();
+        }
+        else if (!m_conduitSelectedPaletteStableId.empty() &&
+                 std::find(
+                     m_conduitVisiblePaletteStableIds.begin(),
+                     m_conduitVisiblePaletteStableIds.end(),
+                     m_conduitSelectedPaletteStableId) == m_conduitVisiblePaletteStableIds.end())
+        {
+            m_conduitSelectedPaletteStableId = m_conduitVisiblePaletteStableIds.empty()
+                ? std::string{}
+                : m_conduitVisiblePaletteStableIds.front();
         }
     }
+
+    RefreshConduitCanvasView();
 
     if (m_conduitNodesTree.Id.Value != 0)
     {
@@ -4161,6 +4477,97 @@ void EditorLayout::RefreshConduitWorkspaceView()
     }
 
     m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::RefreshConduitCanvasView()
+{
+    if (!m_context || m_conduitGraphCanvas.Id.Value == 0)
+    {
+        return;
+    }
+
+    auto* Canvas = dynamic_cast<Conduit::Editor::UIConduitGraphCanvas*>(&m_context->GetElement(m_conduitGraphCanvas.Id));
+    if (!Canvas)
+    {
+        return;
+    }
+
+    Conduit::Editor::GraphCanvasView CanvasView{};
+    CanvasView.Viewport.PanX = m_conduitWorkspaceState.CanvasPanX;
+    CanvasView.Viewport.PanY = m_conduitWorkspaceState.CanvasPanY;
+    CanvasView.Viewport.Zoom = m_conduitWorkspaceState.CanvasZoom;
+    CanvasView.Nodes.reserve(m_conduitWorkspaceState.CanvasNodes.size());
+    for (const auto& Node : m_conduitWorkspaceState.CanvasNodes)
+    {
+        std::vector<Conduit::Editor::CanvasPinView> InputPins{};
+        InputPins.reserve(Node.InputPins.size());
+        for (const auto& Pin : Node.InputPins)
+        {
+            InputPins.push_back(Conduit::Editor::CanvasPinView{
+                .Name = Pin.Name,
+                .TypeLabel = Pin.TypeLabel,
+                .Kind = Pin.Kind,
+                .IsInput = Pin.IsInput,
+                .IsExec = Pin.IsExec,
+            });
+        }
+
+        std::vector<Conduit::Editor::CanvasPinView> OutputPins{};
+        OutputPins.reserve(Node.OutputPins.size());
+        for (const auto& Pin : Node.OutputPins)
+        {
+            OutputPins.push_back(Conduit::Editor::CanvasPinView{
+                .Name = Pin.Name,
+                .TypeLabel = Pin.TypeLabel,
+                .Kind = Pin.Kind,
+                .IsInput = Pin.IsInput,
+                .IsExec = Pin.IsExec,
+            });
+        }
+
+        CanvasView.Nodes.push_back(Conduit::Editor::CanvasNodeView{
+            .Id = Node.Id,
+            .Title = Node.Title,
+            .Detail = Node.Detail,
+            .X = Node.X,
+            .Y = Node.Y,
+            .Width = Node.Width,
+            .IsCollapsed = Node.IsCollapsed,
+            .Selected = Node.Selected,
+            .InputPins = std::move(InputPins),
+            .OutputPins = std::move(OutputPins),
+        });
+    }
+
+    CanvasView.Comments.reserve(m_conduitWorkspaceState.CanvasComments.size());
+    for (const auto& Comment : m_conduitWorkspaceState.CanvasComments)
+    {
+        CanvasView.Comments.push_back(Conduit::Editor::CanvasCommentView{
+            .Id = Comment.Id,
+            .Title = Comment.Title,
+            .X = Comment.X,
+            .Y = Comment.Y,
+            .Width = Comment.Width,
+            .Height = Comment.Height,
+            .ColorRgba = Comment.ColorRgba,
+            .Selected = Comment.Selected,
+        });
+    }
+
+    CanvasView.Wires.reserve(m_conduitWorkspaceState.CanvasWires.size());
+    for (const auto& Wire : m_conduitWorkspaceState.CanvasWires)
+    {
+        CanvasView.Wires.push_back(Conduit::Editor::CanvasWireView{
+            .SourceNodeId = Wire.SourceNodeId,
+            .SourcePin = Wire.SourcePin,
+            .TargetNodeId = Wire.TargetNodeId,
+            .TargetPin = Wire.TargetPin,
+            .Kind = Wire.Kind,
+            .IsExec = Wire.IsExec,
+        });
+    }
+
+    Canvas->SetViewState(std::move(CanvasView));
 }
 
 UIPropertyPanel* EditorLayout::ResolveConduitVariableDefaultPanel() const
@@ -4938,6 +5345,20 @@ void EditorLayout::OpenContentBrowserContextMenu(const SnAPI::UI::PointerEvent& 
     OpenContextMenu(Event.Position, std::move(Items));
 }
 
+void EditorLayout::OpenConduitSpawnMenu(
+    const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest& Request,
+    std::vector<SnAPI::GameFramework::Conduit::Editor::SpawnMenuEntryView> Entries)
+{
+    CloseContextMenu();
+    m_contextMenuScope = EContextMenuScope::ConduitCanvasSpawn;
+    m_contextMenuConduitSpawnRequest = Request;
+    m_contextMenuConduitSpawnEntries = std::move(Entries);
+
+    OpenContextMenu(
+        SnAPI::UI::UIPoint{Request.ScreenX, Request.ScreenY},
+        BuildConduitSpawnMenuItems(Request, m_contextMenuConduitSpawnEntries));
+}
+
 void EditorLayout::OpenContextMenu(const SnAPI::UI::UIPoint& ScreenPosition,
                                    std::vector<SnAPI::UI::UIContextMenuItem> Items)
 {
@@ -5002,6 +5423,8 @@ void EditorLayout::CloseContextMenu()
     m_contextMenuContentInspectorNode = {};
     m_contextMenuComponentOwner.reset();
     m_contextMenuComponentType = {};
+    m_contextMenuConduitSpawnRequest = {};
+    m_contextMenuConduitSpawnEntries.clear();
 }
 
 void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& Item)
@@ -5028,6 +5451,20 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
         else if (Item.Id == kContextMenuItemFileProjectSettingsId)
         {
             OpenProjectSettingsModal();
+        }
+        return;
+    }
+
+    if (m_contextMenuScope == EContextMenuScope::ConduitCanvasSpawn)
+    {
+        if (const auto SpawnIndex = TryParsePrefixedIndex(Item.Id, kContextMenuItemConduitSpawnPrefix))
+        {
+            if (m_onConduitSpawnMenuSelectionRequested && *SpawnIndex < m_contextMenuConduitSpawnEntries.size())
+            {
+                m_onConduitSpawnMenuSelectionRequested(
+                    m_contextMenuConduitSpawnRequest,
+                    m_contextMenuConduitSpawnEntries[*SpawnIndex]);
+            }
         }
         return;
     }
@@ -7500,8 +7937,6 @@ void EditorLayout::ConfirmProjectModal()
         return;
     }
 
-    RememberRecentProject(Request);
-
     if (m_onProjectActionRequested)
     {
         m_onProjectActionRequested(Request);
@@ -8609,6 +9044,39 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ConduitSummaryText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     m_conduitWorkspaceSummaryText = ConduitSummary.Handle();
 
+    auto ConduitActionsRow = ConduitTab.Add(SnAPI::UI::UIPanel("Editor.ConduitWorkspaceActions"));
+    auto& ConduitActionsRowPanel = ConduitActionsRow.Element();
+    ConduitActionsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ConduitActionsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitActionsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ConduitActionsRowPanel.Gap().Set(6.0f);
+    ConduitActionsRowPanel.Padding().Set(0.0f);
+    ConduitActionsRowPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    ConduitActionsRowPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    ConduitActionsRowPanel.BorderThickness().Set(0.0f);
+    ConduitActionsRowPanel.CornerRadius().Set(0.0f);
+
+    auto ConduitActionsSpacer = ConduitActionsRow.Add(SnAPI::UI::UIPanel("Editor.ConduitWorkspaceActionsSpacer"));
+    auto& ConduitActionsSpacerPanel = ConduitActionsSpacer.Element();
+    ConfigureTransparentLayoutPanel(ConduitActionsSpacerPanel);
+    ConduitActionsSpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConduitActionsSpacerPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+
+    auto ConduitCompileButtonBuilder = ConduitActionsRow.Add(SnAPI::UI::UIButton{});
+    auto& ConduitCompileButton = ConduitCompileButtonBuilder.Element();
+    ConduitCompileButton.ElementStyle().Apply("editor.toolbar_button");
+    ConduitCompileButton.Width().Set(SnAPI::UI::Sizing::Auto());
+    ConduitCompileButton.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 4.0f, 8.0f, 4.0f});
+    ConduitCompileButton.OnClick([this]() {
+        if (m_onConduitCompileRequested)
+        {
+            m_onConduitCompileRequested();
+        }
+    });
+    auto ConduitCompileLabel = ConduitCompileButtonBuilder.Add(SnAPI::UI::UIText("Compile Graph"));
+    ConduitCompileLabel.Element().ElementStyle().Apply("editor.menu_item");
+    m_conduitCompileButton = ConduitCompileButtonBuilder.Handle();
+
     auto ConduitBody = ConduitTab.Add(SnAPI::UI::UIPanel("Editor.ConduitWorkspaceBody"));
     auto& ConduitBodyPanel = ConduitBody.Element();
     ConduitBodyPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
@@ -8659,6 +9127,32 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
 
     auto ConduitVariablesTitle = ConduitVariablesCard.Add(SnAPI::UI::UIText("Variables"));
     ConduitVariablesTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto GraphSelfTypeLabel = ConduitVariablesCard.Add(SnAPI::UI::UIText("Graph Self Type"));
+    auto& GraphSelfTypeLabelText = GraphSelfTypeLabel.Element();
+    GraphSelfTypeLabelText.ElementStyle().Apply("editor.panel_subtitle");
+    GraphSelfTypeLabelText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 2.0f, 0.0f, 0.0f});
+
+    auto GraphSelfTypeComboBuilder = ConduitVariablesCard.Add(SnAPI::UI::UIComboBox{});
+    auto& GraphSelfTypeCombo = GraphSelfTypeComboBuilder.Element();
+    GraphSelfTypeCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    GraphSelfTypeCombo.Height().Set(SnAPI::UI::Sizing::Auto());
+    GraphSelfTypeCombo.Placeholder().Set(std::string("Select graph self type"));
+    GraphSelfTypeCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (!m_onConduitGraphSelfTypeRequested)
+        {
+            return;
+        }
+        if (Index < 0 || static_cast<std::size_t>(Index) >= m_conduitWorkspaceState.GraphSelfTypeOptions.size())
+        {
+            m_onConduitGraphSelfTypeRequested(TypeId{});
+            return;
+        }
+        m_onConduitGraphSelfTypeRequested(
+            m_conduitWorkspaceState.GraphSelfTypeOptions[static_cast<std::size_t>(Index)].Type);
+    });
+    m_conduitGraphSelfTypeCombo = GraphSelfTypeComboBuilder.Handle();
 
     auto ConduitVariablesTreeBuilder = ConduitVariablesCard.Add(SnAPI::UI::UITreeView{});
     auto& ConduitVariablesTree = ConduitVariablesTreeBuilder.Element();
@@ -8750,19 +9244,20 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     }));
     m_conduitPaletteSearchInput = ConduitPaletteSearchBuilder.Handle();
 
-    auto ConduitPaletteTreeBuilder = ConduitPaletteCard.Add(SnAPI::UI::UITreeView{});
-    auto& ConduitPaletteTree = ConduitPaletteTreeBuilder.Element();
-    ConduitPaletteTree.Width().Set(SnAPI::UI::Sizing::Fill());
-    ConduitPaletteTree.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    ConduitPaletteTree.OnSelectionChanged([this](const int32_t Index) {
-        if (Index < 0 || static_cast<std::size_t>(Index) >= m_conduitVisiblePaletteStableIds.size())
-        {
-            m_conduitSelectedPaletteStableId.clear();
-            return;
-        }
-        m_conduitSelectedPaletteStableId = m_conduitVisiblePaletteStableIds[static_cast<std::size_t>(Index)];
-    });
-    m_conduitPaletteTree = ConduitPaletteTreeBuilder.Handle();
+    auto ConduitPaletteScrollBuilder = ConduitPaletteCard.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ConduitPaletteScroll = ConduitPaletteScrollBuilder.Element();
+    ConduitPaletteScroll.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitPaletteScroll.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    m_conduitPaletteScroll = ConduitPaletteScrollBuilder.Handle();
+
+    auto ConduitPaletteContentBuilder = ConduitPaletteScrollBuilder.Add(SnAPI::UI::UIPanel("Editor.ConduitPaletteContent"));
+    auto& ConduitPaletteContent = ConduitPaletteContentBuilder.Element();
+    ConduitPaletteContent.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConduitPaletteContent.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConduitPaletteContent.Height().Set(SnAPI::UI::Sizing::Auto());
+    ConduitPaletteContent.Padding().Set(0.0f);
+    ConduitPaletteContent.Gap().Set(6.0f);
+    m_conduitPaletteContentPanel = ConduitPaletteContentBuilder.Handle();
 
     auto PaletteAddButtonBuilder = ConduitPaletteCard.Add(SnAPI::UI::UIButton{});
     auto& PaletteAddButton = PaletteAddButtonBuilder.Element();
@@ -8807,7 +9302,7 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ConduitNodesTitle.Element().ElementStyle().Apply("editor.panel_title");
 
     auto ConduitNodesSummary = ConduitNodesCard.Add(
-        SnAPI::UI::UIText("Left drag nodes. Right or middle drag pans. Mouse wheel zooms. Palette nodes spawn into this authored graph."));
+        SnAPI::UI::UIText("Left drag nodes. Drag from output pins onto input pins to connect data or label flow. Right or middle drag pans. Mouse wheel zooms."));
     auto& ConduitNodesSummaryText = ConduitNodesSummary.Element();
     ConduitNodesSummaryText.ElementStyle().Apply("editor.panel_subtitle");
     ConduitNodesSummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
@@ -8829,6 +9324,25 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
                 m_onConduitNodeMoveRequested(NodeId, X, Y);
             }
         }));
+    ConduitCanvas.SetPinConnectedHandler(
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)>::Bind(
+            [this](const Uuid& SourceNodeId,
+                   const std::string& SourcePin,
+                   const Uuid& TargetNodeId,
+                   const std::string& TargetPin) {
+                if (m_onConduitPinConnectedRequested)
+                {
+                    m_onConduitPinConnectedRequested(SourceNodeId, SourcePin, TargetNodeId, TargetPin);
+                }
+            }));
+    ConduitCanvas.SetSpawnMenuRequestedHandler(
+        SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&)>::Bind(
+            [this](const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest& Request) {
+                if (m_onConduitSpawnMenuRequest)
+                {
+                    m_onConduitSpawnMenuRequest(Request);
+                }
+            }));
     ConduitCanvas.SetViewportChangedHandler(SnAPI::UI::TDelegate<void(float, float, float)>::Bind(
         [this](const float PanX, const float PanY, const float Zoom) {
             if (m_onConduitViewportRequested)

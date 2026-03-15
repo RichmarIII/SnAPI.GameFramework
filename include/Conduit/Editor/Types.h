@@ -126,6 +126,16 @@ struct VariableTypeOption
 
 /**
  * @ingroup SnAPI_GameFramework_Conduit_Editor
+ * @brief One self-type option surfaced by the graph self-type picker.
+ */
+struct GraphSelfTypeOption
+{
+    TypeId Type{}; /**< @brief Reflected self type id. Empty means no self type is authored. */
+    std::string Label{}; /**< @brief Human-readable picker label. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework_Conduit_Editor
  * @brief One host-node type option surfaced by the Conduit class editor.
  */
 struct ClassHostTypeOption
@@ -155,6 +165,34 @@ struct PaletteEntryView
     std::string Category{}; /**< @brief Palette/search category path. */
     std::string Tooltip{}; /**< @brief Short explanatory tooltip. */
     bool RequiresSpecialization = false; /**< @brief `true` when more authored configuration is needed after spawn. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework_Conduit_Editor
+ * @brief Request payload emitted when the graph canvas wants a spawn context menu.
+ */
+struct GraphSpawnMenuRequest
+{
+    float ScreenX = 0.0f; /**< @brief Screen-space X position for the menu anchor. */
+    float ScreenY = 0.0f; /**< @brief Screen-space Y position for the menu anchor. */
+    float GraphX = 0.0f; /**< @brief Graph-space X position where the spawned node should be placed. */
+    float GraphY = 0.0f; /**< @brief Graph-space Y position where the spawned node should be placed. */
+    Uuid SourceNodeId{}; /**< @brief Optional source node id when the menu originated from a dragged output pin. */
+    std::string SourcePin{}; /**< @brief Optional source output pin name when the menu originated from a dragged wire. */
+    bool FromPinDrag = false; /**< @brief `true` when the request came from releasing a dragged output pin on empty canvas. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework_Conduit_Editor
+ * @brief One context-menu spawn option for the graph canvas.
+ */
+struct SpawnMenuEntryView
+{
+    std::string StableId{}; /**< @brief Stable schema/template id used to spawn the node. */
+    std::string DisplayName{}; /**< @brief UI-facing node name. */
+    std::string Category{}; /**< @brief Category path for grouping and disambiguation. */
+    std::string Tooltip{}; /**< @brief Short explanatory tooltip. */
+    std::string TargetPin{}; /**< @brief Input pin name to auto-connect when spawned from a dragged source pin. */
 };
 
 /**

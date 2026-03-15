@@ -15,6 +15,7 @@
 #include <Physics.h>
 
 #include "Expected.h"
+#include "TypeName.h"
 
 namespace SnAPI::GameFramework
 {
@@ -312,6 +313,9 @@ private:
     SnAPI::Physics::Vec3 m_floatingOriginWorld = SnAPI::Physics::Vec3::Zero(); /**< @brief Current floating-origin world offset. */
     bool m_hasFloatingOrigin = false; /**< @brief True when floating origin has been initialized. */
 };
+
+SNAPI_DEFINE_TYPE_NAME(PhysicsSystem, "SnAPI::GameFramework::PhysicsSystem")
+SNAPI_DEFINE_TYPE_NAME(PhysicsBootstrapSettings, "SnAPI::GameFramework::PhysicsBootstrapSettings")
 
 } // namespace SnAPI::GameFramework
 

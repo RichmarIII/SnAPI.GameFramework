@@ -11,6 +11,7 @@ option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
 option(SNAPI_GF_BUILD_EDITOR "Build editor target" ON)
 option(SNAPI_GF_BUILD_RUNTIME "Build runtime engine target" ON)
+option(SNAPI_GF_BUILD_REFLECTION_GEN "Build the libclang-based reflection generator" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
@@ -35,6 +36,8 @@ endif()
 
 include(FetchContent)
 list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+include(SnAPIReflectionGen)
 
 # Use double-precision math across SnAPI modules.
 set(SNAPI_MATH_USES_DOUBLE ON CACHE BOOL "" FORCE)
@@ -228,6 +231,34 @@ else()
 endif()
 
 target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GAMEFRAMEWORK_BUILD_DLL)
+
+if (SNAPI_GF_BUILD_REFLECTION_GEN)
+    find_path(SNAPI_GF_LIBCLANG_INCLUDE_DIR clang-c/Index.h)
+    find_library(SNAPI_GF_LIBCLANG_LIBRARY NAMES clang libclang libclang.so clang-21 libclang-21)
+    if (NOT SNAPI_GF_LIBCLANG_INCLUDE_DIR OR NOT SNAPI_GF_LIBCLANG_LIBRARY)
+        message(FATAL_ERROR "SNAPI_GF_BUILD_REFLECTION_GEN is ON, but libclang headers/library were not found.")
+    endif()
+
+    add_executable(SnAPI.GameFramework.ReflectionGen
+        tools/ReflectionGen.cpp
+    )
+    target_include_directories(SnAPI.GameFramework.ReflectionGen PRIVATE ${SNAPI_GF_LIBCLANG_INCLUDE_DIR})
+    target_link_libraries(SnAPI.GameFramework.ReflectionGen PRIVATE ${SNAPI_GF_LIBCLANG_LIBRARY})
+
+    file(GLOB_RECURSE SNAPI_GF_REFLECTION_HEADERS CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp")
+
+    snapi_add_reflection_codegen(
+        TARGET SnAPI.GameFramework
+        OUTPUT SnAPI.GameFramework.reflection.generated.cpp
+        BUILD_DIR "${CMAKE_BINARY_DIR}"
+        SEED_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/GameFramework.cpp"
+        PROJECT_ROOT "${CMAKE_SOURCE_DIR}"
+        EXTRA_ARGS "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+        HEADERS ${SNAPI_GF_REFLECTION_HEADERS}
+    )
+endif()
 
 if (SNAPI_GF_BUILD_EDITOR)
     target_compile_definitions(SnAPI.GameFramework PUBLIC WITH_EDITOR=1)

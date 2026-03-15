@@ -237,6 +237,24 @@ void load(Archive& ArchiveRef, SnAPI::GameFramework::Uuid& Id)
     Id = SnAPI::GameFramework::Uuid(Data);
 }
 
+template <class Archive,
+          std::enable_if_t<!std::is_same_v<std::remove_cvref_t<Archive>, JSONOutputArchive> &&
+                               !std::is_same_v<std::remove_cvref_t<Archive>, JSONInputArchive>,
+                           int> = 0>
+void save(Archive& ArchiveRef, const SnAPI::GameFramework::TypeId& Id)
+{
+    save(ArchiveRef, Id.Value);
+}
+
+template <class Archive,
+          std::enable_if_t<!std::is_same_v<std::remove_cvref_t<Archive>, JSONOutputArchive> &&
+                               !std::is_same_v<std::remove_cvref_t<Archive>, JSONInputArchive>,
+                           int> = 0>
+void load(Archive& ArchiveRef, SnAPI::GameFramework::TypeId& Id)
+{
+    load(ArchiveRef, Id.Value);
+}
+
 inline std::string save_minimal(const JSONOutputArchive&, const SnAPI::GameFramework::Uuid& Id)
 {
     if (const auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Id))
@@ -250,7 +268,7 @@ inline void load_minimal(const JSONInputArchive&, SnAPI::GameFramework::Uuid& Id
 {
     if (const auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().FindByName(Text))
     {
-        Id = Info->Id;
+        Id = Info->Id.Value;
         return;
     }
 
@@ -261,6 +279,32 @@ inline void load_minimal(const JSONInputArchive&, SnAPI::GameFramework::Uuid& Id
     }
 
     Id = *Parsed;
+}
+
+inline std::string save_minimal(const JSONOutputArchive&, const SnAPI::GameFramework::TypeId& Id)
+{
+    if (const auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().Find(Id))
+    {
+        return Info->Name;
+    }
+    return SnAPI::GameFramework::ToString(Id);
+}
+
+inline void load_minimal(const JSONInputArchive&, SnAPI::GameFramework::TypeId& Id, const std::string& Text)
+{
+    if (const auto* Info = SnAPI::GameFramework::TypeRegistry::Instance().FindByName(Text))
+    {
+        Id = Info->Id;
+        return;
+    }
+
+    const auto Parsed = SnAPI::GameFramework::Uuid::from_string(Text);
+    if (!Parsed)
+    {
+        throw cereal::Exception(("Invalid UUID/type string: " + Text).c_str());
+    }
+
+    Id = SnAPI::GameFramework::TypeId(*Parsed);
 }
 
 } // namespace cereal
@@ -596,6 +640,8 @@ void serialize(Archive& Ar, GraphNodeAsset& Value)
        Detail::Nvp("LabelName", Value.LabelName),
        Detail::Nvp("FalseLabelName", Value.FalseLabelName),
        Detail::Nvp("MemberName", Value.MemberName),
+       Detail::Nvp("ExecTargetNodeId", Value.ExecTargetNodeId),
+       Detail::Nvp("FalseExecTargetNodeId", Value.FalseExecTargetNodeId),
        Detail::Nvp("ConstantValue", Value.ConstantValue),
        Detail::Nvp("UnaryOp", Value.UnaryOp),
        Detail::Nvp("BinaryOp", Value.BinaryOp),

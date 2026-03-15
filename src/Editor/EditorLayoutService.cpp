@@ -52,6 +52,37 @@ void ApplySelection(EditorSelectionModel& Model, const NodeHandle& Node)
     (void)Model.SelectNode(Node);
 }
 
+void LogConduitCompileOutput(const Conduit::Editor::CompileOutput& Output)
+{
+    if (Output.Diagnostics.empty())
+    {
+        std::printf("[SnAPI][ConduitCompile] Compiled successfully with no diagnostics.\n");
+        std::fflush(stdout);
+        return;
+    }
+
+    for (const auto& Diagnostic : Output.Diagnostics)
+    {
+        const char* SeverityLabel = "Info";
+        switch (Diagnostic.Severity)
+        {
+            case Conduit::Editor::ECompileDiagnosticSeverity::Warning:
+                SeverityLabel = "Warning";
+                break;
+            case Conduit::Editor::ECompileDiagnosticSeverity::Error:
+                SeverityLabel = "Error";
+                break;
+            case Conduit::Editor::ECompileDiagnosticSeverity::Info:
+            default:
+                SeverityLabel = "Info";
+                break;
+        }
+
+        std::printf("[SnAPI][ConduitCompile][%s] %s\n", SeverityLabel, Diagnostic.Message.c_str());
+    }
+    std::fflush(stdout);
+}
+
 class SelectNodeCommand final : public IEditorCommand
 {
 public:
@@ -160,13 +191,7 @@ private:
 
 [[nodiscard]] std::string ShortTypeLabel(std::string_view QualifiedName)
 {
-    const std::size_t Delimiter = QualifiedName.rfind("::");
-    if (Delimiter == std::string_view::npos)
-    {
-        return std::string(QualifiedName);
-    }
-
-    return std::string(QualifiedName.substr(Delimiter + 2));
+    return PrettyReflectedTypeName(QualifiedName);
 }
 
 [[nodiscard]] bool CanPlaceAssetKind(const ::SnAPI::AssetPipeline::TypeId& AssetKind)
@@ -495,6 +520,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingConduitVariableRenameValue.clear();
     m_hasPendingConduitVariableTypeRequest = false;
     m_pendingConduitVariableType = {};
+    m_hasPendingConduitGraphSelfTypeRequest = false;
+    m_pendingConduitGraphSelfType = {};
     m_hasPendingConduitVariableDefaultBoolRequest = false;
     m_pendingConduitVariableDefaultBool = false;
     m_hasPendingConduitVariableDefaultTextRequest = false;
@@ -513,6 +540,17 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingConduitNodeMoveId = {};
     m_pendingConduitNodeMoveX = 0.0f;
     m_pendingConduitNodeMoveY = 0.0f;
+    m_hasPendingConduitSpawnMenuOpenRequest = false;
+    m_pendingConduitSpawnMenuOpenRequest = {};
+    m_hasPendingConduitSpawnMenuSelectionRequest = false;
+    m_pendingConduitSpawnMenuSelectionRequest = {};
+    m_pendingConduitSpawnSelectionEntry = {};
+    m_hasPendingConduitPinConnectRequest = false;
+    m_pendingConduitConnectSourceNode = {};
+    m_pendingConduitConnectSourcePin.clear();
+    m_pendingConduitConnectTargetNode = {};
+    m_pendingConduitConnectTargetPin.clear();
+    m_hasPendingConduitCompileRequest = false;
     m_hasPendingConduitNodePrimaryTextRequest = false;
     m_pendingConduitNodePrimaryText.clear();
     m_hasPendingConduitNodeSecondaryTextRequest = false;
@@ -551,6 +589,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
+    m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
@@ -666,6 +705,10 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_pendingConduitVariableType = Type;
         m_hasPendingConduitVariableTypeRequest = true;
     }));
+    m_layout.SetConduitGraphSelfTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)>::Bind([this](const TypeId& Type) {
+        m_pendingConduitGraphSelfType = Type;
+        m_hasPendingConduitGraphSelfTypeRequest = true;
+    }));
     m_layout.SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)>::Bind([this](const bool Value) {
         m_pendingConduitVariableDefaultBool = Value;
         m_hasPendingConduitVariableDefaultBoolRequest = true;
@@ -707,6 +750,36 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
             m_pendingConduitNodeMoveY = Y;
             m_hasPendingConduitNodeMoveRequest = true;
         }));
+    m_layout.SetConduitSpawnMenuRequestHandler(
+        SnAPI::UI::TDelegate<void(const Conduit::Editor::GraphSpawnMenuRequest&)>::Bind(
+            [this](const Conduit::Editor::GraphSpawnMenuRequest& Request) {
+                m_pendingConduitSpawnMenuOpenRequest = Request;
+                m_hasPendingConduitSpawnMenuOpenRequest = true;
+            }));
+    m_layout.SetConduitSpawnMenuSelectionHandler(
+        SnAPI::UI::TDelegate<void(const Conduit::Editor::GraphSpawnMenuRequest&,
+                                  const Conduit::Editor::SpawnMenuEntryView&)>::Bind(
+            [this](const Conduit::Editor::GraphSpawnMenuRequest& Request,
+                   const Conduit::Editor::SpawnMenuEntryView& Entry) {
+                m_pendingConduitSpawnMenuSelectionRequest = Request;
+                m_pendingConduitSpawnSelectionEntry = Entry;
+                m_hasPendingConduitSpawnMenuSelectionRequest = true;
+            }));
+    m_layout.SetConduitPinConnectedHandler(
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)>::Bind(
+            [this](const Uuid& SourceNodeId,
+                   const std::string& SourcePin,
+                   const Uuid& TargetNodeId,
+                   const std::string& TargetPin) {
+                m_pendingConduitConnectSourceNode = SourceNodeId;
+                m_pendingConduitConnectSourcePin = SourcePin;
+                m_pendingConduitConnectTargetNode = TargetNodeId;
+                m_pendingConduitConnectTargetPin = TargetPin;
+                m_hasPendingConduitPinConnectRequest = true;
+            }));
+    m_layout.SetConduitCompileHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitCompileRequest = true;
+    }));
     m_layout.SetConduitNodePrimaryTextHandler(
         SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
             m_pendingConduitNodePrimaryText = Value;
@@ -800,6 +873,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
             (Request.Action == EditorLayout::EProjectAction::CreateNew ||
              Request.Action == EditorLayout::EProjectAction::OpenExisting))
         {
+            m_layout.RememberRecentProject(Request);
             (void)SceneService->EnsureEditorCamera(Context);
             SelectionService->Model().Clear();
             if (CommandService)
@@ -1016,6 +1090,13 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_pendingConduitVariableType = {};
     }
 
+    if (m_hasPendingConduitGraphSelfTypeRequest)
+    {
+        m_hasPendingConduitGraphSelfTypeRequest = false;
+        (void)ConduitService->SetActiveGraphSelfType(m_pendingConduitGraphSelfType);
+        m_pendingConduitGraphSelfType = {};
+    }
+
     if (m_hasPendingConduitVariableDefaultBoolRequest)
     {
         m_hasPendingConduitVariableDefaultBoolRequest = false;
@@ -1141,6 +1222,75 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_pendingConduitNodeMoveId = {};
         m_pendingConduitNodeMoveX = 0.0f;
         m_pendingConduitNodeMoveY = 0.0f;
+    }
+
+    if (m_hasPendingConduitSpawnMenuOpenRequest)
+    {
+        m_hasPendingConduitSpawnMenuOpenRequest = false;
+        m_layout.OpenConduitSpawnMenu(
+            m_pendingConduitSpawnMenuOpenRequest,
+            ConduitService->BuildSpawnMenuEntries(m_pendingConduitSpawnMenuOpenRequest));
+        m_pendingConduitSpawnMenuOpenRequest = {};
+    }
+
+    if (m_hasPendingConduitSpawnMenuSelectionRequest)
+    {
+        m_hasPendingConduitSpawnMenuSelectionRequest = false;
+        auto SpawnResult = ConduitService->SpawnNode(m_pendingConduitSpawnSelectionEntry.StableId,
+                                                     m_pendingConduitSpawnMenuSelectionRequest.GraphX,
+                                                     m_pendingConduitSpawnMenuSelectionRequest.GraphY);
+        ReportEditorExpectedFailure("Spawn Conduit node", SpawnResult);
+        if (SpawnResult &&
+            m_pendingConduitSpawnMenuSelectionRequest.FromPinDrag &&
+            !m_pendingConduitSpawnMenuSelectionRequest.SourcePin.empty() &&
+            !m_pendingConduitSpawnSelectionEntry.TargetPin.empty())
+        {
+            const Result ConnectResult = ConduitService->ConnectPins(m_pendingConduitSpawnMenuSelectionRequest.SourceNodeId,
+                                                                     m_pendingConduitSpawnMenuSelectionRequest.SourcePin,
+                                                                     (*SpawnResult)->Id,
+                                                                     m_pendingConduitSpawnSelectionEntry.TargetPin);
+            ReportEditorExpectedFailure("Connect Conduit pins", ConnectResult);
+        }
+        m_pendingConduitSpawnMenuSelectionRequest = {};
+        m_pendingConduitSpawnSelectionEntry = {};
+    }
+
+    if (m_hasPendingConduitPinConnectRequest)
+    {
+        m_hasPendingConduitPinConnectRequest = false;
+        const Result ConnectResult = ConduitService->ConnectPins(m_pendingConduitConnectSourceNode,
+                                                                 m_pendingConduitConnectSourcePin,
+                                                                 m_pendingConduitConnectTargetNode,
+                                                                 m_pendingConduitConnectTargetPin);
+        ReportEditorExpectedFailure("Connect Conduit pins", ConnectResult);
+        m_pendingConduitConnectSourceNode = {};
+        m_pendingConduitConnectSourcePin.clear();
+        m_pendingConduitConnectTargetNode = {};
+        m_pendingConduitConnectTargetPin.clear();
+    }
+
+    if (m_hasPendingConduitCompileRequest)
+    {
+        m_hasPendingConduitCompileRequest = false;
+        Result CompileActionResult = Ok();
+        if (const auto* ActiveDocument = ConduitService->ActiveDocument())
+        {
+            auto CompileResult = ConduitService->CompileDocument(ActiveDocument->AssetKey());
+            if (!CompileResult)
+            {
+                CompileActionResult = std::unexpected(CompileResult.error());
+            }
+            else if (*CompileResult != nullptr)
+            {
+                LogConduitCompileOutput(**CompileResult);
+            }
+        }
+        else
+        {
+            CompileActionResult = std::unexpected(
+                MakeError(EErrorCode::NotFound, "No active Conduit graph document is open"));
+        }
+        ReportEditorExpectedFailure("Compile Conduit graph", CompileActionResult);
     }
 
     if (m_hasPendingConduitClassHostTypeRequest)
@@ -1292,13 +1442,11 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
     {
         HashCombine(std::hash<std::string>{}(Document.AssetKey()));
         HashCombine(static_cast<std::size_t>(Document.IsDirty() ? 1u : 0u));
-        HashCombine(std::hash<std::uint64_t>{}(Document.Revision()));
     }
     for (const auto& Document : ConduitService->ClassDocuments())
     {
         HashCombine(std::hash<std::string>{}(Document.AssetKey()));
         HashCombine(static_cast<std::size_t>(Document.IsDirty() ? 1u : 0u));
-        HashCombine(std::hash<std::uint64_t>{}(Document.Revision()));
     }
     AssetSignature ^= ConduitDocumentSignature + 0x9e3779b9 + (AssetSignature << 6) + (AssetSignature >> 2);
     const std::uint64_t IconRevision = IconService->Revision();
@@ -1575,6 +1723,19 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
                 .Label = Entry.Label,
             });
         }
+        const auto GraphSelfTypes = ConduitService->AvailableGraphSelfTypes();
+        WorkspaceState.GraphSelfTypeOptions.reserve(GraphSelfTypes.size());
+        for (const auto& Entry : GraphSelfTypes)
+        {
+            WorkspaceState.GraphSelfTypeOptions.push_back(EditorLayout::ConduitWorkspaceState::GraphSelfTypeOption{
+                .Type = Entry.Type,
+                .Label = Entry.Label,
+            });
+        }
+        if (const auto* ActiveGraphDocument = ConduitService->ActiveDocument())
+        {
+            WorkspaceState.SelectedSelfType = ActiveGraphDocument->Asset().SelfType;
+        }
         const auto ClassHostTypes = ConduitService->AvailableClassHostTypes();
         WorkspaceState.ClassHostTypeOptions.reserve(ClassHostTypes.size());
         for (const auto& Entry : ClassHostTypes)
@@ -1669,10 +1830,36 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         else if (ConduitView.ErrorCount > 0)
         {
             WorkspaceState.Status = "Compile failed with " + std::to_string(ConduitView.ErrorCount) + " error(s).";
+            if (const auto* ActiveGraphDocument = ConduitService->ActiveDocument();
+                ActiveGraphDocument && ActiveGraphDocument->LastCompile().has_value())
+            {
+                const auto& Diagnostics = ActiveGraphDocument->LastCompile()->Diagnostics;
+                const auto It = std::find_if(Diagnostics.begin(), Diagnostics.end(), [](const auto& Diagnostic) {
+                    return Diagnostic.Severity == Conduit::Editor::ECompileDiagnosticSeverity::Error &&
+                           !Diagnostic.Message.empty();
+                });
+                if (It != Diagnostics.end())
+                {
+                    WorkspaceState.Status += " " + It->Message;
+                }
+            }
         }
         else if (ConduitView.WarningCount > 0)
         {
             WorkspaceState.Status = "Compiled with " + std::to_string(ConduitView.WarningCount) + " warning(s).";
+            if (const auto* ActiveGraphDocument = ConduitService->ActiveDocument();
+                ActiveGraphDocument && ActiveGraphDocument->LastCompile().has_value())
+            {
+                const auto& Diagnostics = ActiveGraphDocument->LastCompile()->Diagnostics;
+                const auto It = std::find_if(Diagnostics.begin(), Diagnostics.end(), [](const auto& Diagnostic) {
+                    return Diagnostic.Severity == Conduit::Editor::ECompileDiagnosticSeverity::Warning &&
+                           !Diagnostic.Message.empty();
+                });
+                if (It != Diagnostics.end())
+                {
+                    WorkspaceState.Status += " " + It->Message;
+                }
+            }
         }
         else if (ConduitView.CompileSucceeded)
         {
@@ -1685,6 +1872,13 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
 
         m_layout.SetConduitWorkspaceState(std::move(WorkspaceState));
         m_conduitWorkspaceRevision = ConduitView.Revision;
+        m_conduitCanvasRevision = ConduitView.CanvasRevision;
+    }
+    else if (ConduitView.Kind == Conduit::Editor::EWorkspaceDocumentKind::Graph &&
+             ConduitView.CanvasRevision != m_conduitCanvasRevision)
+    {
+        m_layout.SetConduitCanvasView(ConduitService->ActiveCanvasView());
+        m_conduitCanvasRevision = ConduitView.CanvasRevision;
     }
 
     const std::uint64_t InspectorRevision = AssetService->AssetEditorSessionRevision();
@@ -1792,6 +1986,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
+    m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
     m_hasPendingHierarchyActionRequest = false;
     m_pendingHierarchyActionRequest = {};
     m_hasPendingToolbarAction = false;
@@ -1819,6 +2014,8 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_pendingConduitVariableRenameValue.clear();
     m_hasPendingConduitVariableTypeRequest = false;
     m_pendingConduitVariableType = {};
+    m_hasPendingConduitGraphSelfTypeRequest = false;
+    m_pendingConduitGraphSelfType = {};
     m_hasPendingConduitVariableDefaultBoolRequest = false;
     m_pendingConduitVariableDefaultBool = false;
     m_hasPendingConduitVariableDefaultTextRequest = false;
@@ -1833,6 +2030,17 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_hasPendingConduitNodeCreateRequest = false;
     m_pendingConduitNodeCreateStableId.clear();
     m_hasPendingConduitNodeRemoveRequest = false;
+    m_hasPendingConduitSpawnMenuOpenRequest = false;
+    m_pendingConduitSpawnMenuOpenRequest = {};
+    m_hasPendingConduitSpawnMenuSelectionRequest = false;
+    m_pendingConduitSpawnMenuSelectionRequest = {};
+    m_pendingConduitSpawnSelectionEntry = {};
+    m_hasPendingConduitPinConnectRequest = false;
+    m_pendingConduitConnectSourceNode = {};
+    m_pendingConduitConnectSourcePin.clear();
+    m_pendingConduitConnectTargetNode = {};
+    m_pendingConduitConnectTargetPin.clear();
+    m_hasPendingConduitCompileRequest = false;
 
     SceneService->Tick(Context, 0.0f);
     const Result BuildResult = m_layout.Build(Context.Runtime(),
@@ -1950,6 +2158,10 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
         m_pendingConduitVariableType = Type;
         m_hasPendingConduitVariableTypeRequest = true;
     }));
+    m_layout.SetConduitGraphSelfTypeHandler(SnAPI::UI::TDelegate<void(const TypeId&)>::Bind([this](const TypeId& Type) {
+        m_pendingConduitGraphSelfType = Type;
+        m_hasPendingConduitGraphSelfTypeRequest = true;
+    }));
     m_layout.SetConduitVariableDefaultBoolHandler(SnAPI::UI::TDelegate<void(bool)>::Bind([this](const bool Value) {
         m_pendingConduitVariableDefaultBool = Value;
         m_hasPendingConduitVariableDefaultBoolRequest = true;
@@ -1991,6 +2203,36 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
             m_pendingConduitNodeMoveY = Y;
             m_hasPendingConduitNodeMoveRequest = true;
         }));
+    m_layout.SetConduitSpawnMenuRequestHandler(
+        SnAPI::UI::TDelegate<void(const Conduit::Editor::GraphSpawnMenuRequest&)>::Bind(
+            [this](const Conduit::Editor::GraphSpawnMenuRequest& Request) {
+                m_pendingConduitSpawnMenuOpenRequest = Request;
+                m_hasPendingConduitSpawnMenuOpenRequest = true;
+            }));
+    m_layout.SetConduitSpawnMenuSelectionHandler(
+        SnAPI::UI::TDelegate<void(const Conduit::Editor::GraphSpawnMenuRequest&,
+                                  const Conduit::Editor::SpawnMenuEntryView&)>::Bind(
+            [this](const Conduit::Editor::GraphSpawnMenuRequest& Request,
+                   const Conduit::Editor::SpawnMenuEntryView& Entry) {
+                m_pendingConduitSpawnMenuSelectionRequest = Request;
+                m_pendingConduitSpawnSelectionEntry = Entry;
+                m_hasPendingConduitSpawnMenuSelectionRequest = true;
+            }));
+    m_layout.SetConduitPinConnectedHandler(
+        SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)>::Bind(
+            [this](const Uuid& SourceNodeId,
+                   const std::string& SourcePin,
+                   const Uuid& TargetNodeId,
+                   const std::string& TargetPin) {
+                m_pendingConduitConnectSourceNode = SourceNodeId;
+                m_pendingConduitConnectSourcePin = SourcePin;
+                m_pendingConduitConnectTargetNode = TargetNodeId;
+                m_pendingConduitConnectTargetPin = TargetPin;
+                m_hasPendingConduitPinConnectRequest = true;
+            }));
+    m_layout.SetConduitCompileHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
+        m_hasPendingConduitCompileRequest = true;
+    }));
     m_layout.SetConduitNodePrimaryTextHandler(
         SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
             m_pendingConduitNodePrimaryText = Value;
@@ -2049,6 +2291,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetConduitVariableRemoveHandler({});
     m_layout.SetConduitVariableRenameHandler({});
     m_layout.SetConduitVariableTypeHandler({});
+    m_layout.SetConduitGraphSelfTypeHandler({});
     m_layout.SetConduitVariableDefaultBoolHandler({});
     m_layout.SetConduitVariableDefaultTextHandler({});
     m_layout.SetConduitVariableDefaultEnumHandler({});
@@ -2059,6 +2302,10 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetConduitNodeCreateHandler({});
     m_layout.SetConduitNodeRemoveHandler({});
     m_layout.SetConduitNodeMoveHandler({});
+    m_layout.SetConduitSpawnMenuRequestHandler({});
+    m_layout.SetConduitSpawnMenuSelectionHandler({});
+    m_layout.SetConduitPinConnectedHandler({});
+    m_layout.SetConduitCompileHandler({});
     m_layout.SetConduitNodePrimaryTextHandler({});
     m_layout.SetConduitNodeSecondaryTextHandler({});
     m_layout.SetConduitViewportHandler({});
@@ -2111,6 +2358,8 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingConduitVariableRenameValue.clear();
     m_hasPendingConduitVariableTypeRequest = false;
     m_pendingConduitVariableType = {};
+    m_hasPendingConduitGraphSelfTypeRequest = false;
+    m_pendingConduitGraphSelfType = {};
     m_hasPendingConduitVariableDefaultBoolRequest = false;
     m_pendingConduitVariableDefaultBool = false;
     m_hasPendingConduitVariableDefaultTextRequest = false;
@@ -2129,6 +2378,17 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingConduitNodeMoveId = {};
     m_pendingConduitNodeMoveX = 0.0f;
     m_pendingConduitNodeMoveY = 0.0f;
+    m_hasPendingConduitSpawnMenuOpenRequest = false;
+    m_pendingConduitSpawnMenuOpenRequest = {};
+    m_hasPendingConduitSpawnMenuSelectionRequest = false;
+    m_pendingConduitSpawnMenuSelectionRequest = {};
+    m_pendingConduitSpawnSelectionEntry = {};
+    m_hasPendingConduitPinConnectRequest = false;
+    m_pendingConduitConnectSourceNode = {};
+    m_pendingConduitConnectSourcePin.clear();
+    m_pendingConduitConnectTargetNode = {};
+    m_pendingConduitConnectTargetPin.clear();
+    m_hasPendingConduitCompileRequest = false;
     m_hasPendingConduitNodePrimaryTextRequest = false;
     m_pendingConduitNodePrimaryText.clear();
     m_hasPendingConduitNodeSecondaryTextRequest = false;
@@ -2149,6 +2409,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
+    m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
     m_layout.Shutdown(&Context.Runtime());
 }
 

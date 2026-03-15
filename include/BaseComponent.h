@@ -56,6 +56,9 @@ class Variant;
 class BaseComponent
 {
 public:
+    /** @brief Stable type name used for reflection. */
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::BaseComponent";
+
     /**
      * @brief Construct a component in an inert default state.
      * @remarks Constructors must stay side-effect free; world/backend setup belongs in `OnCreate()`.

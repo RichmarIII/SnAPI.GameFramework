@@ -6,6 +6,7 @@
 
 #include "BuiltinTypes.h"
 #include "Expected.h"
+#include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
 
@@ -263,8 +264,7 @@ private:
     template<typename T>
     static const TypeId& CachedTypeId()
     {
-        static const TypeId Type = TypeIdFromName(TTypeNameV<T>);
-        return Type;
+        return StaticTypeId<T>();
     }
 
     template<typename T>

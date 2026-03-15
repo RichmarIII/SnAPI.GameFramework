@@ -1,5 +1,10 @@
 #pragma once
 
+#include <cctype>
+#include <string>
+#include <string_view>
+#include <type_traits>
+
 namespace SnAPI::GameFramework
 {
 
@@ -30,6 +35,146 @@ struct TTypeName
 template<typename T>
 inline constexpr const char* TTypeNameV = TTypeName<T>::Value;
 
+template<typename T>
+struct THasNativeReflectedTypeName : std::false_type
+{
+};
+
+template<typename T>
+    requires requires {
+        { std::remove_cv_t<T>::kTypeName } -> std::convertible_to<const char*>;
+    }
+struct THasNativeReflectedTypeName<T> : std::true_type
+{
+};
+
+template<typename T>
+struct THasDeclaredReflectedTypeName : THasNativeReflectedTypeName<T>
+{
+};
+
+template<typename T>
+struct THasReflectedTypeName : THasDeclaredReflectedTypeName<std::remove_cv_t<T>>
+{
+};
+
+template<typename T>
+struct THasReflectedTypeName<T*> : THasReflectedTypeName<std::remove_cv_t<T>>
+{
+};
+
+template<typename T>
+struct THasReflectedTypeName<T&> : THasReflectedTypeName<T*>
+{
+};
+
+template<typename T>
+struct THasReflectedTypeName<T&&> : THasReflectedTypeName<T*>
+{
+};
+
+template<typename T, std::size_t Extent>
+struct THasReflectedTypeName<T[Extent]> : THasReflectedTypeName<std::remove_cv_t<T>>
+{
+};
+
+template<typename T>
+struct THasReflectedTypeName<T[]> : THasReflectedTypeName<std::remove_cv_t<T>>
+{
+};
+
+template<typename T>
+concept CHasReflectedTypeName = THasReflectedTypeName<T>::value;
+
+template<typename T>
+inline const std::string& ReflectedTypeName()
+{
+    using Normalized = std::remove_cv_t<T>;
+    static const std::string Name = []() {
+        if constexpr (std::is_pointer_v<Normalized>)
+        {
+            using PointeeWithCv = std::remove_pointer_t<Normalized>;
+            using Pointee = std::remove_cv_t<PointeeWithCv>;
+
+            std::string Result{};
+            if constexpr (std::is_const_v<PointeeWithCv>)
+            {
+                Result += "const ";
+            }
+            Result += ReflectedTypeName<Pointee>();
+            Result += '*';
+            return Result;
+        }
+        else
+        {
+            return std::string(TTypeNameV<Normalized>);
+        }
+    }();
+    return Name;
+}
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Convert a fully qualified reflected type spelling into a UI-friendly label.
+ *
+ * Examples:
+ * - `SnAPI::GameFramework::Vec3` -> `Vec3`
+ * - `SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::Vec3>` -> `TAssetRef<Vec3>`
+ * - `const SnAPI::GameFramework::IWorld*` -> `const IWorld*`
+ *
+ * The transformation is purely cosmetic and preserves template/pointer/reference punctuation while
+ * stripping namespace qualifiers from each reflected identifier token independently.
+ */
+inline std::string PrettyReflectedTypeName(std::string_view QualifiedName)
+{
+    auto StripQualifier = [] (std::string_view Token) -> std::string_view {
+        const std::size_t CppSeparator = Token.rfind("::");
+        const std::size_t DotSeparator = Token.rfind('.');
+        std::size_t Start = 0;
+        if (CppSeparator != std::string_view::npos)
+        {
+            Start = CppSeparator + 2;
+        }
+        if (DotSeparator != std::string_view::npos)
+        {
+            Start = std::max(Start, DotSeparator + 1);
+        }
+        return Token.substr(Start);
+    };
+
+    auto FlushToken = [&StripQualifier](std::string& Out, std::string& Token) {
+        if (Token.empty())
+        {
+            return;
+        }
+
+        Out.append(StripQualifier(Token));
+        Token.clear();
+    };
+
+    std::string Result{};
+    Result.reserve(QualifiedName.size());
+
+    std::string Token{};
+    Token.reserve(QualifiedName.size());
+
+    for (const char Ch : QualifiedName)
+    {
+        const unsigned char Byte = static_cast<unsigned char>(Ch);
+        if (std::isalnum(Byte) != 0 || Ch == '_' || Ch == ':' || Ch == '.')
+        {
+            Token.push_back(Ch);
+            continue;
+        }
+
+        FlushToken(Result, Token);
+        Result.push_back(Ch);
+    }
+
+    FlushToken(Result, Token);
+    return Result;
+}
+
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Macro that specializes `TTypeName` for a type without a native `kTypeName`.
@@ -46,6 +191,10 @@ inline constexpr const char* TTypeNameV = TTypeName<T>::Value;
     struct TTypeName<Type> \
     { \
         static constexpr const char* Value = Name; \
+    }; \
+    template<> \
+    struct THasDeclaredReflectedTypeName<Type> : std::true_type \
+    { \
     };
 
 } // namespace SnAPI::GameFramework

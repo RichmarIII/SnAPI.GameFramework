@@ -184,11 +184,32 @@ constexpr bool SupportsRawReturnFastPath()
     }
     else if constexpr (std::is_reference_v<R>)
     {
-        return std::is_copy_constructible_v<Raw>;
+        return true;
     }
     else
     {
         return std::is_move_constructible_v<Raw>;
+    }
+}
+
+template<typename R>
+TExpected<Variant> BuildMethodReturnVariant(R&& Value)
+{
+    using Return = std::remove_reference_t<R>;
+    if constexpr (std::is_lvalue_reference_v<R>)
+    {
+        if constexpr (std::is_const_v<Return>)
+        {
+            return Variant::FromValue(std::addressof(Value));
+        }
+        else
+        {
+            return Variant::FromValue(std::addressof(Value));
+        }
+    }
+    else
+    {
+        return Variant::FromValue(std::forward<R>(Value));
     }
 }
 
@@ -254,13 +275,22 @@ Result RawInvokeImpl(const TRawMethodPayload<R(T::*)(Args...)>& Payload,
     }
     else
     {
-        using ReturnStorageT = std::remove_cvref_t<R>;
         if (!ReturnStorage)
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null return storage"));
         }
-        std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage),
-                          (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...));
+        if constexpr (std::is_lvalue_reference_v<R>)
+        {
+            using ReturnStorageT = std::add_pointer_t<std::remove_reference_t<R>>;
+            auto&& Result = (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...);
+            std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage), std::addressof(Result));
+        }
+        else
+        {
+            using ReturnStorageT = std::remove_cvref_t<R>;
+            std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage),
+                              (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...));
+        }
         return Ok();
     }
 }
@@ -289,13 +319,22 @@ Result RawInvokeConstImpl(const TRawMethodPayload<R(T::*)(Args...) const>& Paylo
     }
     else
     {
-        using ReturnStorageT = std::remove_cvref_t<R>;
         if (!ReturnStorage)
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null return storage"));
         }
-        std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage),
-                          (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...));
+        if constexpr (std::is_lvalue_reference_v<R>)
+        {
+            using ReturnStorageT = std::add_pointer_t<std::remove_reference_t<R>>;
+            auto&& Result = (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...);
+            std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage), std::addressof(Result));
+        }
+        else
+        {
+            using ReturnStorageT = std::remove_cvref_t<R>;
+            std::construct_at(static_cast<ReturnStorageT*>(ReturnStorage),
+                              (Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...));
+        }
         return Ok();
     }
 }
@@ -362,8 +401,8 @@ TExpected<Variant> InvokeImpl(T* Instance, R(T::*Method)(Args...), std::span<con
     }
     else
     {
-        R Result = (Instance->*Method)(ConvertArg<Args>(*std::get<I>(Extracted))...);
-        return Variant::FromValue(std::move(Result));
+        decltype(auto) Result = (Instance->*Method)(ConvertArg<Args>(*std::get<I>(Extracted))...);
+        return BuildMethodReturnVariant<decltype(Result)>(std::forward<decltype(Result)>(Result));
     }
 }
 
@@ -406,8 +445,8 @@ TExpected<Variant> InvokeConstImpl(const T* Instance, R(T::*Method)(Args...) con
     }
     else
     {
-        R Result = (Instance->*Method)(ConvertArg<Args>(*std::get<I>(Extracted))...);
-        return Variant::FromValue(std::move(Result));
+        decltype(auto) Result = (Instance->*Method)(ConvertArg<Args>(*std::get<I>(Extracted))...);
+        return BuildMethodReturnVariant<decltype(Result)>(std::forward<decltype(Result)>(Result));
     }
 }
 

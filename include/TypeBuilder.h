@@ -179,6 +179,24 @@ private:
         std::is_base_of_v<BaseNode, T> &&
         (SupportsNodeOnCreateWithWorldV<T> || SupportsNodeOnCreateNoWorldV<T>);
 
+    template<typename TReturn>
+    static const TypeId& ReflectedMethodReturnTypeId()
+    {
+        if constexpr (std::is_void_v<TReturn>)
+        {
+            return StaticTypeId<void>();
+        }
+        else if constexpr (std::is_lvalue_reference_v<TReturn>)
+        {
+            using ReturnPointer = std::add_pointer_t<std::remove_reference_t<TReturn>>;
+            return StaticTypeId<ReturnPointer>();
+        }
+        else
+        {
+            return StaticTypeId<std::remove_cvref_t<TReturn>>();
+        }
+    }
+
     static void InvokeDeclaredNodeOnCreate(T& Typed, IWorld* const WorldRef)
     {
         if constexpr (SupportsNodeOnCreateWithWorldV<T>)
@@ -405,6 +423,7 @@ public:
         m_info.Size = sizeof(T);
         m_info.Align = alignof(T);
         m_info.RuntimeOps = &GetTypeRuntimeOps<T>();
+        ApplyEditorValueFamilyMetadata<T>(m_info);
         m_info.IsAbstract = std::is_abstract_v<T>;
         m_info.NodeOnCreate = NodeOnCreateInvokerForType();
 #if defined(WITH_EDITOR) && WITH_EDITOR
@@ -1046,16 +1065,10 @@ public:
     {
         MethodInfo Info;
         Info.Name = Name;
-        if constexpr (std::is_void_v<R>)
-        {
-            Info.ReturnType = StaticTypeId<void>();
-        }
-        else
-        {
-            Info.ReturnType = StaticTypeId<std::remove_cvref_t<R>>();
-        }
+        Info.ReturnType = ReflectedMethodReturnTypeId<R>();
         Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
         Info.ParamPassKinds = {detail::MethodParamPassKindV<Args> ...};
+        Info.Params = {CallableParamInfo{StaticTypeId<std::remove_cvref_t<Args>>(), detail::MethodParamPassKindV<Args>, {}, {}} ...};
         Info.Invoke = MakeInvoker(Method);
         const auto RawBinding = MakeRawInvoker(Method);
         Info.RawInvoke = RawBinding.Invoke;
@@ -1082,16 +1095,10 @@ public:
     {
         MethodInfo Info;
         Info.Name = Name;
-        if constexpr (std::is_void_v<R>)
-        {
-            Info.ReturnType = StaticTypeId<void>();
-        }
-        else
-        {
-            Info.ReturnType = StaticTypeId<std::remove_cvref_t<R>>();
-        }
+        Info.ReturnType = ReflectedMethodReturnTypeId<R>();
         Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
         Info.ParamPassKinds = {detail::MethodParamPassKindV<Args> ...};
+        Info.Params = {CallableParamInfo{StaticTypeId<std::remove_cvref_t<Args>>(), detail::MethodParamPassKindV<Args>, {}, {}} ...};
         Info.Invoke = MakeInvoker(Method);
         const auto RawBinding = MakeRawInvoker(Method);
         Info.RawInvoke = RawBinding.Invoke;
@@ -1118,6 +1125,7 @@ public:
 
         ConstructorInfo Info;
         Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
+        Info.Params = {CallableParamInfo{StaticTypeId<std::remove_cvref_t<Args>>(), detail::MethodParamPassKindV<Args>, {}, {}} ...};
         Info.Construct = [](std::span<const Variant> ArgsPack) -> TExpected<std::shared_ptr<void>> {
             if (ArgsPack.size() != sizeof...(Args))
             {
@@ -1146,7 +1154,7 @@ public:
             static_assert(DenseRuntimeNodeType<T>,
                           "Reflected ECS node types must inherit NodeCRTP<Derived>, be move-only, and be noexcept movable");
         }
-        if constexpr (std::is_base_of_v<BaseComponent, T>)
+        if constexpr (std::is_base_of_v<BaseComponent, T> && !std::is_same_v<T, BaseComponent>)
         {
             static_assert(DenseRuntimeComponentType<T>,
                           "Reflected ECS component types must inherit ComponentCRTP<Derived>, be move-only, and be noexcept movable");
@@ -1157,7 +1165,7 @@ public:
         {
             NodeStorageFactoryRegistry::Instance().Register<T>();
         }
-        if constexpr (std::is_base_of_v<BaseComponent, T>)
+        if constexpr (std::is_base_of_v<BaseComponent, T> && !std::is_same_v<T, BaseComponent>)
         {
             ComponentSerializationRegistry::Instance().Register<T>();
         }
