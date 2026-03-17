@@ -6,6 +6,7 @@
 
 #include "AssetPipelineIds.h"
 #include "Expected.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -17,6 +18,7 @@ enum class EAssetEditorMode : std::uint8_t
     ConduitClass,
 };
 
+SnType(SnInterface)
 class IAsset
 {
 public:

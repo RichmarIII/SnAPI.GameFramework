@@ -150,6 +150,21 @@ public:
      */
     Result SetNodeFalseLabelName(const Uuid& Id, std::string_view Label);
     /**
+     * @brief Apply one explicit fallback/default value to a selected node input pin.
+     * @param Id Stable node id.
+     * @param PinKey Stable authored pin key.
+     * @param Value Serialized fallback value.
+     * @return Success or an error.
+     */
+    Result SetNodeInputDefault(const Uuid& Id, std::string_view PinKey, const SerializedValue& Value);
+    /**
+     * @brief Clear one explicit fallback/default value from a selected node input pin.
+     * @param Id Stable node id.
+     * @param PinKey Stable authored pin key.
+     * @return Success or an error.
+     */
+    Result ClearNodeInputDefault(const Uuid& Id, std::string_view PinKey);
+    /**
      * @brief Update the authored graph-space position of one node.
      * @param Id Stable node id.
      * @param X New graph-space left position.

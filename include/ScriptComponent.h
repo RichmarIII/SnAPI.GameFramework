@@ -7,6 +7,7 @@
 
 #include "BaseComponent.h"
 #include "ScriptRuntime.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -55,14 +56,18 @@ namespace SnAPI::GameFramework
  * bind warning once until the configuration changes or a new bind succeeds.
  * @see ScriptRuntimeService, IScript, EScriptHook
  */
+SnType()
 class ScriptComponent : public BaseComponent, public ComponentCRTP<ScriptComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::ScriptComponent";
 
+    SnField(SnKey("ScriptModule"))
     std::string ScriptModule; /**< @brief Backend-visible script module path or module identifier. Resolved through `PathResolver` before backend selection and instance creation. */
+    SnField(SnKey("ScriptType"))
     std::string ScriptType; /**< @brief Optional backend-specific entry point, such as a Lua table or factory field inside `ScriptModule`. */
+    SnField(SnKey("Instance"))
     ScriptInstanceId Instance = 0; /**< @brief Runtime instance id of the currently bound script. `0` means no live script instance is bound. */
 
     /**

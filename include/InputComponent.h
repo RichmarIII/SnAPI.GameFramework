@@ -6,6 +6,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -56,6 +57,7 @@ namespace SnAPI::GameFramework
  * @see CharacterMovementController
  * @see SprintArmComponent
  */
+SnType()
 class InputComponent : public BaseComponent, public ComponentCRTP<InputComponent>
 {
 public:
@@ -70,44 +72,75 @@ public:
      * normalization and scaling. Mouse and gamepad look are converted into yaw/pitch deltas in degrees.
      * The settings are passive data: mutating them affects subsequent ticks only.
      */
+    SnType()
     struct Settings
     {
         /** @brief Stable reflected type name used for serialization registration. */
         static constexpr const char* kTypeName = "SnAPI::GameFramework::InputComponent::Settings";
 
+        SnField(SnKey("MovementEnabled"))
         bool MovementEnabled = true; /**< @brief Publish movement intent when `true`; otherwise movement is suppressed. */
+        SnField(SnKey("JumpEnabled"))
         bool JumpEnabled = true; /**< @brief Publish jump edges when `true`. */
+        SnField(SnKey("KeyboardEnabled"))
         bool KeyboardEnabled = true; /**< @brief Allow keyboard movement/jump contribution before local-player routing filters are applied. */
+        SnField(SnKey("GamepadEnabled"))
         bool GamepadEnabled = true; /**< @brief Allow gamepad movement/jump/look contribution before local-player routing filters are applied. */
+        SnField(SnKey("RequireInputFocus"))
         bool RequireInputFocus = true; /**< @brief Suppress movement and look when the input snapshot reports the window as unfocused. */
+        SnField(SnKey("NormalizeMove"))
         bool NormalizeMove = true; /**< @brief Normalize combined local X/Z movement before applying `MoveScale`. */
+        SnField(SnKey("ClearMoveWhenUnavailable"))
         bool ClearMoveWhenUnavailable = true; /**< @brief Write zero movement intent when input cannot currently be resolved. */
+        SnField(SnKey("LookEnabled"))
         bool LookEnabled = true; /**< @brief Publish look deltas when `true`. */
+        SnField(SnKey("MouseLookEnabled"))
         bool MouseLookEnabled = true; /**< @brief Allow mouse delta contribution to look input. */
+        SnField(SnKey("GamepadLookEnabled"))
         bool GamepadLookEnabled = true; /**< @brief Allow right-stick contribution to look input. */
+        SnField(SnKey("RequireRightMouseButtonForLook"))
         bool RequireRightMouseButtonForLook = false; /**< @brief Require right mouse button to be held before mouse look is sampled. */
 
+        SnField(SnKey("MoveScale"))
         float MoveScale = 1.0f; /**< @brief Scalar multiplier applied after optional movement normalization. */
+        SnField(SnKey("GamepadDeadzone"))
         float GamepadDeadzone = 0.2f; /**< @brief Per-axis deadzone in the range `[0, 0.99]`, clamped on use. */
+        SnField(SnKey("InvertGamepadY"))
         bool InvertGamepadY = false; /**< @brief Invert the configured movement Y axis before mapping it into local forward/back motion. */
+        SnField(SnKey("MouseLookSensitivity"))
         float MouseLookSensitivity = 0.12f; /**< @brief Mouse look sensitivity in degrees per pixel. Negative values are treated as zero. */
+        SnField(SnKey("InvertMouseY"))
         bool InvertMouseY = false; /**< @brief Invert vertical mouse look contribution. */
+        SnField(SnKey("GamepadLookSensitivity"))
         float GamepadLookSensitivity = 180.0f; /**< @brief Gamepad look sensitivity in degrees per second at full stick deflection. Negative values are treated as zero. */
+        SnField(SnKey("InvertGamepadLookY"))
         bool InvertGamepadLookY = false; /**< @brief Invert vertical gamepad look contribution. */
 
+        SnField(SnKey("MoveForwardKey"))
         SnAPI::Input::EKey MoveForwardKey = SnAPI::Input::EKey::W; /**< @brief Keyboard key mapped to forward movement, which corresponds to local `-Z`. */
+        SnField(SnKey("MoveBackwardKey"))
         SnAPI::Input::EKey MoveBackwardKey = SnAPI::Input::EKey::S; /**< @brief Keyboard key mapped to backward movement, which corresponds to local `+Z`. */
+        SnField(SnKey("MoveLeftKey"))
         SnAPI::Input::EKey MoveLeftKey = SnAPI::Input::EKey::A; /**< @brief Keyboard key mapped to local `-X` motion. */
+        SnField(SnKey("MoveRightKey"))
         SnAPI::Input::EKey MoveRightKey = SnAPI::Input::EKey::D; /**< @brief Keyboard key mapped to local `+X` motion. */
+        SnField(SnKey("JumpKey"))
         SnAPI::Input::EKey JumpKey = SnAPI::Input::EKey::Space; /**< @brief Keyboard key that generates a jump edge. */
 
+        SnField(SnKey("MoveGamepadXAxis"))
         SnAPI::Input::EGamepadAxis MoveGamepadXAxis = SnAPI::Input::EGamepadAxis::LeftX; /**< @brief Gamepad axis sampled for local X movement. */
+        SnField(SnKey("MoveGamepadYAxis"))
         SnAPI::Input::EGamepadAxis MoveGamepadYAxis = SnAPI::Input::EGamepadAxis::LeftY; /**< @brief Gamepad axis sampled for local forward/back movement. */
+        SnField(SnKey("LookGamepadXAxis"))
         SnAPI::Input::EGamepadAxis LookGamepadXAxis = SnAPI::Input::EGamepadAxis::RightX; /**< @brief Gamepad axis sampled for yaw look delta. */
+        SnField(SnKey("LookGamepadYAxis"))
         SnAPI::Input::EGamepadAxis LookGamepadYAxis = SnAPI::Input::EGamepadAxis::RightY; /**< @brief Gamepad axis sampled for pitch look delta. */
+        SnField(SnKey("JumpGamepadButton"))
         SnAPI::Input::EGamepadButton JumpGamepadButton = SnAPI::Input::EGamepadButton::South; /**< @brief Gamepad button that generates a jump edge. */
 
+        SnField(SnKey("PreferredGamepad"))
         SnAPI::Input::DeviceId PreferredGamepad{}; /**< @brief Preferred gamepad device id. An invalid id means "auto-select". */
+        SnField(SnKey("UseAnyGamepadWhenPreferredMissing"))
         bool UseAnyGamepadWhenPreferredMissing = true; /**< @brief Fall back to the first connected gamepad when the preferred one is absent. */
     };
 
@@ -125,6 +158,7 @@ public:
      * @return Borrowed reference to the stored settings object.
      * @remarks Changes affect future ticks only; no immediate resampling or rebinding occurs.
      */
+    SnField(SnKey("Settings"), SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;

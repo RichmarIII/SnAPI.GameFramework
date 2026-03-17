@@ -17,6 +17,7 @@
 #include "SSRParamsNode.h"
 #include "TAAParamsNode.h"
 #include "ToneMapParamsNode.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -56,6 +57,7 @@ namespace SnAPI::GameFramework
  * @see TAAParamsNode
  * @see BloomParamsNode
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API WorldRenderSettings : public BaseNode, public NodeCRTP<WorldRenderSettings>
 {
 public:
@@ -65,46 +67,55 @@ public:
     explicit WorldRenderSettings(std::string Name);
 
     /** @brief Access the referenced SSAO parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("SSAOParams"), SnConstGetter(GetSSAOParams))
     TAssetRef<SSAOParamsNode>& EditSSAOParams();
     /** @brief Access the referenced SSAO parameter asset. @return Const asset reference. */
     const TAssetRef<SSAOParamsNode>& GetSSAOParams() const;
 
     /** @brief Access the referenced SSGI parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("SSGIParams"), SnConstGetter(GetSSGIParams))
     TAssetRef<SSGIParamsNode>& EditSSGIParams();
     /** @brief Access the referenced SSGI parameter asset. @return Const asset reference. */
     const TAssetRef<SSGIParamsNode>& GetSSGIParams() const;
 
     /** @brief Access the referenced SSR parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("SSRParams"), SnConstGetter(GetSSRParams))
     TAssetRef<SSRParamsNode>& EditSSRParams();
     /** @brief Access the referenced SSR parameter asset. @return Const asset reference. */
     const TAssetRef<SSRParamsNode>& GetSSRParams() const;
 
     /** @brief Access the referenced TAA parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("TAAParams"), SnConstGetter(GetTAAParams))
     TAssetRef<TAAParamsNode>& EditTAAParams();
     /** @brief Access the referenced TAA parameter asset. @return Const asset reference. */
     const TAssetRef<TAAParamsNode>& GetTAAParams() const;
 
     /** @brief Access the referenced bloom parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("BloomParams"), SnConstGetter(GetBloomParams))
     TAssetRef<BloomParamsNode>& EditBloomParams();
     /** @brief Access the referenced bloom parameter asset. @return Const asset reference. */
     const TAssetRef<BloomParamsNode>& GetBloomParams() const;
 
     /** @brief Access the referenced atmosphere parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("AtmosphereParams"), SnConstGetter(GetAtmosphereParams))
     TAssetRef<AtmosphereParamsNode>& EditAtmosphereParams();
     /** @brief Access the referenced atmosphere parameter asset. @return Const asset reference. */
     const TAssetRef<AtmosphereParamsNode>& GetAtmosphereParams() const;
 
     /** @brief Access the referenced atmosphere-composite parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("AtmosphereCompositeParams"), SnConstGetter(GetAtmosphereCompositeParams))
     TAssetRef<AtmosphereCompositeParamsNode>& EditAtmosphereCompositeParams();
     /** @brief Access the referenced atmosphere-composite parameter asset. @return Const asset reference. */
     const TAssetRef<AtmosphereCompositeParamsNode>& GetAtmosphereCompositeParams() const;
 
     /** @brief Access the referenced height-fog parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("HeightFogParams"), SnConstGetter(GetHeightFogParams))
     TAssetRef<HeightFogParamsNode>& EditHeightFogParams();
     /** @brief Access the referenced height-fog parameter asset. @return Const asset reference. */
     const TAssetRef<HeightFogParamsNode>& GetHeightFogParams() const;
 
     /** @brief Access the referenced tone-map parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("ToneMapParams"), SnConstGetter(GetToneMapParams))
     TAssetRef<ToneMapParamsNode>& EditToneMapParams();
     /** @brief Access the referenced tone-map parameter asset. @return Const asset reference. */
     const TAssetRef<ToneMapParamsNode>& GetToneMapParams() const;

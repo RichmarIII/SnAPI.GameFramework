@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "TypeName.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -78,46 +79,86 @@ namespace SnAPI::GameFramework
  *
  * @see RendererSystem
  */
+SnType()
 struct RendererBootstrapSettings
 {
+    SnField(SnKey("CreateGraphicsApi"))
     bool CreateGraphicsApi = true; /**< @brief Create and initialize VulkanGraphicsAPI singleton on initialize. */
+    SnField(SnKey("CreateWindow"))
     bool CreateWindow = true; /**< @brief Create an SDL window and initialize renderer resources for it. */
+    SnField(SnKey("WindowTitle"))
     std::string WindowTitle = "SnAPI.GameFramework"; /**< @brief Main renderer window title. */
+    SnField(SnKey("WindowWidth"))
     float WindowWidth = 1280.0f; /**< @brief Main renderer window width. */
+    SnField(SnKey("WindowHeight"))
     float WindowHeight = 720.0f; /**< @brief Main renderer window height. */
+    SnField(SnKey("FullScreen"))
     bool FullScreen = false; /**< @brief Start window in fullscreen mode. */
+    SnField(SnKey("Resizable"))
     bool Resizable = true; /**< @brief Allow window resizing. */
+    SnField(SnKey("Borderless"))
     bool Borderless = false; /**< @brief Use borderless window mode. */
+    SnField(SnKey("Visible"))
     bool Visible = true; /**< @brief Start window visible. */
+    SnField(SnKey("Maximized"))
     bool Maximized = false; /**< @brief Start window maximized. */
+    SnField(SnKey("Minimized"))
     bool Minimized = false; /**< @brief Start window minimized. */
+    SnField(SnKey("Closeable"))
     bool Closeable = true; /**< @brief Allow platform close actions. */
+    SnField(SnKey("AllowTransparency"))
     bool AllowTransparency = true; /**< @brief Enable transparent compositor support when available. */
+    SnField(SnKey("CreateDefaultLighting"))
     bool CreateDefaultLighting = false; /**< @brief Create a default directional light used by shadow/deferred passes. */
+    SnField(SnKey("RegisterDefaultPassGraph"))
     bool RegisterDefaultPassGraph = true; /**< @brief Register the default renderer pass DAG (shadow/gbuffer/deferred/present). */
+    SnField(SnKey("EnableSsao"))
     bool EnableSsao = true; /**< @brief Register SSAO pass chain in default pass graph. */
+    SnField(SnKey("EnableSsgi"))
     bool EnableSsgi = true; /**< @brief Register SSGI trace/filter/composite passes in default pass graph. */
+    SnField(SnKey("EnableSsr"))
     bool EnableSsr = true; /**< @brief Register SSR + composite passes in default pass graph. */
+    SnField(SnKey("EnableTaa"))
     bool EnableTaa = true; /**< @brief Register full-resolution temporal anti-aliasing in default pass graph. */
+    SnField(SnKey("EnableBloom"))
     bool EnableBloom = true; /**< @brief Register bloom pass in default pass graph. */
+    SnField(SnKey("EnableAtmosphere"))
     bool EnableAtmosphere = true; /**< @brief Register atmosphere + composite passes in default pass graph. */
+    SnField(SnKey("EnableHeightFog"))
     bool EnableHeightFog = true; /**< @brief Register analytic height fog pass in default pass graph. */
+    SnField(SnKey("AtmosphereWorldMode"))
     bool AtmosphereWorldMode = false; /**< @brief Enable planet-scale atmosphere coordinates (`WORLD=1`); false uses regular-scene mode. */
+    SnField(SnKey("AutoHandleSwapChainResize"))
     bool AutoHandleSwapChainResize = true; /**< @brief Detect window-size changes and recreate swapchain automatically. */
+    SnField(SnKey("AutoFallbackOnOutOfMemory"))
     bool AutoFallbackOnOutOfMemory = true; /**< @brief Retry renderer init with reduced settings when device-memory allocation fails. */
+    SnField(SnKey("OutOfMemoryFallbackWindowWidth"))
     float OutOfMemoryFallbackWindowWidth = 1920.0f; /**< @brief Maximum retry width used during out-of-memory fallback. */
+    SnField(SnKey("OutOfMemoryFallbackWindowHeight"))
     float OutOfMemoryFallbackWindowHeight = 1080.0f; /**< @brief Maximum retry height used during out-of-memory fallback. */
+    SnField(SnKey("ForceWindowedOnOutOfMemory"))
     bool ForceWindowedOnOutOfMemory = true; /**< @brief Force windowed mode during out-of-memory fallback. */
+    SnField(SnKey("DisableTransparencyOnOutOfMemory"))
     bool DisableTransparencyOnOutOfMemory = true; /**< @brief Disable transparent window mode during out-of-memory fallback. */
+    SnField(SnKey("DisableExpensivePassesOnOutOfMemory"))
     bool DisableExpensivePassesOnOutOfMemory = true; /**< @brief Disable SSAO/SSGI/SSR/Bloom/Atmosphere during out-of-memory fallback. */
+    SnField(SnKey("DisableEnvironmentProbeOnOutOfMemory"))
     bool DisableEnvironmentProbeOnOutOfMemory = true; /**< @brief Disable default environment probe during out-of-memory fallback. */
+    SnField(SnKey("CreateDefaultEnvironmentProbe"))
     bool CreateDefaultEnvironmentProbe = true; /**< @brief Register a default environment probe for scene capture-based IBL. */
+    SnField(SnKey("DefaultEnvironmentProbeX"))
     float DefaultEnvironmentProbeX = 0.0f; /**< @brief Default environment probe world X position. */
+    SnField(SnKey("DefaultEnvironmentProbeY"))
     float DefaultEnvironmentProbeY = 0.0f; /**< @brief Default environment probe world Y position. */
+    SnField(SnKey("DefaultEnvironmentProbeZ"))
     float DefaultEnvironmentProbeZ = 0.0f; /**< @brief Default environment probe world Z position. */
+    SnField(SnKey("PreloadDefaultFont"))
     bool PreloadDefaultFont = true; /**< @brief Attempt to load a default UI font so `QueueText` works out of the box. */
+    SnField(SnKey("DefaultFontPath"))
     std::string DefaultFontPath = "/usr/share/fonts/TTF/Arial.TTF"; /**< @brief Optional default font path; fallback list is used when unavailable. */
+    SnField(SnKey("DefaultFontSize"))
     std::uint32_t DefaultFontSize = 24; /**< @brief Default font pixel size. */
+    SnField(SnKey("CreateDefaultMaterials"))
     bool CreateDefaultMaterials = true; /**< @brief Build default GBuffer + Shadow materials for mesh components. */
 };
 
@@ -136,6 +177,7 @@ struct RendererBootstrapSettings
  *
  * @see RendererSystem::RegisterRenderViewportPassGraph
  */
+SnType()
 enum class ERenderViewportPassGraphPreset : uint8_t
 {
     None = 0, /**< @brief Do not auto-register any passes. */
@@ -187,6 +229,7 @@ SNAPI_DEFINE_TYPE_NAME(ERenderViewportPassGraphPreset, "SnAPI::GameFramework::ER
  * @see RendererBootstrapSettings
  * @see ERenderViewportPassGraphPreset
  */
+SnType()
 class RendererSystem final : public ITaskDispatcher
 {
 public:
@@ -252,12 +295,14 @@ public:
      * @brief Check whether a live graphics backend is available.
      * @return `true` when the subsystem currently has a usable graphics backend pointer.
      */
+    SnFunction(SnKey("IsInitialized"))
     bool IsInitialized() const;
 
     /**
      * @brief Access the active renderer bootstrap settings snapshot.
      * @return Borrowed reference to the subsystem-owned settings copy.
      */
+    SnFunction(SnKey("Settings"))
     const RendererBootstrapSettings& Settings() const
     {
         return m_settings;
@@ -288,6 +333,7 @@ public:
     /**
      * @brief Check whether a renderer window exists and is currently open.
      */
+    SnFunction(SnKey("HasOpenWindow"))
     bool HasOpenWindow() const;
 
     /**
@@ -349,12 +395,14 @@ public:
      * @param Enabled True to enable/create default viewport; false to disable/remove it.
      * @return True when renderer is initialized and state was applied.
      */
+    SnFunction(SnKey("UseDefaultRenderViewport"))
     bool UseDefaultRenderViewport(bool Enabled = true);
 
     /**
      * @brief Query whether the renderer default viewport runtime is currently active.
      * @return True when default viewport runtime exists and is enabled for use.
      */
+    SnFunction(SnKey("IsUsingDefaultRenderViewport"))
     [[nodiscard]] bool IsUsingDefaultRenderViewport() const;
 
     /**
@@ -425,6 +473,7 @@ public:
      * @return `true` when the viewport was destroyed.
      * @warning The renderer default viewport cannot be destroyed through this API.
      */
+    SnFunction(SnKey("DestroyRenderViewport"))
     bool DestroyRenderViewport(std::uint64_t ViewportID);
 
     /**
@@ -432,6 +481,7 @@ public:
      * @param ViewportID Target viewport identifier.
      * @return True when viewport exists.
      */
+    SnFunction(SnKey("HasRenderViewport"))
     [[nodiscard]] bool HasRenderViewport(std::uint64_t ViewportID) const;
 
     /**
@@ -469,6 +519,7 @@ public:
      * @param Height New height in pixels.
      * @return True when resize succeeded.
      */
+    SnFunction(SnKey("ResizeSwapChain"))
     bool ResizeSwapChain(std::uint64_t SwapChainID, std::uint32_t Width, std::uint32_t Height);
 
     /**
@@ -476,6 +527,7 @@ public:
      * @param SwapChainID Target swapchain id.
      * @return True when swapchain was destroyed.
      */
+    SnFunction(SnKey("DestroySwapChain"))
     bool DestroySwapChain(std::uint64_t SwapChainID);
 
     /**
@@ -484,6 +536,7 @@ public:
      * @param SwapChainID Target swapchain id.
      * @return True when assignment succeeded.
      */
+    SnFunction(SnKey("AssignSwapChainToRenderViewport"))
     bool AssignSwapChainToRenderViewport(std::uint64_t ViewportID, std::uint64_t SwapChainID);
 
     /**
@@ -503,6 +556,7 @@ public:
      * idempotent; attempting to replace an existing different preset is rejected. Successful new
      * registrations increment `RenderViewportPassGraphRevision()`.
      */
+    SnFunction(SnKey("RegisterRenderViewportPassGraph"))
     bool RegisterRenderViewportPassGraph(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset);
 
     /**
@@ -706,9 +760,12 @@ public:
      * Components can cache this value to know when viewport pass graphs were added and
      * pass enable masks should be re-applied to existing render objects.
      */
+    SnFunction(SnKey("RenderViewportPassGraphRevision"))
     std::uint64_t RenderViewportPassGraphRevision() const;
 
+    SnFunction(SnKey("SetDefaultTaaJitterScale"))
     void SetDefaultTaaJitterScale(float Value);
+    SnFunction(SnKey("SetViewportTaaJitterScale"))
     void SetViewportTaaJitterScale(std::uint64_t ViewportID, float Value);
 
     /**
@@ -718,6 +775,7 @@ public:
      * When out-of-memory fallback is enabled, a failed recreation may retry with reduced
      * window/transparency settings before giving up.
      */
+    SnFunction(SnKey("RecreateSwapChain"))
     bool RecreateSwapChain();
 
     /**
@@ -726,6 +784,7 @@ public:
      * @param FontSize Font pixel size.
      * @return `true` if a renderable font was resolved and stored as the default font.
      */
+    SnFunction(SnKey("LoadDefaultFont"))
     bool LoadDefaultFont(const std::string& FontPath, std::uint32_t FontSize = 24);
 
     /**
@@ -736,11 +795,13 @@ public:
      * @return `true` if the text request was queued.
      * @remarks Uses the default font configured through settings or `LoadDefaultFont(...)`.
      */
+    SnFunction(SnKey("QueueText"))
     bool QueueText(std::string Text, float X = 0.0f, float Y = 0.0f);
 
     /**
      * @brief Check whether a default font is currently available.
      */
+    SnFunction(SnKey("HasDefaultFont"))
     bool HasDefaultFont() const;
 
     /**

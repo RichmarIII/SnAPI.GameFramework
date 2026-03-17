@@ -5,8 +5,10 @@
 
 #include <UIElementBase.h>
 #include <UIDelegates.h>
+#include <UITooltip.h>
 
 #include <optional>
+#include <chrono>
 
 namespace SnAPI::UI
 {
@@ -53,6 +55,7 @@ public:
     void Measure(const SnAPI::UI::UIConstraints& Constraints, SnAPI::UI::UISize& OutDesired) override;
     void Paint(SnAPI::UI::UIPaintContext& Context) const override;
     void OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context) override;
+    void Tick(float DeltaSeconds) override;
 
 private:
     struct NodeVisual
@@ -79,6 +82,13 @@ private:
         SnAPI::UI::UIRect Rect{};
     };
 
+    struct HoverTooltipState
+    {
+        std::string Text{};
+        SnAPI::UI::UIRect AnchorRect{};
+        SnAPI::UI::ETooltipPlacement Placement = SnAPI::UI::ETooltipPlacement::Top;
+    };
+
     void Invalidate(SnAPI::UI::EInvalidation Flags) const;
     [[nodiscard]] float EffectiveZoom() const;
     [[nodiscard]] float DpiScale() const;
@@ -89,11 +99,15 @@ private:
     [[nodiscard]] SnAPI::UI::UIPoint ScreenToGraph(const SnAPI::UI::UIPoint& ScreenPosition) const;
     [[nodiscard]] std::optional<std::size_t> HitTestNode(const SnAPI::UI::UIPoint& ScreenPosition) const;
     [[nodiscard]] std::optional<HitPinResult> HitTestPin(const SnAPI::UI::UIPoint& ScreenPosition, bool OutputsOnly) const;
+    [[nodiscard]] std::optional<HitPinResult> HitTestTooltipPin(const SnAPI::UI::UIPoint& ScreenPosition) const;
+    [[nodiscard]] std::optional<HoverTooltipState> ResolveHoverTooltip(const SnAPI::UI::UIPoint& ScreenPosition) const;
     [[nodiscard]] static SnAPI::UI::Color DecodeColor(std::uint32_t Rgba, std::uint8_t DefaultAlpha = 255);
     void UpdateDraggedNodePosition(const SnAPI::UI::UIPoint& ScreenPosition);
     void UpdatePanPosition(const SnAPI::UI::UIPoint& ScreenPosition);
     void CompleteWireDrag(const SnAPI::UI::UIPoint& ScreenPosition);
     void RequestSpawnMenu(const SnAPI::UI::UIPoint& ScreenPosition, bool FromPinDrag);
+    void UpdateHoverTooltip(const SnAPI::UI::UIPoint& ScreenPosition);
+    void ClearHoverTooltip();
     void SetSelectedNodeLocal(const Uuid& NodeId);
     void ClearInteractionState();
 
@@ -118,6 +132,13 @@ private:
     SnAPI::UI::UIPoint m_dragWirePointer{};
     float m_dragStartPanX = 0.0f;
     float m_dragStartPanY = 0.0f;
+    bool m_hasPointerPosition = false;
+    bool m_hasHoverTooltip = false;
+    bool m_hasPendingHoverTooltip = false;
+    SnAPI::UI::UIPoint m_lastPointerPosition{};
+    HoverTooltipState m_pendingHoverTooltip{};
+    std::chrono::steady_clock::time_point m_hoverTooltipStart{};
+    mutable SnAPI::UI::UITooltip m_hoverTooltip{};
 };
 
 } // namespace SnAPI::GameFramework::Conduit::Editor

@@ -8,6 +8,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -43,6 +44,7 @@ namespace SnAPI::GameFramework
  * @see AtmosphereParamsNode
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API AtmosphereCompositeParamsNode : public BaseNode, public NodeCRTP<AtmosphereCompositeParamsNode>
 {
 public:
@@ -58,21 +60,25 @@ public:
     explicit AtmosphereCompositeParamsNode(std::string Name);
 
     /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
     /** @brief Access the composite depth threshold. @return Mutable threshold value clamped to [0, 1] before upload. */
+    SnField(SnKey("DepthThreshold"), SnConstGetter(GetDepthThreshold))
     float& EditDepthThreshold();
     /** @brief Read the composite depth threshold. @return Stored threshold value. */
     const float& GetDepthThreshold() const;
 
     /** @brief Access the atmosphere blend factor used when scene geometry is present. @return Mutable blend weight clamped to [0, 1]. */
+    SnField(SnKey("BlendWhenGeometry"), SnConstGetter(GetBlendWhenGeometry))
     float& EditBlendWhenGeometry();
     /** @brief Read the geometry blend factor. @return Stored blend weight. */
     const float& GetBlendWhenGeometry() const;
 
     /** @brief Access the atmosphere blend factor used when sky/background is visible. @return Mutable blend weight clamped to [0, 1]. */
+    SnField(SnKey("BlendWhenSky"), SnConstGetter(GetBlendWhenSky))
     float& EditBlendWhenSky();
     /** @brief Read the sky blend factor. @return Stored blend weight. */
     const float& GetBlendWhenSky() const;

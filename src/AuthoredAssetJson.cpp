@@ -16,7 +16,7 @@
 #include "Math.h"
 #include "NodeAsset.h"
 #include "RenderAssetPayloads.h"
-#include "RenderAssetRuntime.h"
+#include "RenderAssetSourcePayloads.h"
 #include "Serialization.h"
 #include "TypeRegistration.h"
 
@@ -300,7 +300,33 @@ private:
                                       return std::unexpected(
                                           MakeError(EErrorCode::InvalidArgument, "Null JSON array destination"));
                                   }
-                                  if (!Source.is_array() || Source.size() != N)
+                                  const auto ResolveElementJson = [&Source](const std::size_t Index) -> const Json* {
+                                      if (Source.is_array())
+                                      {
+                                          if (Index >= Source.size())
+                                          {
+                                              return nullptr;
+                                          }
+                                          return &Source[Index];
+                                      }
+
+                                      if (Source.is_object())
+                                      {
+                                          const std::string Key = "value" + std::to_string(Index);
+                                          const auto It = Source.find(Key);
+                                          if (It == Source.end())
+                                          {
+                                              return nullptr;
+                                          }
+                                          return &(*It);
+                                      }
+
+                                      return nullptr;
+                                  };
+
+                                  if ((!Source.is_array() && !Source.is_object()) ||
+                                      (Source.is_array() && Source.size() != N) ||
+                                      (Source.is_object() && Source.size() != N))
                                   {
                                       return std::unexpected(
                                           MakeError(EErrorCode::InvalidArgument, "JSON value is not the expected array size"));
@@ -309,10 +335,16 @@ private:
                                   std::array<TElement, N> Parsed{};
                                   for (std::size_t Index = 0; Index < N; ++Index)
                                   {
+                                      const Json* ElementJson = ResolveElementJson(Index);
+                                      if (!ElementJson)
+                                      {
+                                          return std::unexpected(
+                                              MakeError(EErrorCode::InvalidArgument, "JSON value is missing an array element"));
+                                      }
                                       auto ElementResult = DeserializeValueFromJsonInto(
                                           StaticTypeId<TElement>(),
                                           &Parsed[Index],
-                                          Source[Index],
+                                          *ElementJson,
                                           false);
                                       if (!ElementResult)
                                       {
@@ -705,6 +737,7 @@ private:
         RegisterScalar<double>();
         RegisterScalar<std::string>();
         RegisterFlags<FieldFlags, EFieldFlagBits>();
+        RegisterFlags<FieldEditorFlags, EFieldEditorFlagBits>();
         RegisterFlags<MethodFlags, EMethodFlagBits>();
         RegisterFlags<CollisionFilterFlags, ECollisionFilterBits>();
         RegisterVec2();
@@ -721,14 +754,25 @@ private:
         RegisterVector<Conduit::GraphSlotAsset>();
         RegisterVector<Conduit::GraphVariableAsset>();
         RegisterVector<Conduit::GraphNodeAsset>();
+        RegisterVector<Conduit::GraphNodeInputDefaultAsset>();
         RegisterVector<NodeFieldAsset>();
         RegisterVector<NodeComponentAsset>();
         RegisterVector<NodeObjectAsset>();
+        RegisterVector<ImportBuildOptionPayload>();
+        RegisterVector<AssetRefPayload>();
+        RegisterVector<MeshStreamChunkRef>();
+        RegisterVector<StaticSubMeshPayload>();
+        RegisterVector<SkeletalBonePayload>();
+        RegisterVector<AnimationKeyFramePayload>();
+        RegisterVector<AnimationTrackPayload>();
+        RegisterVector<MeshStreamSourcePayload>();
         RegisterVector<MaterialScalarParamPayload>();
         RegisterVector<MaterialVectorParamPayload>();
         RegisterVector<MaterialTextureParamPayload>();
         RegisterVector<MaterialInstanceAssetRef>();
+        RegisterArray<float, 3>();
         RegisterArray<float, 4>();
+        RegisterArray<float, 16>();
 
         m_entries.emplace(StaticTypeId<std::vector<std::uint8_t>>(),
                           JsonCodecEntry{

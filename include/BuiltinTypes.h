@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -25,17 +26,20 @@
 namespace SnAPI::GameFramework
 {
 
+enum class EMeshStreamSemantic : std::uint32_t;
+using Float3Array = std::array<float, 3>;
+using Float16Array = std::array<float, 16>;
+
 template<typename TBase>
 class TSubClassOf;
 template<typename TBase, typename TNameTag>
 class TAssetRef;
 class PawnBase;
-struct MaterialAssetRuntime;
-struct StaticMeshAssetRuntime;
-struct SkeletalMeshAssetRuntime;
-struct MaterialInstanceAssetRuntime;
-struct SkeletonAssetRuntime;
-struct AnimationAssetRuntime;
+struct MaterialAsset;
+struct MaterialInstanceAsset;
+struct TextureAsset;
+struct StaticMeshAsset;
+struct SkeletalMeshAsset;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 class SSAOParamsNode;
 class SSGIParamsNode;
@@ -55,19 +59,24 @@ class WorldRenderSettings;
 using PawnBaseAssetRef = TAssetRef<PawnBase, void>;
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Asset-reference alias for runtime static-mesh assets.
+ * @brief Asset-reference alias for authored texture assets.
  */
-using StaticMeshAssetRef = TAssetRef<StaticMeshAssetRuntime, void>;
+using TextureAssetRef = TAssetRef<TextureAsset, void>;
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Asset-reference alias for runtime skeletal-mesh assets.
+ * @brief Asset-reference alias for authored static-mesh assets.
  */
-using SkeletalMeshAssetRef = TAssetRef<SkeletalMeshAssetRuntime, void>;
+using StaticMeshAssetRef = TAssetRef<StaticMeshAsset, void>;
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Asset-reference alias for runtime material-instance assets.
+ * @brief Asset-reference alias for authored skeletal-mesh assets.
  */
-using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAssetRuntime, void>;
+using SkeletalMeshAssetRef = TAssetRef<SkeletalMeshAsset, void>;
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for authored material-instance assets.
+ */
+using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAsset, void>;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 /**
  * @ingroup SnAPI_GameFramework
@@ -147,22 +156,19 @@ SNAPI_DEFINE_TYPE_NAME(std::string, "std::string")
 SNAPI_DEFINE_TYPE_NAME(std::vector<uint8_t>, "std::vector<uint8_t>")
 SNAPI_DEFINE_TYPE_NAME(Uuid, "SnAPI::GameFramework::Uuid")
 SNAPI_DEFINE_TYPE_NAME(TypeId, "SnAPI::GameFramework::TypeId")
+SNAPI_DEFINE_TYPE_NAME(EMeshStreamSemantic, "SnAPI::GameFramework::EMeshStreamSemantic")
+SNAPI_DEFINE_TYPE_NAME(Float3Array, "std::array<float,3>")
+SNAPI_DEFINE_TYPE_NAME(Float16Array, "std::array<float,16>")
 SNAPI_DEFINE_TYPE_NAME(Vec2, "SnAPI::GameFramework::Vec2")
 SNAPI_DEFINE_TYPE_NAME(Vec3, "SnAPI::GameFramework::Vec3")
 SNAPI_DEFINE_TYPE_NAME(Vec4, "SnAPI::GameFramework::Vec4")
 SNAPI_DEFINE_TYPE_NAME(Quat, "SnAPI::GameFramework::Quat")
 SNAPI_DEFINE_TYPE_NAME(TSubClassOf<PawnBase>, "SnAPI::GameFramework::TSubClassOf<SnAPI::GameFramework::PawnBase>")
-SNAPI_DEFINE_TYPE_NAME(MaterialAssetRuntime, "SnAPI::GameFramework::MaterialAssetRuntime")
-SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRuntime, "SnAPI::GameFramework::StaticMeshAssetRuntime")
-SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRuntime, "SnAPI::GameFramework::SkeletalMeshAssetRuntime")
-SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRuntime, "SnAPI::GameFramework::MaterialInstanceAssetRuntime")
-SNAPI_DEFINE_TYPE_NAME(SkeletonAssetRuntime, "SnAPI::GameFramework::SkeletonAssetRuntime")
-SNAPI_DEFINE_TYPE_NAME(AnimationAssetRuntime, "SnAPI::GameFramework::AnimationAssetRuntime")
 SNAPI_DEFINE_TYPE_NAME(PawnBaseAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::PawnBase>")
-SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::StaticMeshAssetRuntime>")
-SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalMeshAssetRuntime>")
-SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>")
-SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAssetRuntime>>")
+SNAPI_DEFINE_TYPE_NAME(StaticMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::StaticMeshAsset>")
+SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalMeshAsset>")
+SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAsset>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAsset>>")
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 SNAPI_DEFINE_TYPE_NAME(SSAOParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSAOParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSGIParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSGIParamsNode>")

@@ -29,6 +29,7 @@
 #endif
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "RendererSystem.h"
+#include "ReflectionAnnotations.h"
 #endif
 
 namespace SnAPI::GameFramework
@@ -111,6 +112,7 @@ struct WorldExecutionProfile
  * @see GameRuntime
  * @see WorldExecutionProfile
  */
+SnType()
 class World : public IWorld, public ITaskDispatcher
 {
 public:

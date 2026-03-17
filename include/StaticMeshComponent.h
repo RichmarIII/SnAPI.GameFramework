@@ -10,7 +10,9 @@
 
 #include "AssetRef.h"
 #include "BaseComponent.h"
-#include "RenderAssetRuntime.h"
+#include "BuiltinTypes.h"
+#include "RenderAssetPayloads.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -54,6 +56,7 @@ class RendererSystem;
  * @see RendererSystem
  * @see TransformComponent
  */
+SnType()
 class StaticMeshComponent : public BaseComponent, public ComponentCRTP<StaticMeshComponent>
 {
 public:
@@ -68,17 +71,25 @@ public:
      * - `Visible` and `CastShadows` feed renderer pass membership through `RendererSystem::ConfigureRenderObjectPasses(...)`
      * - `MaterialInstanceOverrides` replace matching baked material slots while leaving unspecified slots unchanged
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticMeshComponent::Settings";
 
+        SnField(SnKey("MeshPath"), SnReplicated)
         std::string MeshPath{}; /**< @brief Optional compatibility mesh token. Primitive tokens are supported directly; non-primitive paths are currently best treated as metadata/change keys rather than guaranteed load sources. */
+        SnField(SnKey("Visible"), SnReplicated)
         bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
+        SnField(SnKey("CastShadows"), SnReplicated)
         bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
+        SnField(SnKey("SyncFromTransform"))
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
+        SnField(SnKey("RegisterWithRenderer"))
         bool RegisterWithRenderer = true; /**< @brief Register loaded mesh in renderer draw list. */
-        TAssetRef<StaticMeshAssetRuntime> MeshAsset{}; /**< @brief Preferred runtime asset reference for cooked static meshes (appended for payload compatibility). */
-        std::vector<TAssetRef<MaterialInstanceAssetRuntime>> MaterialInstanceOverrides{}; /**< @brief Optional per-material-slot overrides applied on top of mesh-default material instances. */
+        SnField(SnKey("MeshAsset"), SnReplicated)
+        StaticMeshAssetRef MeshAsset{}; /**< @brief Preferred authored static-mesh asset reference. */
+        SnField(SnKey("MaterialInstanceOverrides"), SnReplicated)
+        std::vector<TAssetRef<MaterialInstanceAsset>> MaterialInstanceOverrides{}; /**< @brief Optional per-material-slot overrides applied on top of mesh-default material instances. */
     };
 
     /** @brief Access settings (const). */
@@ -88,12 +99,14 @@ public:
     }
 
     /** @brief Access settings for mutation. */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;
     }
 
     /** @brief Explicitly clear cached load state and rebuild from current source settings. @return `true` when a render object is available after reload. */
+    SnFunction(SnKey("ReloadMesh"))
     bool ReloadMesh();
     /** @brief Clear the current render object and remove it from all renderer passes. */
     void ClearMesh();
@@ -153,7 +166,7 @@ private:
     std::shared_ptr<SnAPI::Graphics::IRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
-    std::vector<TAssetRef<MaterialInstanceAssetRuntime>> m_loadedMeshMaterialInstances{}; /**< @brief Material instance refs baked into currently loaded mesh asset. */
+    std::vector<TAssetRef<MaterialInstanceAsset>> m_loadedMeshMaterialInstances{}; /**< @brief Material instance asset refs baked into currently loaded mesh asset. */
     bool m_registered = false; /**< @brief True when current mesh has been registered with renderer. */
     bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */

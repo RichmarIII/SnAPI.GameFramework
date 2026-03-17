@@ -536,6 +536,17 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_hasPendingConduitNodeCreateRequest = false;
     m_pendingConduitNodeCreateStableId.clear();
     m_hasPendingConduitNodeRemoveRequest = false;
+    m_hasPendingConduitNodeDefaultBoolRequest = false;
+    m_pendingConduitNodeDefaultPinKey.clear();
+    m_pendingConduitNodeDefaultBool = false;
+    m_hasPendingConduitNodeDefaultTextRequest = false;
+    m_pendingConduitNodeDefaultTextPinKey.clear();
+    m_pendingConduitNodeDefaultText.clear();
+    m_hasPendingConduitNodeDefaultEnumRequest = false;
+    m_pendingConduitNodeDefaultEnumPinKey.clear();
+    m_pendingConduitNodeDefaultEnum.clear();
+    m_hasPendingConduitNodeDefaultClearRequest = false;
+    m_pendingConduitNodeDefaultClearPinKey.clear();
     m_hasPendingConduitNodeMoveRequest = false;
     m_pendingConduitNodeMoveId = {};
     m_pendingConduitNodeMoveX = 0.0f;
@@ -672,6 +683,22 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_layout.SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorCloseRequest = true;
     }));
+    m_layout.SetContentAssetInspectorRuntimeMutatedHandler(
+        SnAPI::UI::TDelegate<void(const TypeId&, void*)>::Bind(
+            [AssetService](const TypeId& RootType, void* RootInstance) {
+                if (AssetService)
+                {
+                    AssetService->NotifyActiveAssetEditorRuntimeMutated(RootType, RootInstance);
+                }
+            }));
+    m_layout.SetContentAssetInspectorImportMutatedHandler(
+        SnAPI::UI::TDelegate<void(const TypeId&, void*)>::Bind(
+            [AssetService](const TypeId& RootType, void* RootInstance) {
+                if (AssetService)
+                {
+                    AssetService->NotifyActiveAssetEditorImportSettingsMutated(RootType, RootInstance);
+                }
+            }));
     m_layout.SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)>::Bind(
         [this](const NodeHandle& Handle) {
             m_pendingAssetInspectorNodeSelection = Handle;
@@ -743,6 +770,31 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_layout.SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingConduitNodeRemoveRequest = true;
     }));
+    m_layout.SetConduitNodeDefaultBoolHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& PinKey, const bool Value) {
+            m_pendingConduitNodeDefaultPinKey = PinKey;
+            m_pendingConduitNodeDefaultBool = Value;
+            m_hasPendingConduitNodeDefaultBoolRequest = true;
+        }));
+    m_layout.SetConduitNodeDefaultTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const std::string&)>::Bind(
+            [this](const std::string& PinKey, const std::string& Value) {
+                m_pendingConduitNodeDefaultTextPinKey = PinKey;
+                m_pendingConduitNodeDefaultText = Value;
+                m_hasPendingConduitNodeDefaultTextRequest = true;
+            }));
+    m_layout.SetConduitNodeDefaultEnumHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const std::string&)>::Bind(
+            [this](const std::string& PinKey, const std::string& Value) {
+                m_pendingConduitNodeDefaultEnumPinKey = PinKey;
+                m_pendingConduitNodeDefaultEnum = Value;
+                m_hasPendingConduitNodeDefaultEnumRequest = true;
+            }));
+    m_layout.SetConduitNodeDefaultClearHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& PinKey) {
+            m_pendingConduitNodeDefaultClearPinKey = PinKey;
+            m_hasPendingConduitNodeDefaultClearRequest = true;
+        }));
     m_layout.SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)>::Bind(
         [this](const Uuid& NodeId, const float X, const float Y) {
             m_pendingConduitNodeMoveId = NodeId;
@@ -1215,6 +1267,56 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         (void)ConduitService->RemoveSelectedNode();
     }
 
+    if (m_hasPendingConduitNodeDefaultBoolRequest)
+    {
+        m_hasPendingConduitNodeDefaultBoolRequest = false;
+        if (!m_pendingConduitNodeDefaultPinKey.empty())
+        {
+            (void)ConduitService->SetSelectedNodeInputDefaultBool(
+                m_pendingConduitNodeDefaultPinKey,
+                m_pendingConduitNodeDefaultBool);
+        }
+        m_pendingConduitNodeDefaultPinKey.clear();
+    }
+
+    if (m_hasPendingConduitNodeDefaultTextRequest)
+    {
+        m_hasPendingConduitNodeDefaultTextRequest = false;
+        if (!m_pendingConduitNodeDefaultTextPinKey.empty())
+        {
+            (void)ConduitService->SetSelectedNodeInputDefaultText(
+                m_pendingConduitNodeDefaultTextPinKey,
+                m_pendingConduitNodeDefaultText);
+        }
+        m_pendingConduitNodeDefaultTextPinKey.clear();
+        m_pendingConduitNodeDefaultText.clear();
+    }
+
+    if (m_hasPendingConduitNodeDefaultEnumRequest)
+    {
+        m_hasPendingConduitNodeDefaultEnumRequest = false;
+        if (!m_pendingConduitNodeDefaultEnumPinKey.empty() &&
+            !m_pendingConduitNodeDefaultEnum.empty())
+        {
+            (void)ConduitService->SetSelectedNodeInputDefaultEnum(
+                m_pendingConduitNodeDefaultEnumPinKey,
+                m_pendingConduitNodeDefaultEnum);
+        }
+        m_pendingConduitNodeDefaultEnumPinKey.clear();
+        m_pendingConduitNodeDefaultEnum.clear();
+    }
+
+    if (m_hasPendingConduitNodeDefaultClearRequest)
+    {
+        m_hasPendingConduitNodeDefaultClearRequest = false;
+        if (!m_pendingConduitNodeDefaultClearPinKey.empty())
+        {
+            (void)ConduitService->ClearSelectedNodeInputDefault(
+                m_pendingConduitNodeDefaultClearPinKey);
+        }
+        m_pendingConduitNodeDefaultClearPinKey.clear();
+    }
+
     if (m_hasPendingConduitNodeMoveRequest)
     {
         m_hasPendingConduitNodeMoveRequest = false;
@@ -1656,6 +1758,7 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
                 InputPins.push_back(EditorLayout::ConduitWorkspaceState::CanvasNode::Pin{
                     .Name = Pin.Name,
                     .TypeLabel = Pin.TypeLabel,
+                    .Tooltip = Pin.Tooltip,
                     .Kind = Pin.Kind,
                     .IsInput = Pin.IsInput,
                     .IsExec = Pin.IsExec,
@@ -1669,6 +1772,7 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
                 OutputPins.push_back(EditorLayout::ConduitWorkspaceState::CanvasNode::Pin{
                     .Name = Pin.Name,
                     .TypeLabel = Pin.TypeLabel,
+                    .Tooltip = Pin.Tooltip,
                     .Kind = Pin.Kind,
                     .IsInput = Pin.IsInput,
                     .IsExec = Pin.IsExec,
@@ -1679,6 +1783,7 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
                 .Id = Node.Id,
                 .Title = Node.Title,
                 .Detail = Node.Detail,
+                .Tooltip = Node.Tooltip,
                 .X = Node.X,
                 .Y = Node.Y,
                 .Width = Node.Width,
@@ -1809,6 +1914,27 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         WorkspaceState.SelectedNode.CanEditSecondaryText = NodeInspector.CanEditSecondaryText;
         WorkspaceState.SelectedNode.SecondaryTextLabel = NodeInspector.SecondaryTextLabel;
         WorkspaceState.SelectedNode.SecondaryTextValue = NodeInspector.SecondaryTextValue;
+        WorkspaceState.SelectedNode.InputDefaults.clear();
+        WorkspaceState.SelectedNode.InputDefaults.reserve(NodeInspector.InputDefaults.size());
+        for (const auto& Entry : NodeInspector.InputDefaults)
+        {
+            EditorLayout::ConduitWorkspaceState::NodeInspector::InputDefault DefaultEntry{};
+            DefaultEntry.PinKey = Entry.PinKey;
+            DefaultEntry.DisplayName = Entry.DisplayName;
+            DefaultEntry.Type = Entry.Type;
+            DefaultEntry.TypeLabel = Entry.TypeLabel;
+            DefaultEntry.Tooltip = Entry.Tooltip;
+            DefaultEntry.Connected = Entry.Connected;
+            DefaultEntry.HasDefault = Entry.HasDefault;
+            DefaultEntry.DefaultEditorKind =
+                static_cast<EditorLayout::ConduitWorkspaceState::EVariableDefaultEditorKind>(
+                    Entry.DefaultEditorKind);
+            DefaultEntry.BoolValue = Entry.BoolValue;
+            DefaultEntry.TextValue = Entry.TextValue;
+            DefaultEntry.EnumOptions = Entry.EnumOptions;
+            DefaultEntry.SelectedEnumIndex = Entry.SelectedEnumIndex;
+            WorkspaceState.SelectedNode.InputDefaults.emplace_back(std::move(DefaultEntry));
+        }
         WorkspaceState.Revision = ConduitView.Revision;
 
         if (!ConduitView.Open)
@@ -1974,7 +2100,8 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     auto* ThemeService = Context.GetService<EditorThemeService>();
     auto* SceneService = Context.GetService<EditorSceneService>();
     auto* SelectionService = Context.GetService<EditorSelectionService>();
-    if (!ThemeService || !SceneService || !SelectionService)
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    if (!ThemeService || !SceneService || !SelectionService || !AssetService)
     {
         m_layoutRebuildRequested = false;
         return;
@@ -2030,6 +2157,17 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_hasPendingConduitNodeCreateRequest = false;
     m_pendingConduitNodeCreateStableId.clear();
     m_hasPendingConduitNodeRemoveRequest = false;
+    m_hasPendingConduitNodeDefaultBoolRequest = false;
+    m_pendingConduitNodeDefaultPinKey.clear();
+    m_pendingConduitNodeDefaultBool = false;
+    m_hasPendingConduitNodeDefaultTextRequest = false;
+    m_pendingConduitNodeDefaultTextPinKey.clear();
+    m_pendingConduitNodeDefaultText.clear();
+    m_hasPendingConduitNodeDefaultEnumRequest = false;
+    m_pendingConduitNodeDefaultEnumPinKey.clear();
+    m_pendingConduitNodeDefaultEnum.clear();
+    m_hasPendingConduitNodeDefaultClearRequest = false;
+    m_pendingConduitNodeDefaultClearPinKey.clear();
     m_hasPendingConduitSpawnMenuOpenRequest = false;
     m_pendingConduitSpawnMenuOpenRequest = {};
     m_hasPendingConduitSpawnMenuSelectionRequest = false;
@@ -2125,6 +2263,22 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_layout.SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingAssetInspectorCloseRequest = true;
     }));
+    m_layout.SetContentAssetInspectorRuntimeMutatedHandler(
+        SnAPI::UI::TDelegate<void(const TypeId&, void*)>::Bind(
+            [AssetService](const TypeId& RootType, void* RootInstance) {
+                if (AssetService)
+                {
+                    AssetService->NotifyActiveAssetEditorRuntimeMutated(RootType, RootInstance);
+                }
+            }));
+    m_layout.SetContentAssetInspectorImportMutatedHandler(
+        SnAPI::UI::TDelegate<void(const TypeId&, void*)>::Bind(
+            [AssetService](const TypeId& RootType, void* RootInstance) {
+                if (AssetService)
+                {
+                    AssetService->NotifyActiveAssetEditorImportSettingsMutated(RootType, RootInstance);
+                }
+            }));
     m_layout.SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)>::Bind(
         [this](const NodeHandle& Handle) {
             m_pendingAssetInspectorNodeSelection = Handle;
@@ -2196,6 +2350,31 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_layout.SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()>::Bind([this]() {
         m_hasPendingConduitNodeRemoveRequest = true;
     }));
+    m_layout.SetConduitNodeDefaultBoolHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& PinKey, const bool Value) {
+            m_pendingConduitNodeDefaultPinKey = PinKey;
+            m_pendingConduitNodeDefaultBool = Value;
+            m_hasPendingConduitNodeDefaultBoolRequest = true;
+        }));
+    m_layout.SetConduitNodeDefaultTextHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const std::string&)>::Bind(
+            [this](const std::string& PinKey, const std::string& Value) {
+                m_pendingConduitNodeDefaultTextPinKey = PinKey;
+                m_pendingConduitNodeDefaultText = Value;
+                m_hasPendingConduitNodeDefaultTextRequest = true;
+            }));
+    m_layout.SetConduitNodeDefaultEnumHandler(
+        SnAPI::UI::TDelegate<void(const std::string&, const std::string&)>::Bind(
+            [this](const std::string& PinKey, const std::string& Value) {
+                m_pendingConduitNodeDefaultEnumPinKey = PinKey;
+                m_pendingConduitNodeDefaultEnum = Value;
+                m_hasPendingConduitNodeDefaultEnumRequest = true;
+            }));
+    m_layout.SetConduitNodeDefaultClearHandler(
+        SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& PinKey) {
+            m_pendingConduitNodeDefaultClearPinKey = PinKey;
+            m_hasPendingConduitNodeDefaultClearRequest = true;
+        }));
     m_layout.SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)>::Bind(
         [this](const Uuid& NodeId, const float X, const float Y) {
             m_pendingConduitNodeMoveId = NodeId;
@@ -2284,6 +2463,8 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetContentAssetInspectorSaveHandler({});
     m_layout.SetContentAssetInspectorReimportHandler({});
     m_layout.SetContentAssetInspectorCloseHandler({});
+    m_layout.SetContentAssetInspectorRuntimeMutatedHandler({});
+    m_layout.SetContentAssetInspectorImportMutatedHandler({});
     m_layout.SetContentAssetInspectorNodeSelectionHandler({});
     m_layout.SetContentAssetInspectorHierarchyActionHandler({});
     m_layout.SetConduitVariableSelectionHandler({});
@@ -2301,6 +2482,10 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetConduitNodeSelectionHandler({});
     m_layout.SetConduitNodeCreateHandler({});
     m_layout.SetConduitNodeRemoveHandler({});
+    m_layout.SetConduitNodeDefaultBoolHandler({});
+    m_layout.SetConduitNodeDefaultTextHandler({});
+    m_layout.SetConduitNodeDefaultEnumHandler({});
+    m_layout.SetConduitNodeDefaultClearHandler({});
     m_layout.SetConduitNodeMoveHandler({});
     m_layout.SetConduitSpawnMenuRequestHandler({});
     m_layout.SetConduitSpawnMenuSelectionHandler({});
@@ -2374,6 +2559,17 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_hasPendingConduitNodeCreateRequest = false;
     m_pendingConduitNodeCreateStableId.clear();
     m_hasPendingConduitNodeRemoveRequest = false;
+    m_hasPendingConduitNodeDefaultBoolRequest = false;
+    m_pendingConduitNodeDefaultPinKey.clear();
+    m_pendingConduitNodeDefaultBool = false;
+    m_hasPendingConduitNodeDefaultTextRequest = false;
+    m_pendingConduitNodeDefaultTextPinKey.clear();
+    m_pendingConduitNodeDefaultText.clear();
+    m_hasPendingConduitNodeDefaultEnumRequest = false;
+    m_pendingConduitNodeDefaultEnumPinKey.clear();
+    m_pendingConduitNodeDefaultEnum.clear();
+    m_hasPendingConduitNodeDefaultClearRequest = false;
+    m_pendingConduitNodeDefaultClearPinKey.clear();
     m_hasPendingConduitNodeMoveRequest = false;
     m_pendingConduitNodeMoveId = {};
     m_pendingConduitNodeMoveX = 0.0f;

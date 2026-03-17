@@ -8,6 +8,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -46,6 +47,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API BloomParamsNode : public BaseNode, public NodeCRTP<BloomParamsNode>
 {
 public:
@@ -61,36 +63,43 @@ public:
     explicit BloomParamsNode(std::string Name);
 
     /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
     /** @brief Access the HDR brightness threshold. @return Mutable non-negative threshold value in bloom input color units. */
+    SnField(SnKey("Threshold"), SnConstGetter(GetThreshold))
     float& EditThreshold();
     /** @brief Read the HDR brightness threshold. @return Stored threshold value. */
     const float& GetThreshold() const;
 
     /** @brief Access the soft-knee width around the bloom threshold. @return Mutable non-negative knee value. */
+    SnField(SnKey("Knee"), SnConstGetter(GetKnee))
     float& EditKnee();
     /** @brief Read the soft-knee width around the bloom threshold. @return Stored knee value. */
     const float& GetKnee() const;
 
     /** @brief Access the bloom intensity multiplier. @return Mutable non-negative intensity scalar. */
+    SnField(SnKey("Intensity"), SnConstGetter(GetIntensity))
     float& EditIntensity();
     /** @brief Read the bloom intensity multiplier. @return Stored intensity scalar. */
     const float& GetIntensity() const;
 
     /** @brief Access the bloom energy spread across mip levels. @return Mutable non-negative scatter value. */
+    SnField(SnKey("Scatter"), SnConstGetter(GetScatter))
     float& EditScatter();
     /** @brief Read the bloom energy spread across mip levels. @return Stored scatter value. */
     const float& GetScatter() const;
 
     /** @brief Access the pre-bloom brightness clamp. @return Mutable non-negative clamp value in bloom input color units. */
+    SnField(SnKey("Clamp"), SnConstGetter(GetClamp))
     float& EditClamp();
     /** @brief Read the pre-bloom brightness clamp. @return Stored clamp value. */
     const float& GetClamp() const;
 
     /** @brief Access the number of bloom mip levels. @return Mutable mip count; values below 1 are clamped to 1. */
+    SnField(SnKey("MipCount"), SnConstGetter(GetMipCount))
     std::uint32_t& EditMipCount();
     /** @brief Read the number of bloom mip levels. @return Stored mip count. */
     const std::uint32_t& GetMipCount() const;

@@ -4,6 +4,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -25,6 +26,7 @@ namespace SnAPI::GameFramework
  * @see GameplayHost
  * @see PlayerStart
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API PawnBase : public BaseNode, public NodeCRTP<PawnBase>
 {
 public:
@@ -40,8 +42,10 @@ public:
     void OnCreate();
 
     /** @brief Notification that a player began possessing this pawn. @param PlayerHandle Possessing player handle. */
+    SnFunction(SnKey("OnPossess"))
     void OnPossess(const NodeHandle& PlayerHandle);
     /** @brief Notification that a player stopped possessing this pawn. @param PlayerHandle Player handle that released possession. */
+    SnFunction(SnKey("OnUnpossess"))
     void OnUnpossess(const NodeHandle& PlayerHandle);
 
 private:

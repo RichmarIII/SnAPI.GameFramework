@@ -21,12 +21,22 @@ namespace SnAPI::GameFramework
  * - Callers typically pass this through `IAssetImportSettings` ownership channels.
  * - `Clone()` returns a deep copy suitable for persistence by the asset pipeline.
  */
+    SnType()
 struct AssimpImporterSettings final : public ::SnAPI::AssetPipeline::IAssetImportSettings
 {
+        static constexpr const char* kTypeName = "SnAPI::GameFramework::AssimpImporterSettings";
+
+        SnField()
     MeshImportSettingsPayload Mesh{}; /**< @brief Mesh-import policy flags forwarded into the source payload. */
-    std::string LogicalNameOverride{}; /**< @brief Optional asset display-name override applied during import. */
-    std::string DefaultShaderModule{"DefaultGBufferMaterial"}; /**< @brief Shader module used when imported materials need a default runtime material. */
-    std::string DefaultShadingModel{"GBufferShadingModel"}; /**< @brief Shading model used when imported materials need a default runtime material. */
+
+        SnField()
+        std::string LogicalNameOverride{}; /**< @brief Optional asset display-name override applied during import. */
+
+        SnField()
+        std::string DefaultShaderModule{"DefaultGBufferMaterial"}; /**< @brief Shader module used when imported materials need a default runtime material. */
+
+        SnField()
+        std::string DefaultShadingModel{"GBufferShadingModel"}; /**< @brief Shading model used when imported materials need a default runtime material. */
 
     /** @brief Deep-clone this settings object through the `IAssetImportSettings` interface. */
     [[nodiscard]] std::unique_ptr<::SnAPI::AssetPipeline::IAssetImportSettings> Clone() const override

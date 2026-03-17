@@ -42,6 +42,16 @@ struct SlotCopyNodeData
 
 /**
  * @ingroup SnAPI_GameFramework_Conduit
+ * @brief Node payload for default-constructing one value slot at runtime.
+ */
+struct DefaultConstructNodeData
+{
+    SlotId Output{}; /**< @brief Destination slot. */
+    const TypeInfo* Type = nullptr; /**< @brief Reflected slot type. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework_Conduit
  * @brief Erased callable for one unary intrinsic implementation.
  *
  * The function reads one input object and writes one output object.
@@ -193,6 +203,7 @@ struct InstanceMethodCallNodeData
  */
 using NodeData = std::variant<ConstantNodeData,
                               SlotCopyNodeData,
+                              DefaultConstructNodeData,
                               UnaryIntrinsicNodeData,
                               BinaryIntrinsicNodeData,
                               JumpNodeData,
@@ -445,6 +456,10 @@ NodeExecuteResult ExecuteSlotCopyNode(const NodeData& Data,
                                       FrameStorage& Frame,
                                       const ExecutionContext& Context,
                                       std::span<void*> ScratchArgs);
+NodeExecuteResult ExecuteDefaultConstructNode(const NodeData& Data,
+                                             FrameStorage& Frame,
+                                             const ExecutionContext& Context,
+                                             std::span<void*> ScratchArgs);
 NodeExecuteResult ExecuteUnaryIntrinsicNode(const NodeData& Data,
                                             FrameStorage& Frame,
                                             const ExecutionContext& Context,

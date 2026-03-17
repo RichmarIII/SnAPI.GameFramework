@@ -10,6 +10,7 @@
 #include "BaseComponent.h"
 #include "Export.h"
 #include <LinearAlgebra.hpp>
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -43,6 +44,7 @@ class RendererSystem;
  * @see EnvironmentProbeNode
  * @see SnAPI::Graphics::IEnvironmentProbe
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API EnvironmentCaptureComponent final : public BaseComponent, public ComponentCRTP<EnvironmentCaptureComponent>
 {
 public:
@@ -58,27 +60,41 @@ public:
      * - `Realtime` only re-requests capture once the current job has finished
      * - `CaptureResourceNameOverride` optionally redirects capture away from the viewport's default final resource
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::EnvironmentCaptureComponent::Settings";
 
+        SnField(SnKey("ViewportID"))
         std::int64_t ViewportID = -1; /**< @brief Source viewport id, or `-1` to use the renderer's current primary/default viewport. */
+        SnField(SnKey("FaceSize"))
         unsigned int FaceSize = 256u; /**< @brief Cube-face width/height in pixels. */
+        SnField(SnKey("FacesPerFrame"))
         unsigned int FacesPerFrame = 6u; /**< @brief Number of faces captured per frame while a capture job is active. */
+        SnField(SnKey("Realtime"))
         bool Realtime = false; /**< @brief Requeue captures continuously once each job completes. */
+        SnField(SnKey("CaptureResourceNameOverride"))
         std::string CaptureResourceNameOverride{}; /**< @brief Optional graph resource name to capture instead of the viewport's configured final color resource. */
+        SnField(SnKey("ProjectionExtents"))
         SnAPI::Vector3D ProjectionExtents{SnAPI::Vector3D(5.0, 5.0, 5.0)}; /**< @brief Half-extents used for parallax-correct local specular projection. */
+        SnField(SnKey("InfluenceExtents"))
         SnAPI::Vector3D InfluenceExtents{SnAPI::Vector3D(7.5, 7.5, 7.5)}; /**< @brief Half-extents used for deferred local-probe blending weights. */
+        SnField(SnKey("Priority"))
         float Priority = 1.0f; /**< @brief Relative probe priority when more than four probes overlap one pixel. */
     };
 
+    SnField(SnKey("Settings"), SnConstGetter(GetSettings))
     [[nodiscard]] Settings& EditSettings();
     [[nodiscard]] const Settings& GetSettings() const;
 
+    SnField(SnKey("CaptureState"))
     [[nodiscard]] std::string GetCaptureStateText() const;
+    SnField(SnKey("CapturedFaces"))
     [[nodiscard]] unsigned int GetCapturedFaces() const;
 
+    SnFunction(SnKey("Bake"), SnEditorAction)
     void Bake();
+    SnFunction(SnKey("CancelCapture"), SnEditorAction)
     void CancelCapture();
 
     void OnCreate();

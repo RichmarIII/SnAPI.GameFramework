@@ -64,9 +64,10 @@ enum class EAssetImportProfile : std::uint8_t
  * - Discovery results are snapshots stored in internal vectors; references and pointers returned
  *   by query functions are invalidated by `RefreshDiscovery()` and many mutating operations.
  * - Packed-asset rename edits are staged in editor-only override maps until saved.
- * - Runtime payload edits in the asset inspector are tracked through cooked-byte diffs and are not
- *   persisted until `SaveActiveAssetEditor()` or `SaveAssetByKey()` succeeds.
- * - Import settings edits are metadata only and typically require `ReimportActiveAsset()` to affect cooked output.
+ * - Asset-inspector dirty tracking is revision-based. Runtime and import-setting mutations mark the
+ *   active document dirty immediately instead of polling serialized payload diffs every frame.
+ * - Import settings edits are persisted onto authored assets and mirrored into reimport metadata;
+ *   they still typically require `ReimportActiveAsset()` to affect cooked output.
  *
  * Ownership and lifetime:
  * - Owned by `GameEditor` through the `IEditorService` contract.
@@ -456,10 +457,11 @@ public:
      */
     Result RemoveAssetEditorComponent(const NodeHandle& Owner, const TypeId& ComponentType);
     /**
-     * @brief Advance active asset-editor dirty-state tracking.
+     * @brief Advance active asset-editor session maintenance.
      * @param DeltaSeconds Variable-step frame delta in seconds.
      * @remarks
-     * Dirty checking is throttled internally. This method is normally driven by `Tick()` rather than called directly.
+     * This keeps the active session title/bindings current and applies runtime-side synchronization
+     * that cannot be expressed directly through reflected field writes.
      */
     void TickAssetEditorSession(float DeltaSeconds = 0.0f);
     /**
@@ -494,6 +496,22 @@ public:
      * @return Revision number incremented when session-visible state changes.
      */
     [[nodiscard]] std::uint64_t AssetEditorSessionRevision() const { return m_assetEditorSessionRevision; }
+    /**
+     * @brief Mark the active asset-editor runtime document dirty after one reflected-object mutation.
+     * @param RootType Reflected type of the mutated root object.
+     * @param RootInstance Borrowed pointer to the mutated root object.
+     * @remarks
+     * The current implementation uses the active inspector context rather than strict pointer matching.
+     * The parameters are preserved so callers can pass the actual mutated root and future validation
+     * can be tightened without changing the UI callback contract.
+     */
+    void NotifyActiveAssetEditorRuntimeMutated(const TypeId& RootType, void* RootInstance);
+    /**
+     * @brief Mark the active asset-editor import-settings document dirty after one mutation.
+     * @param RootType Reflected type of the mutated import-settings root object.
+     * @param RootInstance Borrowed pointer to the mutated import-settings root object.
+     */
+    void NotifyActiveAssetEditorImportSettingsMutated(const TypeId& RootType, void* RootInstance);
 
     /**
      * @brief Instantiate the currently placement-armed asset into the active runtime world.
@@ -586,6 +604,29 @@ private:
     Result LoadProjectDefaultRenderSettings(EditorServiceContext& Context);
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> SerializeAssetEditorPayload() const;
     [[nodiscard]] std::expected<std::string, std::string> SerializeAssetEditorSourceJson() const;
+    struct AssetEditorDocumentState
+    {
+        std::uint64_t RuntimeRevision = 0;
+        std::uint64_t SavedRuntimeRevision = 0;
+        std::uint64_t ImportRevision = 0;
+        std::uint64_t SavedImportRevision = 0;
+
+        void Reset()
+        {
+            RuntimeRevision = 0;
+            SavedRuntimeRevision = 0;
+            ImportRevision = 0;
+            SavedImportRevision = 0;
+        }
+    };
+    [[nodiscard]] bool IsAssetEditorRuntimeDirty() const;
+    [[nodiscard]] bool IsAssetEditorImportDirty() const;
+    void RefreshAssetEditorDirtyFlags(bool RefreshDiscoveryState = false);
+    [[nodiscard]] std::expected<void, std::string> SyncAssetEditorRuntimeOverrideFromCurrentState();
+    void MarkAssetEditorRuntimeChanged(bool RefreshDiscoveryState = false);
+    void MarkAssetEditorImportSettingsChanged(bool RefreshDiscoveryState = false);
+    void MarkAssetEditorRuntimeSaved();
+    void MarkAssetEditorImportSettingsSaved();
     Result SyncMaterialInstanceEditorPayloadFromDescriptor();
     struct AssetImportMetadataEntry
     {
@@ -601,6 +642,12 @@ private:
     [[nodiscard]] std::expected<void, std::string> LoadAssetImportMetadataDatabase();
     [[nodiscard]] std::expected<void, std::string> SaveAssetImportMetadataDatabase() const;
     [[nodiscard]] bool RefreshAssetEditorImportSettingsBinding(const DiscoveredAsset& Asset);
+    static void ApplyImportedAssetProvenanceToMetadata(
+        const ImportedAssetProvenancePayload& Provenance,
+        AssetImportMetadataEntry& Metadata);
+    [[nodiscard]] bool PopulateImportSettingsBindingFromActiveSourceAsset(AssetImportMetadataEntry& InOutMetadata);
+    void ApplyAssetEditorImportSettingsToActiveSourceAsset();
+    Result SyncImportedAssetGroupProvenance(const DiscoveredAsset& ActiveAsset, const AssetImportMetadataEntry& Metadata);
     [[nodiscard]] std::optional<AssetImportMetadataEntry> BuildAssetEditorImportMetadataFromCurrentState() const;
     [[nodiscard]] bool ImportMetadataRecordsEqual(const AssetImportMetadataEntry& Left, const AssetImportMetadataEntry& Right) const;
     [[nodiscard]] ::SnAPI::AssetPipeline::AssetImportSettingsPtr BuildTypedImportSettingsForRecord(
@@ -641,10 +688,11 @@ private:
     void* m_assetEditorTargetObject = nullptr;
     TypeId m_assetEditorSourceAssetType{};
     bool m_assetEditorDirty = false;
+    bool m_assetEditorRuntimeDirty = false;
     bool m_assetEditorCanSave = false;
     bool m_assetEditorCanEditHierarchy = false;
-    std::optional<MaterialPayload> m_assetEditorMaterialPayload{};
-    std::optional<MaterialInstancePayload> m_assetEditorMaterialInstancePayload{};
+    std::optional<MaterialAsset> m_assetEditorMaterialPayload{};
+    std::optional<MaterialInstanceAsset> m_assetEditorMaterialInstancePayload{};
     std::optional<TextureCompressorPlugin::TextureCompressorCookedInfo> m_assetEditorTextureCookedInfo{};
     std::optional<Editor::TextureAssetEditorPayload> m_assetEditorTexturePayload{};
     std::optional<StaticMeshPayload> m_assetEditorStaticMeshPayload{};
@@ -657,13 +705,11 @@ private:
     bool m_assetEditorCanReimport = false;
     std::optional<AssetImportMetadataEntry> m_assetEditorImportMetadataBaseline{};
     std::string m_assetEditorMaterialInstanceDescriptorParentKey{};
-    std::vector<uint8_t> m_assetEditorBaselineCookedBytes{};
-    std::string m_assetEditorBaselineSourceJson{};
     std::string m_assetEditorTitle{};
     NodeHandle m_assetEditorSelectedNode{};
     std::vector<AssetEditorSessionView::NodeEntry> m_assetEditorHierarchy{};
     bool m_assetEditorHierarchyDirty = false;
-    float m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
+    AssetEditorDocumentState m_assetEditorDocumentState{};
     std::uint64_t m_assetEditorSessionRevision = 0;
     std::unordered_map<::SnAPI::AssetPipeline::AssetId, AssetImportMetadataEntry, ::SnAPI::AssetPipeline::UuidHash> m_assetImportMetadata{};
     std::filesystem::path m_assetImportMetadataPath{};

@@ -19,6 +19,7 @@
 
 #include "NetReplication.h"
 #include "NetRpc.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -90,6 +91,7 @@ struct NetworkBootstrapSettings
  * @see NetReplicationBridge
  * @see NetRpcBridge
  */
+SnType()
 class NetworkSystem final : public ITaskDispatcher
 {
 public:
@@ -199,16 +201,19 @@ public:
      * @brief Check whether the attached session currently has server authority.
      * @return `true` when the session is server-capable, or when no session is attached.
      */
+    SnFunction(SnKey("IsServer"))
     bool IsServer() const;
     /**
      * @brief Check whether the attached session currently has client role.
      * @return `true` when the attached session is client-capable.
      */
+    SnFunction(SnKey("IsClient"))
     bool IsClient() const;
     /**
      * @brief Check whether the attached session is a listen server.
      * @return `true` when the session has both server and client roles.
      */
+    SnFunction(SnKey("IsListenServer"))
     bool IsListenServer() const;
 
     /**
@@ -224,6 +229,16 @@ public:
      * @remarks Convenience helper for common single-remote client/server setups.
      */
     std::optional<SnAPI::Networking::NetConnectionHandle> PrimaryConnection() const;
+
+    /**
+     * @brief Resolve a live transport handle from a stable gameplay owner-connection id.
+     * @param OwnerConnectionId Stable owning connection id (`0` means local authority).
+     * @return Matching active connection handle, or `std::nullopt` when no live match exists.
+     *
+     * This bridges gameplay/runtime ownership metadata with transport-visible connection handles,
+     * and is primarily used by owner-targeted client RPC dispatch.
+     */
+    std::optional<SnAPI::Networking::NetConnectionHandle> ResolveConnectionByOwnerId(std::uint64_t OwnerConnectionId) const;
 
 private:
     bool WireSession(SnAPI::Networking::NetSession& Session,

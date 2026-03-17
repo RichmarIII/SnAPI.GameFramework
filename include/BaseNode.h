@@ -14,6 +14,7 @@
 #include "StaticTypeId.h"
 #include "Uuid.h"
 #include "WorldEcsRuntime.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -60,6 +61,7 @@ class Variant;
  * @see BaseComponent
  * @see WorldEcsRuntime
  */
+SnType()
 class BaseNode : public NodeCRTP<BaseNode>
 {
 public:
@@ -136,6 +138,7 @@ public:
      * @brief Get the node name.
      * @return Name string.
      */
+    SnField(SnKey("Name"), SnSetter(Name))
     const std::string& Name() const
     {
         return m_name;
@@ -154,6 +157,7 @@ public:
      * @brief Get the node handle.
      * @return NodeHandle for this node.
      */
+    SnFunction(SnKey("Handle"))
     NodeHandle Handle() const
     {
         return m_self;
@@ -175,6 +179,7 @@ public:
      * @brief Get the node UUID.
      * @return UUID value.
      */
+    SnFunction(SnKey("Id"))
     const Uuid& Id() const
     {
         return m_self.Id;
@@ -196,6 +201,7 @@ public:
      * @brief Get the reflected type id for this node.
      * @return TypeId value.
      */
+    SnFunction(SnKey("TypeKey"))
     const TypeId& TypeKey() const
     {
         return m_typeId;
@@ -217,6 +223,7 @@ public:
      * @brief Get the parent node handle.
      * @return Parent handle or null handle if root.
      */
+    SnFunction(SnKey("Parent"))
     NodeHandle Parent() const
     {
         return m_parent;
@@ -280,6 +287,7 @@ public:
      * @return True if active.
      * @remarks Inactive nodes are skipped during tick.
      */
+    SnFunction(SnKey("Active"))
     bool Active() const
     {
         return m_active;
@@ -292,6 +300,7 @@ public:
      * Active=false suppresses this node's tick hooks during traversal.
      * This is an execution-state toggle, not a destruction or detachment operation.
      */
+    SnFunction(SnKey("SetActive"))
     void Active(bool Active)
     {
         m_active = Active;
@@ -301,6 +310,7 @@ public:
      * @brief Check if the node is replicated over the network.
      * @return True if replicated.
      */
+    SnFunction(SnKey("Replicated"))
     bool Replicated() const
     {
         return m_replicated;
@@ -313,9 +323,37 @@ public:
      * Runtime replication gate: node snapshots/spawns are skipped unless true.
      * Field-level replication flags are evaluated only after this object-level gate passes.
      */
+    SnFunction(SnKey("SetReplicated"))
     void Replicated(bool Replicated)
     {
         m_replicated = Replicated;
+    }
+
+    /**
+     * @brief Get the owning network-connection id for this node.
+     * @return Stable connection id, or `0` for local authority / unowned nodes.
+     *
+     * This is gameplay/runtime ownership metadata rather than transport state. It is used by
+     * generated owner-targeted client RPC routing to resolve which remote connection should
+     * receive `SnRpc(SnClient)` calls for this node.
+     */
+    std::uint64_t& EditOwnerConnectionId()
+    {
+        return m_ownerConnectionId;
+    }
+
+    const std::uint64_t& GetOwnerConnectionId() const
+    {
+        return m_ownerConnectionId;
+    }
+
+    /**
+     * @brief Set the owning network-connection id for this node.
+     * @param OwnerConnectionId Stable owning connection id, or `0` for local authority.
+     */
+    void SetOwnerConnectionId(const std::uint64_t OwnerConnectionId)
+    {
+        m_ownerConnectionId = OwnerConnectionId;
     }
 
     /**
@@ -325,6 +363,7 @@ public:
      * Used by hot-path activity checks to avoid UUID set lookups while preserving
      * end-of-frame deferred destruction semantics.
      */
+    SnFunction(SnKey("PendingDestroy"))
     bool PendingDestroy() const
     {
         return m_pendingDestroy;
@@ -344,6 +383,7 @@ public:
      * @brief Check whether this node is editor-transient and should be excluded from persistence.
      * @return True when the node is flagged transient for editor preview/runtime-only use.
      */
+    SnFunction(SnKey("EditorTransient"))
     bool EditorTransient() const
     {
         return m_editorTransient;
@@ -356,6 +396,7 @@ public:
      * Editor-transient nodes are intended for visualization helpers (for example, preview-only instances)
      * and should not be serialized into level/world assets.
      */
+    SnFunction(SnKey("SetEditorTransient"))
     void EditorTransient(const bool Transient)
     {
         m_editorTransient = Transient;
@@ -365,16 +406,19 @@ public:
      * @brief True when this node executes with server authority.
      * @remarks Derived from world networking role; false when unbound to a world/session.
      */
+    SnFunction(SnKey("IsServer"))
     bool IsServer() const;
     /**
      * @brief True when this node executes in client context.
      * @remarks Derived from world networking role; false when unbound to a world/session.
      */
+    SnFunction(SnKey("IsClient"))
     bool IsClient() const;
     /**
      * @brief True when this node executes as listen-server.
      * @remarks True when both server and client roles are active in the attached session.
      */
+    SnFunction(SnKey("IsListenServer"))
     bool IsListenServer() const;
 
     /**
@@ -382,6 +426,7 @@ public:
      * @param PlayerHandle Handle of the possessing LocalPlayer.
      * @remarks Default implementation is a no-op.
      */
+    SnFunction(SnKey("OnPossess"))
     void OnPossess(const NodeHandle& PlayerHandle)
     {
         (void)PlayerHandle;
@@ -392,6 +437,7 @@ public:
      * @param PlayerHandle Handle of the unpossessing LocalPlayer.
      * @remarks Default implementation is a no-op.
      */
+    SnFunction(SnKey("OnUnpossess"))
     void OnUnpossess(const NodeHandle& PlayerHandle)
     {
         (void)PlayerHandle;
@@ -503,6 +549,7 @@ public:
      * @brief Get the owning world for this node.
      * @return Pointer to the world interface or nullptr if unowned.
      */
+    SnFunction(SnKey("World"))
     IWorld* World() const
     {
         return m_world;
@@ -613,6 +660,7 @@ private:
     bool m_replicated = false; /**< @brief Runtime replication gate for networking bridges. */
     bool m_pendingDestroy = false; /**< @brief True when this node has been scheduled for end-of-frame destruction. */
     bool m_editorTransient = false; /**< @brief True when this node is an editor-only transient helper and must not be persisted. */
+    std::uint64_t m_ownerConnectionId = 0; /**< @brief Stable owning-connection id used for owner-targeted client RPC routing. */
     std::vector<TypeId> m_componentTypes{}; /**< @brief Attached component type ids for introspection and fast feature checks. */
     RelevanceComponent* m_relevanceComponent = nullptr; /**< @brief Cached relevance component pointer for hot-path activation checks. */
     std::vector<uint64_t> m_componentMask{}; /**< @brief Dense bitmask mirror of `m_componentTypes` for fast `Has<T>` checks. */

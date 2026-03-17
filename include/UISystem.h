@@ -14,6 +14,7 @@
 #include "TypeName.h"
 
 #include <UIContext.h>
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -36,9 +37,12 @@ namespace SnAPI::GameFramework
  *
  * @see UISystem
  */
+SnType()
 struct UIBootstrapSettings
 {
+    SnField(SnKey("ViewportWidth"))
     float ViewportWidth = 1600.0f; /**< @brief Initial logical viewport width in UI units; must be finite and > 0. */
+    SnField(SnKey("ViewportHeight"))
     float ViewportHeight = 900.0f; /**< @brief Initial logical viewport height in UI units; must be finite and > 0. */
     std::optional<float> DpiScaleOverride{}; /**< @brief Optional explicit DPI scale override; when nullopt, UIContext defaults/environment values are preserved. */
 };
@@ -81,6 +85,7 @@ struct UIBootstrapSettings
  * @see World
  * @see UIBootstrapSettings
  */
+SnType()
 class UISystem final : public ITaskDispatcher
 {
 public:
@@ -146,6 +151,7 @@ public:
      * @brief Check whether the UI system is initialized.
      * @return `true` when a live root context exists.
      */
+    SnFunction(SnKey("IsInitialized"))
     bool IsInitialized() const;
 
     /**
@@ -215,6 +221,7 @@ public:
      * @brief Access the root context id.
      * @return Root context id, or `0` when uninitialized.
      */
+    SnFunction(SnKey("RootContextId"))
     ContextId RootContextId() const;
     /**
      * @brief Create a child context under an existing parent context.
@@ -315,6 +322,7 @@ public:
      * @brief Access the active bootstrap settings snapshot.
      * @return Borrowed reference to the subsystem-owned settings copy.
      */
+    SnFunction(SnKey("Settings"))
     const UIBootstrapSettings& Settings() const;
 
     /**

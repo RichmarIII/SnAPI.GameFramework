@@ -8,6 +8,7 @@
 #include "CollisionFilters.h"
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -39,6 +40,7 @@ namespace SnAPI::GameFramework
  * @see CollisionLayerToIndex()
  * @see CollisionMaskFlags
  */
+SnType()
 class ColliderComponent : public BaseComponent, public ComponentCRTP<ColliderComponent>
 {
 public:
@@ -52,26 +54,39 @@ public:
      * `RigidBodyComponent` reads these values when building a backend collider description. Mutating
      * them affects only future body creation/recreation.
      */
+    SnType()
     struct Settings
     {
         /** @brief Stable reflected type name used for serialization registration. */
         static constexpr const char* kTypeName = "SnAPI::GameFramework::ColliderComponent::Settings";
 
+        SnField(SnKey("Shape"))
         SnAPI::Physics::EShapeType Shape = SnAPI::Physics::EShapeType::Box; /**< @brief Backend shape type interpreted by the rigid-body build path. */
 
+        SnField(SnKey("HalfExtent"))
         Vec3 HalfExtent{0.5f, 0.5f, 0.5f}; /**< @brief Box half extents in local-space world units when `Shape == Box`. */
+        SnField(SnKey("Radius"))
         float Radius = 0.5f; /**< @brief Sphere or capsule radius in local-space world units. */
+        SnField(SnKey("HalfHeight"))
         float HalfHeight = 0.5f; /**< @brief Capsule half-height in local-space world units, excluding the hemispherical end caps. */
 
+        SnField(SnKey("LocalPosition"))
         Vec3 LocalPosition{}; /**< @brief Local-space shape offset from the owning node origin, expressed in world units. */
+        SnField(SnKey("LocalRotation"))
         Vec3 LocalRotation{}; /**< @brief Local-space Euler rotation in radians, interpreted in XYZ order by the build path. */
 
+        SnField(SnKey("Density"))
         float Density = 1.0f; /**< @brief Density forwarded into backend collider/body setup. */
+        SnField(SnKey("Friction"))
         float Friction = 0.5f; /**< @brief Contact friction coefficient forwarded to the physics backend. */
+        SnField(SnKey("Restitution"))
         float Restitution = 0.1f; /**< @brief Contact restitution/bounciness forwarded to the physics backend. */
 
+        SnField(SnKey("Layer"))
         CollisionLayerFlags Layer = CollisionLayerFlags(ECollisionFilterBits::WorldDynamic); /**< @brief Logical collision layer. Downstream code expects one effective bit. */
+        SnField(SnKey("Mask"))
         CollisionMaskFlags Mask = kCollisionMaskAll; /**< @brief Collision mask describing which layers this collider can query/collide against. */
+        SnField(SnKey("IsTrigger"))
         bool IsTrigger = false; /**< @brief Request trigger/sensor behavior instead of solid collision response. */
     };
 
@@ -89,6 +104,7 @@ public:
      * @return Borrowed reference to the stored settings object.
      * @remarks Runtime backend changes occur only when a sibling rigid body is recreated.
      */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;

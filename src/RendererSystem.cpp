@@ -862,7 +862,7 @@ bool RendererSystem::InitializeUnlocked()
         return false;
     }
 
-    if (auto* ShaderManager = SnAPI::Graphics::ShaderCompilationManager::Instance())
+    if (auto* ShaderManager = SnAPI::Graphics::ShaderCompilationManager::TryInstance())
     {
         ShaderManager->ClearCustomShaderSearchPaths();
         if (const std::filesystem::path AssetRoot = SPathResolver::Instance().AssetRoot(); !AssetRoot.empty())
@@ -1041,7 +1041,7 @@ bool RendererSystem::SetProjectShaderSearchRoot(const std::filesystem::path& Ass
 {
     GameLockGuard Lock(m_mutex);
 
-    auto* ShaderManager = SnAPI::Graphics::ShaderCompilationManager::Instance();
+    auto* ShaderManager = SnAPI::Graphics::ShaderCompilationManager::TryInstance();
     if (!ShaderManager)
     {
         return false;

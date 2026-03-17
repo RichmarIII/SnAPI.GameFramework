@@ -13,12 +13,36 @@
 
 #include "AuthoredAssetCereal.h"
 #include "NodeCast.h"
+#include "TypeAutoRegistration.h"
 #include "TypeAutoRegistry.h"
 #include "TypeRegistry.h"
 #include "WorldEcsRuntime.h"
 
 namespace SnAPI::GameFramework
 {
+SNAPI_REFLECT_TYPE(
+    NodeAsset,
+    (TTypeBuilder<NodeAsset>(NodeAsset::kTypeName)
+        .Base<IAsset>()
+        .Field("Name", &NodeAsset::Name, EFieldFlagBits::Serialized)
+        .Field("Nodes", &NodeAsset::Nodes, EFieldFlagBits::Serialized)
+        .Constructor<>()
+        .Register()));
+
+SNAPI_REFLECT_TYPE(
+    LevelAsset,
+    (TTypeBuilder<LevelAsset>(LevelAsset::kTypeName)
+        .Base<NodeAsset>()
+        .Constructor<>()
+        .Register()));
+
+SNAPI_REFLECT_TYPE(
+    WorldAsset,
+    (TTypeBuilder<WorldAsset>(WorldAsset::kTypeName)
+        .Base<NodeAsset>()
+        .Constructor<>()
+        .Register()));
+
 namespace
 {
 using cereal::make_nvp;

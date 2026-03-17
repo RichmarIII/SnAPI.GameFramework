@@ -33,6 +33,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <memory>
 #include <new>
 #include <cstdlib>
@@ -469,6 +470,38 @@ void NormalizeEditorState(GraphAsset& Asset)
     }
 }
 
+void NormalizeMethodNodeInputs(GraphAsset& Asset)
+{
+    const TypeId FallbackSelfType = Asset.SelfType;
+
+    for (GraphNodeAsset& Node : Asset.Nodes)
+    {
+        if (Node.Kind != EGraphAssetNodeKind::SelfMethodCall &&
+            Node.Kind != EGraphAssetNodeKind::InstanceMethodCall)
+        {
+            continue;
+        }
+
+        const TypeId OwnerType = Node.OwnerType != TypeId{} ? Node.OwnerType : FallbackSelfType;
+        if (OwnerType == TypeId{} || Node.MemberName.empty())
+        {
+            continue;
+        }
+
+        const auto Methods = TypeRegistry::Instance().CollectMethods(OwnerType, true);
+        const auto MethodIt = std::find_if(Methods.begin(), Methods.end(), [&Node](const ReflectedMethodRef& Ref) {
+            return Ref.Method && Ref.Method->RawInvoke && Ref.Method->Name == Node.MemberName;
+        });
+        if (MethodIt == Methods.end() || !MethodIt->Method)
+        {
+            continue;
+        }
+
+        Node.OwnerType = MethodIt->OwnerType;
+        Node.Inputs.resize(MethodIt->Method->ParamTypes.size());
+    }
+}
+
 [[nodiscard]] std::string ResolveTypeLabel(const TypeId& Type)
 {
     if (Type == TypeId{})
@@ -484,9 +517,222 @@ void NormalizeEditorState(GraphAsset& Asset)
     return ToString(Type);
 }
 
+[[nodiscard]] std::string ResolveTypeDisplayLabel(const TypeId& Type)
+{
+    if (Type == TypeId{})
+    {
+        return "Any";
+    }
+
+    if (const TypeInfo* Info = TypeRegistry::Instance().Find(Type))
+    {
+        if (!Info->DisplayName.empty())
+        {
+            return Info->DisplayName;
+        }
+    }
+
+    return ResolveTypeLabel(Type);
+}
+
 [[nodiscard]] std::string BuildArgName(const std::size_t Index)
 {
     return "Arg" + std::to_string(Index);
+}
+
+[[nodiscard]] std::string ResolveFieldDisplayLabel(const FieldInfo& Field)
+{
+    return Field.DisplayName.empty() ? Field.Name : Field.DisplayName;
+}
+
+[[nodiscard]] std::string ResolveMethodDisplayLabel(const MethodInfo& Method)
+{
+    return Method.DisplayName.empty() ? Method.Name : Method.DisplayName;
+}
+
+[[nodiscard]] const FieldInfo* FindDirectFieldInfo(const TypeId& OwnerType, const std::string_view Name)
+{
+    const TypeInfo* OwnerInfo = TypeRegistry::Instance().Find(OwnerType);
+    if (!OwnerInfo)
+    {
+        return nullptr;
+    }
+
+    const auto It = std::find_if(OwnerInfo->Fields.begin(), OwnerInfo->Fields.end(), [Name](const FieldInfo& Field) {
+        return Field.Name == Name;
+    });
+    return It != OwnerInfo->Fields.end() ? &(*It) : nullptr;
+}
+
+[[nodiscard]] const MethodInfo* FindDirectMethodInfo(const TypeId& OwnerType, const std::string_view Name)
+{
+    const TypeInfo* OwnerInfo = TypeRegistry::Instance().Find(OwnerType);
+    if (!OwnerInfo)
+    {
+        return nullptr;
+    }
+
+    const auto It = std::find_if(OwnerInfo->Methods.begin(), OwnerInfo->Methods.end(), [Name](const MethodInfo& Method) {
+        return Method.Name == Name;
+    });
+    return It != OwnerInfo->Methods.end() ? &(*It) : nullptr;
+}
+
+[[nodiscard]] std::string FormatTooltipNumber(const double Value)
+{
+    std::ostringstream Stream;
+    Stream << std::setprecision(15) << Value;
+    std::string Text = Stream.str();
+
+    if (const auto Dot = Text.find('.'); Dot != std::string::npos)
+    {
+        while (!Text.empty() && Text.back() == '0')
+        {
+            Text.pop_back();
+        }
+        if (!Text.empty() && Text.back() == '.')
+        {
+            Text.pop_back();
+        }
+    }
+
+    return Text;
+}
+
+[[nodiscard]] std::string WrapTooltipText(const std::string_view Text, const std::size_t MaxCharsPerLine = 64)
+{
+    std::istringstream Lines{std::string(Text)};
+    std::string RawLine{};
+    std::string Result{};
+    bool FirstLine = true;
+
+    while (std::getline(Lines, RawLine))
+    {
+        if (!FirstLine)
+        {
+            Result += '\n';
+        }
+        FirstLine = false;
+
+        if (RawLine.empty())
+        {
+            continue;
+        }
+
+        std::istringstream Words(RawLine);
+        std::string Word{};
+        std::size_t CurrentLineLength = 0;
+        bool FirstWord = true;
+        while (Words >> Word)
+        {
+            const std::size_t NextLength = FirstWord ? Word.size() : (CurrentLineLength + 1 + Word.size());
+            if (!FirstWord && CurrentLineLength > 0 && NextLength > MaxCharsPerLine)
+            {
+                Result += '\n';
+                Result += Word;
+                CurrentLineLength = Word.size();
+                FirstWord = false;
+                continue;
+            }
+
+            if (!FirstWord)
+            {
+                Result += ' ';
+                ++CurrentLineLength;
+            }
+
+            Result += Word;
+            CurrentLineLength += Word.size();
+            FirstWord = false;
+        }
+    }
+
+    return Result;
+}
+
+void AppendTooltipLine(std::string& Tooltip, const std::string_view Line)
+{
+    if (Line.empty())
+    {
+        return;
+    }
+
+    if (!Tooltip.empty())
+    {
+        Tooltip += '\n';
+    }
+    Tooltip += Line;
+}
+
+void AppendWrappedTooltipLine(std::string& Tooltip, const std::string_view Line)
+{
+    if (Line.empty())
+    {
+        return;
+    }
+
+    AppendTooltipLine(Tooltip, WrapTooltipText(Line));
+}
+
+void AppendFieldValueTooltipLines(std::string& Tooltip, const FieldInfo::NumericValueInfo& ValueInfo)
+{
+    if (ValueInfo.Min.has_value() || ValueInfo.Max.has_value())
+    {
+        std::string RangeLine = "Range: ";
+        RangeLine += ValueInfo.Min.has_value() ? FormatTooltipNumber(*ValueInfo.Min) : std::string("-inf");
+        RangeLine += " to ";
+        RangeLine += ValueInfo.Max.has_value() ? FormatTooltipNumber(*ValueInfo.Max) : std::string("+inf");
+        AppendTooltipLine(Tooltip, RangeLine);
+    }
+
+    if (ValueInfo.Step.has_value())
+    {
+        AppendTooltipLine(Tooltip, "Step: " + FormatTooltipNumber(*ValueInfo.Step));
+    }
+}
+
+[[nodiscard]] std::string BuildReflectedNodeTooltipSummary(const std::string_view Summary,
+                                                           const std::string_view Doc,
+                                                           const TypeId& ValueType,
+                                                           const FieldInfo::NumericValueInfo* ValueInfo = nullptr)
+{
+    std::string Tooltip{};
+    AppendWrappedTooltipLine(Tooltip, Summary);
+    if (Doc.empty())
+    {
+        if (const TypeInfo* Type = TypeRegistry::Instance().Find(ValueType); Type && !Type->Doc.empty())
+        {
+            AppendWrappedTooltipLine(Tooltip, Type->Doc);
+        }
+    }
+    else
+    {
+        AppendWrappedTooltipLine(Tooltip, Doc);
+    }
+
+    if (ValueType != TypeId{})
+    {
+        AppendTooltipLine(Tooltip, "Type: " + ResolveTypeDisplayLabel(ValueType));
+    }
+
+    if (ValueInfo)
+    {
+        AppendFieldValueTooltipLines(Tooltip, *ValueInfo);
+    }
+
+    return Tooltip;
+}
+
+[[nodiscard]] std::string BuildTargetPinTooltip(const TypeId& TargetType, const std::string_view Summary)
+{
+    std::string Tooltip{};
+    AppendWrappedTooltipLine(Tooltip, Summary);
+    AppendTooltipLine(Tooltip, "Type: " + ResolveTypeDisplayLabel(TargetType));
+    if (const TypeInfo* Type = TypeRegistry::Instance().Find(TargetType); Type && !Type->Doc.empty())
+    {
+        AppendWrappedTooltipLine(Tooltip, Type->Doc);
+    }
+    return Tooltip;
 }
 
 [[nodiscard]] std::string_view UnaryIntrinsicName(const EUnaryIntrinsicOp Op)
@@ -802,6 +1048,65 @@ void DisconnectConsumersOfProducedSlots(GraphAsset& Asset, const std::unordered_
     return true;
 }
 
+[[nodiscard]] std::optional<std::size_t> ResolveMethodPinIndex(const GraphNodeAsset& Node, const std::string_view PinName)
+{
+    std::size_t ArgIndex = 0;
+    if (TryParseArgPinIndex(PinName, ArgIndex))
+    {
+        return ArgIndex;
+    }
+
+    const MethodInfo* Method = FindDirectMethodInfo(Node.OwnerType, Node.MemberName);
+    if (!Method)
+    {
+        return std::nullopt;
+    }
+
+    for (std::size_t Index = 0; Index < Method->ParamTypes.size(); ++Index)
+    {
+        const CallableParamInfo* Param = Index < Method->Params.size() ? &Method->Params[Index] : nullptr;
+        const std::string ParamName = (Param && !Param->Name.empty()) ? Param->Name : BuildArgName(Index);
+        if (ParamName == PinName)
+        {
+            return Index;
+        }
+    }
+
+    return std::nullopt;
+}
+
+[[nodiscard]] std::string CanonicalizeNodeInputPinKey(const GraphNodeAsset& Node, const std::string_view PinName)
+{
+    if (Node.Kind == EGraphAssetNodeKind::SelfMethodCall || Node.Kind == EGraphAssetNodeKind::InstanceMethodCall)
+    {
+        if (const auto ArgIndex = ResolveMethodPinIndex(Node, PinName); ArgIndex.has_value())
+        {
+            return BuildArgName(*ArgIndex);
+        }
+    }
+    return std::string(PinName);
+}
+
+[[nodiscard]] GraphNodeInputDefaultAsset* FindMutableNodeInputDefault(GraphNodeAsset& Node, const std::string_view PinKey)
+{
+    const auto It = std::find_if(Node.InputDefaults.begin(),
+                                 Node.InputDefaults.end(),
+                                 [PinKey](const GraphNodeInputDefaultAsset& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    return It != Node.InputDefaults.end() ? &(*It) : nullptr;
+}
+
+[[nodiscard]] const GraphNodeInputDefaultAsset* FindNodeInputDefault(const GraphNodeAsset& Node, const std::string_view PinKey)
+{
+    const auto It = std::find_if(Node.InputDefaults.begin(),
+                                 Node.InputDefaults.end(),
+                                 [PinKey](const GraphNodeInputDefaultAsset& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    return It != Node.InputDefaults.end() ? &(*It) : nullptr;
+}
+
 [[nodiscard]] SlotId* ResolveMutableNodePinSlot(GraphNodeAsset& Node, const std::string_view PinName)
 {
     switch (Node.Kind)
@@ -850,16 +1155,16 @@ void DisconnectConsumersOfProducedSlots(GraphAsset& Asset, const std::unordered_
             return &Node.ReturnSlot;
         }
         {
-            std::size_t ArgIndex = 0;
-            if (!TryParseArgPinIndex(PinName, ArgIndex))
+            const auto ArgIndex = ResolveMethodPinIndex(Node, PinName);
+            if (!ArgIndex.has_value())
             {
                 return nullptr;
             }
-            if (Node.Inputs.size() <= ArgIndex)
+            if (Node.Inputs.size() <= *ArgIndex)
             {
-                Node.Inputs.resize(ArgIndex + 1);
+                Node.Inputs.resize(*ArgIndex + 1);
             }
-            return &Node.Inputs[ArgIndex];
+            return &Node.Inputs[*ArgIndex];
         }
     case EGraphAssetNodeKind::Jump:
     case EGraphAssetNodeKind::Label:
@@ -917,12 +1222,12 @@ void DisconnectConsumersOfProducedSlots(GraphAsset& Asset, const std::unordered_
             return &Node.ReturnSlot;
         }
         {
-            std::size_t ArgIndex = 0;
-            if (!TryParseArgPinIndex(PinName, ArgIndex) || ArgIndex >= Node.Inputs.size())
+            const auto ArgIndex = ResolveMethodPinIndex(Node, PinName);
+            if (!ArgIndex.has_value() || *ArgIndex >= Node.Inputs.size())
             {
                 return nullptr;
             }
-            return &Node.Inputs[ArgIndex];
+            return &Node.Inputs[*ArgIndex];
         }
     case EGraphAssetNodeKind::Jump:
     case EGraphAssetNodeKind::Label:
@@ -1318,16 +1623,40 @@ void AppendDataCanvasWires(const GraphAsset& Asset,
         case EGraphAssetNodeKind::Branch:
             return "Branch";
         case EGraphAssetNodeKind::SelfFieldRead:
+            if (const FieldInfo* Field = FindDirectFieldInfo(Node.OwnerType, Node.MemberName))
+            {
+                return "Get " + ResolveFieldDisplayLabel(*Field);
+            }
             return "Get " + Node.MemberName;
         case EGraphAssetNodeKind::SelfFieldWrite:
+            if (const FieldInfo* Field = FindDirectFieldInfo(Node.OwnerType, Node.MemberName))
+            {
+                return "Set " + ResolveFieldDisplayLabel(*Field);
+            }
             return "Set " + Node.MemberName;
         case EGraphAssetNodeKind::SelfMethodCall:
+            if (const MethodInfo* Method = FindDirectMethodInfo(Node.OwnerType, Node.MemberName))
+            {
+                return "Call " + ResolveMethodDisplayLabel(*Method);
+            }
             return "Call " + Node.MemberName;
         case EGraphAssetNodeKind::InstanceFieldRead:
+            if (const FieldInfo* Field = FindDirectFieldInfo(Node.OwnerType, Node.MemberName))
+            {
+                return "Get " + ResolveFieldDisplayLabel(*Field);
+            }
             return "Get " + Node.MemberName;
         case EGraphAssetNodeKind::InstanceFieldWrite:
+            if (const FieldInfo* Field = FindDirectFieldInfo(Node.OwnerType, Node.MemberName))
+            {
+                return "Set " + ResolveFieldDisplayLabel(*Field);
+            }
             return "Set " + Node.MemberName;
         case EGraphAssetNodeKind::InstanceMethodCall:
+            if (const MethodInfo* Method = FindDirectMethodInfo(Node.OwnerType, Node.MemberName))
+            {
+                return "Call " + ResolveMethodDisplayLabel(*Method);
+            }
             return "Call " + Node.MemberName;
     }
 
@@ -1375,9 +1704,9 @@ void AppendDataCanvasWires(const GraphAsset& Asset,
             return "Self Method Call";
         case EGraphAssetNodeKind::InstanceFieldRead:
         case EGraphAssetNodeKind::InstanceFieldWrite:
-            return ResolveTypeLabel(Node.OwnerType);
+            return ResolveTypeDisplayLabel(Node.OwnerType);
         case EGraphAssetNodeKind::InstanceMethodCall:
-            return "Call on " + ResolveTypeLabel(Node.OwnerType);
+            return "Call on " + ResolveTypeDisplayLabel(Node.OwnerType);
     }
 
     return {};
@@ -1440,6 +1769,62 @@ void AppendDataCanvasWires(const GraphAsset& Asset,
     }
 
     return nullptr;
+}
+
+[[nodiscard]] std::string BuildFallbackPinTooltip(const SchemaPinDescriptor& Pin)
+{
+    if (!Pin.Tooltip.empty())
+    {
+        return Pin.Tooltip;
+    }
+
+    std::string Tooltip{};
+    if (Pin.Type.IsExec)
+    {
+        AppendWrappedTooltipLine(
+            Tooltip,
+            std::string(Pin.Direction == ESchemaPinDirection::Input ? "Exec input" : "Exec output") +
+                " pin '" + Pin.Name + "'.");
+        return Tooltip;
+    }
+
+    const char* DirectionLabel = Pin.Direction == ESchemaPinDirection::Input ? "Input" : "Output";
+    const char* KindLabel = Pin.Type.Kind == ESlotKind::Handle ? "handle" : "value";
+    AppendWrappedTooltipLine(Tooltip, std::string(DirectionLabel) + " " + KindLabel + " pin '" + Pin.Name + "'.");
+
+    if (Pin.Type.Type != TypeId{})
+    {
+        AppendTooltipLine(Tooltip, "Type: " + ResolveTypeDisplayLabel(Pin.Type.Type));
+    }
+    else if (Pin.Type.IsPolymorphic)
+    {
+        AppendTooltipLine(Tooltip, "Type: inferred");
+    }
+
+    if (Pin.SupportsLiteral)
+    {
+        AppendTooltipLine(Tooltip, "Supports inline literal values.");
+    }
+
+    return Tooltip;
+}
+
+[[nodiscard]] std::string BuildCanvasNodeTooltip(const GraphAsset& Asset,
+                                                 const GraphNodeAsset& Node,
+                                                 const SchemaNodeDescriptor* Descriptor)
+{
+    if (Descriptor && !Descriptor->Tooltip.empty())
+    {
+        return Descriptor->Tooltip;
+    }
+
+    std::string Tooltip{};
+    AppendWrappedTooltipLine(Tooltip, DescribeNodeTitle(Asset, Node));
+    if (const std::string Detail = DescribeNodeDetail(Asset, Node); !Detail.empty())
+    {
+        AppendWrappedTooltipLine(Tooltip, Detail);
+    }
+    return Tooltip;
 }
 
 [[nodiscard]] std::optional<CanvasWireView> BuildCanvasWire(const GraphAsset& Asset,
@@ -1568,120 +1953,125 @@ template<typename T>
     return true;
 }
 
-[[nodiscard]] bool TryFormatTextDefault(const GraphVariableAsset& Variable, std::string& OutText)
+[[nodiscard]] bool TryFormatTextSerializedValue(const TypeId& Type, const SerializedValue& Value, std::string& OutText)
 {
-    if (Variable.DefaultValue.Type == TypeId{})
+    if (Value.Type == TypeId{})
     {
         OutText.clear();
         return true;
     }
 
-    if (Variable.Type == StaticTypeId<std::string>())
+    if (Type == StaticTypeId<std::string>())
     {
-        std::string Value{};
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        std::string Decoded{};
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::move(Value);
+        OutText = std::move(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<std::int32_t>())
+    if (Type == StaticTypeId<std::int32_t>())
     {
-        std::int32_t Value = 0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        std::int32_t Decoded = 0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::to_string(Value);
+        OutText = std::to_string(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<int>())
+    if (Type == StaticTypeId<int>())
     {
-        int Value = 0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        int Decoded = 0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::to_string(Value);
+        OutText = std::to_string(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<std::int64_t>())
+    if (Type == StaticTypeId<std::int64_t>())
     {
-        std::int64_t Value = 0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        std::int64_t Decoded = 0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::to_string(Value);
+        OutText = std::to_string(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<std::uint32_t>())
+    if (Type == StaticTypeId<std::uint32_t>())
     {
-        std::uint32_t Value = 0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        std::uint32_t Decoded = 0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::to_string(Value);
+        OutText = std::to_string(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<unsigned int>())
+    if (Type == StaticTypeId<unsigned int>())
     {
-        unsigned int Value = 0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        unsigned int Decoded = 0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::to_string(Value);
+        OutText = std::to_string(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<std::uint64_t>())
+    if (Type == StaticTypeId<std::uint64_t>())
     {
-        std::uint64_t Value = 0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        std::uint64_t Decoded = 0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = std::to_string(Value);
+        OutText = std::to_string(Decoded);
         return true;
     }
-    if (Variable.Type == StaticTypeId<float>())
+    if (Type == StaticTypeId<float>())
     {
-        float Value = 0.0f;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        float Decoded = 0.0f;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
         std::ostringstream Stream{};
-        Stream << Value;
+        Stream << Decoded;
         OutText = Stream.str();
         return true;
     }
-    if (Variable.Type == StaticTypeId<double>())
+    if (Type == StaticTypeId<double>())
     {
-        double Value = 0.0;
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        double Decoded = 0.0;
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
         std::ostringstream Stream{};
-        Stream << Value;
+        Stream << Decoded;
         OutText = Stream.str();
         return true;
     }
-    if (Variable.Type == StaticTypeId<Uuid>())
+    if (Type == StaticTypeId<Uuid>())
     {
-        Uuid Value{};
-        if (!DeserializeSerializedValue(Variable.DefaultValue, Value))
+        Uuid Decoded{};
+        if (!DeserializeSerializedValue(Value, Decoded))
         {
             return false;
         }
-        OutText = ToString(Value);
+        OutText = ToString(Decoded);
         return true;
     }
 
     return false;
+}
+
+[[nodiscard]] bool TryFormatTextDefault(const GraphVariableAsset& Variable, std::string& OutText)
+{
+    return TryFormatTextSerializedValue(Variable.Type, Variable.DefaultValue, OutText);
 }
 
 template<typename T>
@@ -1696,50 +2086,55 @@ template<typename T>
     return SerializedValue::FromValue(Value);
 }
 
-[[nodiscard]] TExpected<SerializedValue> TryParseTextDefault(const GraphVariableAsset& Variable, const std::string_view Text)
+[[nodiscard]] TExpected<SerializedValue> TryParseTextSerializedValue(const TypeId& Type, const std::string_view Text)
 {
-    if (Variable.Type == StaticTypeId<std::string>())
+    if (Type == StaticTypeId<std::string>())
     {
         return SerializedValue::FromValue(std::string(Text));
     }
-    if (Variable.Type == StaticTypeId<std::int32_t>())
+    if (Type == StaticTypeId<std::int32_t>())
     {
         return MakeSerializedFromTextParser<std::int32_t>(Text, &ParseIntegralText<std::int32_t>);
     }
-    if (Variable.Type == StaticTypeId<int>())
+    if (Type == StaticTypeId<int>())
     {
         return MakeSerializedFromTextParser<int>(Text, &ParseIntegralText<int>);
     }
-    if (Variable.Type == StaticTypeId<std::int64_t>())
+    if (Type == StaticTypeId<std::int64_t>())
     {
         return MakeSerializedFromTextParser<std::int64_t>(Text, &ParseIntegralText<std::int64_t>);
     }
-    if (Variable.Type == StaticTypeId<std::uint32_t>())
+    if (Type == StaticTypeId<std::uint32_t>())
     {
         return MakeSerializedFromTextParser<std::uint32_t>(Text, &ParseIntegralText<std::uint32_t>);
     }
-    if (Variable.Type == StaticTypeId<unsigned int>())
+    if (Type == StaticTypeId<unsigned int>())
     {
         return MakeSerializedFromTextParser<unsigned int>(Text, &ParseIntegralText<unsigned int>);
     }
-    if (Variable.Type == StaticTypeId<std::uint64_t>())
+    if (Type == StaticTypeId<std::uint64_t>())
     {
         return MakeSerializedFromTextParser<std::uint64_t>(Text, &ParseIntegralText<std::uint64_t>);
     }
-    if (Variable.Type == StaticTypeId<float>())
+    if (Type == StaticTypeId<float>())
     {
         return MakeSerializedFromTextParser<float>(Text, &ParseFloatingText<float>);
     }
-    if (Variable.Type == StaticTypeId<double>())
+    if (Type == StaticTypeId<double>())
     {
         return MakeSerializedFromTextParser<double>(Text, &ParseFloatingText<double>);
     }
-    if (Variable.Type == StaticTypeId<Uuid>())
+    if (Type == StaticTypeId<Uuid>())
     {
         return MakeSerializedFromTextParser<Uuid>(Text, &ParseUuidText);
     }
 
     return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit variable type does not support text defaults"));
+}
+
+[[nodiscard]] TExpected<SerializedValue> TryParseTextDefault(const GraphVariableAsset& Variable, const std::string_view Text)
+{
+    return TryParseTextSerializedValue(Variable.Type, Text);
 }
 
 [[nodiscard]] std::shared_ptr<void> AllocateRuntimeStorage(const TypeInfo& Type)
@@ -1903,6 +2298,55 @@ template<typename T>
     return Category;
 }
 
+[[nodiscard]] std::string BuildReflectedFieldNodeTooltip(const FieldInfo& Field,
+                                                         const TypeId& OwnerType,
+                                                         const bool SelfContext,
+                                                         const bool IsWrite)
+{
+    const std::string FieldLabel = ResolveFieldDisplayLabel(Field);
+    const std::string OwnerLabel = ResolveTypeDisplayLabel(OwnerType);
+    const std::string Summary = IsWrite
+        ? ("Write reflected field '" + FieldLabel + "' on " + (SelfContext ? std::string("self") : OwnerLabel) + ".")
+        : ("Read reflected field '" + FieldLabel + "' from " + (SelfContext ? std::string("self") : OwnerLabel) + ".");
+    return BuildReflectedNodeTooltipSummary(Summary, Field.Doc, Field.FieldType, &Field.Value);
+}
+
+[[nodiscard]] std::string BuildReflectedFieldValuePinTooltip(const FieldInfo& Field, const bool IsInput)
+{
+    const std::string Summary =
+        (IsInput ? std::string("Input value for field '") : std::string("Output value for field '")) +
+        ResolveFieldDisplayLabel(Field) + "'.";
+    return BuildReflectedNodeTooltipSummary(Summary, Field.Doc, Field.FieldType, &Field.Value);
+}
+
+[[nodiscard]] std::string BuildReflectedMethodNodeTooltip(const MethodInfo& Method,
+                                                          const TypeId& OwnerType,
+                                                          const bool SelfContext)
+{
+    const std::string Summary = "Invoke reflected method '" + ResolveMethodDisplayLabel(Method) + "' on " +
+        (SelfContext ? std::string("self") : ResolveTypeDisplayLabel(OwnerType)) + ".";
+    std::string Tooltip = BuildReflectedNodeTooltipSummary(Summary, Method.Doc, {});
+    if (Method.ReturnType != StaticTypeId<void>())
+    {
+        AppendTooltipLine(Tooltip, "Return: " + ResolveTypeDisplayLabel(Method.ReturnType));
+    }
+    return Tooltip;
+}
+
+[[nodiscard]] std::string BuildReflectedMethodParamTooltip(const MethodInfo& Method, const std::size_t Index)
+{
+    const CallableParamInfo* Param = Index < Method.Params.size() ? &Method.Params[Index] : nullptr;
+    const std::string ParamName = (Param && !Param->Name.empty()) ? Param->Name : BuildArgName(Index);
+    const TypeId ParamType = Index < Method.ParamTypes.size() ? Method.ParamTypes[Index] : TypeId{};
+    const std::string ParamDoc = (Param != nullptr) ? Param->Doc : std::string{};
+    return BuildReflectedNodeTooltipSummary("Input parameter '" + ParamName + "'.", ParamDoc, ParamType);
+}
+
+[[nodiscard]] std::string BuildReflectedMethodReturnTooltip(const MethodInfo& Method)
+{
+    return BuildReflectedNodeTooltipSummary("Return value.", {}, Method.ReturnType);
+}
+
 std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
                                                   const bool SelfContext,
                                                   const std::unordered_set<TypeId, UuidHash>* AvailableInstanceTypes)
@@ -1928,14 +2372,15 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
         }
         const TypeInfo* PaletteTypeInfo = TypeRegistry::Instance().Find(PaletteType);
         const std::string PaletteTypeLabel = PaletteTypeInfo ? ResolveTypeLabel(PaletteTypeInfo->Id) : ResolveTypeLabel(PaletteType);
+        const std::string FieldLabel = ResolveFieldDisplayLabel(*Ref.Field);
 
         if (CanConduitReadField(*Ref.Field))
         {
             SchemaNodeDescriptor Descriptor{};
             Descriptor.StableId = ContextPrefix + std::string(".field.read.") + PaletteTypeLabel + "." + Ref.Field->Name;
-            Descriptor.DisplayName = "Get " + Ref.Field->Name;
+            Descriptor.DisplayName = "Get " + FieldLabel;
             Descriptor.Category = BuildReflectionPaletteCategory(SelfContext, "Fields", PaletteTypeLabel);
-            Descriptor.Tooltip = "Read reflected field '" + Ref.Field->Name + "' from " + (SelfContext ? std::string("self") : std::string("a resolved instance")) + ".";
+            Descriptor.Tooltip = BuildReflectedFieldNodeTooltip(*Ref.Field, Ref.OwnerType, SelfContext, false);
             Descriptor.Family = ESchemaNodeFamily::FieldRead;
             Descriptor.IsPure = true;
             Descriptor.OwnerType = Ref.OwnerType;
@@ -1943,9 +2388,15 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
             Descriptor.LoweredKind = SelfContext ? EGraphAssetNodeKind::SelfFieldRead : EGraphAssetNodeKind::InstanceFieldRead;
             if (!SelfContext)
             {
-                Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType));
+                auto TargetPin = MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType);
+                TargetPin.Tooltip = BuildTargetPinTooltip(
+                    PaletteType,
+                    "Resolved target instance used to read reflected field '" + FieldLabel + "'.");
+                Descriptor.Pins.push_back(std::move(TargetPin));
             }
-            Descriptor.Pins.push_back(MakeValuePin("Value", ESchemaPinDirection::Output, Ref.Field->FieldType));
+            auto ValuePin = MakeValuePin("Value", ESchemaPinDirection::Output, Ref.Field->FieldType);
+            ValuePin.Tooltip = BuildReflectedFieldValuePinTooltip(*Ref.Field, false);
+            Descriptor.Pins.push_back(std::move(ValuePin));
             Result.push_back(std::move(Descriptor));
         }
 
@@ -1953,9 +2404,9 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
         {
             SchemaNodeDescriptor Descriptor{};
             Descriptor.StableId = ContextPrefix + std::string(".field.write.") + PaletteTypeLabel + "." + Ref.Field->Name;
-            Descriptor.DisplayName = "Set " + Ref.Field->Name;
+            Descriptor.DisplayName = "Set " + FieldLabel;
             Descriptor.Category = BuildReflectionPaletteCategory(SelfContext, "Fields", PaletteTypeLabel);
-            Descriptor.Tooltip = "Write reflected field '" + Ref.Field->Name + "'.";
+            Descriptor.Tooltip = BuildReflectedFieldNodeTooltip(*Ref.Field, Ref.OwnerType, SelfContext, true);
             Descriptor.Family = ESchemaNodeFamily::FieldWrite;
             Descriptor.IsPure = false;
             Descriptor.OwnerType = Ref.OwnerType;
@@ -1964,9 +2415,15 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
             Descriptor.Pins.push_back(MakeExecPin("In", ESchemaPinDirection::Input));
             if (!SelfContext)
             {
-                Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType));
+                auto TargetPin = MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType);
+                TargetPin.Tooltip = BuildTargetPinTooltip(
+                    PaletteType,
+                    "Resolved target instance used to write reflected field '" + FieldLabel + "'.");
+                Descriptor.Pins.push_back(std::move(TargetPin));
             }
-            Descriptor.Pins.push_back(MakeValuePin("Value", ESchemaPinDirection::Input, Ref.Field->FieldType, true));
+            auto ValuePin = MakeValuePin("Value", ESchemaPinDirection::Input, Ref.Field->FieldType, true);
+            ValuePin.Tooltip = BuildReflectedFieldValuePinTooltip(*Ref.Field, true);
+            Descriptor.Pins.push_back(std::move(ValuePin));
             Descriptor.Pins.push_back(MakeExecPin("Out", ESchemaPinDirection::Output));
             Result.push_back(std::move(Descriptor));
         }
@@ -1991,14 +2448,15 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
         }
         const TypeInfo* PaletteTypeInfo = TypeRegistry::Instance().Find(PaletteType);
         const std::string PaletteTypeLabel = PaletteTypeInfo ? ResolveTypeLabel(PaletteTypeInfo->Id) : ResolveTypeLabel(PaletteType);
+        const std::string MethodLabel = ResolveMethodDisplayLabel(*Ref.Method);
 
         SchemaNodeDescriptor Descriptor{};
         Descriptor.StableId = ContextPrefix + std::string(".method.") + PaletteTypeLabel + "." + Ref.Method->Name;
         Descriptor.DisplayName = SelfContext
-            ? "Call " + Ref.Method->Name
-            : "Call " + PaletteTypeLabel + "::" + Ref.Method->Name;
+            ? "Call " + MethodLabel
+            : "Call " + PaletteTypeLabel + "::" + MethodLabel;
         Descriptor.Category = BuildReflectionPaletteCategory(SelfContext, "Methods", PaletteTypeLabel);
-        Descriptor.Tooltip = "Invoke reflected method '" + Ref.Method->Name + "'.";
+        Descriptor.Tooltip = BuildReflectedMethodNodeTooltip(*Ref.Method, Ref.OwnerType, SelfContext);
         Descriptor.Family = ESchemaNodeFamily::MethodCall;
         Descriptor.IsPure = Ref.Method->IsConst;
         Descriptor.OwnerType = Ref.OwnerType;
@@ -2012,20 +2470,30 @@ std::vector<SchemaNodeDescriptor> DescribeMembers(const TypeInfo& OwnerType,
 
         if (!SelfContext)
         {
-            Descriptor.Pins.push_back(MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType));
+            auto TargetPin = MakeHandlePin("Target", ESchemaPinDirection::Input, PaletteType);
+            TargetPin.Tooltip = BuildTargetPinTooltip(
+                PaletteType,
+                "Resolved target instance used to invoke reflected method '" + MethodLabel + "'.");
+            Descriptor.Pins.push_back(std::move(TargetPin));
         }
 
         for (std::size_t Index = 0; Index < Ref.Method->ParamTypes.size(); ++Index)
         {
-            Descriptor.Pins.push_back(MakeValuePin(BuildArgName(Index),
-                                                   ESchemaPinDirection::Input,
-                                                   Ref.Method->ParamTypes[Index],
-                                                   true));
+            const CallableParamInfo* Param = Index < Ref.Method->Params.size() ? &Ref.Method->Params[Index] : nullptr;
+            const std::string ParamName = (Param && !Param->Name.empty()) ? Param->Name : BuildArgName(Index);
+            auto ParamPin = MakeValuePin(ParamName,
+                                         ESchemaPinDirection::Input,
+                                         Ref.Method->ParamTypes[Index],
+                                         true);
+            ParamPin.Tooltip = BuildReflectedMethodParamTooltip(*Ref.Method, Index);
+            Descriptor.Pins.push_back(std::move(ParamPin));
         }
 
         if (Ref.Method->ReturnType != StaticTypeId<void>())
         {
-            Descriptor.Pins.push_back(MakeValuePin("Return", ESchemaPinDirection::Output, Ref.Method->ReturnType));
+            auto ReturnPin = MakeValuePin("Return", ESchemaPinDirection::Output, Ref.Method->ReturnType);
+            ReturnPin.Tooltip = BuildReflectedMethodReturnTooltip(*Ref.Method);
+            Descriptor.Pins.push_back(std::move(ReturnPin));
         }
 
         if (!Descriptor.IsPure)
@@ -2214,10 +2682,15 @@ TExpected<GraphNodeAsset*> GraphDocument::AddNode(const SchemaNodeDescriptor& De
         std::size_t ArgCount = 0;
         for (const SchemaPinDescriptor& Pin : Descriptor.Pins)
         {
-            std::size_t ArgIndex = 0;
-            if (Pin.Direction == ESchemaPinDirection::Input && TryParseArgPinIndex(Pin.Name, ArgIndex))
+            if (Pin.Direction != ESchemaPinDirection::Input || Pin.Type.IsExec)
             {
-                ArgCount = std::max(ArgCount, ArgIndex + 1);
+                continue;
+            }
+
+            const auto ArgIndex = ResolveMethodPinIndex(Node, Pin.Name);
+            if (ArgIndex.has_value())
+            {
+                ArgCount = std::max(ArgCount, *ArgIndex + 1);
             }
         }
         Node.Inputs.resize(ArgCount);
@@ -2531,6 +3004,115 @@ Result GraphDocument::SetNodeFalseLabelName(const Uuid& Id, const std::string_vi
     }
 
     Node->FalseLabelName = std::string(Label);
+    MarkMutated();
+    return Ok();
+}
+
+Result GraphDocument::SetNodeInputDefault(const Uuid& Id, const std::string_view PinKey, const SerializedValue& Value)
+{
+    if (PinKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit node input pin key is empty"));
+    }
+    if (Value.Type == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit node input default type is missing"));
+    }
+
+    GraphNodeAsset* Node = FindNode(Id);
+    if (!Node)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit graph node was not found"));
+    }
+
+    SchemaRegistry Schema{};
+    Schema.RebuildBuiltins();
+    const auto Descriptors = BuildActiveSchemaDescriptors(Schema, m_asset);
+    const SchemaNodeDescriptor* Descriptor = FindSchemaDescriptorForNode(Descriptors, *Node);
+    if (!Descriptor)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit schema node descriptor was not found"));
+    }
+
+    const SchemaPinDescriptor* Pin = nullptr;
+    std::string ResolvedPinName{};
+    for (const SchemaPinDescriptor& Candidate : Descriptor->Pins)
+    {
+        if (Candidate.Direction != ESchemaPinDirection::Input || Candidate.Type.IsExec || !Candidate.SupportsLiteral)
+        {
+            continue;
+        }
+
+        if (CanonicalizeNodeInputPinKey(*Node, Candidate.Name) == PinKey)
+        {
+            Pin = &Candidate;
+            ResolvedPinName = Candidate.Name;
+            break;
+        }
+    }
+
+    if (!Pin)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit node input pin was not found or does not support defaults"));
+    }
+
+    auto BindingResult = ResolveNodePinBinding(m_asset, *Node, *Descriptor, ResolvedPinName, ESchemaPinDirection::Input);
+    if (!BindingResult)
+    {
+        return std::unexpected(BindingResult.error());
+    }
+
+    const TypeId ExpectedType = BindingResult->StorageType != TypeId{} ? BindingResult->StorageType : BindingResult->DisplayType;
+    if (ExpectedType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch,
+                                         "Conduit node input type must be inferred before a default can be authored"));
+    }
+    if (Value.Type != ExpectedType)
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit node input default type mismatch"));
+    }
+
+    if (GraphNodeInputDefaultAsset* Existing = FindMutableNodeInputDefault(*Node, PinKey))
+    {
+        Existing->Value = Value;
+    }
+    else
+    {
+        Node->InputDefaults.push_back(GraphNodeInputDefaultAsset{
+            .PinKey = std::string(PinKey),
+            .Value = Value,
+        });
+    }
+
+    MarkMutated();
+    return Ok();
+}
+
+Result GraphDocument::ClearNodeInputDefault(const Uuid& Id, const std::string_view PinKey)
+{
+    if (PinKey.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit node input pin key is empty"));
+    }
+
+    GraphNodeAsset* Node = FindNode(Id);
+    if (!Node)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit graph node was not found"));
+    }
+
+    const auto It = std::find_if(Node->InputDefaults.begin(),
+                                 Node->InputDefaults.end(),
+                                 [PinKey](const GraphNodeInputDefaultAsset& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    if (It == Node->InputDefaults.end())
+    {
+        return Ok();
+    }
+
+    Node->InputDefaults.erase(It);
     MarkMutated();
     return Ok();
 }
@@ -3094,6 +3676,7 @@ TExpected<GraphDocument*> ConduitEditorService::OpenDocument(const std::string_v
 
     GraphAsset WorkingCopy = Asset;
     NormalizeEditorState(WorkingCopy);
+    NormalizeMethodNodeInputs(WorkingCopy);
 
     std::string DocumentTitle = Title.empty() ? WorkingCopy.Name : std::string(Title);
     if (DocumentTitle.empty())
@@ -3475,6 +4058,7 @@ GraphCanvasView ConduitEditorService::ActiveCanvasView() const
 
         if (const SchemaNodeDescriptor* Descriptor = FindSchemaDescriptorForNode(Descriptors, Node))
         {
+            View.Tooltip = BuildCanvasNodeTooltip(Document->Asset(), Node, Descriptor);
             for (const SchemaPinDescriptor& Pin : Descriptor->Pins)
             {
                 CanvasPinView PinView{};
@@ -3482,7 +4066,8 @@ GraphCanvasView ConduitEditorService::ActiveCanvasView() const
                 PinView.Kind = Pin.Type.Kind;
                 PinView.IsInput = Pin.Direction == ESchemaPinDirection::Input;
                 PinView.IsExec = Pin.Type.IsExec;
-                PinView.TypeLabel = Pin.Type.IsExec ? std::string("Exec") : ResolveTypeLabel(Pin.Type.Type);
+                PinView.TypeLabel = Pin.Type.IsExec ? std::string("Exec") : ResolveTypeDisplayLabel(Pin.Type.Type);
+                PinView.Tooltip = BuildFallbackPinTooltip(Pin);
 
                 if (PinView.IsInput)
                 {
@@ -3493,6 +4078,10 @@ GraphCanvasView ConduitEditorService::ActiveCanvasView() const
                     View.OutputPins.push_back(std::move(PinView));
                 }
             }
+        }
+        else
+        {
+            View.Tooltip = BuildCanvasNodeTooltip(Document->Asset(), Node, nullptr);
         }
 
         Result.Nodes.push_back(std::move(View));
@@ -3641,6 +4230,90 @@ NodeInspectorView ConduitEditorService::ActiveNodeInspectorView() const
     View.Kind = Node->Kind;
     View.Title = DescribeNodeTitle(Document->Asset(), *Node);
     View.Detail = DescribeNodeDetail(Document->Asset(), *Node);
+
+    const auto Descriptors = BuildActiveSchemaDescriptors(m_schema, Document->Asset());
+    if (const SchemaNodeDescriptor* Descriptor = FindSchemaDescriptorForNode(Descriptors, *Node))
+    {
+        for (const SchemaPinDescriptor& Pin : Descriptor->Pins)
+        {
+            if (Pin.Direction != ESchemaPinDirection::Input || Pin.Type.IsExec || !Pin.SupportsLiteral)
+            {
+                continue;
+            }
+
+            auto BindingResult = ResolveNodePinBinding(Document->Asset(), *Node, *Descriptor, Pin.Name, ESchemaPinDirection::Input);
+            if (!BindingResult)
+            {
+                continue;
+            }
+
+            const std::string PinKey = CanonicalizeNodeInputPinKey(*Node, Pin.Name);
+            const TypeId EffectiveType = BindingResult->StorageType != TypeId{} ? BindingResult->StorageType : BindingResult->DisplayType;
+            if (EffectiveType == TypeId{})
+            {
+                continue;
+            }
+
+            NodeInputDefaultInspectorEntry Entry{};
+            Entry.PinKey = PinKey;
+            Entry.DisplayName = Pin.Name;
+            Entry.Type = EffectiveType;
+            Entry.TypeLabel = ResolveTypeDisplayLabel(EffectiveType);
+            Entry.Tooltip = Pin.Tooltip;
+            Entry.Connected = BindingResult->Slot && BindingResult->Slot->IsValid();
+
+            if (const GraphNodeInputDefaultAsset* Default = FindNodeInputDefault(*Node, PinKey);
+                Default && Default->Value.Type == EffectiveType)
+            {
+                Entry.HasDefault = true;
+                if (EffectiveType == StaticTypeId<bool>())
+                {
+                    Entry.DefaultEditorKind = EVariableDefaultEditorKind::Bool;
+                    (void)DeserializeSerializedValue(Default->Value, Entry.BoolValue);
+                }
+                else if (const TypeInfo* Type = TypeRegistry::Instance().Find(EffectiveType); Type && Type->IsEnum)
+                {
+                    Entry.DefaultEditorKind = EVariableDefaultEditorKind::Enum;
+                    Entry.EnumOptions.reserve(Type->EnumValues.size());
+                    std::uint64_t SelectedBits = 0;
+                    const bool HasEnumValue = TryReadEnumValueBits(*Type, Default->Value, SelectedBits);
+                    for (std::size_t Index = 0; Index < Type->EnumValues.size(); ++Index)
+                    {
+                        const EnumValueInfo& EnumValue = Type->EnumValues[Index];
+                        Entry.EnumOptions.push_back(EnumValue.Name);
+                        if (HasEnumValue && EnumValue.Value == SelectedBits)
+                        {
+                            Entry.SelectedEnumIndex = static_cast<int32_t>(Index);
+                        }
+                    }
+                }
+                else if (SupportsTextVariableEditor(EffectiveType))
+                {
+                    Entry.DefaultEditorKind = EVariableDefaultEditorKind::Text;
+                    (void)TryFormatTextSerializedValue(EffectiveType, Default->Value, Entry.TextValue);
+                }
+            }
+            else if (EffectiveType == StaticTypeId<bool>())
+            {
+                Entry.DefaultEditorKind = EVariableDefaultEditorKind::Bool;
+            }
+            else if (const TypeInfo* Type = TypeRegistry::Instance().Find(EffectiveType); Type && Type->IsEnum)
+            {
+                Entry.DefaultEditorKind = EVariableDefaultEditorKind::Enum;
+                Entry.EnumOptions.reserve(Type->EnumValues.size());
+                for (const EnumValueInfo& EnumValue : Type->EnumValues)
+                {
+                    Entry.EnumOptions.push_back(EnumValue.Name);
+                }
+            }
+            else if (SupportsTextVariableEditor(EffectiveType))
+            {
+                Entry.DefaultEditorKind = EVariableDefaultEditorKind::Text;
+            }
+
+            View.InputDefaults.push_back(std::move(Entry));
+        }
+    }
 
     switch (Node->Kind)
     {
@@ -4259,6 +4932,140 @@ Result ConduitEditorService::ResetSelectedVariableDefaultEditor()
 
     BumpWorkspaceRevision();
     return Ok();
+}
+
+Result ConduitEditorService::SetSelectedNodeInputDefaultBool(const std::string_view PinKey, const bool Value)
+{
+    GraphDocument* Document = ActiveDocument();
+    const NodeInspectorView Inspector = ActiveNodeInspectorView();
+    if (!Document || !Inspector.HasSelection)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No Conduit graph node is selected"));
+    }
+
+    const auto It = std::find_if(Inspector.InputDefaults.begin(),
+                                 Inspector.InputDefaults.end(),
+                                 [PinKey](const NodeInputDefaultInspectorEntry& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    if (It == Inspector.InputDefaults.end())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Selected Conduit node input default was not found"));
+    }
+    if (It->Type != StaticTypeId<bool>())
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Selected Conduit node input is not a bool"));
+    }
+
+    auto SerializedResult = SerializedValue::FromValue(Value);
+    if (!SerializedResult)
+    {
+        return std::unexpected(SerializedResult.error());
+    }
+
+    const Result SetResult = Document->SetNodeInputDefault(Inspector.NodeId, PinKey, *SerializedResult);
+    if (SetResult)
+    {
+        BumpWorkspaceRevision();
+    }
+    return SetResult;
+}
+
+Result ConduitEditorService::SetSelectedNodeInputDefaultText(const std::string_view PinKey, const std::string_view Value)
+{
+    GraphDocument* Document = ActiveDocument();
+    const NodeInspectorView Inspector = ActiveNodeInspectorView();
+    if (!Document || !Inspector.HasSelection)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No Conduit graph node is selected"));
+    }
+
+    const auto It = std::find_if(Inspector.InputDefaults.begin(),
+                                 Inspector.InputDefaults.end(),
+                                 [PinKey](const NodeInputDefaultInspectorEntry& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    if (It == Inspector.InputDefaults.end())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Selected Conduit node input default was not found"));
+    }
+
+    auto SerializedResult = TryParseTextSerializedValue(It->Type, Value);
+    if (!SerializedResult)
+    {
+        return std::unexpected(SerializedResult.error());
+    }
+
+    const Result SetResult = Document->SetNodeInputDefault(Inspector.NodeId, PinKey, *SerializedResult);
+    if (SetResult)
+    {
+        BumpWorkspaceRevision();
+    }
+    return SetResult;
+}
+
+Result ConduitEditorService::SetSelectedNodeInputDefaultEnum(const std::string_view PinKey, const std::string_view EnumName)
+{
+    GraphDocument* Document = ActiveDocument();
+    const NodeInspectorView Inspector = ActiveNodeInspectorView();
+    if (!Document || !Inspector.HasSelection)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No Conduit graph node is selected"));
+    }
+
+    const auto It = std::find_if(Inspector.InputDefaults.begin(),
+                                 Inspector.InputDefaults.end(),
+                                 [PinKey](const NodeInputDefaultInspectorEntry& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    if (It == Inspector.InputDefaults.end())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Selected Conduit node input default was not found"));
+    }
+
+    const TypeInfo* Type = TypeRegistry::Instance().Find(It->Type);
+    if (!Type || !Type->IsEnum)
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Selected Conduit node input is not an enum"));
+    }
+
+    const auto EnumIt = std::find_if(Type->EnumValues.begin(), Type->EnumValues.end(), [EnumName](const EnumValueInfo& Entry) {
+        return Entry.Name == EnumName;
+    });
+    if (EnumIt == Type->EnumValues.end())
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit enum default value was not found"));
+    }
+
+    auto SerializedResult = MakeSerializedEnumValue(*Type, *EnumIt);
+    if (!SerializedResult)
+    {
+        return std::unexpected(SerializedResult.error());
+    }
+
+    const Result SetResult = Document->SetNodeInputDefault(Inspector.NodeId, PinKey, *SerializedResult);
+    if (SetResult)
+    {
+        BumpWorkspaceRevision();
+    }
+    return SetResult;
+}
+
+Result ConduitEditorService::ClearSelectedNodeInputDefault(const std::string_view PinKey)
+{
+    GraphDocument* Document = ActiveDocument();
+    const NodeInspectorView Inspector = ActiveNodeInspectorView();
+    if (!Document || !Inspector.HasSelection)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "No Conduit graph node is selected"));
+    }
+
+    const Result ClearResult = Document->ClearNodeInputDefault(Inspector.NodeId, PinKey);
+    if (ClearResult)
+    {
+        BumpWorkspaceRevision();
+    }
+    return ClearResult;
 }
 
 Result ConduitEditorService::SetSelectedNodePrimaryText(const std::string_view Value)

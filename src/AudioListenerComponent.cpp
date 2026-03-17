@@ -8,7 +8,6 @@
 #include "BaseNode.h"
 #include "Level.h"
 #include "TransformComponent.h"
-#include "Variant.h"
 #include "World.h"
 
 #include <AudioEngine.h>
@@ -86,28 +85,7 @@ void AudioListenerComponent::EditorOnPropertyChanged(const std::string_view Name
 }
 #endif
 
-void AudioListenerComponent::SetActive(bool ActiveValue)
-{
-    SNAPI_GF_PROFILE_FUNCTION("Audio");
-    if (CallRPC("SetActiveServer", {Variant::FromValue(ActiveValue)}))
-    {
-        return;
-    }
-    SetActiveClient(ActiveValue);
-}
-
-void AudioListenerComponent::SetActiveServer(bool ActiveValue)
-{
-    SNAPI_GF_PROFILE_FUNCTION("Audio");
-    m_active = ActiveValue;
-    if (CallRPC("SetActiveClient", {Variant::FromValue(ActiveValue)}))
-    {
-        return;
-    }
-    SetActiveClient(ActiveValue);
-}
-
-void AudioListenerComponent::SetActiveClient(bool ActiveValue)
+void AudioListenerComponent::SetActiveImpl(bool ActiveValue)
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_active = ActiveValue;

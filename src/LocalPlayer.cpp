@@ -151,12 +151,12 @@ const bool& LocalPlayer::GetAcceptInput() const
 
 std::uint64_t& LocalPlayer::EditOwnerConnectionId()
 {
-    return m_ownerConnectionId;
+    return BaseNode::EditOwnerConnectionId();
 }
 
 const std::uint64_t& LocalPlayer::GetOwnerConnectionId() const
 {
-    return m_ownerConnectionId;
+    return BaseNode::GetOwnerConnectionId();
 }
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
@@ -181,37 +181,13 @@ const bool& LocalPlayer::GetUseAssignedInputDevice() const
 }
 #endif
 
-void LocalPlayer::RequestPossess(const NodeHandle& Target)
+void LocalPlayer::RequestPossessImpl(const NodeHandle& Target)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (CallRPC("ServerRequestPossess", {Variant::FromValue(Target)}))
-    {
-        return;
-    }
-    ServerRequestPossess(Target);
-}
-
-void LocalPlayer::RequestUnpossess()
-{
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (CallRPC("ServerRequestUnpossess"))
-    {
-        return;
-    }
-    ServerRequestUnpossess();
-}
-
-void LocalPlayer::ServerRequestPossess(const NodeHandle& Target)
-{
-    SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (!IsServer())
-    {
-        return;
-    }
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (const auto Caller = NetRpcInvocationContext::CurrentConnection())
     {
-        if (m_ownerConnectionId != 0 && m_ownerConnectionId != static_cast<std::uint64_t>(*Caller))
+        if (GetOwnerConnectionId() != 0 && GetOwnerConnectionId() != static_cast<std::uint64_t>(*Caller))
         {
             return;
         }
@@ -224,17 +200,13 @@ void LocalPlayer::ServerRequestPossess(const NodeHandle& Target)
     SetPossessedNode(Target);
 }
 
-void LocalPlayer::ServerRequestUnpossess()
+void LocalPlayer::RequestUnpossessImpl()
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (!IsServer())
-    {
-        return;
-    }
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
     if (const auto Caller = NetRpcInvocationContext::CurrentConnection())
     {
-        if (m_ownerConnectionId != 0 && m_ownerConnectionId != static_cast<std::uint64_t>(*Caller))
+        if (GetOwnerConnectionId() != 0 && GetOwnerConnectionId() != static_cast<std::uint64_t>(*Caller))
         {
             return;
         }

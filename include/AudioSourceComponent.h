@@ -5,9 +5,11 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "AudioSourceComponent.generated.hpp"
 
 #if defined(SNAPI_GF_ENABLE_AUDIO)
 #include <AudioEngine.h>
+#include "ReflectionAnnotations.h"
 #endif
 
 namespace SnAPI::GameFramework
@@ -43,8 +45,8 @@ class AudioSystem;
  *
  * Networking semantics:
  * - `Play()` and `Stop()` are gameplay-facing, role-aware entry points.
- * - `PlayServer()` / `StopServer()` are authoritative endpoints that fan out to client endpoints.
- * - `PlayClient()` / `StopClient()` perform local backend work.
+ * - Generated RPC wrappers route `Play()` / `Stop()` through authority and multicast delivery.
+ * - The authored implementation only provides local backend behavior through generated `*Impl()` methods.
  * - Dedicated servers skip local playback and stop operations even when RPCs are received.
  *
  * Error semantics:
@@ -55,11 +57,12 @@ class AudioSystem;
  * @see AudioSystem
  * @see AudioListenerComponent
  */
+SnType()
 class AudioSourceComponent : public BaseComponent, public ComponentCRTP<AudioSourceComponent>
 {
 public:
-    /** @brief Stable reflected type name used for serialization registration. */
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::AudioSourceComponent";
+    SnGenerated()
+
 
     /**
      * @ingroup SnAPI_GameFramework
@@ -69,19 +72,29 @@ public:
      * Mutating the settings does not immediately rebind the backend; changes are applied during the
      * normal tick/refresh path or explicit editor property-change handling.
      */
+    SnType()
     struct Settings
     {
         /** @brief Stable reflected type name used for serialization registration. */
         static constexpr const char* kTypeName = "SnAPI::GameFramework::AudioSourceSettings";
 
+        SnField(SnKey("SoundPath"), SnReplicated)
         std::string SoundPath; /**< @brief Logical asset path or URI resolved through `PathResolver` before loading. */
+        SnField(SnKey("Streaming"))
         bool Streaming = false; /**< @brief Select streamed decoding when `true`; otherwise load a resident sample. */
+        SnField(SnKey("AutoPlay"))
         bool AutoPlay = false; /**< @brief Request playback from `OnCreate()` and from relevant editor property edits when `true`. */
+        SnField(SnKey("Looping"))
         bool Looping = false; /**< @brief Forwarded to the backend emitter's looping flag. */
+        SnField(SnKey("Volume"))
         float Volume = 1.0f; /**< @brief Non-spatial gain multiplier applied directly to the emitter. */
+        SnField(SnKey("SpatialGain"))
         float SpatialGain = 1.0f; /**< @brief Spatial gain scalar written into the emitter transform. */
+        SnField(SnKey("MinDistance"))
         float MinDistance = 1.0f; /**< @brief Near attenuation distance in world units. */
+        SnField(SnKey("MaxDistance"))
         float MaxDistance = 50.0f; /**< @brief Far attenuation distance in world units. */
+        SnField(SnKey("Rolloff"))
         float Rolloff = 1.0f; /**< @brief Backend rolloff/attenuation curve control. */
     };
 
@@ -98,6 +111,7 @@ public:
      * @return Borrowed reference to the stored settings.
      * @remarks Changes are applied lazily during `Tick()`, `RefreshPlaybackState()`, or editor property handling.
      */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;
@@ -132,37 +146,18 @@ public:
      * @brief Request playback of the configured sound.
      *
      * Semantics:
-     * - Client: attempts `PlayServer()` RPC and returns if accepted.
-     * - Authority/offline: falls through to local playback.
+     * - Client: forwards to authority, which fans out to all receiving peers.
+     * - Authority/offline: falls through to local playback application.
      * - If the sound or audio engine is not ready yet, playback remains pending through an internal flag.
      */
+    SnFunction(SnKey("Play"), SnRpc(SnReliable, SnMulticast))
     void Play();
     /**
      * @brief Request playback stop.
-     * @remarks Mirrors the role-routing semantics of `Play()`.
+     * @remarks Mirrors the role-routing semantics of `Play()` and applies local stop behavior through `StopImpl()`.
      */
+    SnFunction(SnKey("Stop"), SnRpc(SnReliable, SnMulticast))
     void Stop();
-
-    /**
-     * @brief Authoritative RPC endpoint for `Play()`.
-     * @remarks Marks playback as pending locally, then attempts to fan out through `PlayClient()`.
-     */
-    void PlayServer();
-    /**
-     * @brief Local/client endpoint for `Play()`.
-     * @remarks Performs actual backend playback on client and listen-server peers.
-     */
-    void PlayClient();
-    /**
-     * @brief Authoritative RPC endpoint for `Stop()`.
-     * @remarks Clears pending playback state, then attempts to fan out through `StopClient()`.
-     */
-    void StopServer();
-    /**
-     * @brief Local/client endpoint for `Stop()`.
-     * @remarks Performs actual backend stop on client and listen-server peers.
-     */
-    void StopClient();
 
     /**
      * @brief Check whether the current emitter reports active playback.

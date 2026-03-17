@@ -8,6 +8,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -51,6 +52,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API SSRParamsNode : public BaseNode, public NodeCRTP<SSRParamsNode>
 {
 public:
@@ -66,56 +68,67 @@ public:
     explicit SSRParamsNode(std::string Name);
 
     /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
     /** @brief Access the maximum reflection ray distance. @return Mutable distance in renderer-defined scene units. */
+    SnField(SnKey("MaxDistance"), SnConstGetter(GetMaxDistance))
     float& EditMaxDistance();
     /** @brief Read the maximum reflection ray distance. @return Stored ray distance. */
     const float& GetMaxDistance() const;
 
     /** @brief Access the intersection thickness tolerance. @return Mutable non-negative thickness value. */
+    SnField(SnKey("Thickness"), SnConstGetter(GetThickness))
     float& EditThickness();
     /** @brief Read the intersection thickness tolerance. @return Stored thickness value. */
     const float& GetThickness() const;
 
     /** @brief Access the roughness ceiling accepted by SSR. @return Mutable roughness limit, typically interpreted in [0, 1]. */
+    SnField(SnKey("MaxRoughness"), SnConstGetter(GetMaxRoughness))
     float& EditMaxRoughness();
     /** @brief Read the roughness ceiling accepted by SSR. @return Stored roughness limit. */
     const float& GetMaxRoughness() const;
 
     /** @brief Access the roughness threshold used by the pass. @return Mutable roughness threshold, clamped non-negative on upload. */
+    SnField(SnKey("RoughnessThreshold"), SnConstGetter(GetRoughnessThreshold))
     float& EditRoughnessThreshold();
     /** @brief Read the roughness threshold used by the pass. @return Stored roughness threshold. */
     const float& GetRoughnessThreshold() const;
 
     /** @brief Access the maximum number of forward march steps. @return Mutable step count; values below 1 are clamped to 1. */
+    SnField(SnKey("MaxSteps"), SnConstGetter(GetMaxSteps))
     std::uint32_t& EditMaxSteps();
     /** @brief Read the maximum number of forward march steps. @return Stored step count. */
     const std::uint32_t& GetMaxSteps() const;
 
     /** @brief Access the maximum number of binary-search refinement steps. @return Mutable step count; values below 1 are clamped to 1. */
+    SnField(SnKey("MaxBinarySteps"), SnConstGetter(GetMaxBinarySteps))
     std::uint32_t& EditMaxBinarySteps();
     /** @brief Read the maximum number of binary-search refinement steps. @return Stored step count. */
     const std::uint32_t& GetMaxBinarySteps() const;
 
     /** @brief Access the fade applied near screen borders. @return Mutable non-negative fade scalar. */
+    SnField(SnKey("ScreenEdgeFade"), SnConstGetter(GetScreenEdgeFade))
     float& EditScreenEdgeFade();
     /** @brief Read the fade applied near screen borders. @return Stored fade scalar. */
     const float& GetScreenEdgeFade() const;
 
     /** @brief Access the global reflection fade multiplier. @return Mutable non-negative fade scalar. */
+    SnField(SnKey("ReflectionFade"), SnConstGetter(GetReflectionFade))
     float& EditReflectionFade();
     /** @brief Read the global reflection fade multiplier. @return Stored fade scalar. */
     const float& GetReflectionFade() const;
 
     /** @brief Access the temporal accumulation blend factor. @return Mutable blend scalar clamped to [0, 1] on upload. */
+    SnField(SnKey("TemporalBlendFactor"), SnConstGetter(GetTemporalBlendFactor))
     float& EditTemporalBlendFactor();
     /** @brief Read the temporal accumulation blend factor. @return Stored blend scalar. */
     const float& GetTemporalBlendFactor() const;
 
     /** @brief Access the history clamp expansion strength. @return Mutable non-negative clamp scalar. */
+    SnField(SnKey("ClampStrength"), SnConstGetter(GetClampStrength))
     float& EditClampStrength();
     /** @brief Read the history clamp expansion strength. @return Stored clamp scalar. */
     const float& GetClampStrength() const;
@@ -125,11 +138,13 @@ public:
      * @return Mutable scalar clamped to [0, 1] on upload.
      * @remarks `0` ignores motion for history reset. `1` fully resets SSR history on detected motion.
      */
+    SnField(SnKey("MotionHistoryReset"), SnConstGetter(GetMotionHistoryReset))
     float& EditMotionHistoryReset();
     /** @brief Read the motion-driven history reset strength. @return Stored reset scalar in [0, 1]. */
     const float& GetMotionHistoryReset() const;
 
     /** @brief Access the temporal debug visualization mode. @return Mutable debug selector where 0 = final result. */
+    SnField(SnKey("TemporalDebugMode"), SnConstGetter(GetTemporalDebugMode))
     std::uint32_t& EditTemporalDebugMode();
     /** @brief Read the temporal debug visualization mode. @return Stored debug selector. */
     const std::uint32_t& GetTemporalDebugMode() const;

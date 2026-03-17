@@ -282,6 +282,7 @@ public:
             Uuid Id{};
             std::string Title{};
             std::string Detail{};
+            std::string Tooltip{};
             float X = 0.0f;
             float Y = 0.0f;
             float Width = 240.0f;
@@ -291,6 +292,7 @@ public:
             {
                 std::string Name{};
                 std::string TypeLabel{};
+                std::string Tooltip{};
                 SnAPI::GameFramework::Conduit::ESlotKind Kind = SnAPI::GameFramework::Conduit::ESlotKind::Value;
                 bool IsInput = true;
                 bool IsExec = false;
@@ -350,6 +352,22 @@ public:
 
         struct NodeInspector
         {
+            struct InputDefault
+            {
+                std::string PinKey{};
+                std::string DisplayName{};
+                TypeId Type{};
+                std::string TypeLabel{};
+                std::string Tooltip{};
+                bool Connected = false;
+                bool HasDefault = false;
+                EVariableDefaultEditorKind DefaultEditorKind = EVariableDefaultEditorKind::None;
+                bool BoolValue = false;
+                std::string TextValue{};
+                std::vector<std::string> EnumOptions{};
+                int32_t SelectedEnumIndex = -1;
+            };
+
             bool HasSelection = false;
             Uuid NodeId{};
             std::string Title{};
@@ -360,6 +378,7 @@ public:
             bool CanEditSecondaryText = false;
             std::string SecondaryTextLabel{};
             std::string SecondaryTextValue{};
+            std::vector<InputDefault> InputDefaults{};
         };
 
         EDocumentKind Kind = EDocumentKind::None; /**< @brief Active Conduit document category. */
@@ -574,6 +593,10 @@ public:
     void SetContentAssetInspectorReimportHandler(SnAPI::UI::TDelegate<void()> Handler);
     /** @brief Install the callback invoked when the asset-inspector modal is closed by the user. */
     void SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the runtime inspector mutates its bound root object. */
+    void SetContentAssetInspectorRuntimeMutatedHandler(SnAPI::UI::TDelegate<void(const TypeId&, void*)> Handler);
+    /** @brief Install the callback invoked when the import-settings inspector mutates its bound root object. */
+    void SetContentAssetInspectorImportMutatedHandler(SnAPI::UI::TDelegate<void(const TypeId&, void*)> Handler);
     /** @brief Install the callback invoked when the user selects a node inside the asset-inspector hierarchy. */
     void SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler);
     /** @brief Install the callback invoked when the user requests a hierarchy edit inside the asset-inspector modal. */
@@ -616,6 +639,14 @@ public:
     void SetConduitNodeCreateHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     /** @brief Install the callback invoked when the user removes the selected authored Conduit node. */
     void SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()> Handler);
+    /** @brief Install the callback invoked when the user edits one bool fallback on the selected authored Conduit node. */
+    void SetConduitNodeDefaultBoolHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
+    /** @brief Install the callback invoked when the user edits one text fallback on the selected authored Conduit node. */
+    void SetConduitNodeDefaultTextHandler(SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user selects one enum fallback on the selected authored Conduit node. */
+    void SetConduitNodeDefaultEnumHandler(SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler);
+    /** @brief Install the callback invoked when the user clears one explicit fallback on the selected authored Conduit node. */
+    void SetConduitNodeDefaultClearHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     /** @brief Install the callback invoked when the user drags one authored Conduit node on the canvas. */
     void SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)> Handler);
     /** @brief Install the callback invoked when the user connects one authored Conduit source pin to one target pin. */
@@ -879,6 +910,7 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitNodePrimaryTextInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_conduitNodeSecondaryLabelText{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitNodeSecondaryTextInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIPanel> m_conduitNodeDefaultInputsPanel{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_conduitClassNameInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitClassHostTypeCombo{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_conduitClassGraphCombo{};
@@ -989,6 +1021,8 @@ private:
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorSaveRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorReimportRequested{};
     SnAPI::UI::TDelegate<void()> m_onContentAssetInspectorCloseRequested{};
+    SnAPI::UI::TDelegate<void(const TypeId&, void*)> m_onContentAssetInspectorRuntimeMutated{};
+    SnAPI::UI::TDelegate<void(const TypeId&, void*)> m_onContentAssetInspectorImportMutated{};
     SnAPI::UI::TDelegate<void(const NodeHandle&)> m_onContentAssetInspectorNodeSelected{};
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onContentAssetInspectorHierarchyActionRequested{};
     SnAPI::UI::TDelegate<void(const Uuid&)> m_onConduitVariableSelected{};
@@ -1006,6 +1040,10 @@ private:
     SnAPI::UI::TDelegate<void(const Uuid&)> m_onConduitNodeSelected{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodeCreateRequested{};
     SnAPI::UI::TDelegate<void()> m_onConduitNodeRemoveRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&, bool)> m_onConduitNodeDefaultBoolRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> m_onConduitNodeDefaultTextRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> m_onConduitNodeDefaultEnumRequested{};
+    SnAPI::UI::TDelegate<void(const std::string&)> m_onConduitNodeDefaultClearRequested{};
     SnAPI::UI::TDelegate<void(const Uuid&, float, float)> m_onConduitNodeMoveRequested{};
     SnAPI::UI::TDelegate<void(const Uuid&, const std::string&, const Uuid&, const std::string&)> m_onConduitPinConnectedRequested{};
     SnAPI::UI::TDelegate<void(const SnAPI::GameFramework::Conduit::Editor::GraphSpawnMenuRequest&)> m_onConduitSpawnMenuRequest{};

@@ -8,6 +8,7 @@
 #include "Handles.h"
 #include "TypeName.h"
 #include "Uuid.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -20,6 +21,7 @@ namespace SnAPI::GameFramework
  * `World` implementation can run with different policies depending on whether it is being used
  * for gameplay, tool-time editing, or a PIE session.
  */
+SnType()
 enum class EWorldKind : std::uint8_t
 {
     Runtime, /**< @brief Normal gameplay/runtime execution context. */
@@ -90,6 +92,7 @@ class ScriptRuntimeService;
  * @see BaseNode
  * @see BaseComponent
  */
+SnType(SnInterface)
 class IWorld
 {
 public:
@@ -108,6 +111,7 @@ public:
      * @brief World role classification.
      * @return Active world kind.
      */
+    SnFunction(SnKey("Kind"))
     virtual EWorldKind Kind() const = 0;
 
     /**
@@ -115,18 +119,22 @@ public:
      * @remarks
      * GameRuntime uses this to gate `GameplayHost::Tick` and world ECS runtime phases.
      */
+    SnFunction(SnKey("ShouldRunGameplay"))
     virtual bool ShouldRunGameplay() const = 0;
     /**
      * @brief Whether input pumping should run during variable tick.
      */
+    SnFunction(SnKey("ShouldTickInput"))
     virtual bool ShouldTickInput() const = 0;
     /**
      * @brief Whether UI context tick should run during variable tick.
      */
+    SnFunction(SnKey("ShouldTickUI"))
     virtual bool ShouldTickUI() const = 0;
     /**
      * @brief Whether networking queues/session pumps should run.
      */
+    SnFunction(SnKey("ShouldPumpNetworking"))
     virtual bool ShouldPumpNetworking() const = 0;
     /**
      * @brief Whether physics simulation stepping should run.
@@ -134,28 +142,34 @@ public:
      * Physics queries can still be allowed independently via
      * `ShouldAllowPhysicsQueries()`.
      */
+    SnFunction(SnKey("ShouldSimulatePhysics"))
     virtual bool ShouldSimulatePhysics() const = 0;
     /**
      * @brief Whether physics query access should be considered valid.
      * @remarks
      * Editor worlds typically return true while `ShouldSimulatePhysics()` is false.
      */
+    SnFunction(SnKey("ShouldAllowPhysicsQueries"))
     virtual bool ShouldAllowPhysicsQueries() const = 0;
     /**
      * @brief Whether audio subsystem update should run.
      */
+    SnFunction(SnKey("ShouldTickAudio"))
     virtual bool ShouldTickAudio() const = 0;
     /**
      * @brief Whether node/component end-frame flush should run.
      */
+    SnFunction(SnKey("ShouldRunNodeEndFrame"))
     virtual bool ShouldRunNodeEndFrame() const = 0;
     /**
      * @brief Whether UI render packet generation/queueing should run.
      */
+    SnFunction(SnKey("ShouldBuildUiRenderPackets"))
     virtual bool ShouldBuildUiRenderPackets() const = 0;
     /**
      * @brief Whether renderer end-frame submission should run.
      */
+    SnFunction(SnKey("ShouldRenderFrame"))
     virtual bool ShouldRenderFrame() const = 0;
 
     /**
@@ -320,6 +334,7 @@ public:
      * Components that interpolate fixed-step results for rendering should check this
      * first. When false, interpolation alpha should be treated as 1.
      */
+    SnFunction(SnKey("FixedTickEnabled"))
     virtual bool FixedTickEnabled() const = 0;
 
     /**
@@ -328,6 +343,7 @@ public:
      * @remarks
      * This value is provided for systems that need deterministic step size metadata.
      */
+    SnFunction(SnKey("FixedTickDeltaSeconds"))
     virtual float FixedTickDeltaSeconds() const = 0;
 
     /**
@@ -339,6 +355,7 @@ public:
      * - 1 means "at current fixed sample"
      * When fixed tick is disabled this returns 1.
      */
+    SnFunction(SnKey("FixedTickInterpolationAlpha"))
     virtual float FixedTickInterpolationAlpha() const = 0;
 
     /**
@@ -431,6 +448,7 @@ public:
      * @brief Access the input subsystem for this world.
      * @return Reference to InputSystem.
      */
+    SnFunction(SnKey("Input"))
     virtual InputSystem& Input() = 0;
     /**
      * @brief Access the input subsystem for this world (const).
@@ -444,6 +462,7 @@ public:
      * @brief Access the UI subsystem for this world.
      * @return Reference to UISystem.
      */
+    SnFunction(SnKey("UI"))
     virtual UISystem& UI() = 0;
     /**
      * @brief Access the UI subsystem for this world (const).
@@ -457,6 +476,7 @@ public:
      * @brief Access the audio system for this world.
      * @return Reference to AudioSystem.
      */
+    SnFunction(SnKey("Audio"))
     virtual AudioSystem& Audio() = 0;
     /**
      * @brief Access the audio system for this world (const).
@@ -471,6 +491,7 @@ public:
      * @return Reference to NetworkSystem.
      * @remarks World networking owns session bridge wiring for replication/RPC.
      */
+    SnFunction(SnKey("Networking"))
     virtual NetworkSystem& Networking() = 0;
     /**
      * @brief Access the networking subsystem for this world (const).
@@ -484,6 +505,7 @@ public:
      * @brief Access the physics subsystem for this world.
      * @return Reference to PhysicsSystem.
      */
+    SnFunction(SnKey("Physics"))
     virtual PhysicsSystem& Physics() = 0;
     /**
      * @brief Access the physics subsystem for this world (const).
@@ -497,6 +519,7 @@ public:
      * @brief Access the renderer subsystem for this world.
      * @return Reference to RendererSystem.
      */
+    SnFunction(SnKey("Renderer"))
     virtual RendererSystem& Renderer() = 0;
     /**
      * @brief Access the renderer subsystem for this world (const).

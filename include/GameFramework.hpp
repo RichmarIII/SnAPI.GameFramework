@@ -27,6 +27,7 @@
  * Include this header when you want the complete public API surface instead of selecting individual headers.
  */
 #include "Assert.h"
+#include "AuthoredAssetLoading.h"
 #include "AuthoredAssetRegistry.h"
 #include "AssetRef.h"
 #include "BuiltinTypes.h"

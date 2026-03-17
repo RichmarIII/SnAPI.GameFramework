@@ -129,6 +129,8 @@ constexpr const char* kPayloadMaterialInstanceName = "SnAPI.GameFramework.Materi
 constexpr const char* kPayloadSkeletonName = "SnAPI.GameFramework.SkeletonPayload";
 /** @brief Payload type name for Animation cooked data. */
 constexpr const char* kPayloadAnimationName = "SnAPI.GameFramework.AnimationPayload";
+/** @brief Payload type name for authored Texture source data. */
+constexpr const char* kPayloadTextureSourceName = "SnAPI.GameFramework.TextureSourcePayload";
 /** @brief Payload type name for StaticMesh source-intermediate data. */
 constexpr const char* kPayloadStaticMeshSourceName = "SnAPI.GameFramework.StaticMeshSourcePayload";
 /** @brief Payload type name for SkeletalMesh source-intermediate data. */
@@ -343,6 +345,15 @@ inline ::SnAPI::AssetPipeline::TypeId PayloadSkeleton()
 inline ::SnAPI::AssetPipeline::TypeId PayloadAnimation()
 {
     return AssetPipelineTypeIdFromName(kPayloadAnimationName);
+}
+
+/**
+ * @brief Get the payload TypeId for authored Texture source payloads.
+ * @return TypeId value.
+ */
+inline ::SnAPI::AssetPipeline::TypeId PayloadTextureSource()
+{
+    return AssetPipelineTypeIdFromName(kPayloadTextureSourceName);
 }
 
 /**

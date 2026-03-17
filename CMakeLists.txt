@@ -124,6 +124,7 @@ set(SNAPI_GF_SOURCES
     src/AudioSystem.cpp
     src/AuthoredAssetRegistry.cpp
     src/AuthoredAssetJson.cpp
+    src/AuthoredAssetLoading.cpp
     src/AuthoredAssetSourcePipeline.cpp
     src/AssetRef.cpp
     src/AssetPipelinePlugin.cpp
@@ -175,10 +176,33 @@ set(SNAPI_GF_SOURCES
     src/NetReplication.cpp
     src/NetRpc.cpp
     src/RendererSystem.cpp
-    src/RenderAssetPayloads.cpp
-    src/RenderAssetSharedResources.cpp
     src/RenderAssetAssimpImporter.cpp
-    src/RenderAssetSourcePayloads.cpp
+    src/RenderAssets/AnimationPayload.cpp
+    src/RenderAssets/AssetRefPayload.cpp
+    src/RenderAssets/ImportedAssetProvenancePayload.cpp
+    src/RenderAssets/MaterialAsset.cpp
+    src/RenderAssets/MaterialInstanceAsset.cpp
+    src/RenderAssets/MeshImportSettingsPayload.cpp
+    src/RenderAssets/MeshStreamSourcePayload.cpp
+    src/RenderAssets/SkeletalAnimationAsset.cpp
+    src/RenderAssets/SkeletalMeshAsset.cpp
+    src/RenderAssets/SkeletalMeshPayload.cpp
+    src/RenderAssets/SkeletonAsset.cpp
+    src/RenderAssets/SkeletonPayload.cpp
+    src/RenderAssets/StaticMeshAsset.cpp
+    src/RenderAssets/StaticMeshPayload.cpp
+    src/RenderAssets/TextureAsset.cpp
+    src/RenderAssets/TextureImportSettingsPayload.cpp
+    src/RenderAssets/TextureSourceImagePayload.cpp
+    src/RenderAssetSerializers/AnimationPayloadSerializer.cpp
+    src/RenderAssetSerializers/MaterialInstancePayloadSerializer.cpp
+    src/RenderAssetSerializers/MaterialPayloadSerializer.cpp
+    src/RenderAssetSerializers/SkeletalMeshPayloadSerializer.cpp
+    src/RenderAssetSerializers/SkeletalMeshSourcePayloadSerializer.cpp
+    src/RenderAssetSerializers/SkeletonPayloadSerializer.cpp
+    src/RenderAssetSerializers/StaticMeshPayloadSerializer.cpp
+    src/RenderAssetSerializers/StaticMeshSourcePayloadSerializer.cpp
+    src/RenderAssetSerializers/TextureSourcePayloadSerializer.cpp
     src/RenderAssetSourcePipeline.cpp
     src/RigidBodyComponent.cpp
     src/SkeletalMeshComponent.cpp
@@ -238,12 +262,13 @@ if (SNAPI_GF_BUILD_REFLECTION_GEN)
     if (NOT SNAPI_GF_LIBCLANG_INCLUDE_DIR OR NOT SNAPI_GF_LIBCLANG_LIBRARY)
         message(FATAL_ERROR "SNAPI_GF_BUILD_REFLECTION_GEN is ON, but libclang headers/library were not found.")
     endif()
+    find_package(Threads REQUIRED)
 
     add_executable(SnAPI.GameFramework.ReflectionGen
         tools/ReflectionGen.cpp
     )
     target_include_directories(SnAPI.GameFramework.ReflectionGen PRIVATE ${SNAPI_GF_LIBCLANG_INCLUDE_DIR})
-    target_link_libraries(SnAPI.GameFramework.ReflectionGen PRIVATE ${SNAPI_GF_LIBCLANG_LIBRARY})
+    target_link_libraries(SnAPI.GameFramework.ReflectionGen PRIVATE ${SNAPI_GF_LIBCLANG_LIBRARY} Threads::Threads)
 
     file(GLOB_RECURSE SNAPI_GF_REFLECTION_HEADERS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
@@ -255,6 +280,8 @@ if (SNAPI_GF_BUILD_REFLECTION_GEN)
         BUILD_DIR "${CMAKE_BINARY_DIR}"
         SEED_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/GameFramework.cpp"
         PROJECT_ROOT "${CMAKE_SOURCE_DIR}"
+        HEADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/reflection/include"
         EXTRA_ARGS "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
         HEADERS ${SNAPI_GF_REFLECTION_HEADERS}
     )
@@ -268,6 +295,7 @@ endif()
 
 if (SNAPI_GF_BUILD_EDITOR)
     target_sources(SnAPI.GameFramework PRIVATE
+        src/Editor/EditorCameraComponent.cpp
         src/Editor/EditorRenderPasses.cpp
     )
 

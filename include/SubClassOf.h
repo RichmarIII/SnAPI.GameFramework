@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "StaticTypeId.h"
+#include "ReflectionAnnotations.h"
 #include "TypeName.h"
 #include "TypeRegistry.h"
 
@@ -32,6 +33,7 @@ namespace SnAPI::GameFramework
  * - Value operations are thread-safe in isolation.
  * - Validity and enumeration depend on the global `TypeRegistry`.
  */
+SnType(SnTemplate)
 template<typename TBase>
 class TSubClassOf
 {
@@ -268,7 +270,17 @@ private:
         return PrettyReflectedTypeName(CandidateName) == Query;
     }
 
+    SnField(
+        SnKey("TypeName"),
+        SnGetter(EditTypeName),
+        SnConstGetter(GetTypeName)
+    )
     std::string m_typeName{};
+    SnField(
+        SnKey("TypeId"),
+        SnGetter(EditTypeId),
+        SnConstGetter(GetTypeId)
+    )
     TypeId m_typeId{};
 };
 

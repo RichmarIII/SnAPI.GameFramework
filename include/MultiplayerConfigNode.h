@@ -4,6 +4,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -20,6 +21,7 @@ namespace SnAPI::GameFramework
  * @see GameplayHost
  * @see LocalPlayer
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API MultiplayerConfigNode : public BaseNode, public NodeCRTP<MultiplayerConfigNode>
 {
 public:
@@ -29,21 +31,25 @@ public:
     explicit MultiplayerConfigNode(std::string Name);
 
     /** @brief Access the desired local-player count. @return Mutable player-count field. */
+    SnField(SnKey("LocalPlayerCount"), SnConstGetter(GetLocalPlayerCount))
     int& EditLocalPlayerCount();
     /** @brief Access the desired local-player count. @return Const player-count field. */
     const int& GetLocalPlayerCount() const;
 
     /** @brief Access the splitscreen enable flag. @return Mutable splitscreen field. */
+    SnField(SnKey("Splitscreen"), SnConstGetter(GetSplitscreen))
     bool& EditSplitscreen();
     /** @brief Access the splitscreen enable flag. @return Const splitscreen field. */
     const bool& GetSplitscreen() const;
 
     /** @brief Access the auto-join policy for additional local players. @return Mutable auto-join field. */
+    SnField(SnKey("AutoJoinAdditionalLocalPlayers"), SnConstGetter(GetAutoJoinAdditionalLocalPlayers))
     bool& EditAutoJoinAdditionalLocalPlayers();
     /** @brief Access the auto-join policy for additional local players. @return Const auto-join field. */
     const bool& GetAutoJoinAdditionalLocalPlayers() const;
 
     /** @brief Access the policy requiring a gamepad for additional local players. @return Mutable requirement field. */
+    SnField(SnKey("RequireGamepadForAdditionalPlayers"), SnConstGetter(GetRequireGamepadForAdditionalPlayers))
     bool& EditRequireGamepadForAdditionalPlayers();
     /** @brief Access the policy requiring a gamepad for additional local players. @return Const requirement field. */
     const bool& GetRequireGamepadForAdditionalPlayers() const;

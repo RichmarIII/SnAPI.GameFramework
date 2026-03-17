@@ -10,9 +10,33 @@
 
 #include "AuthoredAssetCereal.h"
 #include "Handles.h"
+#include "TypeAutoRegistration.h"
 
 namespace SnAPI::GameFramework::Conduit
 {
+
+SNAPI_REFLECT_TYPE(
+    GraphAsset,
+    (TTypeBuilder<GraphAsset>(GraphAsset::kTypeName)
+        .Base<IAsset>()
+        .Field("Name", &GraphAsset::Name, EFieldFlagBits::Serialized)
+        .Field("SelfType", &GraphAsset::SelfType, EFieldFlagBits::Serialized)
+        .Field("Slots", &GraphAsset::Slots, EFieldFlagBits::Serialized)
+        .Field("Variables", &GraphAsset::Variables, EFieldFlagBits::Serialized)
+        .Field("Nodes", &GraphAsset::Nodes, EFieldFlagBits::Serialized)
+        .Field("EditorState", &GraphAsset::EditorState, EFieldFlagBits::Serialized)
+        .Constructor<>()
+        .Register()));
+
+SNAPI_REFLECT_TYPE(
+    ClassAsset,
+    (TTypeBuilder<ClassAsset>(ClassAsset::kTypeName)
+        .Base<IAsset>()
+        .Field("Name", &ClassAsset::Name, EFieldFlagBits::Serialized)
+        .Field("HostType", &ClassAsset::HostType, EFieldFlagBits::Serialized)
+        .Field("Graph", &ClassAsset::Graph, EFieldFlagBits::Serialized)
+        .Constructor<>()
+        .Register()));
 
 Result GraphAsset::Save(std::ostream& Output) const
 {
@@ -82,6 +106,158 @@ TExpected<std::vector<SlotId>> ResolveInputSlots(const std::vector<SlotId>& Slot
     for (const SlotId Authored : AuthoredInputs)
     {
         auto SlotResult = ResolveSlotRef(Slots, Authored, Context);
+        if (!SlotResult)
+        {
+            return std::unexpected(SlotResult.error());
+        }
+        Result.push_back(*SlotResult);
+    }
+    return Result;
+}
+
+[[nodiscard]] std::string BuildArgPinKey(const std::size_t Index)
+{
+    return "Arg" + std::to_string(Index);
+}
+
+[[nodiscard]] const GraphNodeInputDefaultAsset* FindNodeInputDefault(const GraphNodeAsset& Node,
+                                                                     const std::string_view PinKey)
+{
+    const auto It = std::find_if(Node.InputDefaults.begin(),
+                                 Node.InputDefaults.end(),
+                                 [PinKey](const GraphNodeInputDefaultAsset& Entry) {
+                                     return Entry.PinKey == PinKey;
+                                 });
+    return It != Node.InputDefaults.end() ? &(*It) : nullptr;
+}
+
+TExpected<const FieldInfo*> ResolveAuthoredFieldInfo(const GraphNodeAsset& Node, const TypeInfo& SelfType)
+{
+    if (Node.Kind != EGraphAssetNodeKind::SelfFieldRead &&
+        Node.Kind != EGraphAssetNodeKind::SelfFieldWrite &&
+        Node.Kind != EGraphAssetNodeKind::InstanceFieldRead &&
+        Node.Kind != EGraphAssetNodeKind::InstanceFieldWrite)
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch, "Conduit authored node is not a field access"));
+    }
+
+    const TypeInfo* OwnerType = &SelfType;
+    if (Node.Kind == EGraphAssetNodeKind::InstanceFieldRead || Node.Kind == EGraphAssetNodeKind::InstanceFieldWrite)
+    {
+        auto OwnerTypeResult = ResolveRegisteredType(Node.OwnerType, "Conduit instance field owner");
+        if (!OwnerTypeResult)
+        {
+            return std::unexpected(OwnerTypeResult.error());
+        }
+        OwnerType = *OwnerTypeResult;
+    }
+
+    for (const ReflectedFieldRef& Ref : TypeRegistry::Instance().CollectFields(OwnerType->Id, true))
+    {
+        if (Ref.Field && Ref.Field->Name == Node.MemberName)
+        {
+            return Ref.Field;
+        }
+    }
+
+    return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit field metadata was not found for the authored node"));
+}
+
+TExpected<SlotId> MaterializeFallbackInputSlot(GraphBuilder& Builder,
+                                               const GraphNodeAsset& Node,
+                                               const std::string_view PinKey,
+                                               const TypeId& ExpectedType,
+                                               const std::string_view Context)
+{
+    if (ExpectedType == TypeId{})
+    {
+        return std::unexpected(MakeError(EErrorCode::TypeMismatch,
+                                         std::string(Context) + " type could not be inferred for an unwired input"));
+    }
+
+    auto TypeResult = ResolveRegisteredType(ExpectedType, Context);
+    if (!TypeResult)
+    {
+        return std::unexpected(TypeResult.error());
+    }
+
+    auto SlotResult = Builder.AddSlot(**TypeResult, ResolveSlotKindForType(ExpectedType));
+    if (!SlotResult)
+    {
+        return std::unexpected(SlotResult.error());
+    }
+
+    if (const GraphNodeInputDefaultAsset* Default = FindNodeInputDefault(Node, PinKey);
+        Default && Default->Value.Type != TypeId{})
+    {
+        if (Default->Value.Type != ExpectedType)
+        {
+            return std::unexpected(MakeError(EErrorCode::TypeMismatch,
+                                             std::string(Context) + " authored default type mismatch"));
+        }
+        auto AddResult = Builder.AddSerializedConstant(*SlotResult, Default->Value);
+        if (!AddResult)
+        {
+            return std::unexpected(AddResult.error());
+        }
+        return *SlotResult;
+    }
+
+    if (!(*TypeResult)->RuntimeOps || !(*TypeResult)->RuntimeOps->DefaultConstruct)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         std::string(Context) +
+                                             " is unwired and its reflected type is not default-constructible"));
+    }
+
+    auto AddResult = Builder.AddDefaultConstruct(*SlotResult);
+    if (!AddResult)
+    {
+        return std::unexpected(AddResult.error());
+    }
+    return *SlotResult;
+}
+
+TExpected<SlotId> ResolveRequiredInputSlot(const std::vector<SlotId>& Slots,
+                                           GraphBuilder& Builder,
+                                           const GraphNodeAsset& Node,
+                                           const SlotId AuthoredRef,
+                                           const std::string_view PinKey,
+                                           const TypeId& ExpectedType,
+                                           const std::string_view Context)
+{
+    if (AuthoredRef.IsValid())
+    {
+        auto SlotResult = ResolveSlotRef(Slots, AuthoredRef, Context);
+        if (!SlotResult)
+        {
+            return std::unexpected(SlotResult.error());
+        }
+        return *SlotResult;
+    }
+
+    return MaterializeFallbackInputSlot(Builder, Node, PinKey, ExpectedType, Context);
+}
+
+TExpected<std::vector<SlotId>> ResolveMethodInputSlots(const std::vector<SlotId>& Slots,
+                                                       GraphBuilder& Builder,
+                                                       const GraphNodeAsset& Node,
+                                                       const MethodInfo& Method,
+                                                       const std::string_view Context)
+{
+    std::vector<SlotId> Result{};
+    Result.reserve(Method.ParamTypes.size());
+    for (std::size_t Index = 0; Index < Method.ParamTypes.size(); ++Index)
+    {
+        const SlotId AuthoredRef = Index < Node.Inputs.size() ? Node.Inputs[Index] : SlotId{};
+        auto SlotResult = ResolveRequiredInputSlot(
+            Slots,
+            Builder,
+            Node,
+            AuthoredRef,
+            BuildArgPinKey(Index),
+            Method.ParamTypes[Index],
+            Context);
         if (!SlotResult)
         {
             return std::unexpected(SlotResult.error());
@@ -386,6 +562,10 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
     {
     case EGraphAssetNodeKind::Constant:
     {
+        if (!Node.Output.IsValid())
+        {
+            return Ok();
+        }
         auto OutputResult = ResolveSlotRef(Slots, Node.Output, "Conduit constant output");
         if (!OutputResult)
         {
@@ -404,6 +584,10 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
         if (It == VariableById.end())
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit variable-get target was not found"));
+        }
+        if (!Node.Output.IsValid())
+        {
+            return Ok();
         }
         auto OutputResult = ResolveSlotRef(Slots, Node.Output, "Conduit variable-get output");
         if (!OutputResult)
@@ -424,7 +608,13 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
         {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit variable-set target was not found"));
         }
-        auto InputResult = ResolveSlotRef(Slots, Node.Input, "Conduit variable-set input");
+        auto InputResult = ResolveRequiredInputSlot(Slots,
+                                                    Builder,
+                                                    Node,
+                                                    Node.Input,
+                                                    "Value",
+                                                    Variables[It->second].Type->Id,
+                                                    "Conduit variable-set input");
         if (!InputResult)
         {
             return std::unexpected(InputResult.error());
@@ -438,6 +628,10 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
     }
     case EGraphAssetNodeKind::UnaryIntrinsic:
     {
+        if (!Node.Output.IsValid())
+        {
+            return Ok();
+        }
         auto InputResult = ResolveSlotRef(Slots, Node.Input, "Conduit unary intrinsic input");
         if (!InputResult)
         {
@@ -457,6 +651,10 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
     }
     case EGraphAssetNodeKind::BinaryIntrinsic:
     {
+        if (!Node.Output.IsValid())
+        {
+            return Ok();
+        }
         auto LeftResult = ResolveSlotRef(Slots, Node.Left, "Conduit binary intrinsic left");
         if (!LeftResult)
         {
@@ -481,6 +679,10 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
     }
     case EGraphAssetNodeKind::SelfFieldRead:
     {
+        if (!Node.Output.IsValid())
+        {
+            return Ok();
+        }
         auto OutputResult = ResolveSlotRef(Slots, Node.Output, "Conduit self field read output");
         if (!OutputResult)
         {
@@ -495,7 +697,19 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
     }
     case EGraphAssetNodeKind::SelfFieldWrite:
     {
-        auto InputResult = ResolveSlotRef(Slots, Node.Input, "Conduit self field write input");
+        auto FieldResult = ResolveAuthoredFieldInfo(Node, Builder.SelfType());
+        if (!FieldResult)
+        {
+            return std::unexpected(FieldResult.error());
+        }
+        auto InputResult = ResolveRequiredInputSlot(
+            Slots,
+            Builder,
+            Node,
+            Node.Input,
+            "Value",
+            (*FieldResult)->FieldType,
+            "Conduit self field write input");
         if (!InputResult)
         {
             return std::unexpected(InputResult.error());
@@ -509,7 +723,16 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
     }
     case EGraphAssetNodeKind::SelfMethodCall:
     {
-        auto InputsResult = ResolveInputSlots(Slots, Node.Inputs, "Conduit self method input");
+        auto MethodResult = ResolveAuthoredMethodInfo(Asset, Node, Builder.SelfType());
+        if (!MethodResult)
+        {
+            return std::unexpected(MethodResult.error());
+        }
+        auto InputsResult = ResolveMethodInputSlots(Slots,
+                                                    Builder,
+                                                    Node,
+                                                    **MethodResult,
+                                                    "Conduit self method input");
         if (!InputsResult)
         {
             return std::unexpected(InputsResult.error());
@@ -532,6 +755,10 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
         if (!OwnerTypeResult)
         {
             return std::unexpected(OwnerTypeResult.error());
+        }
+        if (!Node.Output.IsValid())
+        {
+            return Ok();
         }
         auto InstanceResult = ResolveSlotRef(Slots, Node.Instance, "Conduit instance field read instance");
         if (!InstanceResult)
@@ -562,7 +789,19 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
         {
             return std::unexpected(InstanceResult.error());
         }
-        auto InputResult = ResolveSlotRef(Slots, Node.Input, "Conduit instance field write input");
+        auto FieldResult = ResolveAuthoredFieldInfo(Node, Builder.SelfType());
+        if (!FieldResult)
+        {
+            return std::unexpected(FieldResult.error());
+        }
+        auto InputResult = ResolveRequiredInputSlot(
+            Slots,
+            Builder,
+            Node,
+            Node.Input,
+            "Value",
+            (*FieldResult)->FieldType,
+            "Conduit instance field write input");
         if (!InputResult)
         {
             return std::unexpected(InputResult.error());
@@ -586,7 +825,16 @@ TExpected<void> EmitNonControlNode(GraphBuilder& Builder,
         {
             return std::unexpected(InstanceResult.error());
         }
-        auto InputsResult = ResolveInputSlots(Slots, Node.Inputs, "Conduit instance method input");
+        auto MethodResult = ResolveAuthoredMethodInfo(Asset, Node, Builder.SelfType());
+        if (!MethodResult)
+        {
+            return std::unexpected(MethodResult.error());
+        }
+        auto InputsResult = ResolveMethodInputSlots(Slots,
+                                                    Builder,
+                                                    Node,
+                                                    **MethodResult,
+                                                    "Conduit instance method input");
         if (!InputsResult)
         {
             return std::unexpected(InputsResult.error());
@@ -1239,7 +1487,7 @@ TExpected<CompiledClass> CompileClassAsset(const ClassAsset& Asset, ::SnAPI::Ass
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit class host type must derive from BaseNode"));
     }
 
-    auto LoadResult = Asset.Graph.Load(AssetManager);
+    auto LoadResult = Asset.Graph.LoadAsset();
     if (!LoadResult)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Failed to load Conduit class graph: " + LoadResult.error()));

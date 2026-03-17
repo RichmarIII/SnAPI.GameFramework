@@ -521,7 +521,11 @@ public:
      */
     template<typename FieldT>
     requires (!std::is_function_v<FieldT>)
-    TTypeBuilder& Field(const char* Name, FieldT T::*Member, FieldFlags Flags = {})
+    TTypeBuilder& Field(
+        const char* Name,
+        FieldT T::*Member,
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
         using Raw = std::remove_cv_t<FieldT>;
         FieldInfo Info;
@@ -529,6 +533,7 @@ public:
         const TypeId FieldType = StaticTypeId<Raw>();
         Info.FieldType = FieldType;
         Info.Flags = Flags;
+        Info.EditorFlags = EditorFlags;
         Info.Getter = [Member](void* Instance) -> TExpected<Variant> {
             if (!Instance)
             {
@@ -648,7 +653,11 @@ public:
      */
     template<typename GetterMethod>
     requires (IsGetterMethodV<GetterMethod>)
-    TTypeBuilder& Field(const char* Name, GetterMethod Getter, FieldFlags Flags = {})
+    TTypeBuilder& Field(
+        const char* Name,
+        GetterMethod Getter,
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
         using GetterTraits = TGetterTraits<GetterMethod>;
         using GetterReturn = typename GetterTraits::ReturnType;
@@ -661,6 +670,7 @@ public:
         const TypeId FieldType = StaticTypeId<Raw>();
         Info.FieldType = FieldType;
         Info.Flags = Flags;
+        Info.EditorFlags = EditorFlags;
         Info.Getter = [Getter](void* Instance) -> TExpected<Variant> {
             if (!Instance)
             {
@@ -714,7 +724,11 @@ public:
      */
     template<typename SetterMethod>
     requires (IsSetterMethodV<SetterMethod>)
-    TTypeBuilder& Field(const char* Name, SetterMethod Setter, FieldFlags Flags = {})
+    TTypeBuilder& Field(
+        const char* Name,
+        SetterMethod Setter,
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
         using SetterTraits = TSetterTraits<SetterMethod>;
         using SetterArg = typename SetterTraits::ArgType;
@@ -728,6 +742,7 @@ public:
         Info.Name = Name;
         Info.FieldType = StaticTypeId<Raw>();
         Info.Flags = Flags;
+        Info.EditorFlags = EditorFlags;
         Info.Getter = [](void*) -> TExpected<Variant> {
             return std::unexpected(MakeError(EErrorCode::NotFound, "Field has no getter"));
         };
@@ -767,7 +782,12 @@ public:
      */
     template<typename GetterMethod, typename SetterMethod>
     requires (IsGetterMethodV<GetterMethod> && IsSetterMethodV<SetterMethod>)
-    TTypeBuilder& Field(const char* Name, GetterMethod Getter, SetterMethod Setter, FieldFlags Flags = {})
+    TTypeBuilder& Field(
+        const char* Name,
+        GetterMethod Getter,
+        SetterMethod Setter,
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
         using GetterTraits = TGetterTraits<GetterMethod>;
         using GetterReturn = typename GetterTraits::ReturnType;
@@ -786,6 +806,7 @@ public:
         const TypeId FieldType = StaticTypeId<Raw>();
         Info.FieldType = FieldType;
         Info.Flags = Flags;
+        Info.EditorFlags = EditorFlags;
         Info.Getter = [Getter](void* Instance) -> TExpected<Variant> {
             if (!Instance)
             {
@@ -923,9 +944,10 @@ public:
         const char* Name,
         GetterReturn (T::*Getter)(),
         SetterReturn (T::*Setter)(SetterArg),
-        FieldFlags Flags = {})
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
-        return Field<decltype(Getter), decltype(Setter)>(Name, Getter, Setter, Flags);
+        return Field<decltype(Getter), decltype(Setter)>(Name, Getter, Setter, Flags, EditorFlags);
     }
 
     template<typename GetterReturn, typename SetterArg, typename SetterReturn>
@@ -933,9 +955,10 @@ public:
         const char* Name,
         GetterReturn (T::*Getter)() const,
         SetterReturn (T::*Setter)(SetterArg),
-        FieldFlags Flags = {})
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
-        return Field<decltype(Getter), decltype(Setter)>(Name, Getter, Setter, Flags);
+        return Field<decltype(Getter), decltype(Setter)>(Name, Getter, Setter, Flags, EditorFlags);
     }
 
     /**
@@ -961,7 +984,8 @@ public:
         const char* Name,
         FieldT& (T::*Getter)(),
         const FieldT& (T::*GetterConst)() const,
-        FieldFlags Flags = {})
+        FieldFlags Flags = {},
+        FieldEditorFlags EditorFlags = {})
     {
         using Raw = std::remove_cv_t<FieldT>;
         FieldInfo Info;
@@ -969,6 +993,7 @@ public:
         const TypeId FieldType = StaticTypeId<Raw>();
         Info.FieldType = FieldType;
         Info.Flags = Flags;
+        Info.EditorFlags = EditorFlags;
         Info.Getter = [Getter](void* Instance) -> TExpected<Variant> {
             if (!Instance)
             {

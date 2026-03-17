@@ -3,6 +3,15 @@
 #include <memory>
 
 #include "IPayloadSerializer.h"
+#include "RenderAssetSerializers/AnimationPayloadSerializer.h"
+#include "RenderAssetSerializers/MaterialInstancePayloadSerializer.h"
+#include "RenderAssetSerializers/MaterialPayloadSerializer.h"
+#include "RenderAssetSerializers/SkeletalMeshPayloadSerializer.h"
+#include "RenderAssetSerializers/SkeletalMeshSourcePayloadSerializer.h"
+#include "RenderAssetSerializers/SkeletonPayloadSerializer.h"
+#include "RenderAssetSerializers/StaticMeshPayloadSerializer.h"
+#include "RenderAssetSerializers/StaticMeshSourcePayloadSerializer.h"
+#include "RenderAssetSerializers/TextureSourcePayloadSerializer.h"
 
 namespace SnAPI::GameFramework
 {
@@ -58,53 +67,4 @@ std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateConduitGraphPa
  * @return Owning serializer instance.
  */
 std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateConduitClassPayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for cooked `StaticMeshPayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateStaticMeshPayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for cooked `SkeletalMeshPayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateSkeletalMeshPayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for cooked `MaterialPayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateMaterialPayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for cooked `MaterialInstancePayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateMaterialInstancePayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for cooked `SkeletonPayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateSkeletonPayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for cooked `AnimationPayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateAnimationPayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for source-intermediate `StaticMeshSourcePayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateStaticMeshSourcePayloadSerializer();
-/**
- * @ingroup SnAPI_GameFramework
- * @brief Create the serializer for source-intermediate `SkeletalMeshSourcePayload` data.
- * @return Owning serializer instance.
- */
-std::unique_ptr<::SnAPI::AssetPipeline::IPayloadSerializer> CreateSkeletalMeshSourcePayloadSerializer();
-
 } // namespace SnAPI::GameFramework

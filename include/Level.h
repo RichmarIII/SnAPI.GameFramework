@@ -37,6 +37,7 @@ namespace SnAPI::GameFramework
  * @see World
  * @see BaseNode
  */
+SnType()
 class Level : public BaseNode, public NodeCRTP<Level>
 {
 public:
@@ -558,3 +559,4 @@ public:
 } // namespace SnAPI::GameFramework
 
 #include "BaseNode.inl"
+#include "ReflectionAnnotations.h"

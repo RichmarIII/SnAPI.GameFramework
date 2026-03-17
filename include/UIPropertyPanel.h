@@ -30,7 +30,7 @@ namespace SnAPI::GameFramework
 class BaseNode;
 template<typename TBase, typename TNameTag>
 class TAssetRef;
-struct MaterialInstanceAssetRuntime;
+struct MaterialInstanceAsset;
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -149,6 +149,14 @@ public:
    */
   void SetComponentContextMenuHandler(
     SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)> Handler);
+  /**
+   * @brief Set the callback invoked after one successful model mutation initiated by this panel.
+   * @param Handler Delegate receiving the mutated root reflected type and root instance pointer.
+   *
+   * The callback fires only after a write succeeds. It is intended for editor document dirty
+   * tracking and similar higher-level bookkeeping.
+   */
+  void SetObjectMutatedHandler(SnAPI::UI::TDelegate<void(const TypeId&, void*)> Handler);
 
   /** @brief Forward routed UI events to the scroll container base implementation. */
   void OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context) override;
@@ -161,6 +169,7 @@ private:
     TypeId OwnerType{};
     std::string FieldName{};
     bool IsConst = false;
+    bool ForceReadOnly = false;
   };
 
   enum class EEditorKind : uint8_t
@@ -257,7 +266,7 @@ private:
     std::string_view RowPrefix);
   void AddMaterialInstanceAssetRefCollectionEditor(
     SnAPI::UI::ElementId Parent,
-    std::vector<TAssetRef<MaterialInstanceAssetRuntime, void>>& References,
+    std::vector<TAssetRef<MaterialInstanceAsset, void>>& References,
     bool ReadOnly,
     std::string_view Heading,
     std::string_view RowPrefix);
@@ -329,6 +338,8 @@ private:
     bool BoolValue);
   void CommitBindingFromComponents(std::size_t BindingIndex, std::uint64_t Generation);
   void SyncBindingToEditor(FieldBinding& Binding);
+  void NotifyObjectMutated(const TypeId& RootType, void* RootInstance);
+  void NotifyObjectMutated(const FieldBinding& Binding);
 
   void SyncModelToEditors();
 
@@ -345,6 +356,7 @@ private:
   bool m_CommittingEditorToModel = false;
   SnAPI::UI::TDelegate<void(NodeHandle, const TypeId&, const SnAPI::UI::PointerEvent&)>
     m_OnComponentContextMenuRequested{};
+  SnAPI::UI::TDelegate<void(const TypeId&, void*)> m_OnObjectMutated{};
 };
 
 } // namespace SnAPI::GameFramework

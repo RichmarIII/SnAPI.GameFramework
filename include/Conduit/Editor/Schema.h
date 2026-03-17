@@ -59,6 +59,7 @@ struct SchemaPinType
 struct SchemaPinDescriptor
 {
     std::string Name{}; /**< @brief UI-facing pin label. */
+    std::string Tooltip{}; /**< @brief Hover tooltip describing pin semantics, type contract, and reflected docs. */
     ESchemaPinDirection Direction = ESchemaPinDirection::Input; /**< @brief Input vs output. */
     SchemaPinType Type{}; /**< @brief Type and semantic contract. */
     bool SupportsLiteral = false; /**< @brief True when unlinked pins may expose inline literal editors. */

@@ -6,6 +6,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -26,6 +27,7 @@ namespace SnAPI::GameFramework
  * @see StaticMeshComponent
  * @see TransformComponent
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API EnvironmentProbeNode final : public BaseNode, public NodeCRTP<EnvironmentProbeNode>
 {
 public:

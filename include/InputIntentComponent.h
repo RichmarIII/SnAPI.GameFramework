@@ -2,6 +2,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -39,6 +40,7 @@ namespace SnAPI::GameFramework
  * @see CharacterMovementController
  * @see SprintArmComponent
  */
+SnType()
 class InputIntentComponent : public BaseComponent, public ComponentCRTP<InputIntentComponent>
 {
 public:

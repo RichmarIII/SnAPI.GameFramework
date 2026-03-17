@@ -406,6 +406,10 @@ std::vector<ReflectedMethodRef> CollectMethodsUnlocked(const std::unordered_map<
 
         for (const MethodInfo& Method : Owner->Methods)
         {
+            if (Method.Flags.Has(EMethodFlagBits::HiddenGenerated))
+            {
+                continue;
+            }
             Result.push_back(ReflectedMethodRef{
                 .OwnerType = Owner->Id,
                 .Method = &Method,

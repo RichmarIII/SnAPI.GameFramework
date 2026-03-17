@@ -14,52 +14,71 @@
 #include "TypeName.h"
 #include "Uuid.h"
 #include "World.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
 
+SnType()
 struct NodeFieldAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::NodeFieldAsset";
 
+    SnField(SnKey("Name"))
     std::string Name{};
+    SnField(SnKey("Value"))
     Conduit::SerializedValue Value{};
 
     bool operator==(const NodeFieldAsset&) const = default;
 };
 
+SnType()
 struct NodeComponentAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::NodeComponentAsset";
 
+    SnField(SnKey("Id"))
     Uuid Id{};
+    SnField(SnKey("Type"))
     TypeId Type{};
+    SnField(SnKey("Fields"))
     std::vector<NodeFieldAsset> Fields{};
 
     bool operator==(const NodeComponentAsset&) const = default;
 };
 
+SnType()
 struct NodeObjectAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::NodeObjectAsset";
 
+    SnField(SnKey("Id"))
     Uuid Id{};
+    SnField(SnKey("Type"))
     TypeId Type{};
+    SnField(SnKey("Name"))
     std::string Name{};
+    SnField(SnKey("Active"))
     bool Active = true;
+    SnField(SnKey("Fields"))
     std::vector<NodeFieldAsset> Fields{};
+    SnField(SnKey("Components"))
     std::vector<NodeComponentAsset> Components{};
+    SnField(SnKey("Children"))
     std::vector<NodeObjectAsset> Children{};
 
     bool operator==(const NodeObjectAsset&) const = default;
 };
 
+SnType()
 struct NodeAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::NodeAsset";
     static constexpr std::uint32_t kSchemaVersion = 1;
 
+    SnField(SnKey("Name"))
     std::string Name{};
+    SnField(SnKey("Nodes"))
     std::vector<NodeObjectAsset> Nodes{};
 
     bool operator==(const NodeAsset&) const = default;
@@ -75,6 +94,7 @@ struct NodeAsset : public IAsset
     [[nodiscard]] ::SnAPI::AssetPipeline::TypeId CookedPayloadType() const override { return PayloadNode(); }
 };
 
+SnType()
 struct LevelAsset : public NodeAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::LevelAsset";
@@ -90,6 +110,7 @@ struct LevelAsset : public NodeAsset
     [[nodiscard]] ::SnAPI::AssetPipeline::TypeId CookedPayloadType() const override { return PayloadLevel(); }
 };
 
+SnType()
 struct WorldAsset : public NodeAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::WorldAsset";

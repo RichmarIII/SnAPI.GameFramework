@@ -6,9 +6,11 @@
 #include <string>
 #include <string_view>
 
+#include "BaseNode.h"
 #include "Handle.h"
 #include "Handles.h"
 #include "NodeComponentContracts.h"
+#include "ReflectionAnnotations.h"
 #include "Uuid.h"
 #include "WorldEcsRuntime.h"
 
@@ -53,6 +55,7 @@ class Variant;
  * @see ComponentHandle
  * @see IWorld
  */
+SnType()
 class BaseComponent
 {
 public:
@@ -138,6 +141,7 @@ public:
      * @brief Get the owning node handle.
      * @return Owner node handle.
      */
+    SnFunction(SnKey("Owner"))
     NodeHandle Owner() const
     {
         return m_owner;
@@ -147,6 +151,7 @@ public:
      * @brief Check if this component is active for tick execution.
      * @return True when tick hooks are enabled.
      */
+    SnFunction(SnKey("Active"))
     bool Active() const
     {
         return m_active;
@@ -159,6 +164,7 @@ public:
      * Active=false suppresses Tick/FixedTick/LateTick dispatch while the
      * component remains attached and replicated/serializable.
      */
+    SnFunction(SnKey("SetActive"))
     void Active(bool ActiveValue)
     {
         m_active = ActiveValue;
@@ -168,6 +174,7 @@ public:
      * @brief Check if the component is replicated over the network.
      * @return True if replicated.
      */
+    SnFunction(SnKey("Replicated"))
     bool Replicated() const
     {
         return m_replicated;
@@ -178,6 +185,7 @@ public:
      * @param Replicated New replicated state.
      * @remarks Runtime gate: even replicated fields are skipped when false.
      */
+    SnFunction(SnKey("SetReplicated"))
     void Replicated(bool Replicated)
     {
         m_replicated = Replicated;
@@ -187,6 +195,7 @@ public:
      * @brief Get the component UUID.
      * @return UUID of this component.
      */
+    SnFunction(SnKey("Id"))
     const Uuid& Id() const
     {
         return m_id;
@@ -209,6 +218,7 @@ public:
      * Required for reflection RPC/serialization lookup when working through
      * erased `BaseComponent` pointers.
      */
+    SnFunction(SnKey("TypeKey"))
     const TypeId& TypeKey() const
     {
         return m_typeId;
@@ -227,9 +237,20 @@ public:
      * @brief Get a handle for this component.
      * @return ComponentHandle wrapping the UUID.
      */
+    SnFunction(SnKey("Handle"))
     ComponentHandle Handle() const
     {
         return ComponentHandle(m_id, m_runtimePoolToken, m_runtimeIndex, m_runtimeGeneration);
+    }
+
+    /**
+     * @brief Get the owning network-connection id inherited from the owner node.
+     * @return Stable connection id, or `0` when the component is local/unowned/detached.
+     */
+    std::uint64_t OwnerConnectionId() const
+    {
+        const auto* Node = OwnerNode();
+        return Node ? Node->GetOwnerConnectionId() : 0;
     }
 
     /**
@@ -251,6 +272,7 @@ public:
      * @return Owning BaseNode pointer or nullptr.
      * @remarks Resolves through the stored owner handle each time and may rehydrate it back to the fast path.
      */
+    SnFunction(SnKey("OwnerNode"))
     BaseNode* OwnerNode() const;
 
     /**
@@ -258,24 +280,28 @@ public:
      * @return Owning world or nullptr.
      * @remarks Returns null for detached/prefab graphs not currently world-attached.
      */
+    SnFunction(SnKey("World"))
     IWorld* World() const;
 
     /**
      * @brief Check whether this component executes with server authority.
      * @return True when server-authoritative.
      */
+    SnFunction(SnKey("IsServer"))
     bool IsServer() const;
 
     /**
      * @brief Check whether this component executes in a client context.
      * @return True when client-side.
      */
+    SnFunction(SnKey("IsClient"))
     bool IsClient() const;
 
     /**
      * @brief Check whether this component executes as listen-server.
      * @return True when both server and client role are active.
      */
+    SnFunction(SnKey("IsListenServer"))
     bool IsListenServer() const;
 
     /**

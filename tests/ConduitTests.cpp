@@ -31,6 +31,17 @@ struct ConduitHarness
         return Health + Delta;
     }
 
+    int ApplyHealthDeltaAndReturn(const int Delta)
+    {
+        Health += Delta;
+        return Health;
+    }
+
+    void SetLabelText(const std::string& Value)
+    {
+        Label = Value;
+    }
+
     int GetHealthValue() const
     {
         return Health;
@@ -201,6 +212,8 @@ void EnsureConduitHarnessRegistered()
             .Field("Power", &ConduitHarness::GetPower, &ConduitHarness::SetPower)
             .Method("AddHealth", &ConduitHarness::AddHealth)
             .Method("SumHealth", &ConduitHarness::SumHealth)
+            .Method("ApplyHealthDeltaAndReturn", &ConduitHarness::ApplyHealthDeltaAndReturn)
+            .Method("SetLabelText", &ConduitHarness::SetLabelText)
             .Constructor<>()
             .Register();
         REQUIRE(RegisterResult);
@@ -409,6 +422,38 @@ TEST_CASE("Conduit field reads support getter-only by-value reflection")
     auto ReadValue = Instance.Frame().AsConstRef<int>(*OutputSlot);
     REQUIRE(ReadValue);
     REQUIRE(ReadValue->get() == 41);
+}
+
+TEST_CASE("Conduit method calls can discard reflected return values")
+{
+    EnsureConduitHarnessRegistered();
+
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    GraphBuilder Builder(*SelfType);
+
+    auto DeltaSlot = Builder.AddSlot(StaticTypeId<int>());
+    REQUIRE(DeltaSlot);
+    REQUIRE(Builder.AddConstant(*DeltaSlot, Variant::FromValue(4)));
+
+    const std::array<SlotId, 1> Args{*DeltaSlot};
+    REQUIRE(Builder.AddSelfMethodCall("ApplyHealthDeltaAndReturn", Args));
+
+    auto GraphResult = std::move(Builder).Build();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+    Harness.Health = 3;
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    CHECK(Harness.Health == 7);
 }
 
 TEST_CASE("Conduit field writes support setter-based reflected properties")
@@ -1224,6 +1269,115 @@ TEST_CASE("Conduit authored graph assets serialize compile and execute")
     auto Output = Instance.Frame().AsConstRef<int>(SlotId{5});
     REQUIRE(Output);
     REQUIRE(Output->get() == 5);
+}
+
+TEST_CASE("Conduit authored method calls default construct unwired reflected inputs")
+{
+    EnsureConduitHarnessRegistered();
+
+    GraphAsset Authored{};
+    Authored.Name = "UnwiredMethodDefaults";
+    Authored.SelfType = StaticTypeId<ConduitHarness>();
+    Authored.Nodes = {
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::SelfMethodCall,
+            .MemberName = "SetLabelText",
+        },
+    };
+
+    auto GraphResult = Authored.Compile();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+    Harness.Label = "Unset";
+
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    CHECK(Harness.Label.empty());
+}
+
+TEST_CASE("Conduit authored method calls use explicit input defaults when unwired")
+{
+    EnsureConduitHarnessRegistered();
+
+    GraphAsset Authored{};
+    Authored.Name = "ExplicitMethodDefaults";
+    Authored.SelfType = StaticTypeId<ConduitHarness>();
+    Authored.Nodes = {
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::SelfMethodCall,
+            .MemberName = "SetLabelText",
+            .InputDefaults = {
+                GraphNodeInputDefaultAsset{
+                    .PinKey = "Arg0",
+                    .Value = MakeSerializedValue(std::string("Ready")),
+                },
+            },
+        },
+    };
+
+    auto GraphResult = Authored.Compile();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+    Harness.Label = "Unset";
+
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    CHECK(Harness.Label == "Ready");
+}
+
+TEST_CASE("Conduit authored graphs ignore unused pure producer nodes with no output slots")
+{
+    EnsureConduitHarnessRegistered();
+
+    GraphAsset Authored{};
+    Authored.Name = "DiscardedPureValues";
+    Authored.SelfType = StaticTypeId<ConduitHarness>();
+    Authored.Nodes = {
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::Constant,
+            .ConstantValue = MakeSerializedValue(9),
+        },
+        GraphNodeAsset{
+            .Kind = EGraphAssetNodeKind::SelfFieldRead,
+            .MemberName = "Health",
+        },
+    };
+
+    auto GraphResult = Authored.Compile();
+    REQUIRE(GraphResult);
+
+    GraphInstance Instance(*GraphResult);
+    ConduitHarness Harness;
+    Harness.Health = 5;
+
+    const TypeInfo* SelfType = TypeRegistry::Instance().Find(StaticTypeId<ConduitHarness>());
+    REQUIRE(SelfType != nullptr);
+
+    ExecutionContext Context{
+        .Self = &Harness,
+        .SelfType = SelfType,
+    };
+
+    REQUIRE(Instance.Execute(Context));
+    CHECK(Harness.Health == 5);
 }
 
 TEST_CASE("Conduit graph variables initialize defaults and persist across entrypoints")

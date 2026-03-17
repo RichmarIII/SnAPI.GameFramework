@@ -3,6 +3,8 @@
 #include "BaseComponent.h"
 #include "Math.h"
 #include <string_view>
+#include "ReflectionAnnotations.h"
+#include "AudioListenerComponent.generated.hpp"
 
 namespace SnAPI::GameFramework
 {
@@ -35,8 +37,8 @@ class AudioSystem;
  *
  * Networking semantics:
  * - `SetActive()` is the gameplay-facing, role-aware entry point.
- * - `SetActiveServer()` is the authoritative RPC endpoint.
- * - `SetActiveClient()` applies local state on the receiving peer.
+ * - Generated RPC wrappers route `SetActive()` through authority and multicast delivery.
+ * - The authored implementation only applies local state through `SetActiveImpl()`.
  * - Direct mutation through `Active(bool)` or `EditActive()` is local-only and does not perform RPC.
  *
  * @warning Multiple active listener components in the same world are not arbitrated. The last one to
@@ -48,11 +50,11 @@ class AudioSystem;
  * @see AudioSystem
  * @see AudioSourceComponent
  */
+SnType()
 class AudioListenerComponent : public BaseComponent, public ComponentCRTP<AudioListenerComponent>
 {
 public:
-    /** @brief Stable reflected type name used for serialization registration. */
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::AudioListenerComponent";
+    SnGenerated()
 
     /**
      * @brief Check whether this component currently writes listener updates.
@@ -86,6 +88,7 @@ public:
      * @return Borrowed reference to the stored active flag.
      * @warning This mutates local state only and does not propagate through RPC.
      */
+    SnField(SnKey("Active"), SnConstGetter(GetActive))
     bool& EditActive()
     {
         return m_active;
@@ -118,22 +121,11 @@ public:
      * @param ActiveValue New active state.
      *
      * Semantics:
-     * - Client: attempts `SetActiveServer` RPC and returns if the RPC was accepted.
+     * - Client: forwards the request to authority, which fans out to peers.
      * - Authority/offline: falls through to local application.
      */
+    SnFunction(SnKey("SetActive"), SnRpc(SnReliable, SnMulticast))
     void SetActive(bool ActiveValue);
-    /**
-     * @brief Authoritative RPC endpoint for `SetActive()`.
-     * @param ActiveValue New active state.
-     * @remarks Applies server state first, then attempts to fan out through `SetActiveClient()`.
-     */
-    void SetActiveServer(bool ActiveValue);
-    /**
-     * @brief Local/client endpoint for `SetActive()`.
-     * @param ActiveValue New active state.
-     * @remarks Applies only local listener activity state.
-     */
-    void SetActiveClient(bool ActiveValue);
 
 private:
     /** @brief Resolve world audio subsystem, if available. */

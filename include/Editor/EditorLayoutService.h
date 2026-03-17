@@ -100,6 +100,17 @@ private:
     bool m_hasPendingConduitNodeCreateRequest = false;
     std::string m_pendingConduitNodeCreateStableId{};
     bool m_hasPendingConduitNodeRemoveRequest = false;
+    bool m_hasPendingConduitNodeDefaultBoolRequest = false;
+    std::string m_pendingConduitNodeDefaultPinKey{};
+    bool m_pendingConduitNodeDefaultBool = false;
+    bool m_hasPendingConduitNodeDefaultTextRequest = false;
+    std::string m_pendingConduitNodeDefaultTextPinKey{};
+    std::string m_pendingConduitNodeDefaultText{};
+    bool m_hasPendingConduitNodeDefaultEnumRequest = false;
+    std::string m_pendingConduitNodeDefaultEnumPinKey{};
+    std::string m_pendingConduitNodeDefaultEnum{};
+    bool m_hasPendingConduitNodeDefaultClearRequest = false;
+    std::string m_pendingConduitNodeDefaultClearPinKey{};
     bool m_hasPendingConduitNodeMoveRequest = false;
     Uuid m_pendingConduitNodeMoveId{};
     float m_pendingConduitNodeMoveX = 0.0f;

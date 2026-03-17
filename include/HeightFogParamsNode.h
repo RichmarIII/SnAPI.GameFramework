@@ -9,6 +9,7 @@
 #include "BaseNode.h"
 #include "Export.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -52,6 +53,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API HeightFogParamsNode : public BaseNode, public NodeCRTP<HeightFogParamsNode>
 {
 public:
@@ -67,101 +69,121 @@ public:
     explicit HeightFogParamsNode(std::string Name);
 
     /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
     /** @brief Access fog density. @return Mutable non-negative density scalar. */
+    SnField(SnKey("Density"), SnConstGetter(GetDensity))
     float& EditDensity();
     /** @brief Read fog density. @return Stored density scalar. */
     const float& GetDensity() const;
 
     /** @brief Access vertical density falloff. @return Mutable non-negative falloff scalar. */
+    SnField(SnKey("HeightFalloff"), SnConstGetter(GetHeightFalloff))
     float& EditHeightFalloff();
     /** @brief Read vertical density falloff. @return Stored falloff scalar. */
     const float& GetHeightFalloff() const;
 
     /** @brief Access the height-mode selector. @return Mutable flag choosing absolute-height vs rebased-height mode. */
+    SnField(SnKey("UseAbsoluteHeight"), SnConstGetter(GetUseAbsoluteHeight))
     bool& EditUseAbsoluteHeight();
     /** @brief Read the height-mode selector. @return Stored absolute-height flag. */
     const bool& GetUseAbsoluteHeight() const;
 
     /** @brief Access the absolute fog height offset. @return Mutable world-space Y offset in meters. */
+    SnField(SnKey("HeightOffsetAbsoluteY"), SnConstGetter(GetHeightOffsetAbsoluteY))
     double& EditHeightOffsetAbsoluteY();
     /** @brief Read the absolute fog height offset. @return Stored world-space Y offset in meters. */
     const double& GetHeightOffsetAbsoluteY() const;
 
     /** @brief Access the camera-driven rebase-origin toggle. @return Mutable flag selecting active-camera Y as the rebase origin. */
+    SnField(SnKey("UseActiveCameraYAsRebaseOrigin"), SnConstGetter(GetUseActiveCameraYAsRebaseOrigin))
     bool& EditUseActiveCameraYAsRebaseOrigin();
     /** @brief Read the camera-driven rebase-origin toggle. @return Stored flag selecting active-camera Y as the rebase origin. */
     const bool& GetUseActiveCameraYAsRebaseOrigin() const;
 
     /** @brief Access the explicit absolute rebase origin. @return Mutable world-space Y coordinate in meters. */
+    SnField(SnKey("RebaseOriginAbsoluteY"), SnConstGetter(GetRebaseOriginAbsoluteY))
     double& EditRebaseOriginAbsoluteY();
     /** @brief Read the explicit absolute rebase origin. @return Stored world-space Y coordinate in meters. */
     const double& GetRebaseOriginAbsoluteY() const;
 
     /** @brief Access the rebased fog height offset. @return Mutable local-space height offset in rebased renderer units. */
+    SnField(SnKey("HeightOffsetRebased"), SnConstGetter(GetHeightOffsetRebased))
     float& EditHeightOffsetRebased();
     /** @brief Read the rebased fog height offset. @return Stored local-space height offset. */
     const float& GetHeightOffsetRebased() const;
 
     /** @brief Access the fog start distance from the camera. @return Mutable non-negative distance in renderer scene units. */
+    SnField(SnKey("StartDistance"), SnConstGetter(GetStartDistance))
     float& EditStartDistance();
     /** @brief Read the fog start distance from the camera. @return Stored start distance. */
     const float& GetStartDistance() const;
 
     /** @brief Access the base fog color. @return Mutable RGB fog color. */
+    SnField(SnKey("FogColor"), SnConstGetter(GetFogColor))
     Vec3& EditFogColor();
     /** @brief Read the base fog color. @return Stored RGB fog color. */
     const Vec3& GetFogColor() const;
 
     /** @brief Access the horizon tint used for sky blending. @return Mutable RGB horizon color. */
+    SnField(SnKey("HorizonColor"), SnConstGetter(GetHorizonColor))
     Vec3& EditHorizonColor();
     /** @brief Read the horizon tint used for sky blending. @return Stored RGB horizon color. */
     const Vec3& GetHorizonColor() const;
 
     /** @brief Access the zenith tint used for sky blending. @return Mutable RGB zenith color. */
+    SnField(SnKey("ZenithColor"), SnConstGetter(GetZenithColor))
     Vec3& EditZenithColor();
     /** @brief Read the zenith tint used for sky blending. @return Stored RGB zenith color. */
     const Vec3& GetZenithColor() const;
 
     /** @brief Access the sky-blend start distance. @return Mutable non-negative distance in renderer scene units. */
+    SnField(SnKey("SkyBlendStartDistance"), SnConstGetter(GetSkyBlendStartDistance))
     float& EditSkyBlendStartDistance();
     /** @brief Read the sky-blend start distance. @return Stored start distance. */
     const float& GetSkyBlendStartDistance() const;
 
     /** @brief Access the sky-blend end distance. @return Mutable distance forced above the start distance when applied. */
+    SnField(SnKey("SkyBlendEndDistance"), SnConstGetter(GetSkyBlendEndDistance))
     float& EditSkyBlendEndDistance();
     /** @brief Read the sky-blend end distance. @return Stored end distance. */
     const float& GetSkyBlendEndDistance() const;
 
     /** @brief Access the sky-blend strength. @return Mutable non-negative blend-strength scalar. */
+    SnField(SnKey("SkyBlendStrength"), SnConstGetter(GetSkyBlendStrength))
     float& EditSkyBlendStrength();
     /** @brief Read the sky-blend strength. @return Stored blend-strength scalar. */
     const float& GetSkyBlendStrength() const;
 
     /** @brief Access the tau dithering amplitude. @return Mutable non-negative dither amplitude scalar. */
+    SnField(SnKey("TauDitherAmplitude"), SnConstGetter(GetTauDitherAmplitude))
     float& EditTauDitherAmplitude();
     /** @brief Read the tau dithering amplitude. @return Stored dither amplitude scalar. */
     const float& GetTauDitherAmplitude() const;
 
     /** @brief Access the dominant sun direction. @return Mutable world-space direction vector; normalized before upload. */
+    SnField(SnKey("SunDirection"), SnConstGetter(GetSunDirection))
     Vec3& EditSunDirection();
     /** @brief Read the dominant sun direction. @return Stored world-space direction vector. */
     const Vec3& GetSunDirection() const;
 
     /** @brief Access the anisotropy factor for sun inscattering. @return Mutable phase-function `g` term. */
+    SnField(SnKey("SunAnisotropyG"), SnConstGetter(GetSunAnisotropyG))
     float& EditSunAnisotropyG();
     /** @brief Read the anisotropy factor for sun inscattering. @return Stored phase-function `g` term. */
     const float& GetSunAnisotropyG() const;
 
     /** @brief Access the sun color used for inscattering. @return Mutable RGB color multiplier. */
+    SnField(SnKey("SunColor"), SnConstGetter(GetSunColor))
     Vec3& EditSunColor();
     /** @brief Read the sun color used for inscattering. @return Stored RGB color multiplier. */
     const Vec3& GetSunColor() const;
 
     /** @brief Access the sun-inscattering intensity. @return Mutable non-negative intensity scalar. */
+    SnField(SnKey("SunInscatterIntensity"), SnConstGetter(GetSunInscatterIntensity))
     float& EditSunInscatterIntensity();
     /** @brief Read the sun-inscattering intensity. @return Stored intensity scalar. */
     const float& GetSunInscatterIntensity() const;

@@ -215,6 +215,7 @@ struct CanvasPinView
 {
     std::string Name{}; /**< @brief UI-facing pin label. */
     std::string TypeLabel{}; /**< @brief Secondary type summary shown for value and handle pins. */
+    std::string Tooltip{}; /**< @brief Hover tooltip describing pin semantics, type, and reflected docs. */
     ESlotKind Kind = ESlotKind::Value; /**< @brief Value vs handle semantics for non-exec pins. */
     bool IsInput = true; /**< @brief `true` when this pin is rendered on the left side of the node. */
     bool IsExec = false; /**< @brief `true` when this pin carries control flow rather than data. */
@@ -246,6 +247,7 @@ struct CanvasNodeView
     Uuid Id{}; /**< @brief Stable authored node id. */
     std::string Title{}; /**< @brief UI-facing node title. */
     std::string Detail{}; /**< @brief Secondary node subtitle. */
+    std::string Tooltip{}; /**< @brief Hover tooltip describing node behavior and reflected docs. */
     float X = 0.0f; /**< @brief Authored graph-space left position. */
     float Y = 0.0f; /**< @brief Authored graph-space top position. */
     float Width = 240.0f; /**< @brief Preferred graph-space node width. */
@@ -309,6 +311,26 @@ struct VariableInspectorView
 
 /**
  * @ingroup SnAPI_GameFramework_Conduit_Editor
+ * @brief Editable default/fallback state for one selected node input pin.
+ */
+struct NodeInputDefaultInspectorEntry
+{
+    std::string PinKey{}; /**< @brief Stable authored pin key used to store the default. */
+    std::string DisplayName{}; /**< @brief UI-facing pin label. */
+    TypeId Type{}; /**< @brief Reflected input type. */
+    std::string TypeLabel{}; /**< @brief Human-readable reflected type label. */
+    std::string Tooltip{}; /**< @brief Hover tooltip describing the pin and fallback semantics. */
+    bool Connected = false; /**< @brief `true` when the pin currently has a wired authored slot. */
+    bool HasDefault = false; /**< @brief `true` when one explicit authored fallback value is stored. */
+    EVariableDefaultEditorKind DefaultEditorKind = EVariableDefaultEditorKind::None; /**< @brief UI strategy for editing the explicit fallback value. */
+    bool BoolValue = false; /**< @brief Current bool default value when `DefaultEditorKind == Bool`. */
+    std::string TextValue{}; /**< @brief Current textual default value when `DefaultEditorKind == Text`. */
+    std::vector<std::string> EnumOptions{}; /**< @brief Available enum entry labels when `DefaultEditorKind == Enum`. */
+    int32_t SelectedEnumIndex = -1; /**< @brief Selected enum option index, or `-1`. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework_Conduit_Editor
  * @brief Full detail-pane payload for the currently selected authored node.
  */
 struct NodeInspectorView
@@ -324,6 +346,7 @@ struct NodeInspectorView
     bool CanEditSecondaryText = false; /**< @brief `true` when the secondary text field is editable. */
     std::string SecondaryTextLabel{}; /**< @brief Caption shown beside the secondary text field. */
     std::string SecondaryTextValue{}; /**< @brief Current secondary text value. */
+    std::vector<NodeInputDefaultInspectorEntry> InputDefaults{}; /**< @brief Editable fallback/default entries for literal-capable input pins. */
 };
 
 /**

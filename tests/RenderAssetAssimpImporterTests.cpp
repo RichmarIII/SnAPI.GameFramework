@@ -49,8 +49,8 @@ using SnAPI::GameFramework::CreateSkeletonPayloadSerializer;
 using SnAPI::GameFramework::CreateStaticMeshSourcePayloadSerializer;
 using SnAPI::GameFramework::DeserializeMaterialPayload;
 using SnAPI::GameFramework::DeserializeMaterialInstancePayload;
-using SnAPI::GameFramework::MaterialPayload;
-using SnAPI::GameFramework::MaterialInstancePayload;
+using SnAPI::GameFramework::MaterialAsset;
+using SnAPI::GameFramework::MaterialInstanceAsset;
 
 class DummyTextureIntermediateSerializer final : public IPayloadSerializer
 {
@@ -471,7 +471,7 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
     }
 
     std::unordered_map<std::string, std::string> MaterialNameToId{};
-    std::unordered_map<std::string, MaterialPayload> MaterialByName{};
+    std::unordered_map<std::string, MaterialAsset> MaterialByName{};
     for (const ImportedItem* Item : MaterialItems)
     {
         REQUIRE(Item != nullptr);
@@ -479,7 +479,7 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
             Item->Intermediate.Bytes.data(),
             Item->Intermediate.Bytes.size());
         REQUIRE(MaterialPayloadResult.has_value());
-        const MaterialPayload& Material = MaterialPayloadResult.value();
+        const MaterialAsset& Material = MaterialPayloadResult.value();
         REQUIRE(Material.ShadingModel == "GBufferShadingModel");
         REQUIRE(Material.ShaderModule == "DefaultGBufferMaterial");
         MaterialNameToId.emplace(Item->LogicalName, Item->Id.ToString());
@@ -497,7 +497,7 @@ TEST_CASE("Assimp importer emits texture assets for embedded model textures and 
             MatItem->Intermediate.Bytes.data(),
             MatItem->Intermediate.Bytes.size());
         REQUIRE(MatPayloadResult.has_value());
-        const MaterialInstancePayload& MatPayload = MatPayloadResult.value();
+        const MaterialInstanceAsset& MatPayload = MatPayloadResult.value();
 
         REQUIRE_FALSE(MatPayload.ParentMaterial.AssetName.empty());
         REQUIRE_FALSE(MatPayload.ParentMaterial.AssetId.empty());

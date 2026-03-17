@@ -16,6 +16,7 @@ std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateLevelSourceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateWorldSourceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImporter();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetAssimpImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderTextureCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialInstanceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletonCooker();
@@ -43,6 +44,7 @@ static void RegisterAssetPipelinePlugin(::SnAPI::AssetPipeline::IPluginRegistrar
     Registrar.RegisterPayloadSerializer(CreateMaterialInstancePayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateSkeletonPayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateAnimationPayloadSerializer());
+    Registrar.RegisterPayloadSerializer(CreateTextureSourcePayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateStaticMeshSourcePayloadSerializer());
     Registrar.RegisterPayloadSerializer(CreateSkeletalMeshSourcePayloadSerializer());
 
@@ -54,6 +56,7 @@ static void RegisterAssetPipelinePlugin(::SnAPI::AssetPipeline::IPluginRegistrar
     Registrar.RegisterCooker(CreateNodeSourceCooker());
     Registrar.RegisterCooker(CreateLevelSourceCooker());
     Registrar.RegisterCooker(CreateWorldSourceCooker());
+    Registrar.RegisterCooker(CreateRenderTextureCooker());
     Registrar.RegisterCooker(CreateRenderMaterialCooker());
     Registrar.RegisterCooker(CreateRenderMaterialInstanceCooker());
     Registrar.RegisterCooker(CreateRenderSkeletonCooker());

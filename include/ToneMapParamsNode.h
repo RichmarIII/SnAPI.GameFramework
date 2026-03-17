@@ -8,6 +8,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -46,6 +47,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API ToneMapParamsNode : public BaseNode, public NodeCRTP<ToneMapParamsNode>
 {
 public:
@@ -61,76 +63,91 @@ public:
     explicit ToneMapParamsNode(std::string Name);
 
     /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
     /** @brief Access the global exposure multiplier. @return Mutable non-negative exposure scalar. */
+    SnField(SnKey("Exposure"), SnConstGetter(GetExposure))
     float& EditExposure();
     /** @brief Read the global exposure multiplier. @return Stored exposure scalar. */
     const float& GetExposure() const;
 
     /** @brief Access the display gamma. @return Mutable gamma value; forced to a small positive minimum when applied. */
+    SnField(SnKey("Gamma"), SnConstGetter(GetGamma))
     float& EditGamma();
     /** @brief Read the display gamma. @return Stored gamma value. */
     const float& GetGamma() const;
 
     /** @brief Access the dithering strength. @return Mutable non-negative dither amplitude scalar. */
+    SnField(SnKey("DitherStrength"), SnConstGetter(GetDitherStrength))
     float& EditDitherStrength();
     /** @brief Read the dithering strength. @return Stored dither amplitude scalar. */
     const float& GetDitherStrength() const;
 
     /** @brief Access the AgX exposure bias. @return Mutable exposure bias in stops. */
+    SnField(SnKey("AgXExposureBiasStops"), SnConstGetter(GetAgXExposureBiasStops))
     float& EditAgXExposureBiasStops();
     /** @brief Read the AgX exposure bias. @return Stored exposure bias in stops. */
     const float& GetAgXExposureBiasStops() const;
 
     /** @brief Access AgX saturation. @return Mutable non-negative saturation multiplier. */
+    SnField(SnKey("AgXSaturation"), SnConstGetter(GetAgXSaturation))
     float& EditAgXSaturation();
     /** @brief Read AgX saturation. @return Stored saturation multiplier. */
     const float& GetAgXSaturation() const;
 
     /** @brief Access AgX contrast. @return Mutable non-negative contrast multiplier. */
+    SnField(SnKey("AgXContrast"), SnConstGetter(GetAgXContrast))
     float& EditAgXContrast();
     /** @brief Read AgX contrast. @return Stored contrast multiplier. */
     const float& GetAgXContrast() const;
 
     /** @brief Access the AgX pivot. @return Mutable pivot value clamped to [0, 1] before upload. */
+    SnField(SnKey("AgXPivot"), SnConstGetter(GetAgXPivot))
     float& EditAgXPivot();
     /** @brief Read the AgX pivot. @return Stored pivot value. */
     const float& GetAgXPivot() const;
 
     /** @brief Access the AgX gamut threshold. @return Mutable threshold clamped to [0, 2] before upload. */
+    SnField(SnKey("AgXGamutThreshold"), SnConstGetter(GetAgXGamutThreshold))
     float& EditAgXGamutThreshold();
     /** @brief Read the AgX gamut threshold. @return Stored threshold value. */
     const float& GetAgXGamutThreshold() const;
 
     /** @brief Access the AgX gamut knee. @return Mutable non-negative knee value. */
+    SnField(SnKey("AgXGamutKnee"), SnConstGetter(GetAgXGamutKnee))
     float& EditAgXGamutKnee();
     /** @brief Read the AgX gamut knee. @return Stored knee value. */
     const float& GetAgXGamutKnee() const;
 
     /** @brief Access ACES saturation. @return Mutable non-negative saturation multiplier. */
+    SnField(SnKey("AcesSaturation"), SnConstGetter(GetAcesSaturation))
     float& EditAcesSaturation();
     /** @brief Read ACES saturation. @return Stored saturation multiplier. */
     const float& GetAcesSaturation() const;
 
     /** @brief Access the ACES white point. @return Mutable non-negative white-point value in tone-map input units. */
+    SnField(SnKey("AcesWhitePoint"), SnConstGetter(GetAcesWhitePoint))
     float& EditAcesWhitePoint();
     /** @brief Read the ACES white point. @return Stored white-point value. */
     const float& GetAcesWhitePoint() const;
 
     /** @brief Access the ACES feature toggle. @return Mutable flag enabling the ACES tone-map variant. */
+    SnField(SnKey("EnableACES"), SnConstGetter(GetEnableACES))
     bool& EditEnableACES();
     /** @brief Read the ACES feature toggle. @return Stored ACES-enable flag. */
     const bool& GetEnableACES() const;
 
     /** @brief Access the AgX feature toggle. @return Mutable flag enabling the AgX tone-map variant. */
+    SnField(SnKey("EnableAgX"), SnConstGetter(GetEnableAgX))
     bool& EditEnableAgX();
     /** @brief Read the AgX feature toggle. @return Stored AgX-enable flag. */
     const bool& GetEnableAgX() const;
 
     /** @brief Access the compare/debug feature toggle. @return Mutable flag enabling renderer-side compare mode. */
+    SnField(SnKey("EnableCompare"), SnConstGetter(GetEnableCompare))
     bool& EditEnableCompare();
     /** @brief Read the compare/debug feature toggle. @return Stored compare-mode flag. */
     const bool& GetEnableCompare() const;

@@ -3,9 +3,13 @@
 #include "AssetPipelineIds.h"
 #include "AssetRef.h"
 #include "GameRuntime.h"
-#include "RenderAssetRuntime.h"
+#include "RenderAssetSourcePayloads.h"
 #include "TextureCompressorIds.h"
 #include "World.h"
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <Image.hpp>
+#endif
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -16,7 +20,7 @@ struct EditorAssetIconService::TextureBinding
     std::uint32_t TextureId = 0;
     std::uint32_t TextureWidth = 0;
     std::uint32_t TextureHeight = 0;
-    ::SnAPI::AssetPipeline::AssetHandle<RuntimeTextureAsset> RuntimeTexture{};
+    std::shared_ptr<::SnAPI::Graphics::IGPUImage> RuntimeTexture{};
 };
 
 EditorAssetIconService::~EditorAssetIconService() = default;
@@ -96,16 +100,16 @@ void EditorAssetIconService::Synchronize(EditorServiceContext& Context,
 #if defined(SNAPI_GF_ENABLE_RENDERER)
         const auto& Asset = *AssetIt->second;
 
-        TAssetRef<RuntimeTextureAsset> TextureRef{};
+        TAssetRef<TextureAsset> TextureRef{};
         TextureRef.EditAssetName() = Asset.Name;
         TextureRef.EditAssetId() = Asset.AssetId.ToString();
-        if (auto TextureResult = TextureRef.GetShared<RuntimeTextureAsset>(); TextureResult && TextureResult->Get())
+        if (auto TextureResult = TextureRef.GetRuntimeShared<::SnAPI::Graphics::IGPUImage>(); TextureResult && *TextureResult)
         {
             Binding->AssetId = Asset.AssetId;
             Binding->RuntimeTexture = *TextureResult;
         }
 
-        auto* Image = Binding->RuntimeTexture.Get();
+        auto* Image = Binding->RuntimeTexture.get();
         if (!WorldPtr || !Image ||
             !WorldPtr->Renderer().RegisterExternalImageUiTexture(*UiContext, Binding->TextureId, Image, true))
         {
@@ -162,11 +166,11 @@ EditorAssetIconService::AssetIconMetadata EditorAssetIconService::ResolveAssetIc
         RemoveBinding(Context, Asset.Key);
     }
 
-    TAssetRef<RuntimeTextureAsset> TextureRef{};
+    TAssetRef<TextureAsset> TextureRef{};
     TextureRef.EditAssetName() = Asset.Name;
     TextureRef.EditAssetId() = Asset.AssetId.ToString();
-    auto TextureResult = TextureRef.GetShared<RuntimeTextureAsset>();
-    if (!TextureResult || !TextureResult->Get())
+    auto TextureResult = TextureRef.GetRuntimeShared<::SnAPI::Graphics::IGPUImage>();
+    if (!TextureResult || !*TextureResult)
     {
         return Metadata;
     }
@@ -184,13 +188,13 @@ EditorAssetIconService::AssetIconMetadata EditorAssetIconService::ResolveAssetIc
         return Metadata;
     }
 
-    if (!WorldPtr->Renderer().RegisterExternalImageUiTexture(*UiContext, TextureId, TextureResult->Get(), true))
+    if (!WorldPtr->Renderer().RegisterExternalImageUiTexture(*UiContext, TextureId, TextureResult->get(), true))
     {
         return Metadata;
     }
 
     auto Binding = std::make_shared<TextureBinding>();
-    const auto Extent = TextureResult->Get()->Extent();
+    const auto Extent = (*TextureResult)->Extent();
     Binding->AssetId = Asset.AssetId;
     Binding->Context = UiContext;
     Binding->TextureId = TextureId;

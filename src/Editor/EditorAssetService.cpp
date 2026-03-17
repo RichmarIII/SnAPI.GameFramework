@@ -22,8 +22,6 @@
 #include "PlayerStart.h"
 #include "RenderAssetPayloads.h"
 #include "RenderAssetImportSettings.h"
-#include "RenderAssetRuntime.h"
-#include "RenderAssetSharedResources.h"
 #include "Serialization.h"
 #include "StaticTypeId.h"
 #include "TransformComponent.h"
@@ -48,6 +46,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cereal/archives/json.hpp>
 #include <cereal/types/map.hpp>
 #include <cereal/types/string.hpp>
@@ -67,6 +66,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 
 #define XXH_INLINE_ALL
 #include <xxhash.h>
@@ -90,6 +90,7 @@ std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateLevelSourceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateWorldSourceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImporter();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetAssimpImporter();
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderTextureCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialInstanceCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletonCooker();
@@ -483,6 +484,8 @@ struct AssetImportMetadataDatabaseDisk
     return ECompressedFormat::Unknown;
 }
 
+[[nodiscard]] std::string TextureFormatToAuthoredString(TextureCompressorPlugin::ECompressedFormat Format);
+
 [[nodiscard]] std::string ImportProfileToString(const EImportProfile Profile)
 {
     switch (Profile)
@@ -662,6 +665,77 @@ void FillTextureImportSettingsFromTyped(const TextureCompressorPlugin::TextureCo
     Out.MaxMips = Typed.MaxMipCount > 0 ? static_cast<uint32_t>(Typed.MaxMipCount) : 0u;
     Out.ForceSrgb = Typed.ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
     Out.ForceLinear = Typed.ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+}
+
+void FillAssimpImportSettingsFromPayload(const MeshImportSettingsPayload& Payload, Editor::AssimpImportSettings& Out)
+{
+    Out.GenerateNormals = Payload.GenerateNormals;
+    Out.GenerateTangents = Payload.GenerateTangents;
+    Out.FlipUVs = Payload.FlipUVs;
+    Out.OptimizeMeshes = Payload.OptimizeMeshes;
+    Out.ForceSkeletal = Payload.ForceSkeletal;
+    Out.ForceStatic = Payload.ForceStatic;
+    Out.ImportMaterials = Payload.ImportMaterials;
+    Out.ImportTextures = Payload.ImportTextures;
+    Out.ImportAnimations = Payload.ImportAnimations;
+    Out.ImportSkeleton = Payload.ImportSkeleton;
+    Out.MaxBonesPerVertex = std::max(1u, Payload.MaxBonesPerVertex);
+}
+
+[[nodiscard]] MeshImportSettingsPayload BuildMeshImportSettingsPayload(const Editor::AssimpImportSettings& Settings)
+{
+    MeshImportSettingsPayload Payload{};
+    Payload.GenerateNormals = Settings.GenerateNormals;
+    Payload.GenerateTangents = Settings.GenerateTangents;
+    Payload.FlipUVs = Settings.FlipUVs;
+    Payload.OptimizeMeshes = Settings.OptimizeMeshes;
+    Payload.ForceSkeletal = Settings.ForceSkeletal;
+    Payload.ForceStatic = Settings.ForceStatic;
+    Payload.ImportMaterials = Settings.ImportMaterials;
+    Payload.ImportTextures = Settings.ImportTextures;
+    Payload.ImportAnimations = Settings.ImportAnimations;
+    Payload.ImportSkeleton = Settings.ImportSkeleton;
+    Payload.MaxBonesPerVertex = std::max(1u, Settings.MaxBonesPerVertex);
+    return Payload;
+}
+
+[[nodiscard]] Editor::ETextureCompressionTarget ParseAuthoredTextureTarget(std::string_view Value)
+{
+    const std::string Lower = ToLowerCopy(Value);
+    return Lower == "astc"
+        ? Editor::ETextureCompressionTarget::ASTC
+        : Editor::ETextureCompressionTarget::BCn;
+}
+
+[[nodiscard]] Editor::ETextureCompressionFormat ParseAuthoredTextureFormat(std::string_view Value)
+{
+    const TextureCompressorPlugin::ECompressedFormat Format = ParseTextureFormatOption(Value);
+    return ToEditorTextureFormat(Format);
+}
+
+void FillTextureImportSettingsFromPayload(const TextureImportSettingsPayload& Payload,
+                                          Editor::TextureImportSettings& Out)
+{
+    Out.Target = ParseAuthoredTextureTarget(Payload.Target);
+    Out.Format = ParseAuthoredTextureFormat(Payload.Format);
+    Out.Quality = std::clamp(Payload.Quality, 0.0f, 1.0f);
+    Out.ForceSrgb = Payload.ForceSrgb;
+    Out.ForceLinear = Payload.ForceLinear;
+    Out.ForceNormalMap = Payload.ForceNormalMap;
+    Out.MaxMips = Payload.MaxMips;
+}
+
+[[nodiscard]] TextureImportSettingsPayload BuildTextureImportSettingsPayload(const Editor::TextureImportSettings& Settings)
+{
+    TextureImportSettingsPayload Payload{};
+    Payload.Target = Settings.Target == Editor::ETextureCompressionTarget::ASTC ? "ASTC" : "BCn";
+    Payload.Format = TextureFormatToAuthoredString(ToCookedTextureFormat(Settings.Format));
+    Payload.Quality = std::clamp(Settings.Quality, 0.0f, 1.0f);
+    Payload.ForceSrgb = Settings.ForceSrgb;
+    Payload.ForceLinear = Settings.ForceLinear;
+    Payload.ForceNormalMap = Settings.ForceNormalMap;
+    Payload.MaxMips = Settings.MaxMips;
+    return Payload;
 }
 
 [[nodiscard]] ::SnAPI::AssetPipeline::AssetImportSettingsPtr BuildTypedImportSettingsForImporter(
@@ -1007,8 +1081,8 @@ void CollectParameterLookupKeys(
     }
 }
 
-[[nodiscard]] std::expected<SnAPI::Graphics::MaterialRuntimeDescriptor, std::string> BuildDescriptorForMaterialPayload(
-    const MaterialPayload& ParentMaterial)
+[[nodiscard]] std::expected<SnAPI::Graphics::MaterialRuntimeDescriptor, std::string> BuildDescriptorForMaterialAsset(
+    const MaterialAsset& ParentMaterial)
 {
     if (ParentMaterial.ShaderModule.empty())
     {
@@ -1070,8 +1144,8 @@ void CollectParameterLookupKeys(
     return SnAPI::Graphics::BuildMaterialRuntimeDescriptor(*Instance);
 }
 
-[[nodiscard]] bool SyncPayloadToRuntimeDescriptor(
-    MaterialInstancePayload& Payload,
+[[nodiscard]] bool SyncMaterialInstanceAssetToRuntimeDescriptor(
+    MaterialInstanceAsset& Payload,
     const SnAPI::Graphics::MaterialRuntimeDescriptor& Descriptor)
 {
     std::vector<MaterialScalarParamPayload> SyncedScalars{};
@@ -2498,7 +2572,7 @@ void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 [[nodiscard]] std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker>> CreateEditorCookers()
 {
     std::vector<std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker>> Cookers{};
-    Cookers.reserve(11);
+    Cookers.reserve(12);
     if (auto TextureCooker = TextureCompressorPlugin::CreateTextureCompressorCooker())
     {
         Cookers.emplace_back(std::move(TextureCooker));
@@ -2518,6 +2592,10 @@ void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
     if (auto WorldCooker = CreateWorldSourceCooker())
     {
         Cookers.emplace_back(std::move(WorldCooker));
+    }
+    if (auto TextureSourceCooker = CreateRenderTextureCooker())
+    {
+        Cookers.emplace_back(std::move(TextureSourceCooker));
     }
     if (auto MaterialCooker = CreateRenderMaterialCooker())
     {
@@ -2579,6 +2657,706 @@ void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
 {
     const std::string Name = ToLowerCopy(Importer.GetName() ? Importer.GetName() : "");
     return Name.find("texturecompressor") != std::string::npos;
+}
+
+struct ImportedNameParts
+{
+    std::string Scope{};
+    std::string Leaf{};
+};
+
+using ImportedSourceAssetVariant = std::variant<
+    TextureAsset,
+    MaterialAsset,
+    MaterialInstanceAsset,
+    StaticMeshAsset,
+    SkeletalMeshAsset,
+    SkeletonAsset,
+    SkeletalAnimationAsset>;
+
+struct ImportedSourceDocument
+{
+    std::string OriginalLogicalName{};
+    std::string FinalLogicalName{};
+    ::SnAPI::AssetPipeline::AssetId FinalAssetId{};
+    ImportedSourceAssetVariant Asset{};
+};
+
+struct ScopedStagedImportDirectory
+{
+    std::filesystem::path Root{};
+
+    ~ScopedStagedImportDirectory()
+    {
+        if (Root.empty())
+        {
+            return;
+        }
+
+        std::error_code RemoveError{};
+        (void)std::filesystem::remove_all(Root, RemoveError);
+    }
+};
+
+[[nodiscard]] std::expected<std::filesystem::path, std::string> StageImportSourceDirectory(
+    const std::filesystem::path& SourceFile,
+    ScopedStagedImportDirectory& OutStage)
+{
+    std::error_code PathError{};
+    const std::filesystem::path TempRoot = std::filesystem::temp_directory_path(PathError);
+    if (PathError || TempRoot.empty())
+    {
+        return std::unexpected("Failed to resolve temporary directory for staged import");
+    }
+
+    const auto Stamp = std::to_string(static_cast<unsigned long long>(
+        std::chrono::steady_clock::now().time_since_epoch().count()));
+    const std::filesystem::path StageRoot = (TempRoot / ("snapi_gf_import_" + Stamp)).lexically_normal();
+    const std::filesystem::path StageSourceRoot = StageRoot / "src";
+
+    PathError.clear();
+    std::filesystem::create_directories(StageRoot, PathError);
+    if (PathError)
+    {
+        return std::unexpected("Failed to create staged import directory: " + PathError.message());
+    }
+
+    PathError.clear();
+    std::filesystem::copy(
+        SourceFile.parent_path(),
+        StageSourceRoot,
+        std::filesystem::copy_options::recursive,
+        PathError);
+    if (PathError)
+    {
+        return std::unexpected("Failed to stage import source directory: " + PathError.message());
+    }
+
+    const std::filesystem::path StagedSourceFile = StageSourceRoot / SourceFile.filename();
+    PathError.clear();
+    if (!std::filesystem::exists(StagedSourceFile, PathError) || PathError)
+    {
+        return std::unexpected("Staged import source file was not found after copy");
+    }
+
+    OutStage.Root = StageRoot;
+    return StagedSourceFile;
+}
+
+[[nodiscard]] ImportedNameParts ParseImportedNameParts(std::string_view LogicalName)
+{
+    ImportedNameParts Parts{};
+    const std::size_t LastScope = LogicalName.rfind("::");
+    if (LastScope == std::string_view::npos)
+    {
+        Parts.Leaf = LeafLogicalName(std::string(LogicalName));
+        return Parts;
+    }
+
+    Parts.Leaf = std::string(LogicalName.substr(LastScope + 2u));
+    if (LastScope > 0u)
+    {
+        const std::size_t ScopeStart = LogicalName.rfind("::", LastScope - 1u);
+        if (ScopeStart != std::string_view::npos)
+        {
+            Parts.Scope = std::string(LogicalName.substr(ScopeStart + 2u, LastScope - (ScopeStart + 2u)));
+        }
+    }
+    return Parts;
+}
+
+[[nodiscard]] std::string SanitizeImportedLeaf(std::string_view Value, std::string_view Fallback)
+{
+    std::string Candidate(Value);
+    if (Candidate.find('/') != std::string::npos || Candidate.find('\\') != std::string::npos)
+    {
+        Candidate = std::filesystem::path(Candidate).stem().string();
+    }
+    if (const std::filesystem::path PathCandidate(Candidate); PathCandidate.has_extension())
+    {
+        Candidate = PathCandidate.stem().string();
+    }
+    if (Candidate.empty())
+    {
+        Candidate = std::string(Fallback);
+    }
+
+    std::string Out{};
+    Out.reserve(Candidate.size() + 8u);
+    for (const char Ch : Candidate)
+    {
+        const bool AlphaNum = std::isalnum(static_cast<unsigned char>(Ch)) != 0;
+        Out.push_back(AlphaNum ? Ch : '_');
+    }
+    while (!Out.empty() && Out.back() == '_')
+    {
+        Out.pop_back();
+    }
+    while (!Out.empty() && Out.front() == '_')
+    {
+        Out.erase(Out.begin());
+    }
+    if (Out.empty())
+    {
+        Out = std::string(Fallback);
+    }
+    return Out;
+}
+
+[[nodiscard]] std::string TextureFormatToAuthoredString(const TextureCompressorPlugin::ECompressedFormat Format)
+{
+    using TextureCompressorPlugin::ECompressedFormat;
+    switch (Format)
+    {
+    case ECompressedFormat::Unknown: return "Auto";
+    case ECompressedFormat::BC1: return "BC1";
+    case ECompressedFormat::BC3: return "BC3";
+    case ECompressedFormat::BC4: return "BC4";
+    case ECompressedFormat::BC5: return "BC5";
+    case ECompressedFormat::BC6H: return "BC6H";
+    case ECompressedFormat::BC7: return "BC7";
+    case ECompressedFormat::ASTC_4x4: return "ASTC_4x4";
+    case ECompressedFormat::ASTC_5x5: return "ASTC_5x5";
+    case ECompressedFormat::ASTC_6x6: return "ASTC_6x6";
+    case ECompressedFormat::ASTC_8x8: return "ASTC_8x8";
+    case ECompressedFormat::ASTC_10x10: return "ASTC_10x10";
+    case ECompressedFormat::ASTC_12x12: return "ASTC_12x12";
+    case ECompressedFormat::ASTC_4x4_HDR: return "ASTC_4x4_HDR";
+    case ECompressedFormat::ASTC_6x6_HDR: return "ASTC_6x6_HDR";
+    case ECompressedFormat::ASTC_8x8_HDR: return "ASTC_8x8_HDR";
+    default: return "Auto";
+    }
+}
+
+[[nodiscard]] TextureImportSettingsPayload BuildTextureAssetImportSettingsPayload(
+    const TextureCompressorPlugin::TextureCompressorImportSettings* TypedSettings)
+{
+    TextureImportSettingsPayload Payload{};
+    if (!TypedSettings)
+    {
+        return Payload;
+    }
+
+    Payload.Target = TypedSettings->Target == TextureCompressorPlugin::ECompressionTarget::ASTC ? "ASTC" : "BCn";
+    Payload.Format = TextureFormatToAuthoredString(TypedSettings->Format);
+    Payload.Quality = std::clamp(TypedSettings->Quality, 0.0f, 1.0f);
+    Payload.ForceNormalMap = TypedSettings->ForceNormalMap;
+    Payload.MaxMips = TypedSettings->MaxMipCount > 0 ? static_cast<uint32_t>(TypedSettings->MaxMipCount) : 0u;
+    Payload.ForceSrgb = TypedSettings->ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+    Payload.ForceLinear = TypedSettings->ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+    return Payload;
+}
+
+[[nodiscard]] TextureAsset BuildTextureAssetFromIntermediate(
+    const TextureCompressorPlugin::ImageIntermediate& Intermediate,
+    const TextureImportSettingsPayload& ImportSettings)
+{
+    TextureAsset Asset{};
+    Asset.Image.Width = Intermediate.Width;
+    Asset.Image.Height = Intermediate.Height;
+    Asset.Image.Channels = Intermediate.Channels;
+    Asset.Image.BitsPerChannel = Intermediate.BitsPerChannel;
+    Asset.Image.IsFloat = Intermediate.bIsFloat;
+    Asset.Image.HasNonTrivialAlpha = Intermediate.bHasNonTrivialAlpha;
+    Asset.Image.SRGB = Intermediate.bSRGB;
+    Asset.Image.SourceFilename = Intermediate.SourceFilename;
+    Asset.Image.Pixels = Intermediate.Pixels;
+    Asset.ImportSettings = ImportSettings;
+    return Asset;
+}
+
+[[nodiscard]] std::vector<ImportBuildOptionPayload> BuildImportBuildOptionPayloads(
+    const std::unordered_map<std::string, std::string>& BuildOptions)
+{
+    std::vector<ImportBuildOptionPayload> Result{};
+    Result.reserve(BuildOptions.size());
+    for (const auto& [Key, Value] : BuildOptions)
+    {
+        Result.push_back(ImportBuildOptionPayload{.Key = Key, .Value = Value});
+    }
+    std::sort(Result.begin(), Result.end(), [](const ImportBuildOptionPayload& Left, const ImportBuildOptionPayload& Right) {
+        return Left.Key < Right.Key || (Left.Key == Right.Key && Left.Value < Right.Value);
+    });
+    return Result;
+}
+
+[[nodiscard]] std::unordered_map<std::string, std::string> BuildImportBuildOptionMap(
+    const std::vector<ImportBuildOptionPayload>& BuildOptions)
+{
+    std::unordered_map<std::string, std::string> Result{};
+    for (const ImportBuildOptionPayload& Option : BuildOptions)
+    {
+        if (!Option.Key.empty())
+        {
+            Result[Option.Key] = Option.Value;
+        }
+    }
+    return Result;
+}
+
+[[nodiscard]] ImportedAssetProvenancePayload BuildImportedAssetProvenancePayload(
+    const std::string_view SourcePath,
+    const std::string_view DestinationFolder,
+    const std::string_view ImporterName,
+    const EImportProfile Profile,
+    const std::unordered_map<std::string, std::string>& BuildOptions)
+{
+    ImportedAssetProvenancePayload Payload{};
+    Payload.Profile = ImportProfileToString(Profile);
+    Payload.SourcePath = std::string(SourcePath);
+    Payload.DestinationFolder = NormalizeAssetLogicalName(DestinationFolder);
+    Payload.ImporterName = std::string(ImporterName);
+    Payload.BuildOptions = BuildImportBuildOptionPayloads(BuildOptions);
+    return Payload;
+}
+
+void ApplyImportedSourceAssetProvenance(ImportedSourceAssetVariant& Asset,
+                                        const ImportedAssetProvenancePayload& Provenance)
+{
+    std::visit([&Provenance](auto& TypedAsset) {
+        TypedAsset.Provenance = Provenance;
+    }, Asset);
+}
+
+[[nodiscard]] std::expected<ImportedSourceAssetVariant, std::string> BuildImportedSourceAssetVariant(
+    const ::SnAPI::AssetPipeline::ImportedItem& Item,
+    const ::SnAPI::AssetPipeline::PayloadRegistry& Registry,
+    const TextureImportSettingsPayload& TextureSettings)
+{
+    const auto* Serializer = Registry.Find(Item.Intermediate.PayloadType);
+    if (!Serializer)
+    {
+        return std::unexpected("Missing serializer for imported source payload");
+    }
+
+    if (Item.Intermediate.PayloadType == TextureCompressorPlugin::Payload_CompressorImageIntermediate)
+    {
+        TextureCompressorPlugin::ImageIntermediate Intermediate{};
+        if (!Serializer->DeserializeFromBytes(&Intermediate, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported texture intermediate");
+        }
+        return ImportedSourceAssetVariant(BuildTextureAssetFromIntermediate(Intermediate, TextureSettings));
+    }
+
+    if (Item.Intermediate.PayloadType == PayloadMaterial())
+    {
+        MaterialAsset Asset{};
+        if (!Serializer->DeserializeFromBytes(&Asset, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported material payload");
+        }
+        return ImportedSourceAssetVariant(std::move(Asset));
+    }
+
+    if (Item.Intermediate.PayloadType == PayloadMaterialInstance())
+    {
+        MaterialInstanceAsset Asset{};
+        if (!Serializer->DeserializeFromBytes(&Asset, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported material-instance payload");
+        }
+        return ImportedSourceAssetVariant(std::move(Asset));
+    }
+
+    if (Item.Intermediate.PayloadType == PayloadStaticMeshSource())
+    {
+        StaticMeshAsset Asset{};
+        if (!Serializer->DeserializeFromBytes(&Asset, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported static-mesh payload");
+        }
+        return ImportedSourceAssetVariant(std::move(Asset));
+    }
+
+    if (Item.Intermediate.PayloadType == PayloadSkeletalMeshSource())
+    {
+        SkeletalMeshAsset Asset{};
+        if (!Serializer->DeserializeFromBytes(&Asset, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported skeletal-mesh payload");
+        }
+        return ImportedSourceAssetVariant(std::move(Asset));
+    }
+
+    if (Item.Intermediate.PayloadType == PayloadSkeleton())
+    {
+        SkeletonPayload Payload{};
+        if (!Serializer->DeserializeFromBytes(&Payload, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported skeleton payload");
+        }
+        SkeletonAsset Asset{};
+        Asset.Skeleton = std::move(Payload);
+        return ImportedSourceAssetVariant(std::move(Asset));
+    }
+
+    if (Item.Intermediate.PayloadType == PayloadAnimation())
+    {
+        AnimationPayload Payload{};
+        if (!Serializer->DeserializeFromBytes(&Payload, Item.Intermediate.Bytes.data(), Item.Intermediate.Bytes.size()))
+        {
+            return std::unexpected("Failed to deserialize imported animation payload");
+        }
+        SkeletalAnimationAsset Asset{};
+        Asset.Animation = std::move(Payload);
+        return ImportedSourceAssetVariant(std::move(Asset));
+    }
+
+    return std::unexpected("Imported payload type is not supported by authored-source import");
+}
+
+[[nodiscard]] bool IsImportedSourceAssetType(const TypeId& AssetType)
+{
+    return AssetType == StaticTypeId<TextureAsset>() ||
+           AssetType == StaticTypeId<MaterialAsset>() ||
+           AssetType == StaticTypeId<MaterialInstanceAsset>() ||
+           AssetType == StaticTypeId<StaticMeshAsset>() ||
+           AssetType == StaticTypeId<SkeletalMeshAsset>() ||
+           AssetType == StaticTypeId<SkeletonAsset>() ||
+           AssetType == StaticTypeId<SkeletalAnimationAsset>();
+}
+
+[[nodiscard]] std::expected<ImportedSourceAssetVariant, std::string> LoadImportedSourceAssetVariant(
+    const Editor::EditorAssetService::DiscoveredAsset& Asset)
+{
+    if (Asset.SourceFilePath.empty())
+    {
+        return std::unexpected("Imported source asset has no source file path");
+    }
+
+    std::ifstream File(Asset.SourceFilePath, std::ios::binary | std::ios::ate);
+    if (!File.is_open())
+    {
+        return std::unexpected("Failed to open imported source asset: " + Asset.SourceFilePath);
+    }
+
+    const std::streamsize Size = File.tellg();
+    std::string SourceJson{};
+    if (Size > 0)
+    {
+        SourceJson.resize(static_cast<std::size_t>(Size));
+        File.seekg(0, std::ios::beg);
+        File.read(SourceJson.data(), Size);
+        if (!File.good())
+        {
+            return std::unexpected("Failed to read imported source asset: " + Asset.SourceFilePath);
+        }
+    }
+
+    if (Asset.AssetType == StaticTypeId<TextureAsset>())
+    {
+        TextureAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+    if (Asset.AssetType == StaticTypeId<MaterialAsset>())
+    {
+        MaterialAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+    if (Asset.AssetType == StaticTypeId<MaterialInstanceAsset>())
+    {
+        MaterialInstanceAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+    if (Asset.AssetType == StaticTypeId<StaticMeshAsset>())
+    {
+        StaticMeshAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+    if (Asset.AssetType == StaticTypeId<SkeletalMeshAsset>())
+    {
+        SkeletalMeshAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+    if (Asset.AssetType == StaticTypeId<SkeletonAsset>())
+    {
+        SkeletonAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+    if (Asset.AssetType == StaticTypeId<SkeletalAnimationAsset>())
+    {
+        SkeletalAnimationAsset TypedAsset{};
+        if (auto ParseResult = DeserializeAuthoredAssetFromJson(SourceJson, TypedAsset); !ParseResult)
+        {
+            return std::unexpected(ParseResult.error().Message);
+        }
+        return ImportedSourceAssetVariant(std::move(TypedAsset));
+    }
+
+    return std::unexpected("Authored asset type is not an imported source asset");
+}
+
+[[nodiscard]] bool ImportedProvenanceMatchesGroup(const ImportedAssetProvenancePayload& Provenance,
+                                                  const std::string_view SourcePath,
+                                                  const std::string_view DestinationFolder,
+                                                  const EImportProfile Profile)
+{
+    return Provenance.SourcePath == SourcePath &&
+           NormalizeAssetLogicalName(Provenance.DestinationFolder) == NormalizeAssetLogicalName(DestinationFolder) &&
+           ImportProfileFromString(Provenance.Profile) == Profile;
+}
+
+[[nodiscard]] bool ImportedSourceAssetMatchesGroup(const ImportedSourceAssetVariant& Asset,
+                                                   const std::string_view SourcePath,
+                                                   const std::string_view DestinationFolder,
+                                                   const EImportProfile Profile)
+{
+    return std::visit(
+        [SourcePath, DestinationFolder, Profile](const auto& TypedAsset) {
+            return ImportedProvenanceMatchesGroup(TypedAsset.Provenance, SourcePath, DestinationFolder, Profile);
+        },
+        Asset);
+}
+
+[[nodiscard]] bool UpdateImportedSourceAssetProvenance(ImportedSourceAssetVariant& Asset,
+                                                       const ImportedAssetProvenancePayload& Provenance)
+{
+    bool Changed = false;
+    std::visit(
+        [&Changed, &Provenance](auto& TypedAsset) {
+            if (!(TypedAsset.Provenance == Provenance))
+            {
+                TypedAsset.Provenance = Provenance;
+                Changed = true;
+            }
+        },
+        Asset);
+    return Changed;
+}
+
+void RewriteImportedAssetRefs(ImportedSourceAssetVariant& Asset,
+                              const std::unordered_map<std::string, AssetRefPayload>& RefByOriginalName)
+{
+    std::visit([&RefByOriginalName](auto& TypedAsset) {
+        using TAsset = std::remove_cvref_t<decltype(TypedAsset)>;
+        if constexpr (std::is_same_v<TAsset, MaterialInstanceAsset>)
+        {
+            for (MaterialTextureParamPayload& Texture : TypedAsset.Textures)
+            {
+                if (const auto It = RefByOriginalName.find(Texture.Texture.AssetName); It != RefByOriginalName.end())
+                {
+                    Texture.Texture = It->second;
+                }
+            }
+        }
+        else if constexpr (std::is_same_v<TAsset, StaticMeshAsset>)
+        {
+            for (AssetRefPayload& MaterialRef : TypedAsset.Mesh.MaterialInstances)
+            {
+                if (const auto It = RefByOriginalName.find(MaterialRef.AssetName); It != RefByOriginalName.end())
+                {
+                    MaterialRef = It->second;
+                }
+            }
+        }
+        else if constexpr (std::is_same_v<TAsset, SkeletalMeshAsset>)
+        {
+            for (AssetRefPayload& MaterialRef : TypedAsset.BaseMesh.Mesh.MaterialInstances)
+            {
+                if (const auto It = RefByOriginalName.find(MaterialRef.AssetName); It != RefByOriginalName.end())
+                {
+                    MaterialRef = It->second;
+                }
+            }
+            if (const auto It = RefByOriginalName.find(TypedAsset.Skeleton.AssetName); It != RefByOriginalName.end())
+            {
+                TypedAsset.Skeleton = It->second;
+            }
+            for (AssetRefPayload& AnimationRef : TypedAsset.Animations)
+            {
+                if (const auto It = RefByOriginalName.find(AnimationRef.AssetName); It != RefByOriginalName.end())
+                {
+                    AnimationRef = It->second;
+                }
+            }
+        }
+    }, Asset);
+}
+
+[[nodiscard]] std::expected<std::string, std::string> SerializeImportedSourceAssetJson(const ImportedSourceAssetVariant& Asset)
+{
+    return std::visit([](const auto& TypedAsset) -> std::expected<std::string, std::string> {
+        auto JsonResult = SerializeAuthoredAssetToJson(TypedAsset);
+        if (!JsonResult)
+        {
+            return std::unexpected(JsonResult.error().Message);
+        }
+        return *JsonResult;
+    }, Asset);
+}
+
+[[nodiscard]] std::string FileExtensionForImportedSourceAsset(const ImportedSourceAssetVariant& Asset)
+{
+    return std::visit([](const auto& TypedAsset) {
+        return std::string(TypedAsset.FileExtension());
+    }, Asset);
+}
+
+[[nodiscard]] std::string FallbackLeafForImportedSourceAsset(const ImportedSourceAssetVariant& Asset)
+{
+    return std::visit([](const auto& TypedAsset) -> std::string {
+        using TAsset = std::remove_cvref_t<decltype(TypedAsset)>;
+        if constexpr (std::is_same_v<TAsset, TextureAsset>)
+        {
+            return !TypedAsset.Image.SourceFilename.empty() ? TypedAsset.Image.SourceFilename : "Texture";
+        }
+        else if constexpr (std::is_same_v<TAsset, MaterialAsset>)
+        {
+            return "Material";
+        }
+        else if constexpr (std::is_same_v<TAsset, MaterialInstanceAsset>)
+        {
+            return "MaterialInstance";
+        }
+        else if constexpr (std::is_same_v<TAsset, StaticMeshAsset>)
+        {
+            return !TypedAsset.Mesh.Name.empty() ? TypedAsset.Mesh.Name : "StaticMesh";
+        }
+        else if constexpr (std::is_same_v<TAsset, SkeletalMeshAsset>)
+        {
+            return !TypedAsset.BaseMesh.Mesh.Name.empty() ? TypedAsset.BaseMesh.Mesh.Name : "SkeletalMesh";
+        }
+        else if constexpr (std::is_same_v<TAsset, SkeletonAsset>)
+        {
+            return !TypedAsset.Skeleton.Name.empty() ? TypedAsset.Skeleton.Name : "Skeleton";
+        }
+        else if constexpr (std::is_same_v<TAsset, SkeletalAnimationAsset>)
+        {
+            return !TypedAsset.Animation.Name.empty() ? TypedAsset.Animation.Name : "Animation";
+        }
+        return std::string("Asset");
+    }, Asset);
+}
+
+[[nodiscard]] std::string BuildImportedSourceAssetLeaf(
+    const std::string& GroupLeaf,
+    const ImportedSourceDocument& Document)
+{
+    const ImportedNameParts Parts = ParseImportedNameParts(Document.OriginalLogicalName);
+    const std::string Label = SanitizeImportedLeaf(
+        Parts.Leaf.empty() ? FallbackLeafForImportedSourceAsset(Document.Asset) : Parts.Leaf,
+        "Asset");
+
+    return std::visit([&GroupLeaf, &Label](const auto& TypedAsset) -> std::string {
+        using TAsset = std::remove_cvref_t<decltype(TypedAsset)>;
+        if constexpr (std::is_same_v<TAsset, StaticMeshAsset> || std::is_same_v<TAsset, SkeletalMeshAsset>)
+        {
+            return GroupLeaf;
+        }
+        if constexpr (std::is_same_v<TAsset, TextureAsset>)
+        {
+            return GroupLeaf + "__texture__" + Label;
+        }
+        if constexpr (std::is_same_v<TAsset, MaterialAsset>)
+        {
+            return GroupLeaf + "__material__" + Label;
+        }
+        if constexpr (std::is_same_v<TAsset, MaterialInstanceAsset>)
+        {
+            return GroupLeaf + "__materialinstance__" + Label;
+        }
+        if constexpr (std::is_same_v<TAsset, SkeletonAsset>)
+        {
+            return GroupLeaf + "__skeleton";
+        }
+        if constexpr (std::is_same_v<TAsset, SkeletalAnimationAsset>)
+        {
+            return GroupLeaf + "__skeletalanim__" + Label;
+        }
+        return GroupLeaf + "__asset__" + Label;
+    }, Document.Asset);
+}
+
+[[nodiscard]] int ImportedPrimarySelectionPriority(const ImportedSourceAssetVariant& Asset)
+{
+    return std::visit([](const auto& TypedAsset) -> int {
+        using TAsset = std::remove_cvref_t<decltype(TypedAsset)>;
+        if constexpr (std::is_same_v<TAsset, StaticMeshAsset> || std::is_same_v<TAsset, SkeletalMeshAsset>)
+        {
+            return 3;
+        }
+        if constexpr (std::is_same_v<TAsset, TextureAsset>)
+        {
+            return 2;
+        }
+        return 1;
+    }, Asset);
+}
+
+[[nodiscard]] bool IsExistingImportGroupFolder(const std::filesystem::path& AssetRoot,
+                                               const std::string& LogicalFolder,
+                                               const std::string& SourceStem)
+{
+    if (LogicalFolder.empty())
+    {
+        return false;
+    }
+
+    const std::filesystem::path FolderPath = AssetRoot / std::filesystem::path(LogicalFolder);
+    std::error_code Error{};
+    if (!std::filesystem::exists(FolderPath, Error) || Error)
+    {
+        return false;
+    }
+
+    const std::string FolderLeaf = LeafLogicalName(LogicalFolder);
+    const std::string StemLeaf = SanitizeImportedLeaf(SourceStem, "Asset");
+    return FolderLeaf == StemLeaf || FolderLeaf.rfind(StemLeaf + "_", 0u) == 0u;
+}
+
+[[nodiscard]] std::string ResolveImportGroupFolder(const std::filesystem::path& AssetRoot,
+                                                   const std::string& DestinationFolder,
+                                                   const std::string& SourceStem)
+{
+    const std::string NormalizedDestination = NormalizeAssetLogicalName(DestinationFolder);
+    if (IsExistingImportGroupFolder(AssetRoot, NormalizedDestination, SourceStem))
+    {
+        return NormalizedDestination;
+    }
+
+    const std::string GroupLeaf = SanitizeImportedLeaf(SourceStem, "Asset");
+    std::string Candidate = NormalizedDestination.empty()
+        ? GroupLeaf
+        : NormalizeAssetLogicalName(NormalizedDestination + "/" + GroupLeaf);
+    std::size_t SuffixIndex = 1u;
+    while (!Candidate.empty())
+    {
+        std::error_code ExistsError{};
+        if (!std::filesystem::exists(AssetRoot / std::filesystem::path(Candidate), ExistsError) || ExistsError)
+        {
+            break;
+        }
+
+        Candidate = NormalizedDestination.empty()
+            ? (GroupLeaf + "_" + std::to_string(SuffixIndex++))
+            : NormalizeAssetLogicalName(NormalizedDestination + "/" + GroupLeaf + "_" + std::to_string(SuffixIndex++));
+    }
+    return Candidate;
 }
 } // namespace
 
@@ -3173,6 +3951,11 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
     {
         const std::string AssetName = Asset->Name;
 
+        if (m_assetEditorAssetKey == Asset->Key)
+        {
+            ApplyAssetEditorImportSettingsToActiveSourceAsset();
+        }
+
         if (!Asset->CanSave)
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Selected source asset cannot be saved"));
@@ -3266,13 +4049,29 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
                                                  "Failed to write source asset: " + SourcePath.string()));
             }
 
-            if (auto PayloadResult = SerializeAssetEditorPayload(); PayloadResult)
+            if (m_assetEditorAssetKey == Asset->Key &&
+                m_assetEditorImportSettingsObject != nullptr &&
+                m_assetEditorImportSettingsType != TypeId{})
             {
-                m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
+                if (auto CurrentImportMetadata = BuildAssetEditorImportMetadataFromCurrentState(); CurrentImportMetadata.has_value())
+                {
+                    m_assetImportMetadata[Asset->AssetId] = *CurrentImportMetadata;
+                    if (auto SyncResult = SyncImportedAssetGroupProvenance(*Asset, *CurrentImportMetadata); !SyncResult)
+                    {
+                        return std::unexpected(MakeError(EErrorCode::InternalError, SyncResult.error().Message));
+                    }
+                    m_assetImportMetadataDirty = true;
+                    if (auto SaveMetadataResult = SaveAssetImportMetadataDatabase(); !SaveMetadataResult)
+                    {
+                        return std::unexpected(MakeError(EErrorCode::InternalError, SaveMetadataResult.error()));
+                    }
+                    m_assetImportMetadataDirty = false;
+                    m_assetEditorImportMetadataBaseline = *CurrentImportMetadata;
+                    MarkAssetEditorImportSettingsSaved();
+                }
             }
-            m_assetEditorBaselineSourceJson = *SourceJson;
-            m_assetEditorDirty = m_assetEditorImportSettingsDirty;
-            ++m_assetEditorSessionRevision;
+            MarkAssetEditorRuntimeSaved();
+            RefreshAssetEditorDirtyFlags(false);
 
             auto RebuildResult = RebuildAssetManager();
             if (!RebuildResult)
@@ -3320,9 +4119,27 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
 
         if (m_assetEditorAssetKey == Asset->Key)
         {
-            m_assetEditorBaselineSourceJson = *SerializeResult;
-            m_assetEditorDirty = false;
-            ++m_assetEditorSessionRevision;
+            if (m_assetEditorImportSettingsObject != nullptr && m_assetEditorImportSettingsType != TypeId{})
+            {
+                if (auto CurrentImportMetadata = BuildAssetEditorImportMetadataFromCurrentState(); CurrentImportMetadata.has_value())
+                {
+                    m_assetImportMetadata[Asset->AssetId] = *CurrentImportMetadata;
+                    if (auto SyncResult = SyncImportedAssetGroupProvenance(*Asset, *CurrentImportMetadata); !SyncResult)
+                    {
+                        return std::unexpected(MakeError(EErrorCode::InternalError, SyncResult.error().Message));
+                    }
+                    m_assetImportMetadataDirty = true;
+                    if (auto SaveMetadataResult = SaveAssetImportMetadataDatabase(); !SaveMetadataResult)
+                    {
+                        return std::unexpected(MakeError(EErrorCode::InternalError, SaveMetadataResult.error()));
+                    }
+                    m_assetImportMetadataDirty = false;
+                    m_assetEditorImportMetadataBaseline = *CurrentImportMetadata;
+                    MarkAssetEditorImportSettingsSaved();
+                }
+            }
+            MarkAssetEditorRuntimeSaved();
+            RefreshAssetEditorDirtyFlags(false);
         }
 
         auto RebuildResult = RebuildAssetManager();
@@ -3341,11 +4158,17 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
     }
 
     const std::string AssetKeySnapshot = Asset->Key;
-    const bool bTouchesMaterialRuntimeCache =
-        Asset->AssetKind == AssetKindMaterial() || Asset->AssetKind == AssetKindMaterialInstance();
 
     if (Asset->IsRuntime)
     {
+        if (m_assetEditorAssetKey == Asset->Key && m_assetEditorRuntimeDirty)
+        {
+            if (auto SyncResult = SyncAssetEditorRuntimeOverrideFromCurrentState(); !SyncResult)
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError, SyncResult.error()));
+            }
+        }
+
         if (const auto PayloadOverrideIt = m_assetPayloadOverrides.find(Asset->AssetId);
             PayloadOverrideIt != m_assetPayloadOverrides.end())
         {
@@ -3377,12 +4200,6 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         }
 
         m_assetManager->ClearCache();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-        if (bTouchesMaterialRuntimeCache)
-        {
-            InvalidateRuntimeMaterialCaches();
-        }
-#endif
 
         m_assetRenameOverrides.erase(Asset->AssetId);
         m_assetPayloadOverrides.erase(Asset->AssetId);
@@ -3394,11 +4211,8 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
 
         if (m_assetEditorAssetKey == AssetKeySnapshot)
         {
-            if (auto PayloadResult = SerializeAssetEditorPayload(); PayloadResult)
-            {
-                m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
-            }
-            m_assetEditorDirty = m_assetEditorImportSettingsDirty;
+            MarkAssetEditorRuntimeSaved();
+            RefreshAssetEditorDirtyFlags(false);
         }
 
         m_statusMessage = "Saved runtime asset to pack: " + SavePathResult.value();
@@ -3409,6 +4223,14 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
     if (!PackPathResult)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, PackPathResult.error()));
+    }
+
+    if (m_assetEditorAssetKey == Asset->Key && m_assetEditorRuntimeDirty)
+    {
+        if (auto SyncResult = SyncAssetEditorRuntimeOverrideFromCurrentState(); !SyncResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, SyncResult.error()));
+        }
     }
 
     ::SnAPI::AssetPipeline::TypedPayload CookedPayload{};
@@ -3467,12 +4289,6 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
         }
     }
     m_assetManager->ClearCache();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    if (bTouchesMaterialRuntimeCache)
-    {
-        InvalidateRuntimeMaterialCaches();
-    }
-#endif
 
     m_assetRenameOverrides.erase(Asset->AssetId);
     m_assetPayloadOverrides.erase(Asset->AssetId);
@@ -3484,11 +4300,8 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
 
     if (m_assetEditorAssetKey == AssetKeySnapshot)
     {
-        if (auto PayloadResult = SerializeAssetEditorPayload(); PayloadResult)
-        {
-            m_assetEditorBaselineCookedBytes = PayloadResult->Bytes;
-        }
-        m_assetEditorDirty = m_assetEditorImportSettingsDirty;
+        MarkAssetEditorRuntimeSaved();
+        RefreshAssetEditorDirtyFlags(false);
     }
 
     m_statusMessage = "Saved asset update into pack: " + PackPathResult.value();
@@ -4488,7 +5301,7 @@ Result EditorAssetService::CreateRuntimeMaterialAsset(EditorServiceContext& Cont
     const std::string TargetFolder = NormalizeAssetLogicalName(FolderPath);
     const std::string LogicalName = MakeUniqueLogicalName(*m_assetManager, TargetFolder, BaseName);
 
-    MaterialPayload Payload{};
+    MaterialAsset Payload{};
     Payload.ShaderModule = std::string(kDefaultMaterialShaderModule);
     Payload.ShadingModel = std::string(kDefaultMaterialShadingModel);
 
@@ -4546,7 +5359,7 @@ Result EditorAssetService::CreateRuntimeMaterialInstanceAsset(EditorServiceConte
     const std::string TargetFolder = NormalizeAssetLogicalName(FolderPath);
     const std::string LogicalName = MakeUniqueLogicalName(*m_assetManager, TargetFolder, BaseName);
 
-    MaterialInstancePayload Payload{};
+    MaterialInstanceAsset Payload{};
 
     std::vector<uint8_t> Bytes{};
     auto SerializeResult = SerializeMaterialInstancePayload(Payload, Bytes);
@@ -4639,76 +5452,364 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
 
     std::string FolderPath = NormalizeAssetLogicalName(DestinationFolderPath);
     const std::string SourceLeaf = SourceFile.filename().string();
-    if (SourceLeaf.empty())
+    const std::string SourceStem = SourceFile.stem().string();
+    if (SourceLeaf.empty() || SourceStem.empty())
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Import source filename could not be resolved"));
     }
 
-    const std::string LogicalSourceName = MakeUniqueSourceLogicalName(
-        AssetRoot,
-        FolderPath,
-        std::filesystem::path(SourceLeaf).stem().string(),
-        SourceFile.extension().string());
-    if (LogicalSourceName.empty())
+    AuthoredAssetRegistry::Instance().EnsureBuilt();
+    const std::string SourceExtension = NormalizeAssetExtension(SourceFile.extension().string());
+    if (const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByExtension(SourceExtension))
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to determine a unique import destination"));
+        const std::string LogicalSourceName =
+            MakeUniqueSourceLogicalName(AssetRoot, FolderPath, SourceStem, SourceExtension);
+        if (LogicalSourceName.empty())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to determine a unique import destination"));
+        }
+
+        std::filesystem::path DestinationDirectory = AssetRoot;
+        if (!FolderPath.empty())
+        {
+            DestinationDirectory /= std::filesystem::path(FolderPath);
+        }
+
+        PathError.clear();
+        std::filesystem::create_directories(DestinationDirectory, PathError);
+        if (PathError)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to create import destination folder: " + PathError.message()));
+        }
+
+        const std::filesystem::path DestinationPath = (AssetRoot / std::filesystem::path(LogicalSourceName)).lexically_normal();
+        std::filesystem::copy_file(SourceFile, DestinationPath, std::filesystem::copy_options::overwrite_existing, PathError);
+        if (PathError)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to copy source asset into project: " + PathError.message()));
+        }
+
+        auto RefreshResult = RefreshDiscovery();
+        if (!RefreshResult)
+        {
+            return RefreshResult;
+        }
+
+        (void)SelectAssetByKey(LogicalSourceName);
+        m_statusMessage = "Imported authored asset into " + DestinationPath.string();
+        (void)Descriptor;
+        return Ok();
     }
 
-    std::filesystem::path DestinationDirectory = AssetRoot;
-    if (!FolderPath.empty())
+    ::SnAPI::AssetPipeline::PayloadRegistry Registry{};
+    RegisterAssetPipelinePayloads(Registry);
+    Registry.Register(TextureCompressorPlugin::CreateCompressorImageIntermediateSerializer());
+    Registry.Register(TextureCompressorPlugin::CreateCompressorCookedInfoSerializer());
+
+    std::vector<std::string> Infos{};
+    std::vector<std::string> Warnings{};
+    std::vector<std::string> Errors{};
+    InlineImportPipelineContext PipelineContext(Registry, BuildOptions, Infos, Warnings, Errors);
+
+    auto Importers = CreateEditorImporters();
+    const ::SnAPI::AssetPipeline::SourceRef SourceCandidate{SourceFile.string(), 0ull};
+    ::SnAPI::AssetPipeline::IAssetImporter* Importer = FindMatchingImporter(SourceCandidate, Importers);
+    if (!Importer)
     {
-        DestinationDirectory /= std::filesystem::path(FolderPath);
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "No importer is registered for source: " + SourceFile.string()));
     }
 
+    const ::SnAPI::AssetPipeline::SourceRef Source{SourceFile.string(), 0ull};
+
+    ::SnAPI::AssetPipeline::AssetImportSettingsPtr EffectiveImportSettings = ImportSettings;
+    const bool UseImporterDefaults = !EffectiveImportSettings && BuildOptions.empty();
+    if (!EffectiveImportSettings && !UseImporterDefaults)
+    {
+        EffectiveImportSettings = BuildTypedImportSettingsForImporter(*Importer, BuildOptions);
+    }
+
+    std::vector<::SnAPI::AssetPipeline::ImportedItem> ImportedItems{};
+    const bool ImportedSuccessfully = EffectiveImportSettings
+        ? Importer->ImportWithSettings(Source, EffectiveImportSettings.get(), ImportedItems, PipelineContext)
+        : Importer->Import(Source, ImportedItems, PipelineContext);
+    if (!ImportedSuccessfully)
+    {
+        std::ostringstream Message{};
+        Message << "Import failed for " << SourceFile.string();
+        if (!Errors.empty())
+        {
+            Message << ": " << Errors.front();
+        }
+        return std::unexpected(MakeError(EErrorCode::InternalError, Message.str()));
+    }
+    if (ImportedItems.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Import produced no authored asset outputs"));
+    }
+
+    EImportProfile Profile = ImportProfileFromImporterName(Importer->GetName() ? Importer->GetName() : "");
+    if (const auto* AssimpTyped = dynamic_cast<const AssimpImporterSettings*>(EffectiveImportSettings.get()))
+    {
+        (void)AssimpTyped;
+        Profile = EImportProfile::AssimpModel;
+    }
+    else if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(
+                 EffectiveImportSettings.get()))
+    {
+        (void)TextureTyped;
+        Profile = EImportProfile::Texture;
+    }
+
+    const std::string ImportGroupFolder = ResolveImportGroupFolder(AssetRoot, FolderPath, SourceStem);
+    if (ImportGroupFolder.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to determine import group folder"));
+    }
+
+    const std::filesystem::path ImportGroupPath = AssetRoot / std::filesystem::path(ImportGroupFolder);
     PathError.clear();
-    std::filesystem::create_directories(DestinationDirectory, PathError);
+    std::filesystem::create_directories(ImportGroupPath, PathError);
     if (PathError)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to create import destination folder: " + PathError.message()));
     }
 
-    const std::filesystem::path DestinationPath = (AssetRoot / std::filesystem::path(LogicalSourceName)).lexically_normal();
-    std::filesystem::copy_file(SourceFile, DestinationPath, std::filesystem::copy_options::overwrite_existing, PathError);
-    if (PathError)
+    TextureImportSettingsPayload ImportedTextureSettings{};
+    if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(
+            EffectiveImportSettings.get()))
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError,
-                                         "Failed to copy source asset into project: " + PathError.message()));
+        ImportedTextureSettings = BuildTextureAssetImportSettingsPayload(TextureTyped);
+    }
+
+    std::vector<ImportedSourceDocument> Documents{};
+    Documents.reserve(ImportedItems.size());
+    for (const auto& Item : ImportedItems)
+    {
+        auto AssetResult = BuildImportedSourceAssetVariant(Item, Registry, ImportedTextureSettings);
+        if (!AssetResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, AssetResult.error()));
+        }
+
+        ImportedSourceDocument Document{};
+        Document.OriginalLogicalName = Item.LogicalName;
+        Document.Asset = std::move(*AssetResult);
+        Documents.push_back(std::move(Document));
+    }
+
+    if (Profile == EImportProfile::AssimpModel)
+    {
+        std::unordered_set<std::string> KnownOriginalNames{};
+        for (const ImportedSourceDocument& Document : Documents)
+        {
+            if (!Document.OriginalLogicalName.empty())
+            {
+                KnownOriginalNames.insert(Document.OriginalLogicalName);
+            }
+        }
+
+        std::vector<std::string> ExternalTextureUris{};
+        for (const ImportedSourceDocument& Document : Documents)
+        {
+            const auto* MaterialInstance = std::get_if<MaterialInstanceAsset>(&Document.Asset);
+            if (!MaterialInstance)
+            {
+                continue;
+            }
+
+            for (const MaterialTextureParamPayload& TextureParam : MaterialInstance->Textures)
+            {
+                if (TextureParam.Texture.AssetName.empty() || KnownOriginalNames.contains(TextureParam.Texture.AssetName))
+                {
+                    continue;
+                }
+                KnownOriginalNames.insert(TextureParam.Texture.AssetName);
+                ExternalTextureUris.push_back(TextureParam.Texture.AssetName);
+            }
+        }
+
+        if (!ExternalTextureUris.empty())
+        {
+            auto ExternalTextureSettings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
+            const TextureImportSettingsPayload ExternalTexturePayload =
+                BuildTextureAssetImportSettingsPayload(ExternalTextureSettings.get());
+            for (const std::string& TextureUri : ExternalTextureUris)
+            {
+                const ::SnAPI::AssetPipeline::SourceRef TextureSource{TextureUri, 0ull};
+                ::SnAPI::AssetPipeline::IAssetImporter* TextureImporter = FindMatchingImporter(TextureSource, Importers);
+                if (!TextureImporter)
+                {
+                    Warnings.push_back("No texture importer found for referenced texture: " + TextureUri);
+                    continue;
+                }
+
+                std::vector<::SnAPI::AssetPipeline::ImportedItem> TextureItems{};
+                if (!TextureImporter->ImportWithSettings(TextureSource, ExternalTextureSettings.get(), TextureItems, PipelineContext))
+                {
+                    Warnings.push_back("Failed to import referenced texture: " + TextureUri);
+                    continue;
+                }
+
+                for (const auto& TextureItem : TextureItems)
+                {
+                    auto AssetResult = BuildImportedSourceAssetVariant(TextureItem, Registry, ExternalTexturePayload);
+                    if (!AssetResult)
+                    {
+                        Warnings.push_back("Failed to convert referenced texture to authored asset: " + TextureUri);
+                        continue;
+                    }
+
+                    ImportedSourceDocument Document{};
+                    Document.OriginalLogicalName = TextureItem.LogicalName;
+                    Document.Asset = std::move(*AssetResult);
+                    Documents.push_back(std::move(Document));
+                }
+            }
+        }
+    }
+
+    const std::string GroupLeaf = LeafLogicalName(ImportGroupFolder);
+    for (ImportedSourceDocument& Document : Documents)
+    {
+        const std::string LeafName = BuildImportedSourceAssetLeaf(GroupLeaf, Document);
+        const std::string Extension = FileExtensionForImportedSourceAsset(Document.Asset);
+        Document.FinalLogicalName = NormalizeAssetLogicalName(ImportGroupFolder + "/" + LeafName + Extension);
+        Document.FinalAssetId = MakeDeterministicSourceAssetId(Document.FinalLogicalName);
+    }
+
+    std::unordered_map<std::string, AssetRefPayload> RefsByOriginalName{};
+    for (const ImportedSourceDocument& Document : Documents)
+    {
+        if (Document.OriginalLogicalName.empty())
+        {
+            continue;
+        }
+
+        AssetRefPayload Ref{};
+        Ref.AssetName = Document.FinalLogicalName;
+        Ref.AssetId = Document.FinalAssetId.ToString();
+        RefsByOriginalName.emplace(Document.OriginalLogicalName, std::move(Ref));
+    }
+
+    for (ImportedSourceDocument& Document : Documents)
+    {
+        RewriteImportedAssetRefs(Document.Asset, RefsByOriginalName);
     }
 
     AssetImportMetadataEntry Record{};
     Record.SourcePath = SourceFile.string();
-    Record.DestinationFolder = FolderPath;
+    Record.DestinationFolder = ImportGroupFolder;
+    Record.ImporterName = Importer->GetName() ? Importer->GetName() : "";
+    Record.Profile = Profile;
     Record.BuildOptions = BuildOptions;
-    if (const auto* AssimpTyped = dynamic_cast<const AssimpImporterSettings*>(ImportSettings.get()))
+    if (const auto* AssimpTyped = dynamic_cast<const AssimpImporterSettings*>(EffectiveImportSettings.get()))
     {
         FillAssimpImportSettingsFromTyped(*AssimpTyped, Record.Assimp);
-        Record.Profile = EImportProfile::AssimpModel;
-        Record.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
     }
-    else if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(ImportSettings.get()))
+    if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(
+            EffectiveImportSettings.get()))
     {
         FillTextureImportSettingsFromTyped(*TextureTyped, Record.Texture);
-        Record.Profile = EImportProfile::Texture;
-        Record.ImporterName = "TextureCompressor";
     }
-    else
+    const ImportedAssetProvenancePayload ImportedProvenance = BuildImportedAssetProvenancePayload(
+        Record.SourcePath,
+        Record.DestinationFolder,
+        Record.ImporterName,
+        Record.Profile,
+        Record.BuildOptions);
+    for (ImportedSourceDocument& Document : Documents)
     {
-        const std::string Extension = ToLowerCopy(SourceFile.extension().string());
-        if (Extension == ".png" || Extension == ".jpg" || Extension == ".jpeg" || Extension == ".tga" || Extension == ".dds" ||
-            Extension == ".ktx" || Extension == ".ktx2" || Extension == ".hdr" || Extension == ".exr")
+        ApplyImportedSourceAssetProvenance(Document.Asset, ImportedProvenance);
+    }
+
+    std::unordered_set<::SnAPI::AssetPipeline::AssetId, ::SnAPI::AssetPipeline::UuidHash> NewAssetIds{};
+    std::string PrimaryLogicalName{};
+    int PrimaryLogicalPriority = -1;
+    for (ImportedSourceDocument& Document : Documents)
+    {
+        const std::filesystem::path OutputPath = (AssetRoot / std::filesystem::path(Document.FinalLogicalName)).lexically_normal();
+        std::error_code DirectoryError{};
+        std::filesystem::create_directories(OutputPath.parent_path(), DirectoryError);
+        if (DirectoryError)
         {
-            Record.Profile = EImportProfile::Texture;
-            Record.ImporterName = "TextureCompressor";
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to create import destination folder: " + DirectoryError.message()));
         }
-        else
+
+        auto JsonResult = SerializeImportedSourceAssetJson(Document.Asset);
+        if (!JsonResult)
         {
-            Record.Profile = EImportProfile::AssimpModel;
-            Record.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
+            return std::unexpected(MakeError(EErrorCode::InternalError, JsonResult.error()));
+        }
+
+        std::ofstream File(OutputPath, std::ios::binary | std::ios::trunc);
+        if (!File.is_open())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to open authored asset for write: " + OutputPath.string()));
+        }
+
+        File.write(JsonResult->data(), static_cast<std::streamsize>(JsonResult->size()));
+        if (!File.good())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to write authored asset: " + OutputPath.string()));
+        }
+
+        NewAssetIds.insert(Document.FinalAssetId);
+        const int DocumentPriority = ImportedPrimarySelectionPriority(Document.Asset);
+        if (PrimaryLogicalName.empty() || DocumentPriority > PrimaryLogicalPriority)
+        {
+            PrimaryLogicalName = Document.FinalLogicalName;
+            PrimaryLogicalPriority = DocumentPriority;
         }
     }
 
-    m_assetImportMetadata[MakeDeterministicSourceAssetId(LogicalSourceName)] = std::move(Record);
+    std::vector<std::filesystem::path> StaleFiles{};
+    for (const auto& Asset : m_assets)
+    {
+        if (Asset.SourceFilePath.empty())
+        {
+            continue;
+        }
+
+        const auto MetadataIt = m_assetImportMetadata.find(Asset.AssetId);
+        if (MetadataIt == m_assetImportMetadata.end())
+        {
+            continue;
+        }
+
+        const AssetImportMetadataEntry& ExistingRecord = MetadataIt->second;
+        if (ExistingRecord.SourcePath != SourceFile.string() ||
+            ExistingRecord.DestinationFolder != ImportGroupFolder ||
+            ExistingRecord.Profile != Profile)
+        {
+            continue;
+        }
+
+        if (NewAssetIds.contains(Asset.AssetId))
+        {
+            continue;
+        }
+
+        StaleFiles.push_back(std::filesystem::path(Asset.SourceFilePath));
+        m_assetImportMetadata.erase(MetadataIt);
+    }
+
+    for (const std::filesystem::path& StaleFile : StaleFiles)
+    {
+        std::error_code RemoveError{};
+        (void)std::filesystem::remove(StaleFile, RemoveError);
+    }
+
+    for (const ImportedSourceDocument& Document : Documents)
+    {
+        m_assetImportMetadata[Document.FinalAssetId] = Record;
+    }
 
     m_assetImportMetadataDirty = true;
     if (auto SaveResult = SaveAssetImportMetadataDatabase(); SaveResult)
@@ -4726,11 +5827,22 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
         return RefreshResult;
     }
 
-    (void)SelectAssetByKey(LogicalSourceName);
+    if (!PrimaryLogicalName.empty())
+    {
+        (void)SelectAssetByKey(PrimaryLogicalName);
+    }
 
     std::ostringstream Status{};
-    Status << "Imported source asset " << SourceFile.filename().string()
-           << " into " << DestinationPath.string();
+    Status << "Imported authored assets from " << SourceLeaf << " into " << ImportGroupPath.string();
+    if (!Warnings.empty())
+    {
+        Status << " (" << Warnings.size() << " warning";
+        if (Warnings.size() != 1u)
+        {
+            Status << "s";
+        }
+        Status << ")";
+    }
     m_statusMessage = Status.str();
     return Ok();
 }
@@ -4812,13 +5924,10 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         m_assetEditorTargetType = Asset->AssetType;
         m_assetEditorTargetObject = m_assetEditorGenericSourceObject.get();
         m_assetEditorSourceAssetType = Asset->AssetType;
-        m_assetEditorBaselineSourceJson = std::move(SourceJson);
-        if (auto CanonicalJson = SerializeAssetEditorSourceJson(); CanonicalJson)
-        {
-            m_assetEditorBaselineSourceJson = *CanonicalJson;
-        }
+        (void)RefreshAssetEditorImportSettingsBinding(*Asset);
         m_assetEditorTitle = Asset->TypeLabel + " - " + Asset->Name;
-        m_assetEditorDirty = false;
+        m_assetEditorDocumentState.Reset();
+        RefreshAssetEditorDirtyFlags(false);
         ++m_assetEditorSessionRevision;
         m_statusMessage = "Opened source asset: " + Asset->Name;
         return Ok();
@@ -4997,133 +6106,60 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
     }
     else if (Asset->AssetKind == AssetKindMaterial())
     {
-        if (!Asset->IsRuntime)
+        auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+        if (!CookedPayloadResult)
         {
-            auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
-            if (!CookedPayloadResult)
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
-            }
-
-            if (CookedPayloadResult->PayloadType != PayloadMaterial())
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Material asset has unexpected payload type"));
-            }
-
-            auto PayloadResult = DeserializeMaterialPayload(
-                CookedPayloadResult->Bytes.data(),
-                CookedPayloadResult->Bytes.size());
-            if (!PayloadResult)
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
-            }
-
-            m_assetEditorMaterialPayload = std::move(PayloadResult.value());
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
         }
-        else
+
+        if (CookedPayloadResult->PayloadType != PayloadMaterial())
         {
-            auto LoadResult = m_assetManager->Load<MaterialAssetRuntime>(Asset->AssetId);
-            if (!LoadResult)
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
-            }
-
-            const MaterialAssetRuntime& Loaded = *LoadResult.value();
-            MaterialPayload Payload{};
-            Payload.ShaderModule = Loaded.ShaderModule;
-            Payload.ShadingModel = Loaded.ShadingModel;
-            Payload.FeatureAlbedoMap = Loaded.FeatureAlbedoMap;
-            Payload.FeatureNormalMap = Loaded.FeatureNormalMap;
-            Payload.FeatureRoughnessMap = Loaded.FeatureRoughnessMap;
-            Payload.FeatureMetalnessMap = Loaded.FeatureMetalnessMap;
-            Payload.FeatureOcclusionMap = Loaded.FeatureOcclusionMap;
-            Payload.FeatureAlphaTest = Loaded.FeatureAlphaTest;
-            Payload.FeatureAlphaBlend = Loaded.FeatureAlphaBlend;
-            Payload.FeatureDoubleSided = Loaded.FeatureDoubleSided;
-            Payload.FeatureInstancing = Loaded.FeatureInstancing;
-            m_assetEditorMaterialPayload = std::move(Payload);
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Material asset has unexpected payload type"));
         }
+
+        auto PayloadResult = DeserializeMaterialPayload(
+            CookedPayloadResult->Bytes.data(),
+            CookedPayloadResult->Bytes.size());
+        if (!PayloadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
+        }
+
+        m_assetEditorMaterialPayload = std::move(PayloadResult.value());
         m_assetEditorTargetObject = &(*m_assetEditorMaterialPayload);
-        m_assetEditorTargetType = StaticTypeId<MaterialPayload>();
+        m_assetEditorTargetType = StaticTypeId<MaterialAsset>();
     }
     else if (Asset->AssetKind == AssetKindMaterialInstance())
     {
-        if (!Asset->IsRuntime)
+        auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
+        if (!CookedPayloadResult)
         {
-            auto CookedPayloadResult = BuildCookedPayloadForAsset(*Asset);
-            if (!CookedPayloadResult)
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
-            }
-
-            if (CookedPayloadResult->PayloadType != PayloadMaterialInstance())
-            {
-                ClearAssetEditorState();
-                return std::unexpected(
-                    MakeError(EErrorCode::InvalidArgument, "Material instance asset has unexpected payload type"));
-            }
-
-            auto PayloadResult = DeserializeMaterialInstancePayload(
-                CookedPayloadResult->Bytes.data(),
-                CookedPayloadResult->Bytes.size());
-            if (!PayloadResult)
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
-            }
-
-            m_assetEditorMaterialInstancePayload = std::move(PayloadResult.value());
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
         }
-        else
+
+        if (CookedPayloadResult->PayloadType != PayloadMaterialInstance())
         {
-            auto LoadResult = m_assetManager->Load<MaterialInstanceAssetRuntime>(Asset->AssetId);
-            if (!LoadResult)
-            {
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
-            }
-
-            const MaterialInstanceAssetRuntime& Loaded = *LoadResult.value();
-            MaterialInstancePayload Payload{};
-            Payload.ParentMaterial.AssetName = Loaded.ParentMaterial.GetAssetName();
-            Payload.ParentMaterial.AssetId = Loaded.ParentMaterial.GetAssetId();
-            Payload.Scalars = Loaded.Scalars;
-            Payload.Vectors = Loaded.Vectors;
-
-            const std::size_t TextureSlotCount = Loaded.TextureSlots.size();
-            const std::size_t TextureRefCount = Loaded.Textures.size();
-            const std::size_t TextureCount = std::max(TextureSlotCount, TextureRefCount);
-            Payload.Textures.reserve(TextureCount);
-            for (std::size_t Index = 0; Index < TextureCount; ++Index)
-            {
-                MaterialTextureParamPayload Texture{};
-                if (Index < TextureSlotCount)
-                {
-                    Texture.SlotName = Loaded.TextureSlots[Index];
-                }
-                else
-                {
-                    Texture.SlotName = "Texture" + std::to_string(Index);
-                }
-
-                if (Index < TextureRefCount)
-                {
-                    Texture.Texture.AssetName = Loaded.Textures[Index].GetAssetName();
-                    Texture.Texture.AssetId = Loaded.Textures[Index].GetAssetId();
-                }
-
-                Payload.Textures.push_back(std::move(Texture));
-            }
-
-            m_assetEditorMaterialInstancePayload = std::move(Payload);
+            ClearAssetEditorState();
+            return std::unexpected(
+                MakeError(EErrorCode::InvalidArgument, "Material instance asset has unexpected payload type"));
         }
+
+        auto PayloadResult = DeserializeMaterialInstancePayload(
+            CookedPayloadResult->Bytes.data(),
+            CookedPayloadResult->Bytes.size());
+        if (!PayloadResult)
+        {
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, PayloadResult.error().Message));
+        }
+
+        m_assetEditorMaterialInstancePayload = std::move(PayloadResult.value());
         m_assetEditorTargetObject = &(*m_assetEditorMaterialInstancePayload);
-        m_assetEditorTargetType = StaticTypeId<MaterialInstancePayload>();
+        m_assetEditorTargetType = StaticTypeId<MaterialInstanceAsset>();
         if (auto SyncResult = SyncMaterialInstanceEditorPayloadFromDescriptor(); !SyncResult)
         {
             m_statusMessage = "Material instance descriptor sync warning: " + SyncResult.error().Message;
@@ -5137,55 +6173,20 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
 
     (void)RefreshAssetEditorImportSettingsBinding(*Asset);
 
-    if (HasAssetEditorRuntimeTarget())
+    if (HasAssetEditorRuntimeTarget() && m_assetEditorSourceAssetType == TypeId{})
     {
-        if (m_assetEditorSourceAssetType != TypeId{})
+        auto InitialPayloadResult = SerializeAssetEditorPayload();
+        if (!InitialPayloadResult)
         {
-            if (auto InitialSourceJson = SerializeAssetEditorSourceJson(); InitialSourceJson)
-            {
-                m_assetEditorBaselineSourceJson = *InitialSourceJson;
-            }
-            else
-            {
-                std::ifstream File(Asset->SourceFilePath, std::ios::binary | std::ios::ate);
-                if (File.is_open())
-                {
-                    const std::streamsize Size = File.tellg();
-                    if (Size > 0)
-                    {
-                        m_assetEditorBaselineSourceJson.resize(static_cast<std::size_t>(Size));
-                        File.seekg(0, std::ios::beg);
-                        File.read(m_assetEditorBaselineSourceJson.data(), Size);
-                    }
-                    else
-                    {
-                        m_assetEditorBaselineSourceJson.clear();
-                    }
-                }
-            }
-            m_assetEditorBaselineCookedBytes.clear();
-            m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+            const std::string ErrorMessage = InitialPayloadResult.error();
+            ClearAssetEditorState();
+            return std::unexpected(MakeError(EErrorCode::InternalError, ErrorMessage));
         }
-        else
-        {
-            auto InitialPayloadResult = SerializeAssetEditorPayload();
-            if (!InitialPayloadResult)
-            {
-                const std::string ErrorMessage = InitialPayloadResult.error();
-                ClearAssetEditorState();
-                return std::unexpected(MakeError(EErrorCode::InternalError, ErrorMessage));
-            }
-            m_assetEditorBaselineCookedBytes = InitialPayloadResult->Bytes;
-        }
-    }
-    else
-    {
-        m_assetEditorBaselineCookedBytes.clear();
-        m_assetPayloadOverrides.erase(m_assetEditorAssetId);
     }
 
-    m_assetEditorDirty = m_assetEditorImportSettingsDirty;
     m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+    m_assetEditorDocumentState.Reset();
+    RefreshAssetEditorDirtyFlags(false);
     RefreshAssetEditorHierarchy();
     m_statusMessage = "Opened asset inspector: " + Asset->Name;
     return Ok();
@@ -5435,8 +6436,8 @@ Result EditorAssetService::AddAssetEditorNode(const NodeHandle& Parent, const Ty
         m_assetEditorSelectedNode = *CreateResult;
     }
 
-    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
+    MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
     return Ok();
 }
 
@@ -5471,8 +6472,8 @@ Result EditorAssetService::DeleteAssetEditorNode(const NodeHandle& Node)
     }
 
     m_assetEditorSelectedNode = NextSelection;
-    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
+    MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
     return Ok();
 }
 
@@ -5510,9 +6511,8 @@ Result EditorAssetService::AddAssetEditorComponent(const NodeHandle& Owner, cons
     }
 
     m_assetEditorSelectedNode = OwnerNode->Handle();
-    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
-    ++m_assetEditorSessionRevision;
+    MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
     return Ok();
 }
 
@@ -5546,14 +6546,15 @@ Result EditorAssetService::RemoveAssetEditorComponent(const NodeHandle& Owner, c
     }
 
     m_assetEditorSelectedNode = OwnerNode->Handle();
-    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
     RefreshAssetEditorHierarchy();
-    ++m_assetEditorSessionRevision;
+    MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
     return Ok();
 }
 
 void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
 {
+    (void)DeltaSeconds;
+
     if (m_assetEditorAssetKey.empty())
     {
         return;
@@ -5573,27 +6574,6 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
     if (PreviousCanSave != m_assetEditorCanSave || PreviousTitle != m_assetEditorTitle)
     {
         ++m_assetEditorSessionRevision;
-    }
-
-    if (m_assetEditorSourceAssetType != TypeId{})
-    {
-        m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
-
-        const bool PreviousAnyDirty = m_assetEditorDirty;
-        auto JsonResult = SerializeAssetEditorSourceJson();
-        if (!JsonResult)
-        {
-            return;
-        }
-
-        const bool IsDirtyNow = *JsonResult != m_assetEditorBaselineSourceJson;
-        if (IsDirtyNow != PreviousAnyDirty)
-        {
-            m_assetEditorDirty = IsDirtyNow;
-            ++m_assetEditorSessionRevision;
-            (void)RefreshDiscovery();
-        }
-        return;
     }
 
     if (Asset->AssetKind == AssetKindNode() || Asset->AssetKind == AssetKindLevel())
@@ -5640,76 +6620,20 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
             {
                 m_statusMessage = "Material instance descriptor sync warning: " + SyncResult.error().Message;
             }
+            else if (m_assetEditorRuntimeDirty)
+            {
+                if (auto CaptureResult = SyncAssetEditorRuntimeOverrideFromCurrentState(); !CaptureResult)
+                {
+                    m_statusMessage = "Asset editor dirty-state warning: " + CaptureResult.error();
+                }
+            }
+            else
+            {
+                MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
+            }
         }
     }
     #endif
-
-    m_assetEditorDirtyCheckCooldownSeconds -= std::max(0.0f, DeltaSeconds);
-    if (m_assetEditorDirtyCheckCooldownSeconds > 0.0f)
-    {
-        return;
-    }
-    m_assetEditorDirtyCheckCooldownSeconds = 0.2f;
-
-    const bool PreviousRuntimeDirty = m_assetPayloadOverrides.contains(m_assetEditorAssetId);
-    const bool PreviousImportDirty = m_assetEditorImportSettingsDirty;
-    const bool PreviousAnyDirty = m_assetEditorDirty;
-
-    bool RuntimeDirtyNow = false;
-    if (HasAssetEditorRuntimeTarget())
-    {
-        auto SerializedPayloadResult = SerializeAssetEditorPayload();
-        if (!SerializedPayloadResult)
-        {
-            return;
-        }
-
-        RuntimeDirtyNow = SerializedPayloadResult->Bytes != m_assetEditorBaselineCookedBytes;
-        if (RuntimeDirtyNow)
-        {
-            m_assetPayloadOverrides[m_assetEditorAssetId] = *SerializedPayloadResult;
-        }
-        else
-        {
-            m_assetPayloadOverrides.erase(m_assetEditorAssetId);
-        }
-    }
-    else
-    {
-        m_assetPayloadOverrides.erase(m_assetEditorAssetId);
-    }
-
-    bool ImportDirtyNow = false;
-    if (m_assetEditorImportSettingsObject != nullptr &&
-        m_assetEditorImportSettingsType != TypeId{} &&
-        m_assetEditorImportMetadataBaseline.has_value())
-    {
-        if (auto CurrentImportMetadata = BuildAssetEditorImportMetadataFromCurrentState(); CurrentImportMetadata.has_value())
-        {
-            ImportDirtyNow = !ImportMetadataRecordsEqual(*CurrentImportMetadata, *m_assetEditorImportMetadataBaseline);
-        }
-    }
-
-    const bool IsDirtyNow = RuntimeDirtyNow || ImportDirtyNow;
-    if (ImportDirtyNow != PreviousImportDirty)
-    {
-        m_assetEditorImportSettingsDirty = ImportDirtyNow;
-    }
-
-    if (IsDirtyNow != PreviousAnyDirty)
-    {
-        m_assetEditorDirty = IsDirtyNow;
-        ++m_assetEditorSessionRevision;
-    }
-    else if (ImportDirtyNow != PreviousImportDirty)
-    {
-        ++m_assetEditorSessionRevision;
-    }
-
-    if (RuntimeDirtyNow != PreviousRuntimeDirty)
-    {
-        (void)RefreshDiscovery();
-    }
 }
 
 Result EditorAssetService::SaveActiveAssetEditor()
@@ -5724,11 +6648,16 @@ Result EditorAssetService::SaveActiveAssetEditor()
         return SaveAssetByKey(m_assetEditorAssetKey);
     }
 
-    const bool HadRuntimeOverride = m_assetPayloadOverrides.contains(m_assetEditorAssetId);
+    const bool HadRuntimeDirty = m_assetEditorRuntimeDirty;
     const bool HadImportDirty = m_assetEditorImportSettingsDirty;
 
-    if (HadRuntimeOverride)
+    if (HadRuntimeDirty)
     {
+        if (auto SyncResult = SyncAssetEditorRuntimeOverrideFromCurrentState(); !SyncResult)
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, SyncResult.error()));
+        }
+
         Result SaveResult = SaveAssetByKey(m_assetEditorAssetKey);
         if (!SaveResult)
         {
@@ -5751,37 +6680,27 @@ Result EditorAssetService::SaveActiveAssetEditor()
                 }
                 m_assetImportMetadataDirty = false;
                 m_assetEditorImportMetadataBaseline = *CurrentImportMetadata;
-                m_assetEditorImportSettingsDirty = false;
+                MarkAssetEditorImportSettingsSaved();
             }
         }
     }
 
     const bool WasDirty = m_assetEditorDirty;
-    if (HasAssetEditorRuntimeTarget())
+    if (HadRuntimeDirty)
     {
-        auto SerializedPayloadResult = SerializeAssetEditorPayload();
-        if (SerializedPayloadResult)
-        {
-            m_assetEditorBaselineCookedBytes = SerializedPayloadResult->Bytes;
-        }
-        m_assetPayloadOverrides.erase(m_assetEditorAssetId);
-    }
-    else
-    {
-        m_assetEditorBaselineCookedBytes.clear();
+        MarkAssetEditorRuntimeSaved();
     }
 
-    m_assetEditorDirty = m_assetEditorImportSettingsDirty;
-    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
+    RefreshAssetEditorDirtyFlags(false);
     if (m_assetEditorCanEditHierarchy)
     {
         RefreshAssetEditorHierarchy();
     }
-    if (WasDirty || HadRuntimeOverride || HadImportDirty)
+    if (WasDirty || HadRuntimeDirty || HadImportDirty)
     {
         ++m_assetEditorSessionRevision;
     }
-    if (!HadRuntimeOverride && HadImportDirty)
+    if (!HadRuntimeDirty && HadImportDirty)
     {
         m_statusMessage = "Saved import settings for: " + m_assetEditorTitle;
     }
@@ -5835,9 +6754,7 @@ EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSessio
     View.SelectedNode = m_assetEditorSelectedNode;
     View.CanEditHierarchy = m_assetEditorCanEditHierarchy;
     View.HasImportSettings = HasImportTarget;
-    View.RuntimeDirty = (m_assetEditorSourceAssetType != TypeId{})
-        ? m_assetEditorDirty
-        : m_assetPayloadOverrides.contains(m_assetEditorAssetId);
+    View.RuntimeDirty = m_assetEditorRuntimeDirty;
     View.ImportSettingsDirty = m_assetEditorImportSettingsDirty;
     View.IsDirty = m_assetEditorDirty;
     View.CanSave = m_assetEditorCanSave;
@@ -6929,23 +7846,144 @@ std::expected<void, std::string> EditorAssetService::SaveAssetImportMetadataData
     return {};
 }
 
+void EditorAssetService::ApplyImportedAssetProvenanceToMetadata(const ImportedAssetProvenancePayload& Provenance,
+                                                                AssetImportMetadataEntry& Metadata)
+{
+    if (!Provenance.Profile.empty())
+    {
+        Metadata.Profile = ImportProfileFromString(Provenance.Profile);
+    }
+    if (!Provenance.SourcePath.empty())
+    {
+        Metadata.SourcePath = Provenance.SourcePath;
+    }
+    if (!Provenance.DestinationFolder.empty())
+    {
+        Metadata.DestinationFolder = NormalizeAssetLogicalName(Provenance.DestinationFolder);
+    }
+    if (!Provenance.ImporterName.empty())
+    {
+        Metadata.ImporterName = Provenance.ImporterName;
+    }
+    if (!Provenance.BuildOptions.empty())
+    {
+        Metadata.BuildOptions = BuildImportBuildOptionMap(Provenance.BuildOptions);
+    }
+}
+
+Result EditorAssetService::SyncImportedAssetGroupProvenance(const DiscoveredAsset& ActiveAsset,
+                                                            const AssetImportMetadataEntry& Metadata)
+{
+    if (!IsImportedSourceAssetType(ActiveAsset.AssetType) ||
+        Metadata.SourcePath.empty() ||
+        Metadata.Profile == EImportProfile::Unknown)
+    {
+        return Ok();
+    }
+
+    const ImportedAssetProvenancePayload Provenance = BuildImportedAssetProvenancePayload(
+        Metadata.SourcePath,
+        Metadata.DestinationFolder,
+        Metadata.ImporterName,
+        Metadata.Profile,
+        Metadata.BuildOptions);
+
+    for (const DiscoveredAsset& Candidate : m_assets)
+    {
+        if (Candidate.AssetId == ActiveAsset.AssetId ||
+            Candidate.SourceFilePath.empty() ||
+            Candidate.AssetType == TypeId{} ||
+            !IsImportedSourceAssetType(Candidate.AssetType))
+        {
+            continue;
+        }
+
+        auto LoadedAsset = LoadImportedSourceAssetVariant(Candidate);
+        if (!LoadedAsset)
+        {
+            return std::unexpected(MakeError(
+                EErrorCode::InternalError,
+                "Failed to load imported source asset '" + Candidate.Key + "' for provenance sync: " + LoadedAsset.error()));
+        }
+        if (!ImportedSourceAssetMatchesGroup(*LoadedAsset, Metadata.SourcePath, Metadata.DestinationFolder, Metadata.Profile))
+        {
+            continue;
+        }
+
+        if (UpdateImportedSourceAssetProvenance(*LoadedAsset, Provenance))
+        {
+            auto JsonResult = SerializeImportedSourceAssetJson(*LoadedAsset);
+            if (!JsonResult)
+            {
+                return std::unexpected(MakeError(
+                    EErrorCode::InternalError,
+                    "Failed to serialize imported source asset '" + Candidate.Key + "' during provenance sync: " +
+                        JsonResult.error()));
+            }
+
+            const std::filesystem::path SourcePath = std::filesystem::path(Candidate.SourceFilePath).lexically_normal();
+            std::ofstream File(SourcePath, std::ios::binary | std::ios::trunc);
+            if (!File.is_open())
+            {
+                return std::unexpected(MakeError(
+                    EErrorCode::InternalError,
+                    "Failed to open imported source asset for provenance sync: " + SourcePath.string()));
+            }
+
+            File.write(JsonResult->data(), static_cast<std::streamsize>(JsonResult->size()));
+            if (!File.good())
+            {
+                return std::unexpected(MakeError(
+                    EErrorCode::InternalError,
+                    "Failed to write imported source asset during provenance sync: " + SourcePath.string()));
+            }
+        }
+
+        AssetImportMetadataEntry SyncedMetadata = Metadata;
+        if (Metadata.Profile == EImportProfile::AssimpModel)
+        {
+            SyncedMetadata.Assimp = Metadata.Assimp;
+        }
+        else if (Metadata.Profile == EImportProfile::Texture)
+        {
+            SyncedMetadata.Texture = Metadata.Texture;
+        }
+        m_assetImportMetadata[Candidate.AssetId] = std::move(SyncedMetadata);
+    }
+
+    return Ok();
+}
+
 bool EditorAssetService::RefreshAssetEditorImportSettingsBinding(const DiscoveredAsset& Asset)
 {
     ClearAssetEditorImportSettingsBinding();
 
+    AssetImportMetadataEntry Metadata{};
+    bool HasMetadata = false;
     const auto MetadataIt = m_assetImportMetadata.find(Asset.AssetId);
-    if (MetadataIt == m_assetImportMetadata.end())
+    if (MetadataIt != m_assetImportMetadata.end())
     {
-        return false;
+        Metadata = MetadataIt->second;
+        HasMetadata = true;
     }
 
-    AssetImportMetadataEntry Metadata = MetadataIt->second;
     if (Metadata.Profile == EImportProfile::Unknown)
     {
         Metadata.Profile = ImportProfileFromImporterName(Metadata.ImporterName);
     }
 
-    if (Metadata.Profile == EImportProfile::AssimpModel)
+    bool PopulatedFromSource = false;
+    if (Asset.Key == m_assetEditorAssetKey)
+    {
+        PopulatedFromSource = PopulateImportSettingsBindingFromActiveSourceAsset(Metadata);
+    }
+
+    if (!PopulatedFromSource && !HasMetadata)
+    {
+        return false;
+    }
+
+    if (m_assetEditorImportSettingsObject == nullptr && Metadata.Profile == EImportProfile::AssimpModel)
     {
         if (auto Typed = BuildTypedImportSettingsForRecord(Metadata);
             Typed && dynamic_cast<const AssimpImporterSettings*>(Typed.get()))
@@ -6963,7 +8001,7 @@ bool EditorAssetService::RefreshAssetEditorImportSettingsBinding(const Discovere
         m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
         m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
     }
-    else if (Metadata.Profile == EImportProfile::Texture)
+    else if (m_assetEditorImportSettingsObject == nullptr && Metadata.Profile == EImportProfile::Texture)
     {
         if (auto Typed = BuildTypedImportSettingsForRecord(Metadata);
             Typed && dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(Typed.get()))
@@ -7001,6 +8039,265 @@ bool EditorAssetService::RefreshAssetEditorImportSettingsBinding(const Discovere
         m_assetEditorCanReimport = std::filesystem::exists(SourcePath, Error) && !Error;
     }
     return true;
+}
+
+bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(AssetImportMetadataEntry& InOutMetadata)
+{
+    if (m_assetEditorSourceAssetType == TypeId{} || !m_assetEditorGenericSourceObject)
+    {
+        return false;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<TextureAsset>())
+    {
+        auto* Asset = static_cast<TextureAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        Editor::TextureImportSettings Settings{};
+        FillTextureImportSettingsFromPayload(Asset->ImportSettings, Settings);
+        InOutMetadata.Profile = EImportProfile::Texture;
+        InOutMetadata.Texture = Settings;
+        RemoveManagedBuildOptions(InOutMetadata.BuildOptions, kTextureManagedBuildOptionKeys);
+        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromTextureImportSettings(Settings))
+        {
+            InOutMetadata.BuildOptions[OptionKey] = OptionValue;
+        }
+        if (InOutMetadata.ImporterName.empty())
+        {
+            InOutMetadata.ImporterName = "TextureCompressor.Importer";
+        }
+
+        m_assetEditorTextureImportSettings = Settings;
+        m_assetEditorImportSettingsType = StaticTypeId<Editor::TextureImportSettings>();
+        m_assetEditorImportSettingsObject = &(*m_assetEditorTextureImportSettings);
+        return true;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<StaticMeshAsset>())
+    {
+        auto* Asset = static_cast<StaticMeshAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        Editor::AssimpImportSettings Settings{};
+        FillAssimpImportSettingsFromPayload(Asset->ImportSettings, Settings);
+        InOutMetadata.Profile = EImportProfile::AssimpModel;
+        InOutMetadata.Assimp = Settings;
+        RemoveManagedBuildOptions(InOutMetadata.BuildOptions, kAssimpManagedBuildOptionKeys);
+        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromAssimpImportSettings(Settings))
+        {
+            InOutMetadata.BuildOptions[OptionKey] = OptionValue;
+        }
+        InOutMetadata.BuildOptions["SnAPI.GF.Assimp.DefaultShaderModule"] = OptionValueOr(
+            InOutMetadata.BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShaderModule",
+            kDefaultMaterialShaderModule);
+        InOutMetadata.BuildOptions["SnAPI.GF.Assimp.DefaultShadingModel"] = OptionValueOr(
+            InOutMetadata.BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShadingModel",
+            kDefaultMaterialShadingModel);
+        if (InOutMetadata.ImporterName.empty())
+        {
+            InOutMetadata.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
+        }
+
+        m_assetEditorAssimpImportSettings = Settings;
+        m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
+        m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
+        return true;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<SkeletalMeshAsset>())
+    {
+        auto* Asset = static_cast<SkeletalMeshAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        Editor::AssimpImportSettings Settings{};
+        FillAssimpImportSettingsFromPayload(Asset->BaseMesh.ImportSettings, Settings);
+        InOutMetadata.Profile = EImportProfile::AssimpModel;
+        InOutMetadata.Assimp = Settings;
+        RemoveManagedBuildOptions(InOutMetadata.BuildOptions, kAssimpManagedBuildOptionKeys);
+        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromAssimpImportSettings(Settings))
+        {
+            InOutMetadata.BuildOptions[OptionKey] = OptionValue;
+        }
+        InOutMetadata.BuildOptions["SnAPI.GF.Assimp.DefaultShaderModule"] = OptionValueOr(
+            InOutMetadata.BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShaderModule",
+            kDefaultMaterialShaderModule);
+        InOutMetadata.BuildOptions["SnAPI.GF.Assimp.DefaultShadingModel"] = OptionValueOr(
+            InOutMetadata.BuildOptions,
+            "SnAPI.GF.Assimp.DefaultShadingModel",
+            kDefaultMaterialShadingModel);
+        if (InOutMetadata.ImporterName.empty())
+        {
+            InOutMetadata.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
+        }
+
+        m_assetEditorAssimpImportSettings = Settings;
+        m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
+        m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
+        return true;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<MaterialAsset>())
+    {
+        auto* Asset = static_cast<MaterialAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        return !Asset->Provenance.Profile.empty() ||
+               !Asset->Provenance.SourcePath.empty() ||
+               !Asset->Provenance.ImporterName.empty();
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<MaterialInstanceAsset>())
+    {
+        auto* Asset = static_cast<MaterialInstanceAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        return !Asset->Provenance.Profile.empty() ||
+               !Asset->Provenance.SourcePath.empty() ||
+               !Asset->Provenance.ImporterName.empty();
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<SkeletonAsset>())
+    {
+        auto* Asset = static_cast<SkeletonAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        return !Asset->Provenance.Profile.empty() ||
+               !Asset->Provenance.SourcePath.empty() ||
+               !Asset->Provenance.ImporterName.empty();
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<SkeletalAnimationAsset>())
+    {
+        auto* Asset = static_cast<SkeletalAnimationAsset*>(m_assetEditorGenericSourceObject.get());
+        if (!Asset)
+        {
+            return false;
+        }
+        ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
+        return !Asset->Provenance.Profile.empty() ||
+               !Asset->Provenance.SourcePath.empty() ||
+               !Asset->Provenance.ImporterName.empty();
+    }
+
+    return false;
+}
+
+void EditorAssetService::ApplyAssetEditorImportSettingsToActiveSourceAsset()
+{
+    if (m_assetEditorSourceAssetType == TypeId{} ||
+        !m_assetEditorGenericSourceObject ||
+        m_assetEditorImportSettingsType == TypeId{} ||
+        m_assetEditorImportSettingsObject == nullptr)
+    {
+        return;
+    }
+
+    const AssetImportMetadataEntry Metadata = BuildAssetEditorImportMetadataFromCurrentState()
+        .value_or(m_assetEditorImportMetadataBaseline.value_or(AssetImportMetadataEntry{}));
+    const ImportedAssetProvenancePayload Provenance = BuildImportedAssetProvenancePayload(
+        Metadata.SourcePath,
+        Metadata.DestinationFolder,
+        Metadata.ImporterName,
+        Metadata.Profile,
+        Metadata.BuildOptions);
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<TextureAsset>() &&
+        m_assetEditorImportSettingsType == StaticTypeId<Editor::TextureImportSettings>())
+    {
+        auto* Asset = static_cast<TextureAsset*>(m_assetEditorGenericSourceObject.get());
+        const auto* Settings = static_cast<const Editor::TextureImportSettings*>(m_assetEditorImportSettingsObject);
+        if (Asset && Settings)
+        {
+            Asset->ImportSettings = BuildTextureImportSettingsPayload(*Settings);
+            Asset->Provenance = Provenance;
+        }
+        return;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<StaticMeshAsset>() &&
+        m_assetEditorImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>())
+    {
+        auto* Asset = static_cast<StaticMeshAsset*>(m_assetEditorGenericSourceObject.get());
+        const auto* Settings = static_cast<const Editor::AssimpImportSettings*>(m_assetEditorImportSettingsObject);
+        if (Asset && Settings)
+        {
+            Asset->ImportSettings = BuildMeshImportSettingsPayload(*Settings);
+            Asset->Provenance = Provenance;
+        }
+        return;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<SkeletalMeshAsset>() &&
+        m_assetEditorImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>())
+    {
+        auto* Asset = static_cast<SkeletalMeshAsset*>(m_assetEditorGenericSourceObject.get());
+        const auto* Settings = static_cast<const Editor::AssimpImportSettings*>(m_assetEditorImportSettingsObject);
+        if (Asset && Settings)
+        {
+            Asset->BaseMesh.ImportSettings = BuildMeshImportSettingsPayload(*Settings);
+            Asset->Provenance = Provenance;
+        }
+        return;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<MaterialAsset>())
+    {
+        if (auto* Asset = static_cast<MaterialAsset*>(m_assetEditorGenericSourceObject.get()))
+        {
+            Asset->Provenance = Provenance;
+        }
+        return;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<MaterialInstanceAsset>())
+    {
+        if (auto* Asset = static_cast<MaterialInstanceAsset*>(m_assetEditorGenericSourceObject.get()))
+        {
+            Asset->Provenance = Provenance;
+        }
+        return;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<SkeletonAsset>())
+    {
+        if (auto* Asset = static_cast<SkeletonAsset*>(m_assetEditorGenericSourceObject.get()))
+        {
+            Asset->Provenance = Provenance;
+        }
+        return;
+    }
+
+    if (m_assetEditorSourceAssetType == StaticTypeId<SkeletalAnimationAsset>())
+    {
+        if (auto* Asset = static_cast<SkeletalAnimationAsset*>(m_assetEditorGenericSourceObject.get()))
+        {
+            Asset->Provenance = Provenance;
+        }
+    }
 }
 
 std::optional<EditorAssetService::AssetImportMetadataEntry> EditorAssetService::BuildAssetEditorImportMetadataFromCurrentState() const
@@ -7289,7 +8586,7 @@ Result EditorAssetService::ReimportActiveAsset(EditorServiceContext& Context)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "No active asset editor to reimport"));
     }
-    if (m_assetPayloadOverrides.contains(m_assetEditorAssetId))
+    if (m_assetEditorRuntimeDirty)
     {
         return std::unexpected(MakeError(
             EErrorCode::InvalidArgument,
@@ -7468,6 +8765,132 @@ bool EditorAssetService::HasAssetEditorRuntimeTarget() const
     return ResolveAssetEditorRuntimeTargetObject() != nullptr && m_assetEditorTargetType != TypeId{};
 }
 
+bool EditorAssetService::IsAssetEditorRuntimeDirty() const
+{
+    return m_assetEditorDocumentState.RuntimeRevision != m_assetEditorDocumentState.SavedRuntimeRevision;
+}
+
+bool EditorAssetService::IsAssetEditorImportDirty() const
+{
+    return m_assetEditorDocumentState.ImportRevision != m_assetEditorDocumentState.SavedImportRevision;
+}
+
+void EditorAssetService::RefreshAssetEditorDirtyFlags(const bool RefreshDiscoveryState)
+{
+    const bool PreviousRuntimeDirty = m_assetEditorRuntimeDirty;
+    const bool PreviousImportDirty = m_assetEditorImportSettingsDirty;
+    const bool PreviousAnyDirty = m_assetEditorDirty;
+
+    m_assetEditorRuntimeDirty = IsAssetEditorRuntimeDirty();
+    m_assetEditorImportSettingsDirty = IsAssetEditorImportDirty();
+    m_assetEditorDirty = m_assetEditorRuntimeDirty || m_assetEditorImportSettingsDirty;
+
+    if (RefreshDiscoveryState &&
+        m_assetEditorSourceAssetType != TypeId{} &&
+        PreviousAnyDirty != m_assetEditorDirty)
+    {
+        (void)RefreshDiscovery();
+    }
+
+    if (PreviousRuntimeDirty != m_assetEditorRuntimeDirty ||
+        PreviousImportDirty != m_assetEditorImportSettingsDirty ||
+        PreviousAnyDirty != m_assetEditorDirty)
+    {
+        ++m_assetEditorSessionRevision;
+    }
+}
+
+std::expected<void, std::string> EditorAssetService::SyncAssetEditorRuntimeOverrideFromCurrentState()
+{
+    if (m_assetEditorAssetKey.empty() || m_assetEditorSourceAssetType != TypeId{} || !HasAssetEditorRuntimeTarget())
+    {
+        return {};
+    }
+
+    auto SerializedPayloadResult = SerializeAssetEditorPayload();
+    if (!SerializedPayloadResult)
+    {
+        return std::unexpected(SerializedPayloadResult.error());
+    }
+
+    m_assetPayloadOverrides[m_assetEditorAssetId] = std::move(*SerializedPayloadResult);
+    return {};
+}
+
+void EditorAssetService::MarkAssetEditorRuntimeChanged(const bool RefreshDiscoveryState)
+{
+    if (m_assetEditorAssetKey.empty())
+    {
+        return;
+    }
+
+    ++m_assetEditorDocumentState.RuntimeRevision;
+    if (auto SyncResult = SyncAssetEditorRuntimeOverrideFromCurrentState(); !SyncResult)
+    {
+        m_statusMessage = "Asset editor dirty-state warning: " + SyncResult.error();
+    }
+
+    RefreshAssetEditorDirtyFlags(RefreshDiscoveryState);
+}
+
+void EditorAssetService::MarkAssetEditorImportSettingsChanged(const bool RefreshDiscoveryState)
+{
+    if (m_assetEditorAssetKey.empty() ||
+        m_assetEditorImportSettingsObject == nullptr ||
+        m_assetEditorImportSettingsType == TypeId{})
+    {
+        return;
+    }
+
+    ++m_assetEditorDocumentState.ImportRevision;
+    if (m_assetEditorSourceAssetType != TypeId{})
+    {
+        ApplyAssetEditorImportSettingsToActiveSourceAsset();
+        ++m_assetEditorDocumentState.RuntimeRevision;
+    }
+
+    RefreshAssetEditorDirtyFlags(RefreshDiscoveryState || m_assetEditorSourceAssetType != TypeId{});
+}
+
+void EditorAssetService::MarkAssetEditorRuntimeSaved()
+{
+    m_assetEditorDocumentState.SavedRuntimeRevision = m_assetEditorDocumentState.RuntimeRevision;
+    m_assetPayloadOverrides.erase(m_assetEditorAssetId);
+}
+
+void EditorAssetService::MarkAssetEditorImportSettingsSaved()
+{
+    m_assetEditorDocumentState.SavedImportRevision = m_assetEditorDocumentState.ImportRevision;
+}
+
+void EditorAssetService::NotifyActiveAssetEditorRuntimeMutated(const TypeId& RootType, void* RootInstance)
+{
+    (void)RootType;
+    (void)RootInstance;
+
+    if (m_assetEditorAssetKey.empty() || !HasAssetEditorRuntimeTarget())
+    {
+        return;
+    }
+
+    MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
+}
+
+void EditorAssetService::NotifyActiveAssetEditorImportSettingsMutated(const TypeId& RootType, void* RootInstance)
+{
+    (void)RootType;
+    (void)RootInstance;
+
+    if (m_assetEditorAssetKey.empty() ||
+        m_assetEditorImportSettingsObject == nullptr ||
+        m_assetEditorImportSettingsType == TypeId{})
+    {
+        return;
+    }
+
+    MarkAssetEditorImportSettingsChanged();
+}
+
 void EditorAssetService::RefreshAssetEditorHierarchy()
 {
     const NodeHandle PreviousSelection = m_assetEditorSelectedNode;
@@ -7614,7 +9037,7 @@ Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
         return Ok();
     }
 
-    MaterialInstancePayload& Payload = *m_assetEditorMaterialInstancePayload;
+    MaterialInstanceAsset& Payload = *m_assetEditorMaterialInstancePayload;
     const std::string ParentIdentity = BuildAssetRefIdentity(Payload.ParentMaterial);
     m_assetEditorMaterialInstanceDescriptorParentKey = ParentIdentity;
     if (ParentIdentity.empty())
@@ -7622,24 +9045,13 @@ Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
         return Ok();
     }
 
-    MaterialPayload ParentMaterial{};
+    MaterialAsset ParentMaterial{};
     bool ParentResolved = false;
 
-    TAssetRef<MaterialAssetRuntime> ParentMaterialRef(Payload.ParentMaterial.AssetName, Payload.ParentMaterial.AssetId);
-    if (auto RuntimeResult = ParentMaterialRef.GetShared<MaterialAssetRuntime>(*m_assetManager);
-        RuntimeResult && RuntimeResult->Get())
+    TAssetRef<MaterialAsset> ParentMaterialRef(Payload.ParentMaterial.AssetName, Payload.ParentMaterial.AssetId);
+    if (auto ParentAssetResult = ParentMaterialRef.LoadAsset(); ParentAssetResult && *ParentAssetResult)
     {
-        ParentMaterial.ShaderModule = RuntimeResult->Get()->ShaderModule;
-        ParentMaterial.ShadingModel = RuntimeResult->Get()->ShadingModel;
-        ParentMaterial.FeatureAlbedoMap = RuntimeResult->Get()->FeatureAlbedoMap;
-        ParentMaterial.FeatureNormalMap = RuntimeResult->Get()->FeatureNormalMap;
-        ParentMaterial.FeatureRoughnessMap = RuntimeResult->Get()->FeatureRoughnessMap;
-        ParentMaterial.FeatureMetalnessMap = RuntimeResult->Get()->FeatureMetalnessMap;
-        ParentMaterial.FeatureOcclusionMap = RuntimeResult->Get()->FeatureOcclusionMap;
-        ParentMaterial.FeatureAlphaTest = RuntimeResult->Get()->FeatureAlphaTest;
-        ParentMaterial.FeatureAlphaBlend = RuntimeResult->Get()->FeatureAlphaBlend;
-        ParentMaterial.FeatureDoubleSided = RuntimeResult->Get()->FeatureDoubleSided;
-        ParentMaterial.FeatureInstancing = RuntimeResult->Get()->FeatureInstancing;
+        ParentMaterial = std::move(**ParentAssetResult);
         ParentResolved = true;
     }
 
@@ -7707,15 +9119,14 @@ Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
         return std::unexpected(MakeError(EErrorCode::InternalError, "Unable to resolve parent material payload"));
     }
 
-    auto DescriptorResult = BuildDescriptorForMaterialPayload(ParentMaterial);
+    auto DescriptorResult = BuildDescriptorForMaterialAsset(ParentMaterial);
     if (!DescriptorResult)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError, DescriptorResult.error()));
     }
 
-    if (SyncPayloadToRuntimeDescriptor(Payload, *DescriptorResult))
+    if (SyncMaterialInstanceAssetToRuntimeDescriptor(Payload, *DescriptorResult))
     {
-        m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
         ++m_assetEditorSessionRevision;
     }
 
@@ -7873,7 +9284,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (m_assetEditorAssetKind == AssetKindMaterial())
     {
-        auto* Material = static_cast<MaterialPayload*>(ResolveAssetEditorRuntimeTargetObject());
+        auto* Material = static_cast<MaterialAsset*>(ResolveAssetEditorRuntimeTargetObject());
         if (!Material)
         {
             return std::unexpected("Asset editor material target is null");
@@ -7891,7 +9302,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (m_assetEditorAssetKind == AssetKindMaterialInstance())
     {
-        auto* MaterialInstance = static_cast<MaterialInstancePayload*>(ResolveAssetEditorRuntimeTargetObject());
+        auto* MaterialInstance = static_cast<MaterialInstanceAsset*>(ResolveAssetEditorRuntimeTargetObject());
         if (!MaterialInstance)
         {
             return std::unexpected("Asset editor material instance target is null");
@@ -8023,6 +9434,7 @@ void EditorAssetService::ClearAssetEditorState()
                                   !m_assetEditorHierarchy.empty() ||
                                   !m_assetEditorSelectedNode.IsNull() ||
                                   m_assetEditorDirty;
+    const ::SnAPI::AssetPipeline::AssetId PreviousAssetId = m_assetEditorAssetId;
     m_assetEditorWorld.reset();
     m_assetEditorRootHandle = {};
     m_assetEditorAssetKey.clear();
@@ -8032,6 +9444,7 @@ void EditorAssetService::ClearAssetEditorState()
     m_assetEditorTargetObject = nullptr;
     m_assetEditorSourceAssetType = {};
     m_assetEditorDirty = false;
+    m_assetEditorRuntimeDirty = false;
     m_assetEditorCanSave = false;
     m_assetEditorCanEditHierarchy = false;
     m_assetEditorMaterialPayload.reset();
@@ -8042,13 +9455,12 @@ void EditorAssetService::ClearAssetEditorState()
     m_assetEditorStaticMeshEditorPayload.reset();
     ClearAssetEditorImportSettingsBinding();
     m_assetEditorMaterialInstanceDescriptorParentKey.clear();
-    m_assetEditorBaselineCookedBytes.clear();
-    m_assetEditorBaselineSourceJson.clear();
     m_assetEditorTitle.clear();
     m_assetEditorSelectedNode = {};
     m_assetEditorHierarchy.clear();
     m_assetEditorHierarchyDirty = false;
-    m_assetEditorDirtyCheckCooldownSeconds = 0.0f;
+    m_assetEditorDocumentState.Reset();
+    m_assetPayloadOverrides.erase(PreviousAssetId);
     m_assetEditorGenericSourceObject = {nullptr, [](void*) {}};
     if (HadActiveSession)
     {
@@ -8293,7 +9705,7 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
 
     if (Asset.IsRuntime)
     {
-        return std::unexpected("Runtime memory assets are saved via SaveRuntimeAsset");
+        return m_assetManager->LoadCookedPayload(Asset.AssetId);
     }
 
     auto PackPathResult = ResolveOwningPackPath(Asset);

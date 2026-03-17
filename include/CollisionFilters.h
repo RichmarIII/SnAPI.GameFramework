@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "Flags.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -25,6 +26,7 @@ namespace SnAPI::GameFramework
  * @note Although the same flag type is used for layers and masks, downstream code typically expects
  * layers to contain exactly one effective bit.
  */
+SnType()
 enum class ECollisionFilterBits : std::uint32_t
 {
     None = 0u, /**< @brief No collision bits set. */

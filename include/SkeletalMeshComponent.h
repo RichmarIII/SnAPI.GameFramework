@@ -9,7 +9,8 @@
 
 #include "AssetRef.h"
 #include "BaseComponent.h"
-#include "RenderAssetRuntime.h"
+#include "BuiltinTypes.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -49,6 +50,7 @@ class RendererSystem;
  * @see RendererSystem
  * @see TransformComponent
  */
+SnType()
 class SkeletalMeshComponent : public BaseComponent, public ComponentCRTP<SkeletalMeshComponent>
 {
 public:
@@ -63,19 +65,29 @@ public:
      * - `Visible` and `CastShadows` affect renderer pass membership
      * - `AnimationName` empty means "play all available rigid animations" for auto-play and `PlayAllAnimations()`
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalMeshComponent::Settings";
 
+        SnField(SnKey("MeshPath"), SnReplicated)
         std::string MeshPath{}; /**< @brief Compatibility mesh identifier tracked for change detection; direct source-path loading is not the primary supported path in the current implementation. */
+        SnField(SnKey("Visible"), SnReplicated)
         bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
+        SnField(SnKey("CastShadows"), SnReplicated)
         bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
+        SnField(SnKey("SyncFromTransform"))
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
+        SnField(SnKey("RegisterWithRenderer"))
         bool RegisterWithRenderer = true; /**< @brief Register loaded mesh in renderer draw list. */
+        SnField(SnKey("AutoPlayAnimations"))
         bool AutoPlayAnimations = true; /**< @brief Auto-play animation after load. */
+        SnField(SnKey("LoopAnimations"))
         bool LoopAnimations = true; /**< @brief Loop animation playback. */
+        SnField(SnKey("AnimationName"))
         std::string AnimationName{}; /**< @brief Optional named rigid animation; empty = play all. */
-        TAssetRef<SkeletalMeshAssetRuntime> MeshAsset{}; /**< @brief Preferred runtime asset reference for cooked skeletal meshes (appended for payload compatibility). */
+        SnField(SnKey("MeshAsset"), SnReplicated)
+        SkeletalMeshAssetRef MeshAsset{}; /**< @brief Preferred authored skeletal-mesh asset reference. */
     };
 
     /** @brief Access settings (const). */
@@ -85,21 +97,26 @@ public:
     }
 
     /** @brief Access settings for mutation. */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;
     }
 
     /** @brief Explicitly clear cached load state and rebuild from current source settings. @return `true` when a render object is available after reload. */
+    SnFunction(SnKey("ReloadMesh"))
     bool ReloadMesh();
     /** @brief Clear the current render object, stop its registration, and reset animation tracking state. */
     void ClearMesh();
 
     /** @brief Play one rigid animation by name on the loaded mesh. @param Name Animation name. @param Loop Whether playback should loop. @param StartTime Initial playback time in seconds. @return `true` when a render object exists and the request was applied. */
+    SnFunction(SnKey("PlayAnimation"))
     bool PlayAnimation(const std::string& Name, bool Loop = true, float StartTime = 0.0f);
     /** @brief Play all rigid animations on the loaded mesh. @param Loop Whether playback should loop. @param StartTime Initial playback time in seconds. @return `true` when a render object exists and the request was applied. */
+    SnFunction(SnKey("PlayAllAnimations"))
     bool PlayAllAnimations(bool Loop = true, float StartTime = 0.0f);
     /** @brief Stop all rigid animations on the loaded mesh and clear auto-play-applied state. */
+    SnFunction(SnKey("StopAnimations"))
     void StopAnimations();
 
     /** @brief Access the component-owned renderer object handle. @return Borrowed reference to the shared-pointer handle, which may be empty. */

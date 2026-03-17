@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -11,6 +12,7 @@
 #include "AuthoredAssetJson.h"
 #include "Conduit/Editor/Service.h"
 #include "Editor/EditorAssetService.h"
+#include "Editor/EditorImportSettings.h"
 #include "Editor/EditorPieService.h"
 #include "Editor/IEditorService.h"
 #include "GameFramework.hpp"
@@ -265,6 +267,267 @@ void WriteTextFile(const std::filesystem::path& Path, const std::string& Text)
     REQUIRE(Out.good());
 }
 
+void WriteBinaryFile(const std::filesystem::path& Path, const std::vector<std::uint8_t>& Bytes)
+{
+    std::error_code Ec{};
+    std::filesystem::create_directories(Path.parent_path(), Ec);
+    REQUIRE_FALSE(Ec);
+
+    std::ofstream Out(Path, std::ios::binary | std::ios::trunc);
+    REQUIRE(Out.is_open());
+    if (!Bytes.empty())
+    {
+        Out.write(reinterpret_cast<const char*>(Bytes.data()), static_cast<std::streamsize>(Bytes.size()));
+    }
+    REQUIRE(Out.good());
+}
+
+std::filesystem::path WriteTinyPngFixture(const std::filesystem::path& RootDir, std::string_view LeafName = "tiny.png")
+{
+    static constexpr std::array<std::uint8_t, 90> kPng{
+        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,
+        0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
+        0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,
+        0xDE,0x00,0x00,0x00,0x09,0x70,0x48,0x59,
+        0x73,0x00,0x00,0x0B,0x13,0x00,0x00,0x0B,
+        0x13,0x01,0x00,0x9A,0x9C,0x18,0x00,0x00,
+        0x00,0x0C,0x49,0x44,0x41,0x54,0x08,0x99,
+        0x63,0xF8,0xCF,0xC0,0x00,0x00,0x03,0x01,
+        0x01,0x00,0x9C,0xE3,0xBF,0x59,0x00,0x00,
+        0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,0x42,
+        0x60,0x82
+    };
+
+    const std::filesystem::path Path = RootDir / std::string(LeafName);
+    WriteBinaryFile(Path, std::vector<std::uint8_t>(kPng.begin(), kPng.end()));
+    return Path;
+}
+
+void AppendFloat(std::vector<std::uint8_t>& Buffer, const float Value)
+{
+    const auto* Bytes = reinterpret_cast<const std::uint8_t*>(&Value);
+    Buffer.insert(Buffer.end(), Bytes, Bytes + sizeof(float));
+}
+
+void AppendU16(std::vector<std::uint8_t>& Buffer, const std::uint16_t Value)
+{
+    const auto* Bytes = reinterpret_cast<const std::uint8_t*>(&Value);
+    Buffer.insert(Buffer.end(), Bytes, Bytes + sizeof(std::uint16_t));
+}
+
+void AppendU32(std::vector<std::uint8_t>& Buffer, const std::uint32_t Value)
+{
+    const auto* Bytes = reinterpret_cast<const std::uint8_t*>(&Value);
+    Buffer.insert(Buffer.end(), Bytes, Bytes + sizeof(std::uint32_t));
+}
+
+std::filesystem::path WriteEmbeddedTextureGltfFixture(const std::filesystem::path& RootDir)
+{
+    std::filesystem::create_directories(RootDir);
+
+    std::vector<std::uint8_t> Buffer{};
+    Buffer.reserve(256);
+
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    constexpr std::uint32_t PositionByteLength = 9u * sizeof(float);
+
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    constexpr std::uint32_t TexcoordByteOffset = PositionByteLength;
+    constexpr std::uint32_t TexcoordByteLength = 6u * sizeof(float);
+
+    AppendU16(Buffer, 0u);
+    AppendU16(Buffer, 1u);
+    AppendU16(Buffer, 2u);
+    constexpr std::uint32_t IndexByteOffset = TexcoordByteOffset + TexcoordByteLength;
+    constexpr std::uint32_t IndexByteLength = 3u * sizeof(std::uint16_t);
+
+    while ((Buffer.size() % 4u) != 0u)
+    {
+        Buffer.push_back(0u);
+    }
+
+    static constexpr std::array<std::uint8_t, 90> kPng{
+        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,
+        0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
+        0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,
+        0xDE,0x00,0x00,0x00,0x09,0x70,0x48,0x59,
+        0x73,0x00,0x00,0x0B,0x13,0x00,0x00,0x0B,
+        0x13,0x01,0x00,0x9A,0x9C,0x18,0x00,0x00,
+        0x00,0x0C,0x49,0x44,0x41,0x54,0x08,0x99,
+        0x63,0xF8,0xCF,0xC0,0x00,0x00,0x03,0x01,
+        0x01,0x00,0x9C,0xE3,0xBF,0x59,0x00,0x00,
+        0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,0x42,
+        0x60,0x82
+    };
+
+    const std::uint32_t ImageByteOffset = static_cast<std::uint32_t>(Buffer.size());
+    Buffer.insert(Buffer.end(), kPng.begin(), kPng.end());
+    const std::uint32_t ImageByteLength = static_cast<std::uint32_t>(kPng.size());
+    const std::uint32_t BufferByteLength = static_cast<std::uint32_t>(Buffer.size());
+
+    const std::filesystem::path BinPath = RootDir / "mesh.bin";
+    WriteBinaryFile(BinPath, Buffer);
+
+    std::ostringstream Json{};
+    Json
+        << "{\n"
+        << "  \"asset\": {\"version\": \"2.0\"},\n"
+        << "  \"buffers\": [{\"uri\": \"mesh.bin\", \"byteLength\": " << BufferByteLength << "}],\n"
+        << "  \"bufferViews\": [\n"
+        << "    {\"buffer\": 0, \"byteOffset\": 0, \"byteLength\": " << PositionByteLength << ", \"target\": 34962},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << TexcoordByteOffset << ", \"byteLength\": " << TexcoordByteLength << ", \"target\": 34962},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << IndexByteOffset << ", \"byteLength\": " << IndexByteLength << ", \"target\": 34963},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << ImageByteOffset << ", \"byteLength\": " << ImageByteLength << "}\n"
+        << "  ],\n"
+        << "  \"accessors\": [\n"
+        << "    {\"bufferView\": 0, \"componentType\": 5126, \"count\": 3, \"type\": \"VEC3\", \"min\": [0, 0, 0], \"max\": [1, 1, 0]},\n"
+        << "    {\"bufferView\": 1, \"componentType\": 5126, \"count\": 3, \"type\": \"VEC2\"},\n"
+        << "    {\"bufferView\": 2, \"componentType\": 5123, \"count\": 3, \"type\": \"SCALAR\"}\n"
+        << "  ],\n"
+        << "  \"images\": [{\"bufferView\": 3, \"mimeType\": \"image/png\", \"name\": \"EmbeddedTexture\"}],\n"
+        << "  \"samplers\": [{\"magFilter\": 9729, \"minFilter\": 9729, \"wrapS\": 10497, \"wrapT\": 10497}],\n"
+        << "  \"textures\": [{\"source\": 0, \"sampler\": 0}],\n"
+        << "  \"materials\": [{\"name\": \"Mat0\", \"pbrMetallicRoughness\": {\"baseColorTexture\": {\"index\": 0}, \"metallicFactor\": 0.0, \"roughnessFactor\": 1.0}}],\n"
+        << "  \"meshes\": [{\"primitives\": [{\"attributes\": {\"POSITION\": 0, \"TEXCOORD_0\": 1}, \"indices\": 2, \"material\": 0}]}],\n"
+        << "  \"nodes\": [{\"mesh\": 0}],\n"
+        << "  \"scenes\": [{\"nodes\": [0]}],\n"
+        << "  \"scene\": 0\n"
+        << "}\n";
+
+    const std::filesystem::path GltfPath = RootDir / "embedded_textures.gltf";
+    WriteTextFile(GltfPath, Json.str());
+    return GltfPath;
+}
+
+std::filesystem::path WriteEmbeddedTextureGlbFixture(const std::filesystem::path& RootDir)
+{
+    std::filesystem::create_directories(RootDir);
+
+    std::vector<std::uint8_t> Buffer{};
+    Buffer.reserve(256);
+
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    constexpr std::uint32_t PositionByteLength = 9u * sizeof(float);
+
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    constexpr std::uint32_t TexcoordByteOffset = PositionByteLength;
+    constexpr std::uint32_t TexcoordByteLength = 6u * sizeof(float);
+
+    AppendU16(Buffer, 0u);
+    AppendU16(Buffer, 1u);
+    AppendU16(Buffer, 2u);
+    constexpr std::uint32_t IndexByteOffset = TexcoordByteOffset + TexcoordByteLength;
+    constexpr std::uint32_t IndexByteLength = 3u * sizeof(std::uint16_t);
+
+    while ((Buffer.size() % 4u) != 0u)
+    {
+        Buffer.push_back(0u);
+    }
+
+    static constexpr std::array<std::uint8_t, 90> kPng{
+        0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,
+        0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,
+        0x08,0x02,0x00,0x00,0x00,0x90,0x77,0x53,
+        0xDE,0x00,0x00,0x00,0x09,0x70,0x48,0x59,
+        0x73,0x00,0x00,0x0B,0x13,0x00,0x00,0x0B,
+        0x13,0x01,0x00,0x9A,0x9C,0x18,0x00,0x00,
+        0x00,0x0C,0x49,0x44,0x41,0x54,0x08,0x99,
+        0x63,0xF8,0xCF,0xC0,0x00,0x00,0x03,0x01,
+        0x01,0x00,0x9C,0xE3,0xBF,0x59,0x00,0x00,
+        0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,0x42,
+        0x60,0x82
+    };
+
+    const std::uint32_t ImageByteOffset = static_cast<std::uint32_t>(Buffer.size());
+    Buffer.insert(Buffer.end(), kPng.begin(), kPng.end());
+    const std::uint32_t ImageByteLength = static_cast<std::uint32_t>(kPng.size());
+    const std::uint32_t BufferByteLength = static_cast<std::uint32_t>(Buffer.size());
+
+    std::ostringstream Json{};
+    Json
+        << "{\n"
+        << "  \"asset\": {\"version\": \"2.0\"},\n"
+        << "  \"buffers\": [{\"byteLength\": " << BufferByteLength << "}],\n"
+        << "  \"bufferViews\": [\n"
+        << "    {\"buffer\": 0, \"byteOffset\": 0, \"byteLength\": " << PositionByteLength << ", \"target\": 34962},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << TexcoordByteOffset << ", \"byteLength\": " << TexcoordByteLength << ", \"target\": 34962},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << IndexByteOffset << ", \"byteLength\": " << IndexByteLength << ", \"target\": 34963},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << ImageByteOffset << ", \"byteLength\": " << ImageByteLength << "}\n"
+        << "  ],\n"
+        << "  \"accessors\": [\n"
+        << "    {\"bufferView\": 0, \"componentType\": 5126, \"count\": 3, \"type\": \"VEC3\", \"min\": [0, 0, 0], \"max\": [1, 1, 0]},\n"
+        << "    {\"bufferView\": 1, \"componentType\": 5126, \"count\": 3, \"type\": \"VEC2\"},\n"
+        << "    {\"bufferView\": 2, \"componentType\": 5123, \"count\": 3, \"type\": \"SCALAR\"}\n"
+        << "  ],\n"
+        << "  \"images\": [{\"bufferView\": 3, \"mimeType\": \"image/png\", \"name\": \"EmbeddedTexture\"}],\n"
+        << "  \"samplers\": [{\"magFilter\": 9729, \"minFilter\": 9729, \"wrapS\": 10497, \"wrapT\": 10497}],\n"
+        << "  \"textures\": [{\"source\": 0, \"sampler\": 0}],\n"
+        << "  \"materials\": [{\"name\": \"Mat0\", \"pbrMetallicRoughness\": {\"baseColorTexture\": {\"index\": 0}, \"metallicFactor\": 0.0, \"roughnessFactor\": 1.0}}],\n"
+        << "  \"meshes\": [{\"primitives\": [{\"attributes\": {\"POSITION\": 0, \"TEXCOORD_0\": 1}, \"indices\": 2, \"material\": 0}]}],\n"
+        << "  \"nodes\": [{\"mesh\": 0}],\n"
+        << "  \"scenes\": [{\"nodes\": [0]}],\n"
+        << "  \"scene\": 0\n"
+        << "}\n";
+
+    const std::string JsonText = Json.str();
+    std::vector<std::uint8_t> JsonBytes(JsonText.begin(), JsonText.end());
+    while ((JsonBytes.size() % 4u) != 0u)
+    {
+        JsonBytes.push_back(static_cast<std::uint8_t>(' '));
+    }
+
+    std::vector<std::uint8_t> BinBytes = Buffer;
+    while ((BinBytes.size() % 4u) != 0u)
+    {
+        BinBytes.push_back(0u);
+    }
+
+    std::vector<std::uint8_t> Glb{};
+    Glb.reserve(12u + 8u + JsonBytes.size() + 8u + BinBytes.size());
+    AppendU32(Glb, 0x46546C67u);
+    AppendU32(Glb, 2u);
+    AppendU32(Glb, static_cast<std::uint32_t>(12u + 8u + JsonBytes.size() + 8u + BinBytes.size()));
+    AppendU32(Glb, static_cast<std::uint32_t>(JsonBytes.size()));
+    AppendU32(Glb, 0x4E4F534Au);
+    Glb.insert(Glb.end(), JsonBytes.begin(), JsonBytes.end());
+    AppendU32(Glb, static_cast<std::uint32_t>(BinBytes.size()));
+    AppendU32(Glb, 0x004E4942u);
+    Glb.insert(Glb.end(), BinBytes.begin(), BinBytes.end());
+
+    const std::filesystem::path GlbPath = RootDir / "embedded_textures.glb";
+    WriteBinaryFile(GlbPath, Glb);
+    return GlbPath;
+}
+
 struct ScopedAssetRoot
 {
     std::filesystem::path Previous{};
@@ -339,6 +602,27 @@ struct TestEditorHost final : IEditorServiceHost
         return nullptr;
     }
 };
+
+template <typename TAsset>
+std::vector<const EditorAssetService::DiscoveredAsset*> FindDiscoveredAssetsByType(
+    const EditorAssetService& Service,
+    const std::string_view Prefix = {})
+{
+    std::vector<const EditorAssetService::DiscoveredAsset*> Matches{};
+    for (const auto& Asset : Service.Assets())
+    {
+        if (Asset.AssetType != StaticTypeId<TAsset>())
+        {
+            continue;
+        }
+        if (!Prefix.empty() && Asset.Key.rfind(Prefix, 0u) != 0u)
+        {
+            continue;
+        }
+        Matches.push_back(&Asset);
+    }
+    return Matches;
+}
 
 std::size_t CountNodesOfType(World& WorldRef, const TypeId& Type, const bool RootsOnly = false)
 {
@@ -484,7 +768,7 @@ TEST_CASE("Editor asset discovery shows source files and skips cooked packs", "[
     ScopedAssetRoot AssetRoot(Root.Path);
     EditorServiceContext Context(Host);
 
-    MaterialPayload Material{};
+    MaterialAsset Material{};
     Material.ShaderModule = "DiscoveryShader";
     auto MaterialJson = SerializeAuthoredAssetToJson(Material);
     REQUIRE(MaterialJson);
@@ -527,7 +811,7 @@ TEST_CASE("Editor asset discovery shows source files and skips cooked packs", "[
         return Asset.Key.ends_with(".snpak");
     }));
     CHECK(std::any_of(Assets.begin(), Assets.end(), [](const EditorAssetService::DiscoveredAsset& Asset) {
-        return Asset.Key == "Rendering/Visible.material" && Asset.AssetType == StaticTypeId<MaterialPayload>();
+        return Asset.Key == "Rendering/Visible.material" && Asset.AssetType == StaticTypeId<MaterialAsset>();
     }));
     CHECK(std::any_of(Assets.begin(), Assets.end(), [](const EditorAssetService::DiscoveredAsset& Asset) {
         return Asset.Key == "Conduit/Visible.conduitgraph" &&
@@ -547,7 +831,7 @@ TEST_CASE("Editor asset service can create and persist generic authored source a
     EditorServiceContext Context(Host);
 
     REQUIRE(Host.AssetService.RefreshDiscovery());
-    REQUIRE(Host.AssetService.CreateSourceAssetByType(Context, StaticTypeId<MaterialPayload>(), "UnitTestMaterial", "Rendering"));
+    REQUIRE(Host.AssetService.CreateSourceAssetByType(Context, StaticTypeId<MaterialAsset>(), "UnitTestMaterial", "Rendering"));
 
     const auto* Created = Host.AssetService.SelectedAsset();
     REQUIRE(Created != nullptr);
@@ -560,18 +844,18 @@ TEST_CASE("Editor asset service can create and persist generic authored source a
     REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
     auto Session = Host.AssetService.AssetEditorSession();
     REQUIRE(Session.IsOpen);
-    REQUIRE(Session.TargetType == StaticTypeId<MaterialPayload>());
-    auto* Material = static_cast<MaterialPayload*>(Session.TargetObject);
+    REQUIRE(Session.TargetType == StaticTypeId<MaterialAsset>());
+    auto* Material = static_cast<MaterialAsset*>(Session.TargetObject);
     REQUIRE(Material != nullptr);
     Material->ShaderModule = "SavedUnitTestShader";
     Material->FeatureAlphaBlend = true;
+    Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
 
-    Host.AssetService.TickAssetEditorSession(0.25f);
     CHECK(Host.AssetService.AssetEditorSession().RuntimeDirty);
 
     REQUIRE(Host.AssetService.SaveAssetByKey(CreatedKey));
 
-    MaterialPayload SavedMaterial{};
+    MaterialAsset SavedMaterial{};
     REQUIRE(DeserializeAuthoredAssetFromJson(
         ReadTextFile(Root.Path / "Rendering" / "UnitTestMaterial.material"),
         SavedMaterial));
@@ -788,8 +1072,8 @@ TEST_CASE("Typed prefabs persist default components and saved component settings
         Node->World()->BorrowedComponent(NodeHandleValue, StaticTypeId<TransformComponent>()));
     REQUIRE(Transform != nullptr);
     Transform->Position = Vec3(12.0, 34.0, 56.0);
+    Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
 
-    Host.AssetService.TickAssetEditorSession(0.25f);
     REQUIRE(Host.AssetService.SaveAssetByKey(CreatedKey));
 
     Host.AssetService.CloseAssetEditor();
@@ -891,7 +1175,7 @@ TEST_CASE("UI property panel edits on typed prefabs persist component settings t
     REQUIRE(EditedComponent != nullptr);
     CHECK(EditedComponent->GetSettings().FovDegrees == Catch::Approx(91.0f));
 
-    Host->AssetService.TickAssetEditorSession(0.0f);
+    Host->AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
     const bool RuntimeDirty = Host->AssetService.AssetEditorSession().RuntimeDirty;
     CHECK(RuntimeDirty);
     REQUIRE(Host->AssetService.SaveActiveAssetEditor());
@@ -979,7 +1263,7 @@ TEST_CASE("World render settings prefab saves referenced fog params without dead
     }
     CHECK(FogChildCount == 1);
 
-    Host.AssetService.TickAssetEditorSession(0.25f);
+    Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
     REQUIRE(Host.AssetService.SaveActiveAssetEditor());
 
     const std::string SavedJson = ReadTextFile(Root.Path / "Rendering" / "UnitWorldRenderSettings.prefab");
@@ -1054,7 +1338,7 @@ TEST_CASE("Project default render settings do not duplicate authored world rende
     SettingsNode->EditHeightFogParams().EditAssetName() = FogAssetKey;
     SettingsNode->EditHeightFogParams().EditAssetId() = FogAssetId;
     SettingsNode->EditorOnPropertyChanged("HeightFogParams");
-    Host.AssetService.TickAssetEditorSession(0.25f);
+    Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
     REQUIRE(Host.AssetService.SaveActiveAssetEditor());
     Host.AssetService.CloseAssetEditor();
 
@@ -1493,8 +1777,8 @@ TEST_CASE("Typed prefabs with Conduit class components reopen in the asset edito
     auto ComponentResult = RootNode->Add<Conduit::ClassComponent>();
     REQUIRE(ComponentResult);
     ComponentResult->Class.EditAssetName() = "Conduit/TestClass.conduitclass";
+    Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
 
-    Host.AssetService.TickAssetEditorSession(0.0f);
     REQUIRE(Host.AssetService.AssetEditorSession().RuntimeDirty);
     REQUIRE(Host.AssetService.SaveActiveAssetEditor());
 
@@ -1509,4 +1793,199 @@ TEST_CASE("Typed prefabs with Conduit class components reopen in the asset edito
     auto ReopenedComponent = ReopenedNode->Component<Conduit::ClassComponent>();
     REQUIRE(ReopenedComponent);
     CHECK(ReopenedComponent->Class.GetAssetName() == "Conduit/TestClass.conduitclass");
+}
+
+TEST_CASE("Editor asset service imports raw textures as authored texture assets",
+          "[Assets][Editor][Source][Import]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    const std::filesystem::path SourceTexture = WriteTinyPngFixture(Root.Path / "ImportInput");
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.ImportSourceAsset(Context, SourceTexture.string(), "Rendering", {}));
+
+    const auto TextureAssets = FindDiscoveredAssetsByType<TextureAsset>(Host.AssetService, "Rendering/");
+    REQUIRE(TextureAssets.size() == 1u);
+
+    const auto* ImportedTexture = TextureAssets.front();
+    REQUIRE(ImportedTexture != nullptr);
+    const std::string ImportedTextureKey = ImportedTexture->Key;
+    CHECK(ImportedTexture->Key.ends_with(".texture"));
+    CHECK(ImportedTexture->CanSave);
+
+    const auto* Selected = Host.AssetService.SelectedAsset();
+    REQUIRE(Selected != nullptr);
+    CHECK(Selected->Key == ImportedTexture->Key);
+    CHECK(Selected->AssetType == StaticTypeId<TextureAsset>());
+
+    TextureAsset SavedTexture{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(ReadTextFile(Root.Path / std::filesystem::path(ImportedTexture->Key)), SavedTexture));
+    CHECK(SavedTexture.Image.Width == 1u);
+    CHECK(SavedTexture.Image.Height == 1u);
+    CHECK(SavedTexture.Image.Channels == 4u);
+    CHECK_FALSE(SavedTexture.Image.Pixels.empty());
+    CHECK(SavedTexture.ImportSettings.Target == "BCn");
+    CHECK(SavedTexture.ImportSettings.Format == "Auto");
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(ImportedTexture->Key));
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    CHECK(Session.TargetType == StaticTypeId<TextureAsset>());
+    auto* Texture = static_cast<TextureAsset*>(Session.TargetObject);
+    REQUIRE(Texture != nullptr);
+    CHECK(Texture->Image.Width == 1u);
+    CHECK(Texture->Image.Height == 1u);
+    CHECK(Session.HasImportSettings);
+    CHECK(Session.ImportSettingsType == StaticTypeId<Editor::TextureImportSettings>());
+    auto* ImportSettings = static_cast<Editor::TextureImportSettings*>(Session.ImportSettingsObject);
+    REQUIRE(ImportSettings != nullptr);
+    CHECK(ImportSettings->Target == Editor::ETextureCompressionTarget::BCn);
+    CHECK(ImportSettings->Format == Editor::ETextureCompressionFormat::Auto);
+    CHECK(Session.CanReimport);
+
+    ImportSettings->ForceLinear = true;
+    ImportSettings->MaxMips = 3u;
+    Host.AssetService.NotifyActiveAssetEditorImportSettingsMutated(Session.ImportSettingsType, Session.ImportSettingsObject);
+    CHECK(Host.AssetService.AssetEditorSession().IsDirty);
+    CHECK(Host.AssetService.AssetEditorSession().ImportSettingsDirty);
+    REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    TextureAsset ResavedTexture{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / std::filesystem::path(ImportedTextureKey)),
+        ResavedTexture));
+    CHECK(ResavedTexture.ImportSettings.ForceLinear);
+    CHECK(ResavedTexture.ImportSettings.MaxMips == 3u);
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(ImportedTextureKey));
+    const auto ReopenedSession = Host.AssetService.AssetEditorSession();
+    REQUIRE(ReopenedSession.IsOpen);
+    auto* ReopenedImportSettings = static_cast<Editor::TextureImportSettings*>(ReopenedSession.ImportSettingsObject);
+    REQUIRE(ReopenedImportSettings != nullptr);
+    CHECK(ReopenedImportSettings->ForceLinear);
+    CHECK(ReopenedImportSettings->MaxMips == 3u);
+}
+
+TEST_CASE("Editor asset service imports models into authored sibling assets and opens the authored mesh",
+          "[Assets][Editor][Source][Import]")
+{
+    TempDir ImportRoot{};
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+    const std::filesystem::path SourceModel = WriteEmbeddedTextureGltfFixture(ImportRoot.Path / "ImportInputModel");
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    const auto ImportResult = Host.AssetService.ImportSourceAsset(Context, SourceModel.string(), "Rendering", {});
+    const std::string ImportErrorMessage = ImportResult ? std::string{} : ImportResult.error().Message;
+    INFO(ImportErrorMessage);
+    REQUIRE(ImportResult);
+
+    const auto StaticMeshes = FindDiscoveredAssetsByType<StaticMeshAsset>(Host.AssetService, "Rendering/");
+    const auto Materials = FindDiscoveredAssetsByType<MaterialAsset>(Host.AssetService, "Rendering/");
+    const auto MaterialInstances = FindDiscoveredAssetsByType<MaterialInstanceAsset>(Host.AssetService, "Rendering/");
+    const auto Textures = FindDiscoveredAssetsByType<TextureAsset>(Host.AssetService, "Rendering/");
+
+    REQUIRE(StaticMeshes.size() == 1u);
+    REQUIRE(Materials.size() == 1u);
+    REQUIRE(MaterialInstances.size() == 1u);
+    REQUIRE(Textures.size() == 1u);
+    const std::string StaticMeshKey = StaticMeshes.front()->Key;
+    const std::string MaterialInstanceKey = MaterialInstances.front()->Key;
+
+    const auto* Selected = Host.AssetService.SelectedAsset();
+    REQUIRE(Selected != nullptr);
+    CHECK(Selected->Key == StaticMeshes.front()->Key);
+    CHECK(Selected->AssetType == StaticTypeId<StaticMeshAsset>());
+
+    StaticMeshAsset SavedMesh{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(ReadTextFile(Root.Path / std::filesystem::path(StaticMeshes.front()->Key)), SavedMesh));
+    REQUIRE(SavedMesh.Mesh.MaterialInstances.size() == 1u);
+    CHECK(SavedMesh.Mesh.MaterialInstances.front().AssetName == MaterialInstances.front()->Key);
+    CHECK(SavedMesh.Mesh.MaterialInstances.front().AssetId == MaterialInstances.front()->AssetId.ToString());
+
+    MaterialInstanceAsset SavedMaterialInstance{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / std::filesystem::path(MaterialInstances.front()->Key)),
+        SavedMaterialInstance));
+    CHECK(SavedMaterialInstance.ParentMaterial.AssetName == Materials.front()->Key);
+    CHECK(SavedMaterialInstance.ParentMaterial.AssetId == Materials.front()->AssetId.ToString());
+    REQUIRE(SavedMaterialInstance.Textures.size() == 1u);
+    CHECK(SavedMaterialInstance.Textures.front().Texture.AssetName == Textures.front()->Key);
+    CHECK(SavedMaterialInstance.Textures.front().Texture.AssetId == Textures.front()->AssetId.ToString());
+    CHECK(SavedMaterialInstance.Textures.front().Texture.AssetName.ends_with(".texture"));
+
+    TextureAsset SavedTexture{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(ReadTextFile(Root.Path / std::filesystem::path(Textures.front()->Key)), SavedTexture));
+    CHECK(SavedTexture.Image.Width == 1u);
+    CHECK(SavedTexture.Image.Height == 1u);
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(StaticMeshes.front()->Key));
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    CHECK(Session.TargetType == StaticTypeId<StaticMeshAsset>());
+    auto* Mesh = static_cast<StaticMeshAsset*>(Session.TargetObject);
+    REQUIRE(Mesh != nullptr);
+    REQUIRE(Mesh->Mesh.MaterialInstances.size() == 1u);
+    CHECK(Mesh->Mesh.MaterialInstances.front().AssetName == MaterialInstances.front()->Key);
+    CHECK(Session.HasImportSettings);
+    CHECK(Session.ImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>());
+    auto* ImportSettings = static_cast<Editor::AssimpImportSettings*>(Session.ImportSettingsObject);
+    REQUIRE(ImportSettings != nullptr);
+    CHECK(ImportSettings->ImportMaterials);
+    CHECK(ImportSettings->ImportTextures);
+    CHECK(Session.CanReimport);
+
+    ImportSettings->FlipUVs = true;
+    ImportSettings->MaxBonesPerVertex = 6u;
+    Host.AssetService.NotifyActiveAssetEditorImportSettingsMutated(Session.ImportSettingsType, Session.ImportSettingsObject);
+    CHECK(Host.AssetService.AssetEditorSession().IsDirty);
+    CHECK(Host.AssetService.AssetEditorSession().ImportSettingsDirty);
+    REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    StaticMeshAsset ResavedMesh{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / std::filesystem::path(StaticMeshKey)),
+        ResavedMesh));
+    CHECK(ResavedMesh.ImportSettings.FlipUVs);
+    CHECK(ResavedMesh.ImportSettings.MaxBonesPerVertex == 6u);
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(StaticMeshKey));
+    const auto ReopenedSession = Host.AssetService.AssetEditorSession();
+    REQUIRE(ReopenedSession.IsOpen);
+    auto* ReopenedImportSettings = static_cast<Editor::AssimpImportSettings*>(ReopenedSession.ImportSettingsObject);
+    REQUIRE(ReopenedImportSettings != nullptr);
+    CHECK(ReopenedImportSettings->FlipUVs);
+    CHECK(ReopenedImportSettings->MaxBonesPerVertex == 6u);
+
+    const std::filesystem::path MetadataPath = Root.Path / ".snapi_editor" / "asset_import_metadata.json";
+    std::error_code RemoveError{};
+    REQUIRE(std::filesystem::remove(MetadataPath, RemoveError));
+    REQUIRE_FALSE(RemoveError);
+
+    {
+        TestEditorHost ReloadedHost{};
+        ScopedAssetRoot ReloadedAssetRoot(Root.Path);
+
+        REQUIRE(ReloadedHost.AssetService.RefreshDiscovery());
+        REQUIRE(ReloadedHost.AssetService.OpenAssetEditorByKey(MaterialInstanceKey));
+        const auto FallbackSession = ReloadedHost.AssetService.AssetEditorSession();
+        REQUIRE(FallbackSession.IsOpen);
+        CHECK(FallbackSession.HasImportSettings);
+        CHECK(FallbackSession.ImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>());
+        CHECK(FallbackSession.CanReimport);
+        auto* FallbackImportSettings = static_cast<Editor::AssimpImportSettings*>(FallbackSession.ImportSettingsObject);
+        REQUIRE(FallbackImportSettings != nullptr);
+        CHECK(FallbackImportSettings->FlipUVs);
+        CHECK(FallbackImportSettings->MaxBonesPerVertex == 6u);
+    }
 }

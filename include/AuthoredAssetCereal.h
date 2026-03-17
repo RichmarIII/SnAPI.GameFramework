@@ -22,6 +22,7 @@
 #include "Conduit/Asset.h"
 #include "NodeAsset.h"
 #include "RenderAssetPayloads.h"
+#include "RenderAssetSourcePayloads.h"
 #include "TypeRegistry.h"
 
 namespace SnAPI::GameFramework::Detail
@@ -319,6 +320,23 @@ void serialize(Archive& Ar, AssetRefPayload& Value)
        Detail::Nvp("AssetId", Value.AssetId));
 }
 
+template<class Archive>
+void serialize(Archive& Ar, ImportBuildOptionPayload& Value)
+{
+    Ar(Detail::Nvp("Key", Value.Key),
+       Detail::Nvp("Value", Value.Value));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, ImportedAssetProvenancePayload& Value)
+{
+    Ar(Detail::Nvp("Profile", Value.Profile),
+       Detail::Nvp("SourcePath", Value.SourcePath),
+       Detail::Nvp("DestinationFolder", Value.DestinationFolder),
+       Detail::Nvp("ImporterName", Value.ImporterName),
+       Detail::Nvp("BuildOptions", Value.BuildOptions));
+}
+
 template<class Archive, typename TBase, typename TNameTag>
 void serialize(Archive& Ar, TAssetRef<TBase, TNameTag>& Value)
 {
@@ -361,6 +379,105 @@ void serialize(Archive& Ar, StaticMeshPayload& Value)
        Detail::Nvp("SubMeshes", Value.SubMeshes),
        Detail::Nvp("MaterialInstances", Value.MaterialInstances),
        Detail::Nvp("Streams", Value.Streams));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, MeshStreamSourcePayload& Value)
+{
+    Ar(Detail::Nvp("Semantic", Value.Semantic),
+       Detail::Nvp("SubIndex", Value.SubIndex),
+       Detail::Nvp("Uri", Value.Uri),
+       Detail::Nvp("Bytes", Value.Bytes),
+       Detail::Nvp("ElementCount", Value.ElementCount),
+       Detail::Nvp("StrideBytes", Value.StrideBytes),
+       Detail::Nvp("Compress", Value.Compress));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, MeshImportSettingsPayload& Value)
+{
+    Ar(Detail::Nvp("GenerateNormals", Value.GenerateNormals),
+       Detail::Nvp("GenerateTangents", Value.GenerateTangents),
+       Detail::Nvp("FlipUVs", Value.FlipUVs),
+       Detail::Nvp("OptimizeMeshes", Value.OptimizeMeshes),
+       Detail::Nvp("ForceSkeletal", Value.ForceSkeletal),
+       Detail::Nvp("ForceStatic", Value.ForceStatic),
+       Detail::Nvp("ImportMaterials", Value.ImportMaterials),
+       Detail::Nvp("ImportTextures", Value.ImportTextures),
+       Detail::Nvp("ImportAnimations", Value.ImportAnimations),
+       Detail::Nvp("ImportSkeleton", Value.ImportSkeleton),
+       Detail::Nvp("MaxBonesPerVertex", Value.MaxBonesPerVertex));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, TextureSourceImagePayload& Value)
+{
+    Ar(Detail::Nvp("Width", Value.Width),
+       Detail::Nvp("Height", Value.Height),
+       Detail::Nvp("Channels", Value.Channels),
+       Detail::Nvp("BitsPerChannel", Value.BitsPerChannel),
+       Detail::Nvp("IsFloat", Value.IsFloat),
+       Detail::Nvp("HasNonTrivialAlpha", Value.HasNonTrivialAlpha),
+       Detail::Nvp("SRGB", Value.SRGB),
+       Detail::Nvp("SourceFilename", Value.SourceFilename),
+       Detail::Nvp("Pixels", Value.Pixels));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, TextureImportSettingsPayload& Value)
+{
+    Ar(Detail::Nvp("Target", Value.Target),
+       Detail::Nvp("Format", Value.Format),
+       Detail::Nvp("Quality", Value.Quality),
+       Detail::Nvp("ForceSrgb", Value.ForceSrgb),
+       Detail::Nvp("ForceLinear", Value.ForceLinear),
+       Detail::Nvp("ForceNormalMap", Value.ForceNormalMap),
+       Detail::Nvp("MaxMips", Value.MaxMips));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, TextureAsset& Value)
+{
+    Ar(Detail::Nvp("Image", Value.Image),
+       Detail::Nvp("ImportSettings", Value.ImportSettings),
+       Detail::Nvp("Provenance", Value.Provenance));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, StaticMeshAsset& Value)
+{
+    Ar(Detail::Nvp("Mesh", Value.Mesh),
+       Detail::Nvp("Streams", Value.Streams),
+       Detail::Nvp("ImportSettings", Value.ImportSettings),
+       Detail::Nvp("Provenance", Value.Provenance));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, SkeletalMeshAsset& Value)
+{
+    Ar(Detail::Nvp("BaseMesh", Value.BaseMesh),
+       Detail::Nvp("Bones", Value.Bones),
+       Detail::Nvp("Skeleton", Value.Skeleton),
+       Detail::Nvp("Animations", Value.Animations),
+       Detail::Nvp("SkeletonAnimationUri", Value.SkeletonAnimationUri),
+       Detail::Nvp("SkeletonAnimationBytes", Value.SkeletonAnimationBytes),
+       Detail::Nvp("SkeletonAnimationSubIndex", Value.SkeletonAnimationSubIndex),
+       Detail::Nvp("CompressSkeletonAnimation", Value.CompressSkeletonAnimation),
+       Detail::Nvp("Provenance", Value.Provenance));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, SkeletonAsset& Value)
+{
+    Ar(Detail::Nvp("Skeleton", Value.Skeleton),
+       Detail::Nvp("Provenance", Value.Provenance));
+}
+
+template<class Archive>
+void serialize(Archive& Ar, SkeletalAnimationAsset& Value)
+{
+    Ar(Detail::Nvp("Animation", Value.Animation),
+       Detail::Nvp("Provenance", Value.Provenance));
 }
 
 template<class Archive>
@@ -414,7 +531,7 @@ void serialize(Archive& Ar, SkeletalMeshPayload& Value)
 }
 
 template<class Archive>
-void serialize(Archive& Ar, MaterialPayload& Value)
+void serialize(Archive& Ar, MaterialAsset& Value)
 {
     Ar(Detail::Nvp("ShaderModule", Value.ShaderModule),
        Detail::Nvp("ShadingModel", Value.ShadingModel),
@@ -426,7 +543,8 @@ void serialize(Archive& Ar, MaterialPayload& Value)
        Detail::Nvp("FeatureAlphaTest", Value.FeatureAlphaTest),
        Detail::Nvp("FeatureAlphaBlend", Value.FeatureAlphaBlend),
        Detail::Nvp("FeatureDoubleSided", Value.FeatureDoubleSided),
-       Detail::Nvp("FeatureInstancing", Value.FeatureInstancing));
+       Detail::Nvp("FeatureInstancing", Value.FeatureInstancing),
+       Detail::Nvp("Provenance", Value.Provenance));
 }
 
 template<class Archive>
@@ -472,12 +590,13 @@ void serialize(Archive& Ar, MaterialTextureParamPayload& Value)
 }
 
 template<class Archive>
-void serialize(Archive& Ar, MaterialInstancePayload& Value)
+void serialize(Archive& Ar, MaterialInstanceAsset& Value)
 {
     Ar(Detail::Nvp("ParentMaterial", Value.ParentMaterial),
        Detail::Nvp("Scalars", Value.Scalars),
        Detail::Nvp("Vectors", Value.Vectors),
-       Detail::Nvp("Textures", Value.Textures));
+       Detail::Nvp("Textures", Value.Textures),
+       Detail::Nvp("Provenance", Value.Provenance));
 }
 
 template<class Archive>
@@ -588,6 +707,13 @@ void serialize(Archive& Ar, GraphViewportAsset& Value)
 }
 
 template<class Archive>
+void serialize(Archive& Ar, GraphNodeInputDefaultAsset& Value)
+{
+    Ar(Detail::Nvp("PinKey", Value.PinKey),
+       Detail::Nvp("Value", Value.Value));
+}
+
+template<class Archive>
 void serialize(Archive& Ar, GraphNodeEditorAsset& Value)
 {
     Ar(Detail::Nvp("NodeId", Value.NodeId),
@@ -653,7 +779,8 @@ void serialize(Archive& Ar, GraphNodeAsset& Value)
        Detail::Nvp("Instance", Value.Instance),
        Detail::Nvp("ReturnSlot", Value.ReturnSlot),
        Detail::Nvp("OwnerType", Value.OwnerType),
-       Detail::Nvp("Inputs", Value.Inputs));
+       Detail::Nvp("Inputs", Value.Inputs),
+       Detail::Nvp("InputDefaults", Value.InputDefaults));
 }
 
 template<class Archive>

@@ -277,7 +277,8 @@ Result RawInvokeImpl(const TRawMethodPayload<R(T::*)(Args...)>& Payload,
     {
         if (!ReturnStorage)
         {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null return storage"));
+            (void)(Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...);
+            return Ok();
         }
         if constexpr (std::is_lvalue_reference_v<R>)
         {
@@ -321,7 +322,8 @@ Result RawInvokeConstImpl(const TRawMethodPayload<R(T::*)(Args...) const>& Paylo
     {
         if (!ReturnStorage)
         {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Null return storage"));
+            (void)(Typed->*(Payload.Method))(ConvertRawArg<Args>(ArgsPack[I])...);
+            return Ok();
         }
         if constexpr (std::is_lvalue_reference_v<R>)
         {

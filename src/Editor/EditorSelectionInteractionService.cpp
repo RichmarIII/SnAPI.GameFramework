@@ -9,7 +9,6 @@
 #include "Editor/EditorSceneService.h"
 #include "Editor/EditorSelectionService.h"
 #include "GameRuntime.h"
-#include "RenderAssetRuntime.h"
 #include "StaticMeshComponent.h"
 #include "SkeletalMeshComponent.h"
 #include "TransformComponent.h"

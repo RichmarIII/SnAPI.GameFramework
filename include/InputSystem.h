@@ -11,6 +11,7 @@
 #include "TypeName.h"
 
 #include <Input.h>
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -38,9 +39,11 @@ namespace SnAPI::GameFramework
  *
  * @see InputSystem
  */
+SnType()
 struct InputBootstrapSettings
 {
 #if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
+    SnField(SnKey("Backend"))
     SnAPI::Input::EInputBackend Backend = SnAPI::Input::EInputBackend::SDL3; /**< @brief Backend selected for context creation. */
 #elif defined(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI) && SNAPI_INPUT_ENABLE_BACKEND_HIDAPI
     SnAPI::Input::EInputBackend Backend = SnAPI::Input::EInputBackend::HIDAPI; /**< @brief Backend selected for context creation. */
@@ -52,18 +55,21 @@ struct InputBootstrapSettings
     SnAPI::Input::InputBackendCreateDesc CreateDesc{}; /**< @brief Context creation descriptor passed directly to SnAPI.Input backend creation. */
 
 #if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
+    SnField(SnKey("RegisterSdl3Backend"))
     bool RegisterSdl3Backend = true; /**< @brief Auto-register SDL3 backend factory before creating context. */
 #else
     bool RegisterSdl3Backend = false; /**< @brief Auto-register SDL3 backend factory before creating context. */
 #endif
 
 #if defined(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI) && SNAPI_INPUT_ENABLE_BACKEND_HIDAPI
+    SnField(SnKey("RegisterHidApiBackend"))
     bool RegisterHidApiBackend = true; /**< @brief Auto-register HIDAPI backend factory before creating context. */
 #else
     bool RegisterHidApiBackend = false; /**< @brief Auto-register HIDAPI backend factory before creating context. */
 #endif
 
 #if defined(SNAPI_INPUT_ENABLE_BACKEND_LIBUSB) && SNAPI_INPUT_ENABLE_BACKEND_LIBUSB
+    SnField(SnKey("RegisterLibUsbBackend"))
     bool RegisterLibUsbBackend = true; /**< @brief Auto-register libusb backend factory before creating context. */
 #else
     bool RegisterLibUsbBackend = false; /**< @brief Auto-register libusb backend factory before creating context. */
@@ -107,6 +113,7 @@ struct InputBootstrapSettings
  * @see World
  * @see InputBootstrapSettings
  */
+SnType()
 class InputSystem final : public ITaskDispatcher
 {
 public:
@@ -159,6 +166,7 @@ public:
      * @brief Check whether a context is initialized and ready for pumping.
      * @return True when initialized.
      */
+    SnFunction(SnKey("IsInitialized"))
     bool IsInitialized() const;
 
     /**
@@ -194,6 +202,7 @@ public:
      * @return Settings currently used by this subsystem.
      * @remarks Returns a borrowed reference owned by the subsystem.
      */
+    SnFunction(SnKey("Settings"))
     const InputBootstrapSettings& Settings() const;
 
     /**

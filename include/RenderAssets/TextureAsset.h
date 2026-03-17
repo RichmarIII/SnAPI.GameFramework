@@ -1,0 +1,58 @@
+#pragma once
+
+#include <vector>
+
+#include "Expected.h"
+#include "IAsset.h"
+#include "RenderAssets/ImportedAssetProvenancePayload.h"
+#include "RenderAssets/TextureImportSettingsPayload.h"
+#include "RenderAssets/TextureSourceImagePayload.h"
+
+#include <TextureCompressorIds.h>
+
+namespace SnAPI::GameFramework
+{
+
+SnType()
+struct TextureAsset : public IAsset
+{
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::TextureAsset";
+
+    SnField(SnKey("Image"))
+    TextureSourceImagePayload Image{};
+    SnField(SnKey("ImportSettings"))
+    TextureImportSettingsPayload ImportSettings{};
+    SnField(SnKey("Provenance"))
+    ImportedAssetProvenancePayload Provenance{};
+
+    [[nodiscard]] std::string_view DisplayName() const override { return "Texture"; }
+    [[nodiscard]] std::string_view FileExtension() const override { return ".texture"; }
+    [[nodiscard]] std::string_view Category() const override { return "Rendering"; }
+    [[nodiscard]] bool CanCreate() const override { return false; }
+    [[nodiscard]] Result Save(std::ostream& Output) const override;
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourceAssetKind() const override
+    {
+        return TextureCompressorPlugin::AssetKind_CompressedTexture;
+    }
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId SourcePayloadType() const override { return PayloadTextureSource(); }
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId CookedAssetKind() const override
+    {
+        return TextureCompressorPlugin::AssetKind_CompressedTexture;
+    }
+    [[nodiscard]] ::SnAPI::AssetPipeline::TypeId CookedPayloadType() const override
+    {
+        return TextureCompressorPlugin::Payload_CompressorCookedInfo;
+    }
+
+    bool operator==(const TextureAsset& Other) const
+    {
+        return Image == Other.Image &&
+               ImportSettings == Other.ImportSettings &&
+               Provenance == Other.Provenance;
+    }
+};
+
+TExpected<void> SerializeTextureSourcePayload(const TextureAsset& Payload, std::vector<uint8_t>& OutBytes);
+TExpected<TextureAsset> DeserializeTextureSourcePayload(const uint8_t* Bytes, size_t Size);
+
+} // namespace SnAPI::GameFramework

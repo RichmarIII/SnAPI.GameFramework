@@ -11,13 +11,12 @@
 #include <string_view>
 
 #include <LinearAlgebra.hpp>
+#include <MaterialInstance.hpp>
 #include <MeshRenderObject.hpp>
 
 #include "BaseNode.h"
 #include "IWorld.h"
 #include "PathResolver.h"
-#include "RenderAssetRuntime.h"
-#include "RenderAssetSharedResources.h"
 #include "RendererSystem.h"
 #include "TransformComponent.h"
 
@@ -96,7 +95,7 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
     return true;
 }
 
-[[nodiscard]] std::string BuildMeshAssetToken(const TAssetRef<SkeletalMeshAssetRuntime>& MeshAssetRef)
+[[nodiscard]] std::string BuildMeshAssetToken(const SkeletalMeshAssetRef& MeshAssetRef)
 {
     const std::string AssetId = MeshAssetRef.GetAssetId();
     if (!AssetId.empty())
@@ -111,6 +110,50 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
     }
 
     return {};
+}
+
+[[nodiscard]] std::vector<TAssetRef<MaterialInstanceAsset>> BuildMaterialRefsFromPayloads(
+    const std::vector<AssetRefPayload>& Payloads)
+{
+    std::vector<TAssetRef<MaterialInstanceAsset>> Refs{};
+    Refs.reserve(Payloads.size());
+    for (const AssetRefPayload& Payload : Payloads)
+    {
+        Refs.emplace_back(Payload.AssetName, Payload.AssetId);
+    }
+    return Refs;
+}
+
+void ApplyRuntimeOrDefaultMaterialInstances(
+    SnAPI::Graphics::IRenderObject& RenderObject,
+    RendererSystem& Renderer,
+    const std::vector<TAssetRef<MaterialInstanceAsset>>& MaterialRefs,
+    ::SnAPI::AssetPipeline::AssetManager* AssetManager)
+{
+    Renderer.ApplyDefaultMaterials(RenderObject);
+
+    const auto& Source = RenderObject.VertexStreamSource();
+    if (!Source || !AssetManager)
+    {
+        return;
+    }
+
+    for (uint32_t SubMeshIndex = 0; SubMeshIndex < Source->SubMeshCount(); ++SubMeshIndex)
+    {
+        SnAPI::Graphics::VertexSourceSubMesh SubMesh{};
+        const bool HasSubMesh = Source->SubMesh(SubMeshIndex, SubMesh);
+        const uint32_t MaterialSlot = HasSubMesh ? SubMesh.MaterialSlot : SubMeshIndex;
+        if (MaterialSlot >= MaterialRefs.size())
+        {
+            continue;
+        }
+
+        auto RuntimeInstance = MaterialRefs[MaterialSlot].GetRuntimeShared<SnAPI::Graphics::MaterialInstance>(*AssetManager);
+        if (RuntimeInstance && *RuntimeInstance && (*RuntimeInstance)->Material())
+        {
+            RenderObject.SetMaterialInstance(SubMeshIndex, *RuntimeInstance);
+        }
+    }
 }
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
@@ -365,44 +408,37 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
     {
         if (auto* AssetManager = ResolveDefaultAssetManager())
         {
-            auto SharedRuntimeMesh = m_settings.MeshAsset.GetShared(*AssetManager);
-            if (SharedRuntimeMesh && SharedRuntimeMesh->Get())
+            auto RuntimeSource = m_settings.MeshAsset.GetRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*AssetManager);
+            auto AuthoredMesh = m_settings.MeshAsset.LoadAsset();
+            if (RuntimeSource && *RuntimeSource)
             {
                 std::string AssetToken = BuildMeshAssetToken(m_settings.MeshAsset);
-                if (AssetToken.empty() && !SharedRuntimeMesh->GetAssetId().IsNull())
-                {
-                    AssetToken = "asset-id://" + SharedRuntimeMesh->GetAssetId().ToString();
-                }
                 if (AssetToken.empty())
                 {
-                    AssetToken = "asset-runtime://" +
-                        std::to_string(static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(SharedRuntimeMesh->Get())));
+                    AssetToken = "asset-ref://" + m_settings.MeshAsset.DisplayLabel();
                 }
 
-                auto StreamSource = AcquireSharedRuntimeMeshStreamSource(*SharedRuntimeMesh->Get(), AssetToken);
-                if (StreamSource)
+                if (auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>())
                 {
-                    auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>();
-                    if (RenderObject)
-                    {
-                        RenderObject->SetVertexStreamSource(std::move(StreamSource));
-                        m_renderObject = std::move(RenderObject);
-                        m_loadedPath = AssetToken;
-                        m_loadedFromAsset = true;
-                        m_lastAutoPlayAnimation.clear();
-                        m_lastAutoPlayLoop = m_settings.LoopAnimations;
-                        m_autoPlayApplied = false;
-                        m_registered = false;
+                    RenderObject->SetVertexStreamSource(*RuntimeSource);
+                    m_renderObject = std::move(RenderObject);
+                    m_loadedPath = AssetToken;
+                    m_loadedFromAsset = true;
+                    m_lastAutoPlayAnimation.clear();
+                    m_lastAutoPlayLoop = m_settings.LoopAnimations;
+                    m_autoPlayApplied = false;
+                    m_registered = false;
 
-                        ApplyRuntimeOrDefaultMaterialInstances(
-                            *m_renderObject,
-                            *Renderer,
-                            SharedRuntimeMesh->Get()->MaterialInstances,
-                            AssetManager);
-                        ApplyRenderObjectState(*m_renderObject);
+                    ApplyRuntimeOrDefaultMaterialInstances(
+                        *m_renderObject,
+                        *Renderer,
+                        (AuthoredMesh && *AuthoredMesh)
+                            ? BuildMaterialRefsFromPayloads((*AuthoredMesh)->BaseMesh.Mesh.MaterialInstances)
+                            : std::vector<TAssetRef<MaterialInstanceAsset>>{},
+                        AssetManager);
+                    ApplyRenderObjectState(*m_renderObject);
 
-                        return true;
-                    }
+                    return true;
                 }
             }
         }

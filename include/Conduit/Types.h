@@ -8,6 +8,7 @@
 #include "Expected.h"
 #include "TypeName.h"
 #include "TypeRegistry.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework::Conduit
 {
@@ -29,11 +30,13 @@ namespace SnAPI::GameFramework::Conduit
  * - compiled nodes read/write slot ids during execution
  * - the authored graph layer should treat slot ids as compiler internals
  */
+SnType()
 struct SlotId
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Conduit::SlotId";
     static constexpr std::uint32_t InvalidValue = std::numeric_limits<std::uint32_t>::max(); /**< @brief Sentinel used for invalid slot ids. */
 
+    SnField(SnKey("Value"))
     std::uint32_t Value = InvalidValue; /**< @brief Dense slot index within one frame layout. */
 
     /**
@@ -87,6 +90,7 @@ struct LabelId
  * against a bound host object. Custom entrypoints are represented by `None` plus a user
  * supplied string name.
  */
+SnType()
 enum class EBuiltinEntryPoint : std::uint8_t
 {
     None,      /**< @brief Custom named entrypoint. */
@@ -166,6 +170,7 @@ enum class EBuiltinEntryPoint : std::uint8_t
  * - handle slots are used when runtime execution must later resolve a live instance
  * - Conduit does not persist raw borrows in frame storage
  */
+SnType()
 enum class ESlotKind : std::uint8_t
 {
     Value,  /**< @brief Owned value stored directly in the frame. */
@@ -188,6 +193,7 @@ enum class ENodeKind : std::uint8_t
 {
     Constant,          /**< @brief Copy a baked constant into one output slot. */
     SlotCopy,          /**< @brief Copy one initialized slot value into another slot. */
+    DefaultConstruct,  /**< @brief Default-construct one reflected value into an output slot. */
     UnaryIntrinsic,    /**< @brief Execute one built-in unary operation. */
     BinaryIntrinsic,   /**< @brief Execute one built-in binary operation. */
     Jump,              /**< @brief Unconditional control-flow jump. */
@@ -207,6 +213,7 @@ enum class ENodeKind : std::uint8_t
  * Intrinsics exist so authored graphs do not need reflected helper methods for
  * fundamental logic and arithmetic operations.
  */
+SnType()
 enum class EUnaryIntrinsicOp : std::uint8_t
 {
     LogicalNot, /**< @brief Boolean negation (`!Value`). */
@@ -222,6 +229,7 @@ enum class EUnaryIntrinsicOp : std::uint8_t
  * - logical ops require `bool`
  * - equality can use either specialized intrinsic dispatch or reflected `RuntimeOps->Equals`
  */
+SnType()
 enum class EBinaryIntrinsicOp : std::uint8_t
 {
     Add,          /**< @brief `Left + Right`. */

@@ -217,6 +217,14 @@ public:
     Result CommitSelectedVariableComplexDefault();
     /** @brief Reset service-owned scratch storage from the selected graph variable default. */
     Result ResetSelectedVariableDefaultEditor();
+    /** @brief Apply a bool fallback value to one selected node input pin. */
+    Result SetSelectedNodeInputDefaultBool(std::string_view PinKey, bool Value);
+    /** @brief Apply a text-encoded fallback value to one selected node input pin. */
+    Result SetSelectedNodeInputDefaultText(std::string_view PinKey, std::string_view Value);
+    /** @brief Apply an enum-entry fallback value to one selected node input pin. */
+    Result SetSelectedNodeInputDefaultEnum(std::string_view PinKey, std::string_view EnumName);
+    /** @brief Clear one explicit fallback value from a selected node input pin. */
+    Result ClearSelectedNodeInputDefault(std::string_view PinKey);
     /** @brief Apply the primary editable text field for the currently selected node. */
     Result SetSelectedNodePrimaryText(std::string_view Value);
     /** @brief Apply the secondary editable text field for the currently selected node. */

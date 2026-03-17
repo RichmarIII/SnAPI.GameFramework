@@ -8,6 +8,7 @@
 
 #include "BaseNode.h"
 #include "Export.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -58,6 +59,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API SSAOParamsNode : public BaseNode, public NodeCRTP<SSAOParamsNode>
 {
 public:
@@ -76,6 +78,7 @@ public:
      * @brief Access the target viewport selector.
      * @return Mutable viewport id. Negative values mean "apply to all current viewports".
      */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /**
      * @brief Read the target viewport selector.
@@ -87,6 +90,7 @@ public:
      * @brief Access the SSAO sample radius.
      * @return Mutable radius in renderer scene units. Negative values are clamped to zero when applied.
      */
+    SnField(SnKey("Radius"), SnConstGetter(GetRadius))
     float& EditRadius();
     /**
      * @brief Read the SSAO sample radius.
@@ -98,6 +102,7 @@ public:
      * @brief Access the depth bias used to suppress self-occlusion.
      * @return Mutable non-negative bias value.
      */
+    SnField(SnKey("Bias"), SnConstGetter(GetBias))
     float& EditBias();
     /**
      * @brief Read the depth bias used to suppress self-occlusion.
@@ -109,6 +114,7 @@ public:
      * @brief Access the occlusion intensity multiplier.
      * @return Mutable non-negative intensity scalar.
      */
+    SnField(SnKey("Intensity"), SnConstGetter(GetIntensity))
     float& EditIntensity();
     /**
      * @brief Read the occlusion intensity multiplier.
@@ -120,6 +126,7 @@ public:
      * @brief Access the maximum occlusion distance.
      * @return Mutable non-negative distance in renderer scene units.
      */
+    SnField(SnKey("MaxDistance"), SnConstGetter(GetMaxDistance))
     float& EditMaxDistance();
     /**
      * @brief Read the maximum occlusion distance.
@@ -131,6 +138,7 @@ public:
      * @brief Access the number of azimuth slices used by the SSAO kernel.
      * @return Mutable slice count. Values below 1 are clamped to 1 when applied.
      */
+    SnField(SnKey("SliceCount"), SnConstGetter(GetSliceCount))
     std::uint32_t& EditSliceCount();
     /**
      * @brief Read the number of azimuth slices used by the SSAO kernel.
@@ -142,6 +150,7 @@ public:
      * @brief Access the number of samples traced per slice.
      * @return Mutable step count. Values below 1 are clamped to 1 when applied.
      */
+    SnField(SnKey("StepsPerSlice"), SnConstGetter(GetStepsPerSlice))
     std::uint32_t& EditStepsPerSlice();
     /**
      * @brief Read the number of samples traced per slice.
@@ -153,6 +162,7 @@ public:
      * @brief Access the normalized falloff-start position.
      * @return Mutable non-negative falloff start. The end value is forced above this value at apply time.
      */
+    SnField(SnKey("FalloffStart"), SnConstGetter(GetFalloffStart))
     float& EditFalloffStart();
     /**
      * @brief Read the normalized falloff-start position.
@@ -164,6 +174,7 @@ public:
      * @brief Access the normalized falloff-end position.
      * @return Mutable falloff end. The renderer receives at least `FalloffStart + 1e-3`.
      */
+    SnField(SnKey("FalloffEnd"), SnConstGetter(GetFalloffEnd))
     float& EditFalloffEnd();
     /**
      * @brief Read the normalized falloff-end position.
@@ -175,6 +186,7 @@ public:
      * @brief Access the maximum radius in pixels used by the pass.
      * @return Mutable non-negative screen-space radius in pixels.
      */
+    SnField(SnKey("MaxPixelRadius"), SnConstGetter(GetMaxPixelRadius))
     float& EditMaxPixelRadius();
     /**
      * @brief Read the maximum radius in pixels used by the pass.
@@ -186,6 +198,7 @@ public:
      * @brief Access the thickness tolerance used by the SSAO resolver.
      * @return Mutable non-negative thickness value in renderer-defined depth units.
      */
+    SnField(SnKey("Thickness"), SnConstGetter(GetThickness))
     float& EditThickness();
     /**
      * @brief Read the thickness tolerance used by the SSAO resolver.
@@ -197,6 +210,7 @@ public:
      * @brief Access the denoise blur beta.
      * @return Mutable non-negative filter-shaping parameter.
      */
+    SnField(SnKey("DenoiseBlurBeta"), SnConstGetter(GetDenoiseBlurBeta))
     float& EditDenoiseBlurBeta();
     /**
      * @brief Read the denoise blur beta.
@@ -208,6 +222,7 @@ public:
      * @brief Access the temporal accumulation blend factor.
      * @return Mutable non-negative blend scalar. Lower values favor longer temporal history.
      */
+    SnField(SnKey("TemporalBlendFactor"), SnConstGetter(GetTemporalBlendFactor))
     float& EditTemporalBlendFactor();
     /**
      * @brief Read the temporal accumulation blend factor.
@@ -219,6 +234,7 @@ public:
      * @brief Access the temporal disocclusion rejection threshold.
      * @return Mutable non-negative threshold value.
      */
+    SnField(SnKey("DisocclusionThreshold"), SnConstGetter(GetDisocclusionThreshold))
     float& EditDisocclusionThreshold();
     /**
      * @brief Read the temporal disocclusion rejection threshold.
@@ -230,6 +246,7 @@ public:
      * @brief Access the motion-vector weighting used by temporal accumulation.
      * @return Mutable non-negative velocity weight.
      */
+    SnField(SnKey("VelocityWeight"), SnConstGetter(GetVelocityWeight))
     float& EditVelocityWeight();
     /**
      * @brief Read the motion-vector weighting used by temporal accumulation.

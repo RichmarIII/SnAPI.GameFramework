@@ -9,6 +9,16 @@
 
 using namespace SnAPI::GameFramework;
 
+void SnAPI::GameFramework::Tests::GeneratedRpcNode::JumpImpl(const int Delta)
+{
+    Counter += Delta;
+}
+
+void SnAPI::GameFramework::Tests::GeneratedRpcNode::ShowDamageImpl(const int Delta)
+{
+    Counter += Delta * 10;
+}
+
 /**
  * @brief Minimal base type used to validate field/method registration.
  * @remarks Exercised by reflection inheritance and invocation tests.
@@ -59,6 +69,14 @@ namespace
     return std::any_of(Type.Fields.begin(), Type.Fields.end(), [Name](const FieldInfo& Entry) {
         return Entry.Name == Name;
     });
+}
+
+[[nodiscard]] const FieldInfo* FindReflectedField(const TypeInfo& Type, const std::string_view Name)
+{
+    const auto It = std::find_if(Type.Fields.begin(), Type.Fields.end(), [Name](const FieldInfo& Entry) {
+        return Entry.Name == Name;
+    });
+    return It != Type.Fields.end() ? &(*It) : nullptr;
 }
 
 } // namespace
@@ -152,21 +170,52 @@ TEST_CASE("Generated reflection codegen captures docs and parameter metadata")
     CHECK(FixtureInfo->Category == "Tests|Generated");
     CHECK(FixtureInfo->Doc == "Annotated fixture type used to validate libclang-driven reflection generation.");
 
-    REQUIRE(FixtureInfo->Fields.size() == 1);
+    REQUIRE(FixtureInfo->Fields.size() == 4);
     CHECK(HasReflectedField(*FixtureInfo, "Value"));
+    CHECK(HasReflectedField(*FixtureInfo, "HiddenValue"));
+    CHECK(HasReflectedField(*FixtureInfo, "PreviewValue"));
+    CHECK(HasReflectedField(*FixtureInfo, "PreviewBytes"));
     CHECK_FALSE(HasReflectedField(*FixtureInfo, "Unsupported"));
-    CHECK(FixtureInfo->Fields[0].DisplayName == "Value");
-    CHECK(FixtureInfo->Fields[0].Category == "Tests|Generated|Fields");
-    CHECK(FixtureInfo->Fields[0].Doc == "Current value carried by the generated fixture.");
-    CHECK(FixtureInfo->Fields[0].Flags.Has(EFieldFlagBits::Replication));
-    CHECK(FixtureInfo->Fields[0].Flags.Has(EFieldFlagBits::Serialized));
-    CHECK(FixtureInfo->Fields[0].Flags.Has(EFieldFlagBits::ReplicationUnreliable));
-    REQUIRE(FixtureInfo->Fields[0].Value.Min.has_value());
-    REQUIRE(FixtureInfo->Fields[0].Value.Max.has_value());
-    REQUIRE(FixtureInfo->Fields[0].Value.Step.has_value());
-    CHECK(*FixtureInfo->Fields[0].Value.Min == -16.0);
-    CHECK(*FixtureInfo->Fields[0].Value.Max == 16.0);
-    CHECK(*FixtureInfo->Fields[0].Value.Step == 1.0);
+    const FieldInfo* ValueField = FindReflectedField(*FixtureInfo, "Value");
+    REQUIRE(ValueField != nullptr);
+    CHECK(ValueField->DisplayName == "Value");
+    CHECK(ValueField->Category == "Tests|Generated|Fields");
+    CHECK(ValueField->Doc == "Current value carried by the generated fixture.");
+    CHECK(ValueField->Flags.Has(EFieldFlagBits::Replication));
+    CHECK(ValueField->Flags.Has(EFieldFlagBits::Serialized));
+    CHECK(ValueField->Flags.Has(EFieldFlagBits::ReplicationUnreliable));
+    CHECK(ValueField->EditorFlags.Has(EFieldEditorFlagBits::Advanced));
+    REQUIRE(ValueField->Value.Min.has_value());
+    REQUIRE(ValueField->Value.Max.has_value());
+    REQUIRE(ValueField->Value.Step.has_value());
+    CHECK(*ValueField->Value.Min == -16.0);
+    CHECK(*ValueField->Value.Max == 16.0);
+    CHECK(*ValueField->Value.Step == 1.0);
+
+    const FieldInfo* HiddenField = FindReflectedField(*FixtureInfo, "HiddenValue");
+    REQUIRE(HiddenField != nullptr);
+    CHECK(HiddenField->DisplayName == "Hidden Value");
+    CHECK(HiddenField->Category == "Tests|Generated|Fields");
+    CHECK(HiddenField->Doc == "Hidden value exposed through `EditHiddenValue()` / `GetHiddenValue()`.");
+    CHECK(HiddenField->Flags.Has(EFieldFlagBits::Serialized));
+    CHECK(HiddenField->EditorFlags.Has(EFieldEditorFlagBits::Hidden));
+
+    const FieldInfo* PreviewField = FindReflectedField(*FixtureInfo, "PreviewValue");
+    REQUIRE(PreviewField != nullptr);
+    CHECK(PreviewField->DisplayName == "Preview Value");
+    CHECK(PreviewField->Category == "Tests|Generated|Fields");
+    CHECK(PreviewField->Doc ==
+          "Compute a preview value derived from the current fixture state.\n\nTwice the current stored value.");
+    CHECK(PreviewField->Flags.Has(EFieldFlagBits::Serialized));
+    CHECK(PreviewField->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly));
+
+    const FieldInfo* PreviewBytesField = FindReflectedField(*FixtureInfo, "PreviewBytes");
+    REQUIRE(PreviewBytesField != nullptr);
+    CHECK(PreviewBytesField->DisplayName == "Preview Bytes");
+    CHECK(PreviewBytesField->Category == "Tests|Generated|Fields");
+    CHECK(PreviewBytesField->Doc == "Opaque preview bytes used to validate heavy-data field metadata.");
+    CHECK(PreviewBytesField->Flags.Has(EFieldFlagBits::Serialized));
+    CHECK(PreviewBytesField->EditorFlags.Has(EFieldEditorFlagBits::HeavyData));
 
     REQUIRE(FixtureInfo->Methods.size() == 1);
     CHECK(HasReflectedMethod(StaticTypeId<Tests::GeneratedReflectionFixture>(), "AddValue"));
@@ -174,8 +223,8 @@ TEST_CASE("Generated reflection codegen captures docs and parameter metadata")
     CHECK(FixtureInfo->Methods[0].DisplayName == "Add Value");
     CHECK(FixtureInfo->Methods[0].Category == "Tests|Generated|Methods");
     CHECK(FixtureInfo->Methods[0].Doc == "Add a delta to the fixture value.");
-    CHECK(FixtureInfo->Methods[0].Flags.Has(EMethodFlagBits::RpcReliable));
-    CHECK(FixtureInfo->Methods[0].Flags.Has(EMethodFlagBits::RpcNetServer));
+    CHECK_FALSE(FixtureInfo->Methods[0].Flags.Has(EMethodFlagBits::RpcReliable));
+    CHECK_FALSE(FixtureInfo->Methods[0].Flags.Has(EMethodFlagBits::RpcNetServer));
     REQUIRE(FixtureInfo->Methods[0].Params.size() == 1);
     CHECK(FixtureInfo->Methods[0].Params[0].Name == "Delta");
     CHECK(FixtureInfo->Methods[0].Params[0].Doc == "Signed amount to add to the current value.");
@@ -196,6 +245,50 @@ TEST_CASE("Generated reflection codegen captures docs and parameter metadata")
     CHECK(EnumInfo->EnumValues[0].Doc == "Idle state for the generated enum fixture.");
     CHECK(EnumInfo->EnumValues[1].DisplayName == "Active");
     CHECK(EnumInfo->EnumValues[1].Doc == "Active state for the generated enum fixture.");
+
+    static constexpr std::string_view kGeneratedTemplateBoxTypeName =
+        "SnAPI::GameFramework::Tests::GeneratedTemplateBox<SnAPI::GameFramework::Tests::GeneratedReflectionFixture>";
+
+    const TypeInfo* TemplateBoxInfo =
+        TypeRegistry::Instance().Find(TypeIdFromName(kGeneratedTemplateBoxTypeName));
+    REQUIRE(TemplateBoxInfo != nullptr);
+    CHECK(TemplateBoxInfo->DisplayName == "Generated Template Box");
+    CHECK(TemplateBoxInfo->Category == "Tests|Generated|Template");
+    CHECK(TemplateBoxInfo->Doc == "Annotated primary template used to validate reflected specialization expansion.");
+    REQUIRE(TemplateBoxInfo->Fields.size() == 1);
+    CHECK(TemplateBoxInfo->Fields[0].Name == "Label");
+    CHECK(TemplateBoxInfo->Fields[0].Doc == "Stored label for the generated template box.");
+    REQUIRE(TemplateBoxInfo->Methods.size() == 1);
+    CHECK(TemplateBoxInfo->Methods[0].Name == "ReadLabel");
+    CHECK(TemplateBoxInfo->Methods[0].DisplayName == "Read Label");
+    CHECK(TemplateBoxInfo->Methods[0].Doc == "Read the stored label.");
+
+    const TypeInfo* TemplateHostInfo = TypeRegistry::Instance().Find(StaticTypeId<Tests::GeneratedTemplateHost>());
+    REQUIRE(TemplateHostInfo != nullptr);
+    REQUIRE(TemplateHostInfo->Fields.size() == 1);
+    CHECK(TemplateHostInfo->Fields[0].Name == "Box");
+    CHECK(TemplateHostInfo->Fields[0].FieldType == TypeIdFromName(kGeneratedTemplateBoxTypeName));
+
+    const TypeInfo* RpcNodeInfo = TypeRegistry::Instance().Find(StaticTypeId<Tests::GeneratedRpcNode>());
+    REQUIRE(RpcNodeInfo != nullptr);
+    CHECK(RpcNodeInfo->DisplayName == "Generated RPC Node");
+    CHECK(RpcNodeInfo->Category == "Tests|Generated|RPC");
+    CHECK(RpcNodeInfo->Methods.size() == 5);
+
+    const auto RpcNodeMethods = TypeRegistry::Instance().CollectMethods(StaticTypeId<Tests::GeneratedRpcNode>(), true);
+    REQUIRE(RpcNodeMethods.size() == 2);
+    CHECK(std::ranges::any_of(RpcNodeMethods, [](const ReflectedMethodRef& Entry) {
+        return Entry.Method && Entry.Method->Name == "Jump";
+    }));
+    CHECK(std::ranges::any_of(RpcNodeMethods, [](const ReflectedMethodRef& Entry) {
+        return Entry.Method && Entry.Method->Name == "ShowDamage";
+    }));
+
+    Tests::GeneratedRpcNode RpcNode{};
+    RpcNode.Jump(3);
+    CHECK(RpcNode.Counter == 3);
+    RpcNode.ShowDamage(2);
+    CHECK(RpcNode.Counter == 23);
 }
 
 TEST_CASE("Reflected template families expose editor metadata automatically")
@@ -206,6 +299,11 @@ TEST_CASE("Reflected template families expose editor metadata automatically")
     REQUIRE(FieldFlagsInfo != nullptr);
     CHECK(FieldFlagsInfo->EditorValueFamily == EEditorValueFamily::Flags);
     CHECK(FieldFlagsInfo->EditorValueTargetType == StaticTypeId<EFieldFlagBits>());
+
+    const TypeInfo* FieldEditorFlagsInfo = TypeRegistry::Instance().Find(StaticTypeId<FieldEditorFlags>());
+    REQUIRE(FieldEditorFlagsInfo != nullptr);
+    CHECK(FieldEditorFlagsInfo->EditorValueFamily == EEditorValueFamily::Flags);
+    CHECK(FieldEditorFlagsInfo->EditorValueTargetType == StaticTypeId<EFieldEditorFlagBits>());
 
     const TypeInfo* MethodFlagsInfo = TypeRegistry::Instance().Find(StaticTypeId<MethodFlags>());
     REQUIRE(MethodFlagsInfo != nullptr);
@@ -241,6 +339,10 @@ TEST_CASE("Builtins expose enum metadata for editor-facing engine enums")
     const TypeInfo* FieldFlagBitsInfo = TypeRegistry::Instance().Find(StaticTypeId<EFieldFlagBits>());
     REQUIRE(FieldFlagBitsInfo != nullptr);
     CHECK(FieldFlagBitsInfo->IsEnum);
+
+    const TypeInfo* FieldEditorFlagBitsInfo = TypeRegistry::Instance().Find(StaticTypeId<EFieldEditorFlagBits>());
+    REQUIRE(FieldEditorFlagBitsInfo != nullptr);
+    CHECK(FieldEditorFlagBitsInfo->IsEnum);
 
     const TypeInfo* MethodFlagBitsInfo = TypeRegistry::Instance().Find(StaticTypeId<EMethodFlagBits>());
     REQUIRE(MethodFlagBitsInfo != nullptr);
@@ -390,60 +492,96 @@ TEST_CASE("AudioSourceComponent exposes reflected RPC endpoints")
     auto* Info = TypeRegistry::Instance().Find(StaticTypeId<AudioSourceComponent>());
     REQUIRE(Info);
 
-    bool HasPlayServer = false;
-    bool HasPlayClient = false;
-    bool HasStopServer = false;
-    bool HasStopClient = false;
-    bool HasSetActiveServer = false;
-    bool HasSetActiveClient = false;
+    bool HasPlay = false;
+    bool HasStop = false;
+    bool HasLegacyPlayServer = false;
+    bool HasLegacyPlayClient = false;
+    bool HasLegacyStopServer = false;
+    bool HasLegacyStopClient = false;
+    bool HasHiddenAudioServerRpc = false;
+    bool HasHiddenAudioMulticastRpc = false;
+    bool HasSetActive = false;
+    bool HasLegacySetActiveServer = false;
+    bool HasLegacySetActiveClient = false;
+    bool HasHiddenListenerServerRpc = false;
+    bool HasHiddenListenerMulticastRpc = false;
 
     for (const auto& Method : Info->Methods)
     {
-        if (Method.Name == "PlayServer")
+        if (Method.Name == "Play")
         {
-            HasPlayServer = Method.Flags.Has(EMethodFlagBits::RpcReliable)
-                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+            HasPlay = true;
+        }
+        else if (Method.Name == "Stop")
+        {
+            HasStop = true;
+        }
+        else if (Method.Name == "PlayServer")
+        {
+            HasLegacyPlayServer = true;
         }
         else if (Method.Name == "PlayClient")
         {
-            HasPlayClient = Method.Flags.Has(EMethodFlagBits::RpcReliable)
-                && Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
+            HasLegacyPlayClient = true;
         }
         else if (Method.Name == "StopServer")
         {
-            HasStopServer = Method.Flags.Has(EMethodFlagBits::RpcReliable)
-                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+            HasLegacyStopServer = true;
         }
         else if (Method.Name == "StopClient")
         {
-            HasStopClient = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+            HasLegacyStopClient = true;
+        }
+
+        if (Method.Flags.Has(EMethodFlagBits::HiddenGenerated))
+        {
+            HasHiddenAudioServerRpc |= Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+            HasHiddenAudioMulticastRpc |= Method.Flags.Has(EMethodFlagBits::RpcReliable)
                 && Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
         }
     }
 
-    REQUIRE(HasPlayServer);
-    REQUIRE(HasPlayClient);
-    REQUIRE(HasStopServer);
-    REQUIRE(HasStopClient);
+    REQUIRE(HasPlay);
+    REQUIRE(HasStop);
+    REQUIRE_FALSE(HasLegacyPlayServer);
+    REQUIRE_FALSE(HasLegacyPlayClient);
+    REQUIRE_FALSE(HasLegacyStopServer);
+    REQUIRE_FALSE(HasLegacyStopClient);
+    REQUIRE(HasHiddenAudioServerRpc);
+    REQUIRE(HasHiddenAudioMulticastRpc);
 
     auto* ListenerInfo = TypeRegistry::Instance().Find(StaticTypeId<AudioListenerComponent>());
     REQUIRE(ListenerInfo);
     for (const auto& Method : ListenerInfo->Methods)
     {
-        if (Method.Name == "SetActiveServer")
+        if (Method.Name == "SetActive")
         {
-            HasSetActiveServer = Method.Flags.Has(EMethodFlagBits::RpcReliable)
-                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+            HasSetActive = true;
+        }
+        else if (Method.Name == "SetActiveServer")
+        {
+            HasLegacySetActiveServer = true;
         }
         else if (Method.Name == "SetActiveClient")
         {
-            HasSetActiveClient = Method.Flags.Has(EMethodFlagBits::RpcReliable)
+            HasLegacySetActiveClient = true;
+        }
+
+        if (Method.Flags.Has(EMethodFlagBits::HiddenGenerated))
+        {
+            HasHiddenListenerServerRpc |= Method.Flags.Has(EMethodFlagBits::RpcReliable)
+                && Method.Flags.Has(EMethodFlagBits::RpcNetServer);
+            HasHiddenListenerMulticastRpc |= Method.Flags.Has(EMethodFlagBits::RpcReliable)
                 && Method.Flags.Has(EMethodFlagBits::RpcNetMulticast);
         }
     }
 
-    REQUIRE(HasSetActiveServer);
-    REQUIRE(HasSetActiveClient);
+    REQUIRE(HasSetActive);
+    REQUIRE_FALSE(HasLegacySetActiveServer);
+    REQUIRE_FALSE(HasLegacySetActiveClient);
+    REQUIRE(HasHiddenListenerServerRpc);
+    REQUIRE(HasHiddenListenerMulticastRpc);
 }
 
 TEST_CASE("AudioSourceComponent settings fields are marked for replication")

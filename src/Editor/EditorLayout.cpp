@@ -110,7 +110,7 @@ constexpr std::string_view kHierarchyIconPath = "editor://Assets/hierarchy-circl
 constexpr std::string_view kHierarchyWorldIconPath = "editor://Assets/world.svg";
 constexpr std::string_view kHierarchyLevelIconPath = "editor://Assets/level.svg";
 constexpr std::string_view kHierarchyNodeIconPath = "editor://Assets/component.svg";
-constexpr std::string_view kSearchIconPath = "editor://Assets/options-vertical.svg";
+constexpr std::string_view kSearchIconPath = "editor://Assets/search.svg";
 constexpr std::string_view kGameViewIconPath = "editor://Assets/box.svg";
 constexpr std::string_view kInspectorIconPath = "editor://Assets/settings.svg";
 constexpr std::string_view kContentBrowserIconPath = "editor://Assets/folder-open.svg";
@@ -1194,6 +1194,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_conduitNodePrimaryTextInput = {};
     m_conduitNodeSecondaryLabelText = {};
     m_conduitNodeSecondaryTextInput = {};
+    m_conduitNodeDefaultInputsPanel = {};
     m_conduitClassOverviewSummaryText = {};
     m_conduitClassOverviewHostText = {};
     m_conduitClassOverviewGraphText = {};
@@ -3510,6 +3511,18 @@ void EditorLayout::SetContentAssetInspectorCloseHandler(SnAPI::UI::TDelegate<voi
     m_onContentAssetInspectorCloseRequested = std::move(Handler);
 }
 
+void EditorLayout::SetContentAssetInspectorRuntimeMutatedHandler(
+    SnAPI::UI::TDelegate<void(const TypeId&, void*)> Handler)
+{
+    m_onContentAssetInspectorRuntimeMutated = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetInspectorImportMutatedHandler(
+    SnAPI::UI::TDelegate<void(const TypeId&, void*)> Handler)
+{
+    m_onContentAssetInspectorImportMutated = std::move(Handler);
+}
+
 void EditorLayout::SetContentAssetInspectorNodeSelectionHandler(SnAPI::UI::TDelegate<void(const NodeHandle&)> Handler)
 {
     m_onContentAssetInspectorNodeSelected = std::move(Handler);
@@ -3667,6 +3680,7 @@ void EditorLayout::SetConduitCanvasView(SnAPI::GameFramework::Conduit::Editor::G
             InputPins.push_back(ConduitWorkspaceState::CanvasNode::Pin{
                 .Name = std::move(Pin.Name),
                 .TypeLabel = std::move(Pin.TypeLabel),
+                .Tooltip = std::move(Pin.Tooltip),
                 .Kind = Pin.Kind,
                 .IsInput = Pin.IsInput,
                 .IsExec = Pin.IsExec,
@@ -3680,6 +3694,7 @@ void EditorLayout::SetConduitCanvasView(SnAPI::GameFramework::Conduit::Editor::G
             OutputPins.push_back(ConduitWorkspaceState::CanvasNode::Pin{
                 .Name = std::move(Pin.Name),
                 .TypeLabel = std::move(Pin.TypeLabel),
+                .Tooltip = std::move(Pin.Tooltip),
                 .Kind = Pin.Kind,
                 .IsInput = Pin.IsInput,
                 .IsExec = Pin.IsExec,
@@ -3690,6 +3705,7 @@ void EditorLayout::SetConduitCanvasView(SnAPI::GameFramework::Conduit::Editor::G
             .Id = Node.Id,
             .Title = std::move(Node.Title),
             .Detail = std::move(Node.Detail),
+            .Tooltip = std::move(Node.Tooltip),
             .X = Node.X,
             .Y = Node.Y,
             .Width = Node.Width,
@@ -3806,6 +3822,28 @@ void EditorLayout::SetConduitNodeCreateHandler(SnAPI::UI::TDelegate<void(const s
 void EditorLayout::SetConduitNodeRemoveHandler(SnAPI::UI::TDelegate<void()> Handler)
 {
     m_onConduitNodeRemoveRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeDefaultBoolHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler)
+{
+    m_onConduitNodeDefaultBoolRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeDefaultTextHandler(
+    SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler)
+{
+    m_onConduitNodeDefaultTextRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeDefaultEnumHandler(
+    SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> Handler)
+{
+    m_onConduitNodeDefaultEnumRequested = std::move(Handler);
+}
+
+void EditorLayout::SetConduitNodeDefaultClearHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
+{
+    m_onConduitNodeDefaultClearRequested = std::move(Handler);
 }
 
 void EditorLayout::SetConduitNodeMoveHandler(SnAPI::UI::TDelegate<void(const Uuid&, float, float)> Handler)
@@ -4378,6 +4416,130 @@ void EditorLayout::RefreshConduitWorkspaceView()
             }
         }
     }
+    if (m_conduitNodeDefaultInputsPanel.Id.Value != 0)
+    {
+        DestroyDirectChildren(*m_context, m_conduitNodeDefaultInputsPanel.Id);
+        SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel> DefaultsRoot(m_context, m_conduitNodeDefaultInputsPanel);
+
+        auto TitleBuilder = DefaultsRoot.Add(SnAPI::UI::UIText("Input Defaults"));
+        auto& TitleText = TitleBuilder.Element();
+        TitleText.ElementStyle().Apply("editor.panel_subtitle");
+        TitleText.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 6.0f, 0.0f, 0.0f});
+
+        const std::string EmptyHint = !ShowNodeInspector
+            ? std::string("Select a node to configure fallback input values.")
+            : (NodeInspector.InputDefaults.empty()
+                   ? std::string("Selected node has no literal-capable input pins. Unwired compatible inputs default-construct when possible.")
+                   : std::string("Fallback values are used only when the input pin is not connected."));
+        auto HintBuilder = DefaultsRoot.Add(SnAPI::UI::UIText(EmptyHint));
+        auto& HintText = HintBuilder.Element();
+        HintText.ElementStyle().Apply("editor.panel_subtitle");
+        HintText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+        for (const auto& Entry : NodeInspector.InputDefaults)
+        {
+            auto CardBuilder = DefaultsRoot.Add(SnAPI::UI::UIPanel("Editor.ConduitNodeInputDefaultCard"));
+            auto& Card = CardBuilder.Element();
+            Card.ElementStyle().Apply("editor.section_card");
+            Card.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+            Card.Width().Set(SnAPI::UI::Sizing::Fill());
+            Card.Height().Set(SnAPI::UI::Sizing::Auto());
+            Card.Padding().Set(6.0f);
+            Card.Gap().Set(4.0f);
+
+            auto NameBuilder = CardBuilder.Add(SnAPI::UI::UIText(Entry.DisplayName + " : " + Entry.TypeLabel));
+            NameBuilder.Element().ElementStyle().Apply("editor.menu_item");
+
+            std::string StatusText = Entry.Connected
+                ? "Connected. The authored fallback is kept, but the wire currently wins."
+                : (Entry.HasDefault ? "Using authored fallback when disconnected."
+                                    : "No explicit fallback. The compiler will default-construct this input when possible.");
+            if (!Entry.Tooltip.empty())
+            {
+                StatusText += "\n" + Entry.Tooltip;
+            }
+            auto StatusBuilder = CardBuilder.Add(SnAPI::UI::UIText(StatusText));
+            auto& StatusLabel = StatusBuilder.Element();
+            StatusLabel.ElementStyle().Apply("editor.panel_subtitle");
+            StatusLabel.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+            if (Entry.DefaultEditorKind == ConduitWorkspaceState::EVariableDefaultEditorKind::Bool)
+            {
+                auto CheckboxBuilder = CardBuilder.Add(SnAPI::UI::UICheckbox("Use explicit bool fallback"));
+                auto& Checkbox = CheckboxBuilder.Element();
+                Checkbox.Checked().Set(Entry.HasDefault ? Entry.BoolValue : false);
+                Checkbox.OnChanged([this, PinKey = Entry.PinKey](const bool Checked) {
+                    if (m_onConduitNodeDefaultBoolRequested)
+                    {
+                        m_onConduitNodeDefaultBoolRequested(PinKey, Checked);
+                    }
+                });
+            }
+            else if (Entry.DefaultEditorKind == ConduitWorkspaceState::EVariableDefaultEditorKind::Text)
+            {
+                auto TextBuilder = CardBuilder.Add(SnAPI::UI::UITextInput{});
+                auto& TextInput = TextBuilder.Element();
+                TextInput.Width().Set(SnAPI::UI::Sizing::Fill());
+                TextInput.Placeholder().Set(std::string("Press Enter to apply fallback value"));
+                TextInput.Text().Set(Entry.TextValue);
+                TextInput.OnSubmit(SnAPI::UI::TDelegate<void(const std::string&)>::Bind(
+                    [this, PinKey = Entry.PinKey](const std::string& Text) {
+                        if (m_onConduitNodeDefaultTextRequested)
+                        {
+                            m_onConduitNodeDefaultTextRequested(PinKey, Text);
+                        }
+                    }));
+                TextInput.OnFocusStateChanged(SnAPI::UI::TDelegate<void(bool)>::Bind(
+                    [this, PinKey = Entry.PinKey, Handle = TextBuilder.Handle()](const bool Focused) {
+                        if (Focused || !m_onConduitNodeDefaultTextRequested || !m_context)
+                        {
+                            return;
+                        }
+                        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(Handle.Id)))
+                        {
+                            m_onConduitNodeDefaultTextRequested(PinKey, Input->Text().Get());
+                        }
+                    }));
+            }
+            else if (Entry.DefaultEditorKind == ConduitWorkspaceState::EVariableDefaultEditorKind::Enum)
+            {
+                auto ComboBuilder = CardBuilder.Add(SnAPI::UI::UIComboBox{});
+                auto& Combo = ComboBuilder.Element();
+                Combo.Width().Set(SnAPI::UI::Sizing::Fill());
+                Combo.Placeholder().Set(std::string("Enum fallback"));
+                Combo.SetItems(Entry.EnumOptions);
+                (void)Combo.SetSelectedIndex(Entry.SelectedEnumIndex, false);
+                Combo.OnChanged([this, PinKey = Entry.PinKey](const int32_t Index, const std::string& Text) {
+                    if (Index >= 0 && m_onConduitNodeDefaultEnumRequested)
+                    {
+                        m_onConduitNodeDefaultEnumRequested(PinKey, Text);
+                    }
+                });
+            }
+            else
+            {
+                auto UnsupportedBuilder = CardBuilder.Add(SnAPI::UI::UIText(
+                    "No inline editor for this type yet. Leave it unwired to use implicit default construction."));
+                auto& UnsupportedText = UnsupportedBuilder.Element();
+                UnsupportedText.ElementStyle().Apply("editor.panel_subtitle");
+                UnsupportedText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+            }
+
+            auto ClearButtonBuilder = CardBuilder.Add(SnAPI::UI::UIButton{});
+            auto& ClearButton = ClearButtonBuilder.Element();
+            ClearButton.ElementStyle().Apply("editor.toolbar_button");
+            ClearButton.Width().Set(SnAPI::UI::Sizing::Auto());
+            ClearButton.ElementPadding().Set(SnAPI::UI::Padding{6.0f, 4.0f, 6.0f, 4.0f});
+            ClearButton.OnClick([this, PinKey = Entry.PinKey]() {
+                if (m_onConduitNodeDefaultClearRequested)
+                {
+                    m_onConduitNodeDefaultClearRequested(PinKey);
+                }
+            });
+            auto ClearLabelBuilder = ClearButtonBuilder.Add(SnAPI::UI::UIText("Clear Explicit Fallback"));
+            ClearLabelBuilder.Element().ElementStyle().Apply("editor.menu_item");
+        }
+    }
 
     if (m_conduitVariableDefaultBoolCheckbox.Id.Value != 0)
     {
@@ -4506,6 +4668,7 @@ void EditorLayout::RefreshConduitCanvasView()
             InputPins.push_back(Conduit::Editor::CanvasPinView{
                 .Name = Pin.Name,
                 .TypeLabel = Pin.TypeLabel,
+                .Tooltip = Pin.Tooltip,
                 .Kind = Pin.Kind,
                 .IsInput = Pin.IsInput,
                 .IsExec = Pin.IsExec,
@@ -4519,6 +4682,7 @@ void EditorLayout::RefreshConduitCanvasView()
             OutputPins.push_back(Conduit::Editor::CanvasPinView{
                 .Name = Pin.Name,
                 .TypeLabel = Pin.TypeLabel,
+                .Tooltip = Pin.Tooltip,
                 .Kind = Pin.Kind,
                 .IsInput = Pin.IsInput,
                 .IsExec = Pin.IsExec,
@@ -4529,6 +4693,7 @@ void EditorLayout::RefreshConduitCanvasView()
             .Id = Node.Id,
             .Title = Node.Title,
             .Detail = Node.Detail,
+            .Tooltip = Node.Tooltip,
             .X = Node.X,
             .Y = Node.Y,
             .Width = Node.Width,
@@ -8554,6 +8719,7 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
     {
         if (auto* PropertyPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorPropertyPanel.Id)))
         {
+            PropertyPanel->SetObjectMutatedHandler(m_onContentAssetInspectorRuntimeMutated);
             if (m_contentAssetInspectorState.Open && HasRuntimeTarget)
             {
                 const bool BindingNodeTarget = !RuntimeBindingTargetNode.IsNull() && SelectedHierarchyNode != nullptr;
@@ -8623,6 +8789,7 @@ void EditorLayout::RefreshContentAssetInspectorModalState()
     {
         if (auto* ImportPanel = dynamic_cast<UIPropertyPanel*>(&m_context->GetElement(m_contentInspectorImportSettingsPanel.Id)))
         {
+            ImportPanel->SetObjectMutatedHandler(m_onContentAssetInspectorImportMutated);
             if (m_contentAssetInspectorState.Open && HasImportTarget)
             {
                 if (!m_contentInspectorImportTargetBound ||
@@ -9657,6 +9824,19 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
         }
     }));
     m_conduitNodeSecondaryTextInput = NodeSecondaryInputBuilder.Handle();
+
+    auto NodeDefaultInputsPanelBuilder = NodeInspectorPanelBuilder.Add(SnAPI::UI::UIPanel("Editor.ConduitNodeDefaultInputsPanel"));
+    auto& NodeDefaultInputsPanel = NodeDefaultInputsPanelBuilder.Element();
+    NodeDefaultInputsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    NodeDefaultInputsPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    NodeDefaultInputsPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    NodeDefaultInputsPanel.Gap().Set(6.0f);
+    NodeDefaultInputsPanel.Padding().Set(0.0f);
+    NodeDefaultInputsPanel.Background().Set(SnAPI::UI::Color::Transparent());
+    NodeDefaultInputsPanel.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    NodeDefaultInputsPanel.BorderThickness().Set(0.0f);
+    NodeDefaultInputsPanel.CornerRadius().Set(0.0f);
+    m_conduitNodeDefaultInputsPanel = NodeDefaultInputsPanelBuilder.Handle();
 
     auto ConduitClassWorkspaceHost = ConduitBody.Add(SnAPI::UI::UIPanel("Editor.ConduitClassWorkspaceHost"));
     ConfigureHostPanel(ConduitClassWorkspaceHost.Element());

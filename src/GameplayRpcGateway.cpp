@@ -34,16 +34,11 @@ const Uuid& GameplayRpcGateway::GatewayNodeId()
     return GatewayId;
 }
 
-void GameplayRpcGateway::ServerRequestJoinPlayer(std::string RequestedName,
-                                                 const int PreferredPlayerIndex,
-                                                 const bool ReplicatedPlayer)
+void GameplayRpcGateway::ServerRequestJoinPlayerImpl(std::string RequestedName,
+                                                     const int PreferredPlayerIndex,
+                                                     const bool ReplicatedPlayer)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (!IsServer())
-    {
-        return;
-    }
-
 #if !defined(SNAPI_GF_ENABLE_NETWORKING)
     (void)RequestedName;
     (void)PreferredPlayerIndex;
@@ -75,14 +70,9 @@ void GameplayRpcGateway::ServerRequestJoinPlayer(std::string RequestedName,
 #endif
 }
 
-void GameplayRpcGateway::ServerRequestLeavePlayer(const int PlayerIndex)
+void GameplayRpcGateway::ServerRequestLeavePlayerImpl(const int PlayerIndex)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (!IsServer())
-    {
-        return;
-    }
-
 #if !defined(SNAPI_GF_ENABLE_NETWORKING)
     (void)PlayerIndex;
     return;
@@ -106,14 +96,9 @@ void GameplayRpcGateway::ServerRequestLeavePlayer(const int PlayerIndex)
 #endif
 }
 
-void GameplayRpcGateway::ServerRequestLoadLevel(std::string RequestedName)
+void GameplayRpcGateway::ServerRequestLoadLevelImpl(std::string RequestedName)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (!IsServer())
-    {
-        return;
-    }
-
 #if !defined(SNAPI_GF_ENABLE_NETWORKING)
     (void)RequestedName;
     return;
@@ -134,14 +119,9 @@ void GameplayRpcGateway::ServerRequestLoadLevel(std::string RequestedName)
 #endif
 }
 
-void GameplayRpcGateway::ServerRequestUnloadLevel(std::string LevelIdText)
+void GameplayRpcGateway::ServerRequestUnloadLevelImpl(std::string LevelIdText)
 {
     SNAPI_GF_PROFILE_FUNCTION("Gameplay");
-    if (!IsServer())
-    {
-        return;
-    }
-
 #if !defined(SNAPI_GF_ENABLE_NETWORKING)
     (void)LevelIdText;
     return;

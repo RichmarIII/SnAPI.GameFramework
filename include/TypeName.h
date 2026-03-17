@@ -42,7 +42,7 @@ struct THasNativeReflectedTypeName : std::false_type
 
 template<typename T>
     requires requires {
-        { std::remove_cv_t<T>::kTypeName } -> std::convertible_to<const char*>;
+        { std::remove_cvref_t<T>::kTypeName } -> std::convertible_to<const char*>;
     }
 struct THasNativeReflectedTypeName<T> : std::true_type
 {
@@ -54,32 +54,32 @@ struct THasDeclaredReflectedTypeName : THasNativeReflectedTypeName<T>
 };
 
 template<typename T>
-struct THasReflectedTypeName : THasDeclaredReflectedTypeName<std::remove_cv_t<T>>
+struct THasReflectedTypeName : THasDeclaredReflectedTypeName<std::remove_cvref_t<T>>
 {
 };
 
 template<typename T>
-struct THasReflectedTypeName<T*> : THasReflectedTypeName<std::remove_cv_t<T>>
+struct THasReflectedTypeName<T*> : THasReflectedTypeName<std::remove_cvref_t<T>>
 {
 };
 
 template<typename T>
-struct THasReflectedTypeName<T&> : THasReflectedTypeName<T*>
+struct THasReflectedTypeName<T&> : THasReflectedTypeName<std::remove_cvref_t<T>>
 {
 };
 
 template<typename T>
-struct THasReflectedTypeName<T&&> : THasReflectedTypeName<T*>
+struct THasReflectedTypeName<T&&> : THasReflectedTypeName<std::remove_cvref_t<T>>
 {
 };
 
 template<typename T, std::size_t Extent>
-struct THasReflectedTypeName<T[Extent]> : THasReflectedTypeName<std::remove_cv_t<T>>
+struct THasReflectedTypeName<T[Extent]> : THasReflectedTypeName<std::remove_cvref_t<T>>
 {
 };
 
 template<typename T>
-struct THasReflectedTypeName<T[]> : THasReflectedTypeName<std::remove_cv_t<T>>
+struct THasReflectedTypeName<T[]> : THasReflectedTypeName<std::remove_cvref_t<T>>
 {
 };
 
@@ -89,11 +89,12 @@ concept CHasReflectedTypeName = THasReflectedTypeName<T>::value;
 template<typename T>
 inline const std::string& ReflectedTypeName()
 {
-    using Normalized = std::remove_cv_t<T>;
+    using Bare = std::remove_reference_t<T>;
+    using Normalized = std::remove_cv_t<Bare>;
     static const std::string Name = []() {
-        if constexpr (std::is_pointer_v<Normalized>)
+        if constexpr (std::is_pointer_v<Bare>)
         {
-            using PointeeWithCv = std::remove_pointer_t<Normalized>;
+            using PointeeWithCv = std::remove_pointer_t<Bare>;
             using Pointee = std::remove_cv_t<PointeeWithCv>;
 
             std::string Result{};

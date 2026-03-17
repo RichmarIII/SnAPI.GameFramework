@@ -7,6 +7,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -46,6 +47,7 @@ class RendererSystem;
  *
  * @see RendererSystem
  */
+SnType()
 class DirectionalLightComponent : public BaseComponent, public ComponentCRTP<DirectionalLightComponent>
 {
 public:
@@ -60,22 +62,36 @@ public:
      * - `ShadowFarDistance` is in world units.
      * - `ShadowBias` and `SoftnessFactor` are unitless tuning values.
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::DirectionalLightComponent::Settings";
 
+        SnField(SnKey("Enabled"), SnReplicated)
         bool Enabled = true; /**< @brief Master enable for light registration/update. */
+        SnField(SnKey("Direction"), SnReplicated)
         Vec3 Direction{-0.5f, -1.0f, -0.3f}; /**< @brief Light direction in world space. */
+        SnField(SnKey("Color"), SnReplicated)
         Vec3 Color{1.0f, 1.0f, 1.0f}; /**< @brief RGB light color. */
+        SnField(SnKey("Intensity"), SnReplicated)
         float Intensity = 1.0f; /**< @brief Light intensity multiplier. */
+        SnField(SnKey("CastShadows"), SnReplicated)
         bool CastShadows = true; /**< @brief Shadow casting toggle. */
+        SnField(SnKey("CascadeCount"), SnReplicated)
         unsigned int CascadeCount = 4u; /**< @brief Cascade count for directional CSM. */
+        SnField(SnKey("ShadowMapSize"), SnReplicated)
         unsigned int ShadowMapSize = 2048u; /**< @brief Per-cascade shadow map resolution. */
+        SnField(SnKey("ShadowBias"), SnReplicated)
         float ShadowBias = 0.005f; /**< @brief Receiver bias used in shadow sampling. */
+        SnField(SnKey("ShadowFarDistance"), SnReplicated)
         float ShadowFarDistance = 300.0f; /**< @brief Max camera distance covered by directional shadows. */
+        SnField(SnKey("SoftnessFactor"), SnReplicated)
         float SoftnessFactor = 1.0f; /**< @brief Soft-shadow kernel scale. */
+        SnField(SnKey("SoftShadows"), SnReplicated)
         bool SoftShadows = true; /**< @brief Enables PCF/soft-shadow sampling. */
+        SnField(SnKey("ContactHardening"), SnReplicated)
         bool ContactHardening = false; /**< @brief Enables contact-hardening approximation. */
+        SnField(SnKey("CascadeBlending"), SnReplicated)
         bool CascadeBlending = true; /**< @brief Enables blend band between cascades. */
     };
 
@@ -84,6 +100,7 @@ public:
         return m_settings;
     }
 
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;

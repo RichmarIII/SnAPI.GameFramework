@@ -1129,6 +1129,28 @@ NodeExecuteResult ExecuteSlotCopyNode(const NodeData& Data,
     return ContinueExecution();
 }
 
+NodeExecuteResult ExecuteDefaultConstructNode(const NodeData& Data,
+                                             FrameStorage& Frame,
+                                             const ExecutionContext& Context,
+                                             const std::span<void*> ScratchArgs)
+{
+    (void)Context;
+    (void)ScratchArgs;
+
+    const auto& Node = std::get<DefaultConstructNodeData>(Data);
+    if (!Node.Type)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit default-construct type is missing"));
+    }
+
+    const Result ConstructResult = Frame.DefaultConstructSlot(Node.Output);
+    if (!ConstructResult)
+    {
+        return std::unexpected(ConstructResult.error());
+    }
+    return ContinueExecution();
+}
+
 NodeExecuteResult ExecuteUnaryIntrinsicNode(const NodeData& Data,
                                             FrameStorage& Frame,
                                             const ExecutionContext& Context,
@@ -1974,6 +1996,30 @@ Result GraphBuilder::AddBranch(const SlotId Condition, const LabelId TrueTarget,
     return Ok();
 }
 
+Result GraphBuilder::AddDefaultConstruct(const SlotId Output)
+{
+    const SlotDesc* Slot = FindSlot(Output);
+    if (!Slot || !Slot->Type)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotFound, "Conduit output slot was not found"));
+    }
+    if (!Slot->Type->RuntimeOps || !Slot->Type->RuntimeOps->DefaultConstruct)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Conduit default-construct output is not default-constructible"));
+    }
+
+    BoundNode Node;
+    Node.Kind = ENodeKind::DefaultConstruct;
+    Node.Execute = &ExecuteDefaultConstructNode;
+    Node.Data = DefaultConstructNodeData{
+        .Output = Output,
+        .Type = Slot->Type,
+    };
+    m_nodes.push_back(std::move(Node));
+    return Ok();
+}
+
 Result GraphBuilder::AddSelfFieldRead(const std::string_view FieldName, const SlotId Output)
 {
     const SlotDesc* Slot = FindSlot(Output);
@@ -2058,13 +2104,8 @@ Result GraphBuilder::AddSelfMethodCall(const std::string_view Name,
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit void method cannot write to an output slot"));
         }
     }
-    else
+    else if (Output)
     {
-        if (!Output)
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit non-void method requires an output slot"));
-        }
-
         const SlotDesc* Slot = FindSlot(*Output);
         if (!Slot || !Slot->Type)
         {
@@ -2269,13 +2310,8 @@ Result GraphBuilder::AddMethodCall(const TypeInfo& OwnerType,
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit void method cannot write to an output slot"));
         }
     }
-    else
+    else if (Output)
     {
-        if (!Output)
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit non-void method requires an output slot"));
-        }
-
         const SlotDesc* OutputSlot = FindSlot(*Output);
         if (!OutputSlot || !OutputSlot->Type)
         {

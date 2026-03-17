@@ -7,6 +7,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -45,6 +46,7 @@ class RendererSystem;
  * @see RendererSystem
  * @see TransformComponent
  */
+SnType()
 class CameraComponent : public BaseComponent, public ComponentCRTP<CameraComponent>
 {
 public:
@@ -64,18 +66,28 @@ public:
      * - `Active` affects world-level renderer selection, not just this component's local state
      * - `AutoActivateForPlayer` is consumed by gameplay code such as `PawnBase` possession flow rather than by this component alone
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::CameraComponent::Settings";
 
+        SnField(SnKey("NearClip"))
         float NearClip = 0.01f; /**< @brief Near clipping plane. */
+        SnField(SnKey("FarClip"))
         float FarClip = 1000.0f; /**< @brief Far clipping plane (reserved by some pipelines). */
+        SnField(SnKey("FovDegrees"))
         float FovDegrees = 60.0f; /**< @brief Vertical field of view in degrees. */
+        SnField(SnKey("Aspect"))
         float Aspect = 16.0f / 9.0f; /**< @brief Camera aspect ratio. */
+        SnField(SnKey("Active"))
         bool Active = false; /**< @brief When true this camera is selected as world active camera. */
+        SnField(SnKey("SyncFromTransform"))
         bool SyncFromTransform = true; /**< @brief Pull camera pose from owner `TransformComponent`. */
+        SnField(SnKey("LocalPositionOffset"))
         Vec3 LocalPositionOffset{}; /**< @brief Local translation offset applied after owner world transform. */
+        SnField(SnKey("LocalRotationOffsetEuler"))
         Vec3 LocalRotationOffsetEuler{}; /**< @brief Local rotation offset (XYZ euler radians) applied after owner world rotation. */
+        SnField(SnKey("AutoActivateForPlayer"))
         bool AutoActivateForPlayer = false; /**< @brief When true, will activate the camera for the player possessing the owned node */
     };
 
@@ -93,6 +105,7 @@ public:
     }
 
     /** @brief Access settings for mutation. */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;
@@ -116,6 +129,7 @@ public:
      * @param Active New active state.
      * @remarks If disabling the currently active camera, the renderer active camera is cleared.
      */
+    SnFunction(SnKey("SetActive"))
     void SetActive(bool Active);
 
     /** @brief Ensure the renderer camera exists, apply current settings, and optionally activate it. */

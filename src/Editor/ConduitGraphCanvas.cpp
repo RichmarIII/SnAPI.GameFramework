@@ -47,6 +47,7 @@ constexpr float kSelectedBorderThickness = 2.0f;
 constexpr float kPanStrokeFactor = 1.0f / 120.0f;
 constexpr float kZoomWheelMagnitude = 100.0f;
 constexpr float kRightClickPanThreshold = 6.0f;
+constexpr float kTooltipRevealDelaySeconds = 1.5f;
 
 [[nodiscard]] SnAPI::UI::ScissorRect ToScissorRect(const SnAPI::UI::UIRect& Rect)
 {
@@ -257,6 +258,12 @@ UIConduitGraphCanvas::UIConduitGraphCanvas()
 void UIConduitGraphCanvas::Initialize(SnAPI::UI::UIContext* Context, const SnAPI::UI::ElementId Id)
 {
     InitializeBase(Context, Id);
+    m_hoverTooltip.Initialize(Context, Id);
+    m_hoverTooltip.UseAnchor().Set(true);
+    m_hoverTooltip.ClampToViewport().Set(true);
+    m_hoverTooltip.Offset().Set(10.0f);
+    m_hoverTooltip.MaxBubbleWidth().Set(420.0f);
+    m_hoverTooltip.MaxBubbleHeight().Set(280.0f);
 }
 
 void UIConduitGraphCanvas::SetViewState(GraphCanvasView View)
@@ -281,6 +288,15 @@ void UIConduitGraphCanvas::SetViewState(GraphCanvasView View)
         m_isDraggingWire = false;
         m_dragWireNodeId = {};
         m_dragWirePinName.clear();
+    }
+
+    if (m_hasPointerPosition && !m_isDraggingNode && !m_isDraggingWire && !m_isPanning && IsHovered())
+    {
+        UpdateHoverTooltip(m_lastPointerPosition);
+    }
+    else
+    {
+        ClearHoverTooltip();
     }
 
     Invalidate(SnAPI::UI::EInvalidation::Paint);
@@ -698,6 +714,35 @@ void UIConduitGraphCanvas::Paint(SnAPI::UI::UIPaintContext& Context) const
     }
 
     Context.Packets.PopScissor();
+
+    if (m_hasHoverTooltip &&
+        !m_hoverTooltip.GetStyledProperty(SnAPI::UI::UITooltip::TextKey, std::string{}).empty())
+    {
+        m_hoverTooltip.Arrange(m_Rect);
+        m_hoverTooltip.Paint(Context);
+    }
+}
+
+void UIConduitGraphCanvas::Tick(const float DeltaSeconds)
+{
+    (void)DeltaSeconds;
+
+    if (!m_hasPendingHoverTooltip || m_hasHoverTooltip)
+    {
+        return;
+    }
+
+    const std::chrono::duration<float> Elapsed = std::chrono::steady_clock::now() - m_hoverTooltipStart;
+    if (Elapsed.count() < kTooltipRevealDelaySeconds)
+    {
+        return;
+    }
+
+    m_hasHoverTooltip = true;
+    m_hoverTooltip.Text().Set(m_pendingHoverTooltip.Text);
+    m_hoverTooltip.AnchorRect().Set(m_pendingHoverTooltip.AnchorRect);
+    m_hoverTooltip.Placement().Set(m_pendingHoverTooltip.Placement);
+    Invalidate(SnAPI::UI::EInvalidation::Paint);
 }
 
 void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
@@ -712,6 +757,8 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
     if (TypeId == SnAPI::UI::RoutedEventTypes::PointerLeave.Id)
     {
         SetHovered(false);
+        m_hasPointerPosition = false;
+        ClearHoverTooltip();
         if (!m_isDraggingNode && !m_isDraggingWire && !m_isPanning && !m_isPendingContextMenu)
         {
             SetPressed(false);
@@ -726,6 +773,22 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
         if (!Wheel || !m_Rect.Contains(Wheel->Position))
         {
             return;
+        }
+
+        if (m_hasHoverTooltip &&
+            !m_hoverTooltip.GetStyledProperty(SnAPI::UI::UITooltip::TextKey, std::string{}).empty())
+        {
+            m_hoverTooltip.Arrange(m_Rect);
+            if (m_hoverTooltip.BubbleRect().Contains(Wheel->Position))
+            {
+                const float RawDelta = std::abs(Wheel->DeltaY) > 0.0001f ? Wheel->DeltaY : Wheel->DeltaX;
+                if (std::abs(RawDelta) > 0.0001f)
+                {
+                    m_hoverTooltip.ScrollByPixels(-RawDelta * 28.0f * DpiScale());
+                    Context.SetHandled(true);
+                    return;
+                }
+            }
         }
 
         const float OldZoom = EffectiveZoom();
@@ -746,6 +809,9 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
         m_view.Viewport.PanX = NewPanX;
         m_view.Viewport.PanY = NewPanY;
         m_view.Viewport.Zoom = NewZoom;
+        m_hasPointerPosition = true;
+        m_lastPointerPosition = Wheel->Position;
+        UpdateHoverTooltip(Wheel->Position);
         Invalidate(SnAPI::UI::EInvalidation::Paint);
         if (m_onViewportChanged)
         {
@@ -763,7 +829,13 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 
     if (TypeId == SnAPI::UI::RoutedEventTypes::PointerMove.Id)
     {
-        SetHovered(m_Rect.Contains(Pointer->Position));
+        m_hasPointerPosition = m_Rect.Contains(Pointer->Position);
+        m_lastPointerPosition = Pointer->Position;
+        SetHovered(m_hasPointerPosition);
+        if (!m_hasPointerPosition)
+        {
+            ClearHoverTooltip();
+        }
 
         if (m_isPendingContextMenu)
         {
@@ -783,6 +855,7 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
                 m_isPendingContextMenu = false;
                 m_isPanning = true;
                 SetPressed(true);
+                ClearHoverTooltip();
             }
         }
 
@@ -797,10 +870,12 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
             m_dragStartPanX = m_view.Viewport.PanX;
             m_dragStartPanY = m_view.Viewport.PanY;
             SetPressed(true);
+            ClearHoverTooltip();
         }
 
         if (m_isDraggingNode)
         {
+            ClearHoverTooltip();
             if (!Pointer->LeftDown)
             {
                 UpdateDraggedNodePosition(Pointer->Position);
@@ -817,6 +892,7 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 
         if (m_isDraggingWire)
         {
+            ClearHoverTooltip();
             if (!Pointer->LeftDown)
             {
                 CompleteWireDrag(Pointer->Position);
@@ -834,6 +910,7 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 
         if (m_isPanning)
         {
+            ClearHoverTooltip();
             if (!Pointer->RightDown && !Pointer->MiddleDown)
             {
                 UpdatePanPosition(Pointer->Position);
@@ -848,6 +925,15 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
             return;
         }
 
+        if (m_hasPointerPosition)
+        {
+            UpdateHoverTooltip(Pointer->Position);
+        }
+        else
+        {
+            ClearHoverTooltip();
+        }
+
         return;
     }
 
@@ -857,6 +943,10 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
         {
             return;
         }
+
+        m_hasPointerPosition = true;
+        m_lastPointerPosition = Pointer->Position;
+        ClearHoverTooltip();
 
         if (Pointer->RightDown)
         {
@@ -969,6 +1059,17 @@ void UIConduitGraphCanvas::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
             RequestSpawnMenu(Pointer->Position, false);
         }
         ClearInteractionState();
+        if (m_Rect.Contains(Pointer->Position))
+        {
+            m_hasPointerPosition = true;
+            m_lastPointerPosition = Pointer->Position;
+            UpdateHoverTooltip(Pointer->Position);
+        }
+        else
+        {
+            m_hasPointerPosition = false;
+            ClearHoverTooltip();
+        }
         if (WasInteracting)
         {
             Context.SetHandled(true);
@@ -1148,6 +1249,110 @@ std::optional<UIConduitGraphCanvas::HitPinResult> UIConduitGraphCanvas::HitTestP
     return std::nullopt;
 }
 
+std::optional<UIConduitGraphCanvas::HitPinResult> UIConduitGraphCanvas::HitTestTooltipPin(
+    const SnAPI::UI::UIPoint& ScreenPosition) const
+{
+    const float Scale = DpiScale() * EffectiveZoom();
+    const float RowHalfHeight = std::max(10.0f, ((kNodePinRowHeight + kNodePinRowGap) * Scale) * 0.5f);
+
+    for (std::size_t Index = m_view.Nodes.size(); Index > 0; --Index)
+    {
+        const std::size_t NodeIndex = Index - 1;
+        const CanvasNodeView& Node = m_view.Nodes[NodeIndex];
+        if (Node.IsCollapsed)
+        {
+            continue;
+        }
+
+        const NodeVisual Visual = ComputeNodeVisual(Node);
+        const float MidX = Visual.Rect.X + (Visual.Rect.W * 0.5f);
+
+        for (std::size_t PinIndex = 0; PinIndex < Node.InputPins.size(); ++PinIndex)
+        {
+            const PinVisual Pin = ComputePinVisual(Node, Visual, true, PinIndex);
+            const SnAPI::UI::UIRect HitRect{
+                Visual.Rect.X,
+                Pin.Center.Y - RowHalfHeight,
+                std::max(1.0f, MidX - Visual.Rect.X),
+                RowHalfHeight * 2.0f,
+            };
+            if (HitRect.Contains(ScreenPosition))
+            {
+                return HitPinResult{
+                    .NodeIndex = NodeIndex,
+                    .IsInput = true,
+                    .PinIndex = PinIndex,
+                };
+            }
+        }
+
+        for (std::size_t PinIndex = 0; PinIndex < Node.OutputPins.size(); ++PinIndex)
+        {
+            const PinVisual Pin = ComputePinVisual(Node, Visual, false, PinIndex);
+            const SnAPI::UI::UIRect HitRect{
+                MidX,
+                Pin.Center.Y - RowHalfHeight,
+                std::max(1.0f, (Visual.Rect.X + Visual.Rect.W) - MidX),
+                RowHalfHeight * 2.0f,
+            };
+            if (HitRect.Contains(ScreenPosition))
+            {
+                return HitPinResult{
+                    .NodeIndex = NodeIndex,
+                    .IsInput = false,
+                    .PinIndex = PinIndex,
+                };
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<UIConduitGraphCanvas::HoverTooltipState> UIConduitGraphCanvas::ResolveHoverTooltip(
+    const SnAPI::UI::UIPoint& ScreenPosition) const
+{
+    if (!m_Rect.Contains(ScreenPosition))
+    {
+        return std::nullopt;
+    }
+
+    if (const auto HitPin = HitTestTooltipPin(ScreenPosition); HitPin.has_value())
+    {
+        const CanvasNodeView& Node = m_view.Nodes[HitPin->NodeIndex];
+        const CanvasPinView& Pin = HitPin->IsInput ? Node.InputPins[HitPin->PinIndex] : Node.OutputPins[HitPin->PinIndex];
+        if (Pin.Tooltip.empty())
+        {
+            return std::nullopt;
+        }
+
+        const NodeVisual Visual = ComputeNodeVisual(Node);
+
+        return HoverTooltipState{
+            .Text = Pin.Tooltip,
+            .AnchorRect = Visual.Rect,
+            .Placement = SnAPI::UI::ETooltipPlacement::Top,
+        };
+    }
+
+    if (const auto HitNode = HitTestNode(ScreenPosition); HitNode.has_value())
+    {
+        const CanvasNodeView& Node = m_view.Nodes[*HitNode];
+        if (Node.Tooltip.empty())
+        {
+            return std::nullopt;
+        }
+
+        return HoverTooltipState{
+            .Text = Node.Tooltip,
+            .AnchorRect = ComputeNodeVisual(Node).Rect,
+            .Placement = SnAPI::UI::ETooltipPlacement::Top,
+        };
+    }
+
+    return std::nullopt;
+}
+
 SnAPI::UI::Color UIConduitGraphCanvas::DecodeColor(const std::uint32_t Rgba, const std::uint8_t DefaultAlpha)
 {
     const std::uint8_t R = static_cast<std::uint8_t>((Rgba >> 24u) & 0xFFu);
@@ -1233,6 +1438,58 @@ void UIConduitGraphCanvas::RequestSpawnMenu(const SnAPI::UI::UIPoint& ScreenPosi
     m_onSpawnMenuRequested(Request);
 }
 
+void UIConduitGraphCanvas::UpdateHoverTooltip(const SnAPI::UI::UIPoint& ScreenPosition)
+{
+    if (m_isDraggingNode || m_isDraggingWire || m_isPanning || m_isPendingContextMenu)
+    {
+        ClearHoverTooltip();
+        return;
+    }
+
+    const auto NextTooltip = ResolveHoverTooltip(ScreenPosition);
+    if (!NextTooltip.has_value())
+    {
+        ClearHoverTooltip();
+        return;
+    }
+
+    const bool Changed = !m_hasPendingHoverTooltip ||
+        (m_pendingHoverTooltip.Text != NextTooltip->Text) ||
+        (m_pendingHoverTooltip.AnchorRect != NextTooltip->AnchorRect) ||
+        (m_pendingHoverTooltip.Placement != NextTooltip->Placement);
+
+    if (!Changed)
+    {
+        return;
+    }
+
+    m_hasPendingHoverTooltip = true;
+    m_pendingHoverTooltip = *NextTooltip;
+    m_hoverTooltipStart = std::chrono::steady_clock::now();
+    m_hasHoverTooltip = false;
+    if (!m_hoverTooltip.Text().Get().empty())
+    {
+        m_hoverTooltip.Text().Set(std::string{});
+    }
+    Invalidate(SnAPI::UI::EInvalidation::Paint);
+}
+
+void UIConduitGraphCanvas::ClearHoverTooltip()
+{
+    if (!m_hasPendingHoverTooltip && !m_hasHoverTooltip && m_hoverTooltip.Text().Get().empty())
+    {
+        return;
+    }
+
+    m_hasPendingHoverTooltip = false;
+    m_hasHoverTooltip = false;
+    if (!m_hoverTooltip.Text().Get().empty())
+    {
+        m_hoverTooltip.Text().Set(std::string{});
+    }
+    Invalidate(SnAPI::UI::EInvalidation::Paint);
+}
+
 void UIConduitGraphCanvas::SetSelectedNodeLocal(const Uuid& NodeId)
 {
     for (CanvasNodeView& Node : m_view.Nodes)
@@ -1253,6 +1510,7 @@ void UIConduitGraphCanvas::ClearInteractionState()
     m_dragWirePinName.clear();
     m_dragWireKind = ESlotKind::Value;
     m_dragWireIsExec = false;
+    ClearHoverTooltip();
     ReleaseCanvasCaptureIfOwned(m_Context, m_Id);
 }
 

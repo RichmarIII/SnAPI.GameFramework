@@ -11,6 +11,7 @@
 #include "Export.h"
 
 #include <UIHandles.h>
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -32,6 +33,7 @@ namespace SnAPI::GameFramework
  * Threading model:
  * - Main-thread only.
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API FrameGraphNode final : public BaseNode, public NodeCRTP<FrameGraphNode>
 {
 public:
@@ -40,21 +42,27 @@ public:
     FrameGraphNode();
     explicit FrameGraphNode(std::string Name);
 
+    SnField(SnKey("Title"), SnConstGetter(GetTitle))
     std::string& EditTitle();
     const std::string& GetTitle() const;
 
+    SnField(SnKey("ShowLegend"), SnConstGetter(GetShowLegend))
     bool& EditShowLegend();
     const bool& GetShowLegend() const;
 
+    SnField(SnKey("ValuePrecision"), SnConstGetter(GetValuePrecision))
     std::uint32_t& EditValuePrecision();
     const std::uint32_t& GetValuePrecision() const;
 
+    SnField(SnKey("SampleCapacity"), SnConstGetter(GetSampleCapacity))
     std::uint32_t& EditSampleCapacity();
     const std::uint32_t& GetSampleCapacity() const;
 
+    SnField(SnKey("FrameTimeMaxSeconds"), SnConstGetter(GetFrameTimeMaxSeconds))
     float& EditFrameTimeMaxSeconds();
     const float& GetFrameTimeMaxSeconds() const;
 
+    SnField(SnKey("FpsMax"), SnConstGetter(GetFpsMax))
     float& EditFpsMax();
     const float& GetFpsMax() const;
 

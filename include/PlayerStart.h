@@ -6,6 +6,7 @@
 #include "BaseNode.h"
 #include "Export.h"
 #include "PawnBase.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -22,6 +23,7 @@ namespace SnAPI::GameFramework
  * @see GameplayHost
  * @see PawnBase
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API PlayerStart : public BaseNode, public NodeCRTP<PlayerStart>
 {
 public:
@@ -37,6 +39,7 @@ public:
     void OnCreate();
 
     /** @brief Access the optional pawn asset instantiated when players spawn from this start. @return Mutable asset reference. */
+    SnField(SnKey("SpawnPawnAsset"), SnReplicated, SnConstGetter(GetSpawnPawnAsset))
     TAssetRef<PawnBase>& EditSpawnPawnAsset();
     /** @brief Access the optional pawn asset instantiated when players spawn from this start. @return Const asset reference. */
     const TAssetRef<PawnBase>& GetSpawnPawnAsset() const;

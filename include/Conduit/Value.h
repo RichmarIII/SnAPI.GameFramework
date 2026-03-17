@@ -5,6 +5,7 @@
 
 #include "Serialization.h"
 #include "TypeName.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework::Conduit
 {
@@ -17,10 +18,13 @@ namespace SnAPI::GameFramework::Conduit
  * It intentionally stores logical serialized bytes rather than raw object memory so it can
  * safely represent non-trivial reflected types such as `std::string` and reflected structs.
  */
+SnType()
 struct SerializedValue
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Conduit::SerializedValue";
+    SnField(SnKey("Type"))
     TypeId Type{}; /**< @brief Reflected type id of the stored value. */
+    SnField(SnKey("Bytes"))
     std::vector<uint8_t> Bytes{}; /**< @brief Serialized byte payload for the value. */
 
     bool operator==(const SerializedValue&) const = default;

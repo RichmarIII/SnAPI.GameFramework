@@ -18,6 +18,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include "AuthoredAssetLoading.h"
+#include "AuthoredAssetRegistry.h"
+#include "AssetPipeline.h"
 #include "AssetManager.h"
 #include "AssetPipelineFactories.h"
 #include "AssetPipelineIds.h"
@@ -25,6 +28,7 @@
 #include "Export.h"
 #include "IWorld.h"
 #include "PathResolver.h"
+#include "ReflectionAnnotations.h"
 #include "StaticTypeId.h"
 #include "TypeRegistry.h"
 
@@ -98,6 +102,7 @@ struct THasAssetRefDefaultName<TTag, std::void_t<decltype(TTag::Value)>> : std::
  * - Fails by returning `std::unexpected<std::string>` or an async result with the `Error` field populated.
  * - Empty references fail with `"AssetRef is empty"`.
  */
+SnType(SnTemplate)
 template<typename TBase, typename TNameTag = void>
 class TAssetRef
 {
@@ -257,25 +262,57 @@ public:
     }
 
     /**
-     * @brief Load the referenced asset through an explicit asset manager.
+     * @brief Load the referenced authored asset document through an explicit asset manager parameter for API symmetry.
+     * @param Manager Borrowed asset manager. Unused for authored asset refs because document loading bypasses the runtime manager.
+     * @param Params Optional type-erased load parameters. Ignored for authored asset refs.
+     * @return Owning authored asset document on success, or an error string.
+     */
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::unique_ptr<U>, std::string>>
+    Load(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    {
+        (void)Manager;
+        (void)Params;
+        return LoadAsset<U>();
+    }
+
+    /**
+     * @brief Load the referenced runtime asset through an explicit asset manager.
      * @param Manager Borrowed asset manager.
      * @param Params Optional type-erased load parameters forwarded to the asset factory.
      * @return Owning detached runtime object on success, or an error string.
      *
      * Resolution order is asset id first, then resolved asset name.
      */
-    [[nodiscard]] TLoadResult Load(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<!std::is_base_of_v<IAsset, U>, TLoadResult>
+    Load(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
     {
         return LoadInternal(Manager, Params);
     }
 
     /**
-     * @brief Load the referenced asset through the default asset manager.
+     * @brief Load the referenced authored asset document directly from JSON source.
+     * @param Params Optional type-erased load parameters. Ignored for authored asset refs.
+     * @return Owning authored asset document on success, or an error string.
+     */
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::unique_ptr<U>, std::string>>
+    Load(const std::any& Params = {}) const
+    {
+        (void)Params;
+        return LoadAsset<U>();
+    }
+
+    /**
+     * @brief Load the referenced runtime asset through the default asset manager.
      * @param Params Optional type-erased load parameters forwarded to the asset factory.
      * @return Owning detached runtime object on success, or an error string.
      * @warning Fails when no default asset-manager resolver is configured.
      */
-    [[nodiscard]] TLoadResult Load(const std::any& Params = {}) const
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<!std::is_base_of_v<IAsset, U>, TLoadResult>
+    Load(const std::any& Params = {}) const
     {
         auto* Manager = ResolveDefaultAssetManager();
         if (!Manager)
@@ -283,6 +320,300 @@ public:
             return std::unexpected("No default AssetManager resolver is configured");
         }
         return Load(*Manager, Params);
+    }
+
+    template<typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::unique_ptr<U>, std::string>>
+    LoadAsset() const
+    {
+        const std::string Name = ResolvedAssetName();
+        if (Name.empty())
+        {
+            return std::unexpected("Authored asset reference requires an asset name");
+        }
+
+        auto LoadResult = ::SnAPI::GameFramework::LoadAuthoredAssetByName<U>(Name);
+        if (!LoadResult)
+        {
+            return std::unexpected(LoadResult.error().Message);
+        }
+        return std::move(*LoadResult);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::unique_ptr<RuntimeT>, std::string>>
+    LoadRuntime(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    {
+        const std::optional<::SnAPI::AssetPipeline::AssetId> ParsedId = ParsedAssetId();
+        const std::string Name = ResolvedAssetName();
+
+        if (ParsedId.has_value())
+        {
+            auto ExistingById = Manager.FindAsset(*ParsedId);
+            if (ExistingById.has_value())
+            {
+                return Manager.Load<RuntimeT>(*ParsedId, Params);
+            }
+        }
+
+        if (!Name.empty())
+        {
+            auto ExistingByName = Manager.FindAsset(Name);
+            if (ExistingByName.has_value())
+            {
+                return Manager.Load<RuntimeT>(ExistingByName->Id, Params);
+            }
+        }
+
+        auto AssetResult = LoadAsset<U>();
+        if (!AssetResult)
+        {
+            return std::unexpected(AssetResult.error());
+        }
+
+        auto PayloadResult = BuildAuthoredAssetSourcePayload(**AssetResult, Manager.GetRegistry());
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        ::SnAPI::AssetPipeline::SourcePayloadRequest Request{};
+        if (ParsedId.has_value())
+        {
+            Request.Id = *ParsedId;
+        }
+        Request.LogicalName = !Name.empty() ? Name : Request.Id.ToString();
+        Request.AssetKind = (*AssetResult)->CookedAssetKind();
+        Request.Intermediate = std::move(*PayloadResult);
+
+        if (!Name.empty())
+        {
+            if (auto SourcePath = ResolveAuthoredAssetPath(Name); SourcePath)
+            {
+                Request.Dependencies.emplace_back(SourcePath->string());
+            }
+        }
+
+        return Manager.LoadFromSourcePayload<RuntimeT>(Request, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::unique_ptr<RuntimeT>, std::string>>
+    LoadRuntime(const std::any& Params = {}) const
+    {
+        auto* Manager = ResolveDefaultAssetManager();
+        if (!Manager)
+        {
+            return std::unexpected("No default AssetManager resolver is configured");
+        }
+        return LoadRuntime<RuntimeT, U>(*Manager, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::shared_ptr<RuntimeT>, std::string>>
+    LoadRuntimeShared(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    {
+        const std::optional<::SnAPI::AssetPipeline::AssetId> ParsedId = ParsedAssetId();
+        const std::string Name = ResolvedAssetName();
+
+        if (ParsedId.has_value())
+        {
+            auto ExistingById = Manager.FindAsset(*ParsedId);
+            if (ExistingById.has_value())
+            {
+                return Manager.LoadShared<RuntimeT>(*ParsedId, Params);
+            }
+        }
+
+        if (!Name.empty())
+        {
+            auto ExistingByName = Manager.FindAsset(Name);
+            if (ExistingByName.has_value())
+            {
+                return Manager.LoadShared<RuntimeT>(ExistingByName->Id, Params);
+            }
+        }
+
+        auto AssetResult = LoadAsset<U>();
+        if (!AssetResult)
+        {
+            return std::unexpected(AssetResult.error());
+        }
+
+        auto PayloadResult = BuildAuthoredAssetSourcePayload(**AssetResult, Manager.GetRegistry());
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        ::SnAPI::AssetPipeline::SourcePayloadRequest Request{};
+        if (ParsedId.has_value())
+        {
+            Request.Id = *ParsedId;
+        }
+        Request.LogicalName = !Name.empty() ? Name : Request.Id.ToString();
+        Request.AssetKind = (*AssetResult)->CookedAssetKind();
+        Request.Intermediate = std::move(*PayloadResult);
+
+        if (!Name.empty())
+        {
+            if (auto SourcePath = ResolveAuthoredAssetPath(Name); SourcePath)
+            {
+                Request.Dependencies.emplace_back(SourcePath->string());
+            }
+        }
+
+        return Manager.LoadSharedFromSourcePayload<RuntimeT>(Request, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::shared_ptr<RuntimeT>, std::string>>
+    LoadRuntimeShared(const std::any& Params = {}) const
+    {
+        auto* Manager = ResolveDefaultAssetManager();
+        if (!Manager)
+        {
+            return std::unexpected("No default AssetManager resolver is configured");
+        }
+        return LoadRuntimeShared<RuntimeT, U>(*Manager, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<::SnAPI::AssetPipeline::AssetHandle<RuntimeT>, std::string>>
+    GetRuntime(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    {
+        const std::optional<::SnAPI::AssetPipeline::AssetId> ParsedId = ParsedAssetId();
+        const std::string Name = ResolvedAssetName();
+
+        if (ParsedId.has_value())
+        {
+            auto ExistingById = Manager.FindAsset(*ParsedId);
+            if (ExistingById.has_value())
+            {
+                return Manager.GetById<RuntimeT>(*ParsedId, Params);
+            }
+        }
+
+        if (!Name.empty())
+        {
+            auto ExistingByName = Manager.FindAsset(Name);
+            if (ExistingByName.has_value())
+            {
+                return Manager.GetById<RuntimeT>(ExistingByName->Id, Params);
+            }
+        }
+
+        auto AssetResult = LoadAsset<U>();
+        if (!AssetResult)
+        {
+            return std::unexpected(AssetResult.error());
+        }
+
+        auto PayloadResult = BuildAuthoredAssetSourcePayload(**AssetResult, Manager.GetRegistry());
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        ::SnAPI::AssetPipeline::SourcePayloadRequest Request{};
+        if (ParsedId.has_value())
+        {
+            Request.Id = *ParsedId;
+        }
+        Request.LogicalName = !Name.empty() ? Name : Request.Id.ToString();
+        Request.AssetKind = (*AssetResult)->CookedAssetKind();
+        Request.Intermediate = std::move(*PayloadResult);
+
+        if (!Name.empty())
+        {
+            if (auto SourcePath = ResolveAuthoredAssetPath(Name); SourcePath)
+            {
+                Request.Dependencies.emplace_back(SourcePath->string());
+            }
+        }
+
+        return Manager.GetFromSourcePayload<RuntimeT>(Request, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<::SnAPI::AssetPipeline::AssetHandle<RuntimeT>, std::string>>
+    GetRuntime(const std::any& Params = {}) const
+    {
+        auto* Manager = ResolveDefaultAssetManager();
+        if (!Manager)
+        {
+            return std::unexpected("No default AssetManager resolver is configured");
+        }
+        return GetRuntime<RuntimeT, U>(*Manager, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::shared_ptr<RuntimeT>, std::string>>
+    GetRuntimeShared(::SnAPI::AssetPipeline::AssetManager& Manager, const std::any& Params = {}) const
+    {
+        const std::optional<::SnAPI::AssetPipeline::AssetId> ParsedId = ParsedAssetId();
+        const std::string Name = ResolvedAssetName();
+
+        if (ParsedId.has_value())
+        {
+            auto ExistingById = Manager.FindAsset(*ParsedId);
+            if (ExistingById.has_value())
+            {
+                return Manager.GetSharedById<RuntimeT>(*ParsedId, Params);
+            }
+        }
+
+        if (!Name.empty())
+        {
+            auto ExistingByName = Manager.FindAsset(Name);
+            if (ExistingByName.has_value())
+            {
+                return Manager.GetSharedById<RuntimeT>(ExistingByName->Id, Params);
+            }
+        }
+
+        auto AssetResult = LoadAsset<U>();
+        if (!AssetResult)
+        {
+            return std::unexpected(AssetResult.error());
+        }
+
+        auto PayloadResult = BuildAuthoredAssetSourcePayload(**AssetResult, Manager.GetRegistry());
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error().Message);
+        }
+
+        ::SnAPI::AssetPipeline::SourcePayloadRequest Request{};
+        if (ParsedId.has_value())
+        {
+            Request.Id = *ParsedId;
+        }
+        Request.LogicalName = !Name.empty() ? Name : Request.Id.ToString();
+        Request.AssetKind = (*AssetResult)->CookedAssetKind();
+        Request.Intermediate = std::move(*PayloadResult);
+
+        if (!Name.empty())
+        {
+            if (auto SourcePath = ResolveAuthoredAssetPath(Name); SourcePath)
+            {
+                Request.Dependencies.emplace_back(SourcePath->string());
+            }
+        }
+
+        return Manager.GetSharedFromSourcePayload<RuntimeT>(Request, Params);
+    }
+
+    template<typename RuntimeT, typename U = TBase>
+    [[nodiscard]] std::enable_if_t<std::is_base_of_v<IAsset, U>, std::expected<std::shared_ptr<RuntimeT>, std::string>>
+    GetRuntimeShared(const std::any& Params = {}) const
+    {
+        auto* Manager = ResolveDefaultAssetManager();
+        if (!Manager)
+        {
+            return std::unexpected("No default AssetManager resolver is configured");
+        }
+        return GetRuntimeShared<RuntimeT, U>(*Manager, Params);
     }
 
     /**
@@ -697,6 +1028,39 @@ public:
                     }
                 }
             }
+            else if constexpr (std::is_base_of_v<IAsset, TBase>)
+            {
+                AuthoredAssetRegistry::Instance().EnsureBuilt();
+                const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByType(StaticTypeId<TBase>());
+                if (!Descriptor)
+                {
+                    return;
+                }
+
+                const auto MatchesExtension = [&Descriptor](const std::filesystem::path& Path) {
+                    std::string AssetExtension = Path.extension().string();
+                    std::string ExpectedExtension = Descriptor->FileExtension;
+                    std::transform(AssetExtension.begin(), AssetExtension.end(), AssetExtension.begin(), [](unsigned char Ch) {
+                        return static_cast<char>(std::tolower(Ch));
+                    });
+                    std::transform(ExpectedExtension.begin(), ExpectedExtension.end(), ExpectedExtension.begin(), [](unsigned char Ch) {
+                        return static_cast<char>(std::tolower(Ch));
+                    });
+                    return AssetExtension == ExpectedExtension;
+                };
+
+                if (SourcePath != nullptr)
+                {
+                    if (!MatchesExtension(*SourcePath))
+                    {
+                        return;
+                    }
+                }
+                else if (!MatchesExtension(std::filesystem::path(AssetName)))
+                {
+                    return;
+                }
+            }
             else
             {
                 auto Preview = LoadByName
@@ -955,7 +1319,17 @@ private:
         return std::unexpected("AssetRef is empty");
     }
 
+    SnField(
+        SnKey("AssetName"),
+        SnGetter(EditAssetName),
+        SnConstGetter(GetAssetName)
+    )
     std::string m_assetName{};
+    SnField(
+        SnKey("AssetId"),
+        SnGetter(EditAssetId),
+        SnConstGetter(GetAssetId)
+    )
     std::string m_assetId{};
 };
 

@@ -40,6 +40,9 @@ public:
      */
     explicit GraphBuilder(const TypeInfo& SelfType);
 
+    /** @brief Access the stable reflected self type bound into this builder. */
+    [[nodiscard]] const TypeInfo& SelfType() const { return *m_selfType; }
+
     /**
      * @brief Add one slot using reflected type metadata.
      * @param Type Reflected slot type.
@@ -140,6 +143,13 @@ public:
      * @return Success or error.
      */
     Result AddBranch(SlotId Condition, LabelId TrueTarget, LabelId FalseTarget);
+
+    /**
+     * @brief Emit one runtime default-construction step for a reflected slot.
+     * @param Output Destination slot.
+     * @return Success or error.
+     */
+    Result AddDefaultConstruct(SlotId Output);
 
     /**
      * @brief Emit a reflected self-field read.

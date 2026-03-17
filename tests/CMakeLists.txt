@@ -27,6 +27,8 @@ if (SNAPI_GF_BUILD_REFLECTION_GEN)
         BUILD_DIR "${CMAKE_BINARY_DIR}"
         SEED_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/ReflectionTests.cpp"
         PROJECT_ROOT "${CMAKE_SOURCE_DIR}"
+        HEADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}"
+        GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/reflection/tests"
         EXTRA_ARGS
             "-I${CMAKE_SOURCE_DIR}/include"
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
@@ -41,6 +43,7 @@ catch_discover_tests(GameFrameworkTests)
 add_executable(GameFrameworkEditorTests
     SourceAssetEditorTests.cpp
     ConduitEditorTests.cpp
+    ../src/Editor/EditorCameraComponent.cpp
     ../src/Editor/EditorAssetService.cpp
     ../src/Editor/EditorPieService.cpp
     ../src/Editor/ConduitEditor.cpp

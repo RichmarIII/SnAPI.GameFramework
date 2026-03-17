@@ -3,6 +3,7 @@
 #include "BaseComponent.h"
 #include "Math.h"
 #include <string_view>
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -31,6 +32,7 @@ namespace SnAPI::GameFramework
  *
  * @see TransformComponent
  */
+SnType()
 class FollowTargetComponent : public BaseComponent, public ComponentCRTP<FollowTargetComponent>
 {
 public:
@@ -46,17 +48,26 @@ public:
      * - `PositionOffset` is in world units
      * - smoothing values are exponential frequencies in hertz
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::FollowTargetComponent::Settings";
 
+        SnField(SnKey("Target"))
         NodeHandle Target{}; /**< @brief Target node to follow. */
+        SnField(SnKey("PositionOffset"))
         Vec3 PositionOffset = Vec3::Zero(); /**< @brief World-space offset added to target position when syncing position. */
+        SnField(SnKey("SyncPosition"))
         bool SyncPosition = true; /**< @brief Enable position follow. */
+        SnField(SnKey("SyncRotation"))
         bool SyncRotation = false; /**< @brief Enable rotation follow from target rotation. */
+        SnField(SnKey("RotationOffset"))
         Quat RotationOffset = Quat::Identity(); /**< @brief Extra rotation applied after followed target rotation when SyncRotation is true. */
+        SnField(SnKey("PositionSmoothingHz"))
         float PositionSmoothingHz = 14.0f; /**< @brief Exponential smoothing frequency for position (0 = instant snap). */
+        SnField(SnKey("RotationSmoothingHz"))
         float RotationSmoothingHz = 14.0f; /**< @brief Exponential smoothing frequency for rotation (0 = instant snap). */
+        SnField(SnKey("ResolveTargetByUuidFallback"))
         bool ResolveTargetByUuidFallback = true; /**< @brief Resolve target through UUID fallback when runtime key path is unavailable. */
     };
 
@@ -67,6 +78,7 @@ public:
     }
 
     /** @brief Access settings for mutation. */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;

@@ -6,6 +6,7 @@
 #include "Export.h"
 #include "Math.h"
 #include <string_view>
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -34,6 +35,7 @@ namespace SnAPI::GameFramework
  * @see CameraComponent
  * @see InputIntentComponent
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API SprintArmComponent : public BaseComponent, public ComponentCRTP<SprintArmComponent>
 {
 public:
@@ -49,17 +51,26 @@ public:
      * - angles are in degrees
      * - `ArmLength` and `SocketOffset` are in world units
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::SprintArmComponent::Settings";
 
+        SnField(SnKey("Enabled"))
         bool Enabled = true; /**< @brief Global runtime toggle for sprint arm behavior. */
+        SnField(SnKey("DriveOwnerYaw"))
         bool DriveOwnerYaw = true; /**< @brief When true, writes yaw-only rotation back to owning node transform. */
+        SnField(SnKey("ArmLength"))
         float ArmLength = 2.8f; /**< @brief Distance from socket pivot to camera along local +Z (behind -Z facing pawn). */
+        SnField(SnKey("SocketOffset"))
         Vec3 SocketOffset = Vec3(0.0f, 1.35f, 0.0f); /**< @brief Local socket pivot offset from owner origin. */
+        SnField(SnKey("YawDegrees"))
         float YawDegrees = 0.0f; /**< @brief Current view yaw in degrees. */
+        SnField(SnKey("PitchDegrees"))
         float PitchDegrees = -12.0f; /**< @brief Current view pitch in degrees. */
+        SnField(SnKey("MinPitchDegrees"))
         float MinPitchDegrees = -80.0f; /**< @brief Minimum allowed pitch in degrees. */
+        SnField(SnKey("MaxPitchDegrees"))
         float MaxPitchDegrees = 80.0f; /**< @brief Maximum allowed pitch in degrees. */
     };
 
@@ -70,6 +81,7 @@ public:
     }
 
     /** @brief Access settings for mutation. */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;
@@ -91,6 +103,7 @@ public:
      * @param YawDeltaDegrees Positive values turn view right.
      * @param PitchDeltaDegrees Positive values look up.
      */
+    SnFunction(SnKey("AddLookInput"))
     void AddLookInput(float YawDeltaDegrees, float PitchDeltaDegrees);
 
     /**
@@ -98,6 +111,7 @@ public:
      * @param YawDegrees Absolute yaw in degrees.
      * @param PitchDegrees Absolute pitch in degrees.
      */
+    SnFunction(SnKey("SetViewAngles"))
     void SetViewAngles(float YawDegrees, float PitchDegrees);
 
     /** @brief Current resolved yaw in degrees. */

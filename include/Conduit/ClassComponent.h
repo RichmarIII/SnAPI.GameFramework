@@ -7,6 +7,7 @@
 
 #include "BaseComponent.h"
 #include "Conduit/Asset.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -31,11 +32,13 @@ namespace SnAPI::GameFramework::Conduit
  * - one `GraphInstance` is retained per component, so frame slots persist across executions
  * - binding uses the process-wide default `AssetManager` resolver
  */
+SnType()
 class ClassComponent : public BaseComponent, public ComponentCRTP<ClassComponent>
 {
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::Conduit::ClassComponent";
 
+    SnField(SnKey("Class"))
     TAssetRef<ClassAsset> Class{}; /**< @brief Referenced Conduit class asset to bind to the owning node. */
 
     void OnCreate(IWorld& WorldRef);
@@ -58,9 +61,11 @@ public:
     Result Rebind(IWorld& WorldRef);
 
     /** @brief Whether a compiled class and graph instance are currently bound. */
+    SnField(SnKey("Bound"))
     [[nodiscard]] bool IsBound() const;
 
     /** @brief The last bind/execute failure message, or empty string when no error is present. */
+    SnField(SnKey("LastError"))
     [[nodiscard]] const std::string& LastError() const;
 
 private:

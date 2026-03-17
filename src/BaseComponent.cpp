@@ -202,9 +202,10 @@ bool BaseComponent::CallRPC(std::string_view MethodName, std::span<const Variant
             auto* WorldPtr = World();
             auto* Network = WorldPtr ? &WorldPtr->Networking() : nullptr;
             auto* Bridge = Network ? Network->RpcBridge() : nullptr;
+            const std::uint64_t OwnerConnectionIdValue = OwnerConnectionId();
             if (Network && Network->Session() && Network->Rpc() && Bridge)
             {
-                const auto Connection = Network->PrimaryConnection();
+                const auto Connection = Network->ResolveConnectionByOwnerId(OwnerConnectionIdValue);
                 if (Connection)
                 {
                     return Bridge->Call(*Connection,
@@ -217,7 +218,7 @@ bool BaseComponent::CallRPC(std::string_view MethodName, std::span<const Variant
                         != 0;
                 }
 
-                if (!IsListenServer())
+                if (OwnerConnectionIdValue != 0 && !IsListenServer())
                 {
                     return false;
                 }

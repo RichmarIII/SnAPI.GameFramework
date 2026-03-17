@@ -22,7 +22,6 @@
 #include "Level.h"
 #include "NodeCast.h"
 #include "Relevance.h"
-#include "RenderAssetRuntime.h"
 #include "ScriptComponent.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "StaticMeshComponent.h"
@@ -2018,7 +2017,7 @@ void RegisterSerializationDefaults()
         {
             if (Field.Name == "MaterialInstanceOverrides")
             {
-                ValueRegistry.RegisterAs<std::vector<TAssetRef<MaterialInstanceAssetRuntime>>>(Field.FieldType);
+                ValueRegistry.RegisterAs<std::vector<TAssetRef<MaterialInstanceAsset>>>(Field.FieldType);
                 break;
             }
         }

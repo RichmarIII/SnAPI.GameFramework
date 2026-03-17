@@ -9,8 +9,29 @@
 namespace SnAPI::GameFramework
 {
 
+namespace
+{
+
+#if defined(SNAPI_REFLECTION_LINK_ANCHOR_SYMBOL)
+extern "C" void SNAPI_REFLECTION_LINK_ANCHOR_SYMBOL();
+#endif
+
+void EnsureGeneratedReflectionLinked()
+{
+#if defined(SNAPI_REFLECTION_LINK_ANCHOR_SYMBOL)
+    static const bool Linked = [] {
+        SNAPI_REFLECTION_LINK_ANCHOR_SYMBOL();
+        return true;
+    }();
+    (void)Linked;
+#endif
+}
+
+} // namespace
+
 TypeAutoRegistry& TypeAutoRegistry::Instance()
 {
+    EnsureGeneratedReflectionLinked();
     static TypeAutoRegistry Instance;
     return Instance;
 }
@@ -26,9 +47,8 @@ void TypeAutoRegistry::Register(const TypeId& Id, std::string_view Name, EnsureF
     auto It = m_entries.find(Id);
     if (It != m_entries.end())
     {
-        // If this happens, it usually means the same type was registered in more than one TU.
+        // Generated reflection and manual registration can both contribute the same type.
         // Keep the first registration to avoid non-deterministic behavior.
-        DEBUG_ASSERT(It->second == Fn, "Duplicate TypeAutoRegistry registration for type: {}", std::string(Name));
         return;
     }
     m_entries.emplace(Id, Fn);

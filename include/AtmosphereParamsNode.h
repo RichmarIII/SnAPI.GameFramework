@@ -9,6 +9,7 @@
 #include "BaseNode.h"
 #include "Export.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
 {
@@ -50,6 +51,7 @@ namespace SnAPI::GameFramework
  * @see RendererSystem
  * @see WorldRenderSettings
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API AtmosphereParamsNode : public BaseNode, public NodeCRTP<AtmosphereParamsNode>
 {
 public:
@@ -65,96 +67,115 @@ public:
     explicit AtmosphereParamsNode(std::string Name);
 
     /** @brief Access the target viewport selector. @return Mutable viewport id; negative means all current viewports. */
+    SnField(SnKey("ViewportID"), SnConstGetter(GetViewportID))
     std::int64_t& EditViewportID();
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
     /** @brief Access the world-atmosphere feature toggle. @return Mutable flag enabling the pass's world-mode feature. */
+    SnField(SnKey("WorldMode"), SnConstGetter(GetWorldMode))
     bool& EditWorldMode();
     /** @brief Read the world-atmosphere feature toggle. @return Stored world-mode flag. */
     const bool& GetWorldMode() const;
 
     /** @brief Access the primary sun direction. @return Mutable world-space direction vector; normalized before upload. */
+    SnField(SnKey("SunDirection"), SnConstGetter(GetSunDirection))
     Vec3& EditSunDirection();
     /** @brief Read the primary sun direction. @return Stored world-space direction vector. */
     const Vec3& GetSunDirection() const;
 
     /** @brief Access the sun spectral color multiplier. @return Mutable non-negative RGB value. */
+    SnField(SnKey("SunColor"), SnConstGetter(GetSunColor))
     Vec3& EditSunColor();
     /** @brief Read the sun spectral color multiplier. @return Stored RGB value. */
     const Vec3& GetSunColor() const;
 
     /** @brief Access the final atmosphere exposure. @return Mutable non-negative exposure scalar. */
+    SnField(SnKey("Exposure"), SnConstGetter(GetExposure))
     float& EditExposure();
     /** @brief Read the final atmosphere exposure. @return Stored exposure scalar. */
     const float& GetExposure() const;
 
     /** @brief Access the sun radiance multiplier. @return Mutable non-negative intensity scalar. */
+    SnField(SnKey("SunIntensity"), SnConstGetter(GetSunIntensity))
     float& EditSunIntensity();
     /** @brief Read the sun radiance multiplier. @return Stored intensity scalar. */
     const float& GetSunIntensity() const;
 
     /** @brief Access Rayleigh scattering coefficients. @return Mutable non-negative RGB scattering coefficients. */
+    SnField(SnKey("RayleighScattering"), SnConstGetter(GetRayleighScattering))
     Vec3& EditRayleighScattering();
     /** @brief Read Rayleigh scattering coefficients. @return Stored RGB scattering coefficients. */
     const Vec3& GetRayleighScattering() const;
 
     /** @brief Access the Rayleigh scale height. @return Mutable scale height in meters; sanitized to stay positive. */
+    SnField(SnKey("RayleighScaleHeight"), SnConstGetter(GetRayleighScaleHeight))
     float& EditRayleighScaleHeight();
     /** @brief Read the Rayleigh scale height. @return Stored scale height in meters. */
     const float& GetRayleighScaleHeight() const;
 
     /** @brief Access Mie scattering coefficients. @return Mutable non-negative RGB scattering coefficients. */
+    SnField(SnKey("MieScattering"), SnConstGetter(GetMieScattering))
     Vec3& EditMieScattering();
     /** @brief Read Mie scattering coefficients. @return Stored RGB scattering coefficients. */
     const Vec3& GetMieScattering() const;
 
     /** @brief Access the Mie scale height. @return Mutable scale height in meters; sanitized to stay positive. */
+    SnField(SnKey("MieScaleHeight"), SnConstGetter(GetMieScaleHeight))
     float& EditMieScaleHeight();
     /** @brief Read the Mie scale height. @return Stored scale height in meters. */
     const float& GetMieScaleHeight() const;
 
     /** @brief Access Mie absorption coefficients. @return Mutable non-negative RGB absorption coefficients. */
+    SnField(SnKey("MieAbsorption"), SnConstGetter(GetMieAbsorption))
     Vec3& EditMieAbsorption();
     /** @brief Read Mie absorption coefficients. @return Stored RGB absorption coefficients. */
     const Vec3& GetMieAbsorption() const;
 
     /** @brief Access the Mie anisotropy parameter. @return Mutable forward-scattering `g` term. */
+    SnField(SnKey("MieAnisotropyG"), SnConstGetter(GetMieAnisotropyG))
     float& EditMieAnisotropyG();
     /** @brief Read the Mie anisotropy parameter. @return Stored `g` term. */
     const float& GetMieAnisotropyG() const;
 
     /** @brief Access the planet radius. @return Mutable radius in meters; sanitized to a finite positive value. */
+    SnField(SnKey("PlanetRadiusMeters"), SnConstGetter(GetPlanetRadiusMeters))
     float& EditPlanetRadiusMeters();
     /** @brief Read the planet radius. @return Stored radius in meters. */
     const float& GetPlanetRadiusMeters() const;
 
     /** @brief Access the atmosphere outer radius. @return Mutable radius in meters; forced above planet radius when applied. */
+    SnField(SnKey("AtmosphereRadiusMeters"), SnConstGetter(GetAtmosphereRadiusMeters))
     float& EditAtmosphereRadiusMeters();
     /** @brief Read the atmosphere outer radius. @return Stored radius in meters. */
     const float& GetAtmosphereRadiusMeters() const;
 
     /** @brief Access the camera offset above ground. @return Mutable offset in meters. */
+    SnField(SnKey("CameraGroundOffsetMeters"), SnConstGetter(GetCameraGroundOffsetMeters))
     float& EditCameraGroundOffsetMeters();
     /** @brief Read the camera offset above ground. @return Stored offset in meters. */
     const float& GetCameraGroundOffsetMeters() const;
 
     /** @brief Access the maximum sun-distance parameter. @return Mutable distance in meters. */
+    SnField(SnKey("MaxSunDistanceMeters"), SnConstGetter(GetMaxSunDistanceMeters))
     float& EditMaxSunDistanceMeters();
     /** @brief Read the maximum sun-distance parameter. @return Stored distance in meters. */
     const float& GetMaxSunDistanceMeters() const;
 
     /** @brief Access the number of primary view samples. @return Mutable sample count controlling atmospheric integration quality. */
+    SnField(SnKey("ViewSampleCount"), SnConstGetter(GetViewSampleCount))
     std::uint32_t& EditViewSampleCount();
     /** @brief Read the number of primary view samples. @return Stored sample count. */
     const std::uint32_t& GetViewSampleCount() const;
 
     /** @brief Access the number of sun-light samples. @return Mutable sample count controlling lighting quality. */
+    SnField(SnKey("SunSampleCount"), SnConstGetter(GetSunSampleCount))
     std::uint32_t& EditSunSampleCount();
     /** @brief Read the number of sun-light samples. @return Stored sample count. */
     const std::uint32_t& GetSunSampleCount() const;
 
     /** @brief Access the multi-scattering strength term. @return Mutable non-negative scattering strength scalar. */
+    SnField(SnKey("MultiScatterStrength"), SnConstGetter(GetMultiScatterStrength))
     float& EditMultiScatterStrength();
     /** @brief Read the multi-scattering strength term. @return Stored scattering strength scalar. */
     const float& GetMultiScatterStrength() const;

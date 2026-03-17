@@ -11,6 +11,7 @@
 #include "StaticTypeId.h"
 #include "TypeName.h"
 #include "Uuid.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -177,6 +178,7 @@ private:
  *
  * @see RelevancePolicyRegistry
  */
+SnType()
 class RelevanceComponent : public BaseComponent, public ComponentCRTP<RelevanceComponent>
 {
 public:

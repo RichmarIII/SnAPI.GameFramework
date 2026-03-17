@@ -96,6 +96,56 @@ void EnsureConduitEditorNodeHostRegistered()
         .Method("GetSelfPointer", &ConduitEditorNodeHost::GetSelfPointer)
         .Register();
     REQUIRE(RegisterResult);
+    TypeInfo* NodeHostInfo = *RegisterResult;
+    REQUIRE(NodeHostInfo != nullptr);
+    NodeHostInfo->DisplayName = "Editor Node Host";
+    NodeHostInfo->Doc = "Test node host used to validate reflected Conduit metadata and tooltips.";
+    if (auto FieldIt = std::find_if(NodeHostInfo->Fields.begin(), NodeHostInfo->Fields.end(), [](const FieldInfo& Field) {
+            return Field.Name == "Score";
+        });
+        FieldIt != NodeHostInfo->Fields.end())
+    {
+        FieldIt->DisplayName = "Score";
+        FieldIt->Doc = "Current score accumulated on the test host.";
+        FieldIt->Value.Min = 0.0;
+        FieldIt->Value.Max = 500.0;
+        FieldIt->Value.Step = 1.0;
+    }
+    if (auto MethodIt = std::find_if(NodeHostInfo->Methods.begin(), NodeHostInfo->Methods.end(), [](const MethodInfo& Method) {
+            return Method.Name == "AddScore";
+        });
+        MethodIt != NodeHostInfo->Methods.end())
+    {
+        MethodIt->DisplayName = "Add Score";
+        MethodIt->Doc = "Add a delta to the current score.";
+        REQUIRE(MethodIt->Params.size() == 1);
+        MethodIt->Params[0].Name = "Delta";
+        MethodIt->Params[0].Doc = "Signed amount to add to the score.";
+    }
+    if (auto MethodIt = std::find_if(NodeHostInfo->Methods.begin(), NodeHostInfo->Methods.end(), [](const MethodInfo& Method) {
+            return Method.Name == "GetScore";
+        });
+        MethodIt != NodeHostInfo->Methods.end())
+    {
+        MethodIt->DisplayName = "Get Score";
+        MethodIt->Doc = "Read the current score without mutating the node.";
+    }
+    if (auto MethodIt = std::find_if(NodeHostInfo->Methods.begin(), NodeHostInfo->Methods.end(), [](const MethodInfo& Method) {
+            return Method.Name == "GetSelfReference";
+        });
+        MethodIt != NodeHostInfo->Methods.end())
+    {
+        MethodIt->DisplayName = "Get Self Reference";
+        MethodIt->Doc = "Expose the current node instance as a mutable reference.";
+    }
+    if (auto MethodIt = std::find_if(NodeHostInfo->Methods.begin(), NodeHostInfo->Methods.end(), [](const MethodInfo& Method) {
+            return Method.Name == "GetSelfPointer";
+        });
+        MethodIt != NodeHostInfo->Methods.end())
+    {
+        MethodIt->DisplayName = "Get Self Pointer";
+        MethodIt->Doc = "Expose the current node instance as a raw pointer.";
+    }
 
     if (!TypeRegistry::Instance().Find(StaticTypeId<ConduitEditorDotNamedHost>()))
     {
@@ -114,6 +164,29 @@ void EnsureConduitEditorNodeHostRegistered()
             .Method("AddCharge", &ConduitEditorComponentHost::AddCharge)
             .Register();
         REQUIRE(ComponentRegisterResult);
+        TypeInfo* ComponentInfo = *ComponentRegisterResult;
+        REQUIRE(ComponentInfo != nullptr);
+        ComponentInfo->DisplayName = "Editor Component Host";
+        ComponentInfo->Doc = "Test component host used to validate reflected instance palette entries.";
+        if (auto FieldIt = std::find_if(ComponentInfo->Fields.begin(), ComponentInfo->Fields.end(), [](const FieldInfo& Field) {
+                return Field.Name == "Charge";
+            });
+            FieldIt != ComponentInfo->Fields.end())
+        {
+            FieldIt->DisplayName = "Charge";
+            FieldIt->Doc = "Current charge stored on the component host.";
+        }
+        if (auto MethodIt = std::find_if(ComponentInfo->Methods.begin(), ComponentInfo->Methods.end(), [](const MethodInfo& Method) {
+                return Method.Name == "AddCharge";
+            });
+            MethodIt != ComponentInfo->Methods.end())
+        {
+            MethodIt->DisplayName = "Add Charge";
+            MethodIt->Doc = "Add charge to the current component host value.";
+            REQUIRE(MethodIt->Params.size() == 1);
+            MethodIt->Params[0].Name = "Delta";
+            MethodIt->Params[0].Doc = "Signed amount to add to the current charge.";
+        }
     }
 }
 
@@ -567,6 +640,67 @@ TEST_CASE("Conduit editor service exposes editable node inspector state", "[Cond
     CHECK(BranchNode->FalseLabelName == "LoopExit");
 }
 
+TEST_CASE("Conduit editor service exposes editable reflected node input defaults", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/NodeInputDefaultsDoc", "NodeInputDefaultsDoc", GraphAsset{});
+    REQUIRE(OpenResult);
+    REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
+
+    auto CallNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.AddScore");
+    REQUIRE(CallNodeResult);
+    REQUIRE(Service.SelectNode((*CallNodeResult)->Id));
+
+    {
+        const auto Inspector = Service.ActiveNodeInspectorView();
+        REQUIRE(Inspector.HasSelection);
+        REQUIRE(Inspector.InputDefaults.size() == 1);
+        CHECK(Inspector.InputDefaults[0].PinKey == "Arg0");
+        CHECK(Inspector.InputDefaults[0].DisplayName == "Delta");
+        CHECK(Inspector.InputDefaults[0].Type == StaticTypeId<int>());
+        CHECK(Inspector.InputDefaults[0].DefaultEditorKind == EVariableDefaultEditorKind::Text);
+        CHECK_FALSE(Inspector.InputDefaults[0].Connected);
+        CHECK_FALSE(Inspector.InputDefaults[0].HasDefault);
+        CHECK(Inspector.InputDefaults[0].Tooltip.find("Signed amount to add") != std::string::npos);
+    }
+
+    REQUIRE(Service.SetSelectedNodeInputDefaultText("Arg0", "7"));
+
+    {
+        const auto Inspector = Service.ActiveNodeInspectorView();
+        REQUIRE(Inspector.InputDefaults.size() == 1);
+        CHECK(Inspector.InputDefaults[0].HasDefault);
+        CHECK(Inspector.InputDefaults[0].TextValue == "7");
+    }
+
+    const GraphNodeAsset* StoredNode = Service.ActiveDocument()->FindNode((*CallNodeResult)->Id);
+    REQUIRE(StoredNode != nullptr);
+    REQUIRE(StoredNode->InputDefaults.size() == 1);
+    CHECK(StoredNode->InputDefaults[0].PinKey == "Arg0");
+    CHECK(StoredNode->InputDefaults[0].Value.Type == StaticTypeId<int>());
+    int DecodedValue = 0;
+    REQUIRE(DeserializeReflectedValueInto(StoredNode->InputDefaults[0].Value.Type,
+                                          &DecodedValue,
+                                          StoredNode->InputDefaults[0].Value.Bytes.data(),
+                                          StoredNode->InputDefaults[0].Value.Bytes.size()));
+    CHECK(DecodedValue == 7);
+
+    REQUIRE(Service.ClearSelectedNodeInputDefault("Arg0"));
+
+    {
+        const auto Inspector = Service.ActiveNodeInspectorView();
+        REQUIRE(Inspector.InputDefaults.size() == 1);
+        CHECK_FALSE(Inspector.InputDefaults[0].HasDefault);
+        CHECK(Inspector.InputDefaults[0].TextValue.empty());
+    }
+
+    StoredNode = Service.ActiveDocument()->FindNode((*CallNodeResult)->Id);
+    REQUIRE(StoredNode != nullptr);
+    CHECK(StoredNode->InputDefaults.empty());
+}
+
 TEST_CASE("Conduit editor service exposes and persists graph canvas state", "[Conduit][Editor]")
 {
     RegisterBuiltinTypes();
@@ -789,11 +923,11 @@ TEST_CASE("Conduit editor service exposes reflected method call nodes for self a
           }) == PaletteBefore.end());
     CHECK(std::find_if(PaletteBefore.begin(), PaletteBefore.end(), [](const PaletteEntryView& Entry) {
               return Entry.StableId == "instance.method.ConduitEditorNodeHost.AddScore" &&
-                     Entry.DisplayName == "Call ConduitEditorNodeHost::AddScore";
+                     Entry.DisplayName == "Call ConduitEditorNodeHost::Add Score";
           }) != PaletteBefore.end());
     CHECK(std::find_if(PaletteBefore.begin(), PaletteBefore.end(), [](const PaletteEntryView& Entry) {
               return Entry.StableId == "instance.method.ConduitEditorComponentHost.AddCharge" &&
-                     Entry.DisplayName == "Call ConduitEditorComponentHost::AddCharge";
+                     Entry.DisplayName == "Call ConduitEditorComponentHost::Add Charge";
           }) != PaletteBefore.end());
 
     REQUIRE(Service.SetActiveGraphSelfType(StaticTypeId<ConduitEditorNodeHost>()));
@@ -805,32 +939,54 @@ TEST_CASE("Conduit editor service exposes reflected method call nodes for self a
     const auto PaletteAfter = Service.ActivePaletteEntries();
     CHECK(std::find_if(PaletteAfter.begin(), PaletteAfter.end(), [](const PaletteEntryView& Entry) {
               return Entry.StableId == "self.method.ConduitEditorNodeHost.AddScore" &&
-                     Entry.DisplayName == "Call AddScore";
+                     Entry.DisplayName == "Call Add Score";
           }) != PaletteAfter.end());
     CHECK(std::find_if(PaletteAfter.begin(), PaletteAfter.end(), [](const PaletteEntryView& Entry) {
               return Entry.StableId == "self.method.ConduitEditorNodeHost.GetScore" &&
-                     Entry.DisplayName == "Call GetScore";
+                     Entry.DisplayName == "Call Get Score";
           }) != PaletteAfter.end());
+    const auto ScoreFieldIt = std::find_if(PaletteAfter.begin(), PaletteAfter.end(), [](const PaletteEntryView& Entry) {
+        return Entry.StableId == "self.field.read.ConduitEditorNodeHost.Score";
+    });
+    REQUIRE(ScoreFieldIt != PaletteAfter.end());
+    CHECK(ScoreFieldIt->Tooltip.find("Current score accumulated on the test host.") != std::string::npos);
+    CHECK(ScoreFieldIt->Tooltip.find("Range: 0 to 500") != std::string::npos);
+    CHECK(ScoreFieldIt->Tooltip.find("Step: 1") != std::string::npos);
 
     auto CallNodeResult = Service.SpawnNode("self.method.ConduitEditorNodeHost.AddScore");
     REQUIRE(CallNodeResult);
+    const Uuid CallNodeId = (*CallNodeResult)->Id;
     CHECK((*CallNodeResult)->Kind == EGraphAssetNodeKind::SelfMethodCall);
     CHECK((*CallNodeResult)->OwnerType == StaticTypeId<ConduitEditorNodeHost>());
     CHECK((*CallNodeResult)->MemberName == "AddScore");
+    CHECK((*CallNodeResult)->Inputs.size() == 1);
+
+    auto FieldNodeResult = Service.SpawnNode("self.field.read.ConduitEditorNodeHost.Score");
+    REQUIRE(FieldNodeResult);
+    const Uuid FieldNodeId = (*FieldNodeResult)->Id;
 
     const auto Canvas = Service.ActiveCanvasView();
-    const auto CanvasNodeIt = std::find_if(Canvas.Nodes.begin(), Canvas.Nodes.end(), [&CallNodeResult](const CanvasNodeView& Node) {
-        return Node.Id == (*CallNodeResult)->Id;
+    const auto CanvasNodeIt = std::find_if(Canvas.Nodes.begin(), Canvas.Nodes.end(), [CallNodeId](const CanvasNodeView& Node) {
+        return Node.Id == CallNodeId;
     });
     REQUIRE(CanvasNodeIt != Canvas.Nodes.end());
     REQUIRE(CanvasNodeIt->InputPins.size() == 2);
     CHECK(CanvasNodeIt->InputPins[0].Name == "In");
     CHECK(CanvasNodeIt->InputPins[0].IsExec);
-    CHECK(CanvasNodeIt->InputPins[1].Name == "Arg0");
+    CHECK(CanvasNodeIt->InputPins[1].Name == "Delta");
+    CHECK(CanvasNodeIt->Tooltip.find("Add a delta to the current score.") != std::string::npos);
+    CHECK(CanvasNodeIt->InputPins[1].Tooltip.find("Signed amount to add to the score.") != std::string::npos);
     CHECK_FALSE(CanvasNodeIt->InputPins[1].IsExec);
     REQUIRE(CanvasNodeIt->OutputPins.size() == 1);
     CHECK(CanvasNodeIt->OutputPins[0].Name == "Out");
     CHECK(CanvasNodeIt->OutputPins[0].IsExec);
+
+    const auto FieldCanvasNodeIt = std::find_if(Canvas.Nodes.begin(), Canvas.Nodes.end(), [FieldNodeId](const CanvasNodeView& Node) {
+        return Node.Id == FieldNodeId;
+    });
+    REQUIRE(FieldCanvasNodeIt != Canvas.Nodes.end());
+    REQUIRE(FieldCanvasNodeIt->OutputPins.size() == 1);
+    CHECK(FieldCanvasNodeIt->OutputPins[0].Tooltip.find("Range: 0 to 500") != std::string::npos);
 }
 
 TEST_CASE("Conduit editor palette groups reflected members by declaring type and dedups inherited instance entries",
@@ -909,6 +1065,43 @@ TEST_CASE("Conduit editor palette includes reflected world and subsystem instanc
     CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
               return Entry.StableId == "instance.field.write.RendererBootstrapSettings.CreateGraphicsApi";
           }) != Palette.end());
+
+    auto QueueTextNodeResult = Service.SpawnNode("instance.method.RendererSystem.QueueText");
+    REQUIRE(QueueTextNodeResult);
+    CHECK((*QueueTextNodeResult)->Kind == EGraphAssetNodeKind::InstanceMethodCall);
+    CHECK((*QueueTextNodeResult)->OwnerType == StaticTypeId<RendererSystem>());
+    CHECK((*QueueTextNodeResult)->MemberName == "QueueText");
+    CHECK((*QueueTextNodeResult)->Inputs.size() == 3);
+}
+
+TEST_CASE("Conduit editor repairs stale reflected method node input arity on open", "[Conduit][Editor]")
+{
+    EnsureConduitEditorNodeHostRegistered();
+
+    const Uuid QueueTextNodeId = NewUuid();
+
+    GraphAsset Asset{};
+    Asset.Name = "StaleRendererMethodDoc";
+    Asset.Nodes = {
+        GraphNodeAsset{
+            .Id = QueueTextNodeId,
+            .Kind = EGraphAssetNodeKind::InstanceMethodCall,
+            .MemberName = "QueueText",
+            .OwnerType = StaticTypeId<RendererSystem>(),
+        },
+    };
+
+    ConduitEditorService Service{};
+    auto OpenResult = Service.OpenDocument("Conduit/StaleRendererMethodDoc", "StaleRendererMethodDoc", Asset);
+    REQUIRE(OpenResult);
+
+    const GraphDocument* Document = Service.ActiveDocument();
+    REQUIRE(Document != nullptr);
+
+    const GraphNodeAsset* QueueTextNode = Document->FindNode(QueueTextNodeId);
+    REQUIRE(QueueTextNode != nullptr);
+    CHECK(QueueTextNode->OwnerType == StaticTypeId<RendererSystem>());
+    CHECK(QueueTextNode->Inputs.size() == 3);
 }
 
 TEST_CASE("Conduit editor service connects data pins into authored slots and visible wires", "[Conduit][Editor]")
@@ -941,7 +1134,7 @@ TEST_CASE("Conduit editor service connects data pins into authored slots and vis
     REQUIRE(MethodNodeResult);
     const Uuid MethodNodeId = (*MethodNodeResult)->Id;
 
-    const Result ConnectResult = Service.ConnectPins(VariableNodeId, "Value", MethodNodeId, "Arg0");
+    const Result ConnectResult = Service.ConnectPins(VariableNodeId, "Value", MethodNodeId, "Delta");
     const std::string ConnectMessage = ConnectResult ? std::string("connect ok") : ConnectResult.error().Message;
     INFO(ConnectMessage);
     REQUIRE(ConnectResult);
@@ -964,7 +1157,7 @@ TEST_CASE("Conduit editor service connects data pins into authored slots and vis
         return Wire.SourceNodeId == VariableNodeId &&
                Wire.SourcePin == "Value" &&
                Wire.TargetNodeId == MethodNodeId &&
-               Wire.TargetPin == "Arg0";
+               Wire.TargetPin == "Delta";
     });
     REQUIRE(WireIt != Canvas.Wires.end());
     CHECK_FALSE(WireIt->IsExec);
@@ -1143,7 +1336,7 @@ TEST_CASE("Conduit editor service builds compatible spawn-menu entries from a dr
     const auto Entries = Service.BuildSpawnMenuEntries(Request);
     CHECK_FALSE(Entries.empty());
     CHECK(std::find_if(Entries.begin(), Entries.end(), [](const SpawnMenuEntryView& Entry) {
-              return Entry.StableId == "self.method.ConduitEditorNodeHost.AddScore" && Entry.TargetPin == "Arg0";
+              return Entry.StableId == "self.method.ConduitEditorNodeHost.AddScore" && Entry.TargetPin == "Delta";
           }) != Entries.end());
     CHECK(std::find_if(Entries.begin(), Entries.end(), [VariableId](const SpawnMenuEntryView& Entry) {
               return Entry.StableId == ("variable.set." + ToString(VariableId)) && Entry.TargetPin == "Value";

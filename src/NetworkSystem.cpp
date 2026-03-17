@@ -206,6 +206,32 @@ std::optional<SnAPI::Networking::NetConnectionHandle> NetworkSystem::PrimaryConn
     return Handles.front();
 }
 
+std::optional<SnAPI::Networking::NetConnectionHandle> NetworkSystem::ResolveConnectionByOwnerId(
+    const std::uint64_t OwnerConnectionId) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
+    if (OwnerConnectionId == 0)
+    {
+        return std::nullopt;
+    }
+
+    GameLockGuard Lock(m_threadMutex);
+    if (!m_session)
+    {
+        return std::nullopt;
+    }
+
+    for (const SnAPI::Networking::NetConnectionHandle Handle : m_session->Connections())
+    {
+        if (static_cast<std::uint64_t>(Handle) == OwnerConnectionId)
+        {
+            return Handle;
+        }
+    }
+
+    return std::nullopt;
+}
+
 } // namespace SnAPI::GameFramework
 
 #endif // SNAPI_GF_ENABLE_NETWORKING

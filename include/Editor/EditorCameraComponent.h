@@ -4,6 +4,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -38,6 +39,7 @@ namespace SnAPI::GameFramework
  * @see CameraComponent
  * @see TransformComponent
  */
+SnType()
 class EditorCameraComponent final : public BaseComponent, public ComponentCRTP<EditorCameraComponent>
 {
 public:
@@ -48,17 +50,26 @@ public:
     /**
      * @brief Runtime tuning parameters for editor camera navigation.
      */
+    SnType()
     struct Settings
     {
         static constexpr const char* kTypeName = "SnAPI::GameFramework::EditorCameraComponent::Settings";
 
+        SnField(SnKey("Enabled"))
         bool Enabled = true; /**< @brief Master enable gate. When `false`, the component leaves the transform untouched. */
+        SnField(SnKey("RequireInputFocus"))
         bool RequireInputFocus = true; /**< @brief Ignore navigation input while the host window is unfocused. */
+        SnField(SnKey("RequireRightMouseButton"))
         bool RequireRightMouseButton = true; /**< @brief Require the right mouse button to be held before look and move input is consumed. */
+        SnField(SnKey("RequirePointerInsideViewport"))
         bool RequirePointerInsideViewport = true; /**< @brief Only accept navigation input while the pointer is inside a viewport currently bound to this camera. */
+        SnField(SnKey("MoveSpeed"))
         float MoveSpeed = 12.0f; /**< @brief Base translation speed in world units per second. */
+        SnField(SnKey("FastMoveMultiplier"))
         float FastMoveMultiplier = 2.0f; /**< @brief Additional multiplier applied while Shift is held. */
+        SnField(SnKey("LookSensitivity"))
         float LookSensitivity = 0.10f; /**< @brief Angular look sensitivity measured in degrees per mouse pixel. */
+        SnField(SnKey("InvertY"))
         bool InvertY = false; /**< @brief Invert the sign of vertical look input. */
     };
 
@@ -76,6 +87,7 @@ public:
      * @return Borrowed settings reference.
      * @remarks Setting changes take effect on the next tick.
      */
+    SnField(SnKey("Settings"), SnConstGetter(GetSettings))
     [[nodiscard]] Settings& EditSettings()
     {
         return m_settings;

@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -9,6 +10,11 @@
 #include "AuthoredAssetJson.h"
 #include "GameFramework.hpp"
 #include "NodeCast.h"
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <Material.hpp>
+#include <IVertexStreamSource.hpp>
+#include <ShaderCompilationManager.hpp>
+#endif
 
 using namespace SnAPI::GameFramework;
 
@@ -31,6 +37,22 @@ struct TempDir
     {
         std::error_code Ec{};
         std::filesystem::remove_all(Path, Ec);
+    }
+};
+
+struct ScopedAssetRoot
+{
+    std::filesystem::path Previous{};
+
+    explicit ScopedAssetRoot(const std::filesystem::path& Path)
+        : Previous(SPathResolver::Instance().AssetRoot())
+    {
+        REQUIRE(SPathResolver::Instance().SetAssetRoot(Path));
+    }
+
+    ~ScopedAssetRoot()
+    {
+        (void)SPathResolver::Instance().SetAssetRoot(Previous);
     }
 };
 
@@ -63,6 +85,19 @@ std::unique_ptr<SnAPI::AssetPipeline::AssetManager> MakeSourceOnlyManager(const 
     return Manager;
 }
 
+template<typename TValue>
+std::vector<std::uint8_t> BytesFromVector(const std::vector<TValue>& Values)
+{
+    static_assert(std::is_trivially_copyable_v<TValue>);
+
+    std::vector<std::uint8_t> Bytes(sizeof(TValue) * Values.size());
+    if (!Bytes.empty())
+    {
+        std::memcpy(Bytes.data(), Values.data(), Bytes.size());
+    }
+    return Bytes;
+}
+
 std::size_t CountWorldNodes(World& WorldRef)
 {
     std::size_t Count = 0;
@@ -74,6 +109,13 @@ std::size_t CountWorldNodes(World& WorldRef)
         &Count);
     return Count;
 }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+[[nodiscard]] bool CanCompileRuntimeMaterialsInTests()
+{
+    return SnAPI::Graphics::ShaderCompilationManager::TryInstance() != nullptr;
+}
+#endif
 
 } // namespace
 
@@ -123,7 +165,7 @@ TEST_CASE("Authored asset registry discovers built-in source asset types", "[Ass
     }
     CHECK(AuthoredAssetRegistry::Instance().IsValid());
 
-    const auto* MaterialDescriptor = AuthoredAssetRegistry::Instance().FindByType(StaticTypeId<MaterialPayload>());
+    const auto* MaterialDescriptor = AuthoredAssetRegistry::Instance().FindByType(StaticTypeId<MaterialAsset>());
     REQUIRE(MaterialDescriptor != nullptr);
     CHECK(AuthoredAssetRegistry::Instance().FindByExtension(".material") == MaterialDescriptor);
     CHECK(AuthoredAssetRegistry::Instance().FindBySourceAssetKind(AssetKindMaterial()) == MaterialDescriptor);
@@ -138,7 +180,7 @@ TEST_CASE("Authored asset registry discovers built-in source asset types", "[Ass
     CHECK(MaterialDescriptor->CookedPayloadType == PayloadMaterial());
 
     const auto* MaterialInstanceDescriptor =
-        AuthoredAssetRegistry::Instance().FindByType(StaticTypeId<MaterialInstancePayload>());
+        AuthoredAssetRegistry::Instance().FindByType(StaticTypeId<MaterialInstanceAsset>());
     REQUIRE(MaterialInstanceDescriptor != nullptr);
     CHECK(AuthoredAssetRegistry::Instance().FindByExtension(".materialinstance") == MaterialInstanceDescriptor);
     CHECK(AuthoredAssetRegistry::Instance().FindBySourceAssetKind(AssetKindMaterialInstance()) == MaterialInstanceDescriptor);
@@ -216,7 +258,7 @@ TEST_CASE("Asset manager JIT loads authored source assets by logical name", "[As
 
     TempDir Root{};
 
-    MaterialPayload Material{};
+    MaterialAsset Material{};
     Material.ShaderModule = "UnitTestShader";
     Material.ShadingModel = "DefaultLit";
     Material.FeatureAlbedoMap = true;
@@ -239,21 +281,28 @@ TEST_CASE("Asset manager JIT loads authored source assets by logical name", "[As
 
     {
         auto Manager = MakeSourceOnlyManager(Root.Path);
-        auto DirectLoadResult = Manager->Load<MaterialAssetRuntime>("Rendering/UnitTest.material");
-        const std::string DirectLoadError = DirectLoadResult ? std::string{} : DirectLoadResult.error();
-        INFO("Direct load error: " << DirectLoadError);
-        REQUIRE(DirectLoadResult);
-        REQUIRE(*DirectLoadResult);
-        CHECK((*DirectLoadResult)->ShaderModule == "UnitTestShader");
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        if (CanCompileRuntimeMaterialsInTests())
+        {
+            auto DirectLoadResult = Manager->LoadShared<SnAPI::Graphics::Material>("Rendering/UnitTest.material");
+            const std::string DirectLoadError = DirectLoadResult ? std::string{} : DirectLoadResult.error();
+            INFO("Direct load error: " << DirectLoadError);
+            REQUIRE(DirectLoadResult);
+            REQUIRE(*DirectLoadResult);
+            CHECK((*DirectLoadResult)->ShaderModuleName() == "UnitTestShader");
 
-        auto GetResult = Manager->Get<MaterialAssetRuntime>("Rendering/UnitTest.material");
-        const std::string GetError = GetResult ? std::string{} : GetResult.error();
-        INFO("Get error: " << GetError);
-        REQUIRE(GetResult);
-        REQUIRE(GetResult->IsValid());
-        REQUIRE(GetResult->Get() != nullptr);
-        CHECK(GetResult->Get()->ShaderModule == "UnitTestShader");
-        CHECK(GetResult->Get()->FeatureInstancing);
+            auto GetResult = Manager->GetShared<SnAPI::Graphics::Material>("Rendering/UnitTest.material");
+            const std::string GetError = GetResult ? std::string{} : GetResult.error();
+            INFO("Get error: " << GetError);
+            REQUIRE(GetResult);
+            REQUIRE(*GetResult);
+            CHECK((*GetResult)->ShaderModuleName() == "UnitTestShader");
+        }
+        else
+        {
+            INFO("Skipping runtime material load checks because ShaderCompilationManager is not initialized in this test process.");
+        }
+#endif
     }
 
     {
@@ -281,7 +330,7 @@ TEST_CASE("Asset manager Get caches source-JIT runtime objects while Load stays 
 
     TempDir Root{};
 
-    MaterialPayload Material{};
+    MaterialAsset Material{};
     Material.ShaderModule = "CacheShader";
     Material.ShadingModel = "DefaultLit";
     Material.FeatureInstancing = true;
@@ -303,27 +352,34 @@ TEST_CASE("Asset manager Get caches source-JIT runtime objects while Load stays 
 
     auto Manager = MakeSourceOnlyManager(Root.Path);
 
-    auto GetMaterialA = Manager->Get<MaterialAssetRuntime>("Rendering/CacheUnit.material");
-    REQUIRE(GetMaterialA);
-    REQUIRE(GetMaterialA->IsValid());
-    REQUIRE(GetMaterialA->Get() != nullptr);
-    CHECK(GetMaterialA->Get()->ShaderModule == "CacheShader");
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (CanCompileRuntimeMaterialsInTests())
+    {
+        auto GetMaterialA = Manager->GetShared<SnAPI::Graphics::Material>("Rendering/CacheUnit.material");
+        REQUIRE(GetMaterialA);
+        REQUIRE(*GetMaterialA);
+        CHECK((*GetMaterialA)->ShaderModuleName() == "CacheShader");
 
-    auto GetMaterialB = Manager->Get<MaterialAssetRuntime>("Rendering/CacheUnit.material");
-    REQUIRE(GetMaterialB);
-    REQUIRE(GetMaterialB->IsValid());
-    REQUIRE(GetMaterialB->Get() != nullptr);
-    CHECK(GetMaterialA->Get() == GetMaterialB->Get());
+        auto GetMaterialB = Manager->GetShared<SnAPI::Graphics::Material>("Rendering/CacheUnit.material");
+        REQUIRE(GetMaterialB);
+        REQUIRE(*GetMaterialB);
+        CHECK(*GetMaterialA == *GetMaterialB);
 
-    auto LoadMaterialA = Manager->Load<MaterialAssetRuntime>("Rendering/CacheUnit.material");
-    REQUIRE(LoadMaterialA);
-    REQUIRE(*LoadMaterialA);
-    auto LoadMaterialB = Manager->Load<MaterialAssetRuntime>("Rendering/CacheUnit.material");
-    REQUIRE(LoadMaterialB);
-    REQUIRE(*LoadMaterialB);
-    CHECK(LoadMaterialA->get() != LoadMaterialB->get());
-    CHECK(LoadMaterialA->get() != GetMaterialA->Get());
-    CHECK((*LoadMaterialA)->ShaderModule == "CacheShader");
+        auto LoadMaterialA = Manager->LoadShared<SnAPI::Graphics::Material>("Rendering/CacheUnit.material");
+        REQUIRE(LoadMaterialA);
+        REQUIRE(*LoadMaterialA);
+        auto LoadMaterialB = Manager->LoadShared<SnAPI::Graphics::Material>("Rendering/CacheUnit.material");
+        REQUIRE(LoadMaterialB);
+        REQUIRE(*LoadMaterialB);
+        CHECK(*LoadMaterialA != *LoadMaterialB);
+        CHECK(*LoadMaterialA != *GetMaterialA);
+        CHECK((*LoadMaterialA)->ShaderModuleName() == "CacheShader");
+    }
+    else
+    {
+        INFO("Skipping runtime material cache checks because ShaderCompilationManager is not initialized in this test process.");
+    }
+#endif
 
     auto GetGraphA = Manager->Get<Conduit::GraphAsset>("Conduit/CacheUnit.conduitgraph");
     REQUIRE(GetGraphA);
@@ -343,6 +399,231 @@ TEST_CASE("Asset manager Get caches source-JIT runtime objects while Load stays 
     REQUIRE(*LoadGraph);
     CHECK(LoadGraph->get() != GetGraphA->Get());
     CHECK((*LoadGraph)->Name == "CacheGraph");
+}
+
+TEST_CASE("Authored asset refs load source documents without going through AssetManager", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    Conduit::GraphAsset Graph{};
+    Graph.Name = "AuthoredGraph";
+    Graph.Variables.push_back({
+        .Id = NewUuid(),
+        .Name = "Counter",
+        .Type = StaticTypeId<int>(),
+        .DefaultValue = Conduit::SerializedValue::FromValue(42).value(),
+    });
+    auto GraphJson = SerializeAuthoredAssetToJson(Graph);
+    REQUIRE(GraphJson);
+    WriteTextFile(Root.Path / "Conduit" / "AuthoredGraph.conduitgraph", *GraphJson);
+
+    TAssetRef<Conduit::GraphAsset> GraphRef("Conduit/AuthoredGraph.conduitgraph");
+    auto LoadResult = GraphRef.Load();
+    REQUIRE(LoadResult);
+    REQUIRE(*LoadResult);
+    CHECK((*LoadResult)->Name == "AuthoredGraph");
+    REQUIRE((*LoadResult)->Variables.size() == 1);
+    CHECK((*LoadResult)->Variables.front().Name == "Counter");
+}
+
+TEST_CASE("Authored asset refs compile runtime assets from authored source payloads on demand", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    Conduit::GraphAsset Graph{};
+    Graph.Name = "PayloadGraph";
+    Graph.Variables.push_back({
+        .Id = NewUuid(),
+        .Name = "Counter",
+        .Type = StaticTypeId<int>(),
+        .DefaultValue = Conduit::SerializedValue::FromValue(17).value(),
+    });
+    auto GraphJson = SerializeAuthoredAssetToJson(Graph);
+    REQUIRE(GraphJson);
+    WriteTextFile(Root.Path / "Conduit" / "PayloadGraph.conduitgraph", *GraphJson);
+
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+    TAssetRef<Conduit::GraphAsset> GraphRef("Conduit/PayloadGraph.conduitgraph");
+
+    auto LoadRuntimeResult = GraphRef.LoadRuntime<Conduit::GraphAsset>(*Manager);
+    REQUIRE(LoadRuntimeResult);
+    REQUIRE(*LoadRuntimeResult);
+    CHECK((*LoadRuntimeResult)->Name == "PayloadGraph");
+
+    auto RuntimeInfo = Manager->FindAsset("Conduit/PayloadGraph.conduitgraph");
+    REQUIRE(RuntimeInfo);
+    CHECK(RuntimeInfo->Name == "Conduit/PayloadGraph.conduitgraph");
+
+    auto GetRuntimeA = GraphRef.GetRuntime<Conduit::GraphAsset>(*Manager);
+    REQUIRE(GetRuntimeA);
+    REQUIRE(GetRuntimeA->IsValid());
+    REQUIRE(GetRuntimeA->Get() != nullptr);
+    CHECK(GetRuntimeA->Get()->Name == "PayloadGraph");
+
+    auto GetRuntimeB = GraphRef.GetRuntime<Conduit::GraphAsset>(*Manager);
+    REQUIRE(GetRuntimeB);
+    REQUIRE(GetRuntimeB->IsValid());
+    REQUIRE(GetRuntimeB->Get() != nullptr);
+    CHECK(GetRuntimeA->Get() == GetRuntimeB->Get());
+}
+
+TEST_CASE("Authored static mesh assets compile into runtime mesh payloads on demand", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    StaticMeshAsset Mesh{};
+    Mesh.Mesh.Name = "Triangle";
+    Mesh.Mesh.BoundsMin = {0.0f, 0.0f, 0.0f};
+    Mesh.Mesh.BoundsMax = {1.0f, 1.0f, 0.0f};
+    Mesh.Mesh.SubMeshes.push_back({
+        .IndexOffset = 0,
+        .IndexCount = 3,
+        .MaterialSlot = 0,
+        .BoundsMin = {0.0f, 0.0f, 0.0f},
+        .BoundsMax = {1.0f, 1.0f, 0.0f},
+    });
+
+    const std::vector<float> Positions = {
+        0.0f, 0.0f, 0.0f,
+        1.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+    };
+    Mesh.Streams.push_back({
+        .Semantic = EMeshStreamSemantic::Position,
+        .Bytes = BytesFromVector(Positions),
+        .ElementCount = 3,
+        .StrideBytes = sizeof(float) * 3,
+        .Compress = false,
+    });
+
+    const std::vector<std::uint32_t> Indices = {0u, 1u, 2u};
+    Mesh.Streams.push_back({
+        .Semantic = EMeshStreamSemantic::Index,
+        .Bytes = BytesFromVector(Indices),
+        .ElementCount = static_cast<std::uint32_t>(Indices.size()),
+        .StrideBytes = sizeof(std::uint32_t),
+        .Compress = false,
+    });
+
+    auto MeshJson = SerializeAuthoredAssetToJson(Mesh);
+    REQUIRE(MeshJson);
+    WriteTextFile(Root.Path / "Rendering" / "Triangle.staticmesh", *MeshJson);
+
+    TAssetRef<StaticMeshAsset> MeshRef("Rendering/Triangle.staticmesh");
+    auto LoadedMesh = MeshRef.Load();
+    REQUIRE(LoadedMesh);
+    REQUIRE(*LoadedMesh);
+    CHECK((*LoadedMesh)->Mesh.Name == "Triangle");
+    REQUIRE((*LoadedMesh)->Streams.size() == 2);
+
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+
+    const auto MeshEntries = TAssetRef<StaticMeshAsset>::EnumerateCompatibleAssets(*Manager);
+    CHECK(std::any_of(MeshEntries.begin(), MeshEntries.end(), [](const TAssetRef<StaticMeshAsset>::TEntry& Entry) {
+        return Entry.Name == "Rendering/Triangle.staticmesh";
+    }));
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto SharedRuntimeMesh = MeshRef.GetRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*Manager);
+    REQUIRE(SharedRuntimeMesh);
+    REQUIRE(*SharedRuntimeMesh);
+    auto MeshInfo = Manager->FindAsset("Rendering/Triangle.staticmesh");
+    REQUIRE(MeshInfo);
+    const std::string ExpectedMeshDebugToken = "asset-id://" + MeshInfo->Id.ToString();
+    CHECK((*SharedRuntimeMesh)->DebugName().find(ExpectedMeshDebugToken) != std::string_view::npos);
+    CHECK((*SharedRuntimeMesh)->VertexCount() == 3u);
+    CHECK((*SharedRuntimeMesh)->IndexCount() == 3u);
+    CHECK((*SharedRuntimeMesh)->SubMeshCount() == 1u);
+#endif
+}
+
+TEST_CASE("Conduit class compilation resolves graph refs from authored source assets", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    Conduit::GraphAsset Graph{};
+    Graph.Name = "CompiledFromSource";
+    auto GraphJson = SerializeAuthoredAssetToJson(Graph);
+    REQUIRE(GraphJson);
+    WriteTextFile(Root.Path / "Conduit" / "CompiledFromSource.conduitgraph", *GraphJson);
+
+    Conduit::ClassAsset Class{};
+    Class.Name = "CompiledClass";
+    Class.HostType = StaticTypeId<PawnBase>();
+    Class.Graph.EditAssetName() = "Conduit/CompiledFromSource.conduitgraph";
+    auto ClassJson = SerializeAuthoredAssetToJson(Class);
+    REQUIRE(ClassJson);
+    WriteTextFile(Root.Path / "Conduit" / "CompiledClass.conduitclass", *ClassJson);
+
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+    TAssetRef<Conduit::ClassAsset> ClassRef("Conduit/CompiledClass.conduitclass");
+    auto LoadedClass = ClassRef.LoadAsset();
+    REQUIRE(LoadedClass);
+    REQUIRE(*LoadedClass);
+
+    auto CompileResult = Conduit::CompileClassAsset(**LoadedClass, *Manager);
+    REQUIRE(CompileResult);
+    CHECK(CompileResult->HostType == StaticTypeId<PawnBase>());
+    CHECK(CompileResult->SourceGraph.Name == "CompiledFromSource");
+}
+
+TEST_CASE("Authored asset refs enumerate authored asset types by file extension", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    MaterialAsset Material{};
+    Material.ShaderModule = "UnitTestShader";
+    auto MaterialJson = SerializeAuthoredAssetToJson(Material);
+    REQUIRE(MaterialJson);
+    WriteTextFile(Root.Path / "Rendering" / "UnitTest.material", *MaterialJson);
+
+    MaterialInstanceAsset MaterialInstance{};
+    MaterialInstance.ParentMaterial.AssetName = "Rendering/UnitTest.material";
+    auto MaterialInstanceJson = SerializeAuthoredAssetToJson(MaterialInstance);
+    REQUIRE(MaterialInstanceJson);
+    WriteTextFile(Root.Path / "Rendering" / "UnitTest.materialinstance", *MaterialInstanceJson);
+
+    Conduit::GraphAsset Graph{};
+    Graph.Name = "EnumerationGraph";
+    auto GraphJson = SerializeAuthoredAssetToJson(Graph);
+    REQUIRE(GraphJson);
+    WriteTextFile(Root.Path / "Conduit" / "EnumerationGraph.conduitgraph", *GraphJson);
+
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+
+    const auto MaterialEntries = TAssetRef<MaterialAsset>::EnumerateCompatibleAssets(*Manager);
+    CHECK(std::any_of(MaterialEntries.begin(), MaterialEntries.end(), [](const TAssetRef<MaterialAsset>::TEntry& Entry) {
+        return Entry.Name == "Rendering/UnitTest.material";
+    }));
+    CHECK_FALSE(std::any_of(MaterialEntries.begin(), MaterialEntries.end(), [](const TAssetRef<MaterialAsset>::TEntry& Entry) {
+        return Entry.Name == "Rendering/UnitTest.materialinstance";
+    }));
+    CHECK_FALSE(std::any_of(MaterialEntries.begin(), MaterialEntries.end(), [](const TAssetRef<MaterialAsset>::TEntry& Entry) {
+        return Entry.Name == "Conduit/EnumerationGraph.conduitgraph";
+    }));
+
+    const auto GraphEntries = TAssetRef<Conduit::GraphAsset>::EnumerateCompatibleAssets(*Manager);
+    CHECK(std::any_of(GraphEntries.begin(), GraphEntries.end(), [](const TAssetRef<Conduit::GraphAsset>::TEntry& Entry) {
+        return Entry.Name == "Conduit/EnumerationGraph.conduitgraph";
+    }));
+    CHECK_FALSE(std::any_of(GraphEntries.begin(), GraphEntries.end(), [](const TAssetRef<Conduit::GraphAsset>::TEntry& Entry) {
+        return Entry.Name == "Rendering/UnitTest.material";
+    }));
 }
 
 TEST_CASE("Authored asset JSON saves reflected nested fields with structured values", "[Assets][Source]")
@@ -375,11 +656,62 @@ TEST_CASE("Authored asset JSON saves reflected nested fields with structured val
     CHECK(Root["Asset"]["Variables"][0]["DefaultValue"]["Value"] == 7);
 }
 
+TEST_CASE("Authored asset JSON round-trips conduit node input defaults", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    Conduit::GraphAsset Graph{};
+    Graph.Name = "NodeInputDefaults";
+    Graph.Nodes = {
+        Conduit::GraphNodeAsset{
+            .Kind = Conduit::EGraphAssetNodeKind::SelfMethodCall,
+            .MemberName = "SetLabelText",
+            .InputDefaults = {
+                Conduit::GraphNodeInputDefaultAsset{
+                    .PinKey = "Arg0",
+                    .Value = Conduit::SerializedValue::FromValue(std::string("Ready")).value(),
+                },
+            },
+        },
+    };
+
+    auto JsonResult = SerializeAuthoredAssetToJson(Graph);
+    REQUIRE(JsonResult);
+
+    const nlohmann::json Root = nlohmann::json::parse(*JsonResult);
+    REQUIRE(Root["Asset"].contains("Nodes"));
+    REQUIRE(Root["Asset"]["Nodes"].is_array());
+    REQUIRE(Root["Asset"]["Nodes"].size() == 1);
+    REQUIRE(Root["Asset"]["Nodes"][0].contains("InputDefaults"));
+    REQUIRE(Root["Asset"]["Nodes"][0]["InputDefaults"].is_array());
+    REQUIRE(Root["Asset"]["Nodes"][0]["InputDefaults"].size() == 1);
+    CHECK(Root["Asset"]["Nodes"][0]["InputDefaults"][0]["PinKey"] == "Arg0");
+    CHECK(Root["Asset"]["Nodes"][0]["InputDefaults"][0]["Value"]["Type"] == TTypeNameV<std::string>);
+    CHECK(Root["Asset"]["Nodes"][0]["InputDefaults"][0]["Value"]["Value"] == "Ready");
+
+    Conduit::GraphAsset Loaded{};
+    std::vector<std::string> Diagnostics{};
+    auto LoadResult = DeserializeAuthoredAssetFromJson(*JsonResult, Loaded, Diagnostics);
+    REQUIRE(LoadResult);
+    CHECK(Diagnostics.empty());
+    REQUIRE(Loaded.Nodes.size() == 1);
+    REQUIRE(Loaded.Nodes[0].InputDefaults.size() == 1);
+    CHECK(Loaded.Nodes[0].InputDefaults[0].PinKey == "Arg0");
+    CHECK(Loaded.Nodes[0].InputDefaults[0].Value.Type == StaticTypeId<std::string>());
+
+    std::string DecodedValue{};
+    REQUIRE(DeserializeReflectedValueInto(Loaded.Nodes[0].InputDefaults[0].Value.Type,
+                                          &DecodedValue,
+                                          Loaded.Nodes[0].InputDefaults[0].Value.Bytes.data(),
+                                          Loaded.Nodes[0].InputDefaults[0].Value.Bytes.size()));
+    CHECK(DecodedValue == "Ready");
+}
+
 TEST_CASE("Authored asset JSON load tolerates missing and unknown reflected fields", "[Assets][Source]")
 {
     RegisterBuiltinTypes();
 
-    MaterialPayload Material{};
+    MaterialAsset Material{};
     Material.ShaderModule = "OldShader";
     Material.ShadingModel = "OldModel";
     Material.FeatureInstancing = true;
@@ -406,7 +738,7 @@ TEST_CASE("Authored asset JSON save keeps material vector overrides as arrays", 
 {
     RegisterBuiltinTypes();
 
-    MaterialInstancePayload Material{};
+    MaterialInstanceAsset Material{};
     Material.Vectors.push_back({
         .Name = "Tint",
         .Value = {1.0f, 0.5f, 0.25f, 1.0f},

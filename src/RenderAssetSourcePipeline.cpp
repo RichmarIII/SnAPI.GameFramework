@@ -7,6 +7,10 @@
 #include "IPipelineContext.h"
 #include "IPayloadSerializer.h"
 
+#include <TextureCompressorIds.h>
+#include <TextureCompressorImportSettings.h>
+#include <TextureCompressorPayloads.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -21,6 +25,11 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+namespace TextureCompressorPlugin
+{
+std::unique_ptr<SnAPI::AssetPipeline::IAssetCooker> CreateTextureCompressorCooker();
+}
 
 namespace SnAPI::GameFramework
 {
@@ -761,7 +770,7 @@ template<size_t N>
     return !OutStreams.empty();
 }
 
-[[nodiscard]] bool ParseMaterialPayload(const JsonValue& Root, MaterialPayload& Out)
+[[nodiscard]] bool ParseMaterialAsset(const JsonValue& Root, MaterialAsset& Out)
 {
     const JsonValue* ShaderModule = TryGetField(Root, "shaderModule");
     if (!ShaderModule || !TryReadString(*ShaderModule, Out.ShaderModule) || Out.ShaderModule.empty())
@@ -797,7 +806,7 @@ template<size_t N>
     return true;
 }
 
-[[nodiscard]] bool ParseMaterialInstancePayload(const JsonValue& Root, MaterialInstancePayload& Out)
+[[nodiscard]] bool ParseMaterialInstanceAsset(const JsonValue& Root, MaterialInstanceAsset& Out)
 {
     const JsonValue* ParentMaterial = TryGetField(Root, "parentMaterial");
     if (!ParentMaterial || !ParseAssetRefPayload(*ParentMaterial, Out.ParentMaterial))
@@ -1038,8 +1047,8 @@ public:
 
         if (SourceType == ERenderSourceType::Material)
         {
-            MaterialPayload Payload{};
-            if (!ParseMaterialPayload(Root, Payload))
+            MaterialAsset Payload{};
+            if (!ParseMaterialAsset(Root, Payload))
             {
                 Ctx.LogError("RenderAsset importer failed to parse material payload: %s", Source.Uri.c_str());
                 return false;
@@ -1059,8 +1068,8 @@ public:
         }
         else if (SourceType == ERenderSourceType::MaterialInstance)
         {
-            MaterialInstancePayload Payload{};
-            if (!ParseMaterialInstancePayload(Root, Payload))
+            MaterialInstanceAsset Payload{};
+            if (!ParseMaterialInstanceAsset(Root, Payload))
             {
                 Ctx.LogError("RenderAsset importer failed to parse material instance payload: %s", Source.Uri.c_str());
                 return false;
@@ -1080,7 +1089,7 @@ public:
         }
         else if (SourceType == ERenderSourceType::StaticMesh)
         {
-            StaticMeshSourcePayload SourcePayload{};
+            StaticMeshAsset SourcePayload{};
             if (!ParseStaticMeshPayloadFields(Root, SourcePayload.Mesh) ||
                 !ParseStreamSourceArray(Root, Source.Uri, SourcePayload.Streams))
             {
@@ -1107,7 +1116,7 @@ public:
         }
         else if (SourceType == ERenderSourceType::SkeletalMesh)
         {
-            SkeletalMeshSourcePayload SourcePayload{};
+            SkeletalMeshAsset SourcePayload{};
             const JsonValue* BaseMesh = TryGetField(Root, "baseMesh");
             if (!BaseMesh || BaseMesh->Type != EJsonValueType::Object)
             {
@@ -1205,6 +1214,187 @@ public:
         Ctx.LogInfo("Imported render asset source: %s", Source.Uri.c_str());
         return true;
     }
+};
+
+[[nodiscard]] TextureCompressorPlugin::ECompressionTarget ParseTextureCompressionTarget(std::string_view Value)
+{
+    const std::string Lower = ToLowerAscii(Value);
+    return Lower == "astc"
+        ? TextureCompressorPlugin::ECompressionTarget::ASTC
+        : TextureCompressorPlugin::ECompressionTarget::BCn;
+}
+
+[[nodiscard]] TextureCompressorPlugin::ECompressedFormat ParseTextureCompressionFormat(std::string_view Value)
+{
+    const std::string Lower = ToLowerAscii(Value);
+    using TextureCompressorPlugin::ECompressedFormat;
+
+    if (Lower.empty() || Lower == "auto")
+    {
+        return ECompressedFormat::Unknown;
+    }
+    if (Lower == "bc1")
+    {
+        return ECompressedFormat::BC1;
+    }
+    if (Lower == "bc3")
+    {
+        return ECompressedFormat::BC3;
+    }
+    if (Lower == "bc4")
+    {
+        return ECompressedFormat::BC4;
+    }
+    if (Lower == "bc5")
+    {
+        return ECompressedFormat::BC5;
+    }
+    if (Lower == "bc6h")
+    {
+        return ECompressedFormat::BC6H;
+    }
+    if (Lower == "bc7")
+    {
+        return ECompressedFormat::BC7;
+    }
+    if (Lower == "astc_4x4")
+    {
+        return ECompressedFormat::ASTC_4x4;
+    }
+    if (Lower == "astc_5x5")
+    {
+        return ECompressedFormat::ASTC_5x5;
+    }
+    if (Lower == "astc_6x6")
+    {
+        return ECompressedFormat::ASTC_6x6;
+    }
+    if (Lower == "astc_8x8")
+    {
+        return ECompressedFormat::ASTC_8x8;
+    }
+    if (Lower == "astc_10x10")
+    {
+        return ECompressedFormat::ASTC_10x10;
+    }
+    if (Lower == "astc_12x12")
+    {
+        return ECompressedFormat::ASTC_12x12;
+    }
+    if (Lower == "astc_4x4_hdr")
+    {
+        return ECompressedFormat::ASTC_4x4_HDR;
+    }
+    if (Lower == "astc_6x6_hdr")
+    {
+        return ECompressedFormat::ASTC_6x6_HDR;
+    }
+    if (Lower == "astc_8x8_hdr")
+    {
+        return ECompressedFormat::ASTC_8x8_HDR;
+    }
+    return ECompressedFormat::Unknown;
+}
+
+[[nodiscard]] TextureCompressorPlugin::TextureCompressorImportSettings BuildTextureCompressorImportSettings(
+    const TextureImportSettingsPayload& Settings)
+{
+    TextureCompressorPlugin::TextureCompressorImportSettings Typed{};
+    Typed.Target = ParseTextureCompressionTarget(Settings.Target);
+    Typed.Format = ParseTextureCompressionFormat(Settings.Format);
+    Typed.Quality = std::clamp(Settings.Quality, 0.0f, 1.0f);
+    Typed.ForceNormalMap = Settings.ForceNormalMap;
+    Typed.MaxMipCount = Settings.MaxMips > 0u ? static_cast<int32_t>(Settings.MaxMips) : -1;
+    if (Settings.ForceLinear)
+    {
+        Typed.ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+    }
+    else if (Settings.ForceSrgb)
+    {
+        Typed.ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+    }
+    else
+    {
+        Typed.ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::Auto;
+    }
+    return Typed;
+}
+
+[[nodiscard]] TextureCompressorPlugin::ImageIntermediate BuildTextureIntermediate(const TextureAsset& Asset)
+{
+    TextureCompressorPlugin::ImageIntermediate Intermediate{};
+    Intermediate.Width = Asset.Image.Width;
+    Intermediate.Height = Asset.Image.Height;
+    Intermediate.Channels = Asset.Image.Channels;
+    Intermediate.BitsPerChannel = Asset.Image.BitsPerChannel;
+    Intermediate.bIsFloat = Asset.Image.IsFloat;
+    Intermediate.bHasNonTrivialAlpha = Asset.Image.HasNonTrivialAlpha;
+    Intermediate.bSRGB = Asset.Image.SRGB;
+    Intermediate.SourceFilename = Asset.Image.SourceFilename;
+    Intermediate.Pixels = Asset.Image.Pixels;
+    return Intermediate;
+}
+
+class RenderTextureCooker final : public ::SnAPI::AssetPipeline::IAssetCooker
+{
+public:
+    RenderTextureCooker()
+        : m_textureCooker(TextureCompressorPlugin::CreateTextureCompressorCooker())
+    {
+    }
+
+    [[nodiscard]] const char* GetName() const override
+    {
+        return "SnAPI.GameFramework.RenderTextureCooker";
+    }
+
+    bool CanCook(const ::SnAPI::AssetPipeline::TypeId AssetKind, const ::SnAPI::AssetPipeline::TypeId IntermediatePayloadType) const override
+    {
+        return AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture &&
+               IntermediatePayloadType == PayloadTextureSource();
+    }
+
+    bool Cook(const ::SnAPI::AssetPipeline::CookRequest& Req,
+              ::SnAPI::AssetPipeline::CookResult& Out,
+              ::SnAPI::AssetPipeline::IPipelineContext& Ctx) override
+    {
+        if (!m_textureCooker)
+        {
+            Ctx.LogError("Render texture cooker is missing TextureCompressor cooker");
+            return false;
+        }
+
+        const auto* SourceSerializer = Ctx.FindSerializer(PayloadTextureSource());
+        const auto* IntermediateSerializer = Ctx.FindSerializer(TextureCompressorPlugin::Payload_CompressorImageIntermediate);
+        if (!SourceSerializer || !IntermediateSerializer)
+        {
+            Ctx.LogError("Render texture cooker missing serializers");
+            return false;
+        }
+
+        TextureAsset SourceAsset{};
+        if (!SourceSerializer->DeserializeFromBytes(&SourceAsset, Req.Intermediate.Bytes.data(), Req.Intermediate.Bytes.size()))
+        {
+            Ctx.LogError("Render texture cooker failed to deserialize source payload");
+            return false;
+        }
+
+        TextureCompressorPlugin::ImageIntermediate Intermediate = BuildTextureIntermediate(SourceAsset);
+        std::vector<uint8_t> IntermediateBytes{};
+        IntermediateSerializer->SerializeToBytes(&Intermediate, IntermediateBytes);
+
+        ::SnAPI::AssetPipeline::CookRequest TextureReq = Req;
+        TextureReq.Intermediate.PayloadType = TextureCompressorPlugin::Payload_CompressorImageIntermediate;
+        TextureReq.Intermediate.SchemaVersion = IntermediateSerializer->GetSchemaVersion();
+        TextureReq.Intermediate.Bytes = std::move(IntermediateBytes);
+        TextureReq.ImportSettings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>(
+            BuildTextureCompressorImportSettings(SourceAsset.ImportSettings));
+
+        return m_textureCooker->Cook(TextureReq, Out, Ctx);
+    }
+
+private:
+    std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> m_textureCooker{};
 };
 
 class RenderMaterialCooker final : public ::SnAPI::AssetPipeline::IAssetCooker
@@ -1321,7 +1511,7 @@ public:
             return false;
         }
 
-        StaticMeshSourcePayload SourcePayload{};
+        StaticMeshAsset SourcePayload{};
         if (!SourceSerializer->DeserializeFromBytes(&SourcePayload, Req.Intermediate.Bytes.data(), Req.Intermediate.Bytes.size()))
         {
             Ctx.LogError("Render static mesh cooker failed to deserialize source payload");
@@ -1412,7 +1602,7 @@ public:
             return false;
         }
 
-        SkeletalMeshSourcePayload SourcePayload{};
+        SkeletalMeshAsset SourcePayload{};
         if (!SourceSerializer->DeserializeFromBytes(&SourcePayload, Req.Intermediate.Bytes.data(), Req.Intermediate.Bytes.size()))
         {
             Ctx.LogError("Render skeletal mesh cooker failed to deserialize source payload");
@@ -1518,6 +1708,11 @@ std::unique_ptr<::SnAPI::AssetPipeline::IAssetImporter> CreateRenderAssetJsonImp
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialCooker()
 {
     return std::make_unique<RenderMaterialCooker>();
+}
+
+std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderTextureCooker()
+{
+    return std::make_unique<RenderTextureCooker>();
 }
 
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderMaterialInstanceCooker()

@@ -6,6 +6,8 @@
 #include "BaseNode.h"
 #include "Export.h"
 #include "Uuid.h"
+#include "ReflectionAnnotations.h"
+#include "GameplayRpcGateway.generated.hpp"
 
 namespace SnAPI::GameFramework
 {
@@ -26,10 +28,11 @@ namespace SnAPI::GameFramework
  *
  * @see GameplayHost
  */
+SnType()
 class SNAPI_GAMEFRAMEWORK_API GameplayRpcGateway final : public BaseNode, public NodeCRTP<GameplayRpcGateway>
 {
 public:
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::GameplayRpcGateway";
+    SnGenerated()
 
     GameplayRpcGateway();
     explicit GameplayRpcGateway(std::string Name);
@@ -49,6 +52,7 @@ public:
      * The caller connection is taken from the active RPC invocation context rather than
      * being trusted from the wire payload.
      */
+    SnFunction(SnKey("ServerRequestJoinPlayer"), SnRpc(SnReliable, SnServer))
     void ServerRequestJoinPlayer(std::string RequestedName, int PreferredPlayerIndex, bool ReplicatedPlayer);
 
     /**
@@ -56,6 +60,7 @@ public:
      * @param PlayerIndex Player index to remove, or `-1` for all caller-owned players.
      * @remarks The caller connection is taken from the active RPC invocation context.
      */
+    SnFunction(SnKey("ServerRequestLeavePlayer"), SnRpc(SnReliable, SnServer))
     void ServerRequestLeavePlayer(int PlayerIndex);
 
     /**
@@ -63,6 +68,7 @@ public:
      * @param RequestedName Optional level node name.
      * @remarks The caller connection is taken from the active RPC invocation context.
      */
+    SnFunction(SnKey("ServerRequestLoadLevel"), SnRpc(SnReliable, SnServer))
     void ServerRequestLoadLevel(std::string RequestedName);
 
     /**
@@ -70,6 +76,7 @@ public:
      * @param LevelIdText UUID string of the target level node.
      * @remarks Invalid UUID text is ignored.
      */
+    SnFunction(SnKey("ServerRequestUnloadLevel"), SnRpc(SnReliable, SnServer))
     void ServerRequestUnloadLevel(std::string LevelIdText);
 
 private:

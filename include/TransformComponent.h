@@ -2,6 +2,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -43,14 +44,18 @@ struct NodeTransform
  * @see BaseNode
  * @see NodeTransform
  */
+SnType()
 class TransformComponent : public BaseComponent, public ComponentCRTP<TransformComponent>
 {
 public:
     /** @brief Stable type name for reflection. */
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TransformComponent";
 
+    SnField(SnKey("Position"), SnReplicated)
     Vec3 Position{}; /**< @brief Local position. */
+    SnField(SnKey("Rotation"), SnReplicated)
     Quat Rotation = Quat::Identity(); /**< @brief Local rotation as quaternion. */
+    SnField(SnKey("Scale"), SnReplicated)
     Vec3 Scale{1.0f, 1.0f, 1.0f}; /**< @brief Local scale. */
 
     /**

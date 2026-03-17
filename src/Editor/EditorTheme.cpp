@@ -11,6 +11,7 @@
 #include <UICheckbox.h>
 #include <UIColorPicker.h>
 #include <UIComboBox.h>
+#include <UIContextMenu.h>
 #include <UIDatePicker.h>
 #include <UIDockZone.h>
 #include <UIFilesystemPicker.h>
@@ -200,11 +201,27 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIComboBox::ArrowColorKey, kTextSecondary)
         .Set(SnAPI::UI::UIComboBox::PaddingKey, 8.0f)
         .Set(SnAPI::UI::UIComboBox::RowHeightKey, 26.0f)
+        .Set(SnAPI::UI::UIComboBox::SearchIconSourceKey, std::string("editor://Assets/search.svg"))
         .Set(SnAPI::UI::UIComboBox::DropShadowColorKey, kShadowSoft)
         .Set(SnAPI::UI::UIComboBox::DropShadowBlurKey, 3.0f)
         .Set(SnAPI::UI::UIComboBox::DropShadowSpreadKey, 0.0f)
         .Set(SnAPI::UI::UIComboBox::DropShadowOffsetXKey, 0.0f)
         .Set(SnAPI::UI::UIComboBox::DropShadowOffsetYKey, 2.0f);
+
+    Define<SnAPI::UI::UIContextMenu>()
+        .Set(SnAPI::UI::UIContextMenu::BackgroundColorKey, Color::RGBA(23, 27, 34, 252))
+        .Set(SnAPI::UI::UIContextMenu::BorderColorKey, Color::RGBA(76, 84, 96, 240))
+        .Set(SnAPI::UI::UIContextMenu::BorderThicknessKey, 1.0f)
+        .Set(SnAPI::UI::UIContextMenu::CornerRadiusKey, 6.0f)
+        .Set(SnAPI::UI::UIContextMenu::ItemHoverColorKey, Color::RGBA(58, 67, 80, 240))
+        .Set(SnAPI::UI::UIContextMenu::ItemSelectedColorKey, Color::RGBA(67, 57, 42, 236))
+        .Set(SnAPI::UI::UIContextMenu::ItemPressedColorKey, Color::RGBA(81, 70, 50, 244))
+        .Set(SnAPI::UI::UIContextMenu::TextColorKey, kTextPrimary)
+        .Set(SnAPI::UI::UIContextMenu::DisabledTextColorKey, kTextMuted)
+        .Set(SnAPI::UI::UIContextMenu::ShortcutColorKey, kTextSecondary)
+        .Set(SnAPI::UI::UIContextMenu::SeparatorColorKey, Color::RGBA(96, 103, 114, 220))
+        .Set(SnAPI::UI::UIContextMenu::CheckColorKey, kAccentStrong)
+        .Set(SnAPI::UI::UIContextMenu::SearchIconSourceKey, std::string("editor://Assets/search.svg"));
 
     Define<SnAPI::UI::UIAccordion>()
         .Set(SnAPI::UI::UIAccordion::PaddingKey, 0.0f)

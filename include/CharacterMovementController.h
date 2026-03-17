@@ -5,6 +5,7 @@
 #include "CollisionFilters.h"
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -53,6 +54,7 @@ namespace SnAPI::GameFramework
  * @see ColliderComponent
  * @see InputIntentComponent
  */
+SnType()
 class CharacterMovementController : public BaseComponent, public ComponentCRTP<CharacterMovementController>
 {
 public:
@@ -66,17 +68,25 @@ public:
      * These settings are sampled directly during fixed tick. Mutating them affects future simulation
      * steps only; there is no separate rebuild phase.
      */
+    SnType()
     struct Settings
     {
         /** @brief Stable reflected type name used for serialization registration. */
         static constexpr const char* kTypeName = "SnAPI::GameFramework::CharacterMovementController::Settings";
 
+        SnField(SnKey("MoveForce"))
         float MoveForce = 35.0f; /**< @brief Horizontal movement tuning scalar. The current implementation multiplies it by a fixed `0.1` scale to derive target planar speed. */
+        SnField(SnKey("JumpImpulse"))
         float JumpImpulse = 4.5f; /**< @brief Upward velocity change applied through `VelocityChange` force mode when a buffered jump is accepted. */
+        SnField(SnKey("GroundProbeStartOffset"))
         float GroundProbeStartOffset = 0.1f; /**< @brief Upward offset in world units above the collider top used as the grounded-ray origin. */
+        SnField(SnKey("GroundProbeDistance"))
         float GroundProbeDistance = 1.2f; /**< @brief Additional downward reach in world units below the collider bottom used for grounded checks. */
+        SnField(SnKey("GroundMask"))
         CollisionMaskFlags GroundMask = kCollisionMaskAll; /**< @brief Collision mask used for the grounded probe after the owner's own collision layer is removed. */
+        SnField(SnKey("ConsumeInputEachTick"))
         bool ConsumeInputEachTick = false; /**< @brief Clear the controller's stored move vector after each fixed tick. Does not clear sibling `InputIntentComponent` state. */
+        SnField(SnKey("KeepUpright"))
         bool KeepUpright = true; /**< @brief Force yaw-only orientation by teleporting away pitch and roll each fixed tick. */
     };
 
@@ -93,6 +103,7 @@ public:
      * @brief Mutate the current movement settings.
      * @return Borrowed reference to the stored settings object.
      */
+    SnField(SnKey("Settings"), SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         return m_settings;
@@ -115,11 +126,13 @@ public:
      * @brief Replace the current stored movement input vector.
      * @param Input Desired world-space movement input. The Y component is ignored during locomotion.
      */
+    SnFunction(SnKey("SetMoveInput"))
     void SetMoveInput(const Vec3& Input);
     /**
      * @brief Add to the current stored movement input vector.
      * @param Input Additional world-space movement input. The Y component is ignored during locomotion.
      */
+    SnFunction(SnKey("AddMoveInput"))
     void AddMoveInput(const Vec3& Input);
     /**
      * @brief Read the controller's current stored movement input vector.
@@ -134,6 +147,7 @@ public:
      * @brief Queue a jump request for the next eligible fixed tick.
      * @remarks The request is converted into an internal buffered-jump timer during `FixedTick()`.
      */
+    SnFunction(SnKey("Jump"))
     void Jump();
 
     /**

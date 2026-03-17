@@ -22,6 +22,7 @@
 #include "Flags.h"
 #include "Variant.h"
 #include "Invoker.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -82,6 +83,7 @@ struct TransparentStringEqual
  * @ingroup SnAPI_GameFramework
  * @brief Field-level behavior flags carried by reflection metadata.
  */
+SnType()
 enum class EFieldFlagBits : uint32_t
 {
     None = 0, /**< @brief No special field behavior flags. */
@@ -103,10 +105,40 @@ struct EnableFlags<EFieldFlagBits> : std::true_type
 
 /**
  * @ingroup SnAPI_GameFramework
+ * @brief Editor-facing behavior flags carried by reflected field metadata.
+ */
+SnType()
+enum class EFieldEditorFlagBits : uint32_t
+{
+    SnEnumValue(SnDisplayName("None"))
+    None = 0, /**< @brief No special editor behavior flags. */
+    SnEnumValue(SnDisplayName("Hidden"))
+    Hidden = 1u << 0, /**< @brief Omit the field from generic inspector/editor surfaces. */
+    SnEnumValue(SnDisplayName("Read Only"))
+    ReadOnly = 1u << 1, /**< @brief Show the field but never allow generic editor mutation. */
+    SnEnumValue(SnDisplayName("Advanced"))
+    Advanced = 1u << 2, /**< @brief Place the field in an advanced/collapsed editor group when supported. */
+    SnEnumValue(SnDisplayName("Heavy Data"))
+    HeavyData = 1u << 3, /**< @brief Treat the field as large/opaque data in generic editor tooling. */
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Bitflag wrapper for `EFieldEditorFlagBits`.
+ */
+using FieldEditorFlags = TFlags<EFieldEditorFlagBits>;
+template<>
+struct EnableFlags<EFieldEditorFlagBits> : std::true_type
+{
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
  * @brief Method-level behavior flags carried by reflection metadata.
  *
  * These flags are primarily consumed by RPC and networking bridges rather than generic invocation.
  */
+SnType()
 enum class EMethodFlagBits : uint32_t
 {
     None = 0, /**< @brief No special method behavior flags. */
@@ -116,6 +148,7 @@ enum class EMethodFlagBits : uint32_t
     RpcNetClient = 1u << 3, /**< @brief Method is intended as client-target endpoint. */
     RpcNetMulticast = 1u << 4, /**< @brief Method is intended for server-initiated multicast dispatch. */
     EditorAction = 1u << 5, /**< @brief Expose the method as an editor action button when inspector tooling supports it. */
+    HiddenGenerated = 1u << 6, /**< @brief Internal generator-owned helper method hidden from normal tooling surfaces. */
 };
 
 /**
@@ -130,6 +163,8 @@ struct EnableFlags<EMethodFlagBits> : std::true_type
 
 SNAPI_DEFINE_TYPE_NAME(EFieldFlagBits, "SnAPI::GameFramework::EFieldFlagBits")
 SNAPI_DEFINE_TYPE_NAME(FieldFlags, "SnAPI::GameFramework::FieldFlags")
+SNAPI_DEFINE_TYPE_NAME(EFieldEditorFlagBits, "SnAPI::GameFramework::EFieldEditorFlagBits")
+SNAPI_DEFINE_TYPE_NAME(FieldEditorFlags, "SnAPI::GameFramework::FieldEditorFlags")
 SNAPI_DEFINE_TYPE_NAME(EMethodFlagBits, "SnAPI::GameFramework::EMethodFlagBits")
 SNAPI_DEFINE_TYPE_NAME(MethodFlags, "SnAPI::GameFramework::MethodFlags")
 
@@ -368,6 +403,7 @@ struct FieldInfo
     std::string Doc; /**< @brief Optional documentation text harvested from source comments or generators. */
     TypeId FieldType; /**< @brief TypeId of the field. */
     FieldFlags Flags{}; /**< @brief Field flags (replication, etc.). */
+    FieldEditorFlags EditorFlags{}; /**< @brief Editor-facing field flags (visibility, mutability, etc.). */
     NumericValueInfo Value{}; /**< @brief Optional numeric range/step metadata for editor tooling. */
     std::function<TExpected<Variant>(void* Instance)> Getter; /**< @brief Getter callback. */
     std::function<Result(void* Instance, const Variant& Value)> Setter; /**< @brief Setter callback. */

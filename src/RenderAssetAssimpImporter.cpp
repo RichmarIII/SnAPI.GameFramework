@@ -21,11 +21,14 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <sstream>
 #include <set>
@@ -87,6 +90,224 @@ constexpr std::array<std::string_view, 14> kSupportedModelExtensions{
         }
     }
     return false;
+}
+
+[[nodiscard]] std::string SourceExtensionHint(const std::string& Uri)
+{
+    std::string Extension = std::filesystem::path(Uri).extension().string();
+    if (!Extension.empty() && Extension.front() == '.')
+    {
+        Extension.erase(Extension.begin());
+    }
+    return ToLowerAscii(Extension);
+}
+
+[[nodiscard]] bool ReadUInt32LE(const std::vector<std::uint8_t>& Bytes, const size_t Offset, std::uint32_t& OutValue)
+{
+    if (Offset + sizeof(std::uint32_t) > Bytes.size())
+    {
+        return false;
+    }
+
+    std::memcpy(&OutValue, Bytes.data() + Offset, sizeof(std::uint32_t));
+    return true;
+}
+
+struct ExtractedGlbSource
+{
+    std::filesystem::path TempDirectory{};
+    std::filesystem::path GltfPath{};
+};
+
+[[nodiscard]] std::optional<ExtractedGlbSource> ExtractGlbSource(
+    const std::string& SourceUri,
+    const std::vector<std::uint8_t>& SourceBytes,
+    IPipelineContext& Ctx)
+{
+    constexpr std::uint32_t kGlbMagic = 0x46546C67u;
+    constexpr std::uint32_t kGlbVersion2 = 2u;
+    constexpr std::uint32_t kJsonChunkType = 0x4E4F534Au;
+    constexpr std::uint32_t kBinChunkType = 0x004E4942u;
+
+    std::uint32_t Magic = 0u;
+    std::uint32_t Version = 0u;
+    std::uint32_t DeclaredLength = 0u;
+    if (!ReadUInt32LE(SourceBytes, 0u, Magic) ||
+        !ReadUInt32LE(SourceBytes, 4u, Version) ||
+        !ReadUInt32LE(SourceBytes, 8u, DeclaredLength))
+    {
+        Ctx.LogError("RenderAsset Assimp importer failed to parse GLB header for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+
+    if (Magic != kGlbMagic || Version != kGlbVersion2)
+    {
+        Ctx.LogError("RenderAsset Assimp importer encountered unsupported GLB header for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+
+    if (DeclaredLength > SourceBytes.size())
+    {
+        Ctx.LogError("RenderAsset Assimp importer encountered truncated GLB payload for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+
+    std::string JsonChunk{};
+    std::vector<std::uint8_t> BinChunk{};
+    size_t Offset = 12u;
+    while (Offset + 8u <= DeclaredLength)
+    {
+        std::uint32_t ChunkLength = 0u;
+        std::uint32_t ChunkType = 0u;
+        if (!ReadUInt32LE(SourceBytes, Offset, ChunkLength) ||
+            !ReadUInt32LE(SourceBytes, Offset + 4u, ChunkType))
+        {
+            break;
+        }
+        Offset += 8u;
+        if (Offset + ChunkLength > DeclaredLength)
+        {
+            Ctx.LogError("RenderAsset Assimp importer encountered invalid GLB chunk bounds for %s", SourceUri.c_str());
+            return std::nullopt;
+        }
+
+        const auto* ChunkBegin = reinterpret_cast<const char*>(SourceBytes.data() + Offset);
+        if (ChunkType == kJsonChunkType)
+        {
+            JsonChunk.assign(ChunkBegin, ChunkBegin + ChunkLength);
+            while (!JsonChunk.empty() && (JsonChunk.back() == '\0' || JsonChunk.back() == ' ' || JsonChunk.back() == '\n' || JsonChunk.back() == '\r' || JsonChunk.back() == '\t'))
+            {
+                JsonChunk.pop_back();
+            }
+        }
+        else if (ChunkType == kBinChunkType)
+        {
+            BinChunk.assign(SourceBytes.begin() + static_cast<std::ptrdiff_t>(Offset),
+                            SourceBytes.begin() + static_cast<std::ptrdiff_t>(Offset + ChunkLength));
+        }
+
+        Offset += ChunkLength;
+    }
+
+    if (JsonChunk.empty())
+    {
+        Ctx.LogError("RenderAsset Assimp importer failed to locate GLB JSON chunk for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+
+    nlohmann::ordered_json Document = nlohmann::ordered_json::parse(JsonChunk, nullptr, false);
+    if (Document.is_discarded())
+    {
+        Ctx.LogError("RenderAsset Assimp importer failed to parse GLB JSON chunk for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+
+    const std::string SourceStem = std::filesystem::path(SourceUri).stem().string();
+    const std::string SafeStem = SourceStem.empty() ? "imported_glb" : SourceStem;
+
+    if (Document.contains("buffers") && Document["buffers"].is_array())
+    {
+        int EmbeddedBufferIndex = -1;
+        std::uint32_t ExpectedByteLength = static_cast<std::uint32_t>(BinChunk.size());
+        for (size_t Index = 0; Index < Document["buffers"].size(); ++Index)
+        {
+            nlohmann::ordered_json& Buffer = Document["buffers"][Index];
+            if (!Buffer.is_object() || Buffer.contains("uri"))
+            {
+                continue;
+            }
+
+            if (EmbeddedBufferIndex >= 0)
+            {
+                Ctx.LogError("RenderAsset Assimp importer encountered multiple embedded GLB buffers for %s", SourceUri.c_str());
+                return std::nullopt;
+            }
+
+            EmbeddedBufferIndex = static_cast<int>(Index);
+            if (Buffer.contains("byteLength") && Buffer["byteLength"].is_number_unsigned())
+            {
+                ExpectedByteLength = Buffer["byteLength"].get<std::uint32_t>();
+            }
+        }
+
+        if (EmbeddedBufferIndex >= 0)
+        {
+            if (BinChunk.empty())
+            {
+                Ctx.LogError("RenderAsset Assimp importer expected a GLB BIN chunk for %s", SourceUri.c_str());
+                return std::nullopt;
+            }
+            if (ExpectedByteLength > BinChunk.size())
+            {
+                Ctx.LogError("RenderAsset Assimp importer encountered undersized GLB BIN data for %s", SourceUri.c_str());
+                return std::nullopt;
+            }
+
+            Document["buffers"][EmbeddedBufferIndex]["uri"] = SafeStem + ".bin";
+            nlohmann::ordered_json OrderedBuffer = nlohmann::ordered_json::object();
+            OrderedBuffer["uri"] = SafeStem + ".bin";
+            for (auto MemberIt = Document["buffers"][EmbeddedBufferIndex].begin();
+                 MemberIt != Document["buffers"][EmbeddedBufferIndex].end();
+                 ++MemberIt)
+            {
+                if (MemberIt.key() == "uri")
+                {
+                    continue;
+                }
+                OrderedBuffer[MemberIt.key()] = MemberIt.value();
+            }
+            Document["buffers"][EmbeddedBufferIndex] = std::move(OrderedBuffer);
+            BinChunk.resize(ExpectedByteLength);
+        }
+    }
+
+    const auto Stamp = std::to_string(static_cast<unsigned long long>(
+        std::chrono::steady_clock::now().time_since_epoch().count()));
+    ExtractedGlbSource Extracted{};
+    Extracted.TempDirectory = std::filesystem::temp_directory_path() / ("snapi_gf_glb_import_" + Stamp);
+    std::error_code DirectoryError{};
+    std::filesystem::create_directories(Extracted.TempDirectory, DirectoryError);
+    if (DirectoryError)
+    {
+        Ctx.LogError("RenderAsset Assimp importer failed to create temporary GLB extraction directory for %s: %s",
+                     SourceUri.c_str(),
+                     DirectoryError.message().c_str());
+        return std::nullopt;
+    }
+
+    if (!BinChunk.empty())
+    {
+        const std::filesystem::path BinPath = Extracted.TempDirectory / (SafeStem + ".bin");
+        std::ofstream BinFile(BinPath, std::ios::binary | std::ios::trunc);
+        if (!BinFile.is_open())
+        {
+            Ctx.LogError("RenderAsset Assimp importer failed to write temporary GLB BIN payload for %s", SourceUri.c_str());
+            return std::nullopt;
+        }
+        BinFile.write(reinterpret_cast<const char*>(BinChunk.data()), static_cast<std::streamsize>(BinChunk.size()));
+        if (!BinFile.good())
+        {
+            Ctx.LogError("RenderAsset Assimp importer failed to flush temporary GLB BIN payload for %s", SourceUri.c_str());
+            return std::nullopt;
+        }
+    }
+
+    Extracted.GltfPath = Extracted.TempDirectory / (SafeStem + ".gltf");
+    std::ofstream JsonFile(Extracted.GltfPath, std::ios::binary | std::ios::trunc);
+    if (!JsonFile.is_open())
+    {
+        Ctx.LogError("RenderAsset Assimp importer failed to write temporary GLB JSON payload for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+    const std::string SerializedDocument = Document.dump(2);
+    JsonFile.write(SerializedDocument.data(), static_cast<std::streamsize>(SerializedDocument.size()));
+    if (!JsonFile.good())
+    {
+        Ctx.LogError("RenderAsset Assimp importer failed to flush temporary GLB JSON payload for %s", SourceUri.c_str());
+        return std::nullopt;
+    }
+
+    return Extracted;
 }
 
 [[nodiscard]] bool ParseBool(std::string Value, const bool DefaultValue)
@@ -929,7 +1150,7 @@ struct MeshImportBuffers
         MaterialItem.Intermediate.PayloadType = PayloadMaterial();
         MaterialItem.Intermediate.SchemaVersion = MaterialSerializer->GetSchemaVersion();
 
-        MaterialPayload MaterialPayloadData{};
+        MaterialAsset MaterialPayloadData{};
         MaterialPayloadData.ShaderModule = DefaultShaderModule;
         MaterialPayloadData.ShadingModel = DefaultShadingModel;
 
@@ -942,7 +1163,7 @@ struct MeshImportBuffers
         MaterialInstanceItem.Intermediate.PayloadType = PayloadMaterialInstance();
         MaterialInstanceItem.Intermediate.SchemaVersion = MaterialInstanceSerializer->GetSchemaVersion();
 
-        MaterialInstancePayload MaterialInstancePayloadData{};
+        MaterialInstanceAsset MaterialInstancePayloadData{};
         MaterialInstancePayloadData.ParentMaterial = MakeAssetRef(MaterialItem);
 
         const bool IsGBufferShadingModel = ToLowerAscii(DefaultShadingModel) == "gbuffershadingmodel";
@@ -1473,7 +1694,7 @@ struct MeshImportBuffers
         MeshItem.Intermediate.PayloadType = PayloadStaticMeshSource();
         MeshItem.Intermediate.SchemaVersion = StaticMeshSourceSerializer->GetSchemaVersion();
 
-        StaticMeshSourcePayload SourcePayload{};
+        StaticMeshAsset SourcePayload{};
         SourcePayload.ImportSettings = ImportSettings;
         SourcePayload.Mesh.Name = std::filesystem::path(Source.Uri).stem().string();
         SourcePayload.Mesh.BoundsMin = MeshBuffers.BoundsMin;
@@ -1528,7 +1749,7 @@ struct MeshImportBuffers
         MeshItem.Intermediate.PayloadType = PayloadSkeletalMeshSource();
         MeshItem.Intermediate.SchemaVersion = SkeletalMeshSourceSerializer->GetSchemaVersion();
 
-        SkeletalMeshSourcePayload SourcePayload{};
+        SkeletalMeshAsset SourcePayload{};
         SourcePayload.BaseMesh.ImportSettings = ImportSettings;
         SourcePayload.BaseMesh.Mesh.Name = std::filesystem::path(Source.Uri).stem().string();
         SourcePayload.BaseMesh.Mesh.BoundsMin = MeshBuffers.BoundsMin;
@@ -1654,12 +1875,72 @@ public:
         }
 
         Assimp::Importer Importer{};
-        const aiScene* Scene = Importer.ReadFile(Source.Uri, Flags);
+        const aiScene* Scene = nullptr;
+
+        std::vector<std::uint8_t> SourceBytes{};
+        const std::string ExtensionHint = SourceExtensionHint(Source.Uri);
+        bool UsedMemoryImport = false;
+        std::optional<ExtractedGlbSource> ExtractedGlb{};
+        auto CleanupExtractedGlb = [&ExtractedGlb]() {
+            if (!ExtractedGlb)
+            {
+                return;
+            }
+
+            std::error_code RemoveError{};
+            std::filesystem::remove_all(ExtractedGlb->TempDirectory, RemoveError);
+        };
+        if (ExtensionHint == "glb" && Ctx.ReadAllBytes(Source.Uri, SourceBytes) && !SourceBytes.empty())
+        {
+            ExtractedGlb = ExtractGlbSource(Source.Uri, SourceBytes, Ctx);
+            if (ExtractedGlb)
+            {
+                Scene = Importer.ReadFile(ExtractedGlb->GltfPath.string(), Flags);
+                if (!Scene || !Scene->mRootNode)
+                {
+                    Ctx.LogError("RenderAsset Assimp importer failed to load extracted GLB surrogate %s for %s: %s",
+                                 ExtractedGlb->GltfPath.string().c_str(),
+                                 Source.Uri.c_str(),
+                                 Importer.GetErrorString());
+                    CleanupExtractedGlb();
+                    return false;
+                }
+            }
+        }
+
         if (!Scene || !Scene->mRootNode)
         {
-            Ctx.LogError("RenderAsset Assimp importer failed to load %s: %s", Source.Uri.c_str(), Importer.GetErrorString());
+            Scene = Importer.ReadFile(Source.Uri, Flags);
+        }
+        if ((!Scene || !Scene->mRootNode) && Ctx.ReadAllBytes(Source.Uri, SourceBytes) && !SourceBytes.empty())
+        {
+            UsedMemoryImport = true;
+            Scene = Importer.ReadFileFromMemory(
+                SourceBytes.data(),
+                SourceBytes.size(),
+                Flags,
+                ExtensionHint.c_str());
+        }
+        if (!Scene || !Scene->mRootNode)
+        {
+            if (UsedMemoryImport)
+            {
+                Ctx.LogError("RenderAsset Assimp importer failed to load %s from memory (%zu bytes): %s",
+                             Source.Uri.c_str(),
+                             SourceBytes.size(),
+                             Importer.GetErrorString());
+            }
+            else
+            {
+                Ctx.LogError("RenderAsset Assimp importer failed to load %s: %s",
+                             Source.Uri.c_str(),
+                             Importer.GetErrorString());
+            }
+            CleanupExtractedGlb();
             return false;
         }
+
+        CleanupExtractedGlb();
 
         const std::size_t ExistingCount = OutItems.size();
         if (!BuildAssimpItems(Source, *Scene, ImportSettings, OutItems, Ctx))

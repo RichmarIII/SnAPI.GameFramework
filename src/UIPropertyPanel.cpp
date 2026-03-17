@@ -11,7 +11,6 @@
 #include "IWorld.h"
 #include "PathResolver.h"
 #include "RenderAssetPayloads.h"
-#include "RenderAssetRuntime.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "AtmosphereCompositeParamsNode.h"
 #include "AtmosphereParamsNode.h"
@@ -1196,6 +1195,32 @@ void UIPropertyPanel::SetComponentContextMenuHandler(
   m_OnComponentContextMenuRequested = std::move(Handler);
 }
 
+void UIPropertyPanel::SetObjectMutatedHandler(SnAPI::UI::TDelegate<void(const TypeId&, void*)> Handler)
+{
+  m_OnObjectMutated = std::move(Handler);
+}
+
+void UIPropertyPanel::NotifyObjectMutated(const TypeId& RootType, void* RootInstance)
+{
+  if (!RootInstance || RootType == TypeId{} || !m_OnObjectMutated)
+  {
+    return;
+  }
+
+  m_OnObjectMutated(RootType, RootInstance);
+}
+
+void UIPropertyPanel::NotifyObjectMutated(const FieldBinding& Binding)
+{
+  if (Binding.RootInstance == nullptr)
+  {
+    return;
+  }
+
+  const TypeId rootType = !Binding.Path.empty() ? Binding.Path.front().OwnerType : m_BoundType;
+  NotifyObjectMutated(rootType, Binding.RootInstance);
+}
+
 void UIPropertyPanel::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
 {
   UIScrollContainer::OnRoutedEvent(Context);
@@ -1488,9 +1513,9 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     return;
   }
 
-  if (Type == StaticTypeId<MaterialInstancePayload>())
+  if (Type == StaticTypeId<MaterialInstanceAsset>())
   {
-    auto* payload = static_cast<MaterialInstancePayload*>(RootInstance);
+    auto* payload = static_cast<MaterialInstanceAsset*>(RootInstance);
     if (!payload)
     {
       AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null material instance payload");
@@ -1505,18 +1530,29 @@ void UIPropertyPanel::BuildTypeIntoContainer(
         continue;
       }
 
+      if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+      {
+        continue;
+      }
+
       if (!EqualsIgnoreCase(fieldRef.Field->Name, "ParentMaterial"))
       {
         continue;
       }
 
       auto parentPath = PathPrefix;
-      parentPath.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+      parentPath.push_back(FieldPathEntry{
+        fieldRef.OwnerType,
+        fieldRef.Field->Name,
+        fieldRef.Field->IsConst,
+        fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
       AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(parentPath), Depth, SectionIndex);
       break;
     }
 
-    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) { return entry.IsConst; });
+    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) {
+      return entry.IsConst || entry.ForceReadOnly;
+    });
     AddMaterialScalarCollectionEditor(Parent, payload->Scalars, readOnly, "Scalars");
     AddMaterialVectorCollectionEditor(Parent, payload->Vectors, readOnly, "Vectors");
     AddMaterialTextureCollectionEditor(Parent, payload->Textures, readOnly, "Textures");
@@ -1540,17 +1576,28 @@ void UIPropertyPanel::BuildTypeIntoContainer(
         continue;
       }
 
+      if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+      {
+        continue;
+      }
+
       if (EqualsIgnoreCase(fieldRef.Field->Name, "MaterialInstances"))
       {
         continue;
       }
 
       auto path = PathPrefix;
-      path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+      path.push_back(FieldPathEntry{
+        fieldRef.OwnerType,
+        fieldRef.Field->Name,
+        fieldRef.Field->IsConst,
+        fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
       AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
     }
 
-    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) { return entry.IsConst; });
+    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) {
+      return entry.IsConst || entry.ForceReadOnly;
+    });
     AddAssetRefCollectionEditor(
       Parent,
       payload->MaterialInstances,
@@ -1574,16 +1621,29 @@ void UIPropertyPanel::BuildTypeIntoContainer(
         continue;
       }
 
+      if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+      {
+        continue;
+      }
+
       if (EqualsIgnoreCase(fieldRef.Field->Name, "MaterialInstanceOverrides"))
       {
         overridePath = PathPrefix;
-        overridePath.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+        overridePath.push_back(FieldPathEntry{
+          fieldRef.OwnerType,
+          fieldRef.Field->Name,
+          fieldRef.Field->IsConst,
+          fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
         hasOverrideField = true;
         continue;
       }
 
       auto path = PathPrefix;
-      path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+      path.push_back(FieldPathEntry{
+        fieldRef.OwnerType,
+        fieldRef.Field->Name,
+        fieldRef.Field->IsConst,
+        fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
       AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
     }
 
@@ -1601,20 +1661,22 @@ void UIPropertyPanel::BuildTypeIntoContainer(
       return;
     }
 
-    if (field->FieldType != StaticTypeId<std::vector<TAssetRef<MaterialInstanceAssetRuntime>>>())
+    if (field->FieldType != StaticTypeId<std::vector<TAssetRef<MaterialInstanceAsset>>>())
     {
       AddUnsupportedRow(Parent, "Material Instance Overrides", "Override field type mismatch");
       return;
     }
 
-    auto* overrides = static_cast<std::vector<TAssetRef<MaterialInstanceAssetRuntime>>*>(field->MutablePointer(owner));
+    auto* overrides = static_cast<std::vector<TAssetRef<MaterialInstanceAsset>>*>(field->MutablePointer(owner));
     if (!overrides)
     {
       AddUnsupportedRow(Parent, "Material Instance Overrides", "Override storage is unavailable");
       return;
     }
 
-    const bool readOnly = std::ranges::any_of(overridePath, [](const FieldPathEntry& entry) { return entry.IsConst; })
+    const bool readOnly = std::ranges::any_of(overridePath, [](const FieldPathEntry& entry) {
+      return entry.IsConst || entry.ForceReadOnly;
+    })
                        || field->IsConst
                        || !field->Setter;
     AddMaterialInstanceAssetRefCollectionEditor(
@@ -1641,6 +1703,10 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     return;
   }
 
+  std::vector<ReflectedFieldRef> standardFields{};
+  std::vector<ReflectedFieldRef> advancedFields{};
+  standardFields.reserve(reflectedFields.size());
+  advancedFields.reserve(reflectedFields.size());
   for (const ReflectedFieldRef& fieldRef : reflectedFields)
   {
     if (!fieldRef.Field)
@@ -1648,9 +1714,98 @@ void UIPropertyPanel::BuildTypeIntoContainer(
       continue;
     }
 
+    if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+    {
+      continue;
+    }
+
+    if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Advanced))
+    {
+      advancedFields.push_back(fieldRef);
+    }
+    else
+    {
+      standardFields.push_back(fieldRef);
+    }
+  }
+
+  for (const ReflectedFieldRef& fieldRef : standardFields)
+  {
     auto path = PathPrefix;
-    path.push_back(FieldPathEntry{fieldRef.OwnerType, fieldRef.Field->Name, fieldRef.Field->IsConst});
+    path.push_back(FieldPathEntry{
+      fieldRef.OwnerType,
+      fieldRef.Field->Name,
+      fieldRef.Field->IsConst,
+      fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
     AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
+  }
+
+  if (!advancedFields.empty())
+  {
+    const auto accordionHandle = m_Context->CreateElement<SnAPI::UI::UIAccordion>();
+    if (accordionHandle.Id.Value != 0)
+    {
+      m_Context->AddChild(Parent, accordionHandle.Id);
+      if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
+      {
+        accordion->Width().Set(SnAPI::UI::Sizing::Fill());
+        accordion->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+        accordion->AllowMultipleExpanded().Set(true);
+        accordion->DefaultExpanded().Set(false);
+        accordion->Gap().Set(4.0f);
+        accordion->Padding().Set(0.0f);
+        accordion->HeaderHeight().Set(24.0f);
+        accordion->HeaderPadding().Set(7.0f);
+        accordion->ContentPadding().Set(5.0f);
+        accordion->BackgroundColor().Set(kCardBackground);
+        accordion->BorderColor().Set(kCardBorder);
+        accordion->BorderThickness().Set(1.0f);
+        accordion->CornerRadius().Set(4.0f);
+        accordion->HeaderColor().Set(Color{42, 47, 58, 244});
+        accordion->HeaderHoverColor().Set(Color{48, 54, 66, 246});
+        accordion->HeaderExpandedColor().Set(Color{54, 61, 74, 248});
+        accordion->HeaderTextColor().Set(Color{198, 205, 216, 255});
+        accordion->HeaderTextExpandedColor().Set(Color{220, 225, 234, 255});
+        accordion->HeaderBorderColor().Set(kCardBorder);
+        accordion->HeaderBorderThickness().Set(1.0f);
+        accordion->ArrowSize().Set(18.0f);
+        accordion->ArrowGap().Set(6.0f);
+      }
+
+      const auto bodyHandle = m_Context->CreateElement<SnAPI::UI::UIPanel>("PropertyPanel.AdvancedBody");
+      if (bodyHandle.Id.Value != 0)
+      {
+        m_Context->AddChild(accordionHandle.Id, bodyHandle.Id);
+        if (auto* body = dynamic_cast<SnAPI::UI::UIPanel*>(&m_Context->GetElement(bodyHandle.Id)))
+        {
+          body->Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+          body->Padding().Set(2.0f);
+          body->Gap().Set(4.0f);
+          body->Width().Set(SnAPI::UI::Sizing::Fill());
+          body->HAlign().Set(SnAPI::UI::EAlignment::Stretch);
+          body->Background().Set(Color::Transparent());
+          body->BorderColor().Set(Color::Transparent());
+          body->BorderThickness().Set(0.0f);
+        }
+
+        if (auto* accordion = dynamic_cast<SnAPI::UI::UIAccordion*>(&m_Context->GetElement(accordionHandle.Id)))
+        {
+          accordion->SetSectionHeading(bodyHandle.Id, "Advanced");
+          accordion->SetSectionExpanded(bodyHandle.Id, false);
+        }
+
+        for (const ReflectedFieldRef& fieldRef : advancedFields)
+        {
+          auto path = PathPrefix;
+          path.push_back(FieldPathEntry{
+            fieldRef.OwnerType,
+            fieldRef.Field->Name,
+            fieldRef.Field->IsConst,
+            fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
+          AddFieldEditor(bodyHandle.Id, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
+        }
+      }
+    }
   }
 
   AddMethodActionEditors(Parent, Type, RootInstance, SectionIndex);
@@ -1803,9 +1958,26 @@ void UIPropertyPanel::AddFieldEditor(
     return;
   }
 
+  if (Field.EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+  {
+    return;
+  }
+
   const bool pathConst = std::ranges::any_of(Path, [](const FieldPathEntry& Entry) {
     return Entry.IsConst;
   });
+  const bool pathReadOnly = std::ranges::any_of(Path, [](const FieldPathEntry& Entry) {
+    return Entry.ForceReadOnly;
+  });
+
+  if (Field.EditorFlags.Has(EFieldEditorFlagBits::HeavyData))
+  {
+    AddUnsupportedRow(
+      Parent,
+      PrettyFieldName(Field.Name),
+      "Heavy data hidden in generic inspector");
+    return;
+  }
 
   if (IsNestedStructType(Field.FieldType))
   {
@@ -1963,7 +2135,8 @@ void UIPropertyPanel::AddFieldEditor(
 
   const EEditorKind editorKind = ResolveEditorKind(Field.FieldType);
   const TypeInfo* fieldTypeInfo = TypeRegistry::Instance().Find(Field.FieldType);
-  const bool readOnly = pathConst || Field.IsConst || !Field.Setter;
+  const bool readOnly =
+    pathConst || pathReadOnly || Field.IsConst || !Field.Setter || Field.EditorFlags.Has(EFieldEditorFlagBits::ReadOnly);
   const bool isPathField = editorKind == EEditorKind::String && IsPathLikeField(Field);
   const bool pathSelectsDirectories = isPathField && IsDirectoryLikeField(Field);
 
@@ -2659,10 +2832,11 @@ void UIPropertyPanel::AddMaterialScalarCollectionEditor(
 
       if (!ReadOnly)
       {
-        numberField->Value().AddSetHook([scalarsPtr, index](const double value) {
+        numberField->Value().AddSetHook([this, scalarsPtr, index](const double value) {
           if (index < scalarsPtr->size())
           {
             (*scalarsPtr)[index].Value = static_cast<float>(value);
+            NotifyObjectMutated(m_BoundType, m_BoundInstance);
           }
         });
       }
@@ -2850,10 +3024,11 @@ void UIPropertyPanel::AddMaterialVectorCollectionEditor(
 
         if (!ReadOnly)
         {
-          numberField->Value().AddSetHook([vectorsPtr, index, component](const double value) {
+          numberField->Value().AddSetHook([this, vectorsPtr, index, component](const double value) {
             if (index < vectorsPtr->size() && component < (*vectorsPtr)[index].Value.size())
             {
               (*vectorsPtr)[index].Value[component] = static_cast<float>(value);
+              NotifyObjectMutated(m_BoundType, m_BoundInstance);
             }
           });
         }
@@ -3056,6 +3231,7 @@ void UIPropertyPanel::AddMaterialTextureCollectionEditor(
 
             const std::string selectedText = liveCombo->SelectedText();
             (void)TryWriteAssetRefPayloadSelection(&(*texturesPtr)[index].Texture, selectedText, textureKind);
+            NotifyObjectMutated(m_BoundType, m_BoundInstance);
           });
         }
       }
@@ -3079,10 +3255,11 @@ void UIPropertyPanel::AddMaterialTextureCollectionEditor(
 
         if (!ReadOnly)
         {
-          checkbox->Checked().AddSetHook([texturesPtr, index](const bool value) {
+          checkbox->Checked().AddSetHook([this, texturesPtr, index](const bool value) {
             if (index < texturesPtr->size())
             {
               (*texturesPtr)[index].SRGB = value;
+              NotifyObjectMutated(m_BoundType, m_BoundInstance);
             }
           });
         }
@@ -3270,6 +3447,7 @@ void UIPropertyPanel::AddAssetRefCollectionEditor(
 
           const std::string selectedText = liveCombo->SelectedText();
           (void)TryWriteAssetRefPayloadSelection(&(*refsPtr)[index], selectedText, AssetKindFilter);
+          NotifyObjectMutated(m_BoundType, m_BoundInstance);
         });
       }
     }
@@ -3278,7 +3456,7 @@ void UIPropertyPanel::AddAssetRefCollectionEditor(
 
 void UIPropertyPanel::AddMaterialInstanceAssetRefCollectionEditor(
   const SnAPI::UI::ElementId Parent,
-  std::vector<TAssetRef<MaterialInstanceAssetRuntime>>& References,
+  std::vector<TAssetRef<MaterialInstanceAsset>>& References,
   const bool ReadOnly,
   const std::string_view Heading,
   const std::string_view RowPrefix)
@@ -3351,6 +3529,7 @@ void UIPropertyPanel::AddMaterialInstanceAssetRefCollectionEditor(
   accordion->SetSectionExpanded(bodyHandle.Id, true);
 
   const auto notifyOverridesChanged = [this]() {
+    NotifyObjectMutated(m_BoundType, m_BoundInstance);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     if (m_BoundInstance)
     {
@@ -3533,16 +3712,16 @@ void UIPropertyPanel::AddMaterialInstanceAssetRefCollectionEditor(
       combo->RowHeight().Set(24.0f);
 
       std::vector<std::string> options{};
-      PopulateAssetRefOptions<TAssetRef<MaterialInstanceAssetRuntime>>(options);
+      PopulateAssetRefOptions<TAssetRef<MaterialInstanceAsset>>(options);
       combo->SetItems(std::move(options));
 
       std::string selected{};
-      (void)TryReadAssetRefSelectionLabel<TAssetRef<MaterialInstanceAssetRuntime>>(&(*refsPtr)[index], selected);
+      (void)TryReadAssetRefSelectionLabel<TAssetRef<MaterialInstanceAsset>>(&(*refsPtr)[index], selected);
       (void)combo->SelectByText(selected, false);
 
       if (!ReadOnly)
       {
-        combo->SelectedIndex().AddSetHook([this, refsPtr, index, comboId = comboHandle.Id](const int32_t) {
+        combo->SelectedIndex().AddSetHook([this, refsPtr, index, notifyOverridesChanged, comboId = comboHandle.Id](const int32_t) {
           if (!m_Context || index >= refsPtr->size())
           {
             return;
@@ -3555,18 +3734,8 @@ void UIPropertyPanel::AddMaterialInstanceAssetRefCollectionEditor(
           }
 
           const std::string selectedText = liveCombo->SelectedText();
-          (void)TryWriteAssetRefSelection<TAssetRef<MaterialInstanceAssetRuntime>>(&(*refsPtr)[index], selectedText);
-
-          if (m_BoundInstance)
-          {
-#if defined(WITH_EDITOR) && WITH_EDITOR
-            if (const TypeInfo* rootType = TypeRegistry::Instance().Find(m_BoundType);
-                rootType && rootType->EditorPropertyChanged)
-            {
-              rootType->EditorPropertyChanged(m_BoundInstance, "MaterialInstanceOverrides");
-            }
-#endif
-          }
+          (void)TryWriteAssetRefSelection<TAssetRef<MaterialInstanceAsset>>(&(*refsPtr)[index], selectedText);
+          notifyOverridesChanged();
         });
       }
     }
@@ -4336,9 +4505,11 @@ bool UIPropertyPanel::WriteFieldValue(
         Binding.EditorKind != EEditorKind::SubClass &&
         Binding.EditorKind != EEditorKind::AssetRef)
     {
-      notifyRootEditorPropertyChanged();
+        notifyRootEditorPropertyChanged();
     }
 #endif
+
+    NotifyObjectMutated(Binding);
 
     return true;
   };
@@ -4668,7 +4839,26 @@ bool UIPropertyPanel::WriteFlagsBits(
     return false;
   }
 
-  return WriteUnsignedBits(destination, fieldTypeInfo->Size, Bits);
+  const bool success = WriteUnsignedBits(destination, fieldTypeInfo->Size, Bits);
+  if (!success)
+  {
+    return false;
+  }
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+  if (!Binding.Path.empty())
+  {
+    const FieldPathEntry& rootEntry = Binding.Path.front();
+    if (const TypeInfo* rootType = TypeRegistry::Instance().Find(rootEntry.OwnerType);
+        rootType && rootType->EditorPropertyChanged)
+    {
+      rootType->EditorPropertyChanged(Binding.RootInstance, Binding.Path.back().FieldName);
+    }
+  }
+#endif
+
+  NotifyObjectMutated(Binding);
+  return true;
 }
 
 bool UIPropertyPanel::ParseBool(std::string_view Text, bool& OutValue) const
@@ -5085,18 +5275,6 @@ void UIPropertyPanel::AttachEditorHooks(const std::size_t BindingIndex)
             }
             return;
           }
-
-#if defined(WITH_EDITOR) && WITH_EDITOR
-          if (!liveBinding->Path.empty())
-          {
-            const FieldPathEntry& rootEntry = liveBinding->Path.front();
-            if (const TypeInfo* rootType = TypeRegistry::Instance().Find(rootEntry.OwnerType);
-                rootType && rootType->EditorPropertyChanged)
-            {
-              rootType->EditorPropertyChanged(liveBinding->RootInstance, liveBinding->Path.back().FieldName);
-            }
-          }
-#endif
 
           SyncBindingToEditor(*liveBinding);
         });

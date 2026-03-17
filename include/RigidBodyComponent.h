@@ -9,6 +9,7 @@
 
 #include "BaseComponent.h"
 #include "Math.h"
+#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -54,6 +55,7 @@ class PhysicsSystem;
  * @see ColliderComponent
  * @see TransformComponent
  */
+SnType()
 class RigidBodyComponent : public BaseComponent, public ComponentCRTP<RigidBodyComponent>
 {
 public:
@@ -70,24 +72,37 @@ public:
      * Mutating them does not live-edit the backend body directly; instead, the component marks the
      * body dirty and rebuilds it on the next sync point.
      */
+    SnType()
     struct Settings
     {
         /** @brief Stable reflected type name used for serialization registration. */
         static constexpr const char* kTypeName = "SnAPI::GameFramework::RigidBodyComponent::Settings";
 
+        SnField(SnKey("BodyType"))
         SnAPI::Physics::EBodyType BodyType = SnAPI::Physics::EBodyType::Dynamic; /**< @brief Backend body type controlling simulation authority. */
+        SnField(SnKey("Mass"))
         float Mass = 1.0f; /**< @brief Body mass forwarded to the backend during creation. Meaningful primarily for dynamic bodies. */
+        SnField(SnKey("LinearDamping"))
         float LinearDamping = 0.05f; /**< @brief Linear damping scalar forwarded to the backend body description. */
+        SnField(SnKey("AngularDamping"))
         float AngularDamping = 0.05f; /**< @brief Angular damping scalar forwarded to the backend body description. */
+        SnField(SnKey("EnableCcd"))
         bool EnableCcd = true; /**< @brief Enable continuous collision detection when supported by the backend. */
+        SnField(SnKey("StartActive"))
         bool StartActive = true; /**< @brief Request an initially active backend body on creation. */
 
+        SnField(SnKey("InitialLinearVelocity"))
         Vec3 InitialLinearVelocity{}; /**< @brief Initial world-space linear velocity forwarded directly to the backend. */
+        SnField(SnKey("InitialAngularVelocity"))
         Vec3 InitialAngularVelocity{}; /**< @brief Initial angular velocity vector forwarded directly to the backend. */
 
+        SnField(SnKey("SyncFromPhysics"))
         bool SyncFromPhysics = true; /**< @brief Allow dynamic-body transforms to be published back onto the owning node. */
+        SnField(SnKey("SyncToPhysics"))
         bool SyncToPhysics = true; /**< @brief Allow static/kinematic owner transforms to be pushed into physics. */
+        SnField(SnKey("EnableRenderInterpolation"))
         bool EnableRenderInterpolation = true; /**< @brief Blend dynamic-body transforms between fixed-step samples when the world uses fixed tick. */
+        SnField(SnKey("AutoDeactivateWhenSleeping"))
         bool AutoDeactivateWhenSleeping = true; /**< @brief Toggle component activity from body sleep/wake events for dynamic bodies. */
     };
 
@@ -124,6 +139,7 @@ public:
      * @return Borrowed reference to the stored settings object.
      * @post The body is marked dirty and will be recreated on the next sync point.
      */
+    SnField(SnKey("Settings"), SnReplicated, SnConstGetter(GetSettings))
     Settings& EditSettings()
     {
         m_settingsDirty = true;

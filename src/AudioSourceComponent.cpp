@@ -135,28 +135,7 @@ void AudioSourceComponent::EditorOnPropertyChanged(const std::string_view Name)
 }
 #endif
 
-void AudioSourceComponent::Play()
-{
-    SNAPI_GF_PROFILE_FUNCTION("Audio");
-    if (CallRPC("PlayServer"))
-    {
-        return;
-    }
-    PlayClient();
-}
-
-void AudioSourceComponent::PlayServer()
-{
-    SNAPI_GF_PROFILE_FUNCTION("Audio");
-    m_playRequested = true;
-    if (CallRPC("PlayClient"))
-    {
-        return;
-    }
-    PlayClient();
-}
-
-void AudioSourceComponent::PlayClient()
+void AudioSourceComponent::PlayImpl()
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_playRequested = true;
@@ -195,28 +174,7 @@ void AudioSourceComponent::PlayClient()
     }
 }
 
-void AudioSourceComponent::Stop()
-{
-    SNAPI_GF_PROFILE_FUNCTION("Audio");
-    if (CallRPC("StopServer"))
-    {
-        return;
-    }
-    StopClient();
-}
-
-void AudioSourceComponent::StopServer()
-{
-    SNAPI_GF_PROFILE_FUNCTION("Audio");
-    m_playRequested = false;
-    if (CallRPC("StopClient"))
-    {
-        return;
-    }
-    StopClient();
-}
-
-void AudioSourceComponent::StopClient()
+void AudioSourceComponent::StopImpl()
 {
     SNAPI_GF_PROFILE_FUNCTION("Audio");
     m_playRequested = false;

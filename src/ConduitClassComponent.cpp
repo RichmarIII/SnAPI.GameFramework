@@ -215,7 +215,7 @@ Result ClassComponent::EnsureBound(IWorld& WorldRef)
         return std::unexpected(MakeError(EErrorCode::NotFound, m_lastError));
     }
 
-    auto LoadResult = Class.Load(*AssetManager);
+    auto LoadResult = Class.LoadAsset();
     if (!LoadResult)
     {
         RememberError("Failed to load Conduit class asset: " + LoadResult.error());
