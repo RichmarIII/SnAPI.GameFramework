@@ -1,5 +1,6 @@
 #include "Editor/EditorAssetService.h"
 
+#include "AuthoredAssetCereal.h"
 #include "AuthoredAssetJson.h"
 #include "AuthoredAssetRegistry.h"
 #include "AssetRef.h"
@@ -50,6 +51,7 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/map.hpp>
 #include <cereal/types/string.hpp>
+#include <cereal/types/unordered_map.hpp>
 #include <cereal/types/vector.hpp>
 #include <cctype>
 #include <cstdint>
@@ -98,37 +100,6 @@ std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderAnimationCooke
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderStaticMeshCooker();
 std::unique_ptr<::SnAPI::AssetPipeline::IAssetCooker> CreateRenderSkeletalMeshCooker();
 } // namespace SnAPI::GameFramework
-
-namespace cereal
-{
-template<class Archive>
-void serialize(Archive& Ar, SnAPI::GameFramework::Editor::AssimpImportSettings& Value)
-{
-    Ar(cereal::make_nvp("GenerateNormals", Value.GenerateNormals),
-       cereal::make_nvp("GenerateTangents", Value.GenerateTangents),
-       cereal::make_nvp("FlipUVs", Value.FlipUVs),
-       cereal::make_nvp("OptimizeMeshes", Value.OptimizeMeshes),
-       cereal::make_nvp("ForceSkeletal", Value.ForceSkeletal),
-       cereal::make_nvp("ForceStatic", Value.ForceStatic),
-       cereal::make_nvp("ImportMaterials", Value.ImportMaterials),
-       cereal::make_nvp("ImportTextures", Value.ImportTextures),
-       cereal::make_nvp("ImportAnimations", Value.ImportAnimations),
-       cereal::make_nvp("ImportSkeleton", Value.ImportSkeleton),
-       cereal::make_nvp("MaxBonesPerVertex", Value.MaxBonesPerVertex));
-}
-
-template<class Archive>
-void serialize(Archive& Ar, SnAPI::GameFramework::Editor::TextureImportSettings& Value)
-{
-    Ar(cereal::make_nvp("Target", Value.Target),
-       cereal::make_nvp("Format", Value.Format),
-       cereal::make_nvp("Quality", Value.Quality),
-       cereal::make_nvp("ForceSrgb", Value.ForceSrgb),
-       cereal::make_nvp("ForceLinear", Value.ForceLinear),
-       cereal::make_nvp("ForceNormalMap", Value.ForceNormalMap),
-       cereal::make_nvp("MaxMips", Value.MaxMips));
-}
-} // namespace cereal
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -204,8 +175,8 @@ struct AssetImportMetadataEntryDisk
     std::string ImporterName{};
     std::string Profile{};
     std::unordered_map<std::string, std::string> BuildOptions{};
-    Editor::AssimpImportSettings Assimp{};
-    Editor::TextureImportSettings Texture{};
+    AssimpImporterSettings Assimp{};
+    TextureImporterSettings Texture{};
 
     template<class Archive>
     void serialize(Archive& Ar)
@@ -261,26 +232,25 @@ struct AssetImportMetadataDatabaseDisk
     return Buffer;
 }
 
-[[nodiscard]] Editor::ETextureCompressionTarget ToEditorTextureTarget(
+[[nodiscard]] ETextureCompressionTarget ToTextureCompressionTarget(
     const TextureCompressorPlugin::ECompressionTarget Target)
 {
     return Target == TextureCompressorPlugin::ECompressionTarget::ASTC
-        ? Editor::ETextureCompressionTarget::ASTC
-        : Editor::ETextureCompressionTarget::BCn;
+        ? ETextureCompressionTarget::ASTC
+        : ETextureCompressionTarget::BCn;
 }
 
 [[nodiscard]] TextureCompressorPlugin::ECompressionTarget ToCookedTextureTarget(
-    const Editor::ETextureCompressionTarget Target)
+    const ETextureCompressionTarget Target)
 {
-    return Target == Editor::ETextureCompressionTarget::ASTC
+    return Target == ETextureCompressionTarget::ASTC
         ? TextureCompressorPlugin::ECompressionTarget::ASTC
         : TextureCompressorPlugin::ECompressionTarget::BCn;
 }
 
-[[nodiscard]] Editor::ETextureCompressionFormat ToEditorTextureFormat(
+[[nodiscard]] ETextureCompressionFormat ToTextureCompressionFormat(
     const TextureCompressorPlugin::ECompressedFormat Format)
 {
-    using Editor::ETextureCompressionFormat;
     using TextureCompressorPlugin::ECompressedFormat;
     switch (Format)
     {
@@ -304,9 +274,8 @@ struct AssetImportMetadataDatabaseDisk
 }
 
 [[nodiscard]] TextureCompressorPlugin::ECompressedFormat ToCookedTextureFormat(
-    const Editor::ETextureCompressionFormat Format)
+    const ETextureCompressionFormat Format)
 {
-    using Editor::ETextureCompressionFormat;
     using TextureCompressorPlugin::ECompressedFormat;
     switch (Format)
     {
@@ -526,52 +495,66 @@ struct AssetImportMetadataDatabaseDisk
 }
 
 [[nodiscard]] std::unordered_map<std::string, std::string> BuildOptionsFromAssimpImportSettings(
-    const Editor::AssimpImportSettings& Settings)
+    const AssimpImporterSettings& Settings)
 {
     const auto BoolToText = [](const bool Value) {
         return Value ? std::string("true") : std::string("false");
     };
 
     std::unordered_map<std::string, std::string> BuildOptions{};
-    BuildOptions.emplace("SnAPI.GF.Assimp.GenerateNormals", BoolToText(Settings.GenerateNormals));
-    BuildOptions.emplace("SnAPI.GF.Assimp.GenerateTangents", BoolToText(Settings.GenerateTangents));
-    BuildOptions.emplace("SnAPI.GF.Assimp.FlipUVs", BoolToText(Settings.FlipUVs));
-    BuildOptions.emplace("SnAPI.GF.Assimp.OptimizeMeshes", BoolToText(Settings.OptimizeMeshes));
-    BuildOptions.emplace("SnAPI.GF.Assimp.ForceSkeletal", BoolToText(Settings.ForceSkeletal));
-    BuildOptions.emplace("SnAPI.GF.Assimp.ForceStatic", BoolToText(Settings.ForceStatic));
-    BuildOptions.emplace("SnAPI.GF.Assimp.ImportMaterials", BoolToText(Settings.ImportMaterials));
-    BuildOptions.emplace("SnAPI.GF.Assimp.ImportTextures", BoolToText(Settings.ImportTextures));
-    BuildOptions.emplace("SnAPI.GF.Assimp.ImportAnimations", BoolToText(Settings.ImportAnimations));
-    BuildOptions.emplace("SnAPI.GF.Assimp.ImportSkeleton", BoolToText(Settings.ImportSkeleton));
-    BuildOptions.emplace("SnAPI.GF.Assimp.MaxBonesPerVertex", std::to_string(std::max(1u, Settings.MaxBonesPerVertex)));
+    BuildOptions.emplace("SnAPI.GF.Assimp.GenerateNormals", BoolToText(Settings.Mesh.GenerateNormals));
+    BuildOptions.emplace("SnAPI.GF.Assimp.GenerateTangents", BoolToText(Settings.Mesh.GenerateTangents));
+    BuildOptions.emplace("SnAPI.GF.Assimp.FlipUVs", BoolToText(Settings.Mesh.FlipUVs));
+    BuildOptions.emplace("SnAPI.GF.Assimp.OptimizeMeshes", BoolToText(Settings.Mesh.OptimizeMeshes));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ForceSkeletal", BoolToText(Settings.Mesh.ForceSkeletal));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ForceStatic", BoolToText(Settings.Mesh.ForceStatic));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportMaterials", BoolToText(Settings.Mesh.ImportMaterials));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportTextures", BoolToText(Settings.Mesh.ImportTextures));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportAnimations", BoolToText(Settings.Mesh.ImportAnimations));
+    BuildOptions.emplace("SnAPI.GF.Assimp.ImportSkeleton", BoolToText(Settings.Mesh.ImportSkeleton));
+    BuildOptions.emplace(
+        "SnAPI.GF.Assimp.MaxBonesPerVertex",
+        std::to_string(std::max(1u, Settings.Mesh.MaxBonesPerVertex)));
+    if (!Settings.LogicalNameOverride.empty())
+    {
+        BuildOptions.emplace("SnAPI.GF.Assimp.LogicalName", Settings.LogicalNameOverride);
+    }
+    if (!Settings.DefaultShaderModule.empty())
+    {
+        BuildOptions.emplace("SnAPI.GF.Assimp.DefaultShaderModule", Settings.DefaultShaderModule);
+    }
+    if (!Settings.DefaultShadingModel.empty())
+    {
+        BuildOptions.emplace("SnAPI.GF.Assimp.DefaultShadingModel", Settings.DefaultShadingModel);
+    }
     return BuildOptions;
 }
 
 [[nodiscard]] std::unordered_map<std::string, std::string> BuildOptionsFromTextureImportSettings(
-    const Editor::TextureImportSettings& Settings)
+    const TextureImporterSettings& Settings)
 {
-    const auto TargetToOption = [](const Editor::ETextureCompressionTarget Target) {
-        return Target == Editor::ETextureCompressionTarget::ASTC ? std::string("astc") : std::string("bcn");
+    const auto TargetToOption = [](const ETextureCompressionTarget Target) {
+        return Target == ETextureCompressionTarget::ASTC ? std::string("astc") : std::string("bcn");
     };
-    const auto FormatToOption = [](const Editor::ETextureCompressionFormat Format) -> std::string {
+    const auto FormatToOption = [](const ETextureCompressionFormat Format) -> std::string {
         switch (Format)
         {
-        case Editor::ETextureCompressionFormat::Auto: return {};
-        case Editor::ETextureCompressionFormat::BC1: return "bc1";
-        case Editor::ETextureCompressionFormat::BC3: return "bc3";
-        case Editor::ETextureCompressionFormat::BC4: return "bc4";
-        case Editor::ETextureCompressionFormat::BC5: return "bc5";
-        case Editor::ETextureCompressionFormat::BC6H: return "bc6h";
-        case Editor::ETextureCompressionFormat::BC7: return "bc7";
-        case Editor::ETextureCompressionFormat::ASTC_4x4: return "astc_4x4";
-        case Editor::ETextureCompressionFormat::ASTC_5x5: return "astc_5x5";
-        case Editor::ETextureCompressionFormat::ASTC_6x6: return "astc_6x6";
-        case Editor::ETextureCompressionFormat::ASTC_8x8: return "astc_8x8";
-        case Editor::ETextureCompressionFormat::ASTC_10x10: return "astc_10x10";
-        case Editor::ETextureCompressionFormat::ASTC_12x12: return "astc_12x12";
-        case Editor::ETextureCompressionFormat::ASTC_4x4_HDR: return "astc_4x4_hdr";
-        case Editor::ETextureCompressionFormat::ASTC_6x6_HDR: return "astc_6x6_hdr";
-        case Editor::ETextureCompressionFormat::ASTC_8x8_HDR: return "astc_8x8_hdr";
+        case ETextureCompressionFormat::Auto: return {};
+        case ETextureCompressionFormat::BC1: return "bc1";
+        case ETextureCompressionFormat::BC3: return "bc3";
+        case ETextureCompressionFormat::BC4: return "bc4";
+        case ETextureCompressionFormat::BC5: return "bc5";
+        case ETextureCompressionFormat::BC6H: return "bc6h";
+        case ETextureCompressionFormat::BC7: return "bc7";
+        case ETextureCompressionFormat::ASTC_4x4: return "astc_4x4";
+        case ETextureCompressionFormat::ASTC_5x5: return "astc_5x5";
+        case ETextureCompressionFormat::ASTC_6x6: return "astc_6x6";
+        case ETextureCompressionFormat::ASTC_8x8: return "astc_8x8";
+        case ETextureCompressionFormat::ASTC_10x10: return "astc_10x10";
+        case ETextureCompressionFormat::ASTC_12x12: return "astc_12x12";
+        case ETextureCompressionFormat::ASTC_4x4_HDR: return "astc_4x4_hdr";
+        case ETextureCompressionFormat::ASTC_6x6_HDR: return "astc_6x6_hdr";
+        case ETextureCompressionFormat::ASTC_8x8_HDR: return "astc_8x8_hdr";
         default: return {};
         }
     };
@@ -640,102 +623,42 @@ constexpr std::array<std::string_view, 6> kTextureManagedBuildOptionKeys{
     "texture.normal_map",
     "texture.max_mips"};
 
-void FillAssimpImportSettingsFromTyped(const AssimpImporterSettings& Typed, Editor::AssimpImportSettings& Out)
+[[nodiscard]] TextureImporterSettings BuildTextureImporterSettingsFromCooker(
+    const TextureCompressorPlugin::TextureCompressorImportSettings& Typed)
 {
-    Out.GenerateNormals = Typed.Mesh.GenerateNormals;
-    Out.GenerateTangents = Typed.Mesh.GenerateTangents;
-    Out.FlipUVs = Typed.Mesh.FlipUVs;
-    Out.OptimizeMeshes = Typed.Mesh.OptimizeMeshes;
-    Out.ForceSkeletal = Typed.Mesh.ForceSkeletal;
-    Out.ForceStatic = Typed.Mesh.ForceStatic;
-    Out.ImportMaterials = Typed.Mesh.ImportMaterials;
-    Out.ImportTextures = Typed.Mesh.ImportTextures;
-    Out.ImportAnimations = Typed.Mesh.ImportAnimations;
-    Out.ImportSkeleton = Typed.Mesh.ImportSkeleton;
-    Out.MaxBonesPerVertex = std::max(1u, Typed.Mesh.MaxBonesPerVertex);
-}
-
-void FillTextureImportSettingsFromTyped(const TextureCompressorPlugin::TextureCompressorImportSettings& Typed,
-                                        Editor::TextureImportSettings& Out)
-{
-    Out.Target = ToEditorTextureTarget(Typed.Target);
-    Out.Format = ToEditorTextureFormat(Typed.Format);
+    TextureImporterSettings Out{};
+    Out.Target = ToTextureCompressionTarget(Typed.Target);
+    Out.Format = ToTextureCompressionFormat(Typed.Format);
     Out.Quality = std::clamp(Typed.Quality, 0.0f, 1.0f);
     Out.ForceNormalMap = Typed.ForceNormalMap;
     Out.MaxMips = Typed.MaxMipCount > 0 ? static_cast<uint32_t>(Typed.MaxMipCount) : 0u;
     Out.ForceSrgb = Typed.ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
     Out.ForceLinear = Typed.ColorSpacePolicy == TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+    return Out;
 }
 
-void FillAssimpImportSettingsFromPayload(const MeshImportSettingsPayload& Payload, Editor::AssimpImportSettings& Out)
+[[nodiscard]] TextureCompressorPlugin::TextureCompressorImportSettings BuildTextureCookerImportSettings(
+    const TextureImporterSettings& Typed)
 {
-    Out.GenerateNormals = Payload.GenerateNormals;
-    Out.GenerateTangents = Payload.GenerateTangents;
-    Out.FlipUVs = Payload.FlipUVs;
-    Out.OptimizeMeshes = Payload.OptimizeMeshes;
-    Out.ForceSkeletal = Payload.ForceSkeletal;
-    Out.ForceStatic = Payload.ForceStatic;
-    Out.ImportMaterials = Payload.ImportMaterials;
-    Out.ImportTextures = Payload.ImportTextures;
-    Out.ImportAnimations = Payload.ImportAnimations;
-    Out.ImportSkeleton = Payload.ImportSkeleton;
-    Out.MaxBonesPerVertex = std::max(1u, Payload.MaxBonesPerVertex);
-}
-
-[[nodiscard]] MeshImportSettingsPayload BuildMeshImportSettingsPayload(const Editor::AssimpImportSettings& Settings)
-{
-    MeshImportSettingsPayload Payload{};
-    Payload.GenerateNormals = Settings.GenerateNormals;
-    Payload.GenerateTangents = Settings.GenerateTangents;
-    Payload.FlipUVs = Settings.FlipUVs;
-    Payload.OptimizeMeshes = Settings.OptimizeMeshes;
-    Payload.ForceSkeletal = Settings.ForceSkeletal;
-    Payload.ForceStatic = Settings.ForceStatic;
-    Payload.ImportMaterials = Settings.ImportMaterials;
-    Payload.ImportTextures = Settings.ImportTextures;
-    Payload.ImportAnimations = Settings.ImportAnimations;
-    Payload.ImportSkeleton = Settings.ImportSkeleton;
-    Payload.MaxBonesPerVertex = std::max(1u, Settings.MaxBonesPerVertex);
-    return Payload;
-}
-
-[[nodiscard]] Editor::ETextureCompressionTarget ParseAuthoredTextureTarget(std::string_view Value)
-{
-    const std::string Lower = ToLowerCopy(Value);
-    return Lower == "astc"
-        ? Editor::ETextureCompressionTarget::ASTC
-        : Editor::ETextureCompressionTarget::BCn;
-}
-
-[[nodiscard]] Editor::ETextureCompressionFormat ParseAuthoredTextureFormat(std::string_view Value)
-{
-    const TextureCompressorPlugin::ECompressedFormat Format = ParseTextureFormatOption(Value);
-    return ToEditorTextureFormat(Format);
-}
-
-void FillTextureImportSettingsFromPayload(const TextureImportSettingsPayload& Payload,
-                                          Editor::TextureImportSettings& Out)
-{
-    Out.Target = ParseAuthoredTextureTarget(Payload.Target);
-    Out.Format = ParseAuthoredTextureFormat(Payload.Format);
-    Out.Quality = std::clamp(Payload.Quality, 0.0f, 1.0f);
-    Out.ForceSrgb = Payload.ForceSrgb;
-    Out.ForceLinear = Payload.ForceLinear;
-    Out.ForceNormalMap = Payload.ForceNormalMap;
-    Out.MaxMips = Payload.MaxMips;
-}
-
-[[nodiscard]] TextureImportSettingsPayload BuildTextureImportSettingsPayload(const Editor::TextureImportSettings& Settings)
-{
-    TextureImportSettingsPayload Payload{};
-    Payload.Target = Settings.Target == Editor::ETextureCompressionTarget::ASTC ? "ASTC" : "BCn";
-    Payload.Format = TextureFormatToAuthoredString(ToCookedTextureFormat(Settings.Format));
-    Payload.Quality = std::clamp(Settings.Quality, 0.0f, 1.0f);
-    Payload.ForceSrgb = Settings.ForceSrgb;
-    Payload.ForceLinear = Settings.ForceLinear;
-    Payload.ForceNormalMap = Settings.ForceNormalMap;
-    Payload.MaxMips = Settings.MaxMips;
-    return Payload;
+    TextureCompressorPlugin::TextureCompressorImportSettings Out{};
+    Out.Target = ToCookedTextureTarget(Typed.Target);
+    Out.Format = ToCookedTextureFormat(Typed.Format);
+    Out.Quality = std::clamp(Typed.Quality, 0.0f, 1.0f);
+    Out.ForceNormalMap = Typed.ForceNormalMap;
+    Out.MaxMipCount = Typed.MaxMips > 0 ? static_cast<int32_t>(Typed.MaxMips) : -1;
+    if (Typed.ForceLinear)
+    {
+        Out.ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+    }
+    else if (Typed.ForceSrgb)
+    {
+        Out.ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+    }
+    else
+    {
+        Out.ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::Auto;
+    }
+    return Out;
 }
 
 [[nodiscard]] ::SnAPI::AssetPipeline::AssetImportSettingsPtr BuildTypedImportSettingsForImporter(
@@ -799,15 +722,13 @@ void FillTextureImportSettingsFromPayload(const TextureImportSettingsPayload& Pa
 
     if (ImporterName == "TextureCompressor.Importer")
     {
-        auto Settings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
+        auto Settings = std::make_shared<TextureImporterSettings>();
         const std::string Target = ToLowerCopy(OptionValueOr(BuildOptions, "texture.target", "bcn"));
-        Settings->Target = (Target == "astc")
-            ? TextureCompressorPlugin::ECompressionTarget::ASTC
-            : TextureCompressorPlugin::ECompressionTarget::BCn;
+        Settings->Target = (Target == "astc") ? ETextureCompressionTarget::ASTC : ETextureCompressionTarget::BCn;
+        Settings->Format = ToTextureCompressionFormat(ParseTextureFormatOption(OptionValueOr(BuildOptions, "texture.format", "")));
 
-        Settings->Format = ParseTextureFormatOption(OptionValueOr(BuildOptions, "texture.format", ""));
-
-        const std::string QualityText = OptionValueOr(BuildOptions, "texture.quality", std::to_string(Settings->Quality));
+        const std::string QualityText =
+            OptionValueOr(BuildOptions, "texture.quality", std::to_string(Settings->Quality));
         try
         {
             Settings->Quality = std::clamp(std::stof(QualityText), 0.0f, 1.0f);
@@ -820,9 +741,8 @@ void FillTextureImportSettingsFromPayload(const TextureImportSettingsPayload& Pa
             !SrgbText.empty())
         {
             const bool ForceSrgb = ParseBoolOption(SrgbText, true);
-            Settings->ColorSpacePolicy = ForceSrgb
-                ? TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb
-                : TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+            Settings->ForceSrgb = ForceSrgb;
+            Settings->ForceLinear = !ForceSrgb;
         }
 
         Settings->ForceNormalMap = ParseBoolOption(
@@ -832,7 +752,7 @@ void FillTextureImportSettingsFromPayload(const TextureImportSettingsPayload& Pa
         if (const std::optional<int32_t> MaxMips = ParseIntOption(OptionValueOr(BuildOptions, "texture.max_mips", ""));
             MaxMips.has_value())
         {
-            Settings->MaxMipCount = *MaxMips;
+            Settings->MaxMips = static_cast<uint32_t>(std::max(0, *MaxMips));
         }
         return Settings;
     }
@@ -844,8 +764,8 @@ void PopulateTextureEditorPayloadFromCooked(
     const TextureCompressorPlugin::TextureCompressorCookedInfo& Cooked,
     Editor::TextureAssetEditorPayload& Out)
 {
-    Out.Target = ToEditorTextureTarget(Cooked.RequestedTarget);
-    Out.Format = ToEditorTextureFormat(
+    Out.Target = ToTextureCompressionTarget(Cooked.RequestedTarget);
+    Out.Format = ToTextureCompressionFormat(
         Cooked.RequestedFormat == TextureCompressorPlugin::ECompressedFormat::Unknown
             ? Cooked.Format
             : Cooked.RequestedFormat);
@@ -2828,17 +2748,17 @@ struct ScopedStagedImportDirectory
     }
 }
 
-[[nodiscard]] TextureImportSettingsPayload BuildTextureAssetImportSettingsPayload(
+[[nodiscard]] TextureImporterSettings BuildTextureAssetImportSettings(
     const TextureCompressorPlugin::TextureCompressorImportSettings* TypedSettings)
 {
-    TextureImportSettingsPayload Payload{};
+    TextureImporterSettings Payload{};
     if (!TypedSettings)
     {
         return Payload;
     }
 
-    Payload.Target = TypedSettings->Target == TextureCompressorPlugin::ECompressionTarget::ASTC ? "ASTC" : "BCn";
-    Payload.Format = TextureFormatToAuthoredString(TypedSettings->Format);
+    Payload.Target = ToTextureCompressionTarget(TypedSettings->Target);
+    Payload.Format = ToTextureCompressionFormat(TypedSettings->Format);
     Payload.Quality = std::clamp(TypedSettings->Quality, 0.0f, 1.0f);
     Payload.ForceNormalMap = TypedSettings->ForceNormalMap;
     Payload.MaxMips = TypedSettings->MaxMipCount > 0 ? static_cast<uint32_t>(TypedSettings->MaxMipCount) : 0u;
@@ -2849,7 +2769,7 @@ struct ScopedStagedImportDirectory
 
 [[nodiscard]] TextureAsset BuildTextureAssetFromIntermediate(
     const TextureCompressorPlugin::ImageIntermediate& Intermediate,
-    const TextureImportSettingsPayload& ImportSettings)
+    const TextureImporterSettings& ImportSettings)
 {
     TextureAsset Asset{};
     Asset.Image.Width = Intermediate.Width;
@@ -2921,7 +2841,7 @@ void ApplyImportedSourceAssetProvenance(ImportedSourceAssetVariant& Asset,
 [[nodiscard]] std::expected<ImportedSourceAssetVariant, std::string> BuildImportedSourceAssetVariant(
     const ::SnAPI::AssetPipeline::ImportedItem& Item,
     const ::SnAPI::AssetPipeline::PayloadRegistry& Registry,
-    const TextureImportSettingsPayload& TextureSettings)
+    const TextureImporterSettings& TextureSettings)
 {
     const auto* Serializer = Registry.Find(Item.Intermediate.PayloadType);
     if (!Serializer)
@@ -3156,6 +3076,11 @@ void RewriteImportedAssetRefs(ImportedSourceAssetVariant& Asset,
         using TAsset = std::remove_cvref_t<decltype(TypedAsset)>;
         if constexpr (std::is_same_v<TAsset, MaterialInstanceAsset>)
         {
+            if (const auto It = RefByOriginalName.find(TypedAsset.ParentMaterial.AssetName);
+                It != RefByOriginalName.end())
+            {
+                TypedAsset.ParentMaterial = It->second;
+            }
             for (MaterialTextureParamPayload& Texture : TypedAsset.Textures)
             {
                 if (const auto It = RefByOriginalName.find(Texture.Texture.AssetName); It != RefByOriginalName.end())
@@ -4073,10 +3998,11 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
             MarkAssetEditorRuntimeSaved();
             RefreshAssetEditorDirtyFlags(false);
 
-            auto RebuildResult = RebuildAssetManager();
-            if (!RebuildResult)
+            InvalidateAssetRuntimeCache(Asset->AssetId);
+            auto RefreshResult = RefreshDiscovery();
+            if (!RefreshResult)
             {
-                return RebuildResult;
+                return RefreshResult;
             }
 
             m_statusMessage = "Saved source asset: " + AssetName;
@@ -4142,10 +4068,11 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
             RefreshAssetEditorDirtyFlags(false);
         }
 
-        auto RebuildResult = RebuildAssetManager();
-        if (!RebuildResult)
+        InvalidateAssetRuntimeCache(Asset->AssetId);
+        auto RefreshResult = RefreshDiscovery();
+        if (!RefreshResult)
         {
-            return RebuildResult;
+            return RefreshResult;
         }
 
         m_statusMessage = "Saved source asset: " + AssetName;
@@ -4199,7 +4126,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
             return std::unexpected(MakeError(EErrorCode::InternalError, SaveResult.error()));
         }
 
-        m_assetManager->ClearCache();
+        InvalidateAssetRuntimeCache(Asset->AssetId);
 
         m_assetRenameOverrides.erase(Asset->AssetId);
         m_assetPayloadOverrides.erase(Asset->AssetId);
@@ -4288,7 +4215,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
             return std::unexpected(MakeError(EErrorCode::InternalError, RemountResult.error()));
         }
     }
-    m_assetManager->ClearCache();
+    InvalidateAssetRuntimeCache(Asset->AssetId);
 
     m_assetRenameOverrides.erase(Asset->AssetId);
     m_assetPayloadOverrides.erase(Asset->AssetId);
@@ -4388,10 +4315,11 @@ Result EditorAssetService::SaveAssetByKey(EditorServiceContext& Context, const s
             ClassDocument->MarkSaved();
         }
 
-        auto RebuildResult = RebuildAssetManager();
-        if (!RebuildResult)
+        InvalidateAssetRuntimeCache(Asset->AssetId);
+        auto RefreshResult = RefreshDiscovery();
+        if (!RefreshResult)
         {
-            return RebuildResult;
+            return RefreshResult;
         }
 
         m_statusMessage = Asset->AssetKind == AssetKindConduitGraph()
@@ -4529,7 +4457,7 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
             return std::unexpected(MakeError(EErrorCode::InternalError, DeleteResult.error()));
         }
 
-        m_assetManager->ClearCache();
+        InvalidateAssetRuntimeCache(AssetSnapshot.AssetId);
         m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
         m_assetPayloadOverrides.erase(AssetSnapshot.AssetId);
         if (m_assetImportMetadata.erase(AssetSnapshot.AssetId) > 0)
@@ -4675,7 +4603,7 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
         }
     }
 
-    m_assetManager->ClearCache();
+    InvalidateAssetRuntimeCache(AssetSnapshot.AssetId);
     m_assetRenameOverrides.erase(AssetSnapshot.AssetId);
     m_assetPayloadOverrides.erase(AssetSnapshot.AssetId);
     if (m_assetImportMetadata.erase(AssetSnapshot.AssetId) > 0)
@@ -4997,10 +4925,10 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
                                          "Failed to finalize source asset: " + OutputPath.string()));
     }
 
-    auto RebuildResult = RebuildAssetManager();
-    if (!RebuildResult)
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
     {
-        return RebuildResult;
+        return RefreshResult;
     }
 
     (void)SelectAssetByKey(LogicalName);
@@ -5110,26 +5038,10 @@ Result EditorAssetService::CreateSourceAssetByType(EditorServiceContext& Context
                                          "Failed to write authored asset: " + OutputPath.string()));
     }
 
-    const bool RequiresAssetManagerReload =
-        Descriptor->CookedAssetKind == AssetKindNode() ||
-        Descriptor->CookedAssetKind == AssetKindLevel() ||
-        Descriptor->CookedAssetKind == AssetKindWorld();
-
-    if (RequiresAssetManagerReload)
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
     {
-        auto RebuildResult = RebuildAssetManager();
-        if (!RebuildResult)
-        {
-            return RebuildResult;
-        }
-    }
-    else
-    {
-        auto RefreshResult = RefreshDiscovery();
-        if (!RefreshResult)
-        {
-            return RefreshResult;
-        }
+        return RefreshResult;
     }
 
     (void)SelectAssetByKey(LogicalName);
@@ -5273,10 +5185,10 @@ Result EditorAssetService::CreatePrefabSourceAssetByNodeType(EditorServiceContex
                                          "Failed to finalize prefab asset: " + OutputPath.string()));
     }
 
-    auto RebuildResult = RebuildAssetManager();
-    if (!RebuildResult)
+    auto RefreshResult = RefreshDiscovery();
+    if (!RefreshResult)
     {
-        return RebuildResult;
+        return RefreshResult;
     }
 
     (void)SelectAssetByKey(LogicalName);
@@ -5556,8 +5468,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
         (void)AssimpTyped;
         Profile = EImportProfile::AssimpModel;
     }
-    else if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(
-                 EffectiveImportSettings.get()))
+    else if (const auto* TextureTyped = dynamic_cast<const TextureImporterSettings*>(EffectiveImportSettings.get()))
     {
         (void)TextureTyped;
         Profile = EImportProfile::Texture;
@@ -5578,11 +5489,10 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
                                          "Failed to create import destination folder: " + PathError.message()));
     }
 
-    TextureImportSettingsPayload ImportedTextureSettings{};
-    if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(
-            EffectiveImportSettings.get()))
+    TextureImporterSettings ImportedTextureSettings{};
+    if (const auto* TextureTyped = dynamic_cast<const TextureImporterSettings*>(EffectiveImportSettings.get()))
     {
-        ImportedTextureSettings = BuildTextureAssetImportSettingsPayload(TextureTyped);
+        ImportedTextureSettings = *TextureTyped;
     }
 
     std::vector<ImportedSourceDocument> Documents{};
@@ -5634,9 +5544,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
 
         if (!ExternalTextureUris.empty())
         {
-            auto ExternalTextureSettings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
-            const TextureImportSettingsPayload ExternalTexturePayload =
-                BuildTextureAssetImportSettingsPayload(ExternalTextureSettings.get());
+            auto ExternalTextureSettings = std::make_shared<TextureImporterSettings>();
             for (const std::string& TextureUri : ExternalTextureUris)
             {
                 const ::SnAPI::AssetPipeline::SourceRef TextureSource{TextureUri, 0ull};
@@ -5656,7 +5564,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
 
                 for (const auto& TextureItem : TextureItems)
                 {
-                    auto AssetResult = BuildImportedSourceAssetVariant(TextureItem, Registry, ExternalTexturePayload);
+                    auto AssetResult = BuildImportedSourceAssetVariant(TextureItem, Registry, *ExternalTextureSettings);
                     if (!AssetResult)
                     {
                         Warnings.push_back("Failed to convert referenced texture to authored asset: " + TextureUri);
@@ -5708,12 +5616,11 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
     Record.BuildOptions = BuildOptions;
     if (const auto* AssimpTyped = dynamic_cast<const AssimpImporterSettings*>(EffectiveImportSettings.get()))
     {
-        FillAssimpImportSettingsFromTyped(*AssimpTyped, Record.Assimp);
+        Record.Assimp = *AssimpTyped;
     }
-    if (const auto* TextureTyped = dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(
-            EffectiveImportSettings.get()))
+    if (const auto* TextureTyped = dynamic_cast<const TextureImporterSettings*>(EffectiveImportSettings.get()))
     {
-        FillTextureImportSettingsFromTyped(*TextureTyped, Record.Texture);
+        Record.Texture = *TextureTyped;
     }
     const ImportedAssetProvenancePayload ImportedProvenance = BuildImportedAssetProvenancePayload(
         Record.SourcePath,
@@ -5770,6 +5677,12 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
     }
 
     std::vector<std::filesystem::path> StaleFiles{};
+    std::vector<::SnAPI::AssetPipeline::AssetId> InvalidatedAssetIds{};
+    InvalidatedAssetIds.reserve(NewAssetIds.size());
+    for (const auto& AssetId : NewAssetIds)
+    {
+        InvalidatedAssetIds.push_back(AssetId);
+    }
     for (const auto& Asset : m_assets)
     {
         if (Asset.SourceFilePath.empty())
@@ -5797,6 +5710,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
         }
 
         StaleFiles.push_back(std::filesystem::path(Asset.SourceFilePath));
+        InvalidatedAssetIds.push_back(Asset.AssetId);
         m_assetImportMetadata.erase(MetadataIt);
     }
 
@@ -5821,6 +5735,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
         m_statusMessage = "Import metadata save warning: " + SaveResult.error();
     }
 
+    InvalidateAssetRuntimeCaches(InvalidatedAssetIds);
     auto RefreshResult = RefreshDiscovery();
     if (!RefreshResult)
     {
@@ -7846,6 +7761,37 @@ std::expected<void, std::string> EditorAssetService::SaveAssetImportMetadataData
     return {};
 }
 
+void EditorAssetService::InvalidateAssetRuntimeCache(const ::SnAPI::AssetPipeline::AssetId& AssetId)
+{
+    if (!m_assetManager || AssetId.IsNull())
+    {
+        return;
+    }
+
+    (void)m_assetManager->InvalidateAsset(AssetId);
+}
+
+void EditorAssetService::InvalidateAssetRuntimeCaches(
+    const std::vector<::SnAPI::AssetPipeline::AssetId>& AssetIds)
+{
+    if (!m_assetManager || AssetIds.empty())
+    {
+        return;
+    }
+
+    std::unordered_set<::SnAPI::AssetPipeline::AssetId, ::SnAPI::AssetPipeline::UuidHash> UniqueIds{};
+    UniqueIds.reserve(AssetIds.size());
+    for (const auto& AssetId : AssetIds)
+    {
+        if (AssetId.IsNull() || !UniqueIds.insert(AssetId).second)
+        {
+            continue;
+        }
+
+        (void)m_assetManager->InvalidateAsset(AssetId);
+    }
+}
+
 void EditorAssetService::ApplyImportedAssetProvenanceToMetadata(const ImportedAssetProvenancePayload& Provenance,
                                                                 AssetImportMetadataEntry& Metadata)
 {
@@ -7985,11 +7931,6 @@ bool EditorAssetService::RefreshAssetEditorImportSettingsBinding(const Discovere
 
     if (m_assetEditorImportSettingsObject == nullptr && Metadata.Profile == EImportProfile::AssimpModel)
     {
-        if (auto Typed = BuildTypedImportSettingsForRecord(Metadata);
-            Typed && dynamic_cast<const AssimpImporterSettings*>(Typed.get()))
-        {
-            FillAssimpImportSettingsFromTyped(*static_cast<const AssimpImporterSettings*>(Typed.get()), Metadata.Assimp);
-        }
         if (Metadata.BuildOptions.empty())
         {
             Metadata.BuildOptions = BuildOptionsFromAssimpImportSettings(Metadata.Assimp);
@@ -7998,25 +7939,18 @@ bool EditorAssetService::RefreshAssetEditorImportSettingsBinding(const Discovere
         }
 
         m_assetEditorAssimpImportSettings = Metadata.Assimp;
-        m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
+        m_assetEditorImportSettingsType = StaticTypeId<AssimpImporterSettings>();
         m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
     }
     else if (m_assetEditorImportSettingsObject == nullptr && Metadata.Profile == EImportProfile::Texture)
     {
-        if (auto Typed = BuildTypedImportSettingsForRecord(Metadata);
-            Typed && dynamic_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(Typed.get()))
-        {
-            FillTextureImportSettingsFromTyped(
-                *static_cast<const TextureCompressorPlugin::TextureCompressorImportSettings*>(Typed.get()),
-                Metadata.Texture);
-        }
         if (Metadata.BuildOptions.empty())
         {
             Metadata.BuildOptions = BuildOptionsFromTextureImportSettings(Metadata.Texture);
         }
 
         m_assetEditorTextureImportSettings = Metadata.Texture;
-        m_assetEditorImportSettingsType = StaticTypeId<Editor::TextureImportSettings>();
+        m_assetEditorImportSettingsType = StaticTypeId<TextureImporterSettings>();
         m_assetEditorImportSettingsObject = &(*m_assetEditorTextureImportSettings);
     }
 
@@ -8057,12 +7991,10 @@ bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(Asse
         }
 
         ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
-        Editor::TextureImportSettings Settings{};
-        FillTextureImportSettingsFromPayload(Asset->ImportSettings, Settings);
         InOutMetadata.Profile = EImportProfile::Texture;
-        InOutMetadata.Texture = Settings;
+        InOutMetadata.Texture = Asset->ImportSettings;
         RemoveManagedBuildOptions(InOutMetadata.BuildOptions, kTextureManagedBuildOptionKeys);
-        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromTextureImportSettings(Settings))
+        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromTextureImportSettings(Asset->ImportSettings))
         {
             InOutMetadata.BuildOptions[OptionKey] = OptionValue;
         }
@@ -8071,9 +8003,8 @@ bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(Asse
             InOutMetadata.ImporterName = "TextureCompressor.Importer";
         }
 
-        m_assetEditorTextureImportSettings = Settings;
-        m_assetEditorImportSettingsType = StaticTypeId<Editor::TextureImportSettings>();
-        m_assetEditorImportSettingsObject = &(*m_assetEditorTextureImportSettings);
+        m_assetEditorImportSettingsType = StaticTypeId<TextureImporterSettings>();
+        m_assetEditorImportSettingsObject = &Asset->ImportSettings;
         return true;
     }
 
@@ -8086,12 +8017,10 @@ bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(Asse
         }
 
         ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
-        Editor::AssimpImportSettings Settings{};
-        FillAssimpImportSettingsFromPayload(Asset->ImportSettings, Settings);
         InOutMetadata.Profile = EImportProfile::AssimpModel;
-        InOutMetadata.Assimp = Settings;
+        InOutMetadata.Assimp = Asset->ImportSettings;
         RemoveManagedBuildOptions(InOutMetadata.BuildOptions, kAssimpManagedBuildOptionKeys);
-        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromAssimpImportSettings(Settings))
+        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromAssimpImportSettings(Asset->ImportSettings))
         {
             InOutMetadata.BuildOptions[OptionKey] = OptionValue;
         }
@@ -8108,9 +8037,8 @@ bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(Asse
             InOutMetadata.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
         }
 
-        m_assetEditorAssimpImportSettings = Settings;
-        m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
-        m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
+        m_assetEditorImportSettingsType = StaticTypeId<AssimpImporterSettings>();
+        m_assetEditorImportSettingsObject = &Asset->ImportSettings;
         return true;
     }
 
@@ -8123,12 +8051,10 @@ bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(Asse
         }
 
         ApplyImportedAssetProvenanceToMetadata(Asset->Provenance, InOutMetadata);
-        Editor::AssimpImportSettings Settings{};
-        FillAssimpImportSettingsFromPayload(Asset->BaseMesh.ImportSettings, Settings);
         InOutMetadata.Profile = EImportProfile::AssimpModel;
-        InOutMetadata.Assimp = Settings;
+        InOutMetadata.Assimp = Asset->BaseMesh.ImportSettings;
         RemoveManagedBuildOptions(InOutMetadata.BuildOptions, kAssimpManagedBuildOptionKeys);
-        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromAssimpImportSettings(Settings))
+        for (const auto& [OptionKey, OptionValue] : BuildOptionsFromAssimpImportSettings(Asset->BaseMesh.ImportSettings))
         {
             InOutMetadata.BuildOptions[OptionKey] = OptionValue;
         }
@@ -8145,9 +8071,8 @@ bool EditorAssetService::PopulateImportSettingsBindingFromActiveSourceAsset(Asse
             InOutMetadata.ImporterName = "SnAPI.GameFramework.RenderAssetAssimpImporter";
         }
 
-        m_assetEditorAssimpImportSettings = Settings;
-        m_assetEditorImportSettingsType = StaticTypeId<Editor::AssimpImportSettings>();
-        m_assetEditorImportSettingsObject = &(*m_assetEditorAssimpImportSettings);
+        m_assetEditorImportSettingsType = StaticTypeId<AssimpImporterSettings>();
+        m_assetEditorImportSettingsObject = &Asset->BaseMesh.ImportSettings;
         return true;
     }
 
@@ -8226,39 +8151,33 @@ void EditorAssetService::ApplyAssetEditorImportSettingsToActiveSourceAsset()
         Metadata.BuildOptions);
 
     if (m_assetEditorSourceAssetType == StaticTypeId<TextureAsset>() &&
-        m_assetEditorImportSettingsType == StaticTypeId<Editor::TextureImportSettings>())
+        m_assetEditorImportSettingsType == StaticTypeId<TextureImporterSettings>())
     {
         auto* Asset = static_cast<TextureAsset*>(m_assetEditorGenericSourceObject.get());
-        const auto* Settings = static_cast<const Editor::TextureImportSettings*>(m_assetEditorImportSettingsObject);
-        if (Asset && Settings)
+        if (Asset)
         {
-            Asset->ImportSettings = BuildTextureImportSettingsPayload(*Settings);
             Asset->Provenance = Provenance;
         }
         return;
     }
 
     if (m_assetEditorSourceAssetType == StaticTypeId<StaticMeshAsset>() &&
-        m_assetEditorImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>())
+        m_assetEditorImportSettingsType == StaticTypeId<AssimpImporterSettings>())
     {
         auto* Asset = static_cast<StaticMeshAsset*>(m_assetEditorGenericSourceObject.get());
-        const auto* Settings = static_cast<const Editor::AssimpImportSettings*>(m_assetEditorImportSettingsObject);
-        if (Asset && Settings)
+        if (Asset)
         {
-            Asset->ImportSettings = BuildMeshImportSettingsPayload(*Settings);
             Asset->Provenance = Provenance;
         }
         return;
     }
 
     if (m_assetEditorSourceAssetType == StaticTypeId<SkeletalMeshAsset>() &&
-        m_assetEditorImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>())
+        m_assetEditorImportSettingsType == StaticTypeId<AssimpImporterSettings>())
     {
         auto* Asset = static_cast<SkeletalMeshAsset*>(m_assetEditorGenericSourceObject.get());
-        const auto* Settings = static_cast<const Editor::AssimpImportSettings*>(m_assetEditorImportSettingsObject);
-        if (Asset && Settings)
+        if (Asset)
         {
-            Asset->BaseMesh.ImportSettings = BuildMeshImportSettingsPayload(*Settings);
             Asset->Provenance = Provenance;
         }
         return;
@@ -8312,9 +8231,9 @@ std::optional<EditorAssetService::AssetImportMetadataEntry> EditorAssetService::
         ? m_assetEditorImportMetadataBaseline->BuildOptions
         : Metadata.BuildOptions;
 
-    if (m_assetEditorImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>())
+    if (m_assetEditorImportSettingsType == StaticTypeId<AssimpImporterSettings>())
     {
-        const auto* Settings = static_cast<const Editor::AssimpImportSettings*>(m_assetEditorImportSettingsObject);
+        const auto* Settings = static_cast<const AssimpImporterSettings*>(m_assetEditorImportSettingsObject);
         if (!Settings)
         {
             return std::nullopt;
@@ -8345,9 +8264,9 @@ std::optional<EditorAssetService::AssetImportMetadataEntry> EditorAssetService::
         return Metadata;
     }
 
-    if (m_assetEditorImportSettingsType == StaticTypeId<Editor::TextureImportSettings>())
+    if (m_assetEditorImportSettingsType == StaticTypeId<TextureImporterSettings>())
     {
-        const auto* Settings = static_cast<const Editor::TextureImportSettings*>(m_assetEditorImportSettingsObject);
+        const auto* Settings = static_cast<const TextureImporterSettings*>(m_assetEditorImportSettingsObject);
         if (!Settings)
         {
             return std::nullopt;
@@ -8375,36 +8294,13 @@ std::optional<EditorAssetService::AssetImportMetadataEntry> EditorAssetService::
 bool EditorAssetService::ImportMetadataRecordsEqual(const AssetImportMetadataEntry& Left,
                                                     const AssetImportMetadataEntry& Right) const
 {
-    const auto AssimpEqual = [](const Editor::AssimpImportSettings& A, const Editor::AssimpImportSettings& B) {
-        return A.GenerateNormals == B.GenerateNormals &&
-               A.GenerateTangents == B.GenerateTangents &&
-               A.FlipUVs == B.FlipUVs &&
-               A.OptimizeMeshes == B.OptimizeMeshes &&
-               A.ForceSkeletal == B.ForceSkeletal &&
-               A.ForceStatic == B.ForceStatic &&
-               A.ImportMaterials == B.ImportMaterials &&
-               A.ImportTextures == B.ImportTextures &&
-               A.ImportAnimations == B.ImportAnimations &&
-               A.ImportSkeleton == B.ImportSkeleton &&
-               A.MaxBonesPerVertex == B.MaxBonesPerVertex;
-    };
-    const auto TextureEqual = [](const Editor::TextureImportSettings& A, const Editor::TextureImportSettings& B) {
-        return A.Target == B.Target &&
-               A.Format == B.Format &&
-               A.Quality == B.Quality &&
-               A.ForceSrgb == B.ForceSrgb &&
-               A.ForceLinear == B.ForceLinear &&
-               A.ForceNormalMap == B.ForceNormalMap &&
-               A.MaxMips == B.MaxMips;
-    };
-
     return Left.Profile == Right.Profile &&
            Left.SourcePath == Right.SourcePath &&
            Left.DestinationFolder == Right.DestinationFolder &&
            Left.ImporterName == Right.ImporterName &&
            Left.BuildOptions == Right.BuildOptions &&
-           AssimpEqual(Left.Assimp, Right.Assimp) &&
-           TextureEqual(Left.Texture, Right.Texture);
+           Left.Assimp == Right.Assimp &&
+           Left.Texture == Right.Texture;
 }
 
 ::SnAPI::AssetPipeline::AssetImportSettingsPtr EditorAssetService::BuildTypedImportSettingsForRecord(
@@ -8417,63 +8313,63 @@ bool EditorAssetService::ImportMetadataRecordsEqual(const AssetImportMetadataEnt
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.GenerateNormals",
-                Record.Assimp.GenerateNormals ? "true" : "false"),
-            Record.Assimp.GenerateNormals);
+                Record.Assimp.Mesh.GenerateNormals ? "true" : "false"),
+            Record.Assimp.Mesh.GenerateNormals);
         Settings->Mesh.GenerateTangents = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.GenerateTangents",
-                Record.Assimp.GenerateTangents ? "true" : "false"),
-            Record.Assimp.GenerateTangents);
+                Record.Assimp.Mesh.GenerateTangents ? "true" : "false"),
+            Record.Assimp.Mesh.GenerateTangents);
         Settings->Mesh.FlipUVs = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.FlipUVs",
-                Record.Assimp.FlipUVs ? "true" : "false"),
-            Record.Assimp.FlipUVs);
+                Record.Assimp.Mesh.FlipUVs ? "true" : "false"),
+            Record.Assimp.Mesh.FlipUVs);
         Settings->Mesh.OptimizeMeshes = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.OptimizeMeshes",
-                Record.Assimp.OptimizeMeshes ? "true" : "false"),
-            Record.Assimp.OptimizeMeshes);
+                Record.Assimp.Mesh.OptimizeMeshes ? "true" : "false"),
+            Record.Assimp.Mesh.OptimizeMeshes);
         Settings->Mesh.ForceSkeletal = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.ForceSkeletal",
-                Record.Assimp.ForceSkeletal ? "true" : "false"),
-            Record.Assimp.ForceSkeletal);
+                Record.Assimp.Mesh.ForceSkeletal ? "true" : "false"),
+            Record.Assimp.Mesh.ForceSkeletal);
         Settings->Mesh.ForceStatic = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.ForceStatic",
-                Record.Assimp.ForceStatic ? "true" : "false"),
-            Record.Assimp.ForceStatic);
+                Record.Assimp.Mesh.ForceStatic ? "true" : "false"),
+            Record.Assimp.Mesh.ForceStatic);
         Settings->Mesh.ImportMaterials = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.ImportMaterials",
-                Record.Assimp.ImportMaterials ? "true" : "false"),
-            Record.Assimp.ImportMaterials);
+                Record.Assimp.Mesh.ImportMaterials ? "true" : "false"),
+            Record.Assimp.Mesh.ImportMaterials);
         Settings->Mesh.ImportTextures = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.ImportTextures",
-                Record.Assimp.ImportTextures ? "true" : "false"),
-            Record.Assimp.ImportTextures);
+                Record.Assimp.Mesh.ImportTextures ? "true" : "false"),
+            Record.Assimp.Mesh.ImportTextures);
         Settings->Mesh.ImportAnimations = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.ImportAnimations",
-                Record.Assimp.ImportAnimations ? "true" : "false"),
-            Record.Assimp.ImportAnimations);
+                Record.Assimp.Mesh.ImportAnimations ? "true" : "false"),
+            Record.Assimp.Mesh.ImportAnimations);
         Settings->Mesh.ImportSkeleton = ParseBoolOption(
             OptionValueOr(
                 Record.BuildOptions,
                 "SnAPI.GF.Assimp.ImportSkeleton",
-                Record.Assimp.ImportSkeleton ? "true" : "false"),
-            Record.Assimp.ImportSkeleton);
-        Settings->Mesh.MaxBonesPerVertex = std::max(1u, Record.Assimp.MaxBonesPerVertex);
+                Record.Assimp.Mesh.ImportSkeleton ? "true" : "false"),
+            Record.Assimp.Mesh.ImportSkeleton);
+        Settings->Mesh.MaxBonesPerVertex = std::max(1u, Record.Assimp.Mesh.MaxBonesPerVertex);
         if (const auto MaxBones = ParseIntOption(
                 OptionValueOr(
                     Record.BuildOptions,
@@ -8497,20 +8393,18 @@ bool EditorAssetService::ImportMetadataRecordsEqual(const AssetImportMetadataEnt
 
     if (Record.Profile == EImportProfile::Texture)
     {
-        auto Settings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
+        auto Settings = std::make_shared<TextureImporterSettings>();
         const std::string TargetText = ToLowerCopy(OptionValueOr(
             Record.BuildOptions,
             "texture.target",
-            Record.Texture.Target == Editor::ETextureCompressionTarget::ASTC ? "astc" : "bcn"));
-        Settings->Target = TargetText == "astc"
-            ? TextureCompressorPlugin::ECompressionTarget::ASTC
-            : TextureCompressorPlugin::ECompressionTarget::BCn;
+            Record.Texture.Target == ETextureCompressionTarget::ASTC ? "astc" : "bcn"));
+        Settings->Target = TargetText == "astc" ? ETextureCompressionTarget::ASTC : ETextureCompressionTarget::BCn;
 
         const TextureCompressorPlugin::ECompressedFormat RequestedFormat = ParseTextureFormatOption(
             OptionValueOr(Record.BuildOptions, "texture.format", ""));
         Settings->Format = RequestedFormat == TextureCompressorPlugin::ECompressedFormat::Unknown
-            ? ToCookedTextureFormat(Record.Texture.Format)
-            : RequestedFormat;
+            ? Record.Texture.Format
+            : ToTextureCompressionFormat(RequestedFormat);
 
         const std::string QualityText = OptionValueOr(
             Record.BuildOptions,
@@ -8532,36 +8426,37 @@ bool EditorAssetService::ImportMetadataRecordsEqual(const AssetImportMetadataEnt
                 Record.Texture.ForceNormalMap ? "true" : "false"),
             Record.Texture.ForceNormalMap);
 
-        Settings->MaxMipCount = Record.Texture.MaxMips > 0
-            ? static_cast<int32_t>(Record.Texture.MaxMips)
-            : 0;
+        Settings->MaxMips = Record.Texture.MaxMips;
         if (const auto MaxMips = ParseIntOption(OptionValueOr(
                 Record.BuildOptions,
                 "texture.max_mips",
-                std::to_string(Settings->MaxMipCount)));
+                std::to_string(Settings->MaxMips)));
             MaxMips.has_value())
         {
-            Settings->MaxMipCount = *MaxMips;
+            Settings->MaxMips = static_cast<uint32_t>(std::max(0, *MaxMips));
         }
 
         if (const auto SrgbText = OptionValueOr(Record.BuildOptions, "texture.srgb", "");
             !SrgbText.empty())
         {
-            Settings->ColorSpacePolicy = ParseBoolOption(SrgbText, true)
-                ? TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb
-                : TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+            const bool ForceSrgb = ParseBoolOption(SrgbText, true);
+            Settings->ForceSrgb = ForceSrgb;
+            Settings->ForceLinear = !ForceSrgb;
         }
         else if (Record.Texture.ForceLinear)
         {
-            Settings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
+            Settings->ForceLinear = true;
+            Settings->ForceSrgb = false;
         }
         else if (Record.Texture.ForceSrgb)
         {
-            Settings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
+            Settings->ForceSrgb = true;
+            Settings->ForceLinear = false;
         }
         else
         {
-            Settings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::Auto;
+            Settings->ForceSrgb = false;
+            Settings->ForceLinear = false;
         }
         return Settings;
     }

@@ -31,13 +31,13 @@ struct MeshStreamChunkRef
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::MeshStreamChunkRef";
 
-    SnField(SnKey("Semantic"))
+    SnField(SnKey("Semantic"), SnReadOnly)
     EMeshStreamSemantic Semantic = EMeshStreamSemantic::Position;
-    SnField(SnKey("BulkIndex"))
+    SnField(SnKey("BulkIndex"), SnReadOnly)
     uint32_t BulkIndex = 0;
-    SnField(SnKey("ElementCount"))
+    SnField(SnKey("ElementCount"), SnReadOnly)
     uint32_t ElementCount = 0;
-    SnField(SnKey("StrideBytes"))
+    SnField(SnKey("StrideBytes"), SnReadOnly)
     uint32_t StrideBytes = 0;
 
     bool operator==(const MeshStreamChunkRef&) const = default;
@@ -48,15 +48,15 @@ struct StaticSubMeshPayload
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticSubMeshPayload";
 
-    SnField(SnKey("IndexOffset"))
+    SnField(SnKey("IndexOffset"), SnReadOnly)
     uint32_t IndexOffset = 0;
-    SnField(SnKey("IndexCount"))
+    SnField(SnKey("IndexCount"), SnReadOnly)
     uint32_t IndexCount = 0;
-    SnField(SnKey("MaterialSlot"))
+    SnField(SnKey("MaterialSlot"), SnReadOnly)
     uint32_t MaterialSlot = 0;
-    SnField(SnKey("BoundsMin"))
+    SnField(SnKey("BoundsMin"), SnReadOnly)
     std::array<float, 3> BoundsMin{0.0f, 0.0f, 0.0f};
-    SnField(SnKey("BoundsMax"))
+    SnField(SnKey("BoundsMax"), SnReadOnly)
     std::array<float, 3> BoundsMax{0.0f, 0.0f, 0.0f};
 
     bool operator==(const StaticSubMeshPayload&) const = default;
@@ -67,17 +67,17 @@ struct StaticMeshPayload
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticMeshPayload";
 
-    SnField(SnKey("Name"))
+    SnField(SnKey("Name"), SnReadOnly)
     std::string Name{};
-    SnField(SnKey("BoundsMin"))
+    SnField(SnKey("BoundsMin"), SnReadOnly)
     std::array<float, 3> BoundsMin{0.0f, 0.0f, 0.0f};
-    SnField(SnKey("BoundsMax"))
+    SnField(SnKey("BoundsMax"), SnReadOnly)
     std::array<float, 3> BoundsMax{0.0f, 0.0f, 0.0f};
-    SnField(SnKey("SubMeshes"))
+    SnField(SnKey("SubMeshes"), SnReadOnly)
     std::vector<StaticSubMeshPayload> SubMeshes{};
-    SnField(SnKey("MaterialInstances"))
+    SnField(SnKey("MaterialInstances"), SnReadOnly)
     std::vector<AssetRefPayload> MaterialInstances{};
-    SnField(SnKey("Streams"))
+    SnField(SnKey("Streams"), SnReadOnly)
     std::vector<MeshStreamChunkRef> Streams{};
 
     bool operator==(const StaticMeshPayload&) const = default;

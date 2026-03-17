@@ -226,10 +226,3 @@ struct GeneratedRpcNode : BaseNode, NodeCRTP<GeneratedRpcNode>
 };
 
 } // namespace SnAPI::GameFramework::Tests
-
-namespace SnAPI::GameFramework
-{
-
-SNAPI_DEFINE_TYPE_NAME(Tests::GeneratedReflectionMode, "SnAPI::GameFramework::Tests::GeneratedReflectionMode")
-
-} // namespace SnAPI::GameFramework

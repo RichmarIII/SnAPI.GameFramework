@@ -1695,7 +1695,7 @@ struct MeshImportBuffers
         MeshItem.Intermediate.SchemaVersion = StaticMeshSourceSerializer->GetSchemaVersion();
 
         StaticMeshAsset SourcePayload{};
-        SourcePayload.ImportSettings = ImportSettings;
+        SourcePayload.ImportSettings = ImportConfig;
         SourcePayload.Mesh.Name = std::filesystem::path(Source.Uri).stem().string();
         SourcePayload.Mesh.BoundsMin = MeshBuffers.BoundsMin;
         SourcePayload.Mesh.BoundsMax = MeshBuffers.BoundsMax;
@@ -1750,7 +1750,7 @@ struct MeshImportBuffers
         MeshItem.Intermediate.SchemaVersion = SkeletalMeshSourceSerializer->GetSchemaVersion();
 
         SkeletalMeshAsset SourcePayload{};
-        SourcePayload.BaseMesh.ImportSettings = ImportSettings;
+        SourcePayload.BaseMesh.ImportSettings = ImportConfig;
         SourcePayload.BaseMesh.Mesh.Name = std::filesystem::path(Source.Uri).stem().string();
         SourcePayload.BaseMesh.Mesh.BoundsMin = MeshBuffers.BoundsMin;
         SourcePayload.BaseMesh.Mesh.BoundsMax = MeshBuffers.BoundsMax;

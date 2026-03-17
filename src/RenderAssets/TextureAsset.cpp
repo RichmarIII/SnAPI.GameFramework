@@ -10,9 +10,9 @@ SNAPI_REFLECT_TYPE(
     TextureAsset,
     (TTypeBuilder<TextureAsset>(TextureAsset::kTypeName)
         .Base<IAsset>()
-        .Field("Image", &TextureAsset::Image, EFieldFlagBits::Serialized)
-        .Field("ImportSettings", &TextureAsset::ImportSettings, EFieldFlagBits::Serialized)
-        .Field("Provenance", &TextureAsset::Provenance, EFieldFlagBits::Serialized)
+        .Field("Image", &TextureAsset::Image, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("ImportSettings", &TextureAsset::ImportSettings, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Hidden)
+        .Field("Provenance", &TextureAsset::Provenance, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Advanced)
         .Constructor<>()
         .Register()));
 

@@ -10,8 +10,8 @@ SNAPI_REFLECT_TYPE(
     SkeletalAnimationAsset,
     (TTypeBuilder<SkeletalAnimationAsset>(SkeletalAnimationAsset::kTypeName)
         .Base<IAsset>()
-        .Field("Animation", &SkeletalAnimationAsset::Animation, EFieldFlagBits::Serialized)
-        .Field("Provenance", &SkeletalAnimationAsset::Provenance, EFieldFlagBits::Serialized)
+        .Field("Animation", &SkeletalAnimationAsset::Animation, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Provenance", &SkeletalAnimationAsset::Provenance, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Advanced)
         .Constructor<>()
         .Register()));
 

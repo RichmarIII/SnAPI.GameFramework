@@ -14,21 +14,21 @@ struct TextureSourceImagePayload
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TextureSourceImagePayload";
 
-    SnField(SnKey("Width"))
+    SnField(SnKey("Width"), SnReadOnly)
     uint32_t Width = 0;
-    SnField(SnKey("Height"))
+    SnField(SnKey("Height"), SnReadOnly)
     uint32_t Height = 0;
-    SnField(SnKey("Channels"))
+    SnField(SnKey("Channels"), SnReadOnly)
     uint32_t Channels = 4;
-    SnField(SnKey("BitsPerChannel"))
+    SnField(SnKey("BitsPerChannel"), SnReadOnly)
     uint32_t BitsPerChannel = 8;
-    SnField(SnKey("IsFloat"))
+    SnField(SnKey("IsFloat"), SnReadOnly)
     bool IsFloat = false;
-    SnField(SnKey("HasNonTrivialAlpha"))
+    SnField(SnKey("HasNonTrivialAlpha"), SnReadOnly)
     bool HasNonTrivialAlpha = false;
-    SnField(SnKey("SRGB"))
+    SnField(SnKey("SRGB"), SnReadOnly)
     bool SRGB = true;
-    SnField(SnKey("SourceFilename"))
+    SnField(SnKey("SourceFilename"), SnReadOnly)
     std::string SourceFilename{};
     SnField(SnKey("Pixels"), SnHidden, SnHeavyData)
     std::vector<uint8_t> Pixels{};

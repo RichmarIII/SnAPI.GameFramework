@@ -4,8 +4,8 @@
 
 #include "Expected.h"
 #include "IAsset.h"
+#include "RenderAssetImportSettings.h"
 #include "RenderAssets/ImportedAssetProvenancePayload.h"
-#include "RenderAssets/TextureImportSettingsPayload.h"
 #include "RenderAssets/TextureSourceImagePayload.h"
 
 #include <TextureCompressorIds.h>
@@ -18,11 +18,11 @@ struct TextureAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::TextureAsset";
 
-    SnField(SnKey("Image"))
+    SnField(SnKey("Image"), SnReadOnly)
     TextureSourceImagePayload Image{};
-    SnField(SnKey("ImportSettings"))
-    TextureImportSettingsPayload ImportSettings{};
-    SnField(SnKey("Provenance"))
+    SnField(SnKey("ImportSettings"), SnHidden)
+    TextureImporterSettings ImportSettings{};
+    SnField(SnKey("Provenance"), SnAdvanced)
     ImportedAssetProvenancePayload Provenance{};
 
     [[nodiscard]] std::string_view DisplayName() const override { return "Texture"; }

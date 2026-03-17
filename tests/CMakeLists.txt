@@ -44,6 +44,7 @@ add_executable(GameFrameworkEditorTests
     SourceAssetEditorTests.cpp
     ConduitEditorTests.cpp
     ../src/Editor/EditorCameraComponent.cpp
+    ../src/Editor/EditorAssetIconService.cpp
     ../src/Editor/EditorAssetService.cpp
     ../src/Editor/EditorPieService.cpp
     ../src/Editor/ConduitEditor.cpp

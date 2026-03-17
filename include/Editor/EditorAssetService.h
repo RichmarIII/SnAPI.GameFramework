@@ -635,12 +635,15 @@ private:
         std::string DestinationFolder{};
         std::string ImporterName{};
         std::unordered_map<std::string, std::string> BuildOptions{};
-        Editor::AssimpImportSettings Assimp{};
-        Editor::TextureImportSettings Texture{};
+        AssimpImporterSettings Assimp{};
+        TextureImporterSettings Texture{};
     };
     [[nodiscard]] std::filesystem::path ResolveImportMetadataPath() const;
     [[nodiscard]] std::expected<void, std::string> LoadAssetImportMetadataDatabase();
     [[nodiscard]] std::expected<void, std::string> SaveAssetImportMetadataDatabase() const;
+    void InvalidateAssetRuntimeCache(const ::SnAPI::AssetPipeline::AssetId& AssetId);
+    void InvalidateAssetRuntimeCaches(
+        const std::vector<::SnAPI::AssetPipeline::AssetId>& AssetIds);
     [[nodiscard]] bool RefreshAssetEditorImportSettingsBinding(const DiscoveredAsset& Asset);
     static void ApplyImportedAssetProvenanceToMetadata(
         const ImportedAssetProvenancePayload& Provenance,
@@ -697,8 +700,8 @@ private:
     std::optional<Editor::TextureAssetEditorPayload> m_assetEditorTexturePayload{};
     std::optional<StaticMeshPayload> m_assetEditorStaticMeshPayload{};
     std::optional<Editor::StaticMeshAssetEditorPayload> m_assetEditorStaticMeshEditorPayload{};
-    std::optional<Editor::AssimpImportSettings> m_assetEditorAssimpImportSettings{};
-    std::optional<Editor::TextureImportSettings> m_assetEditorTextureImportSettings{};
+    std::optional<AssimpImporterSettings> m_assetEditorAssimpImportSettings{};
+    std::optional<TextureImporterSettings> m_assetEditorTextureImportSettings{};
     TypeId m_assetEditorImportSettingsType{};
     void* m_assetEditorImportSettingsObject = nullptr;
     bool m_assetEditorImportSettingsDirty = false;

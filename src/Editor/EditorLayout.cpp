@@ -7566,33 +7566,55 @@ void EditorLayout::ConfirmContentAssetImport()
 
         if (m_contentImportProfile == EImportProfile::AssimpModel)
         {
-            auto TypedSettings = std::make_shared<AssimpImporterSettings>();
-            TypedSettings->Mesh.GenerateNormals = m_contentImportAssimpSettings.GenerateNormals;
-            TypedSettings->Mesh.GenerateTangents = m_contentImportAssimpSettings.GenerateTangents;
-            TypedSettings->Mesh.FlipUVs = m_contentImportAssimpSettings.FlipUVs;
-            TypedSettings->Mesh.OptimizeMeshes = m_contentImportAssimpSettings.OptimizeMeshes;
-            TypedSettings->Mesh.ForceSkeletal = m_contentImportAssimpSettings.ForceSkeletal;
-            TypedSettings->Mesh.ForceStatic = m_contentImportAssimpSettings.ForceStatic;
-            TypedSettings->Mesh.ImportMaterials = m_contentImportAssimpSettings.ImportMaterials;
-            TypedSettings->Mesh.ImportTextures = m_contentImportAssimpSettings.ImportTextures;
-            TypedSettings->Mesh.ImportAnimations = m_contentImportAssimpSettings.ImportAnimations;
-            TypedSettings->Mesh.ImportSkeleton = m_contentImportAssimpSettings.ImportSkeleton;
-            TypedSettings->Mesh.MaxBonesPerVertex = std::max(1u, m_contentImportAssimpSettings.MaxBonesPerVertex);
-            Request.ImportSettings = TypedSettings;
+            Request.ImportSettings = std::make_shared<AssimpImporterSettings>(m_contentImportAssimpSettings);
 
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.GenerateNormals", BoolToText(m_contentImportAssimpSettings.GenerateNormals));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.GenerateTangents", BoolToText(m_contentImportAssimpSettings.GenerateTangents));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.FlipUVs", BoolToText(m_contentImportAssimpSettings.FlipUVs));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.OptimizeMeshes", BoolToText(m_contentImportAssimpSettings.OptimizeMeshes));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ForceSkeletal", BoolToText(m_contentImportAssimpSettings.ForceSkeletal));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ForceStatic", BoolToText(m_contentImportAssimpSettings.ForceStatic));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportMaterials", BoolToText(m_contentImportAssimpSettings.ImportMaterials));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportTextures", BoolToText(m_contentImportAssimpSettings.ImportTextures));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportAnimations", BoolToText(m_contentImportAssimpSettings.ImportAnimations));
-            Request.BuildOptions.emplace("SnAPI.GF.Assimp.ImportSkeleton", BoolToText(m_contentImportAssimpSettings.ImportSkeleton));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.GenerateNormals",
+                BoolToText(m_contentImportAssimpSettings.Mesh.GenerateNormals));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.GenerateTangents",
+                BoolToText(m_contentImportAssimpSettings.Mesh.GenerateTangents));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.FlipUVs",
+                BoolToText(m_contentImportAssimpSettings.Mesh.FlipUVs));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.OptimizeMeshes",
+                BoolToText(m_contentImportAssimpSettings.Mesh.OptimizeMeshes));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.ForceSkeletal",
+                BoolToText(m_contentImportAssimpSettings.Mesh.ForceSkeletal));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.ForceStatic",
+                BoolToText(m_contentImportAssimpSettings.Mesh.ForceStatic));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.ImportMaterials",
+                BoolToText(m_contentImportAssimpSettings.Mesh.ImportMaterials));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.ImportTextures",
+                BoolToText(m_contentImportAssimpSettings.Mesh.ImportTextures));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.ImportAnimations",
+                BoolToText(m_contentImportAssimpSettings.Mesh.ImportAnimations));
+            Request.BuildOptions.emplace(
+                "SnAPI.GF.Assimp.ImportSkeleton",
+                BoolToText(m_contentImportAssimpSettings.Mesh.ImportSkeleton));
             Request.BuildOptions.emplace(
                 "SnAPI.GF.Assimp.MaxBonesPerVertex",
-                std::to_string(std::max(1u, m_contentImportAssimpSettings.MaxBonesPerVertex)));
+                std::to_string(std::max(1u, m_contentImportAssimpSettings.Mesh.MaxBonesPerVertex)));
+            if (!m_contentImportAssimpSettings.LogicalNameOverride.empty())
+            {
+                Request.BuildOptions.emplace("SnAPI.GF.Assimp.LogicalName", m_contentImportAssimpSettings.LogicalNameOverride);
+            }
+            if (!m_contentImportAssimpSettings.DefaultShaderModule.empty())
+            {
+                Request.BuildOptions.emplace("SnAPI.GF.Assimp.DefaultShaderModule", m_contentImportAssimpSettings.DefaultShaderModule);
+            }
+            if (!m_contentImportAssimpSettings.DefaultShadingModel.empty())
+            {
+                Request.BuildOptions.emplace(
+                    "SnAPI.GF.Assimp.DefaultShadingModel",
+                    m_contentImportAssimpSettings.DefaultShadingModel);
+            }
         }
         else if (m_contentImportProfile == EImportProfile::Texture)
         {
@@ -7621,49 +7643,7 @@ void EditorLayout::ConfirmContentAssetImport()
                 default: return {};
                 }
             };
-            const auto FormatToTyped = [](const ETextureCompressionFormat Format) -> TextureCompressorPlugin::ECompressedFormat {
-                using TextureCompressorPlugin::ECompressedFormat;
-                switch (Format)
-                {
-                case ETextureCompressionFormat::BC1: return ECompressedFormat::BC1;
-                case ETextureCompressionFormat::BC3: return ECompressedFormat::BC3;
-                case ETextureCompressionFormat::BC4: return ECompressedFormat::BC4;
-                case ETextureCompressionFormat::BC5: return ECompressedFormat::BC5;
-                case ETextureCompressionFormat::BC6H: return ECompressedFormat::BC6H;
-                case ETextureCompressionFormat::BC7: return ECompressedFormat::BC7;
-                case ETextureCompressionFormat::ASTC_4x4: return ECompressedFormat::ASTC_4x4;
-                case ETextureCompressionFormat::ASTC_5x5: return ECompressedFormat::ASTC_5x5;
-                case ETextureCompressionFormat::ASTC_6x6: return ECompressedFormat::ASTC_6x6;
-                case ETextureCompressionFormat::ASTC_8x8: return ECompressedFormat::ASTC_8x8;
-                case ETextureCompressionFormat::ASTC_10x10: return ECompressedFormat::ASTC_10x10;
-                case ETextureCompressionFormat::ASTC_12x12: return ECompressedFormat::ASTC_12x12;
-                case ETextureCompressionFormat::ASTC_4x4_HDR: return ECompressedFormat::ASTC_4x4_HDR;
-                case ETextureCompressionFormat::ASTC_6x6_HDR: return ECompressedFormat::ASTC_6x6_HDR;
-                case ETextureCompressionFormat::ASTC_8x8_HDR: return ECompressedFormat::ASTC_8x8_HDR;
-                case ETextureCompressionFormat::Auto:
-                default: return ECompressedFormat::Unknown;
-                }
-            };
-
-            auto TypedSettings = std::make_shared<TextureCompressorPlugin::TextureCompressorImportSettings>();
-            TypedSettings->Target = m_contentImportTextureSettings.Target == ETextureCompressionTarget::ASTC
-                ? TextureCompressorPlugin::ECompressionTarget::ASTC
-                : TextureCompressorPlugin::ECompressionTarget::BCn;
-            TypedSettings->Format = FormatToTyped(m_contentImportTextureSettings.Format);
-            TypedSettings->Quality = std::clamp(m_contentImportTextureSettings.Quality, 0.0f, 1.0f);
-            TypedSettings->ForceNormalMap = m_contentImportTextureSettings.ForceNormalMap;
-            TypedSettings->MaxMipCount = m_contentImportTextureSettings.MaxMips > 0u
-                ? static_cast<int32_t>(m_contentImportTextureSettings.MaxMips)
-                : -1;
-            if (m_contentImportTextureSettings.ForceLinear)
-            {
-                TypedSettings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceLinear;
-            }
-            else if (m_contentImportTextureSettings.ForceSrgb)
-            {
-                TypedSettings->ColorSpacePolicy = TextureCompressorPlugin::ETextureColorSpacePolicy::ForceSrgb;
-            }
-            Request.ImportSettings = TypedSettings;
+            Request.ImportSettings = std::make_shared<TextureImporterSettings>(m_contentImportTextureSettings);
 
             Request.BuildOptions.emplace("texture.target", TargetToOption(m_contentImportTextureSettings.Target));
 
@@ -7752,10 +7732,10 @@ void EditorLayout::RefreshContentAssetImportSettingsPanel()
     switch (m_contentImportProfile)
     {
     case EImportProfile::AssimpModel:
-        (void)Panel->BindObject<AssimpImportSettings>(&m_contentImportAssimpSettings);
+        (void)Panel->BindObject<AssimpImporterSettings>(&m_contentImportAssimpSettings);
         break;
     case EImportProfile::Texture:
-        (void)Panel->BindObject<TextureImportSettings>(&m_contentImportTextureSettings);
+        (void)Panel->BindObject<TextureImporterSettings>(&m_contentImportTextureSettings);
         break;
     default:
         Panel->ClearObject();

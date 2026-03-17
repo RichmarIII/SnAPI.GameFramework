@@ -1297,11 +1297,35 @@ public:
 }
 
 [[nodiscard]] TextureCompressorPlugin::TextureCompressorImportSettings BuildTextureCompressorImportSettings(
-    const TextureImportSettingsPayload& Settings)
+    const TextureImporterSettings& Settings)
 {
     TextureCompressorPlugin::TextureCompressorImportSettings Typed{};
-    Typed.Target = ParseTextureCompressionTarget(Settings.Target);
-    Typed.Format = ParseTextureCompressionFormat(Settings.Format);
+    Typed.Target = Settings.Target == ETextureCompressionTarget::ASTC
+        ? TextureCompressorPlugin::ECompressionTarget::ASTC
+        : TextureCompressorPlugin::ECompressionTarget::BCn;
+    Typed.Format = [Format = Settings.Format]() {
+        using TextureCompressorPlugin::ECompressedFormat;
+        switch (Format)
+        {
+        case ETextureCompressionFormat::BC1: return ECompressedFormat::BC1;
+        case ETextureCompressionFormat::BC3: return ECompressedFormat::BC3;
+        case ETextureCompressionFormat::BC4: return ECompressedFormat::BC4;
+        case ETextureCompressionFormat::BC5: return ECompressedFormat::BC5;
+        case ETextureCompressionFormat::BC6H: return ECompressedFormat::BC6H;
+        case ETextureCompressionFormat::BC7: return ECompressedFormat::BC7;
+        case ETextureCompressionFormat::ASTC_4x4: return ECompressedFormat::ASTC_4x4;
+        case ETextureCompressionFormat::ASTC_5x5: return ECompressedFormat::ASTC_5x5;
+        case ETextureCompressionFormat::ASTC_6x6: return ECompressedFormat::ASTC_6x6;
+        case ETextureCompressionFormat::ASTC_8x8: return ECompressedFormat::ASTC_8x8;
+        case ETextureCompressionFormat::ASTC_10x10: return ECompressedFormat::ASTC_10x10;
+        case ETextureCompressionFormat::ASTC_12x12: return ECompressedFormat::ASTC_12x12;
+        case ETextureCompressionFormat::ASTC_4x4_HDR: return ECompressedFormat::ASTC_4x4_HDR;
+        case ETextureCompressionFormat::ASTC_6x6_HDR: return ECompressedFormat::ASTC_6x6_HDR;
+        case ETextureCompressionFormat::ASTC_8x8_HDR: return ECompressedFormat::ASTC_8x8_HDR;
+        case ETextureCompressionFormat::Auto:
+        default: return ECompressedFormat::Unknown;
+        }
+    }();
     Typed.Quality = std::clamp(Settings.Quality, 0.0f, 1.0f);
     Typed.ForceNormalMap = Settings.ForceNormalMap;
     Typed.MaxMipCount = Settings.MaxMips > 0u ? static_cast<int32_t>(Settings.MaxMips) : -1;

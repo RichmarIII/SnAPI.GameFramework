@@ -10,15 +10,31 @@ SNAPI_REFLECT_TYPE(
     SkeletalMeshAsset,
     (TTypeBuilder<SkeletalMeshAsset>(SkeletalMeshAsset::kTypeName)
         .Base<IAsset>()
-        .Field("BaseMesh", &SkeletalMeshAsset::BaseMesh, EFieldFlagBits::Serialized)
-        .Field("Bones", &SkeletalMeshAsset::Bones, EFieldFlagBits::Serialized)
-        .Field("Skeleton", &SkeletalMeshAsset::Skeleton, EFieldFlagBits::Serialized)
-        .Field("Animations", &SkeletalMeshAsset::Animations, EFieldFlagBits::Serialized)
-        .Field("SkeletonAnimationUri", &SkeletalMeshAsset::SkeletonAnimationUri, EFieldFlagBits::Serialized)
-        .Field("SkeletonAnimationBytes", &SkeletalMeshAsset::SkeletonAnimationBytes, EFieldFlagBits::Serialized)
-        .Field("SkeletonAnimationSubIndex", &SkeletalMeshAsset::SkeletonAnimationSubIndex, EFieldFlagBits::Serialized)
-        .Field("CompressSkeletonAnimation", &SkeletalMeshAsset::CompressSkeletonAnimation, EFieldFlagBits::Serialized)
-        .Field("Provenance", &SkeletalMeshAsset::Provenance, EFieldFlagBits::Serialized)
+        .Field("BaseMesh", &SkeletalMeshAsset::BaseMesh, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Bones", &SkeletalMeshAsset::Bones, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Skeleton", &SkeletalMeshAsset::Skeleton, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Animations", &SkeletalMeshAsset::Animations, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "SkeletonAnimationUri",
+            &SkeletalMeshAsset::SkeletonAnimationUri,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly | EFieldEditorFlagBits::Advanced)
+        .Field(
+            "SkeletonAnimationBytes",
+            &SkeletalMeshAsset::SkeletonAnimationBytes,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::Hidden | EFieldEditorFlagBits::HeavyData)
+        .Field(
+            "SkeletonAnimationSubIndex",
+            &SkeletalMeshAsset::SkeletonAnimationSubIndex,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly | EFieldEditorFlagBits::Advanced)
+        .Field(
+            "CompressSkeletonAnimation",
+            &SkeletalMeshAsset::CompressSkeletonAnimation,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly | EFieldEditorFlagBits::Advanced)
+        .Field("Provenance", &SkeletalMeshAsset::Provenance, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Advanced)
         .Constructor<>()
         .Register()));
 

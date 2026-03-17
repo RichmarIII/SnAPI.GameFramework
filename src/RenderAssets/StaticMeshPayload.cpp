@@ -9,33 +9,49 @@ namespace SnAPI::GameFramework
 SNAPI_REFLECT_TYPE(
     MeshStreamChunkRef,
     (TTypeBuilder<MeshStreamChunkRef>(MeshStreamChunkRef::kTypeName)
-        .Field("Semantic", &MeshStreamChunkRef::Semantic, EFieldFlagBits::Serialized)
-        .Field("BulkIndex", &MeshStreamChunkRef::BulkIndex, EFieldFlagBits::Serialized)
-        .Field("ElementCount", &MeshStreamChunkRef::ElementCount, EFieldFlagBits::Serialized)
-        .Field("StrideBytes", &MeshStreamChunkRef::StrideBytes, EFieldFlagBits::Serialized)
+        .Field("Semantic", &MeshStreamChunkRef::Semantic, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("BulkIndex", &MeshStreamChunkRef::BulkIndex, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "ElementCount",
+            &MeshStreamChunkRef::ElementCount,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "StrideBytes",
+            &MeshStreamChunkRef::StrideBytes,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
         .Constructor<>()
         .Register()));
 
 SNAPI_REFLECT_TYPE(
     StaticSubMeshPayload,
     (TTypeBuilder<StaticSubMeshPayload>(StaticSubMeshPayload::kTypeName)
-        .Field("IndexOffset", &StaticSubMeshPayload::IndexOffset, EFieldFlagBits::Serialized)
-        .Field("IndexCount", &StaticSubMeshPayload::IndexCount, EFieldFlagBits::Serialized)
-        .Field("MaterialSlot", &StaticSubMeshPayload::MaterialSlot, EFieldFlagBits::Serialized)
-        .Field("BoundsMin", &StaticSubMeshPayload::BoundsMin, EFieldFlagBits::Serialized)
-        .Field("BoundsMax", &StaticSubMeshPayload::BoundsMax, EFieldFlagBits::Serialized)
+        .Field("IndexOffset", &StaticSubMeshPayload::IndexOffset, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("IndexCount", &StaticSubMeshPayload::IndexCount, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "MaterialSlot",
+            &StaticSubMeshPayload::MaterialSlot,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field("BoundsMin", &StaticSubMeshPayload::BoundsMin, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("BoundsMax", &StaticSubMeshPayload::BoundsMax, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
         .Constructor<>()
         .Register()));
 
 SNAPI_REFLECT_TYPE(
     StaticMeshPayload,
     (TTypeBuilder<StaticMeshPayload>(StaticMeshPayload::kTypeName)
-        .Field("Name", &StaticMeshPayload::Name, EFieldFlagBits::Serialized)
-        .Field("BoundsMin", &StaticMeshPayload::BoundsMin, EFieldFlagBits::Serialized)
-        .Field("BoundsMax", &StaticMeshPayload::BoundsMax, EFieldFlagBits::Serialized)
-        .Field("SubMeshes", &StaticMeshPayload::SubMeshes, EFieldFlagBits::Serialized)
-        .Field("MaterialInstances", &StaticMeshPayload::MaterialInstances, EFieldFlagBits::Serialized)
-        .Field("Streams", &StaticMeshPayload::Streams, EFieldFlagBits::Serialized)
+        .Field("Name", &StaticMeshPayload::Name, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("BoundsMin", &StaticMeshPayload::BoundsMin, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("BoundsMax", &StaticMeshPayload::BoundsMax, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("SubMeshes", &StaticMeshPayload::SubMeshes, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "MaterialInstances",
+            &StaticMeshPayload::MaterialInstances,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field("Streams", &StaticMeshPayload::Streams, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
         .Constructor<>()
         .Register()));
 

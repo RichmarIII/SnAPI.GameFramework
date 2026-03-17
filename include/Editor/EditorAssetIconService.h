@@ -5,7 +5,7 @@
 #include "Editor/IEditorService.h"
 
 #include <cstdint>
-#include <memory>
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -17,6 +17,17 @@ class UIContext;
 
 namespace SnAPI::GameFramework::Editor
 {
+
+struct CachedTextureThumbnail
+{
+    ::SnAPI::AssetPipeline::AssetId AssetId{};
+    std::string SourcePath{};
+    std::uint64_t SourceTimestamp = 0;
+    std::uintmax_t SourceSize = 0;
+    std::string ThumbnailFileName{};
+    std::uint32_t ThumbnailWidth = 0;
+    std::uint32_t ThumbnailHeight = 0;
+};
 
 class SNAPI_GAMEFRAMEWORK_EDITOR_API EditorAssetIconService final : public IEditorService
 {
@@ -47,16 +58,20 @@ public:
     [[nodiscard]] std::uint64_t Revision() const { return m_revision; }
 
 private:
-    struct TextureBinding;
-
     [[nodiscard]] AssetIconMetadata BuildFallbackIcon(const EditorAssetService::DiscoveredAsset& Asset) const;
-    [[nodiscard]] std::uint32_t AllocateTextureId();
-    void RemoveBinding(EditorServiceContext& Context, std::string_view AssetKey);
-    void ResetAllBindings(EditorServiceContext& Context);
+    void EnsureProjectCacheLoaded(EditorServiceContext& Context);
+    void LoadThumbnailCacheIndex();
+    void SaveThumbnailCacheIndex();
+    void RemoveCachedThumbnail(std::string_view AssetKey);
+    void PruneMissingTextureThumbnails(const std::vector<EditorAssetService::DiscoveredAsset>& Assets);
+    [[nodiscard]] AssetIconMetadata ResolveTextureThumbnail(const EditorAssetService::DiscoveredAsset& Asset);
 
-    const SnAPI::UI::UIContext* m_boundContext = nullptr;
-    std::unordered_map<std::string, std::shared_ptr<TextureBinding>> m_textureBindingsByAssetKey{};
-    std::uint32_t m_nextTextureId = 0x70000000u;
+    std::string m_loadedProjectKey{};
+    std::filesystem::path m_cacheRoot{};
+    std::filesystem::path m_metadataPath{};
+    std::filesystem::path m_thumbnailDirectory{};
+    std::unordered_map<std::string, CachedTextureThumbnail> m_cachedTextureThumbnailsByAssetKey{};
+    bool m_metadataDirty = false;
     std::uint64_t m_revision = 1;
 };
 

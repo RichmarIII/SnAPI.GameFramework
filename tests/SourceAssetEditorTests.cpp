@@ -11,6 +11,7 @@
 
 #include "AuthoredAssetJson.h"
 #include "Conduit/Editor/Service.h"
+#include "Editor/EditorAssetIconService.h"
 #include "Editor/EditorAssetService.h"
 #include "Editor/EditorImportSettings.h"
 #include "Editor/EditorPieService.h"
@@ -1198,6 +1199,129 @@ TEST_CASE("UI property panel edits on typed prefabs persist component settings t
     CHECK(ReopenedComponent->GetSettings().FovDegrees == Catch::Approx(91.0f));
 }
 
+TEST_CASE("UI property panel persists material instance parent material refs through save and reopen",
+          "[Assets][Editor][Source][UI]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    std::error_code DirectoryError{};
+    std::filesystem::create_directories(Root.Path / "Rendering", DirectoryError);
+    REQUIRE_FALSE(DirectoryError);
+
+    MaterialAsset ParentMaterial{};
+    ParentMaterial.ShaderModule = "UnitTestShader";
+    ParentMaterial.ShadingModel = "GBufferShadingModel";
+    auto ParentJson = SerializeAuthoredAssetToJson(ParentMaterial);
+    REQUIRE(ParentJson);
+
+    MaterialInstanceAsset InstanceAsset{};
+    MaterialScalarParamPayload Roughness{};
+    Roughness.Name = "Roughness";
+    Roughness.Value = 0.42f;
+    InstanceAsset.Scalars.push_back(Roughness);
+    auto InstanceJson = SerializeAuthoredAssetToJson(InstanceAsset);
+    REQUIRE(InstanceJson);
+
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Parent.material", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(ParentJson->data(), static_cast<std::streamsize>(ParentJson->size()));
+    }
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Child.materialinstance", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(InstanceJson->data(), static_cast<std::streamsize>(InstanceJson->size()));
+    }
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey("Rendering/Child.materialinstance"));
+
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.TargetType == StaticTypeId<MaterialInstanceAsset>());
+    auto* MaterialInstance = static_cast<MaterialInstanceAsset*>(Session.TargetObject);
+    REQUIRE(MaterialInstance != nullptr);
+    CHECK(MaterialInstance->ParentMaterial.AssetName.empty());
+    REQUIRE(MaterialInstance->Scalars.size() == 1u);
+    CHECK(MaterialInstance->Scalars.front().Value == Catch::Approx(0.42f));
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindObject(Session.TargetType, Session.TargetObject));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    auto ComboBoxes = FindComboBoxesUnder(*UiContext, PanelBuilder.Handle().Id);
+    REQUIRE(ComboBoxes.size() == 1u);
+    auto* Combo = ComboBoxes.front();
+    REQUIRE(Combo != nullptr);
+
+    const auto& Items = Combo->Items();
+    const auto ParentOptionIt = std::find_if(Items.begin(), Items.end(), [](const std::string& Item) {
+        return Item.rfind("Rendering/Parent.material [", 0u) == 0u;
+    });
+    REQUIRE(ParentOptionIt != Items.end());
+    REQUIRE(Combo->SelectByText(*ParentOptionIt, true));
+
+    CHECK(MaterialInstance->ParentMaterial.AssetName == "Rendering/Parent.material");
+    CHECK(MaterialInstance->ParentMaterial.AssetId == SourceAssetIdFromLogicalName("Rendering/Parent.material").ToString());
+    CHECK(MaterialInstance->Scalars.front().Value == Catch::Approx(0.42f));
+
+    auto DirectJson = SerializeAuthoredAssetToJson(*MaterialInstance);
+    REQUIRE(DirectJson);
+    INFO(*DirectJson);
+    MaterialInstanceAsset DirectRoundTrip{};
+    AuthoredAssetImportDiagnostics Diagnostics{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(*DirectJson, DirectRoundTrip, Diagnostics));
+    INFO("Diagnostics count: " << Diagnostics.size());
+    if (!Diagnostics.empty())
+    {
+        FAIL(Diagnostics.front());
+    }
+    CHECK(DirectRoundTrip.ParentMaterial.AssetName == "Rendering/Parent.material");
+    CHECK(DirectRoundTrip.ParentMaterial.AssetId == SourceAssetIdFromLogicalName("Rendering/Parent.material").ToString());
+
+    REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    MaterialInstanceAsset SavedInstance{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / "Rendering" / "Child.materialinstance"),
+        SavedInstance));
+    CHECK(SavedInstance.ParentMaterial.AssetName == "Rendering/Parent.material");
+    CHECK(SavedInstance.ParentMaterial.AssetId == SourceAssetIdFromLogicalName("Rendering/Parent.material").ToString());
+    REQUIRE(SavedInstance.Scalars.size() == 1u);
+    CHECK(SavedInstance.Scalars.front().Value == Catch::Approx(0.42f));
+
+    Host.AssetService.CloseAssetEditor();
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey("Rendering/Child.materialinstance"));
+
+    const auto ReopenedSession = Host.AssetService.AssetEditorSession();
+    REQUIRE(ReopenedSession.IsOpen);
+    auto* ReopenedInstance = static_cast<MaterialInstanceAsset*>(ReopenedSession.TargetObject);
+    REQUIRE(ReopenedInstance != nullptr);
+    CHECK(ReopenedInstance->ParentMaterial.AssetName == "Rendering/Parent.material");
+    CHECK(ReopenedInstance->ParentMaterial.AssetId == SourceAssetIdFromLogicalName("Rendering/Parent.material").ToString());
+    REQUIRE(ReopenedInstance->Scalars.size() == 1u);
+    CHECK(ReopenedInstance->Scalars.front().Value == Catch::Approx(0.42f));
+}
+
 #endif
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
@@ -1830,8 +1954,8 @@ TEST_CASE("Editor asset service imports raw textures as authored texture assets"
     CHECK(SavedTexture.Image.Height == 1u);
     CHECK(SavedTexture.Image.Channels == 4u);
     CHECK_FALSE(SavedTexture.Image.Pixels.empty());
-    CHECK(SavedTexture.ImportSettings.Target == "BCn");
-    CHECK(SavedTexture.ImportSettings.Format == "Auto");
+    CHECK(SavedTexture.ImportSettings.Target == ETextureCompressionTarget::BCn);
+    CHECK(SavedTexture.ImportSettings.Format == ETextureCompressionFormat::Auto);
 
     REQUIRE(Host.AssetService.OpenAssetEditorByKey(ImportedTexture->Key));
     const auto Session = Host.AssetService.AssetEditorSession();
@@ -1842,11 +1966,11 @@ TEST_CASE("Editor asset service imports raw textures as authored texture assets"
     CHECK(Texture->Image.Width == 1u);
     CHECK(Texture->Image.Height == 1u);
     CHECK(Session.HasImportSettings);
-    CHECK(Session.ImportSettingsType == StaticTypeId<Editor::TextureImportSettings>());
-    auto* ImportSettings = static_cast<Editor::TextureImportSettings*>(Session.ImportSettingsObject);
+    CHECK(Session.ImportSettingsType == StaticTypeId<TextureImporterSettings>());
+    auto* ImportSettings = static_cast<TextureImporterSettings*>(Session.ImportSettingsObject);
     REQUIRE(ImportSettings != nullptr);
-    CHECK(ImportSettings->Target == Editor::ETextureCompressionTarget::BCn);
-    CHECK(ImportSettings->Format == Editor::ETextureCompressionFormat::Auto);
+    CHECK(ImportSettings->Target == ETextureCompressionTarget::BCn);
+    CHECK(ImportSettings->Format == ETextureCompressionFormat::Auto);
     CHECK(Session.CanReimport);
 
     ImportSettings->ForceLinear = true;
@@ -1855,6 +1979,8 @@ TEST_CASE("Editor asset service imports raw textures as authored texture assets"
     CHECK(Host.AssetService.AssetEditorSession().IsDirty);
     CHECK(Host.AssetService.AssetEditorSession().ImportSettingsDirty);
     REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+    CHECK(Host.AssetService.AssetEditorSession().IsOpen);
+    CHECK(Host.AssetService.AssetEditorSession().AssetKey == ImportedTextureKey);
 
     TextureAsset ResavedTexture{};
     REQUIRE(DeserializeAuthoredAssetFromJson(
@@ -1863,10 +1989,27 @@ TEST_CASE("Editor asset service imports raw textures as authored texture assets"
     CHECK(ResavedTexture.ImportSettings.ForceLinear);
     CHECK(ResavedTexture.ImportSettings.MaxMips == 3u);
 
+    const auto* RefreshedImportedTexture = Host.AssetService.SelectedAsset();
+    REQUIRE(RefreshedImportedTexture != nullptr);
+    CHECK(RefreshedImportedTexture->Key == ImportedTextureKey);
+
+    EditorAssetIconService IconService{};
+    REQUIRE(IconService.Initialize(Context));
+    const auto ThumbnailMetadata = IconService.ResolveAssetIcon(Context, *RefreshedImportedTexture, nullptr);
+    CHECK(ThumbnailMetadata.TextureId == 0u);
+    CHECK_FALSE(ThumbnailMetadata.IconSource.empty());
+    CHECK(std::filesystem::exists(std::filesystem::path(ThumbnailMetadata.IconSource)));
+    CHECK(std::filesystem::path(ThumbnailMetadata.IconSource).extension() == ".png");
+
+    const auto CachedThumbnailMetadata = IconService.ResolveAssetIcon(Context, *RefreshedImportedTexture, nullptr);
+    CHECK(CachedThumbnailMetadata.IconSource == ThumbnailMetadata.IconSource);
+    CHECK(CachedThumbnailMetadata.TextureId == 0u);
+    IconService.Shutdown(Context);
+
     REQUIRE(Host.AssetService.OpenAssetEditorByKey(ImportedTextureKey));
     const auto ReopenedSession = Host.AssetService.AssetEditorSession();
     REQUIRE(ReopenedSession.IsOpen);
-    auto* ReopenedImportSettings = static_cast<Editor::TextureImportSettings*>(ReopenedSession.ImportSettingsObject);
+    auto* ReopenedImportSettings = static_cast<TextureImporterSettings*>(ReopenedSession.ImportSettingsObject);
     REQUIRE(ReopenedImportSettings != nullptr);
     CHECK(ReopenedImportSettings->ForceLinear);
     CHECK(ReopenedImportSettings->MaxMips == 3u);
@@ -1938,15 +2081,15 @@ TEST_CASE("Editor asset service imports models into authored sibling assets and 
     REQUIRE(Mesh->Mesh.MaterialInstances.size() == 1u);
     CHECK(Mesh->Mesh.MaterialInstances.front().AssetName == MaterialInstances.front()->Key);
     CHECK(Session.HasImportSettings);
-    CHECK(Session.ImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>());
-    auto* ImportSettings = static_cast<Editor::AssimpImportSettings*>(Session.ImportSettingsObject);
+    CHECK(Session.ImportSettingsType == StaticTypeId<AssimpImporterSettings>());
+    auto* ImportSettings = static_cast<AssimpImporterSettings*>(Session.ImportSettingsObject);
     REQUIRE(ImportSettings != nullptr);
-    CHECK(ImportSettings->ImportMaterials);
-    CHECK(ImportSettings->ImportTextures);
+    CHECK(ImportSettings->Mesh.ImportMaterials);
+    CHECK(ImportSettings->Mesh.ImportTextures);
     CHECK(Session.CanReimport);
 
-    ImportSettings->FlipUVs = true;
-    ImportSettings->MaxBonesPerVertex = 6u;
+    ImportSettings->Mesh.FlipUVs = true;
+    ImportSettings->Mesh.MaxBonesPerVertex = 6u;
     Host.AssetService.NotifyActiveAssetEditorImportSettingsMutated(Session.ImportSettingsType, Session.ImportSettingsObject);
     CHECK(Host.AssetService.AssetEditorSession().IsDirty);
     CHECK(Host.AssetService.AssetEditorSession().ImportSettingsDirty);
@@ -1956,16 +2099,16 @@ TEST_CASE("Editor asset service imports models into authored sibling assets and 
     REQUIRE(DeserializeAuthoredAssetFromJson(
         ReadTextFile(Root.Path / std::filesystem::path(StaticMeshKey)),
         ResavedMesh));
-    CHECK(ResavedMesh.ImportSettings.FlipUVs);
-    CHECK(ResavedMesh.ImportSettings.MaxBonesPerVertex == 6u);
+    CHECK(ResavedMesh.ImportSettings.Mesh.FlipUVs);
+    CHECK(ResavedMesh.ImportSettings.Mesh.MaxBonesPerVertex == 6u);
 
     REQUIRE(Host.AssetService.OpenAssetEditorByKey(StaticMeshKey));
     const auto ReopenedSession = Host.AssetService.AssetEditorSession();
     REQUIRE(ReopenedSession.IsOpen);
-    auto* ReopenedImportSettings = static_cast<Editor::AssimpImportSettings*>(ReopenedSession.ImportSettingsObject);
+    auto* ReopenedImportSettings = static_cast<AssimpImporterSettings*>(ReopenedSession.ImportSettingsObject);
     REQUIRE(ReopenedImportSettings != nullptr);
-    CHECK(ReopenedImportSettings->FlipUVs);
-    CHECK(ReopenedImportSettings->MaxBonesPerVertex == 6u);
+    CHECK(ReopenedImportSettings->Mesh.FlipUVs);
+    CHECK(ReopenedImportSettings->Mesh.MaxBonesPerVertex == 6u);
 
     const std::filesystem::path MetadataPath = Root.Path / ".snapi_editor" / "asset_import_metadata.json";
     std::error_code RemoveError{};
@@ -1981,11 +2124,11 @@ TEST_CASE("Editor asset service imports models into authored sibling assets and 
         const auto FallbackSession = ReloadedHost.AssetService.AssetEditorSession();
         REQUIRE(FallbackSession.IsOpen);
         CHECK(FallbackSession.HasImportSettings);
-        CHECK(FallbackSession.ImportSettingsType == StaticTypeId<Editor::AssimpImportSettings>());
+        CHECK(FallbackSession.ImportSettingsType == StaticTypeId<AssimpImporterSettings>());
         CHECK(FallbackSession.CanReimport);
-        auto* FallbackImportSettings = static_cast<Editor::AssimpImportSettings*>(FallbackSession.ImportSettingsObject);
+        auto* FallbackImportSettings = static_cast<AssimpImporterSettings*>(FallbackSession.ImportSettingsObject);
         REQUIRE(FallbackImportSettings != nullptr);
-        CHECK(FallbackImportSettings->FlipUVs);
-        CHECK(FallbackImportSettings->MaxBonesPerVertex == 6u);
+        CHECK(FallbackImportSettings->Mesh.FlipUVs);
+        CHECK(FallbackImportSettings->Mesh.MaxBonesPerVertex == 6u);
     }
 }

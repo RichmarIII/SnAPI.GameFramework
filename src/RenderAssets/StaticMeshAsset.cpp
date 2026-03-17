@@ -10,10 +10,14 @@ SNAPI_REFLECT_TYPE(
     StaticMeshAsset,
     (TTypeBuilder<StaticMeshAsset>(StaticMeshAsset::kTypeName)
         .Base<IAsset>()
-        .Field("Mesh", &StaticMeshAsset::Mesh, EFieldFlagBits::Serialized)
-        .Field("Streams", &StaticMeshAsset::Streams, EFieldFlagBits::Serialized)
-        .Field("ImportSettings", &StaticMeshAsset::ImportSettings, EFieldFlagBits::Serialized)
-        .Field("Provenance", &StaticMeshAsset::Provenance, EFieldFlagBits::Serialized)
+        .Field("Mesh", &StaticMeshAsset::Mesh, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "Streams",
+            &StaticMeshAsset::Streams,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly | EFieldEditorFlagBits::Advanced)
+        .Field("ImportSettings", &StaticMeshAsset::ImportSettings, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Hidden)
+        .Field("Provenance", &StaticMeshAsset::Provenance, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Advanced)
         .Constructor<>()
         .Register()));
 

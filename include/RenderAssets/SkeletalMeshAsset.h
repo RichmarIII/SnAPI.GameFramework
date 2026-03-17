@@ -19,23 +19,23 @@ struct SkeletalMeshAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalMeshAsset";
 
-    SnField(SnKey("BaseMesh"))
+    SnField(SnKey("BaseMesh"), SnReadOnly)
     StaticMeshAsset BaseMesh{};
-    SnField(SnKey("Bones"))
+    SnField(SnKey("Bones"), SnReadOnly)
     std::vector<SkeletalBonePayload> Bones{};
-    SnField(SnKey("Skeleton"))
+    SnField(SnKey("Skeleton"), SnReadOnly)
     AssetRefPayload Skeleton{};
-    SnField(SnKey("Animations"))
+    SnField(SnKey("Animations"), SnReadOnly)
     std::vector<AssetRefPayload> Animations{};
-    SnField(SnKey("SkeletonAnimationUri"))
+    SnField(SnKey("SkeletonAnimationUri"), SnReadOnly, SnAdvanced)
     std::string SkeletonAnimationUri{};
     SnField(SnKey("SkeletonAnimationBytes"), SnHidden, SnHeavyData)
     std::vector<uint8_t> SkeletonAnimationBytes{};
-    SnField(SnKey("SkeletonAnimationSubIndex"))
+    SnField(SnKey("SkeletonAnimationSubIndex"), SnReadOnly, SnAdvanced)
     uint32_t SkeletonAnimationSubIndex = 0;
-    SnField(SnKey("CompressSkeletonAnimation"))
+    SnField(SnKey("CompressSkeletonAnimation"), SnReadOnly, SnAdvanced)
     bool CompressSkeletonAnimation = true;
-    SnField(SnKey("Provenance"))
+    SnField(SnKey("Provenance"), SnAdvanced)
     ImportedAssetProvenancePayload Provenance{};
 
     [[nodiscard]] std::string_view DisplayName() const override { return "Skeletal Mesh"; }

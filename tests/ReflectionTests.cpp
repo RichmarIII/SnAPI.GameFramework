@@ -161,6 +161,10 @@ TEST_CASE("Generated reflection codegen captures docs and parameter metadata")
 {
     RegisterBuiltinTypes();
 
+    CHECK(THasDeclaredReflectedTypeName<Tests::GeneratedReflectionMode>::value);
+    CHECK(std::string(TTypeNameV<Tests::GeneratedReflectionMode>) ==
+          "SnAPI::GameFramework::Tests::GeneratedReflectionMode");
+
     auto FixtureTypeResult = StaticType<Tests::GeneratedReflectionFixture>();
     REQUIRE(FixtureTypeResult);
 

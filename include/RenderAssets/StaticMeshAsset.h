@@ -4,8 +4,8 @@
 
 #include "Expected.h"
 #include "IAsset.h"
+#include "RenderAssetImportSettings.h"
 #include "RenderAssets/ImportedAssetProvenancePayload.h"
-#include "RenderAssets/MeshImportSettingsPayload.h"
 #include "RenderAssets/MeshStreamSourcePayload.h"
 #include "RenderAssets/StaticMeshPayload.h"
 
@@ -17,13 +17,13 @@ struct StaticMeshAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticMeshAsset";
 
-    SnField(SnKey("Mesh"))
+    SnField(SnKey("Mesh"), SnReadOnly)
     StaticMeshPayload Mesh{};
-    SnField(SnKey("Streams"))
+    SnField(SnKey("Streams"), SnReadOnly, SnAdvanced)
     std::vector<MeshStreamSourcePayload> Streams{};
-    SnField(SnKey("ImportSettings"))
-    MeshImportSettingsPayload ImportSettings{};
-    SnField(SnKey("Provenance"))
+    SnField(SnKey("ImportSettings"), SnHidden)
+    AssimpImporterSettings ImportSettings{};
+    SnField(SnKey("Provenance"), SnAdvanced)
     ImportedAssetProvenancePayload Provenance{};
 
     [[nodiscard]] std::string_view DisplayName() const override { return "Static Mesh"; }

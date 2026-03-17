@@ -14,9 +14,9 @@ struct ImportBuildOptionPayload
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::ImportBuildOptionPayload";
 
-    SnField(SnKey("Key"))
+    SnField(SnKey("Key"), SnReadOnly)
     std::string Key{};
-    SnField(SnKey("Value"))
+    SnField(SnKey("Value"), SnReadOnly)
     std::string Value{};
 
     bool operator==(const ImportBuildOptionPayload&) const = default;

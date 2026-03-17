@@ -12,9 +12,9 @@ struct SkeletalAnimationAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalAnimationAsset";
 
-    SnField(SnKey("Animation"))
+    SnField(SnKey("Animation"), SnReadOnly)
     AnimationPayload Animation{};
-    SnField(SnKey("Provenance"))
+    SnField(SnKey("Provenance"), SnAdvanced)
     ImportedAssetProvenancePayload Provenance{};
 
     [[nodiscard]] std::string_view DisplayName() const override { return "Skeletal Animation"; }

@@ -8,15 +8,35 @@ namespace SnAPI::GameFramework
 SNAPI_REFLECT_TYPE(
     TextureSourceImagePayload,
     (TTypeBuilder<TextureSourceImagePayload>(TextureSourceImagePayload::kTypeName)
-        .Field("Width", &TextureSourceImagePayload::Width, EFieldFlagBits::Serialized)
-        .Field("Height", &TextureSourceImagePayload::Height, EFieldFlagBits::Serialized)
-        .Field("Channels", &TextureSourceImagePayload::Channels, EFieldFlagBits::Serialized)
-        .Field("BitsPerChannel", &TextureSourceImagePayload::BitsPerChannel, EFieldFlagBits::Serialized)
-        .Field("IsFloat", &TextureSourceImagePayload::IsFloat, EFieldFlagBits::Serialized)
-        .Field("HasNonTrivialAlpha", &TextureSourceImagePayload::HasNonTrivialAlpha, EFieldFlagBits::Serialized)
-        .Field("SRGB", &TextureSourceImagePayload::SRGB, EFieldFlagBits::Serialized)
-        .Field("SourceFilename", &TextureSourceImagePayload::SourceFilename, EFieldFlagBits::Serialized)
-        .Field("Pixels", &TextureSourceImagePayload::Pixels, EFieldFlagBits::Serialized)
+        .Field("Width", &TextureSourceImagePayload::Width, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Height", &TextureSourceImagePayload::Height, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "Channels",
+            &TextureSourceImagePayload::Channels,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "BitsPerChannel",
+            &TextureSourceImagePayload::BitsPerChannel,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field("IsFloat", &TextureSourceImagePayload::IsFloat, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "HasNonTrivialAlpha",
+            &TextureSourceImagePayload::HasNonTrivialAlpha,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field("SRGB", &TextureSourceImagePayload::SRGB, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "SourceFilename",
+            &TextureSourceImagePayload::SourceFilename,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::ReadOnly)
+        .Field(
+            "Pixels",
+            &TextureSourceImagePayload::Pixels,
+            EFieldFlagBits::Serialized,
+            EFieldEditorFlagBits::Hidden | EFieldEditorFlagBits::HeavyData)
         .Constructor<>()
         .Register()));
 

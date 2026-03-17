@@ -184,7 +184,9 @@ struct TypeSpec
     bool IsEnum = false;
     bool EnumIsSigned = false;
     bool IsInterface = false;
+    bool HasNativeTypeNameMember = false;
     bool HasDefaultConstructor = false;
+    bool HasHeaderVisibleTypeName = false;
     bool NeedsGeneratedTypeName = false;
     bool IsNodeLike = false;
     bool IsComponentLike = false;
@@ -266,6 +268,8 @@ struct TypeNameCacheEntry
     fs::path TypeNameHeader{};
     std::string QualifiedName{};
     std::string ReflectedName{};
+    bool IsEnum = false;
+    bool HasHeaderVisibleTypeName = false;
     bool NeedsGeneratedTypeName = false;
 };
 
@@ -469,7 +473,7 @@ void AddDependencySnapshot(std::vector<FileDependencySnapshot>& Out,
     }
 }
 
-constexpr std::uint64_t kReflectionCacheSchemaVersion = 7;
+constexpr std::uint64_t kReflectionCacheSchemaVersion = 10;
 constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ull;
 constexpr std::uint64_t kFnvPrime = 1099511628211ull;
 
@@ -2269,7 +2273,10 @@ std::vector<TypeNameCacheEntry> BuildTypeNameCacheEntries(const std::vector<Type
             .ReflectedName = Type.ReflectedName.empty()
                                  ? NormalizeTypeExpressionString(Type.QualifiedName)
                                  : Type.ReflectedName,
-            .NeedsGeneratedTypeName = Type.NeedsGeneratedTypeName,
+            .IsEnum = Type.IsEnum,
+            .HasHeaderVisibleTypeName = Type.HasHeaderVisibleTypeName,
+            .NeedsGeneratedTypeName =
+                Type.NeedsGeneratedTypeName || (Type.IsEnum && !Type.HasHeaderVisibleTypeName),
         });
     }
 
@@ -2375,6 +2382,8 @@ bool SaveReflectionCache(const fs::path& Path, const ReflectionCache& Cache)
                    << ' ' << std::quoted(TypeEntry.TypeNameHeader.generic_string())
                    << ' ' << std::quoted(TypeEntry.QualifiedName)
                    << ' ' << std::quoted(TypeEntry.ReflectedName)
+                   << ' ' << (TypeEntry.IsEnum ? 1 : 0)
+                   << ' ' << (TypeEntry.HasHeaderVisibleTypeName ? 1 : 0)
                    << ' ' << (TypeEntry.NeedsGeneratedTypeName ? 1 : 0)
                    << '\n';
         }
@@ -2452,6 +2461,7 @@ std::optional<ReflectionCache> LoadReflectionCache(const fs::path& Path)
     if (Cache.SchemaVersion != 4 &&
         Cache.SchemaVersion != 5 &&
         Cache.SchemaVersion != 6 &&
+        Cache.SchemaVersion != 9 &&
         Cache.SchemaVersion != kReflectionCacheSchemaVersion)
     {
         return std::nullopt;
@@ -2618,19 +2628,36 @@ std::optional<ReflectionCache> LoadReflectionCache(const fs::path& Path)
 
             std::string Header{};
             std::string TypeNameHeader{};
+            int IsEnum = 0;
+            int HasHeaderVisibleTypeName = 0;
             int NeedsGeneratedTypeName = 0;
             TypeNameCacheEntry TypeEntry{};
             if (!(Input >> std::quoted(Header)
                   >> std::quoted(TypeNameHeader)
                   >> std::quoted(TypeEntry.QualifiedName)
-                  >> std::quoted(TypeEntry.ReflectedName)
-                  >> NeedsGeneratedTypeName))
+                  >> std::quoted(TypeEntry.ReflectedName)))
             {
                 return std::nullopt;
+            }
+            if (Cache.SchemaVersion >= 9)
+            {
+                if (!(Input >> IsEnum >> HasHeaderVisibleTypeName >> NeedsGeneratedTypeName))
+                {
+                    return std::nullopt;
+                }
+            }
+            else
+            {
+                if (!(Input >> NeedsGeneratedTypeName))
+                {
+                    return std::nullopt;
+                }
             }
             TypeEntry.Header = NormalizePath(fs::path(Header));
             TypeEntry.TypeNameHeader =
                 TypeNameHeader.empty() ? fs::path{} : NormalizePath(fs::path(TypeNameHeader));
+            TypeEntry.IsEnum = IsEnum != 0;
+            TypeEntry.HasHeaderVisibleTypeName = HasHeaderVisibleTypeName != 0;
             TypeEntry.NeedsGeneratedTypeName = NeedsGeneratedTypeName != 0;
             Entry.TypeNameEntries.push_back(std::move(TypeEntry));
         }
@@ -4464,6 +4491,27 @@ std::optional<ConstructorSpec> DefaultConstructorSpecFor(const CXCursor Cursor)
     return Spec;
 }
 
+bool CursorDeclaresNativeTypeNameMember(const CXCursor Cursor)
+{
+    bool Result = false;
+    clang_visitChildren(
+        Cursor,
+        [](CXCursor Child, CXCursor Parent, CXClientData ClientData) {
+            (void)Parent;
+            auto* const HasTypeName = static_cast<bool*>(ClientData);
+            if (clang_getCursorKind(Child) == CXCursor_VarDecl &&
+                ToStringDispose(clang_getCursorSpelling(Child)) == "kTypeName")
+            {
+                *HasTypeName = true;
+                return CXChildVisit_Break;
+            }
+
+            return CXChildVisit_Continue;
+        },
+        &Result);
+    return Result;
+}
+
 TypeSpec BuildRecordSpec(const fs::path& Header,
                          const CXCursor Cursor,
                          const AnnotationPayload& TypePayload,
@@ -4480,6 +4528,7 @@ TypeSpec BuildRecordSpec(const fs::path& Header,
                              ? NormalizeReflectedTypeNameString(Spec.QualifiedName)
                              : std::string(ReflectedNameOverride);
     Spec.IsInterface = false;
+    Spec.HasNativeTypeNameMember = CursorDeclaresNativeTypeNameMember(Cursor);
     Spec.HasDefaultConstructor = false;
     Spec.IsNodeLike = CursorIsDerivedFromQualifiedName(Cursor, "SnAPI::GameFramework::BaseNode");
     Spec.IsComponentLike = CursorIsDerivedFromQualifiedName(Cursor, "SnAPI::GameFramework::BaseComponent");
@@ -4496,6 +4545,11 @@ TypeSpec BuildRecordSpec(const fs::path& Header,
     Spec.DisplayName = TypePayload.Values.contains("display_name") ? TypePayload.Values.at("display_name") : "";
     Spec.Category = TypePayload.Values.contains("category") ? TypePayload.Values.at("category") : "";
     Spec.IsInterface = TypePayload.Flags.contains("interface");
+    Spec.HasHeaderVisibleTypeName = Context.Knowledge->HeaderVisibleTypeKeys.contains(Spec.ReflectedName);
+    Spec.NeedsGeneratedTypeName =
+        Spec.GeneratedLine == 0 &&
+        !Spec.HasNativeTypeNameMember &&
+        !Spec.HasHeaderVisibleTypeName;
 
     if (Spec.GeneratedLine != 0 && TypePayload.Flags.contains("template"))
     {
@@ -4633,6 +4687,8 @@ TypeSpec BuildEnumSpec(const fs::path& Header,
     }
     Spec.DisplayName = TypePayload.Values.contains("display_name") ? TypePayload.Values.at("display_name") : "";
     Spec.Category = TypePayload.Values.contains("category") ? TypePayload.Values.at("category") : "";
+    Spec.HasHeaderVisibleTypeName = Context.Knowledge->HeaderVisibleTypeKeys.contains(Spec.ReflectedName);
+    Spec.NeedsGeneratedTypeName = !Spec.HasHeaderVisibleTypeName;
 
     const CXType Underlying = clang_getEnumDeclIntegerType(Cursor);
     Spec.EnumIsSigned = IsSignedIntegerType(Underlying);
@@ -6184,7 +6240,46 @@ std::string BuildScanTranslationUnitSource(const std::vector<fs::path>& Headers)
     return Source;
 }
 
-std::vector<std::string> LoadCompileArguments(const fs::path& BuildDir, const fs::path& SeedSource)
+bool MatchesGeneratedTypeNameHeaderArg(const std::string& Arg, const fs::path& GeneratedTypeNameHeader)
+{
+    if (GeneratedTypeNameHeader.empty() || Arg.empty())
+    {
+        return false;
+    }
+
+    const fs::path ExpectedPath = NormalizePath(GeneratedTypeNameHeader);
+    const std::string ExpectedFileName = ExpectedPath.filename().string();
+
+    if (Arg == ExpectedFileName)
+    {
+        return true;
+    }
+
+    if (Arg.find(".typenames.generated.hpp") == std::string::npos)
+    {
+        return false;
+    }
+
+    const fs::path CandidatePath = NormalizePath(fs::path(Arg));
+    if (!CandidatePath.empty())
+    {
+        if (CandidatePath == ExpectedPath)
+        {
+            return true;
+        }
+
+        if (CandidatePath.filename() == ExpectedPath.filename())
+        {
+            return true;
+        }
+    }
+
+    return Arg.ends_with(ExpectedFileName);
+}
+
+std::vector<std::string> LoadCompileArguments(const fs::path& BuildDir,
+                                              const fs::path& SeedSource,
+                                              const fs::path& GeneratedTypeNameHeader)
 {
     CXCompilationDatabase_Error ErrorCode = CXCompilationDatabase_NoError;
     CXCompilationDatabase Database =
@@ -6232,8 +6327,38 @@ std::vector<std::string> LoadCompileArguments(const fs::path& BuildDir, const fs
             continue;
         }
 
+        if (Arg == "-include")
+        {
+            if (Index + 1 < clang_CompileCommand_getNumArgs(Command))
+            {
+                const std::string IncludedArg = ToStringDispose(clang_CompileCommand_getArg(Command, Index + 1));
+                if (MatchesGeneratedTypeNameHeaderArg(IncludedArg, GeneratedTypeNameHeader))
+                {
+                    SkipNext = true;
+                    continue;
+                }
+            }
+        }
+
         if (Arg.starts_with("-o") || Arg.starts_with("-MF") || Arg.starts_with("-MT") ||
             Arg.starts_with("-MQ") || Arg.starts_with("-MJ"))
+        {
+            continue;
+        }
+
+        if (Arg.starts_with("/FI"))
+        {
+            const std::string IncludedArg = Arg.substr(3);
+            if (MatchesGeneratedTypeNameHeaderArg(IncludedArg, GeneratedTypeNameHeader))
+            {
+                continue;
+            }
+        }
+
+        if (Arg.starts_with("-include") &&
+            Arg.size() > std::char_traits<char>::length("-include") &&
+            MatchesGeneratedTypeNameHeaderArg(Arg.substr(std::char_traits<char>::length("-include")),
+                                              GeneratedTypeNameHeader))
         {
             continue;
         }
@@ -6616,9 +6741,7 @@ void EmitRecordRegistration(std::ostream& Stream, const TypeSpec& Spec, const st
     Stream << "SNAPI_REFLECT_METADATA(" << TypeExpr
            << ", ([]() -> ::SnAPI::GameFramework::TExpected<::SnAPI::GameFramework::TypeInfo*> {\n";
     Stream << "    using T = " << TypeExpr << ";\n";
-    Stream << "    auto Builder = ::SnAPI::GameFramework::TTypeBuilder<T>("
-           << CppStringLiteral(Spec.ReflectedName.empty() ? NormalizeTypeExpressionString(Spec.QualifiedName) : Spec.ReflectedName)
-           << ");\n";
+    Stream << "    auto Builder = ::SnAPI::GameFramework::TTypeBuilder<T>(::SnAPI::GameFramework::ReflectedTypeName<T>().c_str());\n";
     if (Spec.IsInterface)
     {
         Stream << "    Builder.AsInterface();\n";
@@ -6750,12 +6873,8 @@ void EmitEnumRegistration(std::ostream& Stream, const TypeSpec& Spec, const std:
            << ", ([]() -> ::SnAPI::GameFramework::TExpected<::SnAPI::GameFramework::TypeInfo*> {\n";
     Stream << "    using T = " << TypeExpr << ";\n";
     Stream << "    ::SnAPI::GameFramework::TypeInfo Info{};\n";
-    Stream << "    Info.Id = ::SnAPI::GameFramework::TypeIdFromName("
-           << CppStringLiteral(Spec.ReflectedName.empty() ? NormalizeTypeExpressionString(Spec.QualifiedName) : Spec.ReflectedName)
-           << ");\n";
-    Stream << "    Info.Name = "
-           << CppStringLiteral(Spec.ReflectedName.empty() ? NormalizeTypeExpressionString(Spec.QualifiedName) : Spec.ReflectedName)
-           << ";\n";
+    Stream << "    Info.Id = ::SnAPI::GameFramework::TypeIdFromName(::SnAPI::GameFramework::ReflectedTypeName<T>());\n";
+    Stream << "    Info.Name = ::SnAPI::GameFramework::ReflectedTypeName<T>();\n";
     Stream << "    Info.Size = sizeof(T);\n";
     Stream << "    Info.Align = alignof(T);\n";
     WriteAssignment(Stream, "Info.DisplayName", Spec.DisplayName);
@@ -7300,6 +7419,100 @@ bool WriteGeneratedSources(const fs::path& GeneratedSourceDir,
     return true;
 }
 
+bool PruneStaleGeneratedArtifacts(const fs::path& GeneratedIncludeDir,
+                                  const fs::path& GeneratedSourceDir,
+                                  const fs::path& GeneratedTypeNameHeader,
+                                  const fs::path& HeaderRoot,
+                                  const std::vector<fs::path>& Headers)
+{
+    std::unordered_set<std::string> ExpectedSources{};
+    std::unordered_set<std::string> ExpectedHeaders{};
+    ExpectedSources.reserve(Headers.size());
+    ExpectedHeaders.reserve(Headers.size());
+
+    for (const fs::path& Header : Headers)
+    {
+        const fs::path NormalizedHeader = NormalizePath(Header);
+        if (!GeneratedSourceDir.empty())
+        {
+            ExpectedSources.insert(
+                NormalizePath(GeneratedSourceDir / GeneratedSourceRelativePathFor(NormalizedHeader, HeaderRoot))
+                    .generic_string());
+        }
+        if (!GeneratedIncludeDir.empty())
+        {
+            ExpectedHeaders.insert(
+                NormalizePath(GeneratedIncludeDir / GeneratedHeaderRelativePathFor(NormalizedHeader, HeaderRoot))
+                    .generic_string());
+        }
+    }
+
+    const fs::path NormalizedTypeNameHeader =
+        GeneratedTypeNameHeader.empty() ? fs::path{} : NormalizePath(GeneratedTypeNameHeader);
+
+    auto PruneDirectory = [](const fs::path& Root,
+                             const std::string_view ExtensionSuffix,
+                             const std::unordered_set<std::string>& Expected,
+                             const fs::path& ExcludedPath) {
+        if (Root.empty() || !fs::exists(Root))
+        {
+            return true;
+        }
+
+        std::error_code IterateError{};
+        for (fs::recursive_directory_iterator It(Root, IterateError), End; It != End; It.increment(IterateError))
+        {
+            if (IterateError)
+            {
+                return false;
+            }
+
+            if (!It->is_regular_file())
+            {
+                continue;
+            }
+
+            const fs::path Path = NormalizePath(It->path());
+            if (!ExcludedPath.empty() && Path == ExcludedPath)
+            {
+                continue;
+            }
+
+            const std::string PathText = Path.generic_string();
+            if (!PathText.ends_with(ExtensionSuffix))
+            {
+                continue;
+            }
+
+            if (Expected.contains(PathText))
+            {
+                continue;
+            }
+
+            std::error_code RemoveError{};
+            fs::remove(Path, RemoveError);
+            if (RemoveError)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    if (!PruneDirectory(GeneratedSourceDir, ".generated.cpp", ExpectedSources, {}))
+    {
+        return false;
+    }
+
+    if (!PruneDirectory(GeneratedIncludeDir, ".generated.hpp", ExpectedHeaders, NormalizedTypeNameHeader))
+    {
+        return false;
+    }
+
+    return true;
+}
+
 bool WriteGeneratedManifest(const fs::path& OutputPath,
                             const fs::path& GeneratedSourceDir,
                             const fs::path& HeaderRoot,
@@ -7500,7 +7713,10 @@ int main(int argc, char** argv)
         std::vector<Diagnostic> Diagnostics{};
         auto StageStartedAt = Clock::now();
         std::vector<std::string> CompileArgs =
-            LoadCompileArguments(Options.BuildDir, Options.SeedSource.lexically_normal());
+            LoadCompileArguments(
+                Options.BuildDir,
+                Options.SeedSource.lexically_normal(),
+                Options.GeneratedTypeNameHeader.lexically_normal());
         CompileArgs.insert(CompileArgs.end(), Options.ExtraArgs.begin(), Options.ExtraArgs.end());
         if (ProfileEnabled)
         {
@@ -7633,6 +7849,17 @@ int main(int argc, char** argv)
                     PrintReflectionTiming("write_type_name_header", Clock::now() - StageStartedAt);
                 }
             }
+            if ((!Options.GeneratedSourceDir.empty() || !Options.GeneratedIncludeDir.empty()) &&
+                !PruneStaleGeneratedArtifacts(
+                    Options.GeneratedIncludeDir,
+                    Options.GeneratedSourceDir,
+                    Options.GeneratedTypeNameHeader,
+                    Options.HeaderRoot,
+                    Options.Headers))
+            {
+                std::cerr << "Failed to prune stale generated reflection artifacts\n";
+                return 1;
+            }
 
             if (ProfileEnabled)
             {
@@ -7670,7 +7897,9 @@ int main(int argc, char** argv)
             }
         }
 
-        const bool DirtyAll = !ExistingCache;
+        const bool DirtyAll =
+            !ExistingCache ||
+            ExistingCache->SchemaVersion != kReflectionCacheSchemaVersion;
         const bool KnowledgeChanged = ExistingCache && ExistingCache->KnowledgeFingerprint != KnowledgeFingerprint;
         const bool HasKnowledgeDependencyCache =
             ExistingCache && ExistingCache->SchemaVersion >= 6;
@@ -7968,6 +8197,17 @@ int main(int argc, char** argv)
             {
                 PrintReflectionTiming("write_cached_type_name_header", Clock::now() - StageStartedAt);
             }
+        }
+        if ((!Options.GeneratedSourceDir.empty() || !Options.GeneratedIncludeDir.empty()) &&
+            !PruneStaleGeneratedArtifacts(
+                Options.GeneratedIncludeDir,
+                Options.GeneratedSourceDir,
+                Options.GeneratedTypeNameHeader,
+                Options.HeaderRoot,
+                Options.Headers))
+        {
+            std::cerr << "Failed to prune stale generated reflection artifacts\n";
+            return 1;
         }
         StageStartedAt = Clock::now();
         if (!SaveReflectionCache(CachePath, Cache))

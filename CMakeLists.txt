@@ -192,7 +192,6 @@ set(SNAPI_GF_SOURCES
     src/RenderAssets/StaticMeshAsset.cpp
     src/RenderAssets/StaticMeshPayload.cpp
     src/RenderAssets/TextureAsset.cpp
-    src/RenderAssets/TextureImportSettingsPayload.cpp
     src/RenderAssets/TextureSourceImagePayload.cpp
     src/RenderAssetSerializers/AnimationPayloadSerializer.cpp
     src/RenderAssetSerializers/MaterialInstancePayloadSerializer.cpp

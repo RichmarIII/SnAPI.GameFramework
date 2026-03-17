@@ -410,6 +410,15 @@ void serialize(Archive& Ar, MeshImportSettingsPayload& Value)
 }
 
 template<class Archive>
+void serialize(Archive& Ar, AssimpImporterSettings& Value)
+{
+    Ar(Detail::Nvp("Mesh", Value.Mesh),
+       Detail::Nvp("LogicalNameOverride", Value.LogicalNameOverride),
+       Detail::Nvp("DefaultShaderModule", Value.DefaultShaderModule),
+       Detail::Nvp("DefaultShadingModel", Value.DefaultShadingModel));
+}
+
+template<class Archive>
 void serialize(Archive& Ar, TextureSourceImagePayload& Value)
 {
     Ar(Detail::Nvp("Width", Value.Width),
@@ -424,7 +433,7 @@ void serialize(Archive& Ar, TextureSourceImagePayload& Value)
 }
 
 template<class Archive>
-void serialize(Archive& Ar, TextureImportSettingsPayload& Value)
+void serialize(Archive& Ar, TextureImporterSettings& Value)
 {
     Ar(Detail::Nvp("Target", Value.Target),
        Detail::Nvp("Format", Value.Format),

@@ -10,8 +10,8 @@ SNAPI_REFLECT_TYPE(
     SkeletonAsset,
     (TTypeBuilder<SkeletonAsset>(SkeletonAsset::kTypeName)
         .Base<IAsset>()
-        .Field("Skeleton", &SkeletonAsset::Skeleton, EFieldFlagBits::Serialized)
-        .Field("Provenance", &SkeletonAsset::Provenance, EFieldFlagBits::Serialized)
+        .Field("Skeleton", &SkeletonAsset::Skeleton, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Provenance", &SkeletonAsset::Provenance, EFieldFlagBits::Serialized, EFieldEditorFlagBits::Advanced)
         .Constructor<>()
         .Register()));
 

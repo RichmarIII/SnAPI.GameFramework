@@ -6,6 +6,7 @@
 #include "Editor/EditorImportSettings.h"
 #include "Handles.h"
 #include "IAssetImportSettings.h"
+#include "RenderAssetImportSettings.h"
 #include "TypeRegistration.h"
 
 #include <UIHandles.h>
@@ -972,8 +973,8 @@ private:
     bool m_contentImportModalOpen = false;
     std::string m_contentImportSourcePath{};
     EImportProfile m_contentImportProfile = EImportProfile::Unknown;
-    AssimpImportSettings m_contentImportAssimpSettings{};
-    TextureImportSettings m_contentImportTextureSettings{};
+    AssimpImporterSettings m_contentImportAssimpSettings{};
+    TextureImporterSettings m_contentImportTextureSettings{};
     ContentAssetInspectorState m_contentAssetInspectorState{};
     ConduitWorkspaceState m_conduitWorkspaceState{};
     std::vector<Uuid> m_conduitVisibleVariableIds{};
