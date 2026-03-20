@@ -112,18 +112,6 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
     return {};
 }
 
-[[nodiscard]] std::vector<TAssetRef<MaterialInstanceAsset>> BuildMaterialRefsFromPayloads(
-    const std::vector<AssetRefPayload>& Payloads)
-{
-    std::vector<TAssetRef<MaterialInstanceAsset>> Refs{};
-    Refs.reserve(Payloads.size());
-    for (const AssetRefPayload& Payload : Payloads)
-    {
-        Refs.emplace_back(Payload.AssetName, Payload.AssetId);
-    }
-    return Refs;
-}
-
 void ApplyRuntimeOrDefaultMaterialInstances(
     SnAPI::Graphics::IRenderObject& RenderObject,
     RendererSystem& Renderer,
@@ -433,7 +421,7 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
                         *m_renderObject,
                         *Renderer,
                         (AuthoredMesh && *AuthoredMesh)
-                            ? BuildMaterialRefsFromPayloads((*AuthoredMesh)->BaseMesh.Mesh.MaterialInstances)
+                            ? (*AuthoredMesh)->BaseMesh.Mesh.MaterialInstances
                             : std::vector<TAssetRef<MaterialInstanceAsset>>{},
                         AssetManager);
                     ApplyRenderObjectState(*m_renderObject);

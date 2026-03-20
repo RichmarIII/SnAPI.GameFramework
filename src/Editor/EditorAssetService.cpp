@@ -10,6 +10,8 @@
 #include "AssetPipelineFactories.h"
 #include "AssetPipelineIds.h"
 #include "Conduit/Editor/Service.h"
+#include "Editor/EditorLayoutService.h"
+#include "Editor/EditorSceneService.h"
 #include "GameRuntime.h"
 #include "IAssetCooker.h"
 #include "IAssetImporter.h"
@@ -28,10 +30,13 @@
 #include "TransformComponent.h"
 #include "TypeAutoRegistry.h"
 #include "TypeRegistry.h"
+#include "UIRenderViewport.h"
 #include "World.h"
 #include "WorldEcsRuntime.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+#include <ICamera.hpp>
 #include <Definitions.hpp>
+#include <IVertexStreamSource.hpp>
 #include <Material.hpp>
 #include <MaterialInstance.hpp>
 #include <MaterialRuntimeDescriptor.hpp>
@@ -62,6 +67,7 @@
 #include <fstream>
 #include <iomanip>
 #include <mutex>
+#include <numbers>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -129,6 +135,300 @@ constexpr std::string_view kAssetImportMetadataFileName = "asset_import_metadata
 constexpr uint32_t kAssetImportMetadataVersion = 1u;
 
 using EImportProfile = EAssetImportProfile;
+
+[[nodiscard]] bool IsPlaceableAssetKind(const ::SnAPI::AssetPipeline::TypeId& AssetKind)
+{
+    return AssetKind == AssetKindNode() ||
+           AssetKind == AssetKindLevel() ||
+           AssetKind == AssetKindWorld() ||
+           AssetKind == AssetKindStaticMesh() ||
+           AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture;
+}
+
+[[nodiscard]] std::string LeafLogicalAssetName(std::string_view LogicalName)
+{
+    const std::size_t Slash = LogicalName.find_last_of("/\\");
+    if (Slash == std::string_view::npos)
+    {
+        return std::string(LogicalName);
+    }
+    return std::string(LogicalName.substr(Slash + 1u));
+}
+
+[[nodiscard]] std::string ParentLogicalAssetFolder(std::string_view LogicalName)
+{
+    const std::size_t Slash = LogicalName.find_last_of("/\\");
+    if (Slash == std::string_view::npos)
+    {
+        return {};
+    }
+    return std::string(LogicalName.substr(0u, Slash));
+}
+
+[[nodiscard]] std::expected<NodeHandle, std::string> ResolveDefaultPlacementParent(World& WorldRef)
+{
+    const auto Levels = WorldRef.Levels();
+    if (!Levels.empty())
+    {
+        return Levels.front();
+    }
+
+    auto CreateLevelResult = WorldRef.CreateLevel("Level");
+    if (!CreateLevelResult)
+    {
+        return std::unexpected(CreateLevelResult.error().Message);
+    }
+
+    return *CreateLevelResult;
+}
+
+[[nodiscard]] std::expected<NodeHandle, std::string> ResolvePlacementParent(World& WorldRef, const NodeHandle& RequestedParent)
+{
+    if (!RequestedParent.IsNull())
+    {
+        NodeHandle ParentHandle = RequestedParent;
+        if (WorldRef.BorrowedNode(ParentHandle))
+        {
+            return ParentHandle;
+        }
+    }
+
+    return ResolveDefaultPlacementParent(WorldRef);
+}
+
+[[nodiscard]] std::expected<NodeHandle, std::string> CreatePlacementBaseNode(World& WorldRef,
+                                                                              const NodeHandle& Parent,
+                                                                              std::string Name)
+{
+    auto CreateResult = WorldRef.CreateNode(StaticTypeId<BaseNode>(), std::move(Name));
+    if (!CreateResult)
+    {
+        return std::unexpected(CreateResult.error().Message);
+    }
+
+    NodeHandle CreatedHandle = *CreateResult;
+    if (!Parent.IsNull())
+    {
+        NodeHandle ParentHandle = Parent;
+        if (const Result AttachResult = WorldRef.AttachChild(ParentHandle, CreatedHandle); !AttachResult)
+        {
+            return std::unexpected(AttachResult.error().Message);
+        }
+    }
+
+    return CreatedHandle;
+}
+
+void ApplyPlacementWorldPose(BaseNode& Node, const Vec3& WorldPosition)
+{
+    (void)TransformComponent::TrySetNodeWorldPose(Node, WorldPosition, Quat::Identity(), true);
+}
+
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
+[[nodiscard]] bool TryBuildViewportPlacementRay(EditorServiceContext& Context,
+                                                const float ScreenX,
+                                                const float ScreenY,
+                                                Vec3& OutRayOrigin,
+                                                Vec3& OutRayDirection)
+{
+    auto* LayoutService = Context.GetService<EditorLayoutService>();
+    auto* SceneService = Context.GetService<EditorSceneService>();
+    if (!LayoutService || !SceneService)
+    {
+        return false;
+    }
+
+    auto* Viewport = LayoutService->GameViewportElement();
+    auto* Camera = SceneService->ActiveRenderCamera();
+    if (!Viewport || !Camera)
+    {
+        return false;
+    }
+
+    const SnAPI::UI::UIRect ViewRect = Viewport->LayoutRect();
+    const SnAPI::UI::UIPoint ScreenPoint{ScreenX, ScreenY};
+    if (ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !ViewRect.Contains(ScreenPoint))
+    {
+        return false;
+    }
+
+    const float U = (ScreenX - ViewRect.X) / ViewRect.W;
+    const float V = (ScreenY - ViewRect.Y) / ViewRect.H;
+    if (!std::isfinite(U) || !std::isfinite(V))
+    {
+        return false;
+    }
+
+    const SnAPI::Math::Scalar NormalizedX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
+    const SnAPI::Math::Scalar NormalizedY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
+    const SnAPI::Math::Scalar FovRadians = static_cast<SnAPI::Math::Scalar>(
+        static_cast<double>(Camera->Fov()) * (std::numbers::pi_v<double> / 180.0));
+    const SnAPI::Math::Scalar TanHalfFov = static_cast<SnAPI::Math::Scalar>(
+        std::tan(static_cast<double>(FovRadians) * 0.5));
+    const SnAPI::Math::Scalar Aspect = static_cast<SnAPI::Math::Scalar>(Camera->Aspect());
+    if (!std::isfinite(TanHalfFov) || !std::isfinite(Aspect) ||
+        !(TanHalfFov > static_cast<SnAPI::Math::Scalar>(0.0)) ||
+        !(Aspect > static_cast<SnAPI::Math::Scalar>(0.0)))
+    {
+        return false;
+    }
+
+    Vec3 Forward = Camera->Forward().cast<SnAPI::Math::Scalar>();
+    Vec3 Right = Camera->Right().cast<SnAPI::Math::Scalar>();
+    Vec3 Up = Camera->Up().cast<SnAPI::Math::Scalar>();
+    constexpr SnAPI::Math::Scalar kSmallNumber = static_cast<SnAPI::Math::Scalar>(1.0e-8);
+
+    const SnAPI::Math::Scalar ForwardLength = Forward.norm();
+    const SnAPI::Math::Scalar RightLength = Right.norm();
+    const SnAPI::Math::Scalar UpLength = Up.norm();
+    if (!(ForwardLength > kSmallNumber) || !(RightLength > kSmallNumber) || !(UpLength > kSmallNumber))
+    {
+        return false;
+    }
+
+    Forward /= ForwardLength;
+    Right /= RightLength;
+    Up /= UpLength;
+
+    Vec3 RayDirection = Forward +
+        (Right * (NormalizedX * Aspect * TanHalfFov)) +
+        (Up * (NormalizedY * TanHalfFov));
+    const SnAPI::Math::Scalar DirectionLength = RayDirection.norm();
+    if (!(DirectionLength > kSmallNumber))
+    {
+        return false;
+    }
+    RayDirection /= DirectionLength;
+
+    const SnAPI::Math::Scalar NearClip =
+        std::max(static_cast<SnAPI::Math::Scalar>(Camera->Near()), static_cast<SnAPI::Math::Scalar>(0.001));
+    const Vec3 CameraPosition = Camera->Position().cast<SnAPI::Math::Scalar>();
+    OutRayOrigin = CameraPosition + (RayDirection * NearClip);
+    OutRayDirection = RayDirection;
+    return true;
+}
+#endif
+
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
+[[nodiscard]] bool TryResolveViewportPlacementWorldPosition(EditorServiceContext& Context,
+                                                            const float ScreenX,
+                                                            const float ScreenY,
+                                                            Vec3& OutWorldPosition)
+{
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr || !WorldPtr->ShouldAllowPhysicsQueries())
+    {
+        return false;
+    }
+
+    Vec3 RayOrigin{};
+    Vec3 RayDirection{};
+    if (!TryBuildViewportPlacementRay(Context, ScreenX, ScreenY, RayOrigin, RayDirection))
+    {
+        return false;
+    }
+
+    auto& Physics = WorldPtr->Physics();
+    auto* Scene = Physics.Scene();
+    if (!Scene)
+    {
+        return false;
+    }
+
+    SnAPI::Physics::RaycastRequest Request{};
+    Request.Origin = Physics.WorldToPhysicsPosition(RayOrigin, false);
+    Request.Direction = RayDirection;
+    Request.Distance = static_cast<float>(100000.0);
+    Request.Mode = SnAPI::Physics::EQueryMode::ClosestHit;
+
+    std::array<SnAPI::Physics::RaycastHit, 1> Hits{};
+    const std::uint32_t HitCount = Scene->Query().Raycast(Request, std::span<SnAPI::Physics::RaycastHit>(Hits));
+    if (HitCount == 0 || !Hits[0].Body.IsValid())
+    {
+        return false;
+    }
+
+    const SnAPI::Physics::Vec3 WorldHit = Physics.PhysicsToWorldPosition(Hits[0].Position);
+    OutWorldPosition = Vec3(WorldHit.x(), WorldHit.y(), WorldHit.z());
+    return true;
+}
+#endif
+
+[[nodiscard]] std::string PlacementAssetBaseName(std::string_view LogicalName)
+{
+    std::filesystem::path Path = std::filesystem::path(LeafLogicalAssetName(LogicalName));
+    while (Path.has_extension())
+    {
+        const std::filesystem::path Stem = Path.stem();
+        if (Stem.empty() || Stem == Path)
+        {
+            break;
+        }
+        Path = Stem;
+    }
+
+    std::string BaseName = Path.string();
+    if (BaseName.empty())
+    {
+        BaseName = "Asset";
+    }
+    return BaseName;
+}
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+[[nodiscard]] bool TryComputeVertexStreamSourceBounds(
+    const std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>& StreamSource,
+    Vec3& OutCenter,
+    Vec3& OutHalfExtent)
+{
+    if (!StreamSource || StreamSource->SubMeshCount() == 0u)
+    {
+        return false;
+    }
+
+    SnAPI::Graphics::VertexSourceSubMesh SubMesh{};
+    using BoundsVector = decltype(SubMesh.BoundingBoxMin);
+    bool HasBounds = false;
+    BoundsVector BoundsMin{};
+    BoundsVector BoundsMax{};
+    for (std::uint32_t SubMeshIndex = 0; SubMeshIndex < StreamSource->SubMeshCount(); ++SubMeshIndex)
+    {
+        if (!StreamSource->SubMesh(SubMeshIndex, SubMesh))
+        {
+            continue;
+        }
+
+        if (!HasBounds)
+        {
+            BoundsMin = SubMesh.BoundingBoxMin;
+            BoundsMax = SubMesh.BoundingBoxMax;
+            HasBounds = true;
+            continue;
+        }
+
+        BoundsMin = BoundsMin.cwiseMin(SubMesh.BoundingBoxMin);
+        BoundsMax = BoundsMax.cwiseMax(SubMesh.BoundingBoxMax);
+    }
+
+    if (!HasBounds)
+    {
+        return false;
+    }
+
+    const BoundsVector Center = (BoundsMin + BoundsMax) * 0.5f;
+    const BoundsVector HalfExtent = (BoundsMax - BoundsMin) * 0.5f;
+    constexpr SnAPI::Math::Scalar kMinHalfExtent = static_cast<SnAPI::Math::Scalar>(0.05);
+
+    OutCenter = Vec3(static_cast<SnAPI::Math::Scalar>(Center.x()),
+                     static_cast<SnAPI::Math::Scalar>(Center.y()),
+                     static_cast<SnAPI::Math::Scalar>(Center.z()));
+    OutHalfExtent = Vec3(
+        std::max(static_cast<SnAPI::Math::Scalar>(std::abs(HalfExtent.x())), kMinHalfExtent),
+        std::max(static_cast<SnAPI::Math::Scalar>(std::abs(HalfExtent.y())), kMinHalfExtent),
+        std::max(static_cast<SnAPI::Math::Scalar>(std::abs(HalfExtent.z())), kMinHalfExtent));
+    return true;
+}
+#endif
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 struct WorldRenderSettingsRootSet
@@ -2340,6 +2640,14 @@ void InitializeCreatedNodeDefaults(IWorld& WorldRef, BaseNode& Node)
     return SourceAssetIdFromLogicalName(LogicalName, VariantKey);
 }
 
+void StampSourceAssetIdentity(IAsset& Asset,
+                              const ::SnAPI::AssetPipeline::AssetId& AssetId,
+                              const std::string_view LogicalName)
+{
+    Asset.SetPersistentIdentity(AssetId, LogicalName);
+    Asset.EnsurePersistentIdentity(LogicalName);
+}
+
 [[nodiscard]] std::string NormalizeAssetExtension(std::string Extension)
 {
     if (Extension.empty())
@@ -2838,6 +3146,17 @@ void ApplyImportedSourceAssetProvenance(ImportedSourceAssetVariant& Asset,
     }, Asset);
 }
 
+void StampImportedSourceAssetIdentity(ImportedSourceAssetVariant& Asset,
+                                      const ::SnAPI::AssetPipeline::AssetId& AssetId,
+                                      const std::string_view LogicalName)
+{
+    std::visit(
+        [AssetId, LogicalName](auto& TypedAsset) {
+            StampSourceAssetIdentity(static_cast<IAsset&>(TypedAsset), AssetId, LogicalName);
+        },
+        Asset);
+}
+
 [[nodiscard]] std::expected<ImportedSourceAssetVariant, std::string> BuildImportedSourceAssetVariant(
     const ::SnAPI::AssetPipeline::ImportedItem& Item,
     const ::SnAPI::AssetPipeline::PayloadRegistry& Registry,
@@ -3091,21 +3410,21 @@ void RewriteImportedAssetRefs(ImportedSourceAssetVariant& Asset,
         }
         else if constexpr (std::is_same_v<TAsset, StaticMeshAsset>)
         {
-            for (AssetRefPayload& MaterialRef : TypedAsset.Mesh.MaterialInstances)
+            for (MaterialInstanceAssetRef& MaterialRef : TypedAsset.Mesh.MaterialInstances)
             {
-                if (const auto It = RefByOriginalName.find(MaterialRef.AssetName); It != RefByOriginalName.end())
+                if (const auto It = RefByOriginalName.find(MaterialRef.GetAssetName()); It != RefByOriginalName.end())
                 {
-                    MaterialRef = It->second;
+                    MaterialRef = MaterialInstanceAssetRef(It->second.AssetName, It->second.AssetId);
                 }
             }
         }
         else if constexpr (std::is_same_v<TAsset, SkeletalMeshAsset>)
         {
-            for (AssetRefPayload& MaterialRef : TypedAsset.BaseMesh.Mesh.MaterialInstances)
+            for (MaterialInstanceAssetRef& MaterialRef : TypedAsset.BaseMesh.Mesh.MaterialInstances)
             {
-                if (const auto It = RefByOriginalName.find(MaterialRef.AssetName); It != RefByOriginalName.end())
+                if (const auto It = RefByOriginalName.find(MaterialRef.GetAssetName()); It != RefByOriginalName.end())
                 {
-                    MaterialRef = It->second;
+                    MaterialRef = MaterialInstanceAssetRef(It->second.AssetName, It->second.AssetId);
                 }
             }
             if (const auto It = RefByOriginalName.find(TypedAsset.Skeleton.AssetName); It != RefByOriginalName.end())
@@ -3574,9 +3893,7 @@ Result EditorAssetService::ArmPlacementByKey(const std::string_view Key)
         return std::unexpected(MakeError(EErrorCode::NotFound, "Asset was not found for placement"));
     }
 
-    if (Asset->AssetKind != AssetKindNode() &&
-        Asset->AssetKind != AssetKindLevel() &&
-        Asset->AssetKind != AssetKindWorld())
+    if (!IsPlaceableAssetKind(Asset->AssetKind))
     {
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Selected asset kind cannot be placed in scene"));
     }
@@ -3600,6 +3917,7 @@ Result EditorAssetService::RefreshDiscovery()
     std::vector<DiscoveredAsset> NextAssets{};
     std::unordered_set<std::string> SeenKeys{};
     std::unordered_set<::SnAPI::AssetPipeline::AssetId, ::SnAPI::AssetPipeline::UuidHash> SeenAssetIds{};
+    std::unordered_set<std::string> SeenSourceLogicalNames{};
     std::string MetadataWarning{};
     std::size_t DirtyAssetCount = 0;
 
@@ -3630,20 +3948,40 @@ Result EditorAssetService::RefreshDiscovery()
                 continue;
             }
 
-            const std::string LogicalName = BuildSourceLogicalName(AssetRoot, SourcePath);
-            if (LogicalName.empty() || !SeenKeys.insert(LogicalName).second)
+            const std::string Extension = NormalizeAssetExtension(SourcePath.extension().string());
+            const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByExtension(Extension);
+            const std::string FallbackLogicalName = BuildSourceLogicalName(AssetRoot, SourcePath);
+            if (FallbackLogicalName.empty())
             {
                 continue;
             }
+            SeenSourceLogicalNames.insert(FallbackLogicalName);
 
-            const ::SnAPI::AssetPipeline::AssetId AssetId = MakeDeterministicSourceAssetId(LogicalName);
+            std::string LogicalName = FallbackLogicalName;
+            ::SnAPI::AssetPipeline::AssetId AssetId = MakeDeterministicSourceAssetId(FallbackLogicalName);
+            if (Descriptor && Descriptor->Type)
+            {
+                if (auto Identity = LoadAuthoredAssetIdentityFromPath(Descriptor->Type->Id, SourcePath, FallbackLogicalName); Identity)
+                {
+                    if (!Identity->LogicalName.empty())
+                    {
+                        LogicalName = Identity->LogicalName;
+                    }
+                    if (!Identity->AssetId.IsNull())
+                    {
+                        AssetId = Identity->AssetId;
+                    }
+                }
+            }
+
+            if (!SeenKeys.insert(LogicalName).second)
+            {
+                continue;
+            }
             if (!SeenAssetIds.insert(AssetId).second)
             {
                 continue;
             }
-
-            const std::string Extension = NormalizeAssetExtension(SourcePath.extension().string());
-            const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByExtension(Extension);
 
             DiscoveredAsset Asset{};
             Asset.Key = LogicalName;
@@ -3690,6 +4028,19 @@ Result EditorAssetService::RefreshDiscovery()
             }
 
             NextAssets.push_back(std::move(Asset));
+        }
+    }
+
+    if (!AssetRoot.empty())
+    {
+        PruneAuthoredAssetIdentityIndex(AssetRoot, SeenSourceLogicalNames);
+        if (auto SaveIdentityIndexResult = SaveAuthoredAssetIdentityIndex(AssetRoot); !SaveIdentityIndexResult)
+        {
+            if (!MetadataWarning.empty())
+            {
+                MetadataWarning += ' ';
+            }
+            MetadataWarning += "Identity index warning: " + SaveIdentityIndexResult.error().Message;
         }
     }
 
@@ -3911,6 +4262,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
                 {
                     return std::unexpected(AssetResult.error());
                 }
+                StampSourceAssetIdentity(*AssetResult, Asset->AssetId, Asset->Key);
                 SourceJson = SerializeAuthoredAssetToJson(*AssetResult);
             }
             else if (Asset->AssetKind == AssetKindLevel())
@@ -3927,6 +4279,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
                 {
                     return std::unexpected(AssetResult.error());
                 }
+                StampSourceAssetIdentity(*AssetResult, Asset->AssetId, Asset->Key);
                 SourceJson = SerializeAuthoredAssetToJson(*AssetResult);
             }
             else
@@ -3942,6 +4295,7 @@ Result EditorAssetService::SaveAssetByKey(const std::string_view Key)
                 {
                     return std::unexpected(AssetResult.error());
                 }
+                StampSourceAssetIdentity(*AssetResult, Asset->AssetId, Asset->Key);
                 SourceJson = SerializeAuthoredAssetToJson(*AssetResult);
             }
 
@@ -4406,14 +4760,17 @@ Result EditorAssetService::DeleteAssetByKey(const std::string_view Key)
     if (!Asset->SourceFilePath.empty())
     {
         const DiscoveredAsset AssetSnapshot = *Asset;
+        const std::filesystem::path AssetRoot = ResolveImportAssetRootDirectory(m_currentProject);
         std::error_code Error{};
         const bool Removed = std::filesystem::remove(std::filesystem::path(AssetSnapshot.SourceFilePath), Error);
         if (!Removed || Error)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to delete source asset: " +
+                                                 "Failed to delete source asset: " +
                                                  (Error ? Error.message() : std::string("file was not removed"))));
         }
+
+        RemoveAuthoredAssetIdentityIndexEntry(AssetRoot, std::filesystem::path(AssetSnapshot.SourceFilePath));
 
         m_assetImportMetadata.erase(AssetSnapshot.AssetId);
         if (m_selectedAssetKey == AssetSnapshot.Key)
@@ -4704,16 +5061,79 @@ Result EditorAssetService::RenameAssetByKey(const std::string_view Key, const st
             return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to build a valid renamed source asset path"));
         }
 
-        const ::SnAPI::AssetPipeline::AssetId OldAssetId = Asset->AssetId;
-        const ::SnAPI::AssetPipeline::AssetId NewAssetId = MakeDeterministicSourceAssetId(NewLogicalName);
+        const ::SnAPI::AssetPipeline::AssetId StableAssetId = Asset->AssetId;
         const std::filesystem::path NewPath = AssetRoot / std::filesystem::path(NewLogicalName);
         std::error_code DirectoryError{};
         std::filesystem::create_directories(NewPath.parent_path(), DirectoryError);
         if (DirectoryError)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to create destination folder for source asset rename: " +
-                                                 DirectoryError.message()));
+                                                 "Failed to create destination folder for source asset rename: " +
+                                                     DirectoryError.message()));
+        }
+
+        std::string SourceJson{};
+        {
+            std::ifstream File(OldPath, std::ios::binary | std::ios::ate);
+            if (!File.is_open())
+            {
+                return std::unexpected(MakeError(EErrorCode::InternalError,
+                                                 "Failed to open source asset for rename: " + OldPath.string()));
+            }
+
+            const std::streamsize Size = File.tellg();
+            if (Size > 0)
+            {
+                SourceJson.resize(static_cast<std::size_t>(Size));
+                File.seekg(0, std::ios::beg);
+                File.read(SourceJson.data(), Size);
+                if (!File.good())
+                {
+                    return std::unexpected(MakeError(EErrorCode::InternalError,
+                                                     "Failed to read source asset for rename: " + OldPath.string()));
+                }
+            }
+        }
+
+        std::string RenamedJson = SourceJson;
+        if (Asset->AssetType != TypeId{})
+        {
+            const TypeInfo* Type = TypeRegistry::Instance().Find(Asset->AssetType);
+            if (!Type || !Type->RuntimeOps || !Type->RuntimeOps->DefaultConstruct || !Type->RuntimeOps->Destroy)
+            {
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                                 "Renamed source asset type is not registered for authored JSON"));
+            }
+
+            void* Storage = ::operator new(Type->Size, std::align_val_t(Type->Align));
+            Type->RuntimeOps->DefaultConstruct(Storage);
+            const auto DestroyStorage = [&]() {
+                Type->RuntimeOps->Destroy(Storage);
+                ::operator delete(Storage, std::align_val_t(Type->Align));
+            };
+
+            auto* SourceAsset = static_cast<IAsset*>(TypeRegistry::Instance().Cast(Type->Id, StaticTypeId<IAsset>(), Storage));
+            if (!SourceAsset)
+            {
+                DestroyStorage();
+                return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                                 "Renamed source asset does not cast to IAsset"));
+            }
+
+            if (const Result LoadResult = DeserializeAuthoredAssetFromJson(Type->Id, SourceJson, Storage); !LoadResult)
+            {
+                DestroyStorage();
+                return std::unexpected(LoadResult.error());
+            }
+
+            StampSourceAssetIdentity(*SourceAsset, StableAssetId, NewLogicalName);
+            auto JsonResult = SerializeAuthoredAssetToJson(Type->Id, Storage);
+            DestroyStorage();
+            if (!JsonResult)
+            {
+                return std::unexpected(JsonResult.error());
+            }
+            RenamedJson = std::move(*JsonResult);
         }
 
         std::error_code RenameError{};
@@ -4724,17 +5144,33 @@ Result EditorAssetService::RenameAssetByKey(const std::string_view Key, const st
                                              "Failed to rename source asset: " + RenameError.message()));
         }
 
-        if (const auto MetadataIt = m_assetImportMetadata.find(OldAssetId); MetadataIt != m_assetImportMetadata.end())
+        std::ofstream RenamedFile(NewPath, std::ios::binary | std::ios::trunc);
+        if (!RenamedFile.is_open())
         {
-            auto Record = std::move(MetadataIt->second);
-            m_assetImportMetadata.erase(MetadataIt);
-            m_assetImportMetadata.emplace(NewAssetId, std::move(Record));
-            m_assetImportMetadataDirty = true;
-            if (auto SaveResult = SaveAssetImportMetadataDatabase(); SaveResult)
-            {
-                m_assetImportMetadataDirty = false;
-            }
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to open renamed source asset for write: " + NewPath.string()));
         }
+        RenamedFile.write(RenamedJson.data(), static_cast<std::streamsize>(RenamedJson.size()));
+        if (!RenamedFile.good())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to update renamed source asset contents: " + NewPath.string()));
+        }
+        RenamedFile.flush();
+        if (!RenamedFile.good())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to flush renamed source asset contents: " + NewPath.string()));
+        }
+        RenamedFile.close();
+        if (RenamedFile.fail())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError,
+                                             "Failed to finalize renamed source asset contents: " + NewPath.string()));
+        }
+
+        RemoveAuthoredAssetIdentityIndexEntry(AssetRoot, OldPath);
+        UpsertAuthoredAssetIdentityIndexEntry(AssetRoot, NewPath, StableAssetId);
 
         if (m_selectedAssetKey == Asset->Key)
         {
@@ -4743,7 +5179,7 @@ Result EditorAssetService::RenameAssetByKey(const std::string_view Key, const st
         if (m_assetEditorAssetKey == Asset->Key)
         {
             m_assetEditorAssetKey = NewLogicalName;
-            m_assetEditorAssetId = NewAssetId;
+            m_assetEditorAssetId = StableAssetId;
         }
 
         auto RefreshResult = RefreshDiscovery();
@@ -4847,9 +5283,16 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
     }
 
     std::string LogicalName{};
+    ::SnAPI::AssetPipeline::AssetId CreatedAssetId{};
     std::expected<std::string, Error> SourceJson{};
     if (TypeRegistry::Instance().IsA(SourceNode->TypeKey(), StaticTypeId<Level>()))
     {
+        LogicalName = MakeUniqueSourceLogicalName(AssetRoot, "Levels", BaseName, ".level");
+        if (LogicalName.empty())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to determine a unique source asset name"));
+        }
+
         auto* LevelNode = NodeCast<Level>(SourceNode);
         if (!LevelNode)
         {
@@ -4862,32 +5305,35 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
             return std::unexpected(AssetResult.error());
         }
 
+        StampSourceAssetIdentity(*AssetResult, ::SnAPI::AssetPipeline::AssetId::Generate(), LogicalName);
+        CreatedAssetId = AssetResult->AssetId;
         SourceJson = SerializeAuthoredAssetToJson(*AssetResult);
         if (!SourceJson)
         {
             return std::unexpected(SourceJson.error());
         }
-        LogicalName = MakeUniqueSourceLogicalName(AssetRoot, "Levels", BaseName, ".level");
     }
     else
     {
+        LogicalName = MakeUniqueSourceLogicalName(AssetRoot, "Prefabs", BaseName, ".prefab");
+        if (LogicalName.empty())
+        {
+            return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to determine a unique source asset name"));
+        }
+
         auto AssetResult = CaptureNodeAsset(*SourceNode);
         if (!AssetResult)
         {
             return std::unexpected(AssetResult.error());
         }
 
+        StampSourceAssetIdentity(*AssetResult, ::SnAPI::AssetPipeline::AssetId::Generate(), LogicalName);
+        CreatedAssetId = AssetResult->AssetId;
         SourceJson = SerializeAuthoredAssetToJson(*AssetResult);
         if (!SourceJson)
         {
             return std::unexpected(SourceJson.error());
         }
-        LogicalName = MakeUniqueSourceLogicalName(AssetRoot, "Prefabs", BaseName, ".prefab");
-    }
-
-    if (LogicalName.empty())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to determine a unique source asset name"));
     }
 
     const std::filesystem::path OutputPath = AssetRoot / std::filesystem::path(LogicalName);
@@ -4923,6 +5369,11 @@ Result EditorAssetService::CreateRuntimePrefabFromNode(EditorServiceContext& Con
     {
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to finalize source asset: " + OutputPath.string()));
+    }
+
+    if (!CreatedAssetId.IsNull())
+    {
+        UpsertAuthoredAssetIdentityIndexEntry(AssetRoot, OutputPath, CreatedAssetId);
     }
 
     auto RefreshResult = RefreshDiscovery();
@@ -5009,13 +5460,15 @@ Result EditorAssetService::CreateSourceAssetByType(EditorServiceContext& Context
         ::operator delete(Storage, std::align_val_t(Descriptor->Type->Align));
     };
 
-    const auto* Asset = static_cast<const IAsset*>(TypeRegistry::Instance().Cast(Descriptor->Type->Id, StaticTypeId<IAsset>(), Storage));
+    auto* Asset = static_cast<IAsset*>(TypeRegistry::Instance().Cast(Descriptor->Type->Id, StaticTypeId<IAsset>(), Storage));
     if (!Asset)
     {
         DestroyStorage();
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Authored asset type does not cast to IAsset"));
     }
 
+    StampSourceAssetIdentity(*Asset, ::SnAPI::AssetPipeline::AssetId::Generate(), LogicalName);
+    const ::SnAPI::AssetPipeline::AssetId CreatedAssetId = Asset->AssetId;
     std::ostringstream JsonOutput{};
     const Result SaveResult = Asset->Save(JsonOutput);
     DestroyStorage();
@@ -5037,6 +5490,20 @@ Result EditorAssetService::CreateSourceAssetByType(EditorServiceContext& Context
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to write authored asset: " + OutputPath.string()));
     }
+    File.flush();
+    if (!File.good())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to flush authored asset: " + OutputPath.string()));
+    }
+    File.close();
+    if (File.fail())
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError,
+                                         "Failed to finalize authored asset: " + OutputPath.string()));
+    }
+
+    UpsertAuthoredAssetIdentityIndexEntry(AssetRoot, OutputPath, CreatedAssetId);
 
     auto RefreshResult = RefreshDiscovery();
     if (!RefreshResult)
@@ -5145,6 +5612,7 @@ Result EditorAssetService::CreatePrefabSourceAssetByNodeType(EditorServiceContex
         return std::unexpected(AssetResult.error());
     }
 
+    StampSourceAssetIdentity(*AssetResult, ::SnAPI::AssetPipeline::AssetId::Generate(), LogicalName);
     auto SourceJson = SerializeAuthoredAssetToJson(*AssetResult);
     if (!SourceJson)
     {
@@ -5184,6 +5652,8 @@ Result EditorAssetService::CreatePrefabSourceAssetByNodeType(EditorServiceContex
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to finalize prefab asset: " + OutputPath.string()));
     }
+
+    UpsertAuthoredAssetIdentityIndexEntry(AssetRoot, OutputPath, AssetResult->AssetId);
 
     auto RefreshResult = RefreshDiscovery();
     if (!RefreshResult)
@@ -5586,7 +6056,24 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
         const std::string LeafName = BuildImportedSourceAssetLeaf(GroupLeaf, Document);
         const std::string Extension = FileExtensionForImportedSourceAsset(Document.Asset);
         Document.FinalLogicalName = NormalizeAssetLogicalName(ImportGroupFolder + "/" + LeafName + Extension);
-        Document.FinalAssetId = MakeDeterministicSourceAssetId(Document.FinalLogicalName);
+        const std::filesystem::path OutputPath = (AssetRoot / std::filesystem::path(Document.FinalLogicalName)).lexically_normal();
+        if (std::error_code ExistsError{}; std::filesystem::exists(OutputPath, ExistsError) && !ExistsError)
+        {
+            if (auto ExistingIdentity = LoadAuthoredAssetIdentityFromPath(
+                    std::visit([](const auto& TypedAsset) { return StaticTypeId<std::remove_cvref_t<decltype(TypedAsset)>>(); },
+                               Document.Asset),
+                    OutputPath,
+                    Document.FinalLogicalName);
+                ExistingIdentity && !ExistingIdentity->AssetId.IsNull())
+            {
+                Document.FinalAssetId = ExistingIdentity->AssetId;
+            }
+        }
+        if (Document.FinalAssetId.IsNull())
+        {
+            Document.FinalAssetId = ::SnAPI::AssetPipeline::AssetId::Generate();
+        }
+        StampImportedSourceAssetIdentity(Document.Asset, Document.FinalAssetId, Document.FinalLogicalName);
     }
 
     std::unordered_map<std::string, AssetRefPayload> RefsByOriginalName{};
@@ -5667,6 +6154,8 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
                                              "Failed to write authored asset: " + OutputPath.string()));
         }
 
+        UpsertAuthoredAssetIdentityIndexEntry(AssetRoot, OutputPath, Document.FinalAssetId);
+
         NewAssetIds.insert(Document.FinalAssetId);
         const int DocumentPriority = ImportedPrimarySelectionPriority(Document.Asset);
         if (PrimaryLogicalName.empty() || DocumentPriority > PrimaryLogicalPriority)
@@ -5718,6 +6207,7 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
     {
         std::error_code RemoveError{};
         (void)std::filesystem::remove(StaleFile, RemoveError);
+        RemoveAuthoredAssetIdentityIndexEntry(AssetRoot, StaleFile);
     }
 
     for (const ImportedSourceDocument& Document : Documents)
@@ -5780,6 +6270,7 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         }
         else
         {
+        const std::string OpenedAssetName = Asset->Name;
         AuthoredAssetRegistry::Instance().EnsureBuilt();
         const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByType(Asset->AssetType);
         if (!Descriptor || !Descriptor->Type || !Descriptor->Type->RuntimeOps || !Descriptor->Type->RuntimeOps->DefaultConstruct ||
@@ -5820,6 +6311,12 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
             return std::unexpected(LoadResult.error());
         }
 
+        auto* SourceAsset = static_cast<IAsset*>(TypeRegistry::Instance().Cast(Descriptor->Type->Id, StaticTypeId<IAsset>(), Storage));
+        if (SourceAsset)
+        {
+            StampSourceAssetIdentity(*SourceAsset, Asset->AssetId, Asset->Key);
+        }
+
         ClearAssetEditorState();
         m_assetEditorGenericSourceObject = {
             Storage,
@@ -5843,8 +6340,31 @@ Result EditorAssetService::OpenAssetEditorByKey(const std::string_view Key)
         m_assetEditorTitle = Asset->TypeLabel + " - " + Asset->Name;
         m_assetEditorDocumentState.Reset();
         RefreshAssetEditorDirtyFlags(false);
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        if (Asset->AssetKind == AssetKindMaterialInstance())
+        {
+            if (auto* MaterialInstance = ResolveActiveMaterialInstanceEditorPayload())
+            {
+                const AssetRefPayload BeforeParent = MaterialInstance->ParentMaterial;
+                const auto BeforeScalars = MaterialInstance->Scalars;
+                const auto BeforeVectors = MaterialInstance->Vectors;
+                const auto BeforeTextures = MaterialInstance->Textures;
+                if (auto SyncResult = SyncMaterialInstanceEditorPayloadFromDescriptor(); !SyncResult)
+                {
+                    m_statusMessage = "Material instance descriptor sync warning: " + SyncResult.error().Message;
+                }
+                else if (MaterialInstance->ParentMaterial != BeforeParent ||
+                         MaterialInstance->Scalars != BeforeScalars ||
+                         MaterialInstance->Vectors != BeforeVectors ||
+                         MaterialInstance->Textures != BeforeTextures)
+                {
+                    MarkAssetEditorRuntimeChanged(true);
+                }
+            }
+        }
+#endif
         ++m_assetEditorSessionRevision;
-        m_statusMessage = "Opened source asset: " + Asset->Name;
+        m_statusMessage = "Opened source asset: " + OpenedAssetName;
         return Ok();
         }
     }
@@ -6526,8 +7046,9 @@ void EditorAssetService::TickAssetEditorSession(const float DeltaSeconds)
     #if defined(SNAPI_GF_ENABLE_RENDERER)
     if (Asset->AssetKind == AssetKindMaterialInstance())
     {
-        const std::string CurrentParentKey = m_assetEditorMaterialInstancePayload
-            ? BuildAssetRefIdentity(m_assetEditorMaterialInstancePayload->ParentMaterial)
+        const auto* MaterialInstance = ResolveActiveMaterialInstanceEditorPayload();
+        const std::string CurrentParentKey = MaterialInstance
+            ? BuildAssetRefIdentity(MaterialInstance->ParentMaterial)
             : std::string{};
         if (CurrentParentKey != m_assetEditorMaterialInstanceDescriptorParentKey)
         {
@@ -6690,7 +7211,7 @@ EditorAssetService::AssetEditorSessionView EditorAssetService::AssetEditorSessio
     return View;
 }
 
-Result EditorAssetService::InstantiateArmedAsset(EditorServiceContext& Context)
+Result EditorAssetService::InstantiateArmedAsset(EditorServiceContext& Context, const AssetPlacementRequest& Request)
 {
     if (m_placementAssetKey.empty())
     {
@@ -6698,7 +7219,7 @@ Result EditorAssetService::InstantiateArmedAsset(EditorServiceContext& Context)
     }
 
     const std::string PlacementKey = m_placementAssetKey;
-    auto InstantiateResult = InstantiateAssetByKey(Context, PlacementKey);
+    auto InstantiateResult = InstantiateAssetByKey(Context, PlacementKey, Request);
     if (!InstantiateResult)
     {
         m_statusMessage = "Placement failed: " + InstantiateResult.error().Message;
@@ -6709,7 +7230,9 @@ Result EditorAssetService::InstantiateArmedAsset(EditorServiceContext& Context)
     return Ok();
 }
 
-Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context, const std::string_view Key)
+Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context,
+                                                 const std::string_view Key,
+                                                 const AssetPlacementRequest& Request)
 {
     const DiscoveredAsset* Asset = FindAssetByKey(Key);
     if (!Asset)
@@ -6722,17 +7245,42 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
     }
 
+    AssetPlacementRequest ResolvedRequest = Request;
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
+    if (ResolvedRequest.UseScreenPoint && !ResolvedRequest.UseWorldPosition)
+    {
+        Vec3 HitWorldPosition{};
+        if (TryResolveViewportPlacementWorldPosition(
+                Context,
+                ResolvedRequest.ScreenPositionX,
+                ResolvedRequest.ScreenPositionY,
+                HitWorldPosition))
+        {
+            ResolvedRequest.WorldPosition = HitWorldPosition;
+            ResolvedRequest.UseWorldPosition = true;
+        }
+    }
+#endif
+
     if (Asset->AssetKind == AssetKindLevel())
     {
-        return InstantiateLevelAsset(Context, *Asset);
+        return InstantiateLevelAsset(Context, *Asset, ResolvedRequest);
     }
     if (Asset->AssetKind == AssetKindNode())
     {
-        return InstantiateNodeAsset(Context, *Asset);
+        return InstantiateNodeAsset(Context, *Asset, ResolvedRequest);
     }
     if (Asset->AssetKind == AssetKindWorld())
     {
-        return InstantiateWorldAsset(Context, *Asset);
+        return InstantiateWorldAsset(Context, *Asset, ResolvedRequest);
+    }
+    if (Asset->AssetKind == AssetKindStaticMesh())
+    {
+        return InstantiateStaticMeshAsset(Context, *Asset, ResolvedRequest);
+    }
+    if (Asset->AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture)
+    {
+        return InstantiateTextureAsset(Context, *Asset, ResolvedRequest);
     }
 
     return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported asset kind for instantiation"));
@@ -6884,6 +7432,9 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
             }
         }
 
+        StampSourceAssetIdentity(*StarterLevelAsset,
+                                 ::SnAPI::AssetPipeline::AssetId::Generate(),
+                                 m_editorStarterLevelTemplateAssetPath.filename().string());
         auto JsonResult = SerializeAuthoredAssetToJson(*StarterLevelAsset);
         if (!JsonResult)
         {
@@ -8655,6 +9206,36 @@ void* EditorAssetService::ResolveAssetEditorRuntimeTargetObject() const
     return m_assetEditorTargetObject;
 }
 
+MaterialInstanceAsset* EditorAssetService::ResolveActiveMaterialInstanceEditorPayload()
+{
+    if (m_assetEditorSourceAssetType == StaticTypeId<MaterialInstanceAsset>())
+    {
+        return static_cast<MaterialInstanceAsset*>(m_assetEditorGenericSourceObject.get());
+    }
+
+    if (m_assetEditorMaterialInstancePayload)
+    {
+        return &(*m_assetEditorMaterialInstancePayload);
+    }
+
+    return nullptr;
+}
+
+const MaterialInstanceAsset* EditorAssetService::ResolveActiveMaterialInstanceEditorPayload() const
+{
+    if (m_assetEditorSourceAssetType == StaticTypeId<MaterialInstanceAsset>())
+    {
+        return static_cast<const MaterialInstanceAsset*>(m_assetEditorGenericSourceObject.get());
+    }
+
+    if (m_assetEditorMaterialInstancePayload)
+    {
+        return &(*m_assetEditorMaterialInstancePayload);
+    }
+
+    return nullptr;
+}
+
 bool EditorAssetService::HasAssetEditorRuntimeTarget() const
 {
     return ResolveAssetEditorRuntimeTargetObject() != nullptr && m_assetEditorTargetType != TypeId{};
@@ -8767,6 +9348,23 @@ void EditorAssetService::NotifyActiveAssetEditorRuntimeMutated(const TypeId& Roo
     {
         return;
     }
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    if (m_assetEditorAssetKind == AssetKindMaterialInstance())
+    {
+        if (const auto* MaterialInstance = ResolveActiveMaterialInstanceEditorPayload())
+        {
+            const std::string CurrentParentKey = BuildAssetRefIdentity(MaterialInstance->ParentMaterial);
+            if (CurrentParentKey != m_assetEditorMaterialInstanceDescriptorParentKey)
+            {
+                if (auto SyncResult = SyncMaterialInstanceEditorPayloadFromDescriptor(); !SyncResult)
+                {
+                    m_statusMessage = "Material instance descriptor sync warning: " + SyncResult.error().Message;
+                }
+            }
+        }
+    }
+#endif
 
     MarkAssetEditorRuntimeChanged(m_assetEditorSourceAssetType != TypeId{});
 }
@@ -8926,13 +9524,14 @@ Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
     m_assetEditorMaterialInstanceDescriptorParentKey.clear();
     return Ok();
 #else
-    if (!m_assetEditorMaterialInstancePayload || !m_assetManager)
+    MaterialInstanceAsset* PayloadPtr = ResolveActiveMaterialInstanceEditorPayload();
+    if (!PayloadPtr || !m_assetManager)
     {
         m_assetEditorMaterialInstanceDescriptorParentKey.clear();
         return Ok();
     }
 
-    MaterialInstanceAsset& Payload = *m_assetEditorMaterialInstancePayload;
+    MaterialInstanceAsset& Payload = *PayloadPtr;
     const std::string ParentIdentity = BuildAssetRefIdentity(Payload.ParentMaterial);
     m_assetEditorMaterialInstanceDescriptorParentKey = ParentIdentity;
     if (ParentIdentity.empty())
@@ -9240,6 +9839,7 @@ std::expected<std::string, std::string> EditorAssetService::SerializeAssetEditor
             return std::unexpected(AssetResult.error().Message);
         }
 
+        StampSourceAssetIdentity(*AssetResult, m_assetEditorAssetId, m_assetEditorAssetKey);
         auto SaveResult = SerializeAuthoredAssetToJson(*AssetResult);
         if (!SaveResult)
         {
@@ -9262,6 +9862,7 @@ std::expected<std::string, std::string> EditorAssetService::SerializeAssetEditor
             return std::unexpected(AssetResult.error().Message);
         }
 
+        StampSourceAssetIdentity(*AssetResult, m_assetEditorAssetId, m_assetEditorAssetKey);
         auto SaveResult = SerializeAuthoredAssetToJson(*AssetResult);
         if (!SaveResult)
         {
@@ -9283,6 +9884,7 @@ std::expected<std::string, std::string> EditorAssetService::SerializeAssetEditor
             return std::unexpected(AssetResult.error().Message);
         }
 
+        StampSourceAssetIdentity(*AssetResult, m_assetEditorAssetId, m_assetEditorAssetKey);
         auto SaveResult = SerializeAuthoredAssetToJson(*AssetResult);
         if (!SaveResult)
         {
@@ -9625,7 +10227,9 @@ std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetServ
     return std::move(*CookedResult);
 }
 
-Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
+Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context,
+                                                 const DiscoveredAsset& Asset,
+                                                 const AssetPlacementRequest& Request)
 {
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
@@ -9633,9 +10237,11 @@ Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
     }
 
+    NodeHandle CreatedLevel{};
     LevelAssetLoadParams LoadParams{};
     LoadParams.TargetWorld = WorldPtr;
-    LoadParams.NameOverride = Asset.Name.empty() ? std::string("LevelAsset") : Asset.Name;
+    LoadParams.NameOverride = PlacementAssetBaseName(Asset.Name);
+    LoadParams.OutCreatedLevel = &CreatedLevel;
     auto LoadResult = Asset.SourceFilePath.empty()
         ? m_assetManager->Load<Level>(Asset.AssetId, LoadParams)
         : m_assetManager->Load<Level>(Asset.Name, LoadParams);
@@ -9644,11 +10250,18 @@ Result EditorAssetService::InstantiateLevelAsset(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
     }
 
+    if (Request.OutCreatedRoot != nullptr)
+    {
+        *Request.OutCreatedRoot = CreatedLevel;
+    }
+
     m_statusMessage = "Instantiated Level asset: " + Asset.Name;
     return Ok();
 }
 
-Result EditorAssetService::InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
+Result EditorAssetService::InstantiateNodeAsset(EditorServiceContext& Context,
+                                                const DiscoveredAsset& Asset,
+                                                const AssetPlacementRequest& Request)
 {
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
@@ -9656,24 +10269,17 @@ Result EditorAssetService::InstantiateNodeAsset(EditorServiceContext& Context, c
         return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
     }
 
-    NodeHandle ParentHandle{};
-    const auto Levels = WorldPtr->Levels();
-    if (!Levels.empty())
+    const auto ParentResult = ResolvePlacementParent(*WorldPtr, Request.Parent);
+    if (!ParentResult)
     {
-        ParentHandle = Levels.front();
-    }
-    else
-    {
-        auto DefaultLevelResult = WorldPtr->CreateLevel("Level");
-        if (DefaultLevelResult)
-        {
-            ParentHandle = *DefaultLevelResult;
-        }
+        return std::unexpected(MakeError(EErrorCode::InternalError, ParentResult.error()));
     }
 
+    NodeHandle CreatedRoot{};
     NodeAssetLoadParams LoadParams{};
     LoadParams.TargetWorld = WorldPtr;
-    LoadParams.Parent = ParentHandle;
+    LoadParams.Parent = *ParentResult;
+    LoadParams.OutCreatedRoot = &CreatedRoot;
     auto LoadResult = Asset.SourceFilePath.empty()
         ? m_assetManager->Load<BaseNode>(Asset.AssetId, LoadParams)
         : m_assetManager->Load<BaseNode>(Asset.Name, LoadParams);
@@ -9682,11 +10288,27 @@ Result EditorAssetService::InstantiateNodeAsset(EditorServiceContext& Context, c
         return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
     }
 
+    if (!CreatedRoot.IsNull())
+    {
+        BaseNode* CreatedNode = WorldPtr->BorrowedNode(CreatedRoot);
+        if (CreatedNode && Request.UseWorldPosition)
+        {
+            ApplyPlacementWorldPose(*CreatedNode, Request.WorldPosition);
+        }
+    }
+
+    if (Request.OutCreatedRoot != nullptr)
+    {
+        *Request.OutCreatedRoot = CreatedRoot;
+    }
+
     m_statusMessage = "Instantiated Node asset: " + Asset.Name;
     return Ok();
 }
 
-Result EditorAssetService::InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset)
+Result EditorAssetService::InstantiateWorldAsset(EditorServiceContext& Context,
+                                                 const DiscoveredAsset& Asset,
+                                                 const AssetPlacementRequest& Request)
 {
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
@@ -9704,7 +10326,344 @@ Result EditorAssetService::InstantiateWorldAsset(EditorServiceContext& Context, 
         return std::unexpected(MakeError(EErrorCode::InternalError, LoadResult.error()));
     }
 
+    if (Request.OutCreatedRoot != nullptr)
+    {
+        *Request.OutCreatedRoot = {};
+    }
+
     m_statusMessage = "Instantiated World asset: " + Asset.Name;
+    return Ok();
+}
+
+Result EditorAssetService::InstantiateStaticMeshAsset(EditorServiceContext& Context,
+                                                      const DiscoveredAsset& Asset,
+                                                      const AssetPlacementRequest& Request)
+{
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    const auto ParentResult = ResolvePlacementParent(*WorldPtr, Request.Parent);
+    if (!ParentResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, ParentResult.error()));
+    }
+
+    const std::string NodeName = PlacementAssetBaseName(Asset.Name);
+    auto CreateResult = CreatePlacementBaseNode(*WorldPtr, *ParentResult, NodeName.empty() ? std::string("StaticMesh") : NodeName);
+    if (!CreateResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, CreateResult.error()));
+    }
+
+    NodeHandle CreatedHandle = *CreateResult;
+    BaseNode* Node = WorldPtr->BorrowedNode(CreatedHandle);
+    if (!Node)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to resolve created node for static mesh placement"));
+    }
+
+    const std::string MeshAssetId = Asset.AssetId.ToString();
+
+    Vec3 MeshBoundsCenter{0.0f, 0.0f, 0.0f};
+    Vec3 MeshBoundsHalfExtent{0.5f, 0.5f, 0.5f};
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    {
+        const StaticMeshAssetRef MeshRef(Asset.Name, MeshAssetId);
+        auto StreamResult = MeshRef.LoadRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*m_assetManager);
+        if (StreamResult)
+        {
+            (void)TryComputeVertexStreamSourceBounds(*StreamResult, MeshBoundsCenter, MeshBoundsHalfExtent);
+        }
+    }
+#endif
+
+    {
+        ScopedComponentOnCreateSuppression SuppressOnCreate{};
+
+        auto TransformResult = Node->Add<TransformComponent>();
+        if (!TransformResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, TransformResult.error().Message));
+        }
+        TransformResult->Position = Vec3(0.0f, 0.0f, 0.0f);
+        TransformResult->Rotation = Quat::Identity();
+        TransformResult->Scale = Vec3(1.0f, 1.0f, 1.0f);
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        auto MeshResult = Node->Add<StaticMeshComponent>();
+        if (!MeshResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, MeshResult.error().Message));
+        }
+
+        auto& MeshSettings = MeshResult->EditSettings();
+        MeshSettings.MeshPath.clear();
+        MeshSettings.Visible = true;
+        MeshSettings.CastShadows = true;
+        MeshSettings.SyncFromTransform = true;
+        MeshSettings.RegisterWithRenderer = true;
+        MeshSettings.MeshAsset = StaticMeshAssetRef(Asset.Name, MeshAssetId);
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+        auto ColliderResult = Node->Add<ColliderComponent>();
+        if (!ColliderResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, ColliderResult.error().Message));
+        }
+
+        auto& ColliderSettings = ColliderResult->EditSettings();
+        ColliderSettings.Shape = SnAPI::Physics::EShapeType::Box;
+        ColliderSettings.HalfExtent = MeshBoundsHalfExtent;
+        ColliderSettings.LocalPosition = MeshBoundsCenter;
+        ColliderSettings.LocalRotation = Vec3(0.0f, 0.0f, 0.0f);
+        ColliderSettings.Density = 1.0f;
+        ColliderSettings.Friction = 0.8f;
+        ColliderSettings.Restitution = 0.05f;
+        ColliderSettings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+        ColliderSettings.Mask = kCollisionMaskAll;
+        ColliderSettings.IsTrigger = false;
+
+        RigidBodyComponent::Settings BodySettings{};
+        BodySettings.BodyType = SnAPI::Physics::EBodyType::Static;
+        BodySettings.Mass = 1.0f;
+        BodySettings.EnableCcd = false;
+        BodySettings.SyncFromPhysics = false;
+        BodySettings.SyncToPhysics = true;
+        BodySettings.StartActive = true;
+        BodySettings.EnableRenderInterpolation = false;
+        BodySettings.AutoDeactivateWhenSleeping = true;
+        if (auto RigidBodyResult = Node->Add<RigidBodyComponent>(BodySettings); !RigidBodyResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, RigidBodyResult.error().Message));
+        }
+#endif
+    }
+
+    if (Request.UseWorldPosition)
+    {
+        ApplyPlacementWorldPose(*Node, Request.WorldPosition);
+    }
+
+    (void)WorldPtr->RequestNodeOnCreate(CreatedHandle);
+    if (Request.OutCreatedRoot != nullptr)
+    {
+        *Request.OutCreatedRoot = CreatedHandle;
+    }
+
+    m_statusMessage = "Instantiated StaticMesh asset: " + Asset.Name;
+    return Ok();
+}
+
+Result EditorAssetService::InstantiateTextureAsset(EditorServiceContext& Context,
+                                                   const DiscoveredAsset& Asset,
+                                                   const AssetPlacementRequest& Request)
+{
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Runtime world is not available"));
+    }
+    if (!m_assetManager)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Asset manager is not initialized"));
+    }
+
+    const auto ParentResult = ResolvePlacementParent(*WorldPtr, Request.Parent);
+    if (!ParentResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, ParentResult.error()));
+    }
+
+    const std::string BaseName = PlacementAssetBaseName(Asset.Name);
+    const std::string FolderPath = ParentLogicalAssetFolder(Asset.Name);
+    const std::string MaterialLogicalName = MakeUniqueLogicalName(*m_assetManager, FolderPath, BaseName + "_Material");
+    const std::string MaterialInstanceLogicalName =
+        MakeUniqueLogicalName(*m_assetManager, FolderPath, BaseName + "_MaterialInstance");
+
+    MaterialAsset MaterialPayload{};
+    MaterialPayload.ShaderModule = std::string(kDefaultMaterialShaderModule);
+    MaterialPayload.ShadingModel = std::string(kDefaultMaterialShadingModel);
+    MaterialPayload.FeatureAlbedoMap = true;
+
+    std::vector<std::uint8_t> MaterialBytes{};
+    auto SerializeMaterialResult = SerializeMaterialPayload(MaterialPayload, MaterialBytes);
+    if (!SerializeMaterialResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, SerializeMaterialResult.error().Message));
+    }
+
+    const ::SnAPI::AssetPipeline::AssetId MaterialAssetId = ::SnAPI::AssetPipeline::AssetId::Generate();
+    ::SnAPI::AssetPipeline::RuntimeAssetUpsert MaterialUpsert{};
+    MaterialUpsert.Id = MaterialAssetId;
+    MaterialUpsert.Name = MaterialLogicalName;
+    MaterialUpsert.AssetKind = AssetKindMaterial();
+    MaterialUpsert.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+        PayloadMaterial(),
+        kMaterialPayloadSchemaVersion,
+        std::move(MaterialBytes));
+    MaterialUpsert.Bulk.clear();
+    MaterialUpsert.Dirty = true;
+
+    auto MaterialUpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(MaterialUpsert));
+    if (!MaterialUpsertResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, MaterialUpsertResult.error()));
+    }
+
+    MaterialInstanceAsset MaterialInstancePayload{};
+    MaterialInstancePayload.ParentMaterial.AssetName = MaterialLogicalName;
+    MaterialInstancePayload.ParentMaterial.AssetId = MaterialAssetId.ToString();
+    MaterialTextureParamPayload AlbedoTexture{};
+    AlbedoTexture.SlotName = "Material_Albedo";
+    AlbedoTexture.Texture.AssetName = Asset.Name;
+    AlbedoTexture.Texture.AssetId = Asset.AssetId.ToString();
+    AlbedoTexture.SRGB = true;
+    MaterialInstancePayload.Textures.push_back(std::move(AlbedoTexture));
+
+    std::vector<std::uint8_t> MaterialInstanceBytes{};
+    auto SerializeMaterialInstanceResult =
+        SerializeMaterialInstancePayload(MaterialInstancePayload, MaterialInstanceBytes);
+    if (!SerializeMaterialInstanceResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, SerializeMaterialInstanceResult.error().Message));
+    }
+
+    const ::SnAPI::AssetPipeline::AssetId MaterialInstanceAssetId = ::SnAPI::AssetPipeline::AssetId::Generate();
+    ::SnAPI::AssetPipeline::RuntimeAssetUpsert MaterialInstanceUpsert{};
+    MaterialInstanceUpsert.Id = MaterialInstanceAssetId;
+    MaterialInstanceUpsert.Name = MaterialInstanceLogicalName;
+    MaterialInstanceUpsert.AssetKind = AssetKindMaterialInstance();
+    MaterialInstanceUpsert.Cooked = ::SnAPI::AssetPipeline::TypedPayload(
+        PayloadMaterialInstance(),
+        kMaterialInstancePayloadSchemaVersion,
+        std::move(MaterialInstanceBytes));
+    MaterialInstanceUpsert.Bulk.clear();
+    MaterialInstanceUpsert.Dirty = true;
+
+    auto MaterialInstanceUpsertResult = m_assetManager->UpsertRuntimeAsset(std::move(MaterialInstanceUpsert));
+    if (!MaterialInstanceUpsertResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, MaterialInstanceUpsertResult.error()));
+    }
+
+    auto CreateResult = CreatePlacementBaseNode(*WorldPtr, *ParentResult, BaseName.empty() ? std::string("Texture") : BaseName);
+    if (!CreateResult)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, CreateResult.error()));
+    }
+
+    NodeHandle CreatedHandle = *CreateResult;
+    BaseNode* Node = WorldPtr->BorrowedNode(CreatedHandle);
+    if (!Node)
+    {
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to resolve created node for texture placement"));
+    }
+
+    {
+        ScopedComponentOnCreateSuppression SuppressOnCreate{};
+
+        auto TransformResult = Node->Add<TransformComponent>();
+        if (!TransformResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, TransformResult.error().Message));
+        }
+        TransformResult->Position = Vec3(0.0f, 0.0f, 0.0f);
+        TransformResult->Rotation = Quat::Identity();
+        TransformResult->Scale = Vec3(1.0f, 1.0f, 1.0f);
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        auto MeshResult = Node->Add<StaticMeshComponent>();
+        if (!MeshResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, MeshResult.error().Message));
+        }
+
+        auto& MeshSettings = MeshResult->EditSettings();
+        MeshSettings.MeshPath = "primitive://box";
+        MeshSettings.Visible = true;
+        MeshSettings.CastShadows = true;
+        MeshSettings.SyncFromTransform = true;
+        MeshSettings.RegisterWithRenderer = true;
+        MeshSettings.MaterialInstanceOverrides = {
+            MaterialInstanceAssetRef(MaterialInstanceLogicalName, MaterialInstanceAssetId.ToString())};
+#endif
+
+#if defined(SNAPI_GF_ENABLE_PHYSICS)
+        auto ColliderResult = Node->Add<ColliderComponent>();
+        if (!ColliderResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, ColliderResult.error().Message));
+        }
+
+        auto& ColliderSettings = ColliderResult->EditSettings();
+        ColliderSettings.Shape = SnAPI::Physics::EShapeType::Box;
+        ColliderSettings.HalfExtent = Vec3(0.5f, 0.5f, 0.5f);
+        ColliderSettings.LocalPosition = Vec3(0.0f, 0.0f, 0.0f);
+        ColliderSettings.LocalRotation = Vec3(0.0f, 0.0f, 0.0f);
+        ColliderSettings.Density = 1.0f;
+        ColliderSettings.Friction = 0.8f;
+        ColliderSettings.Restitution = 0.05f;
+        ColliderSettings.Layer = CollisionLayerFlags(ECollisionFilterBits::WorldStatic);
+        ColliderSettings.Mask = kCollisionMaskAll;
+        ColliderSettings.IsTrigger = false;
+
+        RigidBodyComponent::Settings BodySettings{};
+        BodySettings.BodyType = SnAPI::Physics::EBodyType::Static;
+        BodySettings.Mass = 1.0f;
+        BodySettings.EnableCcd = false;
+        BodySettings.SyncFromPhysics = false;
+        BodySettings.SyncToPhysics = true;
+        BodySettings.StartActive = true;
+        BodySettings.EnableRenderInterpolation = false;
+        BodySettings.AutoDeactivateWhenSleeping = true;
+        if (auto RigidBodyResult = Node->Add<RigidBodyComponent>(BodySettings); !RigidBodyResult)
+        {
+            NodeHandle DestroyHandle = CreatedHandle;
+            (void)WorldPtr->DestroyNode(DestroyHandle);
+            return std::unexpected(MakeError(EErrorCode::InternalError, RigidBodyResult.error().Message));
+        }
+#endif
+    }
+
+    if (Request.UseWorldPosition)
+    {
+        ApplyPlacementWorldPose(*Node, Request.WorldPosition);
+    }
+
+    (void)WorldPtr->RequestNodeOnCreate(CreatedHandle);
+    if (auto RefreshResult = RefreshDiscovery(); !RefreshResult)
+    {
+        return RefreshResult;
+    }
+
+    if (Request.OutCreatedRoot != nullptr)
+    {
+        *Request.OutCreatedRoot = CreatedHandle;
+    }
+
+    m_statusMessage = "Instantiated Texture asset: " + Asset.Name;
     return Ok();
 }
 

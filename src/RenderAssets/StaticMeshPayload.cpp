@@ -49,8 +49,7 @@ SNAPI_REFLECT_TYPE(
         .Field(
             "MaterialInstances",
             &StaticMeshPayload::MaterialInstances,
-            EFieldFlagBits::Serialized,
-            EFieldEditorFlagBits::ReadOnly)
+            EFieldFlagBits::Serialized)
         .Field("Streams", &StaticMeshPayload::Streams, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
         .Constructor<>()
         .Register()));

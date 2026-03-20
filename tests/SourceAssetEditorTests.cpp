@@ -1322,6 +1322,443 @@ TEST_CASE("UI property panel persists material instance parent material refs thr
     CHECK(ReopenedInstance->Scalars.front().Value == Catch::Approx(0.42f));
 }
 
+TEST_CASE("Material instance parent assignment immediately seeds editable params from the parent material",
+          "[Assets][Editor][Source][UI]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    std::error_code DirectoryError{};
+    std::filesystem::create_directories(Root.Path / "Rendering", DirectoryError);
+    REQUIRE_FALSE(DirectoryError);
+
+    MaterialAsset ParentMaterial{};
+    ParentMaterial.ShaderModule = "DefaultGBufferMaterial";
+    ParentMaterial.ShadingModel = "GBufferShadingModel";
+    ParentMaterial.FeatureAlbedoMap = true;
+    ParentMaterial.FeatureNormalMap = true;
+    ParentMaterial.FeatureRoughnessMap = true;
+    ParentMaterial.FeatureMetalnessMap = true;
+    ParentMaterial.FeatureOcclusionMap = true;
+    auto ParentJson = SerializeAuthoredAssetToJson(ParentMaterial);
+    REQUIRE(ParentJson);
+
+    MaterialInstanceAsset InstanceAsset{};
+    auto InstanceJson = SerializeAuthoredAssetToJson(InstanceAsset);
+    REQUIRE(InstanceJson);
+
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Parent.material", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(ParentJson->data(), static_cast<std::streamsize>(ParentJson->size()));
+    }
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Child.materialinstance", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(InstanceJson->data(), static_cast<std::streamsize>(InstanceJson->size()));
+    }
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey("Rendering/Child.materialinstance"));
+
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.TargetType == StaticTypeId<MaterialInstanceAsset>());
+    auto* MaterialInstance = static_cast<MaterialInstanceAsset*>(Session.TargetObject);
+    REQUIRE(MaterialInstance != nullptr);
+    CHECK(MaterialInstance->ParentMaterial.AssetName.empty());
+    CHECK(MaterialInstance->Scalars.empty());
+    CHECK(MaterialInstance->Vectors.empty());
+    CHECK(MaterialInstance->Textures.empty());
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+    Panel.SetObjectMutatedHandler(
+        SnAPI::UI::TDelegate<void(const TypeId&, void*)>::Bind([&Host](const TypeId& RootType, void* RootInstance) {
+            Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(RootType, RootInstance);
+        }));
+
+    REQUIRE(Panel.BindObject(Session.TargetType, Session.TargetObject));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    auto ComboBoxes = FindComboBoxesUnder(*UiContext, PanelBuilder.Handle().Id);
+    REQUIRE(ComboBoxes.size() == 1u);
+    auto* Combo = ComboBoxes.front();
+    REQUIRE(Combo != nullptr);
+
+    const auto& Items = Combo->Items();
+    const auto ParentOptionIt = std::find_if(Items.begin(), Items.end(), [](const std::string& Item) {
+        return Item.rfind("Rendering/Parent.material [", 0u) == 0u;
+    });
+    REQUIRE(ParentOptionIt != Items.end());
+    REQUIRE(Combo->SelectByText(*ParentOptionIt, true));
+
+    CHECK(MaterialInstance->ParentMaterial.AssetName == "Rendering/Parent.material");
+    CHECK(MaterialInstance->ParentMaterial.AssetId == SourceAssetIdFromLogicalName("Rendering/Parent.material").ToString());
+
+    REQUIRE(MaterialInstance->Vectors.size() == 1u);
+    CHECK(MaterialInstance->Vectors.front().Name == "Color");
+    CHECK(MaterialInstance->Vectors.front().Value[0] == Catch::Approx(1.0f));
+    CHECK(MaterialInstance->Vectors.front().Value[1] == Catch::Approx(1.0f));
+    CHECK(MaterialInstance->Vectors.front().Value[2] == Catch::Approx(1.0f));
+    CHECK(MaterialInstance->Vectors.front().Value[3] == Catch::Approx(1.0f));
+
+    REQUIRE(MaterialInstance->Scalars.size() == 3u);
+    const auto RoughnessIt = std::find_if(MaterialInstance->Scalars.begin(),
+                                          MaterialInstance->Scalars.end(),
+                                          [](const MaterialScalarParamPayload& Param) {
+                                              return Param.Name == "Roughness";
+                                          });
+    const auto MetallicIt = std::find_if(MaterialInstance->Scalars.begin(),
+                                         MaterialInstance->Scalars.end(),
+                                         [](const MaterialScalarParamPayload& Param) {
+                                             return Param.Name == "Metallic";
+                                         });
+    const auto OcclusionIt = std::find_if(MaterialInstance->Scalars.begin(),
+                                          MaterialInstance->Scalars.end(),
+                                          [](const MaterialScalarParamPayload& Param) {
+                                              return Param.Name == "Occlusion";
+                                          });
+    REQUIRE(RoughnessIt != MaterialInstance->Scalars.end());
+    REQUIRE(MetallicIt != MaterialInstance->Scalars.end());
+    REQUIRE(OcclusionIt != MaterialInstance->Scalars.end());
+    CHECK(RoughnessIt->Value == Catch::Approx(0.8f));
+    CHECK(MetallicIt->Value == Catch::Approx(0.0f));
+    CHECK(OcclusionIt->Value == Catch::Approx(1.0f));
+
+    REQUIRE(MaterialInstance->Textures.size() == 3u);
+    CHECK(std::find_if(MaterialInstance->Textures.begin(),
+                       MaterialInstance->Textures.end(),
+                       [](const MaterialTextureParamPayload& Param) {
+                           return Param.SlotName == "Material_Albedo";
+                       }) != MaterialInstance->Textures.end());
+    CHECK(std::find_if(MaterialInstance->Textures.begin(),
+                       MaterialInstance->Textures.end(),
+                       [](const MaterialTextureParamPayload& Param) {
+                           return Param.SlotName == "Material_Normal";
+                       }) != MaterialInstance->Textures.end());
+    CHECK(std::find_if(MaterialInstance->Textures.begin(),
+                       MaterialInstance->Textures.end(),
+                       [](const MaterialTextureParamPayload& Param) {
+                           return Param.SlotName == "Material_ORM";
+                       }) != MaterialInstance->Textures.end());
+}
+
+TEST_CASE("Source material instance with stale empty params is repaired from its parent on open",
+          "[Assets][Editor][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    std::error_code DirectoryError{};
+    std::filesystem::create_directories(Root.Path / "Rendering", DirectoryError);
+    REQUIRE_FALSE(DirectoryError);
+
+    MaterialAsset ParentMaterial{};
+    ParentMaterial.ShaderModule = "DefaultGBufferMaterial";
+    ParentMaterial.ShadingModel = "GBufferShadingModel";
+    auto ParentJson = SerializeAuthoredAssetToJson(ParentMaterial);
+    REQUIRE(ParentJson);
+
+    MaterialInstanceAsset InstanceAsset{};
+    InstanceAsset.ParentMaterial.AssetName = "Rendering/Parent.material";
+    InstanceAsset.ParentMaterial.AssetId = SourceAssetIdFromLogicalName("Rendering/Parent.material").ToString();
+    auto InstanceJson = SerializeAuthoredAssetToJson(InstanceAsset);
+    REQUIRE(InstanceJson);
+
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Parent.material", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(ParentJson->data(), static_cast<std::streamsize>(ParentJson->size()));
+    }
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Child.materialinstance", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(InstanceJson->data(), static_cast<std::streamsize>(InstanceJson->size()));
+    }
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey("Rendering/Child.materialinstance"));
+
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.TargetType == StaticTypeId<MaterialInstanceAsset>());
+    auto* MaterialInstance = static_cast<MaterialInstanceAsset*>(Session.TargetObject);
+    REQUIRE(MaterialInstance != nullptr);
+    CHECK(MaterialInstance->ParentMaterial.AssetName == "Rendering/Parent.material");
+    REQUIRE(MaterialInstance->Vectors.size() == 1u);
+    CHECK(MaterialInstance->Vectors.front().Name == "Color");
+    REQUIRE(MaterialInstance->Scalars.size() == 3u);
+    CHECK(std::find_if(MaterialInstance->Scalars.begin(),
+                       MaterialInstance->Scalars.end(),
+                       [](const MaterialScalarParamPayload& Param) {
+                           return Param.Name == "Roughness";
+                       }) != MaterialInstance->Scalars.end());
+    CHECK(std::find_if(MaterialInstance->Scalars.begin(),
+                       MaterialInstance->Scalars.end(),
+                       [](const MaterialScalarParamPayload& Param) {
+                           return Param.Name == "Metallic";
+                       }) != MaterialInstance->Scalars.end());
+    CHECK(std::find_if(MaterialInstance->Scalars.begin(),
+                       MaterialInstance->Scalars.end(),
+                       [](const MaterialScalarParamPayload& Param) {
+                           return Param.Name == "Occlusion";
+                       }) != MaterialInstance->Scalars.end());
+    CHECK(MaterialInstance->Textures.empty());
+    CHECK(Session.RuntimeDirty);
+    CHECK(Session.IsDirty);
+}
+
+TEST_CASE("UI property panel persists PawnBase material instance overrides through save and reopen",
+          "[Assets][Editor][Source][UI]")
+{
+    RegisterBuiltinTypes();
+    REQUIRE(TypeAutoRegistry::Instance().Ensure(StaticTypeId<PawnBase>()));
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+    EditorServiceContext Context(Host);
+
+    std::error_code DirectoryError{};
+    std::filesystem::create_directories(Root.Path / "Rendering", DirectoryError);
+    REQUIRE_FALSE(DirectoryError);
+
+    MaterialInstanceAsset InstanceAsset{};
+    auto InstanceJson = SerializeAuthoredAssetToJson(InstanceAsset);
+    REQUIRE(InstanceJson);
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "PawnOverride.materialinstance", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(InstanceJson->data(), static_cast<std::streamsize>(InstanceJson->size()));
+    }
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.CreatePrefabSourceAssetByNodeType(
+        Context,
+        StaticTypeId<PawnBase>(),
+        "TypedPawn",
+        "Gameplay"));
+
+    const auto* Created = Host.AssetService.SelectedAsset();
+    REQUIRE(Created != nullptr);
+    const std::string CreatedKey = Created->Key;
+    REQUIRE(CreatedKey == "Gameplay/TypedPawn.prefab");
+
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.TargetType == StaticTypeId<PawnBase>());
+
+    auto* PawnNode = static_cast<PawnBase*>(Session.TargetObject);
+    REQUIRE(PawnNode != nullptr);
+    auto MeshResult = PawnNode->Component<StaticMeshComponent>();
+    REQUIRE(MeshResult);
+    auto* Mesh = &(*MeshResult);
+    Mesh->EditSettings().MaterialInstanceOverrides.emplace_back();
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindObject(StaticTypeId<StaticMeshComponent>(), Mesh));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    const auto LabelId = FindTextElementByText(*UiContext, PanelBuilder.Handle().Id, "Slot 0");
+    REQUIRE(LabelId.has_value());
+    const SnAPI::UI::ElementId RowId = UiContext->GetParent(*LabelId);
+    REQUIRE(RowId.Value != 0);
+
+    auto ComboBoxes = FindComboBoxesUnder(*UiContext, RowId);
+    REQUIRE(ComboBoxes.size() == 1u);
+    auto* Combo = ComboBoxes.front();
+    REQUIRE(Combo != nullptr);
+
+    const auto& Items = Combo->Items();
+    const auto OptionIt = std::find_if(Items.begin(), Items.end(), [](const std::string& Item) {
+        return Item.rfind("Rendering/PawnOverride.materialinstance [", 0u) == 0u;
+    });
+    REQUIRE(OptionIt != Items.end());
+    REQUIRE(Combo->SelectByText(*OptionIt, true));
+
+    REQUIRE(Mesh->GetSettings().MaterialInstanceOverrides.size() == 1u);
+    CHECK(Mesh->GetSettings().MaterialInstanceOverrides.front().GetAssetName() == "Rendering/PawnOverride.materialinstance");
+    CHECK(Mesh->GetSettings().MaterialInstanceOverrides.front().GetAssetId() ==
+          SourceAssetIdFromLogicalName("Rendering/PawnOverride.materialinstance").ToString());
+
+    REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    NodeAsset SavedPrefab{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / "Gameplay" / "TypedPawn.prefab"),
+        SavedPrefab));
+    REQUIRE(SavedPrefab.Nodes.size() == 1u);
+    const auto ComponentIt = std::find_if(
+        SavedPrefab.Nodes.front().Components.begin(),
+        SavedPrefab.Nodes.front().Components.end(),
+        [](const NodeComponentAsset& Component) {
+            return Component.Type == StaticTypeId<StaticMeshComponent>();
+        });
+    REQUIRE(ComponentIt != SavedPrefab.Nodes.front().Components.end());
+
+    Host.AssetService.CloseAssetEditor();
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey(CreatedKey));
+
+    const auto ReopenedSession = Host.AssetService.AssetEditorSession();
+    REQUIRE(ReopenedSession.IsOpen);
+    auto* ReopenedPawn = static_cast<PawnBase*>(ReopenedSession.TargetObject);
+    REQUIRE(ReopenedPawn != nullptr);
+    auto ReopenedMeshResult = ReopenedPawn->Component<StaticMeshComponent>();
+    REQUIRE(ReopenedMeshResult);
+    auto* ReopenedMesh = &(*ReopenedMeshResult);
+    REQUIRE(ReopenedMesh->GetSettings().MaterialInstanceOverrides.size() == 1u);
+    CHECK(ReopenedMesh->GetSettings().MaterialInstanceOverrides.front().GetAssetName() ==
+          "Rendering/PawnOverride.materialinstance");
+    CHECK(ReopenedMesh->GetSettings().MaterialInstanceOverrides.front().GetAssetId() ==
+          SourceAssetIdFromLogicalName("Rendering/PawnOverride.materialinstance").ToString());
+}
+
+TEST_CASE("UI property panel persists authored static mesh material instance refs and closes cleanly",
+          "[Assets][Editor][Source][UI]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    std::error_code DirectoryError{};
+    std::filesystem::create_directories(Root.Path / "Rendering", DirectoryError);
+    REQUIRE_FALSE(DirectoryError);
+
+    MaterialInstanceAsset InstanceAsset{};
+    auto InstanceJson = SerializeAuthoredAssetToJson(InstanceAsset);
+    REQUIRE(InstanceJson);
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "MeshOverride.materialinstance", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(InstanceJson->data(), static_cast<std::streamsize>(InstanceJson->size()));
+    }
+
+    StaticMeshAsset MeshAsset{};
+    MeshAsset.Mesh.Name = "UnitMesh";
+    MeshAsset.Mesh.MaterialInstances.emplace_back();
+    auto MeshJson = SerializeAuthoredAssetToJson(MeshAsset);
+    REQUIRE(MeshJson);
+    {
+        std::ofstream Out(Root.Path / "Rendering" / "Unit.staticmesh", std::ios::binary | std::ios::trunc);
+        REQUIRE(Out.is_open());
+        Out.write(MeshJson->data(), static_cast<std::streamsize>(MeshJson->size()));
+    }
+
+    REQUIRE(Host.AssetService.RefreshDiscovery());
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey("Rendering/Unit.staticmesh"));
+
+    const auto Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    REQUIRE(Session.TargetType == StaticTypeId<StaticMeshAsset>());
+
+    auto* Mesh = static_cast<StaticMeshAsset*>(Session.TargetObject);
+    REQUIRE(Mesh != nullptr);
+    REQUIRE(Mesh->Mesh.MaterialInstances.size() == 1u);
+    CHECK(Mesh->Mesh.MaterialInstances.front().IsNull());
+
+    auto UiContext = std::make_unique<SnAPI::UI::UIContext>();
+    UiContext->EnsureDefaultSetup();
+    UiContext->SetViewportSize(900.0f, 1200.0f);
+    UiContext->RegisterElementType<UIPropertyPanel>();
+
+    auto RootBuilder = UiContext->Root();
+    RootBuilder.Element().Padding().Set(0.0f);
+    RootBuilder.Element().Gap().Set(0.0f);
+
+    auto PanelBuilder = RootBuilder.Add(UIPropertyPanel{});
+    auto& Panel = PanelBuilder.Element();
+    Panel.Width().Set(SnAPI::UI::Sizing::Fill());
+    Panel.Height().Set(SnAPI::UI::Sizing::Fill());
+
+    REQUIRE(Panel.BindObject(Session.TargetType, Session.TargetObject));
+
+    SnAPI::UI::RenderPacketList Packets{};
+    UiContext->BuildRenderPackets(Packets);
+
+    const auto LabelId = FindTextElementByText(*UiContext, PanelBuilder.Handle().Id, "Slot 0");
+    REQUIRE(LabelId.has_value());
+    const SnAPI::UI::ElementId RowId = UiContext->GetParent(*LabelId);
+    REQUIRE(RowId.Value != 0);
+
+    auto ComboBoxes = FindComboBoxesUnder(*UiContext, RowId);
+    REQUIRE(ComboBoxes.size() == 1u);
+    auto* Combo = ComboBoxes.front();
+    REQUIRE(Combo != nullptr);
+
+    const auto& Items = Combo->Items();
+    const auto OptionIt = std::find_if(Items.begin(), Items.end(), [](const std::string& Item) {
+        return Item.rfind("Rendering/MeshOverride.materialinstance [", 0u) == 0u;
+    });
+    REQUIRE(OptionIt != Items.end());
+    REQUIRE(Combo->SelectByText(*OptionIt, true));
+
+    REQUIRE(Mesh->Mesh.MaterialInstances.size() == 1u);
+    CHECK(Mesh->Mesh.MaterialInstances.front().GetAssetName() == "Rendering/MeshOverride.materialinstance");
+    CHECK(Mesh->Mesh.MaterialInstances.front().GetAssetId() ==
+          SourceAssetIdFromLogicalName("Rendering/MeshOverride.materialinstance").ToString());
+
+    REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    StaticMeshAsset SavedMesh{};
+    REQUIRE(DeserializeAuthoredAssetFromJson(
+        ReadTextFile(Root.Path / "Rendering" / "Unit.staticmesh"),
+        SavedMesh));
+    REQUIRE(SavedMesh.Mesh.MaterialInstances.size() == 1u);
+    CHECK(SavedMesh.Mesh.MaterialInstances.front().GetAssetName() == "Rendering/MeshOverride.materialinstance");
+    CHECK(SavedMesh.Mesh.MaterialInstances.front().GetAssetId() ==
+          SourceAssetIdFromLogicalName("Rendering/MeshOverride.materialinstance").ToString());
+
+    Host.AssetService.CloseAssetEditor();
+    REQUIRE(Host.AssetService.OpenAssetEditorByKey("Rendering/Unit.staticmesh"));
+
+    const auto ReopenedSession = Host.AssetService.AssetEditorSession();
+    REQUIRE(ReopenedSession.IsOpen);
+    auto* ReopenedMesh = static_cast<StaticMeshAsset*>(ReopenedSession.TargetObject);
+    REQUIRE(ReopenedMesh != nullptr);
+    REQUIRE(ReopenedMesh->Mesh.MaterialInstances.size() == 1u);
+    CHECK(ReopenedMesh->Mesh.MaterialInstances.front().GetAssetName() == "Rendering/MeshOverride.materialinstance");
+    CHECK(ReopenedMesh->Mesh.MaterialInstances.front().GetAssetId() ==
+          SourceAssetIdFromLogicalName("Rendering/MeshOverride.materialinstance").ToString());
+}
+
 #endif
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
@@ -1389,6 +1826,13 @@ TEST_CASE("World render settings prefab saves referenced fog params without dead
 
     Host.AssetService.NotifyActiveAssetEditorRuntimeMutated(Session.TargetType, Session.TargetObject);
     REQUIRE(Host.AssetService.SaveActiveAssetEditor());
+
+    Session = Host.AssetService.AssetEditorSession();
+    REQUIRE(Session.IsOpen);
+    auto* SavedSessionSettingsNode = static_cast<WorldRenderSettings*>(Session.TargetObject);
+    REQUIRE(SavedSessionSettingsNode != nullptr);
+    CHECK(SavedSessionSettingsNode->GetHeightFogParams().GetAssetName() == FogAssetKey);
+    CHECK(SavedSessionSettingsNode->GetHeightFogParams().GetAssetId() == FogAssetId);
 
     const std::string SavedJson = ReadTextFile(Root.Path / "Rendering" / "UnitWorldRenderSettings.prefab");
     CHECK(SavedJson.find("\"HeightFogParams\"") != std::string::npos);
@@ -2053,8 +2497,8 @@ TEST_CASE("Editor asset service imports models into authored sibling assets and 
     StaticMeshAsset SavedMesh{};
     REQUIRE(DeserializeAuthoredAssetFromJson(ReadTextFile(Root.Path / std::filesystem::path(StaticMeshes.front()->Key)), SavedMesh));
     REQUIRE(SavedMesh.Mesh.MaterialInstances.size() == 1u);
-    CHECK(SavedMesh.Mesh.MaterialInstances.front().AssetName == MaterialInstances.front()->Key);
-    CHECK(SavedMesh.Mesh.MaterialInstances.front().AssetId == MaterialInstances.front()->AssetId.ToString());
+    CHECK(SavedMesh.Mesh.MaterialInstances.front().GetAssetName() == MaterialInstances.front()->Key);
+    CHECK(SavedMesh.Mesh.MaterialInstances.front().GetAssetId() == MaterialInstances.front()->AssetId.ToString());
 
     MaterialInstanceAsset SavedMaterialInstance{};
     REQUIRE(DeserializeAuthoredAssetFromJson(
@@ -2079,7 +2523,7 @@ TEST_CASE("Editor asset service imports models into authored sibling assets and 
     auto* Mesh = static_cast<StaticMeshAsset*>(Session.TargetObject);
     REQUIRE(Mesh != nullptr);
     REQUIRE(Mesh->Mesh.MaterialInstances.size() == 1u);
-    CHECK(Mesh->Mesh.MaterialInstances.front().AssetName == MaterialInstances.front()->Key);
+    CHECK(Mesh->Mesh.MaterialInstances.front().GetAssetName() == MaterialInstances.front()->Key);
     CHECK(Session.HasImportSettings);
     CHECK(Session.ImportSettingsType == StaticTypeId<AssimpImporterSettings>());
     auto* ImportSettings = static_cast<AssimpImporterSettings*>(Session.ImportSettingsObject);

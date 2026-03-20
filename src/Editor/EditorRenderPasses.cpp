@@ -429,29 +429,76 @@ void GFEditorOverlayPass::CreateShaderProgram()
     const bool NeedsRebuild =
         !m_editorOverlayMaterialInstance
         || !m_editorOverlayMaterial
+        || !m_editorOverlayGizmoMaterialInstance
+        || !m_editorOverlayGizmoMaterial
         || m_editorOverlayMaterial->ShaderModuleName() != Module
-        || m_editorOverlayMaterial->ShadingModelName() != RequiredShadingModel;
+        || m_editorOverlayMaterial->ShadingModelName() != RequiredShadingModel
+        || m_editorOverlayGizmoMaterial->ShaderModuleName() != Module
+        || m_editorOverlayGizmoMaterial->ShadingModelName() != RequiredShadingModel;
     if (!NeedsRebuild)
     {
         return;
     }
 
     m_editorOverlayMaterial = std::make_shared<GFEditorOverlayMaterial>(Module);
+    m_editorOverlayMaterial->SetFeature(GFEditorOverlayContract::Feature::SceneDepth, true);
     m_editorOverlayMaterial->BakeAndCompile();
-    if (!m_editorOverlayMaterial || !m_editorOverlayMaterial->ShaderVariant())
+    m_editorOverlayGizmoMaterial = std::make_shared<GFEditorOverlayMaterial>(Module);
+    m_editorOverlayGizmoMaterial->SetFeature(GFEditorOverlayContract::Feature::SceneDepth, false);
+    m_editorOverlayGizmoMaterial->BakeAndCompile();
+    if (!m_editorOverlayMaterial || !m_editorOverlayMaterial->ShaderVariant()
+        || !m_editorOverlayGizmoMaterial || !m_editorOverlayGizmoMaterial->ShaderVariant())
     {
         SNAPI_RENDERER_LOG_WARNING("GFEditorOverlayPass: failed to build editor overlay material variant");
         m_editorOverlayMaterial.reset();
+        m_editorOverlayGizmoMaterial.reset();
         m_editorOverlayMaterialInstance.reset();
+        m_editorOverlayGizmoMaterialInstance.reset();
         return;
     }
 
     m_editorOverlayMaterialInstance = m_editorOverlayMaterial->CreateMaterialInstance();
-    if (!m_editorOverlayMaterialInstance)
+    m_editorOverlayGizmoMaterialInstance = m_editorOverlayGizmoMaterial->CreateMaterialInstance();
+    if (!m_editorOverlayMaterialInstance || !m_editorOverlayGizmoMaterialInstance)
     {
         SNAPI_RENDERER_LOG_WARNING("GFEditorOverlayPass: failed to create material instance");
         m_editorOverlayMaterial.reset();
+        m_editorOverlayGizmoMaterial.reset();
+        m_editorOverlayMaterialInstance.reset();
+        m_editorOverlayGizmoMaterialInstance.reset();
     }
+}
+
+std::vector<SnAPI::Graphics::PassResource>
+GFEditorOverlayPass::DescribeReadResources(const SnAPI::Graphics::PassContext& Context) const
+{
+    auto Resources = SnAPI::Graphics::GBufferPass::DescribeReadResources(Context);
+
+    const auto Depth = std::get<SnAPI::Graphics::DepthConfig>(
+        Property(PropertyNames::PassDepthConfig).value_or(SnAPI::Graphics::DepthConfig{}));
+    if (!Depth.SampleDepth || Depth.ReadResourceName.empty())
+    {
+        return Resources;
+    }
+
+    const bool AlreadyDeclared = std::ranges::any_of(
+        Resources,
+        [&Depth](const SnAPI::Graphics::PassResource& Resource)
+        {
+            return Resource.Name == Depth.ReadResourceName;
+        });
+    if (AlreadyDeclared)
+    {
+        return Resources;
+    }
+
+    SnAPI::Graphics::PassResource Resource{};
+    Resource.Name = Depth.ReadResourceName;
+    Resource.InitialLayout = Depth.ReadLayout;
+    Resource.DstStageMask = SnAPI::Graphics::EPipelineStageFlagBits::FragmentShader;
+    Resource.DstAccessMask = SnAPI::Graphics::EAccessFlagBits::ShaderRead;
+    Resources.push_back(std::move(Resource));
+    return Resources;
 }
 
 void GFEditorOverlayPass::RenderScene(
@@ -459,7 +506,7 @@ void GFEditorOverlayPass::RenderScene(
     const std::vector<std::shared_ptr<SnAPI::Graphics::IRenderObject>>& RenderObjects)
 {
     SNAPI_RENDERER_PROFILE_SCOPE("Renderer.GFEditorOverlay.RenderScene");
-    if (!m_editorOverlayMaterialInstance)
+    if (!m_editorOverlayMaterialInstance || !m_editorOverlayGizmoMaterialInstance)
     {
         SNAPI_RENDERER_LOG_WARNING("GFEditorOverlayPass: missing material instance, skipping draw");
         return;
@@ -476,8 +523,9 @@ void GFEditorOverlayPass::RenderScene(
         return;
     }
 
-    const auto Variant = m_editorOverlayMaterialInstance->ShaderVariant().lock();
-    if (!Variant)
+    const auto OverlayVariant = m_editorOverlayMaterialInstance->ShaderVariant().lock();
+    const auto GizmoVariant = m_editorOverlayGizmoMaterialInstance->ShaderVariant().lock();
+    if (!OverlayVariant || !GizmoVariant)
     {
         SNAPI_RENDERER_LOG_WARNING("GFEditorOverlayPass: material variant is null, skipping draw");
         return;
@@ -493,6 +541,25 @@ void GFEditorOverlayPass::RenderScene(
 
     auto* VertexFactory = SnAPI::Graphics::VertexFactory::Instance();
     SNAPI_RENDERER_DEBUG_ASSERT_MSG(VertexFactory, "VertexFactory is null");
+
+    for (const auto& Resource : ReadResources())
+    {
+        if (auto* pImage = std::get_if<const SnAPI::Graphics::IGPUImage*>(&Resource.Resource))
+        {
+            if (!*pImage)
+            {
+                continue;
+            }
+
+            const std::string& BindingName = Resource.BindingName.empty() ? Resource.Name : Resource.BindingName;
+            const auto Layout =
+                (Resource.InitialLayout == SnAPI::Graphics::EImageLayout::Undefined)
+                    ? SnAPI::Graphics::EImageLayout::ShaderReadOnlyOptimal
+                    : Resource.InitialLayout;
+            m_editorOverlayMaterialInstance->Texture(BindingName, const_cast<SnAPI::Graphics::IGPUImage*>(*pImage), Layout);
+            m_editorOverlayGizmoMaterialInstance->Texture(BindingName, const_cast<SnAPI::Graphics::IGPUImage*>(*pImage), Layout);
+        }
+    }
 
     std::unordered_map<GFEditorOverlaySourceCacheKey,
                        std::shared_ptr<SnAPI::Graphics::TVertexDataFor<SnAPI::Graphics::GBufferVertexContract>>,
@@ -563,7 +630,15 @@ void GFEditorOverlayPass::RenderScene(
                 continue;
             }
 
-            auto* Pipeline = Variant->GetOrCreatePipeline(m_RenderPass.get(), VertexInputLayout(), m_editorOverlayMaterial->PipelineState());
+            const std::uint32_t AxisTag =
+                EditorImmediateAxisTag(RenderObject.get(), SnAPI::Graphics::ERenderPassType::EditorOverlay);
+            const bool IsGizmo = AxisTag != 0u;
+
+            auto& ActiveMaterial = IsGizmo ? m_editorOverlayGizmoMaterial : m_editorOverlayMaterial;
+            auto& ActiveMaterialInstance = IsGizmo ? m_editorOverlayGizmoMaterialInstance : m_editorOverlayMaterialInstance;
+            auto& ActiveVariant = IsGizmo ? GizmoVariant : OverlayVariant;
+
+            auto* Pipeline = ActiveVariant->GetOrCreatePipeline(m_RenderPass.get(), VertexInputLayout(), ActiveMaterial->PipelineState());
             if (!Pipeline)
             {
                 continue;
@@ -582,13 +657,12 @@ void GFEditorOverlayPass::RenderScene(
             PushConstantData.Model = (ViewNoRotation * RigidPartTransform).cast<float>();
             PushConstantData.PrevModel = (PrevViewNoRotation * PrevRigidPartTransform).cast<float>();
             PushConstantData.InstanceOffset = 0u;
-            PushConstantData.AxisTag =
-                EditorImmediateAxisTag(RenderObject.get(), SnAPI::Graphics::ERenderPassType::EditorOverlay);
+            PushConstantData.AxisTag = AxisTag;
 
-            m_editorOverlayMaterialInstance->Buffer("GFEditorOverlay_CameraData", CurrentCameraPerFrameUBO());
-            m_editorOverlayMaterialInstance->PushConstant(&PushConstantData, sizeof(GFEditorOverlayCameraPerObject), 0);
-            m_editorOverlayMaterialInstance->Commit();
-            m_editorOverlayMaterialInstance->Bind(pCommandBuffer, Variant->PipelineLayout());
+            ActiveMaterialInstance->Buffer("GFEditorOverlay_CameraData", CurrentCameraPerFrameUBO());
+            ActiveMaterialInstance->PushConstant(&PushConstantData, sizeof(GFEditorOverlayCameraPerObject), 0);
+            ActiveMaterialInstance->Commit();
+            ActiveMaterialInstance->Bind(pCommandBuffer, ActiveVariant->PipelineLayout());
 
             SnAPI::Graphics::VertexSourceSubMesh SubMesh{};
             if (!Source->SubMesh(static_cast<std::uint32_t>(SubMeshIndex), SubMesh))

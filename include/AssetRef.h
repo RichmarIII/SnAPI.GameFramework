@@ -1123,6 +1123,16 @@ public:
                     continue;
                 }
 
+                std::string Extension = SourcePath.extension().string();
+                std::transform(Extension.begin(), Extension.end(), Extension.begin(), [](const unsigned char Character) {
+                    return static_cast<char>(std::tolower(Character));
+                });
+                const AuthoredAssetDescriptor* Descriptor = AuthoredAssetRegistry::Instance().FindByExtension(Extension);
+                if (!Descriptor)
+                {
+                    continue;
+                }
+
                 std::error_code RelativeError{};
                 std::filesystem::path Relative = std::filesystem::relative(SourcePath, AssetRoot, RelativeError);
                 if (RelativeError)
@@ -1145,7 +1155,21 @@ public:
                     continue;
                 }
 
-                TryAppendEntry(LogicalName, std::nullopt, true, &SourcePath);
+                std::optional<::SnAPI::AssetPipeline::AssetId> EffectiveAssetId{};
+                std::string EffectiveLogicalName = LogicalName;
+                if (Descriptor->Type)
+                {
+                    if (auto Identity = LoadAuthoredAssetIdentityFromPath(Descriptor->Type->Id, SourcePath, LogicalName); Identity)
+                    {
+                        EffectiveAssetId = Identity->AssetId;
+                        if (!Identity->LogicalName.empty())
+                        {
+                            EffectiveLogicalName = Identity->LogicalName;
+                        }
+                    }
+                }
+
+                TryAppendEntry(EffectiveLogicalName, EffectiveAssetId, true, &SourcePath);
             }
         }
 

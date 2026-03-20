@@ -5,6 +5,7 @@
 #include "Editor/EditorImportSettings.h"
 
 #include "Handles.h"
+#include "Math.h"
 #include "TypeRegistration.h"
 #include "AssetManager.h"
 #include "RenderAssetPayloads.h"
@@ -224,6 +225,17 @@ public:
      */
     [[nodiscard]] const std::string& PlacementAssetKey() const { return m_placementAssetKey; }
 
+    struct AssetPlacementRequest
+    {
+        NodeHandle Parent{}; /**< @brief Optional explicit parent for hierarchy-style placement. Null falls back to the default scene root/level. */
+        bool UseScreenPoint = false; /**< @brief When true, `ScreenPositionX/Y` should be resolved into a viewport/world placement point if possible. */
+        float ScreenPositionX = 0.0f; /**< @brief Screen-space X captured at drop/click time. */
+        float ScreenPositionY = 0.0f; /**< @brief Screen-space Y captured at drop/click time. */
+        bool UseWorldPosition = false; /**< @brief When true, spawn recipes should place the created root at `WorldPosition`. */
+        Vec3 WorldPosition{0.0f, 0.0f, 0.0f}; /**< @brief Optional resolved world-space placement position for the created root node. */
+        NodeHandle* OutCreatedRoot = nullptr; /**< @brief Optional out-pointer receiving the created root node when one exists. */
+    };
+
     /**
      * @brief Select one discovered asset by key.
      * @param Key Discovery key of the asset to select.
@@ -235,7 +247,7 @@ public:
      * @brief Arm one asset for scene placement.
      * @param Key Discovery key of the asset to place.
      * @return Success or an error.
-     * @remarks Only node, level, and world assets are placeable through this path.
+     * @remarks Node, level, world, static-mesh, and texture assets are placeable through this path.
      */
     Result ArmPlacementByKey(std::string_view Key);
     /**
@@ -519,15 +531,17 @@ public:
      * @return Success or an error.
      * @post On success, placement mode is cleared.
      */
-    Result InstantiateArmedAsset(EditorServiceContext& Context);
+    Result InstantiateArmedAsset(EditorServiceContext& Context, const AssetPlacementRequest& Request);
     /**
      * @brief Instantiate one asset into the active runtime world.
      * @param Context Borrowed editor-service context.
      * @param Key Discovery key of the asset to instantiate.
      * @return Success or an error.
-     * @remarks Only node, level, and world assets are supported by this path.
+     * @remarks Node, level, world, static-mesh, and texture assets are supported by this path.
      */
-    Result InstantiateAssetByKey(EditorServiceContext& Context, std::string_view Key);
+    Result InstantiateAssetByKey(EditorServiceContext& Context,
+                                 std::string_view Key,
+                                 const AssetPlacementRequest& Request);
     /**
      * @brief Create a new project on disk and load it immediately.
      * @param Context Borrowed editor-service context.
@@ -592,9 +606,11 @@ private:
         const DiscoveredAsset& Asset) const;
     [[nodiscard]] std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> BuildCookedPayloadForAsset(
         const DiscoveredAsset& Asset);
-    Result InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
-    Result InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
-    Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset);
+    Result InstantiateNodeAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset, const AssetPlacementRequest& Request);
+    Result InstantiateLevelAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset, const AssetPlacementRequest& Request);
+    Result InstantiateWorldAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset, const AssetPlacementRequest& Request);
+    Result InstantiateStaticMeshAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset, const AssetPlacementRequest& Request);
+    Result InstantiateTextureAsset(EditorServiceContext& Context, const DiscoveredAsset& Asset, const AssetPlacementRequest& Request);
     Result RebuildAssetManager();
     Result EnsureEditorTemplateAssets(EditorServiceContext& Context);
     Result EnsureProjectShaderDirectory(const std::filesystem::path& ProjectAssetRoot);
@@ -627,6 +643,8 @@ private:
     void MarkAssetEditorImportSettingsChanged(bool RefreshDiscoveryState = false);
     void MarkAssetEditorRuntimeSaved();
     void MarkAssetEditorImportSettingsSaved();
+    [[nodiscard]] MaterialInstanceAsset* ResolveActiveMaterialInstanceEditorPayload();
+    [[nodiscard]] const MaterialInstanceAsset* ResolveActiveMaterialInstanceEditorPayload() const;
     Result SyncMaterialInstanceEditorPayloadFromDescriptor();
     struct AssetImportMetadataEntry
     {

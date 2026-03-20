@@ -17,7 +17,7 @@ struct StaticMeshAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticMeshAsset";
 
-    SnField(SnKey("Mesh"), SnReadOnly)
+    SnField(SnKey("Mesh"))
     StaticMeshPayload Mesh{};
     SnField(SnKey("Streams"), SnReadOnly, SnAdvanced)
     std::vector<MeshStreamSourcePayload> Streams{};

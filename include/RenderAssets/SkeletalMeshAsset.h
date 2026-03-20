@@ -19,7 +19,7 @@ struct SkeletalMeshAsset : public IAsset
 {
     static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalMeshAsset";
 
-    SnField(SnKey("BaseMesh"), SnReadOnly)
+    SnField(SnKey("BaseMesh"))
     StaticMeshAsset BaseMesh{};
     SnField(SnKey("Bones"), SnReadOnly)
     std::vector<SkeletalBonePayload> Bones{};

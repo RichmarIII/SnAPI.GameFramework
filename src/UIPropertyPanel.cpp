@@ -74,6 +74,8 @@ constexpr float kVectorGap = 2.0f;
 constexpr int kFormatNumberPrecision = 9;
 constexpr uint32_t kFloatEditorPrecision = 7u;
 constexpr uint32_t kDoubleEditorPrecision = 9u;
+constexpr std::uint64_t kSignatureOffset = 1469598103934665603ull;
+constexpr std::uint64_t kSignaturePrime = 1099511628211ull;
 
 using SnAPI::UI::Color;
 
@@ -92,6 +94,29 @@ constexpr Color kAxisW{220, 196, 138, 255};
 constexpr std::string_view kAssetRefNoneOption = "<None>";
 
 [[nodiscard]] std::string TrimCopy(std::string_view Text);
+
+void HashSignatureByte(std::uint64_t& Hash, const std::uint8_t Value)
+{
+  Hash ^= static_cast<std::uint64_t>(Value);
+  Hash *= kSignaturePrime;
+}
+
+void HashSignatureText(std::uint64_t& Hash, std::string_view Text)
+{
+  for (const unsigned char Character : Text)
+  {
+    HashSignatureByte(Hash, Character);
+  }
+  HashSignatureByte(Hash, 0xffu);
+}
+
+void HashSignatureU64(std::uint64_t& Hash, const std::uint64_t Value)
+{
+  for (std::uint32_t Shift = 0; Shift < 64u; Shift += 8u)
+  {
+    HashSignatureByte(Hash, static_cast<std::uint8_t>((Value >> Shift) & 0xffu));
+  }
+}
 
 [[nodiscard]] bool IsElementWithinSubtree(SnAPI::UI::UIContext& Context,
                                           SnAPI::UI::ElementId Element,
@@ -400,8 +425,25 @@ struct GenericAssetRefEntry
         continue;
       }
 
-      TryAppendEntry(LogicalName,
-                     SourceAssetIdFromLogicalName(LogicalName),
+      ::SnAPI::AssetPipeline::AssetId EffectiveAssetId = SourceAssetIdFromLogicalName(LogicalName);
+      std::string EffectiveLogicalName = LogicalName;
+      if (Descriptor->Type)
+      {
+        if (auto Identity = LoadAuthoredAssetIdentityFromPath(Descriptor->Type->Id, SourcePath, LogicalName); Identity)
+        {
+          if (!Identity->LogicalName.empty())
+          {
+            EffectiveLogicalName = Identity->LogicalName;
+          }
+          if (!Identity->AssetId.IsNull())
+          {
+            EffectiveAssetId = Identity->AssetId;
+          }
+        }
+      }
+
+      TryAppendEntry(EffectiveLogicalName,
+                     EffectiveAssetId,
                      Descriptor->CookedAssetKind);
     }
   }
@@ -1046,7 +1088,7 @@ bool UIPropertyPanel::BindObject(const TypeId& Type, void* Instance)
 
   if (m_Built && m_ContentRoot.Value != 0 && m_BoundType == Type && m_BoundInstance == Instance)
   {
-    SyncModelToEditors();
+    RefreshFromModel();
     return true;
   }
 
@@ -1172,6 +1214,7 @@ void UIPropertyPanel::ClearObject()
   m_BoundInstance = nullptr;
   m_BoundNodeHandle = {};
   m_BoundSections.clear();
+  m_BoundStructureSignature = 0;
   m_ContentRoot = {};
   std::fill(std::begin(m_Children), std::end(m_Children), SnAPI::UI::ElementId{});
   m_ChildCount = 0;
@@ -1186,6 +1229,14 @@ void UIPropertyPanel::ClearObject()
 void UIPropertyPanel::RefreshFromModel()
 {
   RefreshBoundSectionInstances();
+  const std::uint64_t NextStructureSignature = ComputeBoundStructureSignature();
+  if (m_Built && NextStructureSignature != m_BoundStructureSignature)
+  {
+    if (!RebuildUi())
+    {
+      return;
+    }
+  }
   SyncModelToEditors();
 }
 
@@ -1395,12 +1446,46 @@ bool UIPropertyPanel::RebuildUi()
   }
 
   m_Built = true;
+  m_BoundStructureSignature = ComputeBoundStructureSignature();
   m_RebuildInProgress = false;
   if (m_Context)
   {
     m_Context->MarkLayoutDirty();
   }
   return true;
+}
+
+std::uint64_t UIPropertyPanel::ComputeBoundStructureSignature() const
+{
+  if (m_BoundType != StaticTypeId<MaterialInstanceAsset>() || !m_BoundInstance)
+  {
+    return 0;
+  }
+
+  const auto* MaterialInstance = static_cast<const MaterialInstanceAsset*>(m_BoundInstance);
+  std::uint64_t Hash = kSignatureOffset;
+
+  HashSignatureText(Hash, MaterialInstance->ParentMaterial.AssetName);
+  HashSignatureText(Hash, MaterialInstance->ParentMaterial.AssetId);
+  HashSignatureU64(Hash, MaterialInstance->Scalars.size());
+  for (const MaterialScalarParamPayload& Scalar : MaterialInstance->Scalars)
+  {
+    HashSignatureText(Hash, Scalar.Name);
+  }
+
+  HashSignatureU64(Hash, MaterialInstance->Vectors.size());
+  for (const MaterialVectorParamPayload& Vector : MaterialInstance->Vectors)
+  {
+    HashSignatureText(Hash, Vector.Name);
+  }
+
+  HashSignatureU64(Hash, MaterialInstance->Textures.size());
+  for (const MaterialTextureParamPayload& Texture : MaterialInstance->Textures)
+  {
+    HashSignatureText(Hash, Texture.SlotName);
+  }
+
+  return Hash;
 }
 
 void UIPropertyPanel::RefreshBoundSectionInstances()
@@ -1513,9 +1598,64 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     return;
   }
 
+  const auto resolveCurrentInstance = [this, RootInstance, &PathPrefix](const TypeId& ExpectedType) -> void* {
+    if (PathPrefix.empty())
+    {
+      return RootInstance;
+    }
+
+    void* owner = nullptr;
+    const FieldInfo* field = nullptr;
+    if (!ResolveLeafPath(RootInstance, PathPrefix, owner, field) || !field)
+    {
+      return nullptr;
+    }
+
+    void* current = nullptr;
+    if (field->MutablePointer)
+    {
+      current = field->MutablePointer(owner);
+    }
+
+    if (!current && field->ViewGetter)
+    {
+      if (auto view = field->ViewGetter(owner))
+      {
+        current = view->UnsafeBorrowedMutable();
+        if (!current)
+        {
+          current = const_cast<void*>(view->UnsafeBorrowed());
+        }
+      }
+    }
+
+    if (!current && field->Getter)
+    {
+      if (auto value = field->Getter(owner))
+      {
+        current = value->UnsafeBorrowedMutable();
+        if (!current)
+        {
+          current = const_cast<void*>(value->UnsafeBorrowed());
+        }
+      }
+    }
+
+    if (!current)
+    {
+      return nullptr;
+    }
+
+    if (!TypeRegistry::Instance().Cast(field->FieldType, ExpectedType, current))
+    {
+      return nullptr;
+    }
+    return current;
+  };
+
   if (Type == StaticTypeId<MaterialInstanceAsset>())
   {
-    auto* payload = static_cast<MaterialInstanceAsset*>(RootInstance);
+    auto* payload = static_cast<MaterialInstanceAsset*>(resolveCurrentInstance(Type));
     if (!payload)
     {
       AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null material instance payload");
@@ -1559,9 +1699,9 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     return;
   }
 
-  if (Type == StaticTypeId<Editor::StaticMeshAssetEditorPayload>())
+  if (Type == StaticTypeId<StaticMeshPayload>())
   {
-    auto* payload = static_cast<Editor::StaticMeshAssetEditorPayload*>(RootInstance);
+    auto* payload = static_cast<StaticMeshPayload*>(resolveCurrentInstance(Type));
     if (!payload)
     {
       AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null static mesh payload");
@@ -1598,12 +1738,59 @@ void UIPropertyPanel::BuildTypeIntoContainer(
     const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) {
       return entry.IsConst || entry.ForceReadOnly;
     });
-    AddAssetRefCollectionEditor(
+    AddMaterialInstanceAssetRefCollectionEditor(
       Parent,
       payload->MaterialInstances,
       readOnly,
       "Material Instances",
-      AssetKindMaterialInstance(),
+      "Slot");
+    return;
+  }
+
+  if (Type == StaticTypeId<Editor::StaticMeshAssetEditorPayload>())
+  {
+    auto* payload = static_cast<Editor::StaticMeshAssetEditorPayload*>(resolveCurrentInstance(Type));
+    if (!payload)
+    {
+      AddUnsupportedRow(Parent, PrettyTypeName(Type), "Null static mesh payload");
+      return;
+    }
+
+    const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+    for (const ReflectedFieldRef& fieldRef : reflectedFields)
+    {
+      if (!fieldRef.Field)
+      {
+        continue;
+      }
+
+      if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+      {
+        continue;
+      }
+
+      if (EqualsIgnoreCase(fieldRef.Field->Name, "MaterialInstances"))
+      {
+        continue;
+      }
+
+      auto path = PathPrefix;
+      path.push_back(FieldPathEntry{
+        fieldRef.OwnerType,
+        fieldRef.Field->Name,
+        fieldRef.Field->IsConst,
+        fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
+    }
+
+    const bool readOnly = std::ranges::any_of(PathPrefix, [](const FieldPathEntry& entry) {
+      return entry.IsConst || entry.ForceReadOnly;
+    });
+    AddMaterialInstanceAssetRefCollectionEditor(
+      Parent,
+      payload->MaterialInstances,
+      readOnly,
+      "Material Instances",
       "Slot");
     return;
   }

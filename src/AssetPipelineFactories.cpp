@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -379,6 +380,65 @@ bool BuildRuntimeMeshSourceData(
         return false;
     }
 
+    const auto TryReadPosition = [&Out](const uint32_t VertexIndex, SnAPI::Vector3DF& OutPosition) -> bool
+    {
+        const auto PositionIt = Out.Streams.find(EVertexStream::Position);
+        if (PositionIt == Out.Streams.end())
+        {
+            return false;
+        }
+
+        const RuntimeStreamBuffer& PositionBuffer = PositionIt->second;
+        if (VertexIndex >= PositionBuffer.ElementCount || PositionBuffer.StrideBytes < sizeof(float) * 3u)
+        {
+            return false;
+        }
+
+        const size_t ByteOffset = static_cast<size_t>(VertexIndex) * static_cast<size_t>(PositionBuffer.StrideBytes);
+        if (ByteOffset + (sizeof(float) * 3u) > PositionBuffer.Bytes.size())
+        {
+            return false;
+        }
+
+        std::array<float, 3> Position{};
+        std::memcpy(Position.data(), PositionBuffer.Bytes.data() + ByteOffset, sizeof(float) * 3u);
+        OutPosition = {Position[0], Position[1], Position[2]};
+        return true;
+    };
+
+    const auto ComputeSubMeshBounds =
+        [&Out, &TryReadPosition](const uint32_t IndexOffset, const uint32_t IndexCount, SnAPI::Vector3DF& OutMin, SnAPI::Vector3DF& OutMax) -> bool
+    {
+        if (IndexCount == 0 || static_cast<size_t>(IndexOffset) + static_cast<size_t>(IndexCount) > Out.Indices.size())
+        {
+            return false;
+        }
+
+        OutMin = {
+            std::numeric_limits<float>::max(),
+            std::numeric_limits<float>::max(),
+            std::numeric_limits<float>::max()};
+        OutMax = {
+            -std::numeric_limits<float>::max(),
+            -std::numeric_limits<float>::max(),
+            -std::numeric_limits<float>::max()};
+
+        for (uint32_t RelativeIndex = 0; RelativeIndex < IndexCount; ++RelativeIndex)
+        {
+            const uint32_t VertexIndex = Out.Indices[static_cast<size_t>(IndexOffset) + RelativeIndex];
+            SnAPI::Vector3DF Position{};
+            if (!TryReadPosition(VertexIndex, Position))
+            {
+                return false;
+            }
+
+            OutMin = OutMin.cwiseMin(Position);
+            OutMax = OutMax.cwiseMax(Position);
+        }
+
+        return true;
+    };
+
     constexpr std::array<EMeshStreamSemantic, 7> OptionalSemantics{
         EMeshStreamSemantic::Normal,
         EMeshStreamSemantic::Tangent,
@@ -431,14 +491,18 @@ bool BuildRuntimeMeshSourceData(
         SubMesh.IndexOffset = RuntimeSubMesh.IndexOffset;
         SubMesh.IndexCount = RuntimeSubMesh.IndexCount;
         SubMesh.MaterialSlot = RuntimeSubMesh.MaterialSlot;
-        SubMesh.BoundingBoxMin = {
-            RuntimeSubMesh.BoundsMin[0],
-            RuntimeSubMesh.BoundsMin[1],
-            RuntimeSubMesh.BoundsMin[2]};
-        SubMesh.BoundingBoxMax = {
-            RuntimeSubMesh.BoundsMax[0],
-            RuntimeSubMesh.BoundsMax[1],
-            RuntimeSubMesh.BoundsMax[2]};
+
+        if (!ComputeSubMeshBounds(SubMesh.IndexOffset, SubMesh.IndexCount, SubMesh.BoundingBoxMin, SubMesh.BoundingBoxMax))
+        {
+            SubMesh.BoundingBoxMin = {
+                RuntimeSubMesh.BoundsMin[0],
+                RuntimeSubMesh.BoundsMin[1],
+                RuntimeSubMesh.BoundsMin[2]};
+            SubMesh.BoundingBoxMax = {
+                RuntimeSubMesh.BoundsMax[0],
+                RuntimeSubMesh.BoundsMax[1],
+                RuntimeSubMesh.BoundsMax[2]};
+        }
 
         Out.SubMeshes.push_back(SubMesh);
         MaterialSlotCount = std::max(MaterialSlotCount, RuntimeSubMesh.MaterialSlot + 1);
@@ -450,6 +514,7 @@ bool BuildRuntimeMeshSourceData(
         SubMesh.IndexOffset = 0;
         SubMesh.IndexCount = static_cast<uint32_t>(Out.Indices.size());
         SubMesh.MaterialSlot = 0;
+        (void)ComputeSubMeshBounds(SubMesh.IndexOffset, SubMesh.IndexCount, SubMesh.BoundingBoxMin, SubMesh.BoundingBoxMax);
         Out.SubMeshes.push_back(SubMesh);
         MaterialSlotCount = 1;
     }
@@ -463,7 +528,7 @@ bool BuildRuntimeMeshSourceData(
         if (Slot < RuntimeMesh.MaterialInstances.size())
         {
             const auto& Ref = RuntimeMesh.MaterialInstances[Slot];
-            const std::string Name = !Ref.AssetName.empty() ? Ref.AssetName : Ref.AssetId;
+            const std::string Name = !Ref.GetAssetName().empty() ? Ref.GetAssetName() : Ref.GetAssetId();
             if (!Name.empty())
             {
                 MaterialRecord.Name = Name;

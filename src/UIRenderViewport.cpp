@@ -166,6 +166,16 @@ void UIRenderViewport::ClearPointerEventHandler()
     m_pointerEventHandler = {};
 }
 
+void UIRenderViewport::SetDragDropEventHandler(DragDropEventHandler Handler)
+{
+    m_dragDropEventHandler = std::move(Handler);
+}
+
+void UIRenderViewport::ClearDragDropEventHandler()
+{
+    m_dragDropEventHandler = {};
+}
+
 void UIRenderViewport::Measure(const SnAPI::UI::UIConstraints& Constraints, SnAPI::UI::UISize& OutDesired)
 {
     if (IsCollapsed())
@@ -291,6 +301,24 @@ void UIRenderViewport::OnRoutedEvent(SnAPI::UI::RoutedEventContext& Context)
             }
         }
     }
+
+    if (TypeId == SnAPI::UI::RoutedEventTypes::DragEnter.Id ||
+        TypeId == SnAPI::UI::RoutedEventTypes::DragMove.Id ||
+        TypeId == SnAPI::UI::RoutedEventTypes::DragLeave.Id ||
+        TypeId == SnAPI::UI::RoutedEventTypes::Drop.Id)
+    {
+        auto* DragPayload = static_cast<SnAPI::UI::DragDropEvent*>(Context.Payload());
+        if (!DragPayload)
+        {
+            return;
+        }
+
+        const bool ContainsPointer = m_Rect.Contains(DragPayload->Position);
+        if (m_dragDropEventHandler && m_dragDropEventHandler(*DragPayload, TypeId, ContainsPointer))
+        {
+            Context.SetHandled(true);
+        }
+    }
 }
 
 void UIRenderViewport::OnFocusChanged(const bool Focused)
@@ -305,6 +333,7 @@ void UIRenderViewport::OnDestroyed()
     m_camera = nullptr;
     m_retainedCamera.reset();
     m_pointerEventHandler = {};
+    m_dragDropEventHandler = {};
 }
 
 void UIRenderViewport::ReleaseOwnedResources()

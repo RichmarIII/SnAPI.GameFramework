@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "BuiltinTypes.h"
 #include "RenderAssetImportSettings.h"
 #include "RenderAssetPayloads.h"
 #include "TypeName.h"
@@ -52,7 +53,7 @@ struct StaticMeshAssetEditorPayload
 
     SnField(SnKey("Name"), SnReadOnly)
     std::string Name{}; /**< @brief Logical mesh name stored in the cooked payload. */
-    std::vector<AssetRefPayload> MaterialInstances{}; /**< @brief Ordered material-instance overrides referenced by the mesh sections. */
+    std::vector<MaterialInstanceAssetRef> MaterialInstances{}; /**< @brief Ordered material-instance overrides referenced by the mesh sections. */
 };
 
 } // namespace SnAPI::GameFramework::Editor

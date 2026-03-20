@@ -342,6 +342,7 @@ private:
   void NotifyObjectMutated(const FieldBinding& Binding);
 
   void SyncModelToEditors();
+  [[nodiscard]] std::uint64_t ComputeBoundStructureSignature() const;
 
   TypeId m_BoundType{};
   void* m_BoundInstance = nullptr;
@@ -350,6 +351,7 @@ private:
   SnAPI::UI::ElementId m_ContentRoot{};
   std::vector<FieldBinding> m_Bindings{};
   std::uint64_t m_BindingGeneration = 0;
+  std::uint64_t m_BoundStructureSignature = 0;
   bool m_Built = false;
   bool m_RebuildInProgress = false;
   bool m_SyncingModelToEditors = false;

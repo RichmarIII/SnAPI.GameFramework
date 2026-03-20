@@ -31,8 +31,10 @@ cbuffer GFEditorOverlay_CameraData
 {
     GFEditorOverlay_PerFrame PerFrame;
 };
+#if WITH_SCENE_DEPTH
 [[vk::binding(1, 0)]]
 Sampler2D GBuffer_Depth;
+#endif
 
 public struct GFEditorOverlayVSAttribs : IShadingInput
 {
@@ -103,17 +105,17 @@ public struct GFEditorOverlayShadingModel<M : IGFEditorOverlayHooks> : IShadingM
         if (PerObject.axisTag == 1u)
         {
             baseColor = float3(0.95, 0.32, 0.29);
-            alpha = 0.78;
+            alpha = 0.94;
         }
         else if (PerObject.axisTag == 2u)
         {
             baseColor = float3(0.32, 0.90, 0.40);
-            alpha = 0.78;
+            alpha = 0.94;
         }
         else if (PerObject.axisTag == 3u)
         {
             baseColor = float3(0.30, 0.56, 0.98);
-            alpha = 0.78;
+            alpha = 0.94;
         }
 
         const float3 n = normalize(pin.normalWS);
@@ -122,6 +124,7 @@ public struct GFEditorOverlayShadingModel<M : IGFEditorOverlayHooks> : IShadingM
         const float3 shadedColor = (baseColor * normalSheen) + edgeHighlight;
 
         const bool IsGizmo = (PerObject.axisTag != 0u);
+#if WITH_SCENE_DEPTH
         if (!IsGizmo)
         {
             uint Width = 0u;
@@ -142,6 +145,7 @@ public struct GFEditorOverlayShadingModel<M : IGFEditorOverlayHooks> : IShadingM
                 }
             }
         }
+#endif
 
         out.Overlay_Out = float4(saturate(shadedColor), alpha);
         M::FragmentShader(pin, out);

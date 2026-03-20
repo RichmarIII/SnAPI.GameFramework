@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
+#include "BuiltinTypes.h"
 #include "Expected.h"
 #include "ReflectionAnnotations.h"
-#include "RenderAssets/AssetRefPayload.h"
 #include "TypeName.h"
 
 namespace SnAPI::GameFramework
@@ -75,8 +75,8 @@ struct StaticMeshPayload
     std::array<float, 3> BoundsMax{0.0f, 0.0f, 0.0f};
     SnField(SnKey("SubMeshes"), SnReadOnly)
     std::vector<StaticSubMeshPayload> SubMeshes{};
-    SnField(SnKey("MaterialInstances"), SnReadOnly)
-    std::vector<AssetRefPayload> MaterialInstances{};
+    SnField(SnKey("MaterialInstances"))
+    std::vector<MaterialInstanceAssetRef> MaterialInstances{};
     SnField(SnKey("Streams"), SnReadOnly)
     std::vector<MeshStreamChunkRef> Streams{};
 

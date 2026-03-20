@@ -96,57 +96,6 @@ static_assert(!std::is_polymorphic_v<StaticMeshComponent>, "StaticMeshComponent 
 static_assert(!std::is_polymorphic_v<SkeletalMeshComponent>, "SkeletalMeshComponent must be non-polymorphic runtime type");
 #endif
 
-#if defined(SNAPI_GF_ENABLE_INPUT)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_UI)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_AUDIO)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_NETWORKING)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_UI)
-
-#endif
-
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-
-#endif // SNAPI_GF_ENABLE_RENDERER
-
-#if defined(SNAPI_GF_ENABLE_AUDIO)
-
-#endif // SNAPI_GF_ENABLE_AUDIO
-
-#if defined(SNAPI_GF_ENABLE_PHYSICS)
-
-#if defined(SNAPI_GF_ENABLE_INPUT)
-
-#endif // SNAPI_GF_ENABLE_INPUT
-
-#endif // SNAPI_GF_ENABLE_PHYSICS
-
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-
-#endif // SNAPI_GF_ENABLE_RENDERER
 
 void RegisterBuiltinTypes()
 {

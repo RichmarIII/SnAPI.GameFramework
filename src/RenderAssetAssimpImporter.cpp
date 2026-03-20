@@ -480,6 +480,11 @@ void AppendDependencyUnique(std::vector<SourceRef>& Dependencies, std::unordered
     return Ref;
 }
 
+[[nodiscard]] MaterialInstanceAssetRef MakeMaterialInstanceAssetRef(const ImportedItem& Item)
+{
+    return MaterialInstanceAssetRef(Item.LogicalName, Item.Id.ToString());
+}
+
 template<typename TValue>
 void AppendValueBytes(std::vector<uint8_t>& Bytes, const TValue& Value)
 {
@@ -562,6 +567,80 @@ void AppendArrayBytes(std::vector<uint8_t>& Bytes, const std::array<TValue, N>& 
         }
     }
     return nullptr;
+}
+
+struct StaticMeshNodeReference
+{
+    const aiMesh* Mesh = nullptr;
+    aiMatrix4x4 WorldTransform{};
+};
+
+[[nodiscard]] aiVector3D TransformPoint(const aiMatrix4x4& Transform, const aiVector3D& Value)
+{
+    return {
+        Transform.a1 * Value.x + Transform.a2 * Value.y + Transform.a3 * Value.z + Transform.a4,
+        Transform.b1 * Value.x + Transform.b2 * Value.y + Transform.b3 * Value.z + Transform.b4,
+        Transform.c1 * Value.x + Transform.c2 * Value.y + Transform.c3 * Value.z + Transform.c4,
+    };
+}
+
+[[nodiscard]] aiVector3D TransformDirection(const aiMatrix3x3& Transform, const aiVector3D& Value)
+{
+    return {
+        Transform.a1 * Value.x + Transform.a2 * Value.y + Transform.a3 * Value.z,
+        Transform.b1 * Value.x + Transform.b2 * Value.y + Transform.b3 * Value.z,
+        Transform.c1 * Value.x + Transform.c2 * Value.y + Transform.c3 * Value.z,
+    };
+}
+
+[[nodiscard]] aiVector3D NormalizeOrFallback(const aiVector3D& Value, const aiVector3D& Fallback)
+{
+    const float LengthSquared = (Value.x * Value.x) + (Value.y * Value.y) + (Value.z * Value.z);
+    if (!std::isfinite(LengthSquared) || LengthSquared <= 1e-12f)
+    {
+        return Fallback;
+    }
+
+    const float InvLength = 1.0f / std::sqrt(LengthSquared);
+    return {Value.x * InvLength, Value.y * InvLength, Value.z * InvLength};
+}
+
+void CollectStaticMeshNodeReferences(
+    const aiScene& Scene,
+    aiNode* Node,
+    const aiMatrix4x4& ParentTransform,
+    std::vector<StaticMeshNodeReference>& OutReferences)
+{
+    if (!Node)
+    {
+        return;
+    }
+
+    const aiMatrix4x4 WorldTransform = ParentTransform * Node->mTransformation;
+    for (uint32_t MeshListIndex = 0; MeshListIndex < Node->mNumMeshes; ++MeshListIndex)
+    {
+        const uint32_t MeshIndex = Node->mMeshes[MeshListIndex];
+        if (MeshIndex >= Scene.mNumMeshes)
+        {
+            continue;
+        }
+
+        const aiMesh* Mesh = Scene.mMeshes[MeshIndex];
+        if (!Mesh)
+        {
+            continue;
+        }
+
+        OutReferences.push_back(StaticMeshNodeReference{
+            .Mesh = Mesh,
+            .WorldTransform = WorldTransform,
+        });
+    }
+
+    for (uint32_t ChildIndex = 0; ChildIndex < Node->mNumChildren; ++ChildIndex)
+    {
+        CollectStaticMeshNodeReferences(Scene, Node->mChildren[ChildIndex], WorldTransform, OutReferences);
+    }
 }
 
 void InsertBoneInfluence(
@@ -653,7 +732,7 @@ void InsertBoneInfluence(
 
 struct MaterialImportOutputs
 {
-    std::unordered_map<uint32_t, AssetRefPayload> MaterialInstanceRefsBySlot{};
+    std::unordered_map<uint32_t, MaterialInstanceAssetRef> MaterialInstanceRefsBySlot{};
     std::unordered_set<std::string> TextureDependencies{};
 };
 
@@ -1108,6 +1187,26 @@ struct MeshImportBuffers
 
     const bool ImportAsSkeletal = (ImportSettings.ForceSkeletal || SceneHasBones || SceneHasAnimations) && !ImportSettings.ForceStatic;
 
+    std::vector<StaticMeshNodeReference> StaticMeshReferences{};
+    if (!ImportAsSkeletal)
+    {
+        StaticMeshReferences.reserve(Scene.mNumMeshes);
+        CollectStaticMeshNodeReferences(Scene, Scene.mRootNode, aiMatrix4x4(), StaticMeshReferences);
+        if (StaticMeshReferences.empty())
+        {
+            for (uint32_t MeshIndex = 0; MeshIndex < Scene.mNumMeshes; ++MeshIndex)
+            {
+                if (const aiMesh* Mesh = Scene.mMeshes[MeshIndex])
+                {
+                    StaticMeshReferences.push_back(StaticMeshNodeReference{
+                        .Mesh = Mesh,
+                        .WorldTransform = aiMatrix4x4(),
+                    });
+                }
+            }
+        }
+    }
+
     MaterialImportOutputs MaterialOutputs{};
     EmbeddedTextureImportOutputs EmbeddedTextureOutputs{};
     std::vector<ImportedItem> GeneratedItems{};
@@ -1343,7 +1442,7 @@ struct MeshImportBuffers
 
             MaterialSerializer->SerializeToBytes(&MaterialPayloadData, MaterialItem.Intermediate.Bytes);
             MaterialInstanceSerializer->SerializeToBytes(&MaterialInstancePayloadData, MaterialInstanceItem.Intermediate.Bytes);
-            MaterialOutputs.MaterialInstanceRefsBySlot[MaterialIndex] = MakeAssetRef(MaterialInstanceItem);
+            MaterialOutputs.MaterialInstanceRefsBySlot[MaterialIndex] = MakeMaterialInstanceAssetRef(MaterialInstanceItem);
             GeneratedItems.push_back(std::move(MaterialItem));
             GeneratedItems.push_back(std::move(MaterialInstanceItem));
         }
@@ -1373,12 +1472,26 @@ struct MeshImportBuffers
         return NewIndex;
     };
 
-    for (uint32_t MeshIndex = 0; MeshIndex < Scene.mNumMeshes; ++MeshIndex)
+    const size_t MeshIterationCount = ImportAsSkeletal
+        ? static_cast<size_t>(Scene.mNumMeshes)
+        : StaticMeshReferences.size();
+    for (size_t MeshIndex = 0; MeshIndex < MeshIterationCount; ++MeshIndex)
     {
-        const aiMesh* Mesh = Scene.mMeshes[MeshIndex];
+        const aiMesh* Mesh = ImportAsSkeletal
+            ? Scene.mMeshes[MeshIndex]
+            : StaticMeshReferences[MeshIndex].Mesh;
         if (!Mesh || Mesh->mNumVertices == 0 || Mesh->mNumFaces == 0)
         {
             continue;
+        }
+
+        aiMatrix4x4 StaticWorldTransform{};
+        aiMatrix3x3 StaticNormalTransform{};
+        if (!ImportAsSkeletal)
+        {
+            StaticWorldTransform = StaticMeshReferences[MeshIndex].WorldTransform;
+            StaticNormalTransform = aiMatrix3x3(StaticWorldTransform);
+            StaticNormalTransform.Inverse().Transpose();
         }
 
         const uint32_t VertexOffset = MeshBuffers.VertexCount;
@@ -1399,7 +1512,9 @@ struct MeshImportBuffers
 
         for (uint32_t VertexIndex = 0; VertexIndex < Mesh->mNumVertices; ++VertexIndex)
         {
-            const aiVector3D Position = Mesh->mVertices[VertexIndex];
+            const aiVector3D Position = ImportAsSkeletal
+                ? Mesh->mVertices[VertexIndex]
+                : TransformPoint(StaticWorldTransform, Mesh->mVertices[VertexIndex]);
             AppendArrayBytes(MeshBuffers.Positions, std::array<float, 3>{Position.x, Position.y, Position.z});
 
             for (size_t Axis = 0; Axis < 3; ++Axis)
@@ -1414,6 +1529,10 @@ struct MeshImportBuffers
             if (HasNormals)
             {
                 aiVector3D Normal = Mesh->HasNormals() ? Mesh->mNormals[VertexIndex] : aiVector3D(0.0f, 0.0f, 1.0f);
+                if (!ImportAsSkeletal)
+                {
+                    Normal = NormalizeOrFallback(TransformDirection(StaticNormalTransform, Normal), aiVector3D(0.0f, 0.0f, 1.0f));
+                }
                 AppendArrayBytes(MeshBuffers.Normals, std::array<float, 3>{Normal.x, Normal.y, Normal.z});
             }
 
@@ -1422,7 +1541,11 @@ struct MeshImportBuffers
                 std::array<float, 4> Tangent{1.0f, 0.0f, 0.0f, 1.0f};
                 if (Mesh->HasTangentsAndBitangents())
                 {
-                    const aiVector3D& T = Mesh->mTangents[VertexIndex];
+                    aiVector3D T = Mesh->mTangents[VertexIndex];
+                    if (!ImportAsSkeletal)
+                    {
+                        T = NormalizeOrFallback(TransformDirection(StaticNormalTransform, T), aiVector3D(1.0f, 0.0f, 0.0f));
+                    }
                     Tangent = {T.x, T.y, T.z, 1.0f};
                 }
                 AppendArrayBytes(MeshBuffers.Tangents, Tangent);

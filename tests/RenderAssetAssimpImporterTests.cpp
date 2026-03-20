@@ -392,6 +392,57 @@ std::filesystem::path WriteEmbeddedTextureGltfFixture(const std::filesystem::pat
     return GltfPath;
 }
 
+std::filesystem::path WriteTranslatedNodeGltfFixture(const std::filesystem::path& RootDir)
+{
+    std::filesystem::create_directories(RootDir);
+
+    std::vector<uint8_t> Buffer{};
+    Buffer.reserve(128);
+
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 0.0f);
+    AppendFloat(Buffer, 1.0f);
+    AppendFloat(Buffer, 0.0f);
+    constexpr uint32_t PositionByteLength = 9u * sizeof(float);
+
+    AppendU16(Buffer, 0u);
+    AppendU16(Buffer, 1u);
+    AppendU16(Buffer, 2u);
+    constexpr uint32_t IndexByteOffset = PositionByteLength;
+    constexpr uint32_t IndexByteLength = 3u * sizeof(uint16_t);
+
+    const std::filesystem::path BinPath = RootDir / "translated.bin";
+    WriteBinaryFile(BinPath, Buffer);
+
+    std::ostringstream Json{};
+    Json
+        << "{\n"
+        << "  \"asset\": {\"version\": \"2.0\"},\n"
+        << "  \"buffers\": [{\"uri\": \"translated.bin\", \"byteLength\": " << Buffer.size() << "}],\n"
+        << "  \"bufferViews\": [\n"
+        << "    {\"buffer\": 0, \"byteOffset\": 0, \"byteLength\": " << PositionByteLength << ", \"target\": 34962},\n"
+        << "    {\"buffer\": 0, \"byteOffset\": " << IndexByteOffset << ", \"byteLength\": " << IndexByteLength << ", \"target\": 34963}\n"
+        << "  ],\n"
+        << "  \"accessors\": [\n"
+        << "    {\"bufferView\": 0, \"componentType\": 5126, \"count\": 3, \"type\": \"VEC3\", \"min\": [0, 0, 0], \"max\": [1, 1, 0]},\n"
+        << "    {\"bufferView\": 1, \"componentType\": 5123, \"count\": 3, \"type\": \"SCALAR\"}\n"
+        << "  ],\n"
+        << "  \"meshes\": [{\"primitives\": [{\"attributes\": {\"POSITION\": 0}, \"indices\": 1}]}],\n"
+        << "  \"nodes\": [{\"mesh\": 0, \"translation\": [10.0, 0.0, 0.0]}],\n"
+        << "  \"scenes\": [{\"nodes\": [0]}],\n"
+        << "  \"scene\": 0\n"
+        << "}\n";
+
+    const std::filesystem::path GltfPath = RootDir / "translated_node.gltf";
+    WriteTextFile(GltfPath, Json.str());
+    return GltfPath;
+}
+
 } // namespace
 
 TEST_CASE("Assimp importer emits texture assets for embedded model textures and material refs point to them", "[asset][assimp]")
@@ -637,7 +688,53 @@ TEST_CASE("Assimp importer honors disabled material and texture import options",
     const auto& MaterialRefs = MeshPayloadResult->Mesh.MaterialInstances;
     for (const auto& MaterialRef : MaterialRefs)
     {
-        REQUIRE(MaterialRef.AssetName.empty());
-        REQUIRE(MaterialRef.AssetId.empty());
+        REQUIRE(MaterialRef.GetAssetName().empty());
+        REQUIRE(MaterialRef.GetAssetId().empty());
     }
+}
+
+TEST_CASE("Assimp importer bakes static node transforms into imported mesh bounds", "[asset][assimp]")
+{
+    TestPipelineContext Context{};
+    Context.RegisterSerializer(CreateMaterialPayloadSerializer());
+    Context.RegisterSerializer(CreateMaterialInstancePayloadSerializer());
+    Context.RegisterSerializer(CreateSkeletonPayloadSerializer());
+    Context.RegisterSerializer(CreateAnimationPayloadSerializer());
+    Context.RegisterSerializer(CreateStaticMeshSourcePayloadSerializer());
+    Context.RegisterSerializer(CreateSkeletalMeshSourcePayloadSerializer());
+    Context.RegisterSerializer(std::make_unique<DummyTextureIntermediateSerializer>());
+
+    Context.SetOption("SnAPI.GF.Assimp.ForceStatic", "true");
+    Context.SetOption("SnAPI.GF.Assimp.ImportMaterials", "false");
+    Context.SetOption("SnAPI.GF.Assimp.ImportTextures", "false");
+
+    TempDir Dir{};
+    const std::filesystem::path SourcePath = WriteTranslatedNodeGltfFixture(Dir.Path);
+
+    auto Importer = SnAPI::GameFramework::CreateRenderAssetAssimpImporter();
+    REQUIRE(Importer != nullptr);
+    REQUIRE(Importer->CanImport(SourceRef(SourcePath.string())));
+
+    std::vector<ImportedItem> Items{};
+    REQUIRE(Importer->Import(SourceRef(SourcePath.string(), 789u), Items, Context));
+    REQUIRE(Context.Errors().empty());
+
+    const auto MeshIt = std::ranges::find_if(Items, [](const ImportedItem& Item) {
+        return Item.AssetKind == AssetKindStaticMesh();
+    });
+    REQUIRE(MeshIt != Items.end());
+
+    auto MeshPayloadResult = SnAPI::GameFramework::DeserializeStaticMeshSourcePayload(
+        MeshIt->Intermediate.Bytes.data(),
+        MeshIt->Intermediate.Bytes.size());
+    REQUIRE(MeshPayloadResult.has_value());
+
+    const auto& Mesh = MeshPayloadResult->Mesh;
+    REQUIRE(Mesh.SubMeshes.size() == 1u);
+    REQUIRE(Mesh.BoundsMin[0] == 10.0f);
+    REQUIRE(Mesh.BoundsMax[0] == 11.0f);
+    REQUIRE(Mesh.BoundsMin[1] == 0.0f);
+    REQUIRE(Mesh.BoundsMax[1] == 1.0f);
+    REQUIRE(Mesh.SubMeshes[0].BoundsMin[0] == 10.0f);
+    REQUIRE(Mesh.SubMeshes[0].BoundsMax[0] == 11.0f);
 }

@@ -24,7 +24,28 @@ class IAsset
 public:
     static constexpr const char* kTypeName = "SnAPI::GameFramework::IAsset";
 
+    ::SnAPI::AssetPipeline::AssetId AssetId{};
+    std::string LogicalName{};
+
     virtual ~IAsset() = default;
+
+    void SetPersistentIdentity(const ::SnAPI::AssetPipeline::AssetId& InAssetId, std::string_view InLogicalName)
+    {
+        AssetId = InAssetId;
+        LogicalName = std::string(InLogicalName);
+    }
+
+    void EnsurePersistentIdentity(std::string_view FallbackLogicalName)
+    {
+        if (AssetId.IsNull())
+        {
+            AssetId = ::SnAPI::AssetPipeline::AssetId::Generate();
+        }
+        if (LogicalName.empty())
+        {
+            LogicalName = std::string(FallbackLogicalName);
+        }
+    }
 
     [[nodiscard]] virtual std::string_view DisplayName() const = 0;
     [[nodiscard]] virtual std::string_view FileExtension() const = 0;

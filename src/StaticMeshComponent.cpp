@@ -221,18 +221,6 @@ SnAPI::Graphics::SharedVertexStreamSourcePtr BuildPrimitiveSourceFromMeshPath(co
     return EffectiveRefs;
 }
 
-[[nodiscard]] std::vector<TAssetRef<MaterialInstanceAsset>> BuildMaterialRefsFromPayloads(
-    const std::vector<AssetRefPayload>& Payloads)
-{
-    std::vector<TAssetRef<MaterialInstanceAsset>> Refs{};
-    Refs.reserve(Payloads.size());
-    for (const AssetRefPayload& Payload : Payloads)
-    {
-        Refs.emplace_back(Payload.AssetName, Payload.AssetId);
-    }
-    return Refs;
-}
-
 void ApplyRuntimeOrDefaultMaterialInstances(
     SnAPI::Graphics::IRenderObject& RenderObject,
     RendererSystem& Renderer,
@@ -514,7 +502,7 @@ bool StaticMeshComponent::EnsureMeshLoaded()
                     m_loadedFromAsset = true;
                     if (AuthoredMesh && *AuthoredMesh)
                     {
-                        m_loadedMeshMaterialInstances = BuildMaterialRefsFromPayloads((*AuthoredMesh)->Mesh.MaterialInstances);
+                        m_loadedMeshMaterialInstances = (*AuthoredMesh)->Mesh.MaterialInstances;
                     }
                     else
                     {

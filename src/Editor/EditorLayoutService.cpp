@@ -22,6 +22,8 @@
 #include "UIRenderViewport.h"
 #include "World.h"
 
+#include <TextureCompressorIds.h>
+
 #include <UIContext.h>
 
 #include <algorithm>
@@ -198,7 +200,9 @@ private:
 {
     return AssetKind == AssetKindNode() ||
            AssetKind == AssetKindLevel() ||
-           AssetKind == AssetKindWorld();
+           AssetKind == AssetKindWorld() ||
+           AssetKind == AssetKindStaticMesh() ||
+           AssetKind == TextureCompressorPlugin::AssetKind_CompressedTexture;
 }
 
 [[nodiscard]] BaseNode* ResolveNodeFromHandle(NodeHandle& InOutHandle, World& WorldRef)
@@ -495,6 +499,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingAssetSelectionKey.clear();
     m_hasPendingAssetPlaceRequest = false;
     m_pendingAssetPlaceKey.clear();
+    m_hasPendingAssetDropRequest = false;
+    m_pendingAssetDropRequest = {};
     m_hasPendingAssetSaveRequest = false;
     m_pendingAssetSaveKey.clear();
     m_hasPendingAssetDeleteRequest = false;
@@ -644,6 +650,12 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_pendingAssetPlaceKey = AssetKey;
         m_hasPendingAssetPlaceRequest = true;
     }));
+    m_layout.SetContentAssetDropHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ContentAssetDropRequest&)>::Bind(
+            [this](const EditorLayout::ContentAssetDropRequest& Request) {
+                m_pendingAssetDropRequest = Request;
+                m_hasPendingAssetDropRequest = true;
+            }));
     m_layout.SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
         m_pendingAssetSaveKey = AssetKey;
         m_hasPendingAssetSaveRequest = true;
@@ -980,6 +992,25 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         }
 
         m_pendingAssetPlaceKey.clear();
+    }
+
+    if (m_hasPendingAssetDropRequest)
+    {
+        m_hasPendingAssetDropRequest = false;
+
+        if (!PieService->IsSessionActive() && !m_pendingAssetDropRequest.AssetKey.empty())
+        {
+            EditorAssetService::AssetPlacementRequest Request{};
+            Request.Parent = m_pendingAssetDropRequest.TargetNode;
+            Request.UseScreenPoint = (m_pendingAssetDropRequest.Target == EditorLayout::EContentAssetDropTarget::Viewport);
+            Request.ScreenPositionX = m_pendingAssetDropRequest.ScreenPosition.X;
+            Request.ScreenPositionY = m_pendingAssetDropRequest.ScreenPosition.Y;
+
+            auto DropResult = AssetService->InstantiateAssetByKey(Context, m_pendingAssetDropRequest.AssetKey, Request);
+            ReportEditorExpectedFailure("Drop asset", DropResult);
+        }
+
+        m_pendingAssetDropRequest = {};
     }
 
     if (m_hasPendingAssetSaveRequest)
@@ -2224,6 +2255,12 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
         m_pendingAssetPlaceKey = AssetKey;
         m_hasPendingAssetPlaceRequest = true;
     }));
+    m_layout.SetContentAssetDropHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ContentAssetDropRequest&)>::Bind(
+            [this](const EditorLayout::ContentAssetDropRequest& Request) {
+                m_pendingAssetDropRequest = Request;
+                m_hasPendingAssetDropRequest = true;
+            }));
     m_layout.SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& AssetKey) {
         m_pendingAssetSaveKey = AssetKey;
         m_hasPendingAssetSaveRequest = true;
@@ -2454,6 +2491,7 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
 {
     m_layout.SetContentAssetSelectionHandler({});
     m_layout.SetContentAssetPlaceHandler({});
+    m_layout.SetContentAssetDropHandler({});
     m_layout.SetContentAssetSaveHandler({});
     m_layout.SetContentAssetDeleteHandler({});
     m_layout.SetContentAssetRenameHandler({});
@@ -2514,6 +2552,8 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingAssetSelectionKey.clear();
     m_hasPendingAssetPlaceRequest = false;
     m_pendingAssetPlaceKey.clear();
+    m_hasPendingAssetDropRequest = false;
+    m_pendingAssetDropRequest = {};
     m_hasPendingAssetSaveRequest = false;
     m_pendingAssetSaveKey.clear();
     m_hasPendingAssetDeleteRequest = false;

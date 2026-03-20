@@ -166,7 +166,8 @@ struct GFEditorOverlayContract
     enum class Feature : std::uint32_t
     {
         None = 0,
-        Instancing = 1u << 0
+        Instancing = 1u << 0,
+        SceneDepth = 1u << 1
     };
 
     /**
@@ -188,13 +189,15 @@ struct GFEditorOverlayContract
         {
         case Feature::Instancing:
             return "WITH_INSTANCING";
+        case Feature::SceneDepth:
+            return "WITH_SCENE_DEPTH";
         case Feature::None:
         default:
             return "";
         }
     }
 
-    static inline constexpr std::array<Feature, 1> AllFeatures = {Feature::Instancing};
+    static inline constexpr std::array<Feature, 2> AllFeatures = {Feature::Instancing, Feature::SceneDepth};
     static constexpr std::string_view ParamBlockName = "";
 };
 
@@ -378,6 +381,16 @@ public:
      */
     void CreateShaderProgram() override;
 
+    /**
+     * @brief Describe external read resources required by the overlay pass.
+     * @remarks
+     * The pass uses specialized material variants, so it cannot rely on the generic shading-model
+     * metadata path to always surface the sampled scene-depth dependency needed by the selected-mesh
+     * overlay variant.
+     */
+    [[nodiscard]] std::vector<SnAPI::Graphics::PassResource>
+        DescribeReadResources(const SnAPI::Graphics::PassContext& Context) const override;
+
 protected:
     /**
      * @brief Render the supplied scene objects into the editor overlay target.
@@ -392,7 +405,9 @@ protected:
 
 private:
     SharedGFEditorOverlayMaterialPtr m_editorOverlayMaterial{};
+    SharedGFEditorOverlayMaterialPtr m_editorOverlayGizmoMaterial{};
     SnAPI::Graphics::SharedMaterialInstancePtr m_editorOverlayMaterialInstance{};
+    SnAPI::Graphics::SharedMaterialInstancePtr m_editorOverlayGizmoMaterialInstance{};
 };
 
 } // namespace SnAPI::GameFramework::Editor

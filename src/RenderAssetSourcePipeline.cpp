@@ -541,6 +541,18 @@ template<size_t N>
     return true;
 }
 
+[[nodiscard]] bool ParseMaterialInstanceAssetRef(const JsonValue& Value, MaterialInstanceAssetRef& OutRef)
+{
+    AssetRefPayload Ref{};
+    if (!ParseAssetRefPayload(Value, Ref))
+    {
+        return false;
+    }
+
+    OutRef = MaterialInstanceAssetRef(std::move(Ref.AssetName), std::move(Ref.AssetId));
+    return true;
+}
+
 [[nodiscard]] std::optional<EMeshStreamSemantic> ParseStreamSemantic(const std::string& SemanticText)
 {
     const std::string Key = ToLowerAscii(SemanticText);
@@ -632,8 +644,8 @@ template<size_t N>
     {
         for (const JsonValue& RefValue : MaterialInstances->ArrayValue)
         {
-            AssetRefPayload Ref{};
-            if (!ParseAssetRefPayload(RefValue, Ref))
+            MaterialInstanceAssetRef Ref{};
+            if (!ParseMaterialInstanceAssetRef(RefValue, Ref))
             {
                 return false;
             }
@@ -906,15 +918,21 @@ template<size_t N>
 
 [[nodiscard]] std::string DetermineLogicalName(const JsonValue& Root, const std::string& SourceUri)
 {
-    if (const auto LogicalName = ReadOptionalStringField(Root, "logicalName"); LogicalName && !LogicalName->empty())
-    {
-        return *LogicalName;
-    }
-    if (const auto Name = ReadOptionalStringField(Root, "name"); Name && !Name->empty())
-    {
-        return *Name;
-    }
+    (void)Root;
     return SourceUri;
+}
+
+[[nodiscard]] ::SnAPI::AssetPipeline::AssetId DetermineAssetId(const JsonValue& Root)
+{
+    if (const auto AssetId = ReadOptionalStringField(Root, "AssetId"); AssetId && !AssetId->empty())
+    {
+        return ::SnAPI::AssetPipeline::AssetId::FromString(*AssetId);
+    }
+    if (const auto AssetId = ReadOptionalStringField(Root, "assetId"); AssetId && !AssetId->empty())
+    {
+        return ::SnAPI::AssetPipeline::AssetId::FromString(*AssetId);
+    }
+    return {};
 }
 
 enum class ERenderSourceType : uint8_t
@@ -1044,6 +1062,9 @@ public:
         Item.LogicalName = DetermineLogicalName(Root, Source.Uri);
         Item.VariantKey = VariantKey;
         Item.Dependencies.push_back(Source);
+        const ::SnAPI::AssetPipeline::AssetId ParsedAssetId = DetermineAssetId(Root);
+        const ::SnAPI::AssetPipeline::AssetId ResolvedAssetId =
+            !ParsedAssetId.IsNull() ? ParsedAssetId : Ctx.MakeDeterministicAssetId(Item.LogicalName, Item.VariantKey);
 
         if (SourceType == ERenderSourceType::Material)
         {
@@ -1061,6 +1082,7 @@ public:
                 return false;
             }
 
+            Payload.SetPersistentIdentity(ResolvedAssetId, Item.LogicalName);
             Item.AssetKind = AssetKindMaterial();
             Item.Intermediate.PayloadType = PayloadMaterial();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
@@ -1082,6 +1104,7 @@ public:
                 return false;
             }
 
+            Payload.SetPersistentIdentity(ResolvedAssetId, Item.LogicalName);
             Item.AssetKind = AssetKindMaterialInstance();
             Item.Intermediate.PayloadType = PayloadMaterialInstance();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
@@ -1109,6 +1132,7 @@ public:
                 return false;
             }
 
+            SourcePayload.SetPersistentIdentity(ResolvedAssetId, Item.LogicalName);
             Item.AssetKind = AssetKindStaticMesh();
             Item.Intermediate.PayloadType = PayloadStaticMeshSource();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
@@ -1202,13 +1226,14 @@ public:
                 return false;
             }
 
+            SourcePayload.SetPersistentIdentity(ResolvedAssetId, Item.LogicalName);
             Item.AssetKind = AssetKindSkeletalMesh();
             Item.Intermediate.PayloadType = PayloadSkeletalMeshSource();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
             Serializer->SerializeToBytes(&SourcePayload, Item.Intermediate.Bytes);
         }
 
-        Item.Id = Ctx.MakeDeterministicAssetId(Item.LogicalName, Item.VariantKey);
+        Item.Id = ResolvedAssetId;
         OutItems.push_back(std::move(Item));
 
         Ctx.LogInfo("Imported render asset source: %s", Source.Uri.c_str());

@@ -157,6 +157,20 @@ public:
         ::SnAPI::AssetPipeline::AssetImportSettingsPtr ImportSettings{}; /**< @brief Owning pointer to the typed import-settings object selected in the modal. */
     };
 
+    enum class EContentAssetDropTarget : std::uint8_t
+    {
+        Hierarchy = 0,
+        Viewport,
+    };
+
+    struct ContentAssetDropRequest
+    {
+        std::string AssetKey{}; /**< @brief Stable asset key emitted by the drag source. */
+        EContentAssetDropTarget Target = EContentAssetDropTarget::Hierarchy; /**< @brief Surface that accepted the drop. */
+        NodeHandle TargetNode{}; /**< @brief Optional hierarchy node under the cursor for hierarchy drops. */
+        SnAPI::UI::UIPoint ScreenPosition{}; /**< @brief Screen-space pointer position captured at drop time. */
+    };
+
     /**
      * @brief State payload for the asset-inspector modal.
      *
@@ -576,6 +590,8 @@ public:
     void SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(const std::string&, bool)> Handler);
     /** @brief Install the callback invoked when the user requests asset placement into the world. */
     void SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
+    /** @brief Install the callback invoked when a content asset is dropped onto hierarchy or viewport surfaces. */
+    void SetContentAssetDropHandler(SnAPI::UI::TDelegate<void(const ContentAssetDropRequest&)> Handler);
     /** @brief Install the callback invoked when the user requests asset save. */
     void SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler);
     /** @brief Install the callback invoked when the user requests asset deletion. */
@@ -846,7 +862,8 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetStatusValue{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentPlaceButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_contentSaveButton{};
-    SnAPI::UI::ElementHandle<SnAPI::UI::UIListView> m_contentAssetsList{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIScrollContainer> m_contentAssetsScroll{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIGrid> m_contentAssetsGrid{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_contentAssetsEmptyHint{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_contentCreateModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITreeView> m_contentCreateTypeTree{};
@@ -1013,6 +1030,7 @@ private:
     TypeId m_contentInspectorImportBoundType{};
     SnAPI::UI::TDelegate<void(const std::string&, bool)> m_onContentAssetSelected{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetPlaceRequested{};
+    SnAPI::UI::TDelegate<void(const ContentAssetDropRequest&)> m_onContentAssetDropRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetSaveRequested{};
     SnAPI::UI::TDelegate<void(const std::string&)> m_onContentAssetDeleteRequested{};
     SnAPI::UI::TDelegate<void(const std::string&, const std::string&)> m_onContentAssetRenameRequested{};

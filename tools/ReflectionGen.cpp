@@ -317,6 +317,7 @@ Diagnostic MakeDiagnostic(const CXCursor Cursor, std::string Message);
 Diagnostic MakeDiagnostic(const fs::path& File, unsigned Line, unsigned Column, std::string Message);
 Diagnostic MakeWarning(const CXCursor Cursor, std::string Message);
 Diagnostic MakeWarning(const fs::path& File, unsigned Line, unsigned Column, std::string Message);
+std::string BuildScanTranslationUnitSource(const std::vector<fs::path>& Headers);
 std::string BuildRegistrationProbeSource(
     const fs::path& IncludedFile,
     const std::vector<std::pair<std::size_t, ScopedTypeExpression>>& Expressions);
@@ -6062,6 +6063,7 @@ RegistrationProbeResolution ResolveRegisteredTypeKeysForGroup(const Registration
 
 RegistrationKnowledgeBuildResult BuildRegistrationKnowledgeFromScanData(
     const RegistrationScanData& ScanData,
+    const std::vector<fs::path>& Headers,
     const std::vector<std::string>& CompileArgs,
     const std::uint64_t CompileArgsHash,
     const fs::path& BuildDir,
@@ -6070,6 +6072,60 @@ RegistrationKnowledgeBuildResult BuildRegistrationKnowledgeFromScanData(
     RegistrationKnowledgeBuildResult Result{};
     Result.Knowledge.RegisteredTypeKeys.insert(NormalizeTypeExpressionString("void"));
     Result.Knowledge.HeaderVisibleTypeKeys.insert(NormalizeTypeExpressionString("void"));
+
+    const std::vector<fs::path> AnnotatedHeaders = FilterAnnotatedHeaders(Headers);
+    if (!AnnotatedHeaders.empty())
+    {
+        std::vector<const char*> ArgPointers{};
+        ArgPointers.reserve(CompileArgs.size());
+        for (const std::string& Arg : CompileArgs)
+        {
+            ArgPointers.push_back(Arg.c_str());
+        }
+
+        std::unordered_set<std::string> HeaderKeys{};
+        HeaderKeys.reserve(AnnotatedHeaders.size());
+        for (const fs::path& Header : AnnotatedHeaders)
+        {
+            HeaderKeys.insert(Header.generic_string());
+        }
+
+        std::vector<Diagnostic> MarkerDiagnostics{};
+        const std::unordered_map<std::string, HeaderMarkers> Markers =
+            ScanReflectionMarkers(AnnotatedHeaders, MarkerDiagnostics);
+        const fs::path ScanSourcePath = NormalizePath(BuildDir / "SnAPI.ReflectionGen.annotated_type_scan.cpp");
+        const std::string ScanSourcePathString = ScanSourcePath.string();
+        const std::string ScanSource = BuildScanTranslationUnitSource(AnnotatedHeaders);
+
+        CXUnsavedFile UnsavedFile{};
+        UnsavedFile.Filename = ScanSourcePathString.c_str();
+        UnsavedFile.Contents = ScanSource.c_str();
+        UnsavedFile.Length = ScanSource.size();
+
+        CXIndex Index = clang_createIndex(0, 0);
+        CXTranslationUnit Unit = nullptr;
+        const CXErrorCode ParseError = clang_parseTranslationUnit2FullArgv(
+            Index,
+            ScanSourcePathString.c_str(),
+            ArgPointers.data(),
+            static_cast<int>(ArgPointers.size()),
+            &UnsavedFile,
+            1,
+            CXTranslationUnit_SkipFunctionBodies | CXTranslationUnit_KeepGoing,
+            &Unit);
+        if (ParseError == CXError_Success && Unit != nullptr)
+        {
+            std::unordered_set<std::string> AnnotatedTypeKeys{};
+            CollectAnnotatedTypeKeys(Unit, HeaderKeys, Markers, AnnotatedTypeKeys);
+            AppendRegistrationKeys(Result.Knowledge, AnnotatedTypeKeys, false);
+            clang_disposeTranslationUnit(Unit);
+        }
+        else if (Unit != nullptr)
+        {
+            clang_disposeTranslationUnit(Unit);
+        }
+        clang_disposeIndex(Index);
+    }
 
     if (ScanData.Expressions.empty())
     {
@@ -7777,7 +7833,12 @@ int main(int argc, char** argv)
         const std::uint64_t CompileArgsHash = HashStringVector(CompileArgs);
         StageStartedAt = Clock::now();
         const RegistrationKnowledgeBuildResult KnowledgeBuild = BuildRegistrationKnowledgeFromScanData(
-            RegistrationScan, CompileArgs, CompileArgsHash, Options.BuildDir, ExistingCache ? &*ExistingCache : nullptr);
+            RegistrationScan,
+            Options.Headers,
+            CompileArgs,
+            CompileArgsHash,
+            Options.BuildDir,
+            ExistingCache ? &*ExistingCache : nullptr);
         const RegistrationKnowledge& Knowledge = KnowledgeBuild.Knowledge;
         Cache.RegistrationScanFingerprint = RegistrationScan.Fingerprint;
         Cache.RegistrationCompileArgsHash = CompileArgsHash;

@@ -55,6 +55,8 @@ private:
     std::string m_pendingAssetSelectionKey{};
     bool m_hasPendingAssetPlaceRequest = false;
     std::string m_pendingAssetPlaceKey{};
+    bool m_hasPendingAssetDropRequest = false;
+    EditorLayout::ContentAssetDropRequest m_pendingAssetDropRequest{};
     bool m_hasPendingAssetSaveRequest = false;
     std::string m_pendingAssetSaveKey{};
     bool m_hasPendingAssetDeleteRequest = false;

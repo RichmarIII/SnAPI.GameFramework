@@ -546,6 +546,70 @@ TEST_CASE("Authored static mesh assets compile into runtime mesh payloads on dem
 #endif
 }
 
+TEST_CASE("Runtime mesh stream source rebuilds submesh bounds from geometry when authored bounds are stale", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    StaticMeshAsset Mesh{};
+    Mesh.Mesh.Name = "OffsetTriangle";
+    Mesh.Mesh.BoundsMin = {10.0f, 20.0f, 30.0f};
+    Mesh.Mesh.BoundsMax = {12.0f, 22.0f, 32.0f};
+    Mesh.Mesh.SubMeshes.push_back({
+        .IndexOffset = 0u,
+        .IndexCount = 3u,
+        .MaterialSlot = 0u,
+        .BoundsMin = {0.0f, 0.0f, 0.0f},
+        .BoundsMax = {0.0f, 0.0f, 0.0f},
+    });
+
+    const std::vector<std::array<float, 3>> Positions = {
+        {10.0f, 20.0f, 30.0f},
+        {12.0f, 20.0f, 30.0f},
+        {10.0f, 22.0f, 32.0f},
+    };
+    Mesh.Streams.push_back({
+        .Semantic = EMeshStreamSemantic::Position,
+        .Bytes = BytesFromVector(Positions),
+        .ElementCount = static_cast<std::uint32_t>(Positions.size()),
+        .StrideBytes = sizeof(float) * 3u,
+        .Compress = false,
+    });
+
+    const std::vector<std::uint32_t> Indices = {0u, 1u, 2u};
+    Mesh.Streams.push_back({
+        .Semantic = EMeshStreamSemantic::Index,
+        .Bytes = BytesFromVector(Indices),
+        .ElementCount = static_cast<std::uint32_t>(Indices.size()),
+        .StrideBytes = sizeof(std::uint32_t),
+        .Compress = false,
+    });
+
+    auto MeshJson = SerializeAuthoredAssetToJson(Mesh);
+    REQUIRE(MeshJson);
+    WriteTextFile(Root.Path / "Rendering" / "OffsetTriangle.staticmesh", *MeshJson);
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+    TAssetRef<StaticMeshAsset> MeshRef("Rendering/OffsetTriangle.staticmesh");
+    auto SharedRuntimeMesh = MeshRef.GetRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*Manager);
+    REQUIRE(SharedRuntimeMesh);
+    REQUIRE(*SharedRuntimeMesh);
+    REQUIRE((*SharedRuntimeMesh)->SubMeshCount() == 1u);
+
+    SnAPI::Graphics::VertexSourceSubMesh SubMesh{};
+    REQUIRE((*SharedRuntimeMesh)->SubMesh(0u, SubMesh));
+    CHECK(SubMesh.BoundingBoxMin.x() == 10.0f);
+    CHECK(SubMesh.BoundingBoxMin.y() == 20.0f);
+    CHECK(SubMesh.BoundingBoxMin.z() == 30.0f);
+    CHECK(SubMesh.BoundingBoxMax.x() == 12.0f);
+    CHECK(SubMesh.BoundingBoxMax.y() == 22.0f);
+    CHECK(SubMesh.BoundingBoxMax.z() == 32.0f);
+#endif
+}
+
 TEST_CASE("Conduit class compilation resolves graph refs from authored source assets", "[Assets][Source]")
 {
     RegisterBuiltinTypes();

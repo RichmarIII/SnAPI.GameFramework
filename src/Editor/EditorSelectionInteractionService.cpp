@@ -479,7 +479,11 @@ void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorService
     auto* AssetService = Context.GetService<EditorAssetService>();
     if (AssetService && AssetService->IsPlacementArmed())
     {
-        if (const Result InstantiateResult = AssetService->InstantiateArmedAsset(Context); InstantiateResult)
+        EditorAssetService::AssetPlacementRequest PlacementRequest{};
+        PlacementRequest.UseScreenPoint = true;
+        PlacementRequest.ScreenPositionX = Event.Position.X;
+        PlacementRequest.ScreenPositionY = Event.Position.Y;
+        if (const Result InstantiateResult = AssetService->InstantiateArmedAsset(Context, PlacementRequest); InstantiateResult)
         {
             return;
         }

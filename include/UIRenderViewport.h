@@ -19,6 +19,7 @@ class ICamera;
 
 namespace SnAPI::UI
 {
+struct DragDropEvent;
 struct PointerEvent;
 class UIImage;
 } // namespace SnAPI::UI
@@ -71,6 +72,7 @@ class SNAPI_GAMEFRAMEWORK_API UIRenderViewport final : public SnAPI::UI::UIEleme
 {
 public:
     using PointerEventHandler = SnAPI::UI::TDelegate<void(const SnAPI::UI::PointerEvent&, std::uint32_t, bool)>;
+    using DragDropEventHandler = SnAPI::UI::TDelegate<bool(const SnAPI::UI::DragDropEvent&, std::uint32_t, bool)>;
     using PropertyKey = SnAPI::UI::PropertyKey;
     template<typename TValue>
     using TPropertyRef = SnAPI::UI::TPropertyRef<TValue>;
@@ -128,6 +130,10 @@ public:
     void SetPointerEventHandler(PointerEventHandler Handler);
     /** @brief Remove the currently installed pointer-event callback. */
     void ClearPointerEventHandler();
+    /** @brief Install a drag/drop callback invoked for drag enter/move/leave/drop routing. */
+    void SetDragDropEventHandler(DragDropEventHandler Handler);
+    /** @brief Remove the currently installed drag/drop callback. */
+    void ClearDragDropEventHandler();
 
     /** @brief Access the owned renderer viewport id. @return Viewport id or `0` when no viewport exists yet. */
     std::uint64_t OwnedViewportId() const { return m_ownedViewportId; }
@@ -169,6 +175,7 @@ private:
     bool m_hasPendingRenderExtentResize = false;
     std::optional<ERenderViewportPassGraphPreset> m_registeredPassGraphPreset{};
     PointerEventHandler m_pointerEventHandler{};
+    DragDropEventHandler m_dragDropEventHandler{};
 };
 
 } // namespace SnAPI::GameFramework

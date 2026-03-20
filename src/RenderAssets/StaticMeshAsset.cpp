@@ -10,7 +10,7 @@ SNAPI_REFLECT_TYPE(
     StaticMeshAsset,
     (TTypeBuilder<StaticMeshAsset>(StaticMeshAsset::kTypeName)
         .Base<IAsset>()
-        .Field("Mesh", &StaticMeshAsset::Mesh, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("Mesh", &StaticMeshAsset::Mesh, EFieldFlagBits::Serialized)
         .Field(
             "Streams",
             &StaticMeshAsset::Streams,

@@ -10,6 +10,8 @@
 #include "IAssetCooker.h"
 #include "IAssetImporter.h"
 #include "IPipelineContext.h"
+#include "StaticTypeId.h"
+#include "TypeRegistry.h"
 
 namespace SnAPI::GameFramework
 {
@@ -102,6 +104,17 @@ public:
             return false;
         }
 
+        auto* AuthoredAsset = static_cast<IAsset*>(
+            TypeRegistry::Instance().Cast(Descriptor->Type->Id, StaticTypeId<IAsset>(), Storage));
+        const std::string LogicalName = Source.Uri;
+        const ::SnAPI::AssetPipeline::AssetId AssetId = (AuthoredAsset && !AuthoredAsset->AssetId.IsNull())
+            ? AuthoredAsset->AssetId
+            : Ctx.MakeDeterministicAssetId(LogicalName, {});
+        if (AuthoredAsset)
+        {
+            AuthoredAsset->SetPersistentIdentity(AssetId, LogicalName);
+        }
+
         auto PayloadResult = BuildSourceTypedPayload(Storage, Ctx, Descriptor->SourcePayloadType);
         Descriptor->Type->RuntimeOps->Destroy(Storage);
         ::operator delete(Storage, std::align_val_t(Descriptor->Type->Align));
@@ -121,11 +134,11 @@ public:
         ::SnAPI::AssetPipeline::ImportedItem Item{};
         // AssetPipelineEngine::ProcessSource injects the resolved source logical name before cook.
         // Keep this as a unique fallback only for direct importer use outside that path.
-        Item.LogicalName = Source.Uri;
+        Item.LogicalName = LogicalName;
         Item.AssetKind = Descriptor->CookedAssetKind;
         Item.Intermediate = std::move(PayloadResult.value());
         Item.Dependencies.push_back(Source);
-        Item.Id = Ctx.MakeDeterministicAssetId(Item.LogicalName, {});
+        Item.Id = AssetId;
         OutItems.push_back(std::move(Item));
         return true;
     }

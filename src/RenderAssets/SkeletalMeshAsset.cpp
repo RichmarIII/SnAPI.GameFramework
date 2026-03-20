@@ -10,7 +10,7 @@ SNAPI_REFLECT_TYPE(
     SkeletalMeshAsset,
     (TTypeBuilder<SkeletalMeshAsset>(SkeletalMeshAsset::kTypeName)
         .Base<IAsset>()
-        .Field("BaseMesh", &SkeletalMeshAsset::BaseMesh, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
+        .Field("BaseMesh", &SkeletalMeshAsset::BaseMesh, EFieldFlagBits::Serialized)
         .Field("Bones", &SkeletalMeshAsset::Bones, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
         .Field("Skeleton", &SkeletalMeshAsset::Skeleton, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)
         .Field("Animations", &SkeletalMeshAsset::Animations, EFieldFlagBits::Serialized, EFieldEditorFlagBits::ReadOnly)

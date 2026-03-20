@@ -2,6 +2,7 @@
 
 #if defined(SNAPI_GF_ENABLE_UI)
 
+#include "PathResolver.h"
 #include "UIPropertyPanel.h"
 
 #include <UIAccordion.h>
@@ -57,6 +58,21 @@ constexpr Color kScrollThumbHover{118, 124, 136, 255};
 constexpr Color kShadowSoft{0, 0, 0, 64};
 constexpr Color kShadowMedium{0, 0, 0, 128};
 constexpr Color kShadowStrong{0, 0, 0, 255};
+
+[[nodiscard]] std::string ResolveEditorImageSource(std::string_view Source)
+{
+    if (Source.empty())
+    {
+        return {};
+    }
+
+    if (auto Resolved = SPathResolver::Instance().Resolve(Source); Resolved)
+    {
+        return Resolved->generic_string();
+    }
+
+    return std::string(Source);
+}
 } // namespace
 
 EditorTheme::EditorTheme()
@@ -66,6 +82,8 @@ EditorTheme::EditorTheme()
 
 void EditorTheme::Initialize()
 {
+    const std::string SearchIconSource = ResolveEditorImageSource("editor://Assets/search.svg");
+
     Define<SnAPI::UI::UIPanel>()
         .Set(SnAPI::UI::UIPanel::DirectionKey, SnAPI::UI::ELayoutDirection::Vertical)
         .Set(SnAPI::UI::UIPanel::PaddingKey, 8.0f)
@@ -201,7 +219,7 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIComboBox::ArrowColorKey, kTextSecondary)
         .Set(SnAPI::UI::UIComboBox::PaddingKey, 8.0f)
         .Set(SnAPI::UI::UIComboBox::RowHeightKey, 26.0f)
-        .Set(SnAPI::UI::UIComboBox::SearchIconSourceKey, std::string("editor://Assets/search.svg"))
+        .Set(SnAPI::UI::UIComboBox::SearchIconSourceKey, SearchIconSource)
         .Set(SnAPI::UI::UIComboBox::DropShadowColorKey, kShadowSoft)
         .Set(SnAPI::UI::UIComboBox::DropShadowBlurKey, 3.0f)
         .Set(SnAPI::UI::UIComboBox::DropShadowSpreadKey, 0.0f)
@@ -221,7 +239,7 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIContextMenu::ShortcutColorKey, kTextSecondary)
         .Set(SnAPI::UI::UIContextMenu::SeparatorColorKey, Color::RGBA(96, 103, 114, 220))
         .Set(SnAPI::UI::UIContextMenu::CheckColorKey, kAccentStrong)
-        .Set(SnAPI::UI::UIContextMenu::SearchIconSourceKey, std::string("editor://Assets/search.svg"));
+        .Set(SnAPI::UI::UIContextMenu::SearchIconSourceKey, SearchIconSource);
 
     Define<SnAPI::UI::UIAccordion>()
         .Set(SnAPI::UI::UIAccordion::PaddingKey, 0.0f)

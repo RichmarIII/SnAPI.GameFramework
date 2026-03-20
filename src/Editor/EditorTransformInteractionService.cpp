@@ -2,6 +2,7 @@
 
 #include "BaseNode.h"
 #include "CameraComponent.h"
+#include "Editor/EditorCameraComponent.h"
 #include "Editor/EditorLayoutService.h"
 #include "Editor/EditorPieService.h"
 #include "Editor/EditorSceneService.h"
@@ -668,6 +669,8 @@ void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContex
                                                              SnAPI::Graphics::ICamera& Camera,
                                                              const std::uint64_t ViewportID)
 {
+    (void)SelectedNode;
+
     m_gizmoAxisXID = 0;
     m_gizmoAxisYID = 0;
     m_gizmoAxisZID = 0;
@@ -727,29 +730,16 @@ void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContex
         NormalizeOrAxis(BasisX, Vec3::UnitX()),
         NormalizeOrAxis(BasisY, Vec3::UnitY()),
         NormalizeOrAxis(BasisZ, Vec3::UnitZ())};
-    const std::array<SnAPI::Math::Scalar, 3> AxisEdgeExtents = (SelectedNode != nullptr)
-        ? ResolveSelectedObjectAxisExtents(*SelectedNode, AxisBasis, SelectedTransform.Scale)
-        : ResolveFallbackAxisExtents(AxisBasis, SelectedTransform.Scale);
-    const SnAPI::Math::Scalar SelectedObjectRadius = std::max({
-        AxisEdgeExtents[0],
-        AxisEdgeExtents[1],
-        AxisEdgeExtents[2],
-        static_cast<SnAPI::Math::Scalar>(0.1)});
     const auto CameraPosition = Camera.Position().template cast<SnAPI::Math::Scalar>();
     const SnAPI::Math::Scalar CameraDistance = std::max<SnAPI::Math::Scalar>(
         static_cast<SnAPI::Math::Scalar>(0.25),
         (SelectedTransform.Position - CameraPosition).norm());
-    const SnAPI::Math::Scalar BoundsMargin = std::clamp(
-        SelectedObjectRadius * static_cast<SnAPI::Math::Scalar>(0.010),
-        static_cast<SnAPI::Math::Scalar>(0.004),
-        static_cast<SnAPI::Math::Scalar>(0.03));
+    const SnAPI::Math::Scalar GizmoScaleMultiplier = static_cast<SnAPI::Math::Scalar>(3.0);
     const SnAPI::Math::Scalar AxisLength = std::max<SnAPI::Math::Scalar>(
-        CameraDistance * static_cast<SnAPI::Math::Scalar>(0.08),
-        std::max<SnAPI::Math::Scalar>(
-            static_cast<SnAPI::Math::Scalar>(0.12),
-            (SelectedObjectRadius * static_cast<SnAPI::Math::Scalar>(0.24))));
+        CameraDistance * static_cast<SnAPI::Math::Scalar>(0.08) * GizmoScaleMultiplier,
+        static_cast<SnAPI::Math::Scalar>(0.12) * GizmoScaleMultiplier);
     const SnAPI::Math::Scalar AxisThickness = std::max<SnAPI::Math::Scalar>(
-        static_cast<SnAPI::Math::Scalar>(0.016),
+        static_cast<SnAPI::Math::Scalar>(0.016) * GizmoScaleMultiplier,
         AxisLength * static_cast<SnAPI::Math::Scalar>(0.085));
 
     const auto ToRendererVec3 = [](const Vec3& Value)
@@ -791,38 +781,6 @@ void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContex
         case EActiveAxis::None:
         default:
             return Vec3::UnitX();
-        }
-    };
-
-    const auto AxisEdgeExtentForAxis = [&](const EActiveAxis Axis) -> SnAPI::Math::Scalar
-    {
-        switch (Axis)
-        {
-        case EActiveAxis::X:
-            return AxisEdgeExtents[0];
-        case EActiveAxis::Y:
-            return AxisEdgeExtents[1];
-        case EActiveAxis::Z:
-            return AxisEdgeExtents[2];
-        case EActiveAxis::None:
-        default:
-            return SelectedObjectRadius;
-        }
-    };
-
-    const auto RingRadiusForAxis = [&](const EActiveAxis Axis) -> SnAPI::Math::Scalar
-    {
-        switch (Axis)
-        {
-        case EActiveAxis::X:
-            return std::max(AxisEdgeExtents[1], AxisEdgeExtents[2]);
-        case EActiveAxis::Y:
-            return std::max(AxisEdgeExtents[0], AxisEdgeExtents[2]);
-        case EActiveAxis::Z:
-            return std::max(AxisEdgeExtents[0], AxisEdgeExtents[1]);
-        case EActiveAxis::None:
-        default:
-            return SelectedObjectRadius;
         }
     };
 
@@ -875,13 +833,12 @@ void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContex
                                         const std::shared_ptr<SnAPI::Graphics::IRenderObject>& AuxObject)
     {
         const Vec3 Direction = NormalizeOrAxis(AxisDirection(Axis), Vec3::UnitY());
-        const SnAPI::Math::Scalar AxisStartOffset = AxisEdgeExtentForAxis(Axis);
 
         if (m_mode == EEditorTransformMode::Rotate)
         {
             const SnAPI::Math::Scalar RingRadius = std::max<SnAPI::Math::Scalar>(
-                RingRadiusForAxis(Axis) + BoundsMargin,
-                CameraDistance * static_cast<SnAPI::Math::Scalar>(0.14));
+                AxisLength * static_cast<SnAPI::Math::Scalar>(0.9),
+                CameraDistance * static_cast<SnAPI::Math::Scalar>(0.14) * GizmoScaleMultiplier);
             if (PrimaryObject)
             {
                 PrimaryObject->SetWorldTransform(BuildAlignedTransform(
@@ -905,8 +862,8 @@ void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContex
                 AxisThickness * static_cast<SnAPI::Math::Scalar>(2.5),
                 HeadLength * static_cast<SnAPI::Math::Scalar>(0.20));
 
-            const Vec3 ShaftCenter = SelectedTransform.Position + Direction * (AxisStartOffset + ShaftLength * static_cast<SnAPI::Math::Scalar>(0.5));
-            const Vec3 HeadCenter = SelectedTransform.Position + Direction * (AxisStartOffset + ShaftLength + HeadLength * static_cast<SnAPI::Math::Scalar>(0.5));
+            const Vec3 ShaftCenter = SelectedTransform.Position + Direction * (ShaftLength * static_cast<SnAPI::Math::Scalar>(0.5));
+            const Vec3 HeadCenter = SelectedTransform.Position + Direction * (ShaftLength + HeadLength * static_cast<SnAPI::Math::Scalar>(0.5));
 
             if (PrimaryObject)
             {
@@ -939,8 +896,8 @@ void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContex
             AxisThickness * static_cast<SnAPI::Math::Scalar>(2.8),
             AxisLength * static_cast<SnAPI::Math::Scalar>(0.13));
 
-        const Vec3 ShaftCenter = SelectedTransform.Position + Direction * (AxisStartOffset + ShaftLength * static_cast<SnAPI::Math::Scalar>(0.5));
-        const Vec3 HandleCenter = SelectedTransform.Position + Direction * (AxisStartOffset + ShaftLength + HandleLength * static_cast<SnAPI::Math::Scalar>(0.5));
+        const Vec3 ShaftCenter = SelectedTransform.Position + Direction * (ShaftLength * static_cast<SnAPI::Math::Scalar>(0.5));
+        const Vec3 HandleCenter = SelectedTransform.Position + Direction * (ShaftLength + HandleLength * static_cast<SnAPI::Math::Scalar>(0.5));
         if (PrimaryObject)
         {
             PrimaryObject->SetWorldTransform(BuildAlignedTransform(
@@ -1225,9 +1182,24 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
 
     const SnAPI::UI::UIRect ViewRect = ViewportElement->LayoutRect();
     const std::uint64_t ViewportID = ViewportElement->OwnedViewportId();
+    const bool HideGizmoForActiveEditorCamera = [&]() -> bool
+    {
+        if (!Node->Component<EditorCameraComponent>())
+        {
+            return false;
+        }
+
+        auto* ActiveCameraComponent = SceneService->ActiveCameraComponent();
+        if (!ActiveCameraComponent || ActiveCameraComponent->Owner().IsNull())
+        {
+            return false;
+        }
+
+        return ActiveCameraComponent->Owner() == Node->Handle();
+    }();
     const auto QueueGizmosForCurrentFrame = [&]()
     {
-        if (ViewportID != 0)
+        if (ViewportID != 0 && !HideGizmoForActiveEditorCamera)
         {
             QueueTransformGizmos(Context, Node, TransformWorld, *Camera, ViewportID);
         }

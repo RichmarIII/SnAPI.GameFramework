@@ -216,6 +216,34 @@ template <class Archive,
           std::enable_if_t<!std::is_same_v<std::remove_cvref_t<Archive>, JSONOutputArchive> &&
                                !std::is_same_v<std::remove_cvref_t<Archive>, JSONInputArchive>,
                            int> = 0>
+void save(Archive& ArchiveRef, const ::SnAPI::AssetPipeline::Uuid& Id)
+{
+    std::array<uint8_t, 16> Data{};
+    for (size_t i = 0; i < Data.size(); ++i)
+    {
+        Data[i] = Id.Bytes[i];
+    }
+    ArchiveRef(Data);
+}
+
+template <class Archive,
+          std::enable_if_t<!std::is_same_v<std::remove_cvref_t<Archive>, JSONOutputArchive> &&
+                               !std::is_same_v<std::remove_cvref_t<Archive>, JSONInputArchive>,
+                           int> = 0>
+void load(Archive& ArchiveRef, ::SnAPI::AssetPipeline::Uuid& Id)
+{
+    std::array<uint8_t, 16> Data{};
+    ArchiveRef(Data);
+    for (size_t i = 0; i < Data.size(); ++i)
+    {
+        Id.Bytes[i] = Data[i];
+    }
+}
+
+template <class Archive,
+          std::enable_if_t<!std::is_same_v<std::remove_cvref_t<Archive>, JSONOutputArchive> &&
+                               !std::is_same_v<std::remove_cvref_t<Archive>, JSONInputArchive>,
+                           int> = 0>
 void save(Archive& ArchiveRef, const SnAPI::GameFramework::Uuid& Id)
 {
     std::array<uint8_t, 16> Data{};
@@ -254,6 +282,16 @@ template <class Archive,
 void load(Archive& ArchiveRef, SnAPI::GameFramework::TypeId& Id)
 {
     load(ArchiveRef, Id.Value);
+}
+
+inline std::string save_minimal(const JSONOutputArchive&, const ::SnAPI::AssetPipeline::Uuid& Id)
+{
+    return Id.ToString();
+}
+
+inline void load_minimal(const JSONInputArchive&, ::SnAPI::AssetPipeline::Uuid& Id, const std::string& Text)
+{
+    Id = ::SnAPI::AssetPipeline::Uuid::FromString(Text);
 }
 
 inline std::string save_minimal(const JSONOutputArchive&, const SnAPI::GameFramework::Uuid& Id)
@@ -312,6 +350,13 @@ inline void load_minimal(const JSONInputArchive&, SnAPI::GameFramework::TypeId& 
 
 namespace SnAPI::GameFramework
 {
+
+template<class Archive>
+void SerializeAuthoredAssetIdentity(Archive& Ar, IAsset& Value)
+{
+    Ar(Detail::Nvp("AssetId", Value.AssetId),
+       Detail::Nvp("LogicalName", Value.LogicalName));
+}
 
 template<class Archive>
 void serialize(Archive& Ar, AssetRefPayload& Value)
@@ -447,6 +492,7 @@ void serialize(Archive& Ar, TextureImporterSettings& Value)
 template<class Archive>
 void serialize(Archive& Ar, TextureAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Image", Value.Image),
        Detail::Nvp("ImportSettings", Value.ImportSettings),
        Detail::Nvp("Provenance", Value.Provenance));
@@ -455,6 +501,7 @@ void serialize(Archive& Ar, TextureAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, StaticMeshAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Mesh", Value.Mesh),
        Detail::Nvp("Streams", Value.Streams),
        Detail::Nvp("ImportSettings", Value.ImportSettings),
@@ -464,6 +511,7 @@ void serialize(Archive& Ar, StaticMeshAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, SkeletalMeshAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("BaseMesh", Value.BaseMesh),
        Detail::Nvp("Bones", Value.Bones),
        Detail::Nvp("Skeleton", Value.Skeleton),
@@ -478,6 +526,7 @@ void serialize(Archive& Ar, SkeletalMeshAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, SkeletonAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Skeleton", Value.Skeleton),
        Detail::Nvp("Provenance", Value.Provenance));
 }
@@ -485,6 +534,7 @@ void serialize(Archive& Ar, SkeletonAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, SkeletalAnimationAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Animation", Value.Animation),
        Detail::Nvp("Provenance", Value.Provenance));
 }
@@ -542,6 +592,7 @@ void serialize(Archive& Ar, SkeletalMeshPayload& Value)
 template<class Archive>
 void serialize(Archive& Ar, MaterialAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("ShaderModule", Value.ShaderModule),
        Detail::Nvp("ShadingModel", Value.ShadingModel),
        Detail::Nvp("FeatureAlbedoMap", Value.FeatureAlbedoMap),
@@ -601,6 +652,7 @@ void serialize(Archive& Ar, MaterialTextureParamPayload& Value)
 template<class Archive>
 void serialize(Archive& Ar, MaterialInstanceAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("ParentMaterial", Value.ParentMaterial),
        Detail::Nvp("Scalars", Value.Scalars),
        Detail::Nvp("Vectors", Value.Vectors),
@@ -638,6 +690,7 @@ void serialize(Archive& Ar, NodeObjectAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, NodeAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Name", Value.Name),
        Detail::Nvp("Nodes", Value.Nodes));
 }
@@ -645,6 +698,7 @@ void serialize(Archive& Ar, NodeAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, LevelAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Name", Value.Name),
        Detail::Nvp("Nodes", Value.Nodes));
 }
@@ -652,6 +706,7 @@ void serialize(Archive& Ar, LevelAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, WorldAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Name", Value.Name),
        Detail::Nvp("Nodes", Value.Nodes));
 }
@@ -795,6 +850,7 @@ void serialize(Archive& Ar, GraphNodeAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, GraphAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Name", Value.Name),
        Detail::Nvp("SelfType", Value.SelfType),
        Detail::Nvp("Slots", Value.Slots),
@@ -806,6 +862,7 @@ void serialize(Archive& Ar, GraphAsset& Value)
 template<class Archive>
 void serialize(Archive& Ar, ClassAsset& Value)
 {
+    SerializeAuthoredAssetIdentity(Ar, Value);
     Ar(Detail::Nvp("Name", Value.Name),
        Detail::Nvp("HostType", Value.HostType),
        Detail::Nvp("Graph", Value.Graph));

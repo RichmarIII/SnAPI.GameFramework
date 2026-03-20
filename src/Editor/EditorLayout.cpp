@@ -58,6 +58,7 @@
 
 #include <array>
 #include <algorithm>
+#include <any>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -151,6 +152,22 @@ constexpr std::array<ToolbarActionSpec, 4> kToolbarActions{{
 }};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
+constexpr std::string_view kContentAssetDragPayloadType = "Editor.ContentAsset";
+
+struct ContentAssetDragPayload
+{
+    std::string AssetKey{};
+};
+
+[[nodiscard]] const ContentAssetDragPayload* TryGetContentAssetDragPayload(const SnAPI::UI::DragDropEvent& Event)
+{
+    if (Event.PayloadType != kContentAssetDragPayloadType || Event.Payload == nullptr)
+    {
+        return nullptr;
+    }
+
+    return std::any_cast<ContentAssetDragPayload>(Event.Payload);
+}
 
 [[nodiscard]] constexpr int32_t GizmoSpaceToIndex(const EditorLayout::EGizmoSpace Space)
 {
@@ -1133,7 +1150,8 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_contentAssetStatusValue = {};
     m_contentPlaceButton = {};
     m_contentSaveButton = {};
-    m_contentAssetsList = {};
+    m_contentAssetsScroll = {};
+    m_contentAssetsGrid = {};
     m_contentAssetsEmptyHint = {};
     m_contentCreateModalOverlay = {};
     m_contentCreateTypeTree = {};
@@ -1743,7 +1761,8 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     m_contentAssetStatusValue = {};
     m_contentPlaceButton = {};
     m_contentSaveButton = {};
-    m_contentAssetsList = {};
+    m_contentAssetsScroll = {};
+    m_contentAssetsGrid = {};
     m_contentAssetsEmptyHint = {};
     m_contentAssetCards.clear();
 
@@ -1862,36 +1881,38 @@ void EditorLayout::BuildContentBrowser(PanelBuilder& Root)
     AssetsTabPanel.Padding().Set(6.0f);
     AssetsTabPanel.Gap().Set(6.0f);
 
-    auto AssetsList = AssetsTab.Add(SnAPI::UI::UIListView{});
-    auto& AssetsListElement = AssetsList.Element();
-    AssetsListElement.Orientation().Set(SnAPI::UI::ELayoutDirection::Horizontal);
-    AssetsListElement.ItemExtent().Set(152.0f);
-    AssetsListElement.ItemGap().Set(10.0f);
-    AssetsListElement.Virtualized().Set(false);
-    AssetsListElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    AssetsListElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    AssetsListElement.ElementStyle().Apply("editor.browser_list");
-    AssetsListElement.OnContextMenuRequested(
-        SnAPI::UI::TDelegate<void(int32_t, const SnAPI::UI::PointerEvent&)>::Bind(
-            [this](const int32_t ItemIndex, const SnAPI::UI::PointerEvent& Event) {
-                if (ItemIndex >= 0 && static_cast<std::size_t>(ItemIndex) < m_contentAssetCards.size())
-                {
-                    if (const auto CardIndex = static_cast<std::size_t>(ItemIndex);
-                        m_context && m_contentAssetCards[CardIndex].Button.Id.Value != 0)
-                    {
-                        auto* CardButton = dynamic_cast<SnAPI::UI::UIButton*>(
-                            &m_context->GetElement(m_contentAssetCards[CardIndex].Button.Id));
-                        if (CardButton && !CardButton->IsCollapsed())
-                        {
-                            OpenContentAssetContextMenu(CardIndex, Event);
-                            return;
-                        }
-                    }
-                }
-
+    auto AssetsScroll = AssetsTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& AssetsScrollElement = AssetsScroll.Element();
+    AssetsScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    AssetsScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    AssetsScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    AssetsScrollElement.Padding().Set(0.0f);
+    AssetsScrollElement.Gap().Set(0.0f);
+    AssetsScrollElement.ShowHorizontalScrollbar().Set(false);
+    AssetsScrollElement.ShowVerticalScrollbar().Set(true);
+    AssetsScrollElement.ElementStyle().Apply("editor.browser_list");
+    AssetsScrollElement.OnContextMenuRequested(
+        SnAPI::UI::TDelegate<void(const SnAPI::UI::PointerEvent&)>::Bind(
+            [this](const SnAPI::UI::PointerEvent& Event) {
                 OpenContentBrowserContextMenu(Event);
             }));
-    m_contentAssetsList = AssetsList.Handle();
+    m_contentAssetsScroll = AssetsScroll.Handle();
+
+    auto AssetsGrid = AssetsScroll.Add(SnAPI::UI::UIGrid{});
+    auto& AssetsGridElement = AssetsGrid.Element();
+    AssetsGridElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    AssetsGridElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    AssetsGridElement.Padding().Set(0.0f);
+    AssetsGridElement.CellWidth().Set(152.0f);
+    AssetsGridElement.CellHeight().Set(420.0f);
+    AssetsGridElement.ColumnGap().Set(10.0f);
+    AssetsGridElement.RowGap().Set(10.0f);
+    AssetsGridElement.ClipContent().Set(false);
+    AssetsGridElement.BackgroundColor().Set(SnAPI::UI::Color::Transparent());
+    AssetsGridElement.BorderColor().Set(SnAPI::UI::Color::Transparent());
+    AssetsGridElement.BorderThickness().Set(0.0f);
+    AssetsGridElement.CornerRadius().Set(0.0f);
+    m_contentAssetsGrid = AssetsGrid.Handle();
 
     auto EmptyHint = AssetsTab.Add(SnAPI::UI::UIText("No assets discovered. Click Rescan to search for source assets."));
     EmptyHint.Element().ElementStyle().Apply("editor.panel_subtitle");
@@ -2047,7 +2068,6 @@ void EditorLayout::EnsureContentAssetCreateModalOverlay()
     OverlayPanel.Resizable().Set(true);
     OverlayPanel.DragRegionHeight().Set(30.0f);
     OverlayPanel.ResizeBorderThickness().Set(12.0f);
-    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
@@ -2208,7 +2228,6 @@ void EditorLayout::EnsureContentAssetImportModalOverlay()
     OverlayPanel.Resizable().Set(true);
     OverlayPanel.DragRegionHeight().Set(30.0f);
     OverlayPanel.ResizeBorderThickness().Set(12.0f);
-    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(8, 10, 14, 216));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(20, 25, 35, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(90, 102, 124, 245));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
@@ -2413,7 +2432,6 @@ void EditorLayout::EnsureContentAssetInspectorModalOverlay()
     OverlayPanel.Resizable().Set(true);
     OverlayPanel.DragRegionHeight().Set(30.0f);
     OverlayPanel.ResizeBorderThickness().Set(12.0f);
-    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(7, 10, 15, 214));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 23, 32, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(84, 97, 117, 242));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
@@ -2979,6 +2997,38 @@ void EditorLayout::BuildHierarchyPane(PanelBuilder& Workspace,
 
                 OpenHierarchyContextMenu(static_cast<std::size_t>(ItemIndex), Event);
             }));
+    TreeElement.SetDragDropHandler(
+        [this](const int32_t ItemIndex,
+               const SnAPI::UI::UITreeItem*,
+               const uint32_t RoutedTypeId,
+               const SnAPI::UI::DragDropEvent& Event) -> bool {
+            const ContentAssetDragPayload* Payload = TryGetContentAssetDragPayload(Event);
+            if (!Payload)
+            {
+                return false;
+            }
+
+            if (RoutedTypeId != SnAPI::UI::RoutedEventTypes::Drop.Id)
+            {
+                return true;
+            }
+
+            if (!m_onContentAssetDropRequested)
+            {
+                return false;
+            }
+
+            ContentAssetDropRequest Request{};
+            Request.AssetKey = Payload->AssetKey;
+            Request.Target = EContentAssetDropTarget::Hierarchy;
+            Request.ScreenPosition = Event.Position;
+            if (ItemIndex >= 0 && static_cast<std::size_t>(ItemIndex) < m_hierarchyVisibleNodes.size())
+            {
+                Request.TargetNode = m_hierarchyVisibleNodes[static_cast<std::size_t>(ItemIndex)];
+            }
+            m_onContentAssetDropRequested(Request);
+            return true;
+        });
     m_hierarchyTree = Tree.Handle();
 
     auto HierarchyPager = Hierarchy.Add(SnAPI::UI::UIPagination{});
@@ -3464,6 +3514,11 @@ void EditorLayout::SetContentAssetSelectionHandler(SnAPI::UI::TDelegate<void(con
 void EditorLayout::SetContentAssetPlaceHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
 {
     m_onContentAssetPlaceRequested = std::move(Handler);
+}
+
+void EditorLayout::SetContentAssetDropHandler(SnAPI::UI::TDelegate<void(const ContentAssetDropRequest&)> Handler)
+{
+    m_onContentAssetDropRequested = std::move(Handler);
 }
 
 void EditorLayout::SetContentAssetSaveHandler(SnAPI::UI::TDelegate<void(const std::string&)> Handler)
@@ -5928,14 +5983,14 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
 
 void EditorLayout::EnsureContentAssetCardCapacity()
 {
-    if (!m_context || m_contentAssetsList.Id.Value == 0)
+    if (!m_context || m_contentAssetsGrid.Id.Value == 0)
     {
         return;
     }
 
-    SnAPI::UI::TElementBuilder<SnAPI::UI::UIListView> AssetsListBuilder(
+    SnAPI::UI::TElementBuilder<SnAPI::UI::UIGrid> AssetsListBuilder(
         m_context,
-        SnAPI::UI::ElementHandle<SnAPI::UI::UIListView>{m_contentAssetsList.Id});
+        SnAPI::UI::ElementHandle<SnAPI::UI::UIGrid>{m_contentAssetsGrid.Id});
 
     while (m_contentAssetCards.size() < m_contentBrowserEntries.size())
     {
@@ -5953,6 +6008,23 @@ void EditorLayout::EnsureContentAssetCardCapacity()
                 [this, CardIndex](const SnAPI::UI::PointerEvent& Event) {
                     OpenContentAssetContextMenu(CardIndex, Event);
                 }));
+        CardButtonElement.SetDragPayloadBuilder(
+            [this, CardIndex](std::string& OutPayloadType, std::any& OutPayload) -> bool {
+                if (CardIndex >= m_contentBrowserEntries.size() || CardIndex >= m_contentAssetCardIndices.size())
+                {
+                    return false;
+                }
+
+                const ContentBrowserEntry& Entry = m_contentBrowserEntries[CardIndex];
+                if (Entry.IsFolder || Entry.AssetIndex >= m_contentAssets.size())
+                {
+                    return false;
+                }
+
+                OutPayloadType = std::string(kContentAssetDragPayloadType);
+                OutPayload = ContentAssetDragPayload{.AssetKey = m_contentAssets[Entry.AssetIndex].Key};
+                return true;
+            });
 
         auto Card = CardButton.Add(SnAPI::UI::UIPanel("Editor.AssetCard"));
         auto& CardPanel = Card.Element();
@@ -6392,7 +6464,6 @@ void EditorLayout::EnsureProjectModalOverlay()
         OverlayPanel.Movable().Set(false);
         OverlayPanel.Resizable().Set(false);
         OverlayPanel.DragRegionHeight().Set(0.0f);
-        OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
         OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
         OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
         OverlayPanel.ContentBorderThickness().Set(1.0f);
@@ -6790,7 +6861,6 @@ void EditorLayout::EnsureProjectModalOverlay()
     OverlayPanel.Movable().Set(!m_projectModalRequired);
     OverlayPanel.Resizable().Set(false);
     OverlayPanel.DragRegionHeight().Set(30.0f);
-    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 218));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
@@ -7059,7 +7129,6 @@ void EditorLayout::EnsureProjectSettingsModalOverlay()
     OverlayPanel.Movable().Set(true);
     OverlayPanel.Resizable().Set(false);
     OverlayPanel.DragRegionHeight().Set(30.0f);
-    OverlayPanel.BackdropColor().Set(SnAPI::UI::Color::RGBA(6, 8, 12, 214));
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
@@ -9144,6 +9213,32 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ViewportElement.RenderScale().Set(1.0f);
     ViewportElement.Enabled().Set(true);
     ViewportElement.SetGameRuntime(&Runtime);
+    ViewportElement.SetDragDropEventHandler(
+        SnAPI::UI::TDelegate<bool(const SnAPI::UI::DragDropEvent&, std::uint32_t, bool)>::Bind(
+            [this](const SnAPI::UI::DragDropEvent& Event, const std::uint32_t RoutedTypeId, const bool ContainsPointer) -> bool {
+            const ContentAssetDragPayload* Payload = TryGetContentAssetDragPayload(Event);
+            if (!Payload || !ContainsPointer)
+            {
+                return false;
+            }
+
+            if (RoutedTypeId != SnAPI::UI::RoutedEventTypes::Drop.Id)
+            {
+                return true;
+            }
+
+            if (!m_onContentAssetDropRequested)
+            {
+                return false;
+            }
+
+            ContentAssetDropRequest Request{};
+            Request.AssetKey = Payload->AssetKey;
+            Request.Target = EContentAssetDropTarget::Viewport;
+            Request.ScreenPosition = Event.Position;
+            m_onContentAssetDropRequested(Request);
+            return true;
+        }));
     if (auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
         ActiveCameraComponent && ActiveCameraComponent->Camera())
     {
