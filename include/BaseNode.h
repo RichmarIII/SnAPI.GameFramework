@@ -11,17 +11,20 @@
 #include "Handle.h"
 #include "Handles.h"
 #include "NodeComponentContracts.h"
+#include "ReflectionAnnotations.h"
 #include "StaticTypeId.h"
 #include "Uuid.h"
 #include "WorldEcsRuntime.h"
-#include "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
 
 class IWorld;
+class BaseComponent;
 class RelevanceComponent;
 class Variant;
+template<typename TBase>
+class TSubClassOf;
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -245,6 +248,7 @@ public:
      * @brief Get the list of child handles.
      * @return Vector of child handles.
      */
+    SnFunction()
     const std::vector<NodeHandle>& Children() const
     {
         return m_children;
@@ -257,6 +261,7 @@ public:
      * This appends only to local child bookkeeping; it does not enforce uniqueness and does
      * not modify child-side ownership/parent pointers.
      */
+    SnFunction()
     void AddChild(const NodeHandle& Child)
     {
         m_children.push_back(Child);
@@ -269,6 +274,7 @@ public:
      * Performs first-match erase. If duplicate child handles were inserted, later duplicates
      * remain until explicitly removed.
      */
+    SnFunction()
     void RemoveChild(const NodeHandle& Child)
     {
         for (size_t Index = 0; Index < m_children.size(); ++Index)
@@ -337,6 +343,7 @@ public:
      * generated owner-targeted client RPC routing to resolve which remote connection should
      * receive `SnRpc(SnClient)` calls for this node.
      */
+    SnField(SnKey("OwnerConnectionId"), SnConstGetter(GetOwnerConnectionId))
     std::uint64_t& EditOwnerConnectionId()
     {
         return m_ownerConnectionId;
@@ -635,6 +642,15 @@ public:
     TExpectedRef<T> Component();
 
     /**
+     * @brief Get a component handle by reflected component type.
+     * @param Type Runtime component type id.
+     * @return Stable component handle or null handle when absent.
+     * @remarks Safe on detached nodes; returns a null handle when this node is not world-bound.
+     */
+    SnFunction()
+    [[nodiscard]] ComponentHandle Component(const TSubClassOf<BaseComponent>& Type) const;
+
+    /**
      * @brief Check if a component of type T exists on this node.
      * @tparam T Component type.
      * @return True if present.
@@ -642,6 +658,14 @@ public:
      */
     template<typename T>
     bool Has() const;
+
+    /**
+     * @brief Check if a component of reflected type exists on this node.
+     * @param Type Runtime component type id.
+     * @return True if present.
+     */
+    SnFunction()
+    [[nodiscard]] bool Has(const TSubClassOf<BaseComponent>& Type) const;
 
     /**
      * @brief Remove a component of type T from this node.
@@ -652,6 +676,9 @@ public:
     void Remove();
 
 private:
+    void RefreshComponentMaskCache();
+    [[nodiscard]] bool HasComponentBit(const TypeId& Type) const;
+
     NodeHandle m_self{}; /**< @brief Stable runtime identity handle for this node. */
     NodeHandle m_parent{}; /**< @brief Parent identity; null indicates this node is a root in world hierarchy. */
     std::vector<NodeHandle> m_children{}; /**< @brief Ordered child identity list used for deterministic traversal. */

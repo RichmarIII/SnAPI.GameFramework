@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <unordered_map>
 
 #include "GameThreading.h"
@@ -43,6 +44,21 @@ public:
         m_typeToIndex.emplace(Id, Index);
         ++m_version;
         return Index;
+    }
+
+    /**
+     * @brief Look up an existing bit index for a component type without mutating the registry.
+     * @param Id Component type id.
+     * @return Existing bit index, or `std::nullopt` when the type has not been seen yet.
+     */
+    static std::optional<uint32_t> TryGetTypeIndex(const TypeId& Id)
+    {
+        GameLockGuard Lock(m_mutex);
+        if (const auto It = m_typeToIndex.find(Id); It != m_typeToIndex.end())
+        {
+            return It->second;
+        }
+        return std::nullopt;
     }
 
     /**

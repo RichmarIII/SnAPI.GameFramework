@@ -1369,18 +1369,13 @@ public:
     return Typed;
 }
 
-[[nodiscard]] TextureCompressorPlugin::ImageIntermediate BuildTextureIntermediate(const TextureAsset& Asset)
+[[nodiscard]] TExpected<TextureCompressorPlugin::ImageIntermediate> BuildTextureIntermediate(const TextureAsset& Asset)
 {
     TextureCompressorPlugin::ImageIntermediate Intermediate{};
-    Intermediate.Width = Asset.Image.Width;
-    Intermediate.Height = Asset.Image.Height;
-    Intermediate.Channels = Asset.Image.Channels;
-    Intermediate.BitsPerChannel = Asset.Image.BitsPerChannel;
-    Intermediate.bIsFloat = Asset.Image.IsFloat;
-    Intermediate.bHasNonTrivialAlpha = Asset.Image.HasNonTrivialAlpha;
-    Intermediate.bSRGB = Asset.Image.SRGB;
-    Intermediate.SourceFilename = Asset.Image.SourceFilename;
-    Intermediate.Pixels = Asset.Image.Pixels;
+    if (auto DecodeResult = DecodeTextureSourceImageToIntermediate(Asset.Image, Intermediate); !DecodeResult)
+    {
+        return std::unexpected(DecodeResult.error());
+    }
     return Intermediate;
 }
 
@@ -1428,9 +1423,16 @@ public:
             return false;
         }
 
-        TextureCompressorPlugin::ImageIntermediate Intermediate = BuildTextureIntermediate(SourceAsset);
+        auto IntermediateResult = BuildTextureIntermediate(SourceAsset);
+        if (!IntermediateResult)
+        {
+            Ctx.LogError("Render texture cooker failed to decode source image: %s",
+                         IntermediateResult.error().Message.c_str());
+            return false;
+        }
+
         std::vector<uint8_t> IntermediateBytes{};
-        IntermediateSerializer->SerializeToBytes(&Intermediate, IntermediateBytes);
+        IntermediateSerializer->SerializeToBytes(&*IntermediateResult, IntermediateBytes);
 
         ::SnAPI::AssetPipeline::CookRequest TextureReq = Req;
         TextureReq.Intermediate.PayloadType = TextureCompressorPlugin::Payload_CompressorImageIntermediate;

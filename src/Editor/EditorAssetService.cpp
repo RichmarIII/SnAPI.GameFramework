@@ -63,6 +63,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <expected>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -3075,22 +3076,45 @@ struct ScopedStagedImportDirectory
     return Payload;
 }
 
-[[nodiscard]] TextureAsset BuildTextureAssetFromIntermediate(
+[[nodiscard]] std::expected<TextureAsset, std::string> BuildTextureAssetFromIntermediate(
     const TextureCompressorPlugin::ImageIntermediate& Intermediate,
-    const TextureImporterSettings& ImportSettings)
+    const TextureImporterSettings& ImportSettings,
+    const std::vector<std::uint8_t>* PreferredEncodedBytes = nullptr)
 {
     TextureAsset Asset{};
-    Asset.Image.Width = Intermediate.Width;
-    Asset.Image.Height = Intermediate.Height;
-    Asset.Image.Channels = Intermediate.Channels;
-    Asset.Image.BitsPerChannel = Intermediate.BitsPerChannel;
-    Asset.Image.IsFloat = Intermediate.bIsFloat;
-    Asset.Image.HasNonTrivialAlpha = Intermediate.bHasNonTrivialAlpha;
-    Asset.Image.SRGB = Intermediate.bSRGB;
-    Asset.Image.SourceFilename = Intermediate.SourceFilename;
-    Asset.Image.Pixels = Intermediate.Pixels;
     Asset.ImportSettings = ImportSettings;
+    if (auto PopulateResult = PopulateTextureSourceImageFromIntermediate(
+            Asset.Image,
+            Intermediate,
+            PreferredEncodedBytes);
+        !PopulateResult)
+    {
+        return std::unexpected(PopulateResult.error().Message);
+    }
     return Asset;
+}
+
+[[nodiscard]] bool TryReadFileBytes(const std::filesystem::path& Path, std::vector<std::uint8_t>& OutBytes)
+{
+    std::ifstream File(Path, std::ios::binary | std::ios::ate);
+    if (!File.is_open())
+    {
+        return false;
+    }
+
+    const std::streamsize Size = File.tellg();
+    if (Size < 0)
+    {
+        return false;
+    }
+
+    OutBytes.resize(static_cast<std::size_t>(Size));
+    File.seekg(0, std::ios::beg);
+    if (Size > 0)
+    {
+        File.read(reinterpret_cast<char*>(OutBytes.data()), Size);
+    }
+    return File.good();
 }
 
 [[nodiscard]] std::vector<ImportBuildOptionPayload> BuildImportBuildOptionPayloads(
@@ -3160,7 +3184,8 @@ void StampImportedSourceAssetIdentity(ImportedSourceAssetVariant& Asset,
 [[nodiscard]] std::expected<ImportedSourceAssetVariant, std::string> BuildImportedSourceAssetVariant(
     const ::SnAPI::AssetPipeline::ImportedItem& Item,
     const ::SnAPI::AssetPipeline::PayloadRegistry& Registry,
-    const TextureImporterSettings& TextureSettings)
+    const TextureImporterSettings& TextureSettings,
+    const std::vector<std::uint8_t>* PreferredTextureEncodedBytes = nullptr)
 {
     const auto* Serializer = Registry.Find(Item.Intermediate.PayloadType);
     if (!Serializer)
@@ -3175,7 +3200,16 @@ void StampImportedSourceAssetIdentity(ImportedSourceAssetVariant& Asset,
         {
             return std::unexpected("Failed to deserialize imported texture intermediate");
         }
-        return ImportedSourceAssetVariant(BuildTextureAssetFromIntermediate(Intermediate, TextureSettings));
+
+        auto AssetResult = BuildTextureAssetFromIntermediate(
+            Intermediate,
+            TextureSettings,
+            PreferredTextureEncodedBytes);
+        if (!AssetResult)
+        {
+            return std::unexpected(AssetResult.error());
+        }
+        return ImportedSourceAssetVariant(std::move(*AssetResult));
     }
 
     if (Item.Intermediate.PayloadType == PayloadMaterial())
@@ -5964,12 +5998,22 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
     {
         ImportedTextureSettings = *TextureTyped;
     }
+    std::vector<std::uint8_t> ImportedTextureSourceBytes{};
+    const std::vector<std::uint8_t>* ImportedTextureSourceBytesPtr = nullptr;
+    if (Profile == EImportProfile::Texture && TryReadFileBytes(SourceFile, ImportedTextureSourceBytes))
+    {
+        ImportedTextureSourceBytesPtr = &ImportedTextureSourceBytes;
+    }
 
     std::vector<ImportedSourceDocument> Documents{};
     Documents.reserve(ImportedItems.size());
     for (const auto& Item : ImportedItems)
     {
-        auto AssetResult = BuildImportedSourceAssetVariant(Item, Registry, ImportedTextureSettings);
+        auto AssetResult = BuildImportedSourceAssetVariant(
+            Item,
+            Registry,
+            ImportedTextureSettings,
+            ImportedTextureSourceBytesPtr);
         if (!AssetResult)
         {
             return std::unexpected(MakeError(EErrorCode::InvalidArgument, AssetResult.error()));
@@ -6032,9 +6076,25 @@ Result EditorAssetService::ImportSourceAsset(EditorServiceContext& Context,
                     continue;
                 }
 
+                std::vector<std::uint8_t> ExternalTextureEncodedBytes{};
+                const std::vector<std::uint8_t>* ExternalTextureEncodedBytesPtr = nullptr;
+                std::filesystem::path ExternalTexturePath = std::filesystem::path(TextureUri);
+                if (!ExternalTexturePath.is_absolute())
+                {
+                    ExternalTexturePath = (SourceFile.parent_path() / ExternalTexturePath).lexically_normal();
+                }
+                if (TryReadFileBytes(ExternalTexturePath, ExternalTextureEncodedBytes))
+                {
+                    ExternalTextureEncodedBytesPtr = &ExternalTextureEncodedBytes;
+                }
+
                 for (const auto& TextureItem : TextureItems)
                 {
-                    auto AssetResult = BuildImportedSourceAssetVariant(TextureItem, Registry, *ExternalTextureSettings);
+                    auto AssetResult = BuildImportedSourceAssetVariant(
+                        TextureItem,
+                        Registry,
+                        *ExternalTextureSettings,
+                        ExternalTextureEncodedBytesPtr);
                     if (!AssetResult)
                     {
                         Warnings.push_back("Failed to convert referenced texture to authored asset: " + TextureUri);

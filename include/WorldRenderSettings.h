@@ -10,6 +10,7 @@
 #include "AtmosphereParamsNode.h"
 #include "BaseNode.h"
 #include "BloomParamsNode.h"
+#include "DeferredShadingParamsNode.h"
 #include "Export.h"
 #include "HeightFogParamsNode.h"
 #include "SSAOParamsNode.h"
@@ -51,6 +52,7 @@ namespace SnAPI::GameFramework
  * be deferred by the caller/bootstrap sequence.
  *
  * @see RendererSystem
+ * @see DeferredShadingParamsNode
  * @see SSAOParamsNode
  * @see SSGIParamsNode
  * @see SSRParamsNode
@@ -65,6 +67,12 @@ public:
 
     WorldRenderSettings();
     explicit WorldRenderSettings(std::string Name);
+
+    /** @brief Access the referenced deferred-shading parameter asset. @return Mutable asset reference. */
+    SnField(SnKey("DeferredShadingParams"), SnConstGetter(GetDeferredShadingParams))
+    TAssetRef<DeferredShadingParamsNode>& EditDeferredShadingParams();
+    /** @brief Access the referenced deferred-shading parameter asset. @return Const asset reference. */
+    const TAssetRef<DeferredShadingParamsNode>& GetDeferredShadingParams() const;
 
     /** @brief Access the referenced SSAO parameter asset. @return Mutable asset reference. */
     SnField(SnKey("SSAOParams"), SnConstGetter(GetSSAOParams))
@@ -149,6 +157,7 @@ public:
 private:
     void ApplyReferencedSettings();
 
+    TAssetRef<DeferredShadingParamsNode> m_deferredShadingParams{};
     TAssetRef<SSAOParamsNode> m_ssaoParams{};
     TAssetRef<SSGIParamsNode> m_ssgiParams{};
     TAssetRef<SSRParamsNode> m_ssrParams{};
@@ -159,6 +168,7 @@ private:
     TAssetRef<HeightFogParamsNode> m_heightFogParams{};
     TAssetRef<ToneMapParamsNode> m_toneMapParams{};
 
+    NodeHandle m_spawnedDeferredShading{};
     NodeHandle m_spawnedSSAO{};
     NodeHandle m_spawnedSSGI{};
     NodeHandle m_spawnedSSR{};

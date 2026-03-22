@@ -7,6 +7,7 @@
 #include "HandleFwd.h"
 #include "ObjectRegistry.h"
 #include "Uuid.h"
+#include  "ReflectionAnnotations.h"
 
 namespace SnAPI::GameFramework
 {
@@ -51,6 +52,7 @@ namespace SnAPI::GameFramework
  * @see ComponentHandle
  * @see ObjectRegistry
  */
+    SnType(SnTemplate)
 template<typename T>
 struct THandle
 {
@@ -95,15 +97,23 @@ struct THandle
     {
     }
 
-    Uuid Id{}; /**< @brief Stable UUID of the referenced object; this is the canonical identity used for equality and persistence. */
-    uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Optional cached pool token used to bypass UUID lookup during hot resolution. */
-    uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Optional cached slot index paired with `RuntimePoolToken` for fast lookup. */
-    uint32_t RuntimeGeneration = 0; /**< @brief Cached generation used to reject stale slot reuse after object destruction. */
+        SnField()
+        Uuid Id{}; /**< @brief Stable UUID of the referenced object; this is the canonical identity used for equality and persistence. */
+
+        SnField()
+        uint32_t RuntimePoolToken = kInvalidRuntimePoolToken; /**< @brief Optional cached pool token used to bypass UUID lookup during hot resolution. */
+
+        SnField()
+        uint32_t RuntimeIndex = kInvalidRuntimeIndex; /**< @brief Optional cached slot index paired with `RuntimePoolToken` for fast lookup. */
+
+        SnField()
+        uint32_t RuntimeGeneration = 0; /**< @brief Cached generation used to reject stale slot reuse after object destruction. */
 
     /**
      * @brief Check if the handle is null.
      * @return True when the UUID is nil.
      */
+        SnFunction()
     bool IsNull() const noexcept
     {
         return Id.is_nil();
@@ -123,6 +133,7 @@ struct THandle
      * @brief Check whether runtime slot identity is present.
      * @return True when `RuntimeIndex` contains a valid slot id.
      */
+        SnFunction()
     bool HasRuntimeKey() const noexcept
     {
         return RuntimePoolToken != kInvalidRuntimePoolToken && RuntimeIndex != kInvalidRuntimeIndex;
@@ -158,6 +169,7 @@ struct THandle
      * Returns `nullptr` when the object cannot be resolved.
      * @note The returned pointer must not be stored across frames or destroy boundaries.
      */
+        SnFunction()
     T* Borrowed()
     {
         ObjectRegistry::RuntimeIdentity Identity{};
@@ -183,6 +195,7 @@ struct THandle
      * This path is intended for explicit persistence/replication bridging when runtime
      * slot identity is unavailable. Avoid in hot loops.
      */
+        SnFunction()
     T* BorrowedSlowByUuid() const
     {
         return ObjectRegistry::Instance().Resolve<T>(Id);
@@ -204,6 +217,7 @@ struct THandle
      * Fast path uses runtime slot identity only. For UUID-only persistence handles,
      * use `IsValidSlowByUuid()`.
      */
+        SnFunction()
     bool IsValid()
     {
         return Borrowed() != nullptr;
@@ -216,6 +230,7 @@ struct THandle
      * This preserves const semantics by discarding any refreshed runtime identity, so repeated
      * calls may continue paying the UUID fallback path when the handle is stale or UUID-only.
      */
+        SnFunction()
     bool IsValidMaybeSlow() const
     {
         return ObjectRegistry::Instance().ResolveFast<T>(
@@ -229,6 +244,7 @@ struct THandle
      * @brief Validate by UUID using registry hash lookup (slow path).
      * @return True when object resolves by UUID.
      */
+        SnFunction()
     bool IsValidSlowByUuid() const
     {
         return ObjectRegistry::Instance().IsValid<T>(Id);

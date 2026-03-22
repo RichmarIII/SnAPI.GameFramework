@@ -116,6 +116,9 @@ WorldRenderSettings::WorldRenderSettings(std::string Name)
     TypeKey(StaticTypeId<WorldRenderSettings>());
 }
 
+TAssetRef<DeferredShadingParamsNode>& WorldRenderSettings::EditDeferredShadingParams() { return m_deferredShadingParams; }
+const TAssetRef<DeferredShadingParamsNode>& WorldRenderSettings::GetDeferredShadingParams() const { return m_deferredShadingParams; }
+
 TAssetRef<SSAOParamsNode>& WorldRenderSettings::EditSSAOParams() { return m_ssaoParams; }
 const TAssetRef<SSAOParamsNode>& WorldRenderSettings::GetSSAOParams() const { return m_ssaoParams; }
 
@@ -181,6 +184,7 @@ void WorldRenderSettings::ApplyReferencedSettings()
     }
 
     NodeHandle ParentHandle = Handle();
+    EnsureReferencedNode(*WorldPtr, ParentHandle, m_deferredShadingParams, m_spawnedDeferredShading);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssaoParams, m_spawnedSSAO);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssgiParams, m_spawnedSSGI);
     EnsureReferencedNode(*WorldPtr, ParentHandle, m_ssrParams, m_spawnedSSR);

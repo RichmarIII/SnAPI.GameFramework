@@ -204,7 +204,7 @@ bool BaseNode::Has() const
         return false;
     }
 
-    return HasRuntimeComponent<T>();
+    return HasComponentBit(StaticTypeId<T>());
 }
 
 template<typename T>

@@ -159,6 +159,7 @@ set(SNAPI_GF_SOURCES
     src/LocalPlayerService.cpp
     src/MultiplayerConfigNode.cpp
     src/NodeAsset.cpp
+    src/DeferredShadingParamsNode.cpp
     src/SSAOParamsNode.cpp
     src/SSGIParamsNode.cpp
     src/SSRParamsNode.cpp

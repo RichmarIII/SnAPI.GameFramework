@@ -30,10 +30,22 @@ struct TextureSourceImagePayload
     bool SRGB = true;
     SnField(SnKey("SourceFilename"), SnReadOnly)
     std::string SourceFilename{};
-    SnField(SnKey("Pixels"), SnHidden, SnHeavyData)
-    std::vector<uint8_t> Pixels{};
+    SnField(SnKey("EncodedBytes"), SnHidden, SnHeavyData)
+    std::vector<uint8_t> EncodedBytes{};
+    std::vector<uint8_t> Pixels{}; // Legacy fallback for older authored assets that serialized raw pixels.
 
-    bool operator==(const TextureSourceImagePayload&) const = default;
+    bool operator==(const TextureSourceImagePayload& Other) const
+    {
+        return Width == Other.Width &&
+               Height == Other.Height &&
+               Channels == Other.Channels &&
+               BitsPerChannel == Other.BitsPerChannel &&
+               IsFloat == Other.IsFloat &&
+               HasNonTrivialAlpha == Other.HasNonTrivialAlpha &&
+               SRGB == Other.SRGB &&
+               SourceFilename == Other.SourceFilename &&
+               EncodedBytes == Other.EncodedBytes;
+    }
 };
 
 } // namespace SnAPI::GameFramework

@@ -1,7 +1,9 @@
 #include "BaseNode.h"
 
+#include "ComponentTypeRegistry.h"
 #include "IWorld.h"
 #include "Profiling.h"
+#include "SubClassOf.h"
 #include "TypeRegistry.h"
 #include "Variant.h"
 #include <cstdint>
@@ -15,6 +17,30 @@ namespace SnAPI::GameFramework
 namespace
 {
 constexpr std::uint8_t kRpcTargetNode = 0;
+
+void RebuildComponentMaskCache(BaseNode& Node)
+{
+    const uint32_t Version = ComponentTypeRegistry::Version();
+    if (Node.MaskVersion() == Version)
+    {
+        return;
+    }
+
+    auto& Mask = Node.ComponentMask();
+    Mask.assign(ComponentTypeRegistry::WordCount(), 0u);
+    for (const TypeId& Type : Node.ComponentTypes())
+    {
+        const uint32_t TypeIndex = ComponentTypeRegistry::TypeIndex(Type);
+        const std::size_t Word = static_cast<std::size_t>(TypeIndex / 64u);
+        const std::size_t Bit = static_cast<std::size_t>(TypeIndex % 64u);
+        if (Word >= Mask.size())
+        {
+            Mask.resize(Word + 1u, 0u);
+        }
+        Mask[Word] |= (1ull << Bit);
+    }
+    Node.MaskVersion(Version);
+}
 
 bool IsRpcMethod(const MethodInfo& Method)
 {
@@ -80,6 +106,33 @@ bool InvokeLocal(void* Instance, const MethodInfo& Method, const std::span<const
 }
 } // namespace
 
+void BaseNode::RefreshComponentMaskCache()
+{
+    RebuildComponentMaskCache(*this);
+}
+
+bool BaseNode::HasComponentBit(const TypeId& Type) const
+{
+    if (Type == TypeId{})
+    {
+        return false;
+    }
+
+    BaseNode& MutableSelf = const_cast<BaseNode&>(*this);
+    MutableSelf.RefreshComponentMaskCache();
+
+    const auto TypeIndex = ComponentTypeRegistry::TryGetTypeIndex(Type);
+    if (!TypeIndex.has_value())
+    {
+        return false;
+    }
+
+    const std::size_t Word = static_cast<std::size_t>(*TypeIndex / 64u);
+    const std::size_t Bit = static_cast<std::size_t>(*TypeIndex % 64u);
+    const auto& Mask = ComponentMask();
+    return Word < Mask.size() && (Mask[Word] & (1ull << Bit)) != 0u;
+}
+
 bool BaseNode::IsServer() const
 {
 #if defined(SNAPI_GF_ENABLE_NETWORKING)
@@ -100,6 +153,44 @@ bool BaseNode::IsClient() const
     }
 #endif
     return false;
+}
+
+ComponentHandle BaseNode::Component(const TSubClassOf<BaseComponent>& Type) const
+{
+    if (!m_world)
+    {
+        return {};
+    }
+
+    if (!Type.IsValid())
+        return {};
+
+    NodeHandle OwnerHandle = Handle();
+    if (OwnerHandle.IsNull())
+    {
+        return {};
+    }
+
+    auto* ComponentPtr = static_cast<BaseComponent*>(m_world->BorrowedComponent(OwnerHandle, Type.GetTypeId()));
+    if (!ComponentPtr)
+    {
+        return {};
+    }
+
+    return ComponentPtr->Handle();
+}
+
+bool BaseNode::Has(const TSubClassOf<BaseComponent>& Type) const
+{
+    if (!m_world)
+    {
+        return false;
+    }
+
+    if (!Type.IsValid())
+        return false;
+
+    return HasComponentBit(Type.GetTypeId());
 }
 
 bool BaseNode::IsListenServer() const

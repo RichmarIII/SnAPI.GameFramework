@@ -15,6 +15,7 @@
 #include "AtmosphereCompositeParamsNode.h"
 #include "AtmosphereParamsNode.h"
 #include "BloomParamsNode.h"
+#include "DeferredShadingParamsNode.h"
 #include "HeightFogParamsNode.h"
 #include "SSAOParamsNode.h"
 #include "SSGIParamsNode.h"

@@ -33,8 +33,8 @@ SNAPI_REFLECT_TYPE(
             EFieldFlagBits::Serialized,
             EFieldEditorFlagBits::ReadOnly)
         .Field(
-            "Pixels",
-            &TextureSourceImagePayload::Pixels,
+            "EncodedBytes",
+            &TextureSourceImagePayload::EncodedBytes,
             EFieldFlagBits::Serialized,
             EFieldEditorFlagBits::Hidden | EFieldEditorFlagBits::HeavyData)
         .Constructor<>()

@@ -39,6 +39,7 @@
 #include "AtmosphereParamsNode.h"
 #include "BloomParamsNode.h"
 #include "CameraComponent.h"
+#include "DeferredShadingParamsNode.h"
 #include "DirectionalLightComponent.h"
 #include "EnvironmentCaptureComponent.h"
 #include "EnvironmentProbeNode.h"

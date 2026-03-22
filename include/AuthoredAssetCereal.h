@@ -4,9 +4,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <exception>
 #include <iosfwd>
+#include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -27,6 +30,145 @@
 
 namespace SnAPI::GameFramework::Detail
 {
+
+inline std::string Base64Encode(std::span<const std::uint8_t> Bytes)
+{
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+    std::string Output{};
+    Output.reserve(((Bytes.size() + 2u) / 3u) * 4u);
+
+    std::size_t Index = 0u;
+    while (Index + 3u <= Bytes.size())
+    {
+        const std::uint32_t Chunk = (static_cast<std::uint32_t>(Bytes[Index + 0u]) << 16u) |
+                                    (static_cast<std::uint32_t>(Bytes[Index + 1u]) << 8u) |
+                                    static_cast<std::uint32_t>(Bytes[Index + 2u]);
+        Output.push_back(kAlphabet[(Chunk >> 18u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 12u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 6u) & 0x3Fu]);
+        Output.push_back(kAlphabet[Chunk & 0x3Fu]);
+        Index += 3u;
+    }
+
+    const std::size_t Remaining = Bytes.size() - Index;
+    if (Remaining == 1u)
+    {
+        const std::uint32_t Chunk = static_cast<std::uint32_t>(Bytes[Index]) << 16u;
+        Output.push_back(kAlphabet[(Chunk >> 18u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 12u) & 0x3Fu]);
+        Output.push_back('=');
+        Output.push_back('=');
+    }
+    else if (Remaining == 2u)
+    {
+        const std::uint32_t Chunk = (static_cast<std::uint32_t>(Bytes[Index + 0u]) << 16u) |
+                                    (static_cast<std::uint32_t>(Bytes[Index + 1u]) << 8u);
+        Output.push_back(kAlphabet[(Chunk >> 18u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 12u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 6u) & 0x3Fu]);
+        Output.push_back('=');
+    }
+
+    return Output;
+}
+
+inline std::expected<std::vector<std::uint8_t>, std::string> Base64Decode(const std::string_view Text)
+{
+    auto DecodeChar = [](const char Character) -> int {
+        if (Character >= 'A' && Character <= 'Z')
+        {
+            return Character - 'A';
+        }
+        if (Character >= 'a' && Character <= 'z')
+        {
+            return Character - 'a' + 26;
+        }
+        if (Character >= '0' && Character <= '9')
+        {
+            return Character - '0' + 52;
+        }
+        if (Character == '+')
+        {
+            return 62;
+        }
+        if (Character == '/')
+        {
+            return 63;
+        }
+        if (Character == '=')
+        {
+            return -2;
+        }
+        if (Character == ' ' || Character == '\n' || Character == '\r' || Character == '\t')
+        {
+            return -3;
+        }
+        return -1;
+    };
+
+    std::vector<std::uint8_t> Output{};
+    Output.reserve((Text.size() / 4u) * 3u);
+
+    int Quartet[4] = {0, 0, 0, 0};
+    int QuartetCount = 0;
+    for (const char Character : Text)
+    {
+        const int Decoded = DecodeChar(Character);
+        if (Decoded == -3)
+        {
+            continue;
+        }
+        if (Decoded == -1)
+        {
+            return std::unexpected("Invalid base64 character");
+        }
+
+        Quartet[QuartetCount++] = Decoded;
+        if (QuartetCount != 4)
+        {
+            continue;
+        }
+
+        if (Quartet[0] < 0 || Quartet[1] < 0)
+        {
+            return std::unexpected("Invalid base64 padding");
+        }
+
+        const std::uint32_t Chunk =
+            (static_cast<std::uint32_t>(Quartet[0]) << 18u) |
+            (static_cast<std::uint32_t>(Quartet[1]) << 12u) |
+            (static_cast<std::uint32_t>(Quartet[2] >= 0 ? Quartet[2] : 0) << 6u) |
+            static_cast<std::uint32_t>(Quartet[3] >= 0 ? Quartet[3] : 0);
+
+        Output.push_back(static_cast<std::uint8_t>((Chunk >> 16u) & 0xFFu));
+        if (Quartet[2] != -2)
+        {
+            Output.push_back(static_cast<std::uint8_t>((Chunk >> 8u) & 0xFFu));
+        }
+        if (Quartet[3] != -2)
+        {
+            Output.push_back(static_cast<std::uint8_t>(Chunk & 0xFFu));
+        }
+
+        if (Quartet[2] == -2 && Quartet[3] != -2)
+        {
+            return std::unexpected("Invalid base64 padding");
+        }
+
+        QuartetCount = 0;
+    }
+
+    if (QuartetCount != 0)
+    {
+        return std::unexpected("Invalid base64 length");
+    }
+
+    return Output;
+}
 
 template<class TValue>
 [[nodiscard]] auto Nvp(const char* Name, TValue&& Value)
@@ -463,7 +605,10 @@ void serialize(Archive& Ar, AssimpImporterSettings& Value)
        Detail::Nvp("DefaultShadingModel", Value.DefaultShadingModel));
 }
 
-template<class Archive>
+template<class Archive,
+         std::enable_if_t<!std::is_same_v<std::remove_cvref_t<Archive>, cereal::JSONOutputArchive> &&
+                              !std::is_same_v<std::remove_cvref_t<Archive>, cereal::JSONInputArchive>,
+                          int> = 0>
 void serialize(Archive& Ar, TextureSourceImagePayload& Value)
 {
     Ar(Detail::Nvp("Width", Value.Width),
@@ -474,7 +619,50 @@ void serialize(Archive& Ar, TextureSourceImagePayload& Value)
        Detail::Nvp("HasNonTrivialAlpha", Value.HasNonTrivialAlpha),
        Detail::Nvp("SRGB", Value.SRGB),
        Detail::Nvp("SourceFilename", Value.SourceFilename),
-       Detail::Nvp("Pixels", Value.Pixels));
+       Detail::Nvp("EncodedBytes", Value.EncodedBytes));
+}
+
+inline void save(cereal::JSONOutputArchive& Ar, const TextureSourceImagePayload& Value)
+{
+    TextureSourceImagePayload Normalized = Value;
+    if (auto EncodeResult = SnAPI::GameFramework::EnsureTextureSourceImageEncoded(Normalized); !EncodeResult)
+    {
+        throw cereal::Exception(EncodeResult.error().Message);
+    }
+
+    const std::string EncodedBytesBase64 = Detail::Base64Encode(Normalized.EncodedBytes);
+    Ar(Detail::Nvp("Width", Normalized.Width),
+       Detail::Nvp("Height", Normalized.Height),
+       Detail::Nvp("Channels", Normalized.Channels),
+       Detail::Nvp("BitsPerChannel", Normalized.BitsPerChannel),
+       Detail::Nvp("IsFloat", Normalized.IsFloat),
+       Detail::Nvp("HasNonTrivialAlpha", Normalized.HasNonTrivialAlpha),
+       Detail::Nvp("SRGB", Normalized.SRGB),
+       Detail::Nvp("SourceFilename", Normalized.SourceFilename),
+       Detail::Nvp("EncodedBytesBase64", EncodedBytesBase64));
+}
+
+inline void load(cereal::JSONInputArchive& Ar, TextureSourceImagePayload& Value)
+{
+    std::string EncodedBytesBase64{};
+    Ar(Detail::Nvp("Width", Value.Width),
+       Detail::Nvp("Height", Value.Height),
+       Detail::Nvp("Channels", Value.Channels),
+       Detail::Nvp("BitsPerChannel", Value.BitsPerChannel),
+       Detail::Nvp("IsFloat", Value.IsFloat),
+       Detail::Nvp("HasNonTrivialAlpha", Value.HasNonTrivialAlpha),
+       Detail::Nvp("SRGB", Value.SRGB),
+       Detail::Nvp("SourceFilename", Value.SourceFilename),
+       Detail::Nvp("EncodedBytesBase64", EncodedBytesBase64));
+
+    auto DecodeResult = Detail::Base64Decode(EncodedBytesBase64);
+    if (!DecodeResult)
+    {
+        throw cereal::Exception(DecodeResult.error());
+    }
+
+    Value.EncodedBytes = std::move(*DecodeResult);
+    Value.Pixels.clear();
 }
 
 template<class Archive>

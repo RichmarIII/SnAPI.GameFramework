@@ -10,6 +10,11 @@
 
 #include <TextureCompressorIds.h>
 
+namespace TextureCompressorPlugin
+{
+struct ImageIntermediate;
+}
+
 namespace SnAPI::GameFramework
 {
 
@@ -54,5 +59,14 @@ struct TextureAsset : public IAsset
 
 TExpected<void> SerializeTextureSourcePayload(const TextureAsset& Payload, std::vector<uint8_t>& OutBytes);
 TExpected<TextureAsset> DeserializeTextureSourcePayload(const uint8_t* Bytes, size_t Size);
+TExpected<void> PopulateTextureSourceImageFromIntermediate(
+    TextureSourceImagePayload& OutImage,
+    const TextureCompressorPlugin::ImageIntermediate& Intermediate,
+    const std::vector<std::uint8_t>* PreferredEncodedBytes = nullptr);
+TExpected<void> EnsureTextureSourceImageEncoded(TextureSourceImagePayload& Image);
+TExpected<void> DecodeTextureSourceImageToIntermediate(const TextureSourceImagePayload& Image,
+                                                       TextureCompressorPlugin::ImageIntermediate& OutIntermediate);
+TExpected<void> DecodeTextureSourceImageToRgba(const TextureSourceImagePayload& Image,
+                                               std::vector<std::uint8_t>& OutPixels);
 
 } // namespace SnAPI::GameFramework

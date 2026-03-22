@@ -1104,6 +1104,25 @@ public:
         return *this;
     }
 
+    template<typename R, typename... Args>
+    TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) noexcept, MethodFlags Flags = {})
+    {
+        MethodInfo Info;
+        Info.Name = Name;
+        Info.ReturnType = ReflectedMethodReturnTypeId<R>();
+        Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
+        Info.ParamPassKinds = {detail::MethodParamPassKindV<Args> ...};
+        Info.Params = {CallableParamInfo{StaticTypeId<std::remove_cvref_t<Args>>(), detail::MethodParamPassKindV<Args>, {}, {}} ...};
+        Info.Invoke = MakeInvoker(Method);
+        const auto RawBinding = MakeRawInvoker(Method);
+        Info.RawInvoke = RawBinding.Invoke;
+        Info.RawInvokeUserData = RawBinding.UserData;
+        Info.IsConst = false;
+        Info.Flags = Flags;
+        m_info.Methods.push_back(std::move(Info));
+        return *this;
+    }
+
     /**
      * @brief Reflect a const method.
      * @tparam R Return type.
@@ -1117,6 +1136,25 @@ public:
      */
     template<typename R, typename... Args>
     TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const, MethodFlags Flags = {})
+    {
+        MethodInfo Info;
+        Info.Name = Name;
+        Info.ReturnType = ReflectedMethodReturnTypeId<R>();
+        Info.ParamTypes = {StaticTypeId<std::remove_cvref_t<Args>>() ...};
+        Info.ParamPassKinds = {detail::MethodParamPassKindV<Args> ...};
+        Info.Params = {CallableParamInfo{StaticTypeId<std::remove_cvref_t<Args>>(), detail::MethodParamPassKindV<Args>, {}, {}} ...};
+        Info.Invoke = MakeInvoker(Method);
+        const auto RawBinding = MakeRawInvoker(Method);
+        Info.RawInvoke = RawBinding.Invoke;
+        Info.RawInvokeUserData = RawBinding.UserData;
+        Info.IsConst = true;
+        Info.Flags = Flags;
+        m_info.Methods.push_back(std::move(Info));
+        return *this;
+    }
+
+    template<typename R, typename... Args>
+    TTypeBuilder& Method(const char* Name, R(T::*Method)(Args...) const noexcept, MethodFlags Flags = {})
     {
         MethodInfo Info;
         Info.Name = Name;

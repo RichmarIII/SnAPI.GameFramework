@@ -43,6 +43,7 @@
 #include "DirectionalLightComponent.h"
 #include "EnvironmentCaptureComponent.h"
 #include "EnvironmentProbeNode.h"
+#include "DeferredShadingParamsNode.h"
 #include "SprintArmComponent.h"
 #include "Expected.h"
 #include "FollowTargetComponent.h"

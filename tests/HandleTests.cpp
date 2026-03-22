@@ -6,6 +6,14 @@
 
 using namespace SnAPI::GameFramework;
 
+namespace
+{
+struct TMaskGrowthComponent final : BaseComponent, ComponentCRTP<TMaskGrowthComponent>
+{
+    static constexpr const char* kTypeName = "Tests::TMaskGrowthComponent";
+};
+} // namespace
+
 TEST_CASE("Handle lifecycle honors end-of-frame deletion")
 {
     World Graph;
@@ -117,6 +125,48 @@ TEST_CASE("BaseComponent owner resolution rehydrates UUID-only owner handles")
     REQUIRE_FALSE(ComponentResult->Owner().HasRuntimeKey());
     REQUIRE(ComponentResult->OwnerNode() == OwnerNode);
     REQUIRE(ComponentResult->Owner().HasRuntimeKey());
+}
+
+TEST_CASE("BaseNode Has stays synchronized with immediate component add and remove")
+{
+    World Graph;
+    auto NodeResult = Graph.CreateNode("OwnerNode");
+    REQUIRE(NodeResult);
+
+    auto* OwnerNode = Graph.BorrowedNode(*NodeResult);
+    REQUIRE(OwnerNode != nullptr);
+    REQUIRE_FALSE(OwnerNode->Has<TransformComponent>());
+
+    auto ComponentResult = OwnerNode->Add<TransformComponent>();
+    REQUIRE(ComponentResult);
+    REQUIRE(OwnerNode->Has<TransformComponent>());
+
+    OwnerNode->Remove<TransformComponent>();
+    REQUIRE_FALSE(OwnerNode->Has<TransformComponent>());
+}
+
+TEST_CASE("BaseNode Has refreshes stale component masks after type registry growth")
+{
+    World Graph;
+    auto NodeResult = Graph.CreateNode("OwnerNode");
+    REQUIRE(NodeResult);
+
+    auto* OwnerNode = Graph.BorrowedNode(*NodeResult);
+    REQUIRE(OwnerNode != nullptr);
+    REQUIRE(OwnerNode->Add<TransformComponent>());
+    REQUIRE(OwnerNode->Has<TransformComponent>());
+
+    const uint32_t InitialMaskVersion = OwnerNode->MaskVersion();
+    REQUIRE_FALSE(ComponentTypeRegistry::TryGetTypeIndex(StaticTypeId<TMaskGrowthComponent>()).has_value());
+
+    (void)ComponentTypeRegistry::TypeIndex(StaticTypeId<TMaskGrowthComponent>());
+    const uint32_t GrownVersion = ComponentTypeRegistry::Version();
+    REQUIRE(GrownVersion > InitialMaskVersion);
+    REQUIRE(OwnerNode->MaskVersion() == InitialMaskVersion);
+
+    REQUIRE(OwnerNode->Has<TransformComponent>());
+    REQUIRE_FALSE(OwnerNode->Has<TMaskGrowthComponent>());
+    REQUIRE(OwnerNode->MaskVersion() == GrownVersion);
 }
 
 TEST_CASE("Component attachments stay isolated across different dense node storages")

@@ -41,6 +41,7 @@ struct TextureAsset;
 struct StaticMeshAsset;
 struct SkeletalMeshAsset;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+class DeferredShadingParamsNode;
 class SSAOParamsNode;
 class SSGIParamsNode;
 class SSRParamsNode;
@@ -78,6 +79,11 @@ using SkeletalMeshAssetRef = TAssetRef<SkeletalMeshAsset, void>;
  */
 using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAsset, void>;
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief Asset-reference alias for deferred-shading parameter nodes.
+ */
+using DeferredShadingParamsNodeAssetRef = TAssetRef<DeferredShadingParamsNode, void>;
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Asset-reference alias for SSAO parameter nodes.
@@ -170,6 +176,7 @@ SNAPI_DEFINE_TYPE_NAME(SkeletalMeshAssetRef, "SnAPI::GameFramework::TAssetRef<Sn
 SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAsset>")
 SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAsset>>")
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+SNAPI_DEFINE_TYPE_NAME(DeferredShadingParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::DeferredShadingParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSAOParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSAOParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSGIParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSGIParamsNode>")
 SNAPI_DEFINE_TYPE_NAME(SSRParamsNodeAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SSRParamsNode>")

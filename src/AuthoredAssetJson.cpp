@@ -1,7 +1,9 @@
 #include "AuthoredAssetJson.h"
 
 #include <array>
+#include <expected>
 #include <new>
+#include <span>
 #include <sstream>
 #include <string>
 #include <type_traits>
@@ -16,6 +18,7 @@
 #include "Math.h"
 #include "NodeAsset.h"
 #include "RenderAssetPayloads.h"
+#include "RenderAssets/TextureAsset.h"
 #include "RenderAssetSourcePayloads.h"
 #include "Serialization.h"
 #include "TypeRegistration.h"
@@ -29,6 +32,146 @@ using Json = nlohmann::json;
 
 constexpr std::string_view kOpaqueJsonBytesField = "$bytes";
 constexpr std::string_view kOpaqueJsonTypeField = "$type";
+constexpr std::string_view kTextureEncodedBytesBase64Field = "EncodedBytesBase64";
+
+[[nodiscard]] std::string Base64Encode(std::span<const std::uint8_t> Bytes)
+{
+    static constexpr char kAlphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+    std::string Output{};
+    Output.reserve(((Bytes.size() + 2u) / 3u) * 4u);
+
+    std::size_t Index = 0u;
+    while (Index + 3u <= Bytes.size())
+    {
+        const std::uint32_t Chunk = (static_cast<std::uint32_t>(Bytes[Index + 0u]) << 16u) |
+                                    (static_cast<std::uint32_t>(Bytes[Index + 1u]) << 8u) |
+                                    static_cast<std::uint32_t>(Bytes[Index + 2u]);
+        Output.push_back(kAlphabet[(Chunk >> 18u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 12u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 6u) & 0x3Fu]);
+        Output.push_back(kAlphabet[Chunk & 0x3Fu]);
+        Index += 3u;
+    }
+
+    const std::size_t Remaining = Bytes.size() - Index;
+    if (Remaining == 1u)
+    {
+        const std::uint32_t Chunk = static_cast<std::uint32_t>(Bytes[Index]) << 16u;
+        Output.push_back(kAlphabet[(Chunk >> 18u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 12u) & 0x3Fu]);
+        Output.push_back('=');
+        Output.push_back('=');
+    }
+    else if (Remaining == 2u)
+    {
+        const std::uint32_t Chunk = (static_cast<std::uint32_t>(Bytes[Index + 0u]) << 16u) |
+                                    (static_cast<std::uint32_t>(Bytes[Index + 1u]) << 8u);
+        Output.push_back(kAlphabet[(Chunk >> 18u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 12u) & 0x3Fu]);
+        Output.push_back(kAlphabet[(Chunk >> 6u) & 0x3Fu]);
+        Output.push_back('=');
+    }
+
+    return Output;
+}
+
+[[nodiscard]] std::expected<std::vector<std::uint8_t>, std::string> Base64Decode(const std::string_view Text)
+{
+    auto DecodeChar = [](const char Character) -> int {
+        if (Character >= 'A' && Character <= 'Z')
+        {
+            return Character - 'A';
+        }
+        if (Character >= 'a' && Character <= 'z')
+        {
+            return Character - 'a' + 26;
+        }
+        if (Character >= '0' && Character <= '9')
+        {
+            return Character - '0' + 52;
+        }
+        if (Character == '+')
+        {
+            return 62;
+        }
+        if (Character == '/')
+        {
+            return 63;
+        }
+        if (Character == '=')
+        {
+            return -2;
+        }
+        if (Character == ' ' || Character == '\n' || Character == '\r' || Character == '\t')
+        {
+            return -3;
+        }
+        return -1;
+    };
+
+    std::vector<std::uint8_t> Output{};
+    Output.reserve((Text.size() / 4u) * 3u);
+
+    int Quartet[4] = {0, 0, 0, 0};
+    int QuartetCount = 0;
+    for (const char Character : Text)
+    {
+        const int Decoded = DecodeChar(Character);
+        if (Decoded == -3)
+        {
+            continue;
+        }
+        if (Decoded == -1)
+        {
+            return std::unexpected("Invalid base64 character");
+        }
+
+        Quartet[QuartetCount++] = Decoded;
+        if (QuartetCount != 4)
+        {
+            continue;
+        }
+
+        if (Quartet[0] < 0 || Quartet[1] < 0)
+        {
+            return std::unexpected("Invalid base64 padding");
+        }
+
+        const std::uint32_t Chunk =
+            (static_cast<std::uint32_t>(Quartet[0]) << 18u) |
+            (static_cast<std::uint32_t>(Quartet[1]) << 12u) |
+            (static_cast<std::uint32_t>(Quartet[2] >= 0 ? Quartet[2] : 0) << 6u) |
+            static_cast<std::uint32_t>(Quartet[3] >= 0 ? Quartet[3] : 0);
+
+        Output.push_back(static_cast<std::uint8_t>((Chunk >> 16u) & 0xFFu));
+        if (Quartet[2] != -2)
+        {
+            Output.push_back(static_cast<std::uint8_t>((Chunk >> 8u) & 0xFFu));
+        }
+        if (Quartet[3] != -2)
+        {
+            Output.push_back(static_cast<std::uint8_t>(Chunk & 0xFFu));
+        }
+
+        if (Quartet[2] == -2 && Quartet[3] != -2)
+        {
+            return std::unexpected("Invalid base64 padding");
+        }
+
+        QuartetCount = 0;
+    }
+
+    if (QuartetCount != 0)
+    {
+        return std::unexpected("Invalid base64 length");
+    }
+
+    return Output;
+}
 
 TExpected<Json> SerializeValueToJson(const TypeId& Type, const void* Value);
 Result DeserializeValueFromJsonInto(const TypeId& Type, void* Value, const Json& Source, bool TolerateFailures);
@@ -799,6 +942,116 @@ private:
                                   {
                                       auto Parsed = Source.get<std::vector<std::uint8_t>>();
                                       *static_cast<std::vector<std::uint8_t>*>(Value) = std::move(Parsed);
+                                      return Ok();
+                                  }
+                                  catch (const std::exception& Ex)
+                                  {
+                                      return std::unexpected(MakeError(EErrorCode::InvalidArgument, Ex.what()));
+                                  }
+                              },
+                          });
+
+        m_entries.emplace(StaticTypeId<TextureSourceImagePayload>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null texture-source JSON value"));
+                                  }
+
+                                  TextureSourceImagePayload Normalized =
+                                      *static_cast<const TextureSourceImagePayload*>(Value);
+                                  if (auto EncodeResult = EnsureTextureSourceImageEncoded(Normalized); !EncodeResult)
+                                  {
+                                      return std::unexpected(EncodeResult.error());
+                                  }
+
+                                  Json Out = Json::object();
+                                  Out["Width"] = Normalized.Width;
+                                  Out["Height"] = Normalized.Height;
+                                  Out["Channels"] = Normalized.Channels;
+                                  Out["BitsPerChannel"] = Normalized.BitsPerChannel;
+                                  Out["IsFloat"] = Normalized.IsFloat;
+                                  Out["HasNonTrivialAlpha"] = Normalized.HasNonTrivialAlpha;
+                                  Out["SRGB"] = Normalized.SRGB;
+                                  Out["SourceFilename"] = Normalized.SourceFilename;
+                                  Out[std::string(kTextureEncodedBytesBase64Field)] =
+                                      Base64Encode(Normalized.EncodedBytes);
+                                  return Out;
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null texture-source JSON destination"));
+                                  }
+                                  if (!Source.is_object())
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Texture-source JSON value must be an object"));
+                                  }
+
+                                  auto& OutValue = *static_cast<TextureSourceImagePayload*>(Value);
+                                  OutValue = {};
+
+                                  try
+                                  {
+                                      if (const auto It = Source.find("Width"); It != Source.end())
+                                      {
+                                          OutValue.Width = It->get<std::uint32_t>();
+                                      }
+                                      if (const auto It = Source.find("Height"); It != Source.end())
+                                      {
+                                          OutValue.Height = It->get<std::uint32_t>();
+                                      }
+                                      if (const auto It = Source.find("Channels"); It != Source.end())
+                                      {
+                                          OutValue.Channels = It->get<std::uint32_t>();
+                                      }
+                                      if (const auto It = Source.find("BitsPerChannel"); It != Source.end())
+                                      {
+                                          OutValue.BitsPerChannel = It->get<std::uint32_t>();
+                                      }
+                                      if (const auto It = Source.find("IsFloat"); It != Source.end())
+                                      {
+                                          OutValue.IsFloat = It->get<bool>();
+                                      }
+                                      if (const auto It = Source.find("HasNonTrivialAlpha"); It != Source.end())
+                                      {
+                                          OutValue.HasNonTrivialAlpha = It->get<bool>();
+                                      }
+                                      if (const auto It = Source.find("SRGB"); It != Source.end())
+                                      {
+                                          OutValue.SRGB = It->get<bool>();
+                                      }
+                                      if (const auto It = Source.find("SourceFilename"); It != Source.end())
+                                      {
+                                          OutValue.SourceFilename = It->get<std::string>();
+                                      }
+
+                                      if (const auto It = Source.find(std::string(kTextureEncodedBytesBase64Field));
+                                          It != Source.end() && It->is_string())
+                                      {
+                                          auto DecodeResult = Base64Decode(It->get<std::string>());
+                                          if (!DecodeResult)
+                                          {
+                                              return std::unexpected(
+                                                  MakeError(EErrorCode::InvalidArgument, DecodeResult.error()));
+                                          }
+                                          OutValue.EncodedBytes = std::move(*DecodeResult);
+                                      }
+                                      else if (const auto It = Source.find("EncodedBytes");
+                                               It != Source.end() && It->is_array())
+                                      {
+                                          OutValue.EncodedBytes = It->get<std::vector<std::uint8_t>>();
+                                      }
+                                      else if (const auto It = Source.find("Pixels");
+                                               It != Source.end() && It->is_array())
+                                      {
+                                          OutValue.Pixels = It->get<std::vector<std::uint8_t>>();
+                                      }
+
                                       return Ok();
                                   }
                                   catch (const std::exception& Ex)

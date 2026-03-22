@@ -2393,11 +2393,15 @@ TEST_CASE("Editor asset service imports raw textures as authored texture assets"
     CHECK(Selected->AssetType == StaticTypeId<TextureAsset>());
 
     TextureAsset SavedTexture{};
-    REQUIRE(DeserializeAuthoredAssetFromJson(ReadTextFile(Root.Path / std::filesystem::path(ImportedTexture->Key)), SavedTexture));
+    const std::string SavedTextureJson = ReadTextFile(Root.Path / std::filesystem::path(ImportedTexture->Key));
+    REQUIRE(DeserializeAuthoredAssetFromJson(SavedTextureJson, SavedTexture));
     CHECK(SavedTexture.Image.Width == 1u);
     CHECK(SavedTexture.Image.Height == 1u);
     CHECK(SavedTexture.Image.Channels == 4u);
-    CHECK_FALSE(SavedTexture.Image.Pixels.empty());
+    CHECK_FALSE(SavedTexture.Image.EncodedBytes.empty());
+    CHECK(SavedTexture.Image.Pixels.empty());
+    CHECK(SavedTextureJson.find("\"EncodedBytesBase64\"") != std::string::npos);
+    CHECK(SavedTextureJson.find("\"Pixels\"") == std::string::npos);
     CHECK(SavedTexture.ImportSettings.Target == ETextureCompressionTarget::BCn);
     CHECK(SavedTexture.ImportSettings.Format == ETextureCompressionFormat::Auto);
 
@@ -2515,6 +2519,8 @@ TEST_CASE("Editor asset service imports models into authored sibling assets and 
     REQUIRE(DeserializeAuthoredAssetFromJson(ReadTextFile(Root.Path / std::filesystem::path(Textures.front()->Key)), SavedTexture));
     CHECK(SavedTexture.Image.Width == 1u);
     CHECK(SavedTexture.Image.Height == 1u);
+    CHECK_FALSE(SavedTexture.Image.EncodedBytes.empty());
+    CHECK(SavedTexture.Image.Pixels.empty());
 
     REQUIRE(Host.AssetService.OpenAssetEditorByKey(StaticMeshes.front()->Key));
     const auto Session = Host.AssetService.AssetEditorSession();

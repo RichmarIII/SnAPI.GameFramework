@@ -140,61 +140,7 @@ struct SourceFileFingerprint
 
 [[nodiscard]] bool ConvertTextureImageToRgba(const TextureAsset& Asset, std::vector<std::uint8_t>& OutPixels)
 {
-    const TextureSourceImagePayload& Image = Asset.Image;
-    if (Image.Width == 0u || Image.Height == 0u || Image.Channels == 0u || Image.Channels > 4u)
-    {
-        return false;
-    }
-    if (Image.IsFloat || Image.BitsPerChannel != 8u)
-    {
-        return false;
-    }
-
-    const std::size_t SourceStride = static_cast<std::size_t>(Image.Channels);
-    const std::size_t PixelCount = static_cast<std::size_t>(Image.Width) * static_cast<std::size_t>(Image.Height);
-    if (Image.Pixels.size() < PixelCount * SourceStride)
-    {
-        return false;
-    }
-
-    OutPixels.resize(PixelCount * 4u);
-    for (std::size_t PixelIndex = 0; PixelIndex < PixelCount; ++PixelIndex)
-    {
-        const std::uint8_t* Source = &Image.Pixels[PixelIndex * SourceStride];
-        std::uint8_t* Target = &OutPixels[PixelIndex * 4u];
-
-        switch (Image.Channels)
-        {
-        case 1u:
-            Target[0] = Source[0];
-            Target[1] = Source[0];
-            Target[2] = Source[0];
-            Target[3] = 255u;
-            break;
-        case 2u:
-            Target[0] = Source[0];
-            Target[1] = Source[0];
-            Target[2] = Source[0];
-            Target[3] = Source[1];
-            break;
-        case 3u:
-            Target[0] = Source[0];
-            Target[1] = Source[1];
-            Target[2] = Source[2];
-            Target[3] = 255u;
-            break;
-        case 4u:
-            Target[0] = Source[0];
-            Target[1] = Source[1];
-            Target[2] = Source[2];
-            Target[3] = Source[3];
-            break;
-        default:
-            return false;
-        }
-    }
-
-    return true;
+    return DecodeTextureSourceImageToRgba(Asset.Image, OutPixels).has_value();
 }
 
 [[nodiscard]] std::vector<std::uint8_t> ScaleRgbaNearest(const std::vector<std::uint8_t>& SourcePixels,

@@ -474,7 +474,7 @@ void AddDependencySnapshot(std::vector<FileDependencySnapshot>& Out,
     }
 }
 
-constexpr std::uint64_t kReflectionCacheSchemaVersion = 10;
+constexpr std::uint64_t kReflectionCacheSchemaVersion = 12;
 constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ull;
 constexpr std::uint64_t kFnvPrime = 1099511628211ull;
 
@@ -600,6 +600,39 @@ std::string NormalizeTypeExpressionString(std::string_view Value)
     return Result;
 }
 
+std::string StripTopLevelCvRefFromTypeExpression(std::string Value)
+{
+    Value = Trim(Value);
+
+    bool StrippedPrefix = true;
+    while (StrippedPrefix)
+    {
+        StrippedPrefix = false;
+        for (const std::string_view Prefix : {"const ", "volatile "})
+        {
+            if (Value.starts_with(Prefix))
+            {
+                Value.erase(0, Prefix.size());
+                Value = Trim(Value);
+                StrippedPrefix = true;
+            }
+        }
+    }
+
+    while (Value.ends_with("&&"))
+    {
+        Value.erase(Value.size() - 2);
+        Value = Trim(Value);
+    }
+    while (!Value.empty() && Value.back() == '&')
+    {
+        Value.pop_back();
+        Value = Trim(Value);
+    }
+
+    return Value;
+}
+
 std::string NormalizeReflectedTypeNameString(std::string_view Value)
 {
     std::string Result = NormalizeTypeExpressionString(Value);
@@ -661,6 +694,72 @@ bool IsIdentifierContinue(const char Ch)
 {
     const unsigned char Byte = static_cast<unsigned char>(Ch);
     return std::isalnum(Byte) != 0 || Ch == '_';
+}
+
+void AppendTemplateParameterNames(const CXCursor Cursor, std::unordered_set<std::string>& Out)
+{
+    if (clang_Cursor_isNull(Cursor))
+    {
+        return;
+    }
+
+    clang_visitChildren(
+        Cursor,
+        [](CXCursor Child, CXCursor Parent, CXClientData ClientData) {
+            (void)Parent;
+            auto* const Names = static_cast<std::unordered_set<std::string>*>(ClientData);
+            if (clang_getCursorKind(Child) == CXCursor_TemplateTypeParameter)
+            {
+                const std::string Name = ToStringDispose(clang_getCursorSpelling(Child));
+                if (!Name.empty())
+                {
+                    Names->insert(Name);
+                }
+            }
+            return CXChildVisit_Continue;
+        },
+        &Out);
+}
+
+std::unordered_set<std::string> EnclosingTemplateParameterNames(CXCursor Cursor)
+{
+    std::unordered_set<std::string> Result{};
+    while (!clang_Cursor_isNull(Cursor))
+    {
+        AppendTemplateParameterNames(Cursor, Result);
+        Cursor = clang_getCursorSemanticParent(Cursor);
+    }
+    return Result;
+}
+
+bool TypeExpressionMentionsTemplateParameter(std::string_view TypeExpr, const std::unordered_set<std::string>& Names)
+{
+    if (TypeExpr.empty() || Names.empty())
+    {
+        return false;
+    }
+
+    for (std::size_t Pos = 0; Pos < TypeExpr.size();)
+    {
+        if (!IsIdentifierStart(TypeExpr[Pos]))
+        {
+            ++Pos;
+            continue;
+        }
+
+        const std::size_t Start = Pos++;
+        while (Pos < TypeExpr.size() && IsIdentifierContinue(TypeExpr[Pos]))
+        {
+            ++Pos;
+        }
+
+        if (Names.contains(std::string(TypeExpr.substr(Start, Pos - Start))))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void AdvanceSourcePosition(std::string_view Contents, std::size_t& Pos, unsigned& Line, unsigned& Column)
@@ -3280,9 +3379,76 @@ bool IsRegisteredTypeKey(const CXType Type, const CXCursor Context, const Regist
     return false;
 }
 
+bool IsTemplateDependentTypeImpl(const CXType Type,
+                                 const CXCursor Context,
+                                 const std::unordered_set<std::string>& TemplateParameters)
+{
+    if (Type.kind == CXType_Invalid)
+    {
+        return false;
+    }
+
+    const CXType Canonical = clang_getCanonicalType(Type);
+    const CXType Effective = Canonical.kind != CXType_Invalid ? Canonical : Type;
+
+    const auto IsTemplateParameterDecl = [](const CXType CandidateType) {
+        const CXCursor Decl = clang_getTypeDeclaration(CandidateType);
+        return !clang_Cursor_isNull(Decl) && clang_getCursorKind(Decl) == CXCursor_TemplateTypeParameter;
+    };
+    if (IsTemplateParameterDecl(Type) || IsTemplateParameterDecl(Effective))
+    {
+        return true;
+    }
+
+    if (TypeExpressionMentionsTemplateParameter(PrettyPrintedTypeForCode(Type, Context), TemplateParameters) ||
+        TypeExpressionMentionsTemplateParameter(PrettyPrintedTypeForCode(Effective, Context), TemplateParameters))
+    {
+        return true;
+    }
+
+    const int TemplateArgCount = clang_Type_getNumTemplateArguments(Effective);
+    for (int ArgIndex = 0; ArgIndex < TemplateArgCount; ++ArgIndex)
+    {
+        const CXType ArgType = clang_Type_getTemplateArgumentAsType(Effective, static_cast<unsigned>(ArgIndex));
+        if (ArgType.kind != CXType_Invalid && IsTemplateDependentTypeImpl(ArgType, Context, TemplateParameters))
+        {
+            return true;
+        }
+    }
+
+    switch (Effective.kind)
+    {
+    case CXType_Pointer:
+        return IsTemplateDependentTypeImpl(clang_getPointeeType(Effective), Context, TemplateParameters);
+    case CXType_LValueReference:
+    case CXType_RValueReference:
+        return IsTemplateDependentTypeImpl(clang_getPointeeType(Effective), Context, TemplateParameters);
+    case CXType_ConstantArray:
+    case CXType_IncompleteArray:
+    case CXType_VariableArray:
+    case CXType_DependentSizedArray:
+        return IsTemplateDependentTypeImpl(clang_getArrayElementType(Effective), Context, TemplateParameters);
+    default:
+        break;
+    }
+
+    return false;
+}
+
+bool IsTemplateDependentType(const CXType Type, const CXCursor Context)
+{
+    const std::unordered_set<std::string> TemplateParameters = EnclosingTemplateParameterNames(Context);
+    return IsTemplateDependentTypeImpl(Type, Context, TemplateParameters);
+}
+
 bool IsTypeReflectionCompatible(const CXType Type, const CXCursor Context, const RegistrationKnowledge& Knowledge)
 {
     if (IsRegisteredTypeKey(Type, Context, Knowledge))
+    {
+        return true;
+    }
+
+    if (IsTemplateDependentType(Type, Context))
     {
         return true;
     }
@@ -3798,31 +3964,9 @@ std::string SanitizeIdentifier(std::string_view Value)
 std::string MethodPointerExpression(const std::string& OwnerQualifiedName, const CXCursor MethodCursor)
 {
     const std::string MethodName = ToStringDispose(clang_getCursorSpelling(MethodCursor));
-    const CXCursor OwnerCursor = clang_getCursorSemanticParent(MethodCursor);
-
-    struct OverloadState
-    {
-        std::string Name{};
-        int Count = 0;
-    } State{MethodName, 0};
-    clang_visitChildren(
-        OwnerCursor,
-        [](CXCursor Child, CXCursor Parent, CXClientData ClientData) {
-            (void)Parent;
-            auto* const StatePtr = static_cast<OverloadState*>(ClientData);
-            if (clang_getCursorKind(Child) == CXCursor_CXXMethod &&
-                ToStringDispose(clang_getCursorSpelling(Child)) == StatePtr->Name)
-            {
-                ++StatePtr->Count;
-            }
-            return CXChildVisit_Continue;
-        },
-        &State);
-
-    if (State.Count <= 1)
-    {
-        return "&" + OwnerQualifiedName + "::" + MethodName;
-    }
+    const int ExceptionKind = clang_getCursorExceptionSpecificationType(MethodCursor);
+    const bool IsNoexcept = ExceptionKind == CXCursor_ExceptionSpecificationKind_BasicNoexcept ||
+                            ExceptionKind == CXCursor_ExceptionSpecificationKind_NoThrow;
 
     const CXType MethodType = clang_getCursorType(MethodCursor);
     const std::string ReturnType = PrettyPrintedTypeForCode(clang_getResultType(MethodType), MethodCursor);
@@ -3843,6 +3987,10 @@ std::string MethodPointerExpression(const std::string& OwnerQualifiedName, const
     if (clang_CXXMethod_isConst(MethodCursor) != 0)
     {
         PointerType += " const";
+    }
+    if (IsNoexcept)
+    {
+        PointerType += " noexcept";
     }
 
     return "static_cast<" + PointerType + ">(&" + OwnerQualifiedName + "::" + MethodName + ")";
@@ -4296,15 +4444,6 @@ bool PopulateMethodSpec(const CXCursor Cursor,
     if (clang_CXXMethod_isStatic(Cursor) != 0)
     {
         Diagnostics.push_back(MakeDiagnostic(Cursor, "SnFunction does not support static member functions"));
-        return false;
-    }
-
-    const int ExceptionKind = clang_getCursorExceptionSpecificationType(Cursor);
-    if (ExceptionKind == CXCursor_ExceptionSpecificationKind_BasicNoexcept ||
-        ExceptionKind == CXCursor_ExceptionSpecificationKind_ComputedNoexcept ||
-        ExceptionKind == CXCursor_ExceptionSpecificationKind_NoThrow)
-    {
-        Diagnostics.push_back(MakeDiagnostic(Cursor, "SnFunction does not yet support noexcept methods"));
         return false;
     }
 
@@ -5045,11 +5184,57 @@ std::vector<TemplateExpressionProbeGroup> GroupTemplateProbeExpressions(
     return Groups;
 }
 
+CXType NormalizeTemplateSpecializationType(const CXType Input)
+{
+    if (Input.kind == CXType_Invalid)
+    {
+        return Input;
+    }
+
+    CXType Result = clang_getCanonicalType(Input);
+    if (Result.kind == CXType_Invalid)
+    {
+        Result = Input;
+    }
+
+    while (Result.kind == CXType_LValueReference || Result.kind == CXType_RValueReference)
+    {
+        Result = clang_getPointeeType(Result);
+        if (Result.kind == CXType_Invalid)
+        {
+            return Result;
+        }
+    }
+
+    Result = clang_getUnqualifiedType(Result);
+    const CXType Canonical = clang_getCanonicalType(Result);
+    if (Canonical.kind != CXType_Invalid)
+    {
+        Result = Canonical;
+    }
+    return Result;
+}
+
+std::string NormalizeTemplateCandidateQualifiedName(std::string Value)
+{
+    return StripTopLevelCvRefFromTypeExpression(std::move(Value));
+}
+
 void UpsertTemplateSpecializationCandidate(
     TemplateSpecializationCandidate Candidate,
     std::vector<TemplateSpecializationCandidate>& Candidates,
     std::unordered_map<std::string, std::size_t>& CandidateIndices)
 {
+    const std::string OriginalQualifiedName = Candidate.QualifiedName;
+    const std::string OriginalDefaultReflectedName = NormalizeReflectedTypeNameString(OriginalQualifiedName);
+
+    Candidate.QualifiedName = NormalizeTemplateCandidateQualifiedName(std::move(Candidate.QualifiedName));
+    const std::string DefaultReflectedName = NormalizeReflectedTypeNameString(Candidate.QualifiedName);
+    if (Candidate.ReflectedName.empty() || Candidate.ReflectedName == OriginalDefaultReflectedName)
+    {
+        Candidate.ReflectedName = DefaultReflectedName;
+    }
+
     const std::string CandidateKey = NormalizeTypeExpressionString(Candidate.QualifiedName);
     if (CandidateKey.empty())
     {
@@ -5088,13 +5273,20 @@ void CollectTemplateSpecializationsFromType(
 {
     const auto BuildCandidate =
         [&](const CXType Input, const std::optional<std::string_view>& Override) -> std::optional<TemplateSpecializationCandidate> {
+        const auto QualifiedTypeExpr = [&](const CXType Type) -> std::string {
+            if (const auto ExplicitKey = FullyQualifiedTemplateSpecializationKey(Type, ContextCursor))
+            {
+                return *ExplicitKey;
+            }
+            return PrettyPrintedTypeForCode(Type, ContextCursor);
+        };
+
         if (Input.kind == CXType_Invalid)
         {
             return std::nullopt;
         }
 
-        const CXType Canonical = clang_getCanonicalType(Input);
-        const CXType Effective = Canonical.kind != CXType_Invalid ? Canonical : Input;
+        const CXType Effective = NormalizeTemplateSpecializationType(Input);
         const CXCursor TypeDecl = clang_getTypeDeclaration(Effective);
         if (clang_Cursor_isNull(TypeDecl))
         {
@@ -5122,7 +5314,8 @@ void CollectTemplateSpecializationsFromType(
             }
 
             const std::string TemplateQualifiedName = QualifiedNameForCursor(TemplateDeclarations[Index].Cursor);
-            const std::string QualifiedName = PrettyPrintedTypeForCode(Effective, ContextCursor);
+            const std::string QualifiedName =
+                NormalizeTemplateCandidateQualifiedName(QualifiedTypeExpr(Effective));
             if (!TemplateQualifiedName.empty() &&
                 !QualifiedName.empty() &&
                 QualifiedName.starts_with(TemplateQualifiedName) &&
@@ -5139,7 +5332,8 @@ void CollectTemplateSpecializationsFromType(
             return std::nullopt;
         }
 
-        const std::string QualifiedName = PrettyPrintedTypeForCode(Effective, ContextCursor);
+        const std::string QualifiedName =
+            NormalizeTemplateCandidateQualifiedName(QualifiedTypeExpr(Effective));
         const std::string DefaultReflectedName = NormalizeReflectedTypeNameString(QualifiedName);
         if (QualifiedName.empty() || DefaultReflectedName.empty())
         {
@@ -5178,7 +5372,7 @@ void CollectTemplateSpecializationsFromType(
                 continue;
             }
 
-            const std::string ArgQualifiedName = PrettyPrintedTypeForCode(ArgType, ContextCursor);
+            const std::string ArgQualifiedName = QualifiedTypeExpr(ArgType);
             const std::string ArgKey = NormalizeTypeExpressionString(ArgQualifiedName);
             Candidate.TemplateArgumentKeys.push_back(ArgKey);
             if (static_cast<std::size_t>(ArgIndex) < ParameterNames.size())
@@ -5446,10 +5640,10 @@ TemplateExpressionProbeGroupResult ResolveTemplateSpecializationsForExpressionGr
 
             if (MatchIt != StatePtr->Group->end())
             {
-                const CXType Canonical = clang_getCanonicalType(Underlying);
-                const CXType Effective = Canonical.kind != CXType_Invalid ? Canonical : Underlying;
+                const CXType Effective = NormalizeTemplateSpecializationType(Underlying);
                 const std::string CandidateKey =
-                    NormalizeTypeExpressionString(PrettyPrintedTypeForCode(Effective, Cursor));
+                    NormalizeTypeExpressionString(
+                        NormalizeTemplateCandidateQualifiedName(PrettyPrintedTypeForCode(Effective, Cursor)));
                 if (const auto CandidateIt = StatePtr->CandidateIndices->find(CandidateKey);
                     CandidateIt != StatePtr->CandidateIndices->end())
                 {
