@@ -1,10 +1,26 @@
 add_executable(GameFrameworkTests
+    AssetCookServiceAdapterTests.cpp
     AuthoredAssetTests.cpp
+    BuildCliTests.cpp
+    CodeBuildServiceAdapterTests.cpp
+    BuildExecutionTests.cpp
+    BuildHistoryTests.cpp
+    PackageOutputTests.cpp
+    PackageManifestTests.cpp
+    BuildProfileTests.cpp
+    BuildPlannerTests.cpp
+    BuildRequestTests.cpp
     ConduitTests.cpp
     EcsOnlyWorldTests.cpp
     GeneratedReflectionFixture.h
     GameProjectRuntimeTests.cpp
+    GameplayHostTests.cpp
     HandleTests.cpp
+    ModuleCreationServiceTests.cpp
+    PluginCreationServiceTests.cpp
+    PluginDescriptorTests.cpp
+    ProjectCreationServiceTests.cpp
+    ProjectDescriptorTests.cpp
     ReflectionTests.cpp
     WorldEcsRuntimeTests.cpp
     SerializationTests.cpp
@@ -41,11 +57,14 @@ include(Catch)
 catch_discover_tests(GameFrameworkTests)
 
 add_executable(GameFrameworkEditorTests
+    EditorBuildServiceTests.cpp
     SourceAssetEditorTests.cpp
     ConduitEditorTests.cpp
+    EditorServiceTypeInfoStubs.cpp
     ../src/Editor/EditorCameraComponent.cpp
     ../src/Editor/EditorAssetIconService.cpp
     ../src/Editor/EditorAssetService.cpp
+    ../src/Editor/EditorBuildService.cpp
     ../src/Editor/EditorPieService.cpp
     ../src/Editor/ConduitEditor.cpp
     ../src/Editor/ConduitGraphCanvas.cpp

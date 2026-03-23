@@ -6,6 +6,7 @@
 
 #include "BuiltinTypes.h"
 #include "RenderAssetImportSettings.h"
+#include "RenderAssets/MaterialInstanceAsset.h"
 #include "RenderAssetPayloads.h"
 #include "TypeName.h"
 #include "ReflectionAnnotations.h"

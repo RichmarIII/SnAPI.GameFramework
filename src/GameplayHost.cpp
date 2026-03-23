@@ -1578,6 +1578,12 @@ void GameplayHost::NotifyConnectionAdded(const std::uint64_t OwnerConnectionId)
         return;
     }
 
+    if (m_runtime && m_runtime->WorldPtr()
+        && World().Networking().IsHostedClientConnection(OwnerConnectionId))
+    {
+        return;
+    }
+
     if (!LocalPlayersForConnection(OwnerConnectionId).empty())
     {
         return;

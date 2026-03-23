@@ -1487,7 +1487,10 @@ TExpected<CompiledClass> CompileClassAsset(const ClassAsset& Asset, ::SnAPI::Ass
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Conduit class host type must derive from BaseNode"));
     }
 
-    auto LoadResult = Asset.Graph.LoadAsset();
+    // Conduit graph assets keep the same concrete type in source and cooked form, so packaged
+    // runtime compilation intentionally resolves them through LoadRuntime<GraphAsset>() here
+    // instead of the authored-source LoadAsset() path used by editor workflows.
+    auto LoadResult = Asset.Graph.LoadRuntime<GraphAsset>(AssetManager);
     if (!LoadResult)
     {
         return std::unexpected(MakeError(EErrorCode::NotFound, "Failed to load Conduit class graph: " + LoadResult.error()));

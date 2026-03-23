@@ -215,7 +215,11 @@ Result ClassComponent::EnsureBound(IWorld& WorldRef)
         return std::unexpected(MakeError(EErrorCode::NotFound, m_lastError));
     }
 
-    auto LoadResult = Class.LoadAsset();
+    // Conduit class assets are one of the authored-asset cases where the cooked/runtime type
+    // is intentionally the same concrete type as the source asset. This runtime component must
+    // therefore use LoadRuntime<ClassAsset>() for packaged builds, while still preserving the
+    // normal LoadAsset() source-only semantics for authored/editor code paths.
+    auto LoadResult = Class.LoadRuntime<ClassAsset>(*AssetManager);
     if (!LoadResult)
     {
         RememberError("Failed to load Conduit class asset: " + LoadResult.error());

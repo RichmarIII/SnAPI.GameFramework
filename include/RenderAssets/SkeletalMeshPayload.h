@@ -4,8 +4,10 @@
 #include <limits>
 #include <vector>
 
+#include "BuiltinTypes.h"
 #include "Expected.h"
-#include "RenderAssets/AssetRefPayload.h"
+#include "RenderAssets/SkeletalAnimationAsset.h"
+#include "RenderAssets/SkeletonAsset.h"
 #include "RenderAssets/SkeletonPayload.h"
 #include "RenderAssets/StaticMeshPayload.h"
 
@@ -18,8 +20,8 @@ struct SkeletalMeshPayload
 
     StaticMeshPayload BaseMesh{};
     std::vector<SkeletalBonePayload> Bones{};
-    AssetRefPayload Skeleton{};
-    std::vector<AssetRefPayload> Animations{};
+    SkeletonAssetRef Skeleton{};
+    std::vector<SkeletalAnimationAssetRef> Animations{};
     uint32_t SkeletonAnimationBulkIndex = std::numeric_limits<uint32_t>::max();
 
     bool operator==(const SkeletalMeshPayload&) const = default;

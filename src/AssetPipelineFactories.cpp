@@ -21,6 +21,7 @@
 #include "IAssetImporter.h"
 #include "Level.h"
 #include "NodeCast.h"
+#include "RenderAssets/MeshRuntimeAssets.h"
 #include "RenderAssetPayloads.h"
 #include "Serialization.h"
 #include "TextureCompressorIds.h"
@@ -1264,6 +1265,48 @@ std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> BuildSharedRuntimeMeshStre
     return std::make_shared<RuntimeMeshVertexStreamSource>(std::move(SourceData));
 }
 
+std::shared_ptr<StaticMeshRuntime> BuildSharedRuntimeStaticMesh(
+    const StaticMeshPayload& RuntimeMesh,
+    MeshBulkLoadCallback LoadBulk,
+    const std::string_view StableKey)
+{
+    auto Runtime = std::make_shared<StaticMeshRuntime>();
+    if (!Runtime)
+    {
+        return {};
+    }
+
+    Runtime->StreamSource = BuildSharedRuntimeMeshStreamSource(RuntimeMesh, std::move(LoadBulk), StableKey);
+    if (!Runtime->StreamSource)
+    {
+        return {};
+    }
+
+    Runtime->MaterialRefs = RuntimeMesh.MaterialInstances;
+    return Runtime;
+}
+
+std::shared_ptr<SkeletalMeshRuntime> BuildSharedRuntimeSkeletalMesh(
+    const SkeletalMeshPayload& RuntimeMesh,
+    MeshBulkLoadCallback LoadBulk,
+    const std::string_view StableKey)
+{
+    auto Runtime = std::make_shared<SkeletalMeshRuntime>();
+    if (!Runtime)
+    {
+        return {};
+    }
+
+    Runtime->StreamSource = BuildSharedRuntimeMeshStreamSource(RuntimeMesh.BaseMesh, std::move(LoadBulk), StableKey);
+    if (!Runtime->StreamSource)
+    {
+        return {};
+    }
+
+    Runtime->MaterialRefs = RuntimeMesh.BaseMesh.MaterialInstances;
+    return Runtime;
+}
+
 std::shared_ptr<SnAPI::Graphics::Material> BuildSharedRuntimeMaterial(
     const MaterialAsset& MaterialPayload,
     const std::string_view StableKey)
@@ -1789,6 +1832,37 @@ protected:
     }
 };
 
+class TSharedStaticMeshRuntimeFactory final
+    : public ::SnAPI::AssetPipeline::TAssetFactory<std::shared_ptr<StaticMeshRuntime>>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadStaticMesh();
+    }
+
+protected:
+    std::expected<std::shared_ptr<StaticMeshRuntime>, std::string> DoLoad(
+        const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<StaticMeshPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        const std::string StableKey = !Context.Info.Id.IsNull()
+            ? "asset-id://" + Context.Info.Id.ToString()
+            : (!Context.Info.Name.empty() ? "asset-name://" + Context.Info.Name : PayloadResult->Name);
+        auto RuntimeMesh = BuildSharedRuntimeStaticMesh(*PayloadResult, Context.LoadBulk, StableKey);
+        if (!RuntimeMesh)
+        {
+            return std::unexpected("Failed to build shared runtime static mesh");
+        }
+        return RuntimeMesh;
+    }
+};
+
 class TSharedSkeletalMeshSourceFactory final
     : public ::SnAPI::AssetPipeline::TAssetFactory<std::shared_ptr<::SnAPI::Graphics::IVertexStreamSource>>
 {
@@ -1817,6 +1891,37 @@ protected:
             return std::unexpected("Failed to build shared runtime skeletal vertex stream source");
         }
         return RuntimeSource;
+    }
+};
+
+class TSharedSkeletalMeshRuntimeFactory final
+    : public ::SnAPI::AssetPipeline::TAssetFactory<std::shared_ptr<SkeletalMeshRuntime>>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadSkeletalMesh();
+    }
+
+protected:
+    std::expected<std::shared_ptr<SkeletalMeshRuntime>, std::string> DoLoad(
+        const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<SkeletalMeshPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        const std::string StableKey = !Context.Info.Id.IsNull()
+            ? "asset-id://" + Context.Info.Id.ToString()
+            : (!Context.Info.Name.empty() ? "asset-name://" + Context.Info.Name : PayloadResult->BaseMesh.Name);
+        auto RuntimeMesh = BuildSharedRuntimeSkeletalMesh(*PayloadResult, Context.LoadBulk, StableKey);
+        if (!RuntimeMesh)
+        {
+            return std::unexpected("Failed to build shared runtime skeletal mesh");
+        }
+        return RuntimeMesh;
     }
 };
 #endif
@@ -1860,7 +1965,9 @@ void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manage
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::Material>>(std::make_unique<TSharedMaterialFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::MaterialInstance>>(std::make_unique<TSharedMaterialInstanceFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::IVertexStreamSource>>(std::make_unique<TSharedStaticMeshSourceFactory>());
+    Manager.RegisterFactory<std::shared_ptr<StaticMeshRuntime>>(std::make_unique<TSharedStaticMeshRuntimeFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::IVertexStreamSource>>(std::make_unique<TSharedSkeletalMeshSourceFactory>());
+    Manager.RegisterFactory<std::shared_ptr<SkeletalMeshRuntime>>(std::make_unique<TSharedSkeletalMeshRuntimeFactory>());
 #endif
 }
 

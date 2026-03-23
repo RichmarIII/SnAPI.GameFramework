@@ -3,6 +3,7 @@
 #include "Editor/EditorExport.h"
 #include "Editor/EditorLayout.h"
 #include "Editor/IEditorService.h"
+#include "BuildHistory.h"
 #include "Handles.h"
 #include "TypeRegistry.h"
 #include "Uuid.h"
@@ -11,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace SnAPI::GameFramework
 {
@@ -38,6 +40,7 @@ public:
 
 private:
     void ApplyAssetBrowserState(EditorServiceContext& Context);
+    void ApplyBuildPanelState(EditorServiceContext& Context, bool ForceHistoryReload = false);
     void QueueLayoutRebuild() { m_layoutRebuildRequested = true; }
     void RebuildLayout(EditorServiceContext& Context);
 
@@ -50,6 +53,12 @@ private:
     EditorLayout::EToolbarAction m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     bool m_hasPendingProjectActionRequest = false;
     EditorLayout::ProjectActionRequest m_pendingProjectActionRequest{};
+    bool m_hasPendingPluginActionRequest = false;
+    EditorLayout::PluginActionRequest m_pendingPluginActionRequest{};
+    bool m_hasPendingModuleActionRequest = false;
+    EditorLayout::ModuleActionRequest m_pendingModuleActionRequest{};
+    bool m_hasPendingBuildActionRequest = false;
+    EditorLayout::BuildActionRequest m_pendingBuildActionRequest{};
     bool m_hasPendingAssetSelection = false;
     bool m_pendingAssetSelectionDoubleClick = false;
     std::string m_pendingAssetSelectionKey{};
@@ -145,10 +154,15 @@ private:
     bool m_layoutRebuildRequested = false;
     std::size_t m_assetListSignature = 0;
     std::size_t m_assetDetailsSignature = 0;
+    std::size_t m_buildPanelStateSignature = 0;
     std::uint64_t m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     std::uint64_t m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     std::uint64_t m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
     std::uint64_t m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
+    bool m_buildPanelHistoryDirty = true;
+    std::string m_buildPanelHistoryProjectFilePath{};
+    std::string m_buildPanelComparisonSummary{};
+    std::vector<BuildHistoryEntry> m_cachedBuildHistory{};
 };
 
 } // namespace SnAPI::GameFramework::Editor

@@ -23,6 +23,8 @@
 #include "PawnBase.h"
 #include "PayloadRegistry.h"
 #include "PlayerStart.h"
+#include "ProjectCreationService.h"
+#include "ProjectDescriptor.h"
 #include "RenderAssetPayloads.h"
 #include "RenderAssetImportSettings.h"
 #include "Serialization.h"
@@ -126,7 +128,6 @@ constexpr std::string_view kDefaultProjectAssetRoot = "Assets";
 constexpr std::string_view kDefaultProjectStartupLevelAsset = "Levels/StarterLevel.level";
 constexpr std::string_view kEditorStarterLevelTemplateAssetFileName = "StarterLevelTemplate.level";
 constexpr std::string_view kEditorStarterScriptFileName = "platform_bob.lua";
-constexpr uint32_t kProjectConfigVersion = 1u;
 constexpr uint32_t kMaterialPayloadSchemaVersion = 2u;
 constexpr uint32_t kMaterialInstancePayloadSchemaVersion = 1u;
 constexpr std::string_view kDefaultMaterialShaderModule = "DefaultGBufferMaterial";
@@ -1932,219 +1933,23 @@ void ConfigureRendererShaderSearchRootForAssetRoot(GameRuntime& Runtime, const s
     return Escaped;
 }
 
-[[nodiscard]] std::expected<std::string, std::string> JsonParseString(const std::string& Text, std::size_t& Position)
+/**
+ * @brief Project the shared descriptor service result into the editor's cached project snapshot.
+ * @param Descriptor Resolved descriptor produced by `ProjectDescriptorService`.
+ * @return Editor-facing project info snapshot.
+ */
+[[nodiscard]] EditorAssetService::ProjectInfo MakeProjectInfo(const ResolvedProjectDescriptor& Descriptor)
 {
-    if (Position >= Text.size() || Text[Position] != '"')
-    {
-        return std::unexpected("Expected JSON string");
-    }
-    ++Position;
-
-    std::string Output{};
-    while (Position < Text.size())
-    {
-        const char Character = Text[Position++];
-        if (Character == '"')
-        {
-            return Output;
-        }
-        if (Character != '\\')
-        {
-            Output.push_back(Character);
-            continue;
-        }
-        if (Position >= Text.size())
-        {
-            return std::unexpected("Invalid JSON escape sequence");
-        }
-        const char Escape = Text[Position++];
-        switch (Escape)
-        {
-        case '"':
-            Output.push_back('"');
-            break;
-        case '\\':
-            Output.push_back('\\');
-            break;
-        case '/':
-            Output.push_back('/');
-            break;
-        case 'b':
-            Output.push_back('\b');
-            break;
-        case 'f':
-            Output.push_back('\f');
-            break;
-        case 'n':
-            Output.push_back('\n');
-            break;
-        case 'r':
-            Output.push_back('\r');
-            break;
-        case 't':
-            Output.push_back('\t');
-            break;
-        default:
-            return std::unexpected("Unsupported JSON escape sequence");
-        }
-    }
-    return std::unexpected("Unterminated JSON string");
-}
-
-[[nodiscard]] bool JsonTryReadStringField(const std::string& Text, std::string_view Key, std::string& OutValue)
-{
-    const std::string KeyToken = "\"" + std::string(Key) + "\"";
-    std::size_t SearchOffset = 0;
-    while (true)
-    {
-        const std::size_t KeyPos = Text.find(KeyToken, SearchOffset);
-        if (KeyPos == std::string::npos)
-        {
-            return false;
-        }
-        std::size_t ValuePos = KeyPos + KeyToken.size();
-        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-        {
-            ++ValuePos;
-        }
-        if (ValuePos >= Text.size() || Text[ValuePos] != ':')
-        {
-            SearchOffset = KeyPos + KeyToken.size();
-            continue;
-        }
-        ++ValuePos;
-        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-        {
-            ++ValuePos;
-        }
-        auto Parsed = JsonParseString(Text, ValuePos);
-        if (!Parsed)
-        {
-            SearchOffset = KeyPos + KeyToken.size();
-            continue;
-        }
-        OutValue = std::move(*Parsed);
-        return true;
-    }
-}
-
-[[nodiscard]] bool JsonTryReadUnsignedField(const std::string& Text, std::string_view Key, uint32_t& OutValue)
-{
-    const std::string KeyToken = "\"" + std::string(Key) + "\"";
-    const std::size_t KeyPos = Text.find(KeyToken);
-    if (KeyPos == std::string::npos)
-    {
-        return false;
-    }
-
-    std::size_t ValuePos = Text.find(':', KeyPos + KeyToken.size());
-    if (ValuePos == std::string::npos)
-    {
-        return false;
-    }
-    ++ValuePos;
-    while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-    {
-        ++ValuePos;
-    }
-    std::size_t EndPos = ValuePos;
-    while (EndPos < Text.size() && std::isdigit(static_cast<unsigned char>(Text[EndPos])) != 0)
-    {
-        ++EndPos;
-    }
-    if (EndPos <= ValuePos)
-    {
-        return false;
-    }
-
-    try
-    {
-        OutValue = static_cast<uint32_t>(std::stoul(Text.substr(ValuePos, EndPos - ValuePos)));
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-[[nodiscard]] std::string NormalizeProjectPathField(const std::string_view RawValue)
-{
-    std::string Value = TrimCopy(std::string(RawValue));
-    if (Value.empty())
-    {
-        return {};
-    }
-
-    std::replace(Value.begin(), Value.end(), '\\', '/');
-    return std::filesystem::path(Value).lexically_normal().generic_string();
-}
-
-[[nodiscard]] std::string ToProjectRelativePathField(const std::string_view RawValue, const std::filesystem::path& BaseRoot)
-{
-    std::string Value = TrimCopy(std::string(RawValue));
-    if (Value.empty())
-    {
-        return {};
-    }
-    if (HasUriScheme(Value))
-    {
-        return Value;
-    }
-
-    std::filesystem::path ValuePath = std::filesystem::path(Value).lexically_normal();
-    if (ValuePath.is_absolute() && !BaseRoot.empty())
-    {
-        std::error_code RelativeError{};
-        std::filesystem::path RelativePath = std::filesystem::relative(ValuePath, BaseRoot, RelativeError);
-        if (!RelativeError && !RelativePath.empty())
-        {
-            const std::string RelativeText = RelativePath.generic_string();
-            if (!RelativeText.starts_with("../") && RelativeText != "..")
-            {
-                return std::filesystem::path(RelativeText).lexically_normal().generic_string();
-            }
-        }
-    }
-
-    return ValuePath.generic_string();
-}
-
-[[nodiscard]] std::expected<void, std::string> WriteProjectConfigFile(const std::filesystem::path& ProjectFilePath,
-                                                                      const std::string_view Name,
-                                                                      const std::string_view AssetRoot,
-                                                                      const std::string_view StartupLevelAsset,
-                                                                      const std::string_view DefaultRenderSettingsAssetId)
-{
-    std::ofstream ProjectFile(ProjectFilePath, std::ios::binary | std::ios::trunc);
-    if (!ProjectFile.is_open())
-    {
-        return std::unexpected("Failed to open project file for writing");
-    }
-
-    ProjectFile << "{\n";
-    ProjectFile << "  \"version\": " << kProjectConfigVersion << ",\n";
-    ProjectFile << "  \"name\": \"" << JsonEscape(Name) << "\",\n";
-    ProjectFile << "  \"assetRoot\": \"" << JsonEscape(AssetRoot) << "\",\n";
-    ProjectFile << "  \"startupLevelAsset\": \"" << JsonEscape(StartupLevelAsset) << "\",\n";
-    ProjectFile << "  \"defaultRenderSettings\": \"" << JsonEscape(DefaultRenderSettingsAssetId) << "\"\n";
-    ProjectFile << "}\n";
-
-    if (!ProjectFile.good())
-    {
-        return std::unexpected("Failed to write project file");
-    }
-    ProjectFile.flush();
-    if (!ProjectFile.good())
-    {
-        return std::unexpected("Failed to flush project file");
-    }
-    ProjectFile.close();
-    if (!ProjectFile.good())
-    {
-        return std::unexpected("Failed to close project file");
-    }
-    return {};
+    EditorAssetService::ProjectInfo Project{};
+    Project.IsLoaded = true;
+    Project.Name = Descriptor.Descriptor.Project.Name;
+    Project.ProjectFilePath = Descriptor.ProjectFilePath.string();
+    Project.ProjectRootDirectory = Descriptor.ProjectRootDirectory.string();
+    Project.AssetRoot = Descriptor.Descriptor.Paths.AssetRoot;
+    Project.AssetRootDirectory = Descriptor.AssetRootDirectory.string();
+    Project.StartupLevelAsset = Descriptor.Descriptor.Startup.StartupLevelAsset;
+    Project.DefaultRenderSettingsAssetId = Descriptor.Descriptor.Startup.DefaultRenderSettingsAssetId;
+    return Project;
 }
 
 struct DefaultShapePackSpec
@@ -3461,15 +3266,15 @@ void RewriteImportedAssetRefs(ImportedSourceAssetVariant& Asset,
                     MaterialRef = MaterialInstanceAssetRef(It->second.AssetName, It->second.AssetId);
                 }
             }
-            if (const auto It = RefByOriginalName.find(TypedAsset.Skeleton.AssetName); It != RefByOriginalName.end())
+            if (const auto It = RefByOriginalName.find(TypedAsset.Skeleton.GetAssetName()); It != RefByOriginalName.end())
             {
-                TypedAsset.Skeleton = It->second;
+                TypedAsset.Skeleton = SkeletonAssetRef(It->second.AssetName, It->second.AssetId);
             }
-            for (AssetRefPayload& AnimationRef : TypedAsset.Animations)
+            for (SkeletalAnimationAssetRef& AnimationRef : TypedAsset.Animations)
             {
-                if (const auto It = RefByOriginalName.find(AnimationRef.AssetName); It != RefByOriginalName.end())
+                if (const auto It = RefByOriginalName.find(AnimationRef.GetAssetName()); It != RefByOriginalName.end())
                 {
-                    AnimationRef = It->second;
+                    AnimationRef = SkeletalAnimationAssetRef(It->second.AssetName, It->second.AssetId);
                 }
             }
         }
@@ -7668,28 +7473,39 @@ Result EditorAssetService::CreateProject(EditorServiceContext& Context,
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project directory cannot be empty"));
     }
 
-    std::error_code Error{};
-    std::filesystem::path ParentPath(ParentDirectoryText);
-    if (!ParentPath.is_absolute())
+    if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
     {
-        ParentPath = std::filesystem::absolute(ParentPath, Error);
-        if (Error)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to resolve project directory: " + Error.message()));
-        }
+        return TemplateResult;
     }
 
-    const std::filesystem::path ProjectRoot = ParentPath / Name;
-    const std::filesystem::path AssetRoot = ProjectRoot / std::string(kDefaultProjectAssetRoot);
-    const std::filesystem::path ProjectFilePath = ProjectRoot / std::string(kDefaultProjectFileName);
-    const std::filesystem::path StartupAssetPath = AssetRoot / std::filesystem::path(kDefaultProjectStartupLevelAsset);
-
-    std::filesystem::create_directories(AssetRoot, Error);
-    if (Error)
+    auto DescriptorResult = ProjectCreationService::BuildDefaultDescriptor(Name);
+    if (!DescriptorResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError,
-                                         "Failed to create project directory: " + Error.message()));
+        return std::unexpected(DescriptorResult.error());
+    }
+
+    ProjectCreationRequest CreateRequest{};
+    CreateRequest.ProjectName = Name;
+    CreateRequest.ParentDirectory = ParentDirectoryText;
+    CreateRequest.ProjectFileName = std::string(kDefaultProjectFileName);
+    CreateRequest.Descriptor = std::move(*DescriptorResult);
+    return CreateProject(Context, CreateRequest, true);
+}
+
+Result EditorAssetService::CreateProject(EditorServiceContext& Context,
+                                         const ProjectCreationRequest& Request,
+                                         const bool LoadAfterCreate,
+                                         ProjectCreationResult* OutResult)
+{
+    ProjectCreationRequest CreateRequest = Request;
+    CreateRequest.ProjectName = TrimCopy(CreateRequest.ProjectName);
+    if (CreateRequest.ProjectName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project name cannot be empty"));
+    }
+    if (CreateRequest.ParentDirectory.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project directory cannot be empty"));
     }
 
     if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
@@ -7697,233 +7513,187 @@ Result EditorAssetService::CreateProject(EditorServiceContext& Context,
         return TemplateResult;
     }
 
-    if (Result StarterResult = EnsureProjectStarterLevelAsset(AssetRoot, StartupAssetPath); !StarterResult)
+    if (CreateRequest.ProjectFileName.empty())
     {
-        return StarterResult;
+        CreateRequest.ProjectFileName = std::string(kDefaultProjectFileName);
     }
-    if (Result ShaderResult = EnsureProjectShaderDirectory(AssetRoot); !ShaderResult)
+    if (CreateRequest.Templates.StarterLevelTemplateSourcePath.empty())
     {
-        return ShaderResult;
+        CreateRequest.Templates.StarterLevelTemplateSourcePath = m_editorStarterLevelTemplateAssetPath;
     }
-
-    if (!m_editorStarterScriptTemplatePath.empty())
+    if (CreateRequest.Templates.StarterScriptTemplateSourcePath.empty())
     {
-        const std::filesystem::path ProjectScriptPath = AssetRoot / std::string(kEditorStarterScriptFileName);
-        Error.clear();
-        if (!std::filesystem::exists(ProjectScriptPath, Error) || Error)
+        CreateRequest.Templates.StarterScriptTemplateSourcePath = m_editorStarterScriptTemplatePath;
+    }
+    if (CreateRequest.Templates.ShaderTemplateDirectory.empty())
+    {
+        const std::filesystem::path TemplateShaderDirectory = m_editorTemplateAssetDirectory / "Shaders";
+        std::error_code Error{};
+        if (std::filesystem::exists(TemplateShaderDirectory, Error) && !Error)
         {
-            Error.clear();
-            std::filesystem::copy_file(m_editorStarterScriptTemplatePath,
-                                       ProjectScriptPath,
-                                       std::filesystem::copy_options::overwrite_existing,
-                                       Error);
-            if (Error)
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError,
-                                                 "Failed to copy starter script into project assets: " + Error.message()));
-            }
+            CreateRequest.Templates.ShaderTemplateDirectory = TemplateShaderDirectory;
         }
     }
 
-    if (auto WriteResult = WriteProjectConfigFile(ProjectFilePath,
-                                                  Name,
-                                                  std::string(kDefaultProjectAssetRoot),
-                                                  std::string(kDefaultProjectStartupLevelAsset),
-                                                  std::string{}); !WriteResult)
+    ProjectCreationResult CreateResult{};
+    if (Result CreateWorkspaceResult = ProjectCreationService::CreateProject(CreateRequest, &CreateResult); !CreateWorkspaceResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
+        return CreateWorkspaceResult;
     }
 
-    auto LoadResult = LoadProject(Context, ProjectFilePath.string());
-    if (!LoadResult)
+    if (OutResult != nullptr)
     {
-        return LoadResult;
+        *OutResult = CreateResult;
     }
 
-    m_statusMessage = "Created and loaded project: " + Name;
+    if (LoadAfterCreate)
+    {
+        auto LoadResult = LoadProject(Context, CreateResult.Project.ProjectFilePath.string());
+        if (!LoadResult)
+        {
+            return LoadResult;
+        }
+
+        m_statusMessage = "Created and loaded project: " + CreateResult.Project.Descriptor.Project.Name;
+        return Ok();
+    }
+
+    m_statusMessage = "Created project: " + CreateResult.Project.Descriptor.Project.Name;
+    return Ok();
+}
+
+Result EditorAssetService::CreatePlugin(EditorServiceContext& Context,
+                                        const PluginCreationRequest& Request,
+                                        PluginCreationResult* OutResult)
+{
+    (void)Context;
+    PluginCreationRequest CreateRequest = Request;
+    CreateRequest.PluginName = TrimCopy(CreateRequest.PluginName);
+    if (CreateRequest.PluginName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Plugin name cannot be empty"));
+    }
+    if (CreateRequest.ParentDirectory.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Plugin directory cannot be empty"));
+    }
+
+    PluginCreationResult CreateResult{};
+    if (Result CreateWorkspaceResult = PluginCreationService::CreatePlugin(CreateRequest, &CreateResult); !CreateWorkspaceResult)
+    {
+        return CreateWorkspaceResult;
+    }
+
+    if (OutResult != nullptr)
+    {
+        *OutResult = CreateResult;
+    }
+
+    m_statusMessage = "Created plugin: " + CreateResult.Plugin.Descriptor.Plugin.Name;
+    return Ok();
+}
+
+Result EditorAssetService::CreateProjectModule(EditorServiceContext& Context,
+                                               const ModuleCreationRequest& Request,
+                                               ModuleCreationResult* OutResult)
+{
+    (void)Context;
+    ModuleCreationRequest CreateRequest = Request;
+    if (CreateRequest.ProjectFilePath.empty())
+    {
+        if (m_currentProject.ProjectFilePath.empty())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "Project module creation requires a project descriptor path"));
+        }
+
+        CreateRequest.ProjectFilePath = m_currentProject.ProjectFilePath;
+    }
+
+    ModuleCreationResult CreateResult{};
+    if (Result CreateModuleResult = ModuleCreationService::CreateModule(CreateRequest, &CreateResult); !CreateModuleResult)
+    {
+        return CreateModuleResult;
+    }
+
+    if (OutResult != nullptr)
+    {
+        *OutResult = CreateResult;
+    }
+
+    m_statusMessage = "Added project module: " + CreateResult.Module.Name;
+    return Ok();
+}
+
+Result EditorAssetService::CreatePluginModule(EditorServiceContext& Context,
+                                              const PluginModuleCreationRequest& Request,
+                                              PluginModuleCreationResult* OutResult)
+{
+    (void)Context;
+    PluginModuleCreationRequest CreateRequest = Request;
+    if (CreateRequest.PluginFilePath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Plugin module creation requires a plugin descriptor path"));
+    }
+
+    PluginModuleCreationResult CreateResult{};
+    if (Result CreateModuleResult = ModuleCreationService::CreatePluginModule(CreateRequest, &CreateResult); !CreateModuleResult)
+    {
+        return CreateModuleResult;
+    }
+
+    if (OutResult != nullptr)
+    {
+        *OutResult = CreateResult;
+    }
+
+    m_statusMessage = "Added plugin module: " + CreateResult.Module.Name;
     return Ok();
 }
 
 Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std::string_view ProjectFilePath)
 {
-    std::string ProjectFileText = TrimCopy(std::string(ProjectFilePath));
-    if (ProjectFileText.empty())
+    auto ResolvedProject = ProjectDescriptorService::LoadResolved(ProjectFilePath);
+    if (!ResolvedProject)
     {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file path cannot be empty"));
-    }
-
-    std::filesystem::path ProjectFile = std::filesystem::path(ProjectFileText);
-    if (auto Resolved = SPathResolver::Instance().Resolve(ProjectFileText); Resolved)
-    {
-        ProjectFile = *Resolved;
-    }
-    else if (!ProjectFile.is_absolute())
-    {
-        std::error_code Error{};
-        ProjectFile = std::filesystem::absolute(ProjectFile, Error);
-        if (Error)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to resolve project file path: " + Error.message()));
-        }
+        return std::unexpected(ResolvedProject.error());
     }
 
     std::error_code Error{};
-    if (!std::filesystem::exists(ProjectFile, Error) || Error)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Project file was not found: " + ProjectFile.string()));
-    }
-
-    std::ifstream Input(ProjectFile, std::ios::binary);
-    if (!Input.is_open())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to open project file"));
-    }
-    std::ostringstream Buffer{};
-    Buffer << Input.rdbuf();
-    const std::string JsonText = Buffer.str();
-    if (JsonText.empty())
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file is empty"));
-    }
-
-    uint32_t Version = kProjectConfigVersion;
-    (void)JsonTryReadUnsignedField(JsonText, "version", Version);
-    if (Version != kProjectConfigVersion)
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported project file version"));
-    }
-
-    std::string Name = ProjectFile.stem().string();
-    (void)JsonTryReadStringField(JsonText, "name", Name);
-    Name = TrimCopy(Name);
-    if (Name.empty())
-    {
-        Name = "Project";
-    }
-
-    std::string AssetRootField = std::string(kDefaultProjectAssetRoot);
-    (void)JsonTryReadStringField(JsonText, "assetRoot", AssetRootField);
-    AssetRootField = TrimCopy(AssetRootField);
-    if (AssetRootField.empty())
-    {
-        AssetRootField = std::string(kDefaultProjectAssetRoot);
-    }
-    else if (!HasUriScheme(AssetRootField))
-    {
-        AssetRootField = NormalizeProjectPathField(AssetRootField);
-    }
-
-    std::string StartupLevelAssetField{};
-    (void)JsonTryReadStringField(JsonText, "startupLevelAsset", StartupLevelAssetField);
-    StartupLevelAssetField = TrimCopy(StartupLevelAssetField);
-    if (StartupLevelAssetField.empty())
-    {
-        std::string LegacyStartupLevelPack{};
-        (void)JsonTryReadStringField(JsonText, "startupLevelPack", LegacyStartupLevelPack);
-        LegacyStartupLevelPack = TrimCopy(LegacyStartupLevelPack);
-        if (!LegacyStartupLevelPack.empty())
-        {
-            if (!HasUriScheme(LegacyStartupLevelPack))
-            {
-                LegacyStartupLevelPack = NormalizeProjectPathField(LegacyStartupLevelPack);
-                std::filesystem::path LegacyPath = std::filesystem::path(LegacyStartupLevelPack);
-                if (NormalizeAssetExtension(LegacyPath.extension().string()) == ".snpak")
-                {
-                    LegacyPath.replace_extension(".level");
-                }
-                StartupLevelAssetField = LegacyPath.lexically_normal().generic_string();
-            }
-            else
-            {
-                StartupLevelAssetField = LegacyStartupLevelPack;
-            }
-        }
-    }
-    if (StartupLevelAssetField.empty())
-    {
-        StartupLevelAssetField = std::string(kDefaultProjectStartupLevelAsset);
-    }
-    else if (!HasUriScheme(StartupLevelAssetField))
-    {
-        StartupLevelAssetField = NormalizeProjectPathField(StartupLevelAssetField);
-    }
-
-    std::string DefaultRenderSettingsField{};
-    (void)JsonTryReadStringField(JsonText, "defaultRenderSettings", DefaultRenderSettingsField);
-    DefaultRenderSettingsField = TrimCopy(DefaultRenderSettingsField);
-
-    const std::filesystem::path ProjectRoot = ProjectFile.parent_path();
-    std::filesystem::path ResolvedAssetRoot = std::filesystem::path(AssetRootField);
-    if (HasUriScheme(AssetRootField))
-    {
-        auto Resolved = SPathResolver::Instance().Resolve(AssetRootField);
-        if (!Resolved)
-        {
-            return std::unexpected(Resolved.error());
-        }
-        ResolvedAssetRoot = *Resolved;
-    }
-    else if (!ResolvedAssetRoot.is_absolute())
-    {
-        ResolvedAssetRoot = ProjectRoot / ResolvedAssetRoot;
-    }
-    ResolvedAssetRoot = ResolvedAssetRoot.lexically_normal();
-
-    std::filesystem::create_directories(ResolvedAssetRoot, Error);
+    std::filesystem::create_directories(ResolvedProject->AssetRootDirectory, Error);
     if (Error)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to create project asset root directory: " + Error.message()));
     }
 
-    if (Result SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedAssetRoot); !SetRootResult)
+    if (Result SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedProject->AssetRootDirectory); !SetRootResult)
     {
         return SetRootResult;
     }
 
-    m_currentProject = {};
-    m_currentProject.IsLoaded = true;
-    m_currentProject.Name = Name;
-    m_currentProject.ProjectFilePath = ProjectFile.string();
-    m_currentProject.ProjectRootDirectory = ProjectRoot.string();
-    m_currentProject.AssetRoot = AssetRootField;
-    m_currentProject.AssetRootDirectory = ResolvedAssetRoot.string();
-    m_currentProject.StartupLevelAsset = StartupLevelAssetField;
-    m_currentProject.DefaultRenderSettingsAssetId = DefaultRenderSettingsField;
-
-    std::filesystem::path StartupAssetPath = std::filesystem::path(StartupLevelAssetField);
-    if (HasUriScheme(StartupLevelAssetField))
-    {
-        auto Resolved = SPathResolver::Instance().Resolve(StartupLevelAssetField);
-        if (!Resolved)
-        {
-            return std::unexpected(Resolved.error());
-        }
-        StartupAssetPath = *Resolved;
-    }
-    else if (!StartupAssetPath.is_absolute())
-    {
-        StartupAssetPath = ResolvedAssetRoot / StartupAssetPath;
-    }
-    StartupAssetPath = StartupAssetPath.lexically_normal();
+    m_currentProject = MakeProjectInfo(*ResolvedProject);
+    const std::filesystem::path StartupAssetPath = ResolvedProject->StartupLevelAssetPath;
 
     if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
     {
         return TemplateResult;
     }
-    if (Result StarterResult = EnsureProjectStarterLevelAsset(ResolvedAssetRoot, StartupAssetPath); !StarterResult)
+    if (Result StarterResult = EnsureProjectStarterLevelAsset(ResolvedProject->AssetRootDirectory, StartupAssetPath);
+        !StarterResult)
     {
         return StarterResult;
     }
-    if (Result ShaderResult = EnsureProjectShaderDirectory(ResolvedAssetRoot); !ShaderResult)
+    if (Result ShaderResult = EnsureProjectShaderDirectory(ResolvedProject->AssetRootDirectory); !ShaderResult)
     {
         return ShaderResult;
     }
 
     if (!m_editorStarterScriptTemplatePath.empty())
     {
-        const std::filesystem::path ProjectScriptPath = ResolvedAssetRoot / std::string(kEditorStarterScriptFileName);
+        const std::filesystem::path ProjectScriptPath =
+            ResolvedProject->AssetRootDirectory / std::string(kEditorStarterScriptFileName);
         Error.clear();
         if (!std::filesystem::exists(ProjectScriptPath, Error) || Error)
         {
@@ -7941,7 +7711,7 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
     }
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
-    ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), ResolvedAssetRoot);
+    ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), ResolvedProject->AssetRootDirectory);
 #endif
 
     if (Result RebuildResult = RebuildAssetManager(); !RebuildResult)
@@ -7974,6 +7744,14 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
     const std::filesystem::path ProjectFilePath = std::filesystem::path(m_currentProject.ProjectFilePath).lexically_normal();
     const std::filesystem::path ProjectRoot = ProjectFilePath.parent_path();
 
+    auto DescriptorResult = ProjectDescriptorService::Load(ProjectFilePath.string());
+    if (!DescriptorResult)
+    {
+        return std::unexpected(DescriptorResult.error());
+    }
+
+    ProjectDescriptor Descriptor = *DescriptorResult;
+
     std::string NextName = TrimCopy(std::string(ProjectName));
     if (NextName.empty())
     {
@@ -7989,7 +7767,8 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
     {
         if (!m_currentProject.AssetRootDirectory.empty())
         {
-            NextAssetRoot = ToProjectRelativePathField(m_currentProject.AssetRootDirectory, ProjectRoot);
+            NextAssetRoot =
+                ProjectDescriptorService::ToProjectRelativePathField(m_currentProject.AssetRootDirectory, ProjectRoot);
         }
         if (NextAssetRoot.empty())
         {
@@ -8019,7 +7798,8 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
     }
     if (!HasUriScheme(NextStartupLevelAsset))
     {
-        NextStartupLevelAsset = ToProjectRelativePathField(NextStartupLevelAsset, AssetRootPath);
+        NextStartupLevelAsset =
+            ProjectDescriptorService::ToProjectRelativePathField(NextStartupLevelAsset, AssetRootPath);
     }
 
     std::string NextDefaultRenderSettingsAssetId = TrimCopy(std::string(DefaultRenderSettingsAssetId));
@@ -8028,19 +7808,27 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
         NextDefaultRenderSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
     }
 
-    if (auto WriteResult = WriteProjectConfigFile(ProjectFilePath,
-                                                  NextName,
-                                                  NextAssetRoot,
-                                                  NextStartupLevelAsset,
-                                                  NextDefaultRenderSettingsAssetId); !WriteResult)
+    Descriptor.Project.Name = NextName;
+    if (Descriptor.Project.DisplayName.empty() || Descriptor.Project.DisplayName == m_currentProject.Name)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
+        Descriptor.Project.DisplayName = NextName;
+    }
+    Descriptor.Paths.AssetRoot = NextAssetRoot;
+    Descriptor.Startup.StartupLevelAsset = NextStartupLevelAsset;
+    Descriptor.Startup.DefaultRenderSettingsAssetId = NextDefaultRenderSettingsAssetId;
+
+    if (Result SaveResult = ProjectDescriptorService::Save(Descriptor, ProjectFilePath.string()); !SaveResult)
+    {
+        return SaveResult;
     }
 
-    m_currentProject.Name = std::move(NextName);
-    m_currentProject.AssetRoot = std::move(NextAssetRoot);
-    m_currentProject.StartupLevelAsset = std::move(NextStartupLevelAsset);
-    m_currentProject.DefaultRenderSettingsAssetId = std::move(NextDefaultRenderSettingsAssetId);
+    auto ResolvedProject = ProjectDescriptorService::LoadResolved(ProjectFilePath.string());
+    if (!ResolvedProject)
+    {
+        return std::unexpected(ResolvedProject.error());
+    }
+
+    m_currentProject = MakeProjectInfo(*ResolvedProject);
 
     if (Result LoadDefaultsResult = LoadProjectDefaultRenderSettings(Context); !LoadDefaultsResult)
     {

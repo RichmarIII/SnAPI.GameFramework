@@ -14,6 +14,7 @@
 #include <Material.hpp>
 #include <IVertexStreamSource.hpp>
 #include <ShaderCompilationManager.hpp>
+#include "RenderAssets/MeshRuntimeAssets.h"
 #endif
 
 using namespace SnAPI::GameFramework;
@@ -610,6 +611,100 @@ TEST_CASE("Runtime mesh stream source rebuilds submesh bounds from geometry when
 #endif
 }
 
+TEST_CASE("Runtime mesh assets preserve baked material refs and reuse shared runtime instances", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+    ScopedAssetRoot AssetRoot(Root.Path);
+
+    MaterialAsset Material{};
+    Material.ShaderModule = "UnitTestShader";
+    auto MaterialJson = SerializeAuthoredAssetToJson(Material);
+    REQUIRE(MaterialJson);
+    WriteTextFile(Root.Path / "Rendering" / "Surface.material", *MaterialJson);
+
+    MaterialInstanceAsset MaterialInstance{};
+    MaterialInstance.ParentMaterial.AssetName = "Rendering/Surface.material";
+    auto MaterialInstanceJson = SerializeAuthoredAssetToJson(MaterialInstance);
+    REQUIRE(MaterialInstanceJson);
+    WriteTextFile(Root.Path / "Rendering" / "Surface.materialinstance", *MaterialInstanceJson);
+
+    StaticMeshAsset StaticMesh{};
+    StaticMesh.Mesh.Name = "RuntimeMesh";
+    StaticMesh.Mesh.SubMeshes.push_back({
+        .IndexOffset = 0u,
+        .IndexCount = 3u,
+        .MaterialSlot = 0u,
+        .BoundsMin = {0.0f, 0.0f, 0.0f},
+        .BoundsMax = {1.0f, 1.0f, 0.0f},
+    });
+    StaticMesh.Mesh.MaterialInstances.emplace_back("Rendering/Surface.materialinstance");
+
+    const std::vector<std::array<float, 3>> Positions = {
+        {0.0f, 0.0f, 0.0f},
+        {1.0f, 0.0f, 0.0f},
+        {0.0f, 1.0f, 0.0f},
+    };
+    StaticMesh.Streams.push_back({
+        .Semantic = EMeshStreamSemantic::Position,
+        .Bytes = BytesFromVector(Positions),
+        .ElementCount = static_cast<std::uint32_t>(Positions.size()),
+        .StrideBytes = sizeof(float) * 3u,
+        .Compress = false,
+    });
+
+    const std::vector<std::uint32_t> Indices = {0u, 1u, 2u};
+    StaticMesh.Streams.push_back({
+        .Semantic = EMeshStreamSemantic::Index,
+        .Bytes = BytesFromVector(Indices),
+        .ElementCount = static_cast<std::uint32_t>(Indices.size()),
+        .StrideBytes = sizeof(std::uint32_t),
+        .Compress = false,
+    });
+
+    auto StaticMeshJson = SerializeAuthoredAssetToJson(StaticMesh);
+    REQUIRE(StaticMeshJson);
+    WriteTextFile(Root.Path / "Rendering" / "RuntimeMesh.staticmesh", *StaticMeshJson);
+
+    SkeletalMeshAsset SkeletalMesh{};
+    SkeletalMesh.BaseMesh = StaticMesh;
+    SkeletalMesh.Bones = {};
+    auto SkeletalMeshJson = SerializeAuthoredAssetToJson(SkeletalMesh);
+    REQUIRE(SkeletalMeshJson);
+    WriteTextFile(Root.Path / "Rendering" / "RuntimeMesh.skeletalmesh", *SkeletalMeshJson);
+
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+
+    TAssetRef<StaticMeshAsset> StaticMeshRef("Rendering/RuntimeMesh.staticmesh");
+    auto SharedStaticMesh = StaticMeshRef.GetRuntimeShared<StaticMeshRuntime>(*Manager);
+    REQUIRE(SharedStaticMesh);
+    REQUIRE(*SharedStaticMesh);
+    REQUIRE((*SharedStaticMesh)->StreamSource);
+    REQUIRE((*SharedStaticMesh)->MaterialRefs.size() == 1u);
+    CHECK((*SharedStaticMesh)->MaterialRefs.front().GetAssetName() == "Rendering/Surface.materialinstance");
+
+    auto SharedStaticMeshAgain = StaticMeshRef.GetRuntimeShared<StaticMeshRuntime>(*Manager);
+    REQUIRE(SharedStaticMeshAgain);
+    REQUIRE(*SharedStaticMeshAgain);
+    CHECK((*SharedStaticMeshAgain).get() == (*SharedStaticMesh).get());
+
+    TAssetRef<SkeletalMeshAsset> SkeletalMeshRef("Rendering/RuntimeMesh.skeletalmesh");
+    auto SharedSkeletalMesh = SkeletalMeshRef.GetRuntimeShared<SkeletalMeshRuntime>(*Manager);
+    REQUIRE(SharedSkeletalMesh);
+    REQUIRE(*SharedSkeletalMesh);
+    REQUIRE((*SharedSkeletalMesh)->StreamSource);
+    REQUIRE((*SharedSkeletalMesh)->MaterialRefs.size() == 1u);
+    CHECK((*SharedSkeletalMesh)->MaterialRefs.front().GetAssetName() == "Rendering/Surface.materialinstance");
+
+    auto SharedSkeletalMeshAgain = SkeletalMeshRef.GetRuntimeShared<SkeletalMeshRuntime>(*Manager);
+    REQUIRE(SharedSkeletalMeshAgain);
+    REQUIRE(*SharedSkeletalMeshAgain);
+    CHECK((*SharedSkeletalMeshAgain).get() == (*SharedSkeletalMesh).get());
+#endif
+}
+
 TEST_CASE("Conduit class compilation resolves graph refs from authored source assets", "[Assets][Source]")
 {
     RegisterBuiltinTypes();
@@ -953,6 +1048,72 @@ TEST_CASE("Asset manager JIT loads authored prefab level and world source assets
     REQUIRE(WorldLoad);
     REQUIRE(*WorldLoad);
     CHECK(CountWorldNodes(**WorldLoad) == 2);
+}
+
+TEST_CASE("Empty level assets round-trip through source payload serialization", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    LevelAsset Source{};
+
+    std::vector<std::uint8_t> Bytes{};
+    REQUIRE(SerializeLevelAsset(Source, Bytes));
+    REQUIRE_FALSE(Bytes.empty());
+
+    auto RoundTrip = DeserializeLevelAsset(Bytes.data(), Bytes.size());
+    REQUIRE(RoundTrip);
+    CHECK(RoundTrip->Name.empty());
+    CHECK(RoundTrip->Nodes.empty());
+    CHECK(RoundTrip->LogicalName.empty());
+    CHECK(RoundTrip->AssetId.IsNull());
+}
+
+TEST_CASE("Level source payload binary round-trips preserve authored identity", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    LevelAsset Source{};
+    Source.SetPersistentIdentity(::SnAPI::AssetPipeline::AssetId::Generate(), "Levels/Identity.level");
+
+    std::vector<std::uint8_t> Bytes{};
+    REQUIRE(SerializeLevelAsset(Source, Bytes));
+    REQUIRE_FALSE(Bytes.empty());
+
+    auto RoundTrip = DeserializeLevelAsset(Bytes.data(), Bytes.size());
+    REQUIRE(RoundTrip);
+    CHECK(RoundTrip->AssetId == Source.AssetId);
+    CHECK(RoundTrip->LogicalName == Source.LogicalName);
+    CHECK(RoundTrip->Name.empty());
+    CHECK(RoundTrip->Nodes.empty());
+}
+
+TEST_CASE("Asset manager loads empty authored level source assets by logical name", "[Assets][Source]")
+{
+    RegisterBuiltinTypes();
+
+    TempDir Root{};
+
+    LevelAsset Source{};
+    auto LevelJson = SerializeAuthoredAssetToJson(Source);
+    REQUIRE(LevelJson);
+    WriteTextFile(Root.Path / "Levels" / "Empty.level", *LevelJson);
+
+    auto Manager = MakeSourceOnlyManager(Root.Path);
+
+    World LevelWorld("EmptyLevelLoadWorld");
+    NodeHandle LoadedLevelHandle{};
+    LevelAssetLoadParams LevelParams{};
+    LevelParams.TargetWorld = &LevelWorld;
+    LevelParams.OutCreatedLevel = &LoadedLevelHandle;
+
+    auto LevelLoad = Manager->Load<Level>("Levels/Empty.level", LevelParams);
+    REQUIRE(LevelLoad);
+    REQUIRE(*LevelLoad);
+
+    auto* LoadedLevel = NodeCast<Level>(LoadedLevelHandle.Borrowed());
+    REQUIRE(LoadedLevel != nullptr);
+    CHECK(LoadedLevel->Children().empty());
+    CHECK(CountWorldNodes(LevelWorld) == 1);
 }
 
 TEST_CASE("Prefab capture resolves subtree components from UUID-only live node handles", "[Assets][Source]")

@@ -11,10 +11,12 @@ option(SNAPI_GF_BUILD_EXAMPLES "Build examples" ON)
 option(SNAPI_GF_BUILD_DOCS "Build docs (Doxygen + MkDocs)" ON)
 option(SNAPI_GF_BUILD_EDITOR "Build editor target" ON)
 option(SNAPI_GF_BUILD_RUNTIME "Build runtime engine target" ON)
+option(SNAPI_GF_BUILD_BUILDCLI "Build the build/package CLI target" ON)
 option(SNAPI_GF_BUILD_REFLECTION_GEN "Build the libclang-based reflection generator" ON)
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
+set(SNAPI_PROJECT_ROOT_DIR "" CACHE PATH "Optional external project root integrated into SnAPI.GameFramework targets")
 
 if (SNAPI_ENABLE_IPO)
     include(CheckIPOSupported)
@@ -131,6 +133,15 @@ set(SNAPI_GF_SOURCES
     src/AssetPipelineFactories.cpp
     src/AssetPipelineSerializers.cpp
     src/BaseNode.cpp
+    src/BuildProfile.cpp
+    src/BuildPlanner.cpp
+    src/BuildRequest.cpp
+    src/BuildCache.cpp
+    src/BuildCli.cpp
+    src/BuildExecution.cpp
+    src/BuildHistory.cpp
+    src/AssetCookServiceAdapter.cpp
+    src/CodeBuildServiceAdapter.cpp
     src/CharacterMovementController.cpp
     src/CameraComponent.cpp
     src/ColliderComponent.cpp
@@ -158,7 +169,11 @@ set(SNAPI_GF_SOURCES
     src/LocalPlayer.cpp
     src/LocalPlayerService.cpp
     src/MultiplayerConfigNode.cpp
+    src/ModuleCreationService.cpp
+    src/ModuleScaffoldingShared.cpp
     src/NodeAsset.cpp
+    src/PackageManifest.cpp
+    src/PackageOutput.cpp
     src/DeferredShadingParamsNode.cpp
     src/SSAOParamsNode.cpp
     src/SSGIParamsNode.cpp
@@ -172,6 +187,11 @@ set(SNAPI_GF_SOURCES
     src/WorldRenderSettings.cpp
     src/PawnBase.cpp
     src/PlayerStart.cpp
+    src/ProjectCreationService.cpp
+    src/ProjectBuildGenerationShared.cpp
+    src/ProjectDescriptor.cpp
+    src/PluginCreationService.cpp
+    src/PluginDescriptor.cpp
     src/NetworkSystem.cpp
     src/PhysicsSystem.cpp
     src/NetReplication.cpp
@@ -230,8 +250,12 @@ target_link_libraries(SnAPI.GameFramework PUBLIC stduuid SnAPI.Math nlohmann_jso
 
 set(SNAPI_GF_DEFAULT_ASSET_ROOT "${CMAKE_BINARY_DIR}/Assets")
 file(TO_CMAKE_PATH "${SNAPI_GF_DEFAULT_ASSET_ROOT}" SNAPI_GF_DEFAULT_ASSET_ROOT)
+file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}" SNAPI_GF_SOURCE_ROOT_DIR)
 target_compile_definitions(SnAPI.GameFramework PUBLIC
     SNAPI_GF_DEFAULT_ASSET_ROOT="${SNAPI_GF_DEFAULT_ASSET_ROOT}"
+)
+target_compile_definitions(SnAPI.GameFramework PRIVATE
+    SNAPI_GF_SOURCE_ROOT_DIR="${SNAPI_GF_SOURCE_ROOT_DIR}"
 )
 
 if (SNAPI_GF_ENABLE_PROFILER)
@@ -246,6 +270,13 @@ if (SNAPI_GF_BUILD_RUNTIME)
         src/Runtime/main.cpp
     )
     target_link_libraries(SnAPI.GameFramework.Runtime PRIVATE SnAPI.GameFramework)
+endif()
+
+if (SNAPI_GF_BUILD_BUILDCLI)
+    add_executable(SnAPI.GameFramework.Build
+        tools/BuildCliMain.cpp
+    )
+    target_link_libraries(SnAPI.GameFramework.Build PRIVATE SnAPI.GameFramework)
 endif()
 
 if (SNAPI_GF_ENABLE_SWIG)
@@ -302,6 +333,7 @@ if (SNAPI_GF_BUILD_EDITOR)
     set(SNAPI_GF_EDITOR_SOURCES
         include/Editor/EditorCameraComponent.h
         include/Editor/EditorAssetService.h
+        include/Editor/EditorBuildService.h
         include/Editor/EditorExport.h
         include/Editor/EditorCoreServices.h
         include/Editor/EditorLayout.h
@@ -324,6 +356,7 @@ if (SNAPI_GF_BUILD_EDITOR)
         src/Editor/main.cpp
         src/Editor/EditorCameraComponent.cpp
         src/Editor/EditorAssetService.cpp
+        src/Editor/EditorBuildService.cpp
         src/Editor/EditorAssetIconService.cpp
         src/Editor/ConduitEditor.cpp
         src/Editor/ConduitGraphCanvas.cpp
@@ -334,6 +367,7 @@ if (SNAPI_GF_BUILD_EDITOR)
         src/Editor/EditorPieService.cpp
         src/Editor/EditorRootViewportService.cpp
         src/Editor/EditorSceneService.cpp
+        src/Editor/UIHelpTooltip.cpp
         src/Editor/EditorSelectionInteractionService.cpp
         src/Editor/EditorSelectionModel.cpp
         src/Editor/EditorSelectionService.cpp
@@ -388,6 +422,20 @@ if (SNAPI_GF_BUILD_EDITOR)
         else()
             message(STATUS "SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR is empty; skipping editor asset copy step.")
         endif()
+    endif()
+endif()
+
+if (SNAPI_PROJECT_ROOT_DIR)
+    get_filename_component(SNAPI_PROJECT_ROOT_DIR "${SNAPI_PROJECT_ROOT_DIR}" ABSOLUTE)
+    file(TO_CMAKE_PATH "${SNAPI_PROJECT_ROOT_DIR}" SNAPI_PROJECT_ROOT_DIR)
+    set(SNAPI_GF_EXTERNAL_PROJECT_CODE_DIR "${SNAPI_PROJECT_ROOT_DIR}/Code")
+    if (EXISTS "${SNAPI_GF_EXTERNAL_PROJECT_CODE_DIR}/CMakeLists.txt")
+        add_subdirectory("${SNAPI_GF_EXTERNAL_PROJECT_CODE_DIR}" "${CMAKE_BINARY_DIR}/ExternalProject/Code")
+    else()
+        message(WARNING
+            "SNAPI_PROJECT_ROOT_DIR was set to '${SNAPI_PROJECT_ROOT_DIR}', but "
+            "'${SNAPI_GF_EXTERNAL_PROJECT_CODE_DIR}/CMakeLists.txt' was not found. "
+            "External project modules will not be integrated.")
     endif()
 endif()
 

@@ -1,11 +1,16 @@
 #pragma once
 
 #include "Expected.h"
+#include "BuildRequest.h"
 #include "Conduit/Types.h"
 #include "Conduit/Editor/Types.h"
 #include "Editor/EditorImportSettings.h"
 #include "Handles.h"
 #include "IAssetImportSettings.h"
+#include "ModuleCreationService.h"
+#include "PackageOutput.h"
+#include "PluginCreationService.h"
+#include "ProjectCreationService.h"
 #include "RenderAssetImportSettings.h"
 #include "TypeRegistration.h"
 
@@ -47,6 +52,7 @@ class UIContextMenu;
 class UIButton;
 class UIComboBox;
 class UICheckbox;
+class UITokenField;
 template<typename TElement>
 class TElementBuilder;
 } // namespace SnAPI::UI
@@ -500,11 +506,73 @@ public:
     struct ProjectActionRequest
     {
         EProjectAction Action = EProjectAction::CreateNew; /**< @brief Requested project action. */
-        std::string ProjectName{}; /**< @brief User-facing project name. */
+        ProjectCreationRequest CreateRequest{}; /**< @brief Fully authored project-creation request used for `CreateNew`. */
+        std::string ProjectName{}; /**< @brief User-facing project name or updated loaded-project name. */
         std::string ProjectDirectory{}; /**< @brief Directory that should contain the project when creating a new one. */
         std::string ProjectFilePath{}; /**< @brief Absolute project file path used for open/save workflows. */
         std::string StartupLevelAsset{}; /**< @brief Asset id or pack path for the project's startup level. */
         std::string DefaultRenderSettingsAssetId{}; /**< @brief Default render-settings asset id chosen in project settings. */
+    };
+
+    /**
+     * @brief Plugin-management actions emitted by plugin scaffolding flows.
+     */
+    enum class EPluginAction : std::uint8_t
+    {
+        CreateNew, /**< @brief Create one new plugin workspace from the values entered in the plugin wizard. */
+    };
+
+    /**
+     * @brief Payload describing one plugin action request.
+     */
+    struct PluginActionRequest
+    {
+        EPluginAction Action = EPluginAction::CreateNew; /**< @brief Requested plugin action. */
+        PluginCreationRequest CreateRequest{}; /**< @brief Fully authored plugin-creation request. */
+    };
+
+    /**
+     * @brief Module-management actions emitted by module scaffolding flows.
+     */
+    enum class EModuleAction : std::uint8_t
+    {
+        CreateProjectModule, /**< @brief Add one module to a project descriptor. */
+        CreatePluginModule, /**< @brief Add one module to a plugin descriptor. */
+    };
+
+    /**
+     * @brief Payload describing one module action request.
+     */
+    struct ModuleActionRequest
+    {
+        EModuleAction Action = EModuleAction::CreateProjectModule; /**< @brief Requested module action. */
+        ModuleCreationRequest ProjectRequest{}; /**< @brief Project-module creation payload used for `CreateProjectModule`. */
+        PluginModuleCreationRequest PluginRequest{}; /**< @brief Plugin-module creation payload used for `CreatePluginModule`. */
+    };
+
+    /**
+     * @brief Build-management actions emitted by editor shell menus.
+     */
+    enum class EBuildAction : std::uint8_t
+    {
+        PlanProject, /**< @brief Plan one build for the active project and refresh the packaging modal. */
+        PackageProject, /**< @brief Package the currently loaded project using the shared build backend. */
+        RetryBuild, /**< @brief Retry one prior build while preserving normal resume behavior. */
+        RebuildAll, /**< @brief Retry one prior build while disabling resume/reuse. */
+        RefreshHistory, /**< @brief Refresh the packaging modal's build-history list. */
+        CompareHistory, /**< @brief Compare two build-history entries and refresh the summary view. */
+    };
+
+    /**
+     * @brief Payload describing one build action request.
+     */
+    struct BuildActionRequest
+    {
+        EBuildAction Action = EBuildAction::PackageProject; /**< @brief Requested build action. */
+        BuildRequest Request{}; /**< @brief Fully composed build request emitted by the packaging modal. */
+        PackageOutputOptions PackageOutput{}; /**< @brief Final output/archive overrides emitted by the packaging modal. */
+        std::string SourceBuildId{}; /**< @brief Selected source build id for retry/history actions. */
+        std::string CompareBuildId{}; /**< @brief Optional comparison target build id. */
     };
 
     /**
@@ -519,6 +587,78 @@ public:
         std::string AssetRootDirectory{}; /**< @brief Root content directory shown by the content browser. */
         std::string StartupLevelAsset{}; /**< @brief Configured startup level asset identifier or pack path. */
         std::string DefaultRenderSettingsAssetId{}; /**< @brief Configured default render-settings asset identifier. */
+    };
+
+    /**
+     * @brief One resolved build-profile option displayed inside the packaging modal.
+     */
+    struct BuildProfileEntry
+    {
+        std::string Name{}; /**< @brief Stable authored profile name, or empty for the ad hoc host-default option. */
+        std::string Label{}; /**< @brief User-facing profile label shown in the selector. */
+        std::string Summary{}; /**< @brief Concise resolved profile summary shown beneath the selector. */
+        std::string Platform{}; /**< @brief Resolved target platform label. */
+        std::string Configuration{}; /**< @brief Resolved build configuration label. */
+        std::string ExecutionEnvironment{}; /**< @brief Resolved execution-environment label. */
+        std::vector<std::string> SelectedLevels{}; /**< @brief Resolved selected-level fields used to seed the content-selection editor. */
+        std::vector<std::string> ExplicitAssets{}; /**< @brief Resolved explicit-asset fields used to seed the content-selection editor. */
+        std::vector<std::string> IncludeFolders{}; /**< @brief Resolved include-folder rules used to seed the content-selection editor. */
+        std::vector<std::string> ExcludeFolders{}; /**< @brief Resolved exclude-folder rules used to seed the content-selection editor. */
+        std::vector<std::string> IncludeAssetLabels{}; /**< @brief Resolved include-label rules used to seed the content-selection editor. */
+        std::vector<std::string> ExcludeAssetLabels{}; /**< @brief Resolved exclude-label rules used to seed the content-selection editor. */
+        std::vector<std::string> IncludeAssetKinds{}; /**< @brief Resolved include-kind rules used to seed the content-selection editor. */
+        std::vector<std::string> ExcludeAssetKinds{}; /**< @brief Resolved exclude-kind rules used to seed the content-selection editor. */
+        EAssetDependencyPolicy DependencyPolicy = EAssetDependencyPolicy::HardOnly; /**< @brief Resolved dependency policy for content expansion. */
+        EAssetChunkStrategy ChunkStrategy = EAssetChunkStrategy::Monolithic; /**< @brief Resolved chunking strategy for package emission. */
+        bool AllowExplicitOverrideExcludes = false; /**< @brief Resolved explicit-include precedence flag. */
+        bool ArchiveEnabled = false; /**< @brief Resolved archive toggle used to seed the output editor. */
+        std::string ArchiveFormat{}; /**< @brief Resolved archive format used to seed the output editor. */
+        bool IsDefault = false; /**< @brief `true` when the entry matches the service default request. */
+        bool IsAdHoc = false; /**< @brief `true` when the entry represents the host-local fallback request. */
+    };
+
+    /**
+     * @brief One lightweight build-history row shown in the packaging modal.
+     */
+    struct BuildHistoryEntryView
+    {
+        std::string BuildId{}; /**< @brief Stable build invocation id. */
+        std::string Label{}; /**< @brief User-facing title for the row. */
+        std::string Summary{}; /**< @brief Concise build summary text. */
+        std::string RequestHash{}; /**< @brief Frozen request hash when known. */
+        std::string StartedAtUtc{}; /**< @brief ISO-8601 UTC start timestamp when known. */
+        std::string FinishedAtUtc{}; /**< @brief ISO-8601 UTC finish timestamp when known. */
+        bool IsComplete = false; /**< @brief `true` when the entry has a readable final build report. */
+        bool IsLatest = false; /**< @brief `true` when the row represents the newest known build. */
+    };
+
+    /**
+     * @brief Backend-derived packaging/history state displayed by the editor shell.
+     *
+     * The shell keeps short-lived interaction state such as the currently selected
+     * profile and history row locally. `BuildPanelState` carries the authoritative
+     * data resolved from the active project and shared build services.
+     */
+    struct BuildPanelState
+    {
+        bool ProjectLoaded = false; /**< @brief `true` when package actions are valid for the active editor project. */
+        std::string ProjectName{}; /**< @brief Loaded project display name. */
+        std::string ProjectFilePath{}; /**< @brief Absolute descriptor path for the active project. */
+        std::string AssetRootDirectory{}; /**< @brief Active project asset-root directory used for relative picker and preview context. */
+        bool BuildInProgress = false; /**< @brief `true` while the editor build service is executing one background task. */
+        std::string StatusMessage{}; /**< @brief Latest backend status text shown in the modal. */
+        std::string LastPlanSummary{}; /**< @brief Summary text for the most recent planned build, if any. */
+        std::string LastBuildId{}; /**< @brief Most recent executed build id, if any. */
+        std::string LastBuildSummary{}; /**< @brief Summary text for the most recent executed build. */
+        std::string LastBuildOutputSummary{}; /**< @brief Output/archive summary for the most recent executed build. */
+        std::string HistoryComparisonSummary{}; /**< @brief Optional comparison summary for history actions. */
+        std::uint64_t ConsoleLogRevision = 0u; /**< @brief Revision token for the captured console text shown in the modal. */
+        std::string ConsoleLogText{}; /**< @brief Rolling captured stdout/stderr and build-event log for the active project. */
+        std::vector<BuildProfileEntry> Profiles{}; /**< @brief Available resolved profile options. */
+        std::vector<std::string> AvailableLevels{}; /**< @brief Discovered level assets shown as package-selection suggestions. */
+        std::vector<std::string> AvailableAssets{}; /**< @brief Discovered asset identifiers shown as package-selection suggestions. */
+        std::vector<std::string> AvailableAssetKinds{}; /**< @brief Discovered asset-kind labels shown as package-selection suggestions. */
+        std::vector<BuildHistoryEntryView> HistoryEntries{}; /**< @brief Lightweight project-local build history rows. */
     };
 
     /**
@@ -578,10 +718,20 @@ public:
     void SetToolbarActionHandler(SnAPI::UI::TDelegate<void(EToolbarAction)> Handler);
     /** @brief Install the callback invoked for project create/open/save-settings flows. */
     void SetProjectActionHandler(SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> Handler);
+    /** @brief Install the callback invoked for plugin scaffolding flows. */
+    void SetPluginActionHandler(SnAPI::UI::TDelegate<void(const PluginActionRequest&)> Handler);
+    /** @brief Install the callback invoked for module scaffolding flows. */
+    void SetModuleActionHandler(SnAPI::UI::TDelegate<void(const ModuleActionRequest&)> Handler);
+    /** @brief Install the callback invoked for build/package actions triggered from the shell. */
+    void SetBuildActionHandler(SnAPI::UI::TDelegate<void(const BuildActionRequest&)> Handler);
     /** @brief Record a successfully opened or created project in the welcome-screen recent list. */
     void RememberRecentProject(const ProjectActionRequest& Request);
     /** @brief Replace the loaded-project view state shown across project-sensitive UI. */
     void SetProjectState(ProjectState State);
+    /** @brief Replace the packaging modal's backend-derived view state. */
+    void SetBuildPanelState(BuildPanelState State);
+    /** @brief Query whether the packaging modal is currently open. */
+    [[nodiscard]] bool IsBuildModalOpen() const { return m_buildModalOpen; }
     /** @brief Control whether the shell should force the user through project selection before normal editing. */
     void SetProjectSelectionRequired(bool Required);
     /** @brief Replace the content-browser asset list. */
@@ -744,8 +894,14 @@ private:
     void DestroyContentAssetInspectorModalOverlay();
     void EnsureProjectModalOverlay();
     void DestroyProjectModalOverlay();
+    void EnsurePluginModalOverlay();
+    void DestroyPluginModalOverlay();
+    void EnsureModuleModalOverlay();
+    void DestroyModuleModalOverlay();
     void EnsureProjectSettingsModalOverlay();
     void DestroyProjectSettingsModalOverlay();
+    void EnsureBuildModalOverlay();
+    void DestroyBuildModalOverlay();
 
     void BuildHierarchyPane(PanelBuilder& Workspace,
                             GameRuntime& Runtime,
@@ -801,15 +957,44 @@ private:
     void OpenProjectWelcomeModal();
     void OpenProjectCreateModal();
     void OpenProjectOpenModal();
+    void OpenPluginCreateModal();
+    void OpenProjectModuleModal();
+    void OpenPluginModuleModal();
     void OpenProjectSettingsModal();
+    void OpenBuildModal();
+    void ClosePluginModal();
+    void CloseModuleModal();
     void CloseProjectSettingsModal();
     void ConfirmProjectSettingsModal();
     void CloseProjectModal(bool ForceClose = false);
     void ConfirmProjectModal();
+    void ConfirmPluginModal();
+    void ConfirmModuleModal();
+    void CloseBuildModal();
     void RefreshProjectModalVisibility();
     void RefreshProjectModalOkButtonState();
+    void RefreshPluginModalVisibility();
+    void RefreshPluginModalOkButtonState();
+    void RefreshModuleModalVisibility();
+    void RefreshModuleModalOkButtonState();
     void RefreshProjectSettingsModalVisibility();
     void RefreshProjectSettingsModalSaveButtonState();
+    void RefreshBuildModalVisibility();
+    void RebuildBuildModalOverlay();
+    [[nodiscard]] const BuildProfileEntry* SelectedBuildProfileEntry() const;
+    [[nodiscard]] const BuildHistoryEntryView* SelectedBuildHistoryEntry() const;
+    [[nodiscard]] std::string BuildHistoryComparisonTargetId() const;
+    void ApplyProjectTemplatePreset(std::int32_t Index);
+    void ApplyPluginTemplatePreset(std::int32_t Index);
+    void ResetBuildModalDraftFromSelectedProfile();
+    [[nodiscard]] bool BuildModalRequiresStructuralRebuild(const BuildPanelState& PreviousState,
+                                                           const BuildPanelState& NextState) const;
+    void MarkBuildModalDraftDirty(bool RefreshLiveState = true);
+    void SyncBuildModalTokenField(const SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField>& Handle,
+                                  const std::string& Value) const;
+    void RefreshBuildModalLiveState();
+    [[nodiscard]] BuildRequest BuildModalRequest() const;
+    [[nodiscard]] PackageOutputOptions BuildModalPackageOutput() const;
     void RememberRecentProjectFile(std::string ProjectFilePath, std::string ProjectName = {});
     void CloseContentAssetInspectorModal(bool NotifyHandler);
     void RefreshContentAssetInspectorModalVisibility();
@@ -938,14 +1123,88 @@ private:
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_menuFileButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectDisplayNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectCompanyInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectNamespaceInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectRuntimeModuleInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectEditorModuleInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectDirectoryInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectFilePathInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectStartupLevelInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_projectTemplateCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_projectRuntimeModuleCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_projectEditorModuleCheckbox{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectModalOkButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_pluginModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginDisplayNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginCompanyInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginVersionInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginDescriptionInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginNamespaceInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginRuntimeModuleInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_pluginEditorModuleInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_pluginDirectoryInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_pluginTemplateCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_pluginRuntimeModuleCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_pluginEditorModuleCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_pluginCanContainAssetsCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_pluginModalOkButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_moduleModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_moduleTargetCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_moduleTypeCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_moduleNameInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_moduleNamespaceInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_moduleRootInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_moduleDescriptorFileInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_modulePublicDependenciesInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_modulePrivateDependenciesInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_modulePlatformsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_moduleDefinitionsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_moduleReflectionCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_moduleSwigCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_moduleGameplayBootstrapCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_moduleLoadInEditorCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_moduleLoadInRuntimeCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_moduleModalOkButton{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_projectSettingsModalOverlay{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_projectSettingsNameInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_projectSettingsStartupAssetInput{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_projectSettingsDefaultRenderSettingsCombo{};
     SnAPI::UI::ElementHandle<SnAPI::UI::UIButton> m_projectSettingsSaveButton{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIModal> m_buildModalOverlay{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITabs> m_buildModalTabs{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_buildProfileCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_buildConfigurationCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_buildDependencyPolicyCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_buildChunkStrategyCombo{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_buildPlatformInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_buildExecutionEnvironmentInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildSelectedLevelsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildExplicitAssetsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildIncludeFoldersInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildExcludeFoldersInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildIncludeLabelsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildExcludeLabelsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildIncludeKindsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> m_buildExcludeKindsInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_buildAllowExplicitOverrideCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UICheckbox> m_buildArchiveEnabledCheckbox{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIFilesystemPicker> m_buildOutputRootInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_buildPackageDirectoryInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIComboBox> m_buildArchiveFormatInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UITextInput> m_buildArchiveFileInput{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalSubtitleText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalOverviewSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalProfileSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalLatestSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalPlatformSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalOutputSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalHistoryDetailText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalComparisonText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalConsoleSummaryText{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIScrollContainer> m_buildModalConsoleScroll{};
+    SnAPI::UI::ElementHandle<SnAPI::UI::UIText> m_buildModalConsoleText{};
 
     struct ContentAssetCardWidgets
     {
@@ -1004,17 +1263,96 @@ private:
     bool m_conduitVariableDefaultPanelBound = false;
     void* m_conduitVariableDefaultBoundObject = nullptr;
     TypeId m_conduitVariableDefaultBoundType{};
+    enum class EProjectTemplatePreset : std::uint8_t
+    {
+        RuntimeGame = 0,
+        RuntimeAndEditorGame,
+        ContentOnly,
+    };
+    enum class EPluginTemplatePreset : std::uint8_t
+    {
+        Runtime = 0,
+        EditorTool,
+        Hybrid,
+        ContentOnly,
+    };
     bool m_projectModalOpen = false;
     bool m_projectModalRequired = false;
     bool m_projectModalShowWelcome = false;
+    bool m_pluginModalOpen = false;
+    bool m_moduleModalOpen = false;
     bool m_projectSettingsModalOpen = false;
+    bool m_buildModalOpen = false;
     EProjectAction m_projectModalAction = EProjectAction::CreateNew;
+    EProjectTemplatePreset m_projectTemplatePreset = EProjectTemplatePreset::RuntimeGame;
+    EPluginTemplatePreset m_pluginTemplatePreset = EPluginTemplatePreset::Runtime;
+    EModuleAction m_moduleModalAction = EModuleAction::CreateProjectModule;
     std::string m_projectNameText{};
+    std::string m_projectDisplayNameText{};
+    std::string m_projectCompanyText{};
     std::string m_projectDirectoryText{};
     std::string m_projectFilePathText{};
+    std::string m_projectNamespaceText{};
+    std::string m_projectRuntimeModuleText{};
+    std::string m_projectEditorModuleText{};
+    std::string m_projectStartupLevelText{};
+    bool m_projectCreateRuntimeModule = true;
+    bool m_projectCreateEditorModule = false;
+    std::string m_pluginNameText{};
+    std::string m_pluginDisplayNameText{};
+    std::string m_pluginCompanyText{};
+    std::string m_pluginVersionText{};
+    std::string m_pluginDescriptionText{};
+    std::string m_pluginDirectoryText{};
+    std::string m_pluginNamespaceText{};
+    std::string m_pluginRuntimeModuleText{};
+    std::string m_pluginEditorModuleText{};
+    bool m_pluginCreateRuntimeModule = true;
+    bool m_pluginCreateEditorModule = false;
+    bool m_pluginCanContainAssets = true;
+    std::string m_moduleDescriptorFilePathText{};
+    std::string m_moduleNameText{};
+    std::string m_moduleNamespaceText{};
+    std::string m_moduleRootText{};
+    std::string m_modulePublicDependenciesText{};
+    std::string m_modulePrivateDependenciesText{};
+    std::string m_modulePlatformsText{};
+    std::string m_moduleDefinitionsText{};
+    EProjectModuleType m_moduleType = EProjectModuleType::Runtime;
+    bool m_moduleUseReflectionGen = false;
+    bool m_moduleUseSwig = false;
+    bool m_moduleGenerateGameplayBootstrap = true;
+    bool m_moduleLoadInEditor = true;
+    bool m_moduleLoadInRuntime = true;
     std::string m_projectSettingsNameText{};
     std::string m_projectSettingsStartupAssetText{};
     std::string m_projectSettingsDefaultRenderSettingsAssetId{};
+    BuildPanelState m_buildPanelState{};
+    std::string m_buildModalSelectedProfileName{};
+    std::string m_buildModalSelectedHistoryBuildId{};
+    std::string m_buildModalPlatformText{};
+    std::string m_buildModalExecutionEnvironmentText{};
+    EBuildConfiguration m_buildModalConfiguration = EBuildConfiguration::Development;
+    std::string m_buildModalSelectedLevelsText{};
+    std::string m_buildModalExplicitAssetsText{};
+    std::string m_buildModalIncludeFoldersText{};
+    std::string m_buildModalExcludeFoldersText{};
+    std::string m_buildModalIncludeLabelsText{};
+    std::string m_buildModalExcludeLabelsText{};
+    std::string m_buildModalIncludeKindsText{};
+    std::string m_buildModalExcludeKindsText{};
+    EAssetDependencyPolicy m_buildModalDependencyPolicy = EAssetDependencyPolicy::HardOnly;
+    EAssetChunkStrategy m_buildModalChunkStrategy = EAssetChunkStrategy::Monolithic;
+    bool m_buildModalAllowExplicitOverrideExcludes = false;
+    std::string m_buildModalOutputRootText{};
+    std::string m_buildModalPackageDirectoryText{};
+    bool m_buildModalArchiveEnabled = false;
+    std::string m_buildModalArchiveFormatText{};
+    std::string m_buildModalArchiveFileText{};
+    std::string m_buildModalDraftSeedProfileName{};
+    bool m_buildModalDraftDirty = false;
+    std::vector<std::string> m_buildModalProfileKeys{};
+    int32_t m_buildModalActiveTabIndex = 0;
     std::vector<std::pair<std::string, std::string>> m_projectSettingsRenderSettingsOptions{};
     ProjectState m_projectState{};
     std::vector<RecentProjectEntry> m_recentProjects{};
@@ -1119,6 +1457,9 @@ private:
     SnAPI::UI::TDelegate<void(const HierarchyActionRequest&)> m_onHierarchyActionRequested{};
     SnAPI::UI::TDelegate<void(EToolbarAction)> m_onToolbarActionRequested{};
     SnAPI::UI::TDelegate<void(const ProjectActionRequest&)> m_onProjectActionRequested{};
+    SnAPI::UI::TDelegate<void(const PluginActionRequest&)> m_onPluginActionRequested{};
+    SnAPI::UI::TDelegate<void(const ModuleActionRequest&)> m_onModuleActionRequested{};
+    SnAPI::UI::TDelegate<void(const BuildActionRequest&)> m_onBuildActionRequested{};
     NodeHandle m_boundInspectorNode{};
     void* m_boundInspectorObject = nullptr;
     TypeId m_boundInspectorType{};

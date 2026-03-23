@@ -4,10 +4,12 @@
 #include <string>
 #include <vector>
 
+#include "BuiltinTypes.h"
 #include "Expected.h"
 #include "IAsset.h"
-#include "RenderAssets/AssetRefPayload.h"
 #include "RenderAssets/ImportedAssetProvenancePayload.h"
+#include "RenderAssets/SkeletalAnimationAsset.h"
+#include "RenderAssets/SkeletonAsset.h"
 #include "RenderAssets/SkeletonPayload.h"
 #include "RenderAssets/StaticMeshAsset.h"
 
@@ -24,9 +26,9 @@ struct SkeletalMeshAsset : public IAsset
     SnField(SnKey("Bones"), SnReadOnly)
     std::vector<SkeletalBonePayload> Bones{};
     SnField(SnKey("Skeleton"), SnReadOnly)
-    AssetRefPayload Skeleton{};
+    SkeletonAssetRef Skeleton{};
     SnField(SnKey("Animations"), SnReadOnly)
-    std::vector<AssetRefPayload> Animations{};
+    std::vector<SkeletalAnimationAssetRef> Animations{};
     SnField(SnKey("SkeletonAnimationUri"), SnReadOnly, SnAdvanced)
     std::string SkeletonAnimationUri{};
     SnField(SnKey("SkeletonAnimationBytes"), SnHidden, SnHeavyData)

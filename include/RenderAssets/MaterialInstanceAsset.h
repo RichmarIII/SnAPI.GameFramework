@@ -86,6 +86,10 @@ struct MaterialInstanceAsset : public IAsset
 TExpected<void> SerializeMaterialInstancePayload(const MaterialInstanceAsset& Payload, std::vector<uint8_t>& OutBytes);
 TExpected<MaterialInstanceAsset> DeserializeMaterialInstancePayload(const uint8_t* Bytes, size_t Size);
 
+using MaterialInstanceAssetRef = TAssetRef<MaterialInstanceAsset, void>;
+SNAPI_DEFINE_TYPE_NAME(MaterialInstanceAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAsset>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialInstanceAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::MaterialInstanceAsset>>")
+
 SNAPI_DEFINE_TYPE_NAME(Float4Value, "std::array<float,4>")
 SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialScalarParamPayload>, "std::vector<SnAPI::GameFramework::MaterialScalarParamPayload>")
 SNAPI_DEFINE_TYPE_NAME(std::vector<MaterialVectorParamPayload>, "std::vector<SnAPI::GameFramework::MaterialVectorParamPayload>")

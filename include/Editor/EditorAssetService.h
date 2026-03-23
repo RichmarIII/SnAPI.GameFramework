@@ -3,6 +3,9 @@
 #include "Editor/EditorExport.h"
 #include "Editor/IEditorService.h"
 #include "Editor/EditorImportSettings.h"
+#include "ModuleCreationService.h"
+#include "PluginCreationService.h"
+#include "ProjectCreationService.h"
 
 #include "Handles.h"
 #include "Math.h"
@@ -553,6 +556,53 @@ public:
      * starter script, and project configuration file before forwarding to `LoadProject()`.
      */
     Result CreateProject(EditorServiceContext& Context, std::string_view ProjectName, std::string_view ParentDirectory);
+    /**
+     * @brief Create a new project workspace from a fully authored creation request.
+     * @param Context Borrowed editor-service context.
+     * @param Request Concrete project-creation request.
+     * @param LoadAfterCreate `true` to load the created project immediately after scaffolding succeeds.
+     * @param OutResult Optional filesystem/descriptor snapshot populated on success.
+     * @return Success or an error.
+     * @remarks
+     * When the request leaves template-resource fields empty, editor-managed starter templates are
+     * injected automatically so the wizard and the legacy simple-create flow stay aligned.
+     */
+    Result CreateProject(EditorServiceContext& Context,
+                         const ProjectCreationRequest& Request,
+                         bool LoadAfterCreate = true,
+                         ProjectCreationResult* OutResult = nullptr);
+    /**
+     * @brief Create a new plugin workspace from a fully authored creation request.
+     * @param Context Borrowed editor-service context.
+     * @param Request Concrete plugin-creation request.
+     * @param OutResult Optional filesystem/descriptor snapshot populated on success.
+     * @return Success or an error.
+     */
+    Result CreatePlugin(EditorServiceContext& Context,
+                        const PluginCreationRequest& Request,
+                        PluginCreationResult* OutResult = nullptr);
+    /**
+     * @brief Add one new code module to the active or explicitly selected project workspace.
+     * @param Context Borrowed editor-service context.
+     * @param Request Concrete project-module-creation request.
+     * @param OutResult Optional filesystem/descriptor snapshot populated on success.
+     * @return Success or an error.
+     * @remarks
+     * When `Request.ProjectFilePath` is empty, the currently loaded project descriptor path is used.
+     */
+    Result CreateProjectModule(EditorServiceContext& Context,
+                               const ModuleCreationRequest& Request,
+                               ModuleCreationResult* OutResult = nullptr);
+    /**
+     * @brief Add one new code module to the explicitly selected plugin workspace.
+     * @param Context Borrowed editor-service context.
+     * @param Request Concrete plugin-module-creation request.
+     * @param OutResult Optional filesystem/descriptor snapshot populated on success.
+     * @return Success or an error.
+     */
+    Result CreatePluginModule(EditorServiceContext& Context,
+                              const PluginModuleCreationRequest& Request,
+                              PluginModuleCreationResult* OutResult = nullptr);
     /**
      * @brief Load an existing project file.
      * @param Context Borrowed editor-service context.

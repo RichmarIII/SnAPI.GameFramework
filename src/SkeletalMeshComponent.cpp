@@ -17,6 +17,7 @@
 #include "BaseNode.h"
 #include "IWorld.h"
 #include "PathResolver.h"
+#include "RenderAssets/MeshRuntimeAssets.h"
 #include "RendererSystem.h"
 #include "TransformComponent.h"
 
@@ -112,6 +113,32 @@ SnAPI::Matrix4 ComposeRendererWorldTransform(const NodeTransform& Transform)
     return {};
 }
 
+[[nodiscard]] std::vector<TAssetRef<MaterialInstanceAsset>> BuildEffectiveMaterialRefs(
+    const std::vector<TAssetRef<MaterialInstanceAsset>>& BaseRefs,
+    const std::vector<TAssetRef<MaterialInstanceAsset>>& OverrideRefs)
+{
+    if (OverrideRefs.empty())
+    {
+        return BaseRefs;
+    }
+
+    std::vector<TAssetRef<MaterialInstanceAsset>> EffectiveRefs = BaseRefs;
+    if (EffectiveRefs.size() < OverrideRefs.size())
+    {
+        EffectiveRefs.resize(OverrideRefs.size());
+    }
+
+    for (std::size_t Index = 0; Index < OverrideRefs.size(); ++Index)
+    {
+        if (!OverrideRefs[Index].IsNull())
+        {
+            EffectiveRefs[Index] = OverrideRefs[Index];
+        }
+    }
+
+    return EffectiveRefs;
+}
+
 void ApplyRuntimeOrDefaultMaterialInstances(
     SnAPI::Graphics::IRenderObject& RenderObject,
     RendererSystem& Renderer,
@@ -158,7 +185,8 @@ bool IsSkeletalMeshSettingsField(const std::string_view Name)
         || Name == "RegisterWithRenderer"
         || Name == "AutoPlayAnimations"
         || Name == "LoopAnimations"
-        || Name == "AnimationName";
+        || Name == "AnimationName"
+        || Name == "MaterialInstanceOverrides";
 }
 #endif
 } // namespace
@@ -184,6 +212,7 @@ void SkeletalMeshComponent::ClearMesh()
     m_renderObject.reset();
     m_loadedPath.clear();
     m_loadedFromAsset = false;
+    m_loadedMeshMaterialInstances.clear();
     m_lastAutoPlayAnimation.clear();
     m_lastAutoPlayLoop = true;
     m_autoPlayApplied = false;
@@ -290,6 +319,7 @@ void SkeletalMeshComponent::Tick(const float DeltaSeconds)
         return;
     }
 
+    ApplyConfiguredMaterialInstances(*m_renderObject);
     if (m_settings.SyncFromTransform)
     {
         SyncRenderObjectTransform(*m_renderObject);
@@ -346,6 +376,7 @@ void SkeletalMeshComponent::EditorOnPropertyChanged(const std::string_view Name)
         return;
     }
 
+    ApplyConfiguredMaterialInstances(*m_renderObject);
     if (m_settings.SyncFromTransform)
     {
         SyncRenderObjectTransform(*m_renderObject);
@@ -396,9 +427,8 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
     {
         if (auto* AssetManager = ResolveDefaultAssetManager())
         {
-            auto RuntimeSource = m_settings.MeshAsset.GetRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*AssetManager);
-            auto AuthoredMesh = m_settings.MeshAsset.LoadAsset();
-            if (RuntimeSource && *RuntimeSource)
+            auto RuntimeMesh = m_settings.MeshAsset.GetRuntimeShared<SkeletalMeshRuntime>(*AssetManager);
+            if (RuntimeMesh && *RuntimeMesh && (*RuntimeMesh)->StreamSource)
             {
                 std::string AssetToken = BuildMeshAssetToken(m_settings.MeshAsset);
                 if (AssetToken.empty())
@@ -408,22 +438,17 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
 
                 if (auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>())
                 {
-                    RenderObject->SetVertexStreamSource(*RuntimeSource);
+                    RenderObject->SetVertexStreamSource((*RuntimeMesh)->StreamSource);
                     m_renderObject = std::move(RenderObject);
                     m_loadedPath = AssetToken;
                     m_loadedFromAsset = true;
+                    m_loadedMeshMaterialInstances = (*RuntimeMesh)->MaterialRefs;
                     m_lastAutoPlayAnimation.clear();
                     m_lastAutoPlayLoop = m_settings.LoopAnimations;
                     m_autoPlayApplied = false;
                     m_registered = false;
 
-                    ApplyRuntimeOrDefaultMaterialInstances(
-                        *m_renderObject,
-                        *Renderer,
-                        (AuthoredMesh && *AuthoredMesh)
-                            ? (*AuthoredMesh)->BaseMesh.Mesh.MaterialInstances
-                            : std::vector<TAssetRef<MaterialInstanceAsset>>{},
-                        AssetManager);
+                    ApplyConfiguredMaterialInstances(*m_renderObject);
                     ApplyRenderObjectState(*m_renderObject);
 
                     return true;
@@ -433,6 +458,19 @@ bool SkeletalMeshComponent::EnsureMeshLoaded()
     }
 
     return false;
+}
+
+void SkeletalMeshComponent::ApplyConfiguredMaterialInstances(SnAPI::Graphics::MeshRenderObject& RenderObject)
+{
+    auto* Renderer = ResolveRendererSystem();
+    if (!Renderer || !Renderer->IsInitialized())
+    {
+        return;
+    }
+
+    const std::vector<TAssetRef<MaterialInstanceAsset>> EffectiveRefs =
+        BuildEffectiveMaterialRefs(m_loadedMeshMaterialInstances, m_settings.MaterialInstanceOverrides);
+    ApplyRuntimeOrDefaultMaterialInstances(RenderObject, *Renderer, EffectiveRefs, ResolveDefaultAssetManager());
 }
 
 void SkeletalMeshComponent::SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const

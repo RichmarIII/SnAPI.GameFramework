@@ -64,6 +64,8 @@ public:
      * - `RegisterWithRenderer` controls pass registration, not object creation
      * - `Visible` and `CastShadows` affect renderer pass membership
      * - `AnimationName` empty means "play all available rigid animations" for auto-play and `PlayAllAnimations()`
+     * - `MaterialInstanceOverrides` replace matching baked mesh material slots while leaving unspecified
+     *   slots on the shared runtime mesh unchanged
      */
     SnType()
     struct Settings
@@ -88,6 +90,8 @@ public:
         std::string AnimationName{}; /**< @brief Optional named rigid animation; empty = play all. */
         SnField(SnKey("MeshAsset"), SnReplicated)
         SkeletalMeshAssetRef MeshAsset{}; /**< @brief Preferred authored skeletal-mesh asset reference. */
+        SnField(SnKey("MaterialInstanceOverrides"), SnReplicated)
+        std::vector<TAssetRef<MaterialInstanceAsset>> MaterialInstanceOverrides{}; /**< @brief Optional per-material-slot overrides applied on top of mesh-default material instances. */
     };
 
     /** @brief Access settings (const). */
@@ -142,6 +146,7 @@ private:
     RendererSystem* ResolveRendererSystem() const;
     bool EnsureMeshLoaded();
     void SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const;
+    void ApplyConfiguredMaterialInstances(SnAPI::Graphics::MeshRenderObject& RenderObject);
     void ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject);
     void ApplyAutoPlay(SnAPI::Graphics::MeshRenderObject& RenderObject);
 
@@ -149,6 +154,7 @@ private:
     std::shared_ptr<SnAPI::Graphics::MeshRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
+    std::vector<TAssetRef<MaterialInstanceAsset>> m_loadedMeshMaterialInstances{}; /**< @brief Material instance asset refs baked into the currently loaded skeletal mesh asset. */
     std::string m_lastAutoPlayAnimation{}; /**< @brief Last animation name used for auto-play state tracking. */
     bool m_lastAutoPlayLoop = true; /**< @brief Last loop setting used for auto-play state tracking. */
     bool m_autoPlayApplied = false; /**< @brief True when auto-play has been applied for current settings. */

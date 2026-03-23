@@ -5,6 +5,7 @@
 #include "AssetRef.h"
 #include "NodeCast.h"
 #include "PathResolver.h"
+#include "ProjectDescriptor.h"
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 #include "WorldRenderSettings.h"
@@ -12,24 +13,24 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
 
 #include "CameraComponent.h"
+#include <nlohmann/json.hpp>
 
 namespace SnAPI::GameFramework
 {
 namespace
 {
-constexpr std::string_view kDefaultProjectAssetRoot = "Assets";
-constexpr std::string_view kDefaultProjectStartupLevelAsset = "Levels/StarterLevel.level";
-constexpr std::uint32_t kProjectConfigVersion = 1u;
+using Json = nlohmann::ordered_json;
+
+constexpr std::string_view kDefaultProjectFileName = "project.snproj.json";
+constexpr std::string_view kPackagedRuntimeConfigFileName = "ResolvedRuntimeConfig.json";
 
 [[nodiscard]] std::string TrimCopy(std::string Value)
 {
@@ -108,162 +109,6 @@ void DestroyNodes(World& WorldRef, std::vector<NodeHandle>& Handles)
 }
 #endif
 
-[[nodiscard]] std::expected<std::string, std::string> JsonParseString(const std::string& Text, std::size_t& Position)
-{
-    if (Position >= Text.size() || Text[Position] != '"')
-    {
-        return std::unexpected("Expected JSON string");
-    }
-    ++Position;
-
-    std::string Output{};
-    while (Position < Text.size())
-    {
-        const char Character = Text[Position++];
-        if (Character == '"')
-        {
-            return Output;
-        }
-        if (Character != '\\')
-        {
-            Output.push_back(Character);
-            continue;
-        }
-        if (Position >= Text.size())
-        {
-            return std::unexpected("Invalid JSON escape sequence");
-        }
-        const char Escape = Text[Position++];
-        switch (Escape)
-        {
-        case '"':
-            Output.push_back('"');
-            break;
-        case '\\':
-            Output.push_back('\\');
-            break;
-        case '/':
-            Output.push_back('/');
-            break;
-        case 'b':
-            Output.push_back('\b');
-            break;
-        case 'f':
-            Output.push_back('\f');
-            break;
-        case 'n':
-            Output.push_back('\n');
-            break;
-        case 'r':
-            Output.push_back('\r');
-            break;
-        case 't':
-            Output.push_back('\t');
-            break;
-        default:
-            return std::unexpected("Unsupported JSON escape sequence");
-        }
-    }
-    return std::unexpected("Unterminated JSON string");
-}
-
-[[nodiscard]] bool JsonTryReadStringField(const std::string& Text, const std::string_view Key, std::string& OutValue)
-{
-    const std::string KeyToken = "\"" + std::string(Key) + "\"";
-    std::size_t SearchOffset = 0;
-    while (true)
-    {
-        const std::size_t KeyPos = Text.find(KeyToken, SearchOffset);
-        if (KeyPos == std::string::npos)
-        {
-            return false;
-        }
-
-        std::size_t ValuePos = KeyPos + KeyToken.size();
-        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-        {
-            ++ValuePos;
-        }
-        if (ValuePos >= Text.size() || Text[ValuePos] != ':')
-        {
-            SearchOffset = KeyPos + KeyToken.size();
-            continue;
-        }
-
-        ++ValuePos;
-        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-        {
-            ++ValuePos;
-        }
-
-        auto Parsed = JsonParseString(Text, ValuePos);
-        if (!Parsed)
-        {
-            SearchOffset = KeyPos + KeyToken.size();
-            continue;
-        }
-
-        OutValue = std::move(*Parsed);
-        return true;
-    }
-}
-
-[[nodiscard]] bool JsonTryReadUnsignedField(const std::string& Text,
-                                            const std::string_view Key,
-                                            std::uint32_t& OutValue)
-{
-    const std::string KeyToken = "\"" + std::string(Key) + "\"";
-    const std::size_t KeyPos = Text.find(KeyToken);
-    if (KeyPos == std::string::npos)
-    {
-        return false;
-    }
-
-    std::size_t ValuePos = Text.find(':', KeyPos + KeyToken.size());
-    if (ValuePos == std::string::npos)
-    {
-        return false;
-    }
-
-    ++ValuePos;
-    while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-    {
-        ++ValuePos;
-    }
-
-    std::size_t EndPos = ValuePos;
-    while (EndPos < Text.size() && std::isdigit(static_cast<unsigned char>(Text[EndPos])) != 0)
-    {
-        ++EndPos;
-    }
-    if (EndPos <= ValuePos)
-    {
-        return false;
-    }
-
-    try
-    {
-        OutValue = static_cast<std::uint32_t>(std::stoul(Text.substr(ValuePos, EndPos - ValuePos)));
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-[[nodiscard]] std::string NormalizeProjectPathField(const std::string_view RawValue)
-{
-    std::string Value = TrimCopy(std::string(RawValue));
-    if (Value.empty())
-    {
-        return {};
-    }
-
-    std::replace(Value.begin(), Value.end(), '\\', '/');
-    return std::filesystem::path(Value).lexically_normal().generic_string();
-}
-
 [[nodiscard]] std::string NormalizeAssetLogicalName(std::string_view RawName)
 {
     std::string Name(RawName);
@@ -297,6 +142,172 @@ void DestroyNodes(World& WorldRef, std::vector<NodeHandle>& Handles)
     }
 
     return Name;
+}
+
+[[nodiscard]] TExpected<std::string> ReadTextFile(const std::filesystem::path& FilePath)
+{
+    std::ifstream Input(FilePath, std::ios::binary);
+    if (!Input.is_open())
+    {
+        return std::unexpected(
+            MakeError(EErrorCode::NotFound, "Failed to open runtime bootstrap file: " + FilePath.string()));
+    }
+
+    return std::string((std::istreambuf_iterator<char>(Input)), std::istreambuf_iterator<char>());
+}
+
+[[nodiscard]] TExpected<Json> ReadJsonFile(const std::filesystem::path& FilePath)
+{
+    auto Text = ReadTextFile(FilePath);
+    if (!Text)
+    {
+        return std::unexpected(Text.error());
+    }
+
+    Json Root = Json::parse(*Text, nullptr, false);
+    if (Root.is_discarded())
+    {
+        return std::unexpected(
+            MakeError(EErrorCode::InvalidArgument, "Runtime bootstrap file is not valid JSON: " + FilePath.string()));
+    }
+
+    return Root;
+}
+
+[[nodiscard]] std::string ReadOptionalStringField(const Json& Root,
+                                                  const std::string_view Key,
+                                                  const std::string_view DefaultValue = {})
+{
+    const auto It = Root.find(std::string(Key));
+    if (It == Root.end() || It->is_null())
+    {
+        return std::string(DefaultValue);
+    }
+
+    if (It->is_string())
+    {
+        return TrimCopy(It->get<std::string>());
+    }
+
+    return std::string(DefaultValue);
+}
+
+[[nodiscard]] const Json* ReadObjectField(const Json& Root, const std::string_view Key)
+{
+    const auto It = Root.find(std::string(Key));
+    if (It == Root.end() || !It->is_object())
+    {
+        return nullptr;
+    }
+
+    return std::addressof(*It);
+}
+
+[[nodiscard]] bool IsPackagedRuntimeBootstrapPath(const std::filesystem::path& FilePath)
+{
+    return FilePath.filename() == kPackagedRuntimeConfigFileName;
+}
+
+[[nodiscard]] TExpected<std::filesystem::path> ResolveBootstrapPath(std::filesystem::path InputPath)
+{
+    if (InputPath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Runtime bootstrap path is empty"));
+    }
+
+    std::error_code Error{};
+    const std::filesystem::path AbsoluteInput = std::filesystem::absolute(InputPath, Error);
+    if (!Error)
+    {
+        InputPath = AbsoluteInput;
+    }
+
+    Error.clear();
+    if (std::filesystem::is_directory(InputPath, Error) && !Error)
+    {
+        const std::filesystem::path ProjectDescriptorPath = InputPath / std::string(kDefaultProjectFileName);
+        if (std::filesystem::exists(ProjectDescriptorPath, Error) && !Error)
+        {
+            return ProjectDescriptorPath.lexically_normal();
+        }
+
+        Error.clear();
+        const std::filesystem::path PackagedConfigPath =
+            InputPath / "Config" / std::string(kPackagedRuntimeConfigFileName);
+        if (std::filesystem::exists(PackagedConfigPath, Error) && !Error)
+        {
+            return PackagedConfigPath.lexically_normal();
+        }
+
+        return std::unexpected(MakeError(EErrorCode::NotFound,
+                                         "Runtime bootstrap directory does not contain `" +
+                                             std::string(kDefaultProjectFileName) + "` or `Config/" +
+                                             std::string(kPackagedRuntimeConfigFileName) + "`"));
+    }
+
+    Error.clear();
+    if (!std::filesystem::exists(InputPath, Error) || Error)
+    {
+        return std::unexpected(
+            MakeError(EErrorCode::NotFound, "Runtime bootstrap file was not found: " + InputPath.string()));
+    }
+
+    return InputPath.lexically_normal();
+}
+
+[[nodiscard]] TExpected<GameProjectInfo> LoadPackagedRuntimeBootstrap(const std::filesystem::path& BootstrapPath)
+{
+    auto Root = ReadJsonFile(BootstrapPath);
+    if (!Root)
+    {
+        return std::unexpected(Root.error());
+    }
+
+    const Json* Startup = ReadObjectField(*Root, "Startup");
+    if (Startup == nullptr)
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Packaged runtime bootstrap is missing the `Startup` object"));
+    }
+
+    const std::string ProjectName = ReadOptionalStringField(*Root, "ProjectName");
+    const std::string AssetRoot = ReadOptionalStringField(*Root, "AssetRoot", "Assets");
+    const std::string StartupLevelAsset = ReadOptionalStringField(*Startup, "StartupLevelAsset");
+    if (ProjectName.empty())
+    {
+        return std::unexpected(
+            MakeError(EErrorCode::InvalidArgument, "Packaged runtime bootstrap is missing `ProjectName`"));
+    }
+    if (AssetRoot.empty())
+    {
+        return std::unexpected(
+            MakeError(EErrorCode::InvalidArgument, "Packaged runtime bootstrap is missing `AssetRoot`"));
+    }
+    if (StartupLevelAsset.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Packaged runtime bootstrap is missing `Startup.StartupLevelAsset`"));
+    }
+
+    const std::filesystem::path StageRootDirectory = BootstrapPath.parent_path().parent_path().lexically_normal();
+    const std::filesystem::path AssetRootDirectory = (StageRootDirectory / AssetRoot).lexically_normal();
+    std::error_code Error{};
+    if (!std::filesystem::exists(AssetRootDirectory, Error) || Error)
+    {
+        return std::unexpected(
+            MakeError(EErrorCode::NotFound, "Packaged asset root was not found: " + AssetRootDirectory.string()));
+    }
+
+    return GameProjectInfo{
+        .IsLoaded = true,
+        .Name = ProjectName,
+        .ProjectFilePath = BootstrapPath.string(),
+        .ProjectRootDirectory = StageRootDirectory.string(),
+        .AssetRoot = AssetRoot,
+        .AssetRootDirectory = AssetRootDirectory.string(),
+        .StartupLevelAsset = StartupLevelAsset,
+        .DefaultRenderSettingsAssetId = ReadOptionalStringField(*Startup, "DefaultRenderSettingsAssetId"),
+    };
 }
 
 [[nodiscard]] std::string BuildSourceLogicalName(const std::filesystem::path& AssetRoot,
@@ -458,13 +469,24 @@ Result GameProjectRuntime::Initialize(const GameProjectRuntimeSettings& Settings
     Shutdown();
     m_settings = Settings;
 
-    if (auto LoadProjectResult = LoadProjectMetadata(m_settings.ProjectFilePath); !LoadProjectResult)
+    const std::string BootstrapPath = !TrimCopy(m_settings.BootstrapPath).empty() ? m_settings.BootstrapPath
+                                                                                   : m_settings.ProjectFilePath;
+    if (auto LoadProjectResult = LoadProjectMetadata(BootstrapPath); !LoadProjectResult)
     {
         Shutdown();
         return LoadProjectResult;
     }
 
-    if (auto InitRuntimeResult = m_runtime.Init(m_settings.Runtime); !InitRuntimeResult)
+    GameRuntimeSettings RuntimeSettings = m_settings.Runtime;
+    const bool StartGameplayAfterBootstrap = RuntimeSettings.Gameplay.has_value();
+    if (StartGameplayAfterBootstrap)
+    {
+        // Project bootstrap needs the world, asset manager, startup level, and optional
+        // project defaults loaded before gameplay systems create players or possession state.
+        RuntimeSettings.AutoStartGameplay = false;
+    }
+
+    if (auto InitRuntimeResult = m_runtime.Init(RuntimeSettings); !InitRuntimeResult)
     {
         Shutdown();
         return InitRuntimeResult;
@@ -473,12 +495,6 @@ Result GameProjectRuntime::Initialize(const GameProjectRuntimeSettings& Settings
     if (auto* WorldPtr = m_runtime.WorldPtr(); WorldPtr && !m_project.Name.empty())
     {
         WorldPtr->Name(m_project.Name);
-    }
-
-    const bool RestartGameplayHost = m_settings.Runtime.Gameplay.has_value();
-    if (RestartGameplayHost)
-    {
-        m_runtime.StopGameplayHost();
     }
 
     if (auto AssetManagerResult = CreateAssetManager(); !AssetManagerResult)
@@ -502,7 +518,7 @@ Result GameProjectRuntime::Initialize(const GameProjectRuntimeSettings& Settings
         // Allowed to fail.
     }
 
-    if (RestartGameplayHost)
+    if (StartGameplayAfterBootstrap && m_runtime.WorldPtr() != nullptr && m_runtime.WorldPtr()->ShouldRunGameplay())
     {
         if (auto GameplayResult = m_runtime.StartGameplayHost(); !GameplayResult)
         {
@@ -571,153 +587,56 @@ Result GameProjectRuntime::LoadProjectMetadata(const std::string_view ProjectFil
 {
     m_project = {};
 
-    std::string ProjectFileText = TrimCopy(std::string(ProjectFilePath));
-    if (ProjectFileText.empty())
+    auto BootstrapPath = ResolveBootstrapPath(std::filesystem::path(ProjectFilePath));
+    if (!BootstrapPath)
     {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file path cannot be empty"));
+        return std::unexpected(BootstrapPath.error());
     }
 
-    std::filesystem::path ResolvedProjectFile(ProjectFileText);
-    if (auto Resolved = SPathResolver::Instance().Resolve(ProjectFileText); Resolved)
+    if (IsPackagedRuntimeBootstrapPath(*BootstrapPath))
     {
-        ResolvedProjectFile = *Resolved;
-    }
-    if (!ResolvedProjectFile.is_absolute() && !HasUriScheme(ProjectFileText))
-    {
-        std::error_code Error{};
-        ResolvedProjectFile = std::filesystem::absolute(ResolvedProjectFile, Error);
-        if (Error)
+        auto PackagedProject = LoadPackagedRuntimeBootstrap(*BootstrapPath);
+        if (!PackagedProject)
         {
-            return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to resolve project file path: " + Error.message()));
+            return std::unexpected(PackagedProject.error());
         }
+
+        if (auto SetRootResult = SPathResolver::Instance().SetAssetRoot(PackagedProject->AssetRootDirectory); !SetRootResult)
+        {
+            return SetRootResult;
+        }
+
+        m_project = std::move(*PackagedProject);
+        return Ok();
+    }
+
+    auto ResolvedProject = ProjectDescriptorService::LoadResolved(BootstrapPath->string());
+    if (!ResolvedProject)
+    {
+        return std::unexpected(ResolvedProject.error());
     }
 
     std::error_code Error{};
-    if (!std::filesystem::exists(ResolvedProjectFile, Error) || Error)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound,
-                                         "Project file was not found: " + ResolvedProjectFile.string()));
-    }
-
-    std::ifstream Input(ResolvedProjectFile, std::ios::binary);
-    if (!Input.is_open())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to open project file"));
-    }
-
-    std::ostringstream Buffer{};
-    Buffer << Input.rdbuf();
-    const std::string JsonText = Buffer.str();
-    if (JsonText.empty())
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file is empty"));
-    }
-
-    std::uint32_t Version = kProjectConfigVersion;
-    (void)JsonTryReadUnsignedField(JsonText, "version", Version);
-    if (Version != kProjectConfigVersion)
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported project file version"));
-    }
-
-    std::string Name = ResolvedProjectFile.stem().string();
-    (void)JsonTryReadStringField(JsonText, "name", Name);
-    Name = TrimCopy(Name);
-    if (Name.empty())
-    {
-        Name = "Project";
-    }
-
-    std::string AssetRootField = std::string(kDefaultProjectAssetRoot);
-    (void)JsonTryReadStringField(JsonText, "assetRoot", AssetRootField);
-    AssetRootField = TrimCopy(AssetRootField);
-    if (AssetRootField.empty())
-    {
-        AssetRootField = std::string(kDefaultProjectAssetRoot);
-    }
-    else if (!HasUriScheme(AssetRootField))
-    {
-        AssetRootField = NormalizeProjectPathField(AssetRootField);
-    }
-
-    std::string StartupLevelAssetField{};
-    (void)JsonTryReadStringField(JsonText, "startupLevelAsset", StartupLevelAssetField);
-    StartupLevelAssetField = TrimCopy(StartupLevelAssetField);
-    if (StartupLevelAssetField.empty())
-    {
-        std::string LegacyStartupLevelPack{};
-        (void)JsonTryReadStringField(JsonText, "startupLevelPack", LegacyStartupLevelPack);
-        LegacyStartupLevelPack = TrimCopy(LegacyStartupLevelPack);
-        if (!LegacyStartupLevelPack.empty())
-        {
-            if (!HasUriScheme(LegacyStartupLevelPack))
-            {
-                LegacyStartupLevelPack = NormalizeProjectPathField(LegacyStartupLevelPack);
-                std::filesystem::path LegacyPath(LegacyStartupLevelPack);
-                if (LegacyPath.extension() == ".snpak")
-                {
-                    LegacyPath.replace_extension(".level");
-                }
-                StartupLevelAssetField = LegacyPath.lexically_normal().generic_string();
-            }
-            else
-            {
-                StartupLevelAssetField = LegacyStartupLevelPack;
-            }
-        }
-    }
-    if (StartupLevelAssetField.empty())
-    {
-        StartupLevelAssetField = std::string(kDefaultProjectStartupLevelAsset);
-    }
-    else if (!HasUriScheme(StartupLevelAssetField))
-    {
-        StartupLevelAssetField = NormalizeProjectPathField(StartupLevelAssetField);
-    }
-
-    std::string DefaultRenderSettingsField{};
-    (void)JsonTryReadStringField(JsonText, "defaultRenderSettings", DefaultRenderSettingsField);
-    DefaultRenderSettingsField = TrimCopy(DefaultRenderSettingsField);
-
-    const std::filesystem::path ProjectRoot = ResolvedProjectFile.parent_path();
-
-    std::filesystem::path ResolvedAssetRoot(AssetRootField);
-    if (HasUriScheme(AssetRootField))
-    {
-        auto Resolved = SPathResolver::Instance().Resolve(AssetRootField);
-        if (!Resolved)
-        {
-            return std::unexpected(Resolved.error());
-        }
-        ResolvedAssetRoot = *Resolved;
-    }
-    else if (!ResolvedAssetRoot.is_absolute())
-    {
-        ResolvedAssetRoot = ProjectRoot / ResolvedAssetRoot;
-    }
-    ResolvedAssetRoot = ResolvedAssetRoot.lexically_normal();
-
-    std::filesystem::create_directories(ResolvedAssetRoot, Error);
+    std::filesystem::create_directories(ResolvedProject->AssetRootDirectory, Error);
     if (Error)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to create project asset root directory: " + Error.message()));
     }
 
-    if (auto SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedAssetRoot); !SetRootResult)
+    if (auto SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedProject->AssetRootDirectory); !SetRootResult)
     {
         return SetRootResult;
     }
 
     m_project.IsLoaded = true;
-    m_project.Name = std::move(Name);
-    m_project.ProjectFilePath = ResolvedProjectFile.string();
-    m_project.ProjectRootDirectory = ProjectRoot.string();
-    m_project.AssetRoot = AssetRootField;
-    m_project.AssetRootDirectory = ResolvedAssetRoot.string();
-    m_project.StartupLevelAsset = StartupLevelAssetField;
-    m_project.DefaultRenderSettingsAssetId = DefaultRenderSettingsField;
+    m_project.Name = ResolvedProject->Descriptor.Project.Name;
+    m_project.ProjectFilePath = ResolvedProject->ProjectFilePath.string();
+    m_project.ProjectRootDirectory = ResolvedProject->ProjectRootDirectory.string();
+    m_project.AssetRoot = ResolvedProject->Descriptor.Paths.AssetRoot;
+    m_project.AssetRootDirectory = ResolvedProject->AssetRootDirectory.string();
+    m_project.StartupLevelAsset = ResolvedProject->Descriptor.Startup.StartupLevelAsset;
+    m_project.DefaultRenderSettingsAssetId = ResolvedProject->Descriptor.Startup.DefaultRenderSettingsAssetId;
 
     return Ok();
 }
@@ -771,35 +690,52 @@ Result GameProjectRuntime::LoadStartupLevel()
     WorldPtr->Clear();
     m_defaultRenderSettingsNode = {};
 
-    std::filesystem::path StartupAssetPath(m_project.StartupLevelAsset);
-    if (HasUriScheme(m_project.StartupLevelAsset))
+    const std::string StartupAssetField = TrimCopy(m_project.StartupLevelAsset);
+    if (StartupAssetField.empty())
     {
-        auto Resolved = SPathResolver::Instance().Resolve(m_project.StartupLevelAsset);
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project startup level asset is empty"));
+    }
+
+    std::string LogicalName = NormalizeAssetLogicalName(StartupAssetField);
+    if (HasUriScheme(StartupAssetField))
+    {
+        auto Resolved = SPathResolver::Instance().Resolve(StartupAssetField);
         if (!Resolved)
         {
             return std::unexpected(Resolved.error());
         }
-        StartupAssetPath = *Resolved;
-    }
-    else if (!StartupAssetPath.is_absolute())
-    {
-        StartupAssetPath = std::filesystem::path(m_project.AssetRootDirectory) / StartupAssetPath;
-    }
-    StartupAssetPath = StartupAssetPath.lexically_normal();
 
-    std::error_code Error{};
-    if (!std::filesystem::exists(StartupAssetPath, Error) || Error)
+        const std::filesystem::path StartupAssetPath = Resolved->lexically_normal();
+        std::error_code Error{};
+        if (!std::filesystem::exists(StartupAssetPath, Error) || Error)
+        {
+            return std::unexpected(MakeError(EErrorCode::NotFound,
+                                             "Project startup level asset was not found: " +
+                                                 StartupAssetPath.string()));
+        }
+
+        LogicalName = BuildSourceLogicalName(std::filesystem::path(m_project.AssetRootDirectory), StartupAssetPath);
+    }
+    else if (!m_project.AssetRootDirectory.empty())
     {
-        return std::unexpected(MakeError(EErrorCode::NotFound,
-                                         "Project startup level asset was not found: " + StartupAssetPath.string()));
+        std::filesystem::path StartupAssetPath(StartupAssetField);
+        if (!StartupAssetPath.is_absolute())
+        {
+            StartupAssetPath = std::filesystem::path(m_project.AssetRootDirectory) / StartupAssetPath;
+        }
+        StartupAssetPath = StartupAssetPath.lexically_normal();
+
+        std::error_code Error{};
+        if (std::filesystem::exists(StartupAssetPath, Error) && !Error)
+        {
+            LogicalName = BuildSourceLogicalName(std::filesystem::path(m_project.AssetRootDirectory), StartupAssetPath);
+        }
     }
 
-    const std::string LogicalName =
-        BuildSourceLogicalName(std::filesystem::path(m_project.AssetRootDirectory), StartupAssetPath);
     if (LogicalName.empty())
     {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
-                                         "Project startup level asset is not under the configured asset root"));
+        return std::unexpected(
+            MakeError(EErrorCode::InvalidArgument, "Project startup level asset could not be resolved to a logical name"));
     }
 
     LevelAssetLoadParams LoadParams{};

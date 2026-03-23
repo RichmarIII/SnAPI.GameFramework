@@ -21,6 +21,7 @@
 #include "BaseNode.h"
 #include "IWorld.h"
 #include "PathResolver.h"
+#include "RenderAssets/MeshRuntimeAssets.h"
 #include "RendererSystem.h"
 #include "TransformComponent.h"
 
@@ -485,9 +486,8 @@ bool StaticMeshComponent::EnsureMeshLoaded()
     {
         if (auto* AssetManager = ResolveDefaultAssetManager())
         {
-            auto RuntimeSource = m_settings.MeshAsset.GetRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*AssetManager);
-            auto AuthoredMesh = m_settings.MeshAsset.LoadAsset();
-            if (RuntimeSource && *RuntimeSource)
+            auto RuntimeMesh = m_settings.MeshAsset.GetRuntimeShared<StaticMeshRuntime>(*AssetManager);
+            if (RuntimeMesh && *RuntimeMesh && (*RuntimeMesh)->StreamSource)
             {
                 std::string AssetToken = BuildMeshAssetToken(m_settings.MeshAsset);
                 if (AssetToken.empty())
@@ -496,18 +496,11 @@ bool StaticMeshComponent::EnsureMeshLoaded()
                 }
                 if (auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>())
                 {
-                    RenderObject->SetVertexStreamSource(*RuntimeSource);
+                    RenderObject->SetVertexStreamSource((*RuntimeMesh)->StreamSource);
                     m_renderObject = std::move(RenderObject);
                     m_loadedPath = AssetToken;
                     m_loadedFromAsset = true;
-                    if (AuthoredMesh && *AuthoredMesh)
-                    {
-                        m_loadedMeshMaterialInstances = (*AuthoredMesh)->Mesh.MaterialInstances;
-                    }
-                    else
-                    {
-                        m_loadedMeshMaterialInstances.clear();
-                    }
+                    m_loadedMeshMaterialInstances = (*RuntimeMesh)->MaterialRefs;
                     m_loadedStreamSource.reset();
                     m_registered = false;
                     m_settings.MeshPath.clear();

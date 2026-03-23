@@ -648,7 +648,7 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
 #endif
 
-    if (m_settings.Gameplay && m_world->ShouldRunGameplay())
+    if (m_settings.AutoStartGameplay && m_settings.Gameplay && m_world->ShouldRunGameplay())
     {
         auto InitGameplay = StartGameplayHost();
         if (!InitGameplay)

@@ -303,6 +303,7 @@ void GameEditor::EnsureDefaultServicesRegistered()
     (void)RegisterService<EditorSelectionService>();
     (void)RegisterService<EditorPieService>();
     (void)RegisterService<EditorAssetService>();
+    (void)RegisterService<EditorBuildService>();
     (void)RegisterService<Conduit::Editor::ConduitEditorService>();
     (void)RegisterService<EditorAssetIconService>();
     (void)RegisterService<EditorLayoutService>();

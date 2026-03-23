@@ -34,12 +34,18 @@ struct GameProjectInfo
  * @ingroup SnAPI_GameFramework
  * @brief Bootstrap settings for `GameProjectRuntime`.
  *
- * `ProjectFilePath` selects the authored project configuration to load, while
- * `Runtime` controls the underlying `GameRuntime` session that will host it.
+ * `ProjectFilePath` selects the authored project configuration to load during
+ * normal development/runtime launches. `BootstrapPath` optionally overrides
+ * that with either a project descriptor path, a packaged
+ * `Config/ResolvedRuntimeConfig.json` path, or a directory that contains one of
+ * those bootstrap files. `Runtime` controls the underlying `GameRuntime`
+ * session that will host it.
  */
 struct GameProjectRuntimeSettings
 {
-    std::string ProjectFilePath{};
+    std::string ProjectFilePath{}; /**< @brief Authored project descriptor path used by development/runtime launches. */
+    std::string BootstrapPath{}; /**< @brief Optional bootstrap override path. Accepts a project descriptor, a packaged
+                                      `Config/ResolvedRuntimeConfig.json` file, or a directory that contains one. */
     GameRuntimeSettings Runtime{};
 };
 

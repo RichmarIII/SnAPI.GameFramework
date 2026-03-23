@@ -561,7 +561,9 @@ TExpected<TValue> DeserializeBinaryValue(const uint8_t* Bytes, const size_t Size
         cereal::BinaryInputArchive Archive(Input);
         TValue Value{};
         Archive(Value);
-        return Value;
+        // Construct the success state explicitly so derived IAsset identity stays intact when
+        // authored source assets cross the expected/value boundary.
+        return TExpected<TValue>(std::in_place, std::move(Value));
     }
     catch (const std::exception& Ex)
     {

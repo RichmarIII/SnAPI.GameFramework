@@ -80,6 +80,9 @@ struct GameRuntimeSettings
     bool RegisterBuiltins = true; /**< @brief Register built-in reflection/serialization types once during init. */
     GameRuntimeTickSettings Tick{}; /**< @brief Tick/lifecycle policy for `Update`. */
     std::optional<GameRuntimeGameplaySettings> Gameplay{}; /**< @brief Optional high-level gameplay orchestration settings. */
+    bool AutoStartGameplay = true; /**< @brief Start the gameplay host during `Init()` when `Gameplay` is configured.
+                                        Set this to `false` when a bootstrap path needs to load project content first and
+                                        then call `StartGameplayHost()` explicitly. */
 #if defined(SNAPI_GF_ENABLE_INPUT)
     std::optional<GameRuntimeInputSettings> Input{}; /**< @brief Optional input bootstrap; nullopt keeps world input subsystem uninitialized. */
 #endif

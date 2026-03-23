@@ -1792,6 +1792,38 @@ TEST_CASE("Conduit class assets serialize load and compile against host nodes")
     REQUIRE(Score->get() == 3);
 }
 
+TEST_CASE("Conduit runtime asset refs can resolve packaged assets without loose source files")
+{
+    EnsureConduitHarnessRegistered();
+
+    ::SnAPI::AssetPipeline::AssetManager Manager{};
+    RegisterAssetPipelinePayloads(Manager.GetRegistry());
+    RegisterAssetPipelineFactories(Manager);
+    AssetManagerResolverScope ResolverScope(Manager);
+
+    GraphAsset Graph{};
+    Graph.Name = "PackagedOnlyGraph";
+    const auto GraphId = StoreRuntimeGraphAsset(Manager, Graph, "PackagedOnlyGraph");
+
+    ClassAsset AuthoredClass{};
+    AuthoredClass.Name = "PackagedOnlyClass";
+    AuthoredClass.HostType = StaticTypeId<ConduitNodeHarness>();
+    AuthoredClass.Graph.EditAssetName() = "PackagedOnlyGraph";
+    AuthoredClass.Graph.EditAssetId() = GraphId.ToString();
+
+    const auto ClassId = StoreRuntimeClassAsset(Manager, AuthoredClass, "PackagedOnlyClass");
+
+    TAssetRef<ClassAsset> Ref{};
+    Ref.EditAssetName() = "Missing/PackagedOnlyClass.conduitclass";
+    Ref.EditAssetId() = ClassId.ToString();
+
+    auto LoadResult = Ref.LoadRuntime<ClassAsset>(Manager);
+    REQUIRE(LoadResult);
+    REQUIRE(*LoadResult);
+    CHECK((*LoadResult)->Name == "PackagedOnlyClass");
+    CHECK((*LoadResult)->Graph.GetAssetId() == GraphId.ToString());
+}
+
 TEST_CASE("Conduit class assets reject incompatible graph self types")
 {
     EnsureConduitHarnessRegistered();
