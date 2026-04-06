@@ -16,6 +16,7 @@ option(SNAPI_GF_BUILD_REFLECTION_GEN "Build the libclang-based reflection genera
 option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
+option(SNAPI_GF_INCLUDE_RENDERER_NEW_WORKSPACE "Load SnAPI.Renderer.New as a sibling CMake project for IDE visibility" ON)
 set(SNAPI_PROJECT_ROOT_DIR "" CACHE PATH "Optional external project root integrated into SnAPI.GameFramework targets")
 
 if (SNAPI_ENABLE_IPO)
@@ -696,6 +697,9 @@ target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_UI)
 # SnAPI.Renderer integration (required when source is available)
 set(SNAPI_RENDERER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SNAPI_GF_RENDERER_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Renderer")
+set(SNAPI_RENDERER_NEW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SNAPI_RENDERER_NEW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(SNAPI_GF_RENDERER_NEW_SOURCE_DIR "" CACHE PATH "Local override for SnAPI.Renderer.New")
 
 set(SNAPI_GF_RENDERER_ROOT "")
 if (SNAPI_GF_RENDERER_SOURCE_DIR)
@@ -750,6 +754,28 @@ if (SNAPI_GF_RENDERER_ROOT)
     endif()
 else()
     message(WARNING "SnAPI.Renderer source not found; set SNAPI_GF_RENDERER_SOURCE_DIR to enable renderer integration.")
+endif()
+
+# SnAPI.Renderer.New workspace integration.
+set(SNAPI_GF_RENDERER_NEW_ROOT "")
+if (SNAPI_GF_RENDERER_NEW_SOURCE_DIR)
+    set(SNAPI_GF_RENDERER_NEW_ROOT ${SNAPI_GF_RENDERER_NEW_SOURCE_DIR})
+elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Renderer.New/CMakeLists.txt")
+    set(SNAPI_GF_RENDERER_NEW_ROOT "/mnt/Dev/CodeProjects/SnAPI.Renderer.New")
+endif()
+
+if (SNAPI_GF_INCLUDE_RENDERER_NEW_WORKSPACE AND SNAPI_GF_RENDERER_NEW_ROOT)
+    FetchContent_Declare(
+        SnAPI.Renderer.New
+        SOURCE_DIR ${SNAPI_GF_RENDERER_NEW_ROOT}
+    )
+    FetchContent_MakeAvailable(SnAPI.Renderer.New)
+
+    if (TARGET SnAPI.Renderer.New)
+        add_dependencies(SnAPI.GameFramework SnAPI.Renderer.New)
+    else()
+        message(FATAL_ERROR "SnAPI.Renderer.New source was found, but target SnAPI.Renderer.New was not created.")
+    endif()
 endif()
 
 if (TARGET FreeImage)
