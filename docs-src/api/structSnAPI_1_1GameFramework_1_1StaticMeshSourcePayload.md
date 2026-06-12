@@ -10,7 +10,7 @@ Source-intermediate payload for a static mesh asset.
 Logical mesh metadata and material references.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::vector<MeshStreamSourcePayload> SnAPI::GameFramework::StaticMeshSourcePayload::Streams`
+### `std::vector<MeshVertexStreamPayload> SnAPI::GameFramework::StaticMeshSourcePayload::Streams`
 
 Raw source streams that will be cooked into bulk data.
 </div>

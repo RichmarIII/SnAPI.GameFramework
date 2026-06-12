@@ -1,18 +1,17 @@
 # SnAPI::GameFramework::Editor::EditorViewportBinding
 
-Owns the root editor render viewport and binds it to the root UI context.
+Keeps the root editor UI context bound to the renderer surface viewport.
 
-`EditorViewportBinding` is the small stateful adapter that keeps the editor shell's root render viewport synchronized with the runtime window and the root UI context.
+`EditorViewportBinding` is the small stateful adapter that keeps the editor shell's root UI context synchronized with the runtime window and bound to the renderer's default surface viewport.
 
 Core semantics:
-- Initialization creates an explicit renderer viewport instead of using the renderer's implicit default viewport.
-- The created viewport is bound to the UI root context and assigned the `UiPresentOnly` pass-graph preset.
-- `SyncToWindow()` preserves explicit-viewport mode, recreates missing bindings when possible, and keeps logical UI size and render extent in sync with the current window.
-- Render-extent resize is intentionally deferred while the left mouse button is held to avoid resizing the render target during active drag operations.
+- Initialization enables the default renderer viewport (`1`) and binds it to the UI root context.
+- Embedded game/editor viewports remain explicit offscreen render viewports owned by `UIRenderViewport`.
+- `SyncToWindow()` recreates the root binding when needed and keeps the logical UI size synchronized with the current renderer window size.
 
 Ownership and lifetime:
-- The class stores only ids and cached size state.
-- The underlying viewport and UI binding are owned by the runtime subsystems, not by this object.
+- The class stores only ids and cached UI size state.
+- The default renderer viewport and UI binding are owned by the runtime subsystems.
 - Cached ids become invalid after `Shutdown()` or runtime teardown.
 
 Threading model:
@@ -20,9 +19,6 @@ Threading model:
 
 ## Private Members
 
-<div class="snapi-api-card" markdown="1">
-### `std::string SnAPI::GameFramework::Editor::EditorViewportBinding::m_viewportName`
-</div>
 <div class="snapi-api-card" markdown="1">
 ### `std::uint64_t SnAPI::GameFramework::Editor::EditorViewportBinding::m_viewportId`
 </div>
@@ -36,43 +32,28 @@ Threading model:
 ### `float SnAPI::GameFramework::Editor::EditorViewportBinding::m_lastHeight`
 </div>
 <div class="snapi-api-card" markdown="1">
-### `std::uint32_t SnAPI::GameFramework::Editor::EditorViewportBinding::m_appliedRenderWidth`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `std::uint32_t SnAPI::GameFramework::Editor::EditorViewportBinding::m_appliedRenderHeight`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `std::uint32_t SnAPI::GameFramework::Editor::EditorViewportBinding::m_pendingRenderWidth`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `std::uint32_t SnAPI::GameFramework::Editor::EditorViewportBinding::m_pendingRenderHeight`
-</div>
-<div class="snapi-api-card" markdown="1">
-### `bool SnAPI::GameFramework::Editor::EditorViewportBinding::m_hasPendingRenderExtentResize`
-</div>
-
 ## Public Functions
 
 <div class="snapi-api-card" markdown="1">
 ### `Result SnAPI::GameFramework::Editor::EditorViewportBinding::Initialize(GameRuntime &Runtime, std::string ViewportName)`
 
-Create and bind the root editor viewport.
+Bind the root editor UI context to the renderer surface viewport.
 
 **Parameters**
 
 - `Runtime`: Initialized runtime that owns renderer and UI systems.
-- `ViewportName`: Optional logical viewport name. Empty input keeps the current/default name.
+- `ViewportName`: Reserved diagnostic name for callers that still pass one.
 
 **Returns:** Success or an error.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::Editor::EditorViewportBinding::Shutdown(GameRuntime *Runtime)`
 
-Tear down the current viewport binding if it exists.
+Clear cached binding state.
 
 **Parameters**
 
-- `Runtime`: Optional runtime used to unbind and destroy the live viewport. May be null during late teardown.
+- `Runtime`: Reserved runtime pointer for service lifecycle symmetry.
 </div>
 <div class="snapi-api-card" markdown="1">
 ### `bool SnAPI::GameFramework::Editor::EditorViewportBinding::SyncToWindow(GameRuntime &Runtime)`

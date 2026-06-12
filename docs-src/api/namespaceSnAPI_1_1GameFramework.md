@@ -99,7 +99,7 @@
 - **Type:** SnAPI::GameFramework::SkeletonAssetRuntime
 - **Type:** SnAPI::GameFramework::AnimationAssetRuntime
 - **Type:** SnAPI::GameFramework::SkeletalMeshAssetRuntime
-- **Type:** SnAPI::GameFramework::MeshStreamSourcePayload
+- **Type:** SnAPI::GameFramework::MeshVertexStreamPayload
 - **Type:** SnAPI::GameFramework::MeshImportSettingsPayload
 - **Type:** SnAPI::GameFramework::StaticMeshSourcePayload
 - **Type:** SnAPI::GameFramework::SkeletalMeshSourcePayload
@@ -671,7 +671,7 @@ Register the GameFramework AssetPipeline plugin.
 - `Value`:
 </div>
 <div class="snapi-api-card" markdown="1">
-### `void SnAPI::GameFramework::serialize(Archive &Ar, MeshStreamSourcePayload &Value)`
+### `void SnAPI::GameFramework::serialize(Archive &Ar, MeshVertexStreamPayload &Value)`
 
 **Parameters**
 

@@ -44,13 +44,13 @@ Input.CreateDesc.EnableGamepad = true;
 Settings.Input = Input;
 
 GameRuntimeRendererSettings Renderer{};
-Renderer.CreateGraphicsApi = true;
+Renderer.CreateRendererRuntime = true;
 Renderer.CreateWindow = true;
 Renderer.WindowTitle = "First Play Session";
 Renderer.WindowWidth = 1280.0f;
 Renderer.WindowHeight = 720.0f;
 Renderer.CreateDefaultLighting = true;
-Renderer.RegisterDefaultPassGraph = true;
+Renderer.ApplyDefaultFeatureProfile = true;
 Renderer.CreateDefaultMaterials = true;
 Settings.Renderer = Renderer;
 ```

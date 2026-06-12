@@ -22,7 +22,6 @@
 - [SnAPI::GameFramework::anonymous_namespace{LocalPlayerService.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02LocalPlayerService_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{PathResolver.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02PathResolver_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{RenderAssetAssimpImporter.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02RenderAssetAssimpImporter_8cpp_03.md)
-- [SnAPI::GameFramework::anonymous_namespace{RenderAssetPayloads.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02RenderAssetPayloads_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{RenderAssetSourcePayloads.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02RenderAssetSourcePayloads_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{RenderAssetSourcePipeline.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02RenderAssetSourcePipeline_8cpp_03.md)
 - [SnAPI::GameFramework::anonymous_namespace{ScriptABI.cpp}](namespaceSnAPI_1_1GameFramework_1_1anonymous__namespace_02ScriptABI_8cpp_03.md)
