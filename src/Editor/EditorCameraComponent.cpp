@@ -10,13 +10,12 @@
 #include "UIRenderViewport.h"
 #include "UISystem.h"
 
-#include <IGraphicsAPI.hpp>
 #include <Input.h>
 #include <SnAPI/Math/LinearAlgebra.h>
 #include <algorithm>
 #include <cmath>
 
-#include "CameraBase.hpp"
+
 #include "RendererSystem.h"
 
 namespace SnAPI::GameFramework
@@ -84,77 +83,6 @@ constexpr float kSmallNumber = 1.0e-6f;
     return Value / std::sqrt(LengthSquared);
 }
 
-[[nodiscard]] bool IsPointInsideViewportRect(const float X, const float Y, const SnAPI::Graphics::ViewportFit& Rect)
-{
-    if (!std::isfinite(Rect.X) || !std::isfinite(Rect.Y) || !std::isfinite(Rect.Width) || !std::isfinite(Rect.Height))
-    {
-        return false;
-    }
-
-    if (Rect.Width <= 0.0f || Rect.Height <= 0.0f)
-    {
-        return false;
-    }
-
-    return X >= Rect.X && X < (Rect.X + Rect.Width) && Y >= Rect.Y && Y < (Rect.Y + Rect.Height);
-}
-
-[[nodiscard]] bool IsPointerInsideCameraViewport(const IWorld& WorldRef,
-                                                 const SnAPI::Input::InputSnapshot& Snapshot,
-                                                 const SnAPI::Graphics::ICamera* Camera)
-{
-    if (!Camera)
-    {
-        return true;
-    }
-
-    const float MouseX = Snapshot.Mouse().X;
-    const float MouseY = Snapshot.Mouse().Y;
-    if (!std::isfinite(MouseX) || !std::isfinite(MouseY))
-    {
-        return false;
-    }
-
-    const auto& Renderer = WorldRef.Renderer();
-    if (!Renderer.IsInitialized())
-    {
-        return true;
-    }
-
-    const SnAPI::Graphics::IGraphicsAPI* Graphics = SnAPI::Graphics::IGraphicsAPI::Instance();
-    if (!Graphics)
-    {
-        return true;
-    }
-
-    bool HasMatchedViewport = false;
-
-    const auto ViewportIds = Graphics->RenderViewportIDs();
-    for (const auto ViewportId : ViewportIds)
-    {
-        const auto Config = Graphics->GetRenderViewportConfig(ViewportId);
-        if (!Config.has_value() || !Config->Enabled)
-        {
-            continue;
-        }
-
-        // Editor camera navigation must be scoped to explicitly camera-bound viewports only.
-        // Root/fullscreen utility viewports often keep null camera and should not grant control.
-        if (Config->pCamera != Camera)
-        {
-            continue;
-        }
-
-        HasMatchedViewport = true;
-        if (IsPointInsideViewportRect(MouseX, MouseY, Config->OutputRect))
-        {
-            return true;
-        }
-    }
-
-    // If this camera is not bound to any viewport, do not hard-block navigation.
-    return !HasMatchedViewport;
-}
 
 [[nodiscard]] bool IsPointerOverCameraViewportUi(const IWorld& WorldRef,
                                                  const SnAPI::Input::InputSnapshot& Snapshot)
@@ -258,11 +186,7 @@ void EditorCameraComponent::Tick(const float DeltaSeconds)
         Transform.Rotation = Quat::Identity();
     }
 
-    const auto OwnerCameraResult = Owner->Component<CameraComponent>();
-    const SnAPI::Graphics::ICamera* OwnerCamera = OwnerCameraResult ? OwnerCameraResult->Camera() : nullptr;
-
-    const bool PointerInsideViewport = !m_settings.RequirePointerInsideViewport
-                                    || IsPointerInsideCameraViewport(*WorldPtr, *Snapshot, OwnerCamera);
+    const bool PointerInsideViewport = true;
     const bool PointerOverViewportUi = !m_settings.RequirePointerInsideViewport
                                     || IsPointerOverCameraViewportUi(*WorldPtr, *Snapshot);
 

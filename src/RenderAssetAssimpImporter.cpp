@@ -1435,9 +1435,19 @@ struct MeshImportBuffers
                 AddTextureParam(aiTextureType_AMBIENT_OCCLUSION, "Material_ORM", false);
             }
 
+        MaterialInstanceItem.AssetDependencies.push_back(::SnAPI::AssetPipeline::AssetDependencyRef{
+            .Id = ::SnAPI::AssetPipeline::AssetId::FromString(MaterialInstancePayloadData.ParentMaterial.AssetId),
+            .LogicalName = MaterialInstancePayloadData.ParentMaterial.AssetName,
+            .Kind = ::SnAPI::AssetPipeline::EAssetDependencyKind::Required,
+        });
+
         for (const MaterialTextureParamPayload& TextureParam : MaterialInstancePayloadData.Textures)
         {
-            MaterialInstanceItem.Dependencies.emplace_back(TextureParam.Texture.AssetName, 0);
+            MaterialInstanceItem.AssetDependencies.push_back(::SnAPI::AssetPipeline::AssetDependencyRef{
+                .Id = ::SnAPI::AssetPipeline::AssetId::FromString(TextureParam.Texture.AssetId),
+                .LogicalName = TextureParam.Texture.AssetName,
+                .Kind = ::SnAPI::AssetPipeline::EAssetDependencyKind::Required,
+            });
         }
 
             MaterialSerializer->SerializeToBytes(&MaterialPayloadData, MaterialItem.Intermediate.Bytes);
@@ -1840,7 +1850,7 @@ struct MeshImportBuffers
             {
                 return;
             }
-            MeshStreamSourcePayload Stream{};
+            MeshVertexStreamPayload Stream{};
             Stream.Semantic = Semantic;
             Stream.SubIndex = static_cast<uint32_t>(Semantic);
             Stream.Bytes = Bytes;
@@ -1881,12 +1891,12 @@ struct MeshImportBuffers
         SourcePayload.Bones = MeshBuffers.Bones;
         if (SkeletonItem.has_value())
         {
-            SourcePayload.Skeleton = MakeAssetRef(*SkeletonItem);
+            SourcePayload.Skeleton = SkeletonAssetRef(SkeletonItem->LogicalName, SkeletonItem->Id.ToString());
         }
         SourcePayload.Animations.reserve(AnimationItems.size());
         for (const ImportedItem& AnimationItem : AnimationItems)
         {
-            SourcePayload.Animations.push_back(MakeAssetRef(AnimationItem));
+            SourcePayload.Animations.emplace_back(AnimationItem.LogicalName, AnimationItem.Id.ToString());
         }
 
         const uint32_t MaterialSlotCount = std::max<uint32_t>(1u, MeshBuffers.MaxMaterialSlot + 1);
@@ -1905,7 +1915,7 @@ struct MeshImportBuffers
             {
                 return;
             }
-            MeshStreamSourcePayload Stream{};
+            MeshVertexStreamPayload Stream{};
             Stream.Semantic = Semantic;
             Stream.SubIndex = static_cast<uint32_t>(Semantic);
             Stream.Bytes = Bytes;

@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "BuiltinTypes.h"
 #include "Expected.h"
+#include "RenderAssets/MaterialInstanceAsset.h"
 #include "ReflectionAnnotations.h"
 #include "TypeName.h"
 

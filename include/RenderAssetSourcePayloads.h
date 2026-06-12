@@ -2,7 +2,7 @@
 
 #include "RenderAssetPayloads.h"
 #include "RenderAssets/MeshImportSettingsPayload.h"
-#include "RenderAssets/MeshStreamSourcePayload.h"
+#include "RenderAssets/MeshVertexStreamPayload.h"
 #include "RenderAssets/SkeletalAnimationAsset.h"
 #include "RenderAssets/SkeletalMeshAsset.h"
 #include "RenderAssets/SkeletonAsset.h"

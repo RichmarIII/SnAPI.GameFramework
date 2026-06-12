@@ -26,6 +26,7 @@
  */
 #include "Editor/EditorCameraComponent.h"
 #include "Editor/EditorAssetService.h"
+#include "Editor/EditorBuildService.h"
 #include "Editor/EditorCoreServices.h"
 #include "Editor/EditorSelectionModel.h"
 #include "Editor/EditorWorld.h"

@@ -5,6 +5,7 @@
 #include "BaseNode.h"
 #include "CameraComponent.h"
 #include "Editor/EditorSelectionModel.h"
+#include "Editor/UIHelpTooltip.h"
 #include "Conduit/Editor/GraphCanvas.h"
 #include "GameRuntime.h"
 #include "BaseComponent.h"
@@ -67,12 +68,12 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "CameraBase.hpp"
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -152,6 +153,13 @@ constexpr std::array<ToolbarActionSpec, 4> kToolbarActions{{
 }};
 constexpr std::array<std::string_view, 3> kViewportModes{
     "Perspective", "Lit", "Shaded"};
+constexpr std::array<std::string_view, 3> kKnownBuildPlatforms{
+    "Windows", "Linux", "MacOS"};
+constexpr std::array<std::string_view, 1> kKnownArchiveFormats{
+    "zip"};
+constexpr std::array<std::string_view, 4> kKnownBuildExecutionEnvironments{
+    "host-local", "docker://snapi/windows-msvc:stable", "docker://snapi/linux-clang:stable",
+    "docker://snapi/macos-clang:stable"};
 constexpr std::string_view kContentAssetDragPayloadType = "Editor.ContentAsset";
 
 struct ContentAssetDragPayload
@@ -213,6 +221,196 @@ struct ContentAssetDragPayload
 [[nodiscard]] constexpr EditorLayout::ESnapMode SnapModeFromIndex(const int32_t Index)
 {
     return Index == 1 ? EditorLayout::ESnapMode::On : EditorLayout::ESnapMode::Off;
+}
+
+[[nodiscard]] constexpr int32_t BuildConfigurationToIndex(const EBuildConfiguration Configuration)
+{
+    switch (Configuration)
+    {
+    case EBuildConfiguration::Debug:
+        return 0;
+    case EBuildConfiguration::Development:
+        return 1;
+    case EBuildConfiguration::Test:
+        return 2;
+    case EBuildConfiguration::Shipping:
+        return 3;
+    }
+
+    return 1;
+}
+
+[[nodiscard]] constexpr EBuildConfiguration BuildConfigurationFromIndex(const int32_t Index)
+{
+    switch (Index)
+    {
+    case 0:
+        return EBuildConfiguration::Debug;
+    case 2:
+        return EBuildConfiguration::Test;
+    case 3:
+        return EBuildConfiguration::Shipping;
+    case 1:
+    default:
+        return EBuildConfiguration::Development;
+    }
+}
+
+[[nodiscard]] constexpr std::string_view BuildConfigurationLabel(const EBuildConfiguration Configuration)
+{
+    switch (Configuration)
+    {
+    case EBuildConfiguration::Debug:
+        return "Debug";
+    case EBuildConfiguration::Test:
+        return "Test";
+    case EBuildConfiguration::Shipping:
+        return "Shipping";
+    case EBuildConfiguration::Development:
+    default:
+        return "Development";
+    }
+}
+
+[[nodiscard]] constexpr int32_t DependencyPolicyToIndex(const EAssetDependencyPolicy Policy)
+{
+    switch (Policy)
+    {
+    case EAssetDependencyPolicy::HardOnly:
+        return 0;
+    case EAssetDependencyPolicy::HardAndSoft:
+        return 1;
+    case EAssetDependencyPolicy::HardSoftAndEditorPreview:
+        return 2;
+    case EAssetDependencyPolicy::CustomResolver:
+        return 3;
+    }
+
+    return 0;
+}
+
+[[nodiscard]] constexpr EAssetDependencyPolicy DependencyPolicyFromIndex(const int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        return EAssetDependencyPolicy::HardAndSoft;
+    case 2:
+        return EAssetDependencyPolicy::HardSoftAndEditorPreview;
+    case 3:
+        return EAssetDependencyPolicy::CustomResolver;
+    case 0:
+    default:
+        return EAssetDependencyPolicy::HardOnly;
+    }
+}
+
+[[nodiscard]] constexpr int32_t ChunkStrategyToIndex(const EAssetChunkStrategy Strategy)
+{
+    switch (Strategy)
+    {
+    case EAssetChunkStrategy::Monolithic:
+        return 0;
+    case EAssetChunkStrategy::SharedPlusPerLevel:
+        return 1;
+    case EAssetChunkStrategy::PerLabel:
+        return 2;
+    case EAssetChunkStrategy::CustomGraph:
+        return 3;
+    }
+
+    return 0;
+}
+
+[[nodiscard]] constexpr EAssetChunkStrategy ChunkStrategyFromIndex(const int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        return EAssetChunkStrategy::SharedPlusPerLevel;
+    case 2:
+        return EAssetChunkStrategy::PerLabel;
+    case 3:
+        return EAssetChunkStrategy::CustomGraph;
+    case 0:
+    default:
+        return EAssetChunkStrategy::Monolithic;
+    }
+}
+
+[[nodiscard]] constexpr int32_t ModuleTypeToIndex(const EProjectModuleType ModuleType)
+{
+    switch (ModuleType)
+    {
+    case EProjectModuleType::Runtime:
+        return 0;
+    case EProjectModuleType::Editor:
+        return 1;
+    case EProjectModuleType::Shared:
+        return 2;
+    case EProjectModuleType::Developer:
+        return 3;
+    case EProjectModuleType::Test:
+        return 4;
+    case EProjectModuleType::Program:
+        return 5;
+    }
+
+    return 0;
+}
+
+[[nodiscard]] constexpr EProjectModuleType ModuleTypeFromIndex(const int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        return EProjectModuleType::Editor;
+    case 2:
+        return EProjectModuleType::Shared;
+    case 3:
+        return EProjectModuleType::Developer;
+    case 4:
+        return EProjectModuleType::Test;
+    case 5:
+        return EProjectModuleType::Program;
+    case 0:
+    default:
+        return EProjectModuleType::Runtime;
+    }
+}
+
+[[nodiscard]] constexpr bool DefaultLoadInEditorForModule(const EProjectModuleType ModuleType)
+{
+    switch (ModuleType)
+    {
+    case EProjectModuleType::Runtime:
+    case EProjectModuleType::Editor:
+    case EProjectModuleType::Shared:
+    case EProjectModuleType::Developer:
+        return true;
+    case EProjectModuleType::Test:
+    case EProjectModuleType::Program:
+        return false;
+    }
+
+    return false;
+}
+
+[[nodiscard]] constexpr bool DefaultLoadInRuntimeForModule(const EProjectModuleType ModuleType)
+{
+    switch (ModuleType)
+    {
+    case EProjectModuleType::Runtime:
+    case EProjectModuleType::Shared:
+        return true;
+    case EProjectModuleType::Editor:
+    case EProjectModuleType::Developer:
+    case EProjectModuleType::Test:
+    case EProjectModuleType::Program:
+        return false;
+    }
+
+    return false;
 }
 
 [[nodiscard]] double SanitizePositiveStep(const double Value, const double Fallback)
@@ -312,6 +510,9 @@ constexpr std::string_view kContextMenuItemContentInspectorAddNodeTypePrefix = "
 constexpr std::string_view kContextMenuItemContentInspectorAddComponentTypePrefix = "asset_inspector.add_component.type.";
 constexpr std::string_view kContextMenuItemFileNewProjectId = "menu.file.new_project";
 constexpr std::string_view kContextMenuItemFileOpenProjectId = "menu.file.open_project";
+constexpr std::string_view kContextMenuItemFileNewPluginId = "menu.file.new_plugin";
+constexpr std::string_view kContextMenuItemFileAddModuleId = "menu.file.add_module";
+constexpr std::string_view kContextMenuItemFilePackageProjectId = "menu.file.package_project";
 constexpr std::string_view kContextMenuItemFileProjectSettingsId = "menu.file.project_settings";
 constexpr std::string_view kContextMenuItemConduitSpawnPrefix = "conduit.spawn.";
 constexpr std::string_view kContextMenuItemConduitSpawnNoMatchesId = "conduit.spawn.no_matches";
@@ -575,6 +776,93 @@ void DestroyDirectChildren(SnAPI::UI::UIContext& Context, const SnAPI::UI::Eleme
     return Value;
 }
 
+[[nodiscard]] std::vector<std::string> ParseMultilineEntries(const std::string_view Text)
+{
+    std::vector<std::string> Entries{};
+    std::string Current{};
+    for (const char Character : Text)
+    {
+        if (Character == '\r')
+        {
+            continue;
+        }
+        if (Character == '\n')
+        {
+            Current = TrimCopy(std::move(Current));
+            if (!Current.empty())
+            {
+                Entries.push_back(std::move(Current));
+            }
+            Current.clear();
+            continue;
+        }
+        Current.push_back(Character);
+    }
+
+    Current = TrimCopy(std::move(Current));
+    if (!Current.empty())
+    {
+        Entries.push_back(std::move(Current));
+    }
+
+    return Entries;
+}
+
+[[nodiscard]] std::string JoinEntries(const std::vector<std::string>& Entries)
+{
+    std::string Text{};
+    for (std::size_t Index = 0; Index < Entries.size(); ++Index)
+    {
+        if (Index > 0u)
+        {
+            Text += '\n';
+        }
+        Text += Entries[Index];
+    }
+    return Text;
+}
+
+[[nodiscard]] bool ContainsEntry(const std::vector<std::string>& Entries, const std::string_view Value)
+{
+    return std::ranges::any_of(Entries, [Value](const std::string& Entry) { return Entry == Value; });
+}
+
+void AppendUniqueEntryText(std::string& TargetText, const std::string_view Value)
+{
+    const std::string TrimmedValue = TrimCopy(std::string(Value));
+    if (TrimmedValue.empty())
+    {
+        return;
+    }
+
+    std::vector<std::string> Entries = ParseMultilineEntries(TargetText);
+    if (!ContainsEntry(Entries, TrimmedValue))
+    {
+        Entries.push_back(TrimmedValue);
+        TargetText = JoinEntries(Entries);
+    }
+}
+
+[[nodiscard]] std::vector<std::string> BuildComboItemsWithCurrent(
+    const std::span<const std::string_view> BaseItems, const std::string_view Placeholder, const std::string_view CurrentValue)
+{
+    std::vector<std::string> Items{};
+    Items.reserve(BaseItems.size() + 2u);
+    Items.emplace_back(Placeholder);
+    for (const std::string_view Item : BaseItems)
+    {
+        Items.emplace_back(Item);
+    }
+
+    const std::string TrimmedCurrent = TrimCopy(std::string(CurrentValue));
+    if (!TrimmedCurrent.empty() && !ContainsEntry(Items, TrimmedCurrent))
+    {
+        Items.push_back(TrimmedCurrent);
+    }
+
+    return Items;
+}
+
 [[nodiscard]] std::string ToLowerCopy(std::string_view Value)
 {
     std::string Lower(Value);
@@ -688,6 +976,62 @@ void ConfigureModalScreenRatio(SnAPI::UI::UIModal& Modal, const float Ratio)
     Modal.DialogHeight().Set(kModalRequestedSizePixels);
     Modal.DialogMaxWidthRatio().Set(ClampedRatio);
     Modal.DialogMaxHeightRatio().Set(ClampedRatio);
+}
+
+template<typename TBuilder>
+void AddFieldHelpText(TBuilder& Parent, const std::string_view HelpText)
+{
+    if (HelpText.empty())
+    {
+        return;
+    }
+
+    auto HelpRow = Parent.Add(SnAPI::UI::UIPanel{});
+    auto& HelpRowElement = HelpRow.Element();
+    ConfigureTransparentLayoutPanel(HelpRowElement);
+    HelpRowElement.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HelpRowElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    HelpRowElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    HelpRowElement.Gap().Set(6.0f);
+
+    auto HelpBadge = HelpRow.Add(UIHelpTooltip{});
+    auto& HelpBadgeElement = HelpBadge.Element();
+    HelpBadgeElement.TooltipText().Set(std::string(HelpText));
+    HelpBadgeElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 2.0f, 0.0f});
+
+    std::string PreviewText{};
+    PreviewText.reserve(HelpText.size());
+    bool LastWasWhitespace = false;
+    for (const unsigned char Ch : HelpText)
+    {
+        const bool IsWhitespace = std::isspace(Ch) != 0;
+        if (IsWhitespace)
+        {
+            if (!PreviewText.empty() && !LastWasWhitespace)
+            {
+                PreviewText.push_back(' ');
+            }
+            LastWasWhitespace = true;
+            continue;
+        }
+
+        PreviewText.push_back(static_cast<char>(Ch));
+        LastWasWhitespace = false;
+    }
+
+    constexpr std::size_t kHelpPreviewMaxLength = 120;
+    if (PreviewText.size() > kHelpPreviewMaxLength)
+    {
+        PreviewText.resize(kHelpPreviewMaxLength - 3);
+        PreviewText.append("...");
+    }
+
+    auto HelpLabel = HelpRow.Add(SnAPI::UI::UIText(std::move(PreviewText)));
+    auto& HelpLabelElement = HelpLabel.Element();
+    HelpLabelElement.ElementStyle().Apply("editor.panel_subtitle");
+    HelpLabelElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    HelpLabelElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    HelpLabelElement.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 }
 
 void ConfigureSvgIcon(SnAPI::UI::UIImage& Image,
@@ -1125,6 +1469,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     DestroyContentAssetImportModalOverlay();
     DestroyProjectModalOverlay();
     DestroyProjectSettingsModalOverlay();
+    DestroyBuildModalOverlay();
     DestroyContentAssetInspectorModalOverlay();
     if (m_context && m_shellRoot.Id.Value != 0)
     {
@@ -1253,6 +1598,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectModalRequired = false;
     m_projectModalShowWelcome = false;
     m_projectSettingsModalOpen = false;
+    m_buildModalOpen = false;
     m_projectModalAction = EProjectAction::CreateNew;
     m_projectNameText.clear();
     m_projectDirectoryText.clear();
@@ -1260,6 +1606,10 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectSettingsNameText.clear();
     m_projectSettingsStartupAssetText.clear();
     m_projectSettingsDefaultRenderSettingsAssetId.clear();
+    m_buildPanelState = {};
+    m_buildModalSelectedProfileName.clear();
+    m_buildModalSelectedHistoryBuildId.clear();
+    m_buildModalProfileKeys.clear();
     m_projectSettingsRenderSettingsOptions.clear();
     m_projectState = {};
     m_recentProjects.clear();
@@ -1311,6 +1661,7 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_onHierarchyActionRequested = {};
     m_onToolbarActionRequested = {};
     m_onProjectActionRequested = {};
+    m_onBuildActionRequested = {};
     m_boundInspectorNode = {};
     m_boundInspectorObject = nullptr;
     m_boundInspectorType = {};
@@ -1322,6 +1673,8 @@ void EditorLayout::Shutdown(GameRuntime* Runtime)
     m_projectDirectoryInput = {};
     m_projectFilePathInput = {};
     m_projectModalOkButton = {};
+    m_buildModalOverlay = {};
+    m_buildProfileCombo = {};
     m_projectSettingsModalOverlay = {};
     m_projectSettingsNameInput = {};
     m_projectSettingsStartupAssetInput = {};
@@ -3417,6 +3770,21 @@ void EditorLayout::SetProjectActionHandler(SnAPI::UI::TDelegate<void(const Proje
     m_onProjectActionRequested = std::move(Handler);
 }
 
+void EditorLayout::SetPluginActionHandler(SnAPI::UI::TDelegate<void(const PluginActionRequest&)> Handler)
+{
+    m_onPluginActionRequested = std::move(Handler);
+}
+
+void EditorLayout::SetModuleActionHandler(SnAPI::UI::TDelegate<void(const ModuleActionRequest&)> Handler)
+{
+    m_onModuleActionRequested = std::move(Handler);
+}
+
+void EditorLayout::SetBuildActionHandler(SnAPI::UI::TDelegate<void(const BuildActionRequest&)> Handler)
+{
+    m_onBuildActionRequested = std::move(Handler);
+}
+
 void EditorLayout::SetProjectState(ProjectState State)
 {
     m_projectState = std::move(State);
@@ -3426,11 +3794,97 @@ void EditorLayout::SetProjectState(ProjectState State)
         CloseProjectSettingsModal();
     }
 
+    if (!m_projectState.IsLoaded && m_buildModalOpen)
+    {
+        CloseBuildModal();
+    }
+
     if (!m_projectSettingsModalOpen)
     {
         m_projectSettingsNameText = m_projectState.Name;
         m_projectSettingsStartupAssetText = m_projectState.StartupLevelAsset;
         m_projectSettingsDefaultRenderSettingsAssetId = m_projectState.DefaultRenderSettingsAssetId;
+    }
+}
+
+void EditorLayout::SetBuildPanelState(BuildPanelState State)
+{
+    const BuildPanelState PreviousState = m_buildPanelState;
+    m_buildPanelState = std::move(State);
+
+    const auto ProfileStillExists = [this]() {
+        return std::ranges::any_of(
+            m_buildPanelState.Profiles,
+            [this](const BuildProfileEntry& Entry) { return Entry.Name == m_buildModalSelectedProfileName; });
+    };
+
+    if (!ProfileStillExists())
+    {
+        auto DefaultIt = std::find_if(
+            m_buildPanelState.Profiles.begin(),
+            m_buildPanelState.Profiles.end(),
+            [](const BuildProfileEntry& Entry) { return Entry.IsDefault; });
+        if (DefaultIt != m_buildPanelState.Profiles.end())
+        {
+            m_buildModalSelectedProfileName = DefaultIt->Name;
+        }
+        else if (!m_buildPanelState.Profiles.empty())
+        {
+            m_buildModalSelectedProfileName = m_buildPanelState.Profiles.front().Name;
+        }
+        else
+        {
+            m_buildModalSelectedProfileName.clear();
+        }
+    }
+
+    const bool DraftSeedStillExists =
+        m_buildModalDraftSeedProfileName.empty() ||
+        std::ranges::any_of(m_buildPanelState.Profiles,
+                            [this](const BuildProfileEntry& Entry) { return Entry.Name == m_buildModalDraftSeedProfileName; });
+    if (!DraftSeedStillExists ||
+        (m_buildModalDraftSeedProfileName.empty() && !m_buildModalDraftDirty) ||
+        (m_buildModalDraftSeedProfileName != m_buildModalSelectedProfileName && !m_buildModalDraftDirty))
+    {
+        ResetBuildModalDraftFromSelectedProfile();
+    }
+
+    const auto HistoryStillExists = [this]() {
+        return std::ranges::any_of(
+            m_buildPanelState.HistoryEntries,
+            [this](const BuildHistoryEntryView& Entry) { return Entry.BuildId == m_buildModalSelectedHistoryBuildId; });
+    };
+
+    if (!HistoryStillExists())
+    {
+        auto LatestIt = std::find_if(
+            m_buildPanelState.HistoryEntries.begin(),
+            m_buildPanelState.HistoryEntries.end(),
+            [](const BuildHistoryEntryView& Entry) { return Entry.IsLatest; });
+        if (LatestIt != m_buildPanelState.HistoryEntries.end())
+        {
+            m_buildModalSelectedHistoryBuildId = LatestIt->BuildId;
+        }
+        else if (!m_buildPanelState.HistoryEntries.empty())
+        {
+            m_buildModalSelectedHistoryBuildId = m_buildPanelState.HistoryEntries.front().BuildId;
+        }
+        else
+        {
+            m_buildModalSelectedHistoryBuildId.clear();
+        }
+    }
+
+    if (m_buildModalOpen)
+    {
+        if (m_buildModalOverlay.Id.Value == 0 || BuildModalRequiresStructuralRebuild(PreviousState, m_buildPanelState))
+        {
+            RebuildBuildModalOverlay();
+        }
+        else
+        {
+            RefreshBuildModalLiveState();
+        }
     }
 }
 
@@ -5300,11 +5754,35 @@ void EditorLayout::OpenFileMenu()
         .Checked = false,
     });
     Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemFileNewPluginId),
+        .Label = "New Plugin...",
+        .Shortcut = std::nullopt,
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemFileAddModuleId),
+        .Label = "Add Module...",
+        .Shortcut = std::nullopt,
+        .Enabled = true,
+        .IsSeparator = false,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
         .Id = "menu.file.sep.project",
         .Label = {},
         .Shortcut = std::nullopt,
         .Enabled = false,
         .IsSeparator = true,
+        .Checked = false,
+    });
+    Items.push_back(SnAPI::UI::UIContextMenuItem{
+        .Id = std::string(kContextMenuItemFilePackageProjectId),
+        .Label = "Package Project...",
+        .Shortcut = std::nullopt,
+        .Enabled = m_projectState.IsLoaded,
+        .IsSeparator = false,
         .Checked = false,
     });
     Items.push_back(SnAPI::UI::UIContextMenuItem{
@@ -5667,6 +6145,18 @@ void EditorLayout::OnContextMenuItemInvoked(const SnAPI::UI::UIContextMenuItem& 
         else if (Item.Id == kContextMenuItemFileOpenProjectId)
         {
             OpenProjectOpenModal();
+        }
+        else if (Item.Id == kContextMenuItemFileNewPluginId)
+        {
+            OpenPluginCreateModal();
+        }
+        else if (Item.Id == kContextMenuItemFileAddModuleId)
+        {
+            OpenProjectModuleModal();
+        }
+        else if (Item.Id == kContextMenuItemFilePackageProjectId)
+        {
+            OpenBuildModal();
         }
         else if (Item.Id == kContextMenuItemFileProjectSettingsId)
         {
@@ -6859,14 +7349,14 @@ void EditorLayout::EnsureProjectModalOverlay()
     }
 
     OverlayPanel.Movable().Set(!m_projectModalRequired);
-    OverlayPanel.Resizable().Set(false);
+    OverlayPanel.Resizable().Set(true);
     OverlayPanel.DragRegionHeight().Set(30.0f);
     OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
     OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
     OverlayPanel.ContentBorderThickness().Set(1.0f);
     OverlayPanel.ContentCornerRadius().Set(10.0f);
-    OverlayPanel.ContentPadding().Set(12.0f);
-    ConfigureModalScreenRatio(OverlayPanel, kDefaultModalScreenRatio);
+    OverlayPanel.ContentPadding().Set(14.0f);
+    ConfigureModalScreenRatio(OverlayPanel, 0.62f);
     m_projectModalOverlay = Overlay.Handle();
 
     auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ProjectModal"));
@@ -6875,7 +7365,7 @@ void EditorLayout::EnsureProjectModalOverlay()
     ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
     ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
-    ModalPanel.Padding().Set(10.0f);
+    ModalPanel.Padding().Set(12.0f);
     ModalPanel.Gap().Set(10.0f);
 
     const bool IsCreate = m_projectModalAction == EProjectAction::CreateNew;
@@ -6886,16 +7376,23 @@ void EditorLayout::EnsureProjectModalOverlay()
     HeaderRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
     HeaderRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     HeaderRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
-    HeaderRowPanel.Gap().Set(8.0f);
-    HeaderRowPanel.Padding().Set(0.0f);
+    HeaderRowPanel.Gap().Set(10.0f);
 
     auto HeaderIcon = HeaderRow.Add(SnAPI::UI::UIImage(
         ResolveUIImageSource(IsCreate ? kProjectWelcomeCreateIconPath : kProjectWelcomeOpenIconPath)));
     auto& HeaderIconImage = HeaderIcon.Element();
-    ConfigureSvgIcon(HeaderIconImage, 18.0f, SnAPI::UI::Color::RGB(230, 206, 162));
+    ConfigureSvgIcon(HeaderIconImage, 20.0f, SnAPI::UI::Color::RGB(230, 206, 162));
     HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 
-    auto Title = HeaderRow.Add(SnAPI::UI::UIText(IsCreate ? "Create New Project" : "Open Existing Project"));
+    auto HeaderTextHost = HeaderRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.HeaderText"));
+    auto& HeaderTextHostPanel = HeaderTextHost.Element();
+    ConfigureTransparentLayoutPanel(HeaderTextHostPanel);
+    HeaderTextHostPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    HeaderTextHostPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HeaderTextHostPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    HeaderTextHostPanel.Gap().Set(2.0f);
+
+    auto Title = HeaderTextHost.Add(SnAPI::UI::UIText(IsCreate ? "Create Project" : "Open Project"));
     auto& TitleText = Title.Element();
     TitleText.ElementStyle().Apply("editor.project_welcome_title");
     TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
@@ -6904,9 +7401,9 @@ void EditorLayout::EnsureProjectModalOverlay()
     const std::string SubtitleTextValue = m_projectModalRequired
                                               ? std::string("Create or open a project before continuing.")
                                               : std::string(IsCreate
-                                                                ? "Create a project file, configure its asset root, and initialize starter content."
-                                                                : "Load a project file and switch the editor asset root to that project.");
-    auto Subtitle = Modal.Add(SnAPI::UI::UIText(SubtitleTextValue));
+                                                                ? "Shape the workspace, starter code, and startup content before the project is created."
+                                                                : "Load an existing project descriptor and restore the editor to that workspace.");
+    auto Subtitle = HeaderTextHost.Add(SnAPI::UI::UIText(SubtitleTextValue));
     auto& SubtitleText = Subtitle.Element();
     SubtitleText.ElementStyle().Apply("editor.project_welcome_subtitle");
     SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
@@ -6918,34 +7415,30 @@ void EditorLayout::EnsureProjectModalOverlay()
     ModeRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
     ModeRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
     ModeRowPanel.Gap().Set(8.0f);
-    ModeRowPanel.Padding().Set(0.0f);
 
     auto CreateModeButton = ModeRow.Add(SnAPI::UI::UIButton{});
     auto& CreateModeButtonElement = CreateModeButton.Element();
     CreateModeButtonElement.ElementStyle().Apply(IsCreate ? "editor.project_modal_mode_button_active"
                                                           : "editor.project_modal_mode_button");
     CreateModeButtonElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    CreateModeButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    CreateModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 6.0f, 8.0f, 6.0f});
+    CreateModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 6.0f, 10.0f, 6.0f});
     CreateModeButtonElement.OnClick([this, IsCreate]() {
         if (!IsCreate)
         {
             OpenProjectCreateModal();
         }
     });
-    auto CreateModeLabel = CreateModeButton.Add(SnAPI::UI::UIText("Create New"));
-    auto& CreateModeLabelText = CreateModeLabel.Element();
-    CreateModeLabelText.ElementStyle().Apply("editor.project_modal_mode_button_text");
-    CreateModeLabelText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
-    CreateModeLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    auto CreateModeLabel = CreateModeButton.Add(SnAPI::UI::UIText("New Workspace"));
+    CreateModeLabel.Element().ElementStyle().Apply("editor.project_modal_mode_button_text");
+    CreateModeLabel.Element().TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+    CreateModeLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 
     auto OpenModeButton = ModeRow.Add(SnAPI::UI::UIButton{});
     auto& OpenModeButtonElement = OpenModeButton.Element();
     OpenModeButtonElement.ElementStyle().Apply(IsCreate ? "editor.project_modal_mode_button"
                                                         : "editor.project_modal_mode_button_active");
     OpenModeButtonElement.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    OpenModeButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    OpenModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 6.0f, 8.0f, 6.0f});
+    OpenModeButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 6.0f, 10.0f, 6.0f});
     OpenModeButtonElement.OnClick([this, IsCreate]() {
         if (IsCreate)
         {
@@ -6953,49 +7446,154 @@ void EditorLayout::EnsureProjectModalOverlay()
         }
     });
     auto OpenModeLabel = OpenModeButton.Add(SnAPI::UI::UIText("Open Existing"));
-    auto& OpenModeLabelText = OpenModeLabel.Element();
-    OpenModeLabelText.ElementStyle().Apply("editor.project_modal_mode_button_text");
-    OpenModeLabelText.TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
-    OpenModeLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    OpenModeLabel.Element().ElementStyle().Apply("editor.project_modal_mode_button_text");
+    OpenModeLabel.Element().TextAlignment().Set(SnAPI::UI::ETextAlignment::Center);
+    OpenModeLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 
-    auto FormPanel = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.FormPanel"));
-    auto& FormPanelElement = FormPanel.Element();
-    FormPanelElement.ElementStyle().Apply("editor.project_modal_form_panel");
-    FormPanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
-    FormPanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
-    FormPanelElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
-    FormPanelElement.Padding().Set(10.0f);
-    FormPanelElement.Gap().Set(8.0f);
+    auto BodyScroll = Modal.Add(SnAPI::UI::UIScrollContainer{});
+    auto& BodyScrollElement = BodyScroll.Element();
+    BodyScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    BodyScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    BodyScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    BodyScrollElement.ShowHorizontalScrollbar().Set(false);
+    BodyScrollElement.ShowVerticalScrollbar().Set(true);
+    BodyScrollElement.Smooth().Set(true);
+    BodyScrollElement.Padding().Set(2.0f);
+    BodyScrollElement.Gap().Set(10.0f);
 
     if (IsCreate)
     {
-        auto NameLabel = FormPanel.Add(SnAPI::UI::UIText("Project Name"));
-        NameLabel.Element().ElementStyle().Apply("editor.menu_item");
+        auto TopRow = BodyScroll.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.TopRow"));
+        auto& TopRowPanel = TopRow.Element();
+        ConfigureTransparentLayoutPanel(TopRowPanel);
+        TopRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        TopRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        TopRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        TopRowPanel.Gap().Set(10.0f);
 
-        auto NameInput = FormPanel.Add(SnAPI::UI::UITextInput{});
+        auto IdentityCard = TopRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.IdentityCard"));
+        auto& IdentityCardPanel = IdentityCard.Element();
+        IdentityCardPanel.ElementStyle().Apply("editor.section_card");
+        IdentityCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        IdentityCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        IdentityCardPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        IdentityCardPanel.Padding().Set(12.0f);
+        IdentityCardPanel.Gap().Set(8.0f);
+
+        auto IdentityTitle = IdentityCard.Add(SnAPI::UI::UIText("Identity"));
+        IdentityTitle.Element().ElementStyle().Apply("editor.panel_title");
+        AddFieldHelpText(IdentityCard,
+                         "Project identity becomes the canonical descriptor name, root workspace folder, and default "
+                         "type/module stem for generated starter code.");
+
+        auto NameLabel = IdentityCard.Add(SnAPI::UI::UIText("Project Name"));
+        NameLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(IdentityCard,
+                         "Stable project identifier used for the workspace folder, descriptor identity, and default "
+                         "starter module name.");
+        auto NameInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
         auto& NameInputElement = NameInput.Element();
         NameInputElement.ElementStyle().Apply("editor.text_input");
         NameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
-        NameInputElement.Resizable().Set(false);
-        NameInputElement.Multiline().Set(false);
-        NameInputElement.AcceptTab().Set(false);
-        NameInputElement.Placeholder().Set("NewProject");
+        NameInputElement.Placeholder().Set("MyGame");
         NameInputElement.Text().Set(m_projectNameText);
         NameInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
             m_projectNameText = Value;
+            if (TrimCopy(m_projectDisplayNameText).empty())
+            {
+                m_projectDisplayNameText = Value;
+            }
+            if (TrimCopy(m_projectRuntimeModuleText).empty())
+            {
+                m_projectRuntimeModuleText = Value;
+            }
+            if (TrimCopy(m_projectNamespaceText).empty())
+            {
+                m_projectNamespaceText = Value;
+            }
             RefreshProjectModalOkButtonState();
+            if (m_context)
+            {
+                m_context->MarkLayoutDirty();
+            }
         }));
         m_projectNameInput = NameInput.Handle();
-        m_projectFilePathInput = {};
 
-        auto DirectoryLabel = FormPanel.Add(SnAPI::UI::UIText("Project Directory"));
+        auto DisplayNameLabel = IdentityCard.Add(SnAPI::UI::UIText("Display Name"));
+        DisplayNameLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(IdentityCard,
+                         "Human-facing project title shown in editor surfaces and package metadata.");
+        auto DisplayNameInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+        auto& DisplayNameInputElement = DisplayNameInput.Element();
+        DisplayNameInputElement.ElementStyle().Apply("editor.text_input");
+        DisplayNameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        DisplayNameInputElement.Placeholder().Set("My Game");
+        DisplayNameInputElement.Text().Set(m_projectDisplayNameText);
+        DisplayNameInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectDisplayNameText = Value;
+        }));
+        m_projectDisplayNameInput = DisplayNameInput.Handle();
+
+        auto CompanyLabel = IdentityCard.Add(SnAPI::UI::UIText("Company"));
+        CompanyLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(IdentityCard,
+                         "Optional studio or organization name written into the project descriptor.");
+        auto CompanyInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+        auto& CompanyInputElement = CompanyInput.Element();
+        CompanyInputElement.ElementStyle().Apply("editor.text_input");
+        CompanyInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        CompanyInputElement.Placeholder().Set("Studio Name");
+        CompanyInputElement.Text().Set(m_projectCompanyText);
+        CompanyInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectCompanyText = Value;
+        }));
+        m_projectCompanyInput = CompanyInput.Handle();
+
+        auto LocationCard = TopRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.LocationCard"));
+        auto& LocationCardPanel = LocationCard.Element();
+        LocationCardPanel.ElementStyle().Apply("editor.section_card");
+        LocationCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        LocationCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        LocationCardPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        LocationCardPanel.Padding().Set(12.0f);
+        LocationCardPanel.Gap().Set(8.0f);
+
+        auto LocationTitle = LocationCard.Add(SnAPI::UI::UIText("Location"));
+        LocationTitle.Element().ElementStyle().Apply("editor.panel_title");
+        AddFieldHelpText(LocationCard,
+                         "Location fields control where the workspace root and descriptor are materialized on disk.");
+
+        auto ShapeLabel = LocationCard.Add(SnAPI::UI::UIText("Project Shape"));
+        ShapeLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(LocationCard,
+                         "Choose whether the new workspace starts as a runtime game, a runtime plus editor game, or a "
+                         "content-only project.");
+        auto ShapeComboBuilder = LocationCard.Add(SnAPI::UI::UIComboBox{});
+        auto& ShapeCombo = ShapeComboBuilder.Element();
+        ShapeCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+        ShapeCombo.SetItems({"Runtime Game", "Runtime + Editor Game", "Content Only"});
+        (void)ShapeCombo.SetSelectedIndex(static_cast<int32_t>(m_projectTemplatePreset), false);
+        ShapeCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+            (void)Text;
+            ApplyProjectTemplatePreset(Index);
+            DestroyProjectModalOverlay();
+            RefreshProjectModalVisibility();
+            RefreshProjectModalOkButtonState();
+            if (m_context)
+            {
+                m_context->MarkLayoutDirty();
+            }
+        });
+        m_projectTemplateCombo = ShapeComboBuilder.Handle();
+
+        auto DirectoryLabel = LocationCard.Add(SnAPI::UI::UIText("Parent Directory"));
         DirectoryLabel.Element().ElementStyle().Apply("editor.menu_item");
-
-        auto DirectoryInput = FormPanel.Add(SnAPI::UI::UIFilesystemPicker{});
+        AddFieldHelpText(LocationCard,
+                         "The project root is created beneath this directory as `<Parent>/<ProjectName>`.");
+        auto DirectoryInput = LocationCard.Add(SnAPI::UI::UIFilesystemPicker{});
         auto& DirectoryInputElement = DirectoryInput.Element();
         DirectoryInputElement.ElementStyle().Apply("editor.filesystem_picker");
         DirectoryInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
-        DirectoryInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
         DirectoryInputElement.ReadOnly().Set(false);
         DirectoryInputElement.AllowMultiSelect().Set(false);
         DirectoryInputElement.PickDirectories().Set(true);
@@ -7012,27 +7610,197 @@ void EditorLayout::EnsureProjectModalOverlay()
                     {
                         m_projectDirectoryText = Values.front();
                         RefreshProjectModalOkButtonState();
+                        if (m_context)
+                        {
+                            m_context->MarkLayoutDirty();
+                        }
                     }
                 }));
         m_projectDirectoryInput = DirectoryInput.Handle();
+
+        std::string PreviewPath = TrimCopy(m_projectDirectoryText);
+        if (!PreviewPath.empty() && !TrimCopy(m_projectNameText).empty())
+        {
+            PreviewPath = (std::filesystem::path(PreviewPath) / TrimCopy(m_projectNameText)).lexically_normal().string();
+        }
+        else
+        {
+            PreviewPath = "Choose a parent directory to preview the new workspace root.";
+        }
+        auto PreviewText = LocationCard.Add(SnAPI::UI::UIText(PreviewPath));
+        auto& PreviewTextElement = PreviewText.Element();
+        PreviewTextElement.ElementStyle().Apply("editor.panel_subtitle");
+        PreviewTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+        auto CodeRow = BodyScroll.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.CodeRow"));
+        auto& CodeRowPanel = CodeRow.Element();
+        ConfigureTransparentLayoutPanel(CodeRowPanel);
+        CodeRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+        CodeRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        CodeRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        CodeRowPanel.Gap().Set(10.0f);
+
+        auto CodeCard = CodeRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.CodeCard"));
+        auto& CodeCardPanel = CodeCard.Element();
+        CodeCardPanel.ElementStyle().Apply("editor.section_card");
+        CodeCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        CodeCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        CodeCardPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        CodeCardPanel.Padding().Set(12.0f);
+        CodeCardPanel.Gap().Set(8.0f);
+
+        auto CodeTitle = CodeCard.Add(SnAPI::UI::UIText("Code"));
+        CodeTitle.Element().ElementStyle().Apply("editor.panel_title");
+        AddFieldHelpText(CodeCard,
+                         "Starter code settings decide whether the new project is code-backed immediately and what "
+                         "module/bootstrap names the generated files use.");
+
+        auto NamespaceLabel = CodeCard.Add(SnAPI::UI::UIText("Namespace Root"));
+        NamespaceLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(CodeCard,
+                         "Namespace root used by generated starter classes such as the project game, game mode, and "
+                         "module bootstrap types.");
+        auto NamespaceInput = CodeCard.Add(SnAPI::UI::UITextInput{});
+        auto& NamespaceInputElement = NamespaceInput.Element();
+        NamespaceInputElement.ElementStyle().Apply("editor.text_input");
+        NamespaceInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        NamespaceInputElement.Placeholder().Set("MyGame");
+        NamespaceInputElement.Text().Set(m_projectNamespaceText);
+        NamespaceInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectNamespaceText = Value;
+        }));
+        m_projectNamespaceInput = NamespaceInput.Handle();
+
+        auto RuntimeCheckboxBuilder = CodeCard.Add(SnAPI::UI::UICheckbox("Generate starter runtime module"));
+        auto& RuntimeCheckbox = RuntimeCheckboxBuilder.Element();
+        RuntimeCheckbox.Checked().Set(m_projectCreateRuntimeModule);
+        RuntimeCheckbox.OnChanged([this](const bool Checked) {
+            m_projectCreateRuntimeModule = Checked;
+            RefreshProjectModalOkButtonState();
+        });
+        m_projectRuntimeModuleCheckbox = RuntimeCheckboxBuilder.Handle();
+        AddFieldHelpText(CodeCard,
+                         "When enabled, project creation emits a runtime module with CMake wiring plus starter "
+                         "`IGame` and `IGameMode` implementations.");
+
+        auto RuntimeModuleLabel = CodeCard.Add(SnAPI::UI::UIText("Runtime Module Name"));
+        RuntimeModuleLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(CodeCard,
+                         "Primary runtime module target name and source folder stem.");
+        auto RuntimeModuleInput = CodeCard.Add(SnAPI::UI::UITextInput{});
+        auto& RuntimeModuleInputElement = RuntimeModuleInput.Element();
+        RuntimeModuleInputElement.ElementStyle().Apply("editor.text_input");
+        RuntimeModuleInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        RuntimeModuleInputElement.Placeholder().Set("MyGame");
+        RuntimeModuleInputElement.Text().Set(m_projectRuntimeModuleText);
+        RuntimeModuleInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectRuntimeModuleText = Value;
+            RefreshProjectModalOkButtonState();
+        }));
+        RuntimeModuleInputElement.SetDisabled(!m_projectCreateRuntimeModule);
+        m_projectRuntimeModuleInput = RuntimeModuleInput.Handle();
+
+        auto EditorCheckboxBuilder = CodeCard.Add(SnAPI::UI::UICheckbox("Generate companion editor module"));
+        auto& EditorCheckbox = EditorCheckboxBuilder.Element();
+        EditorCheckbox.Checked().Set(m_projectCreateEditorModule);
+        EditorCheckbox.OnChanged([this](const bool Checked) {
+            m_projectCreateEditorModule = Checked;
+            RefreshProjectModalOkButtonState();
+            if (m_context)
+            {
+                m_context->MarkLayoutDirty();
+            }
+        });
+        m_projectEditorModuleCheckbox = EditorCheckboxBuilder.Handle();
+        AddFieldHelpText(CodeCard,
+                         "Emit an editor-only companion module for custom tools, inspectors, or content workflows.");
+
+        auto EditorModuleLabel = CodeCard.Add(SnAPI::UI::UIText("Editor Module Name"));
+        EditorModuleLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(CodeCard,
+                         "Editor companion target name. This module is linked into editor hosts only.");
+        auto EditorModuleInput = CodeCard.Add(SnAPI::UI::UITextInput{});
+        auto& EditorModuleInputElement = EditorModuleInput.Element();
+        EditorModuleInputElement.ElementStyle().Apply("editor.text_input");
+        EditorModuleInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        EditorModuleInputElement.Placeholder().Set("MyGameEditor");
+        EditorModuleInputElement.Text().Set(m_projectEditorModuleText);
+        EditorModuleInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectEditorModuleText = Value;
+            RefreshProjectModalOkButtonState();
+        }));
+        EditorModuleInputElement.SetDisabled(!m_projectCreateEditorModule);
+        m_projectEditorModuleInput = EditorModuleInput.Handle();
+
+        auto StartupCard = CodeRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.StartupCard"));
+        auto& StartupCardPanel = StartupCard.Element();
+        StartupCardPanel.ElementStyle().Apply("editor.section_card");
+        StartupCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        StartupCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+        StartupCardPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        StartupCardPanel.Padding().Set(12.0f);
+        StartupCardPanel.Gap().Set(8.0f);
+
+        auto StartupTitle = StartupCard.Add(SnAPI::UI::UIText("Startup"));
+        StartupTitle.Element().ElementStyle().Apply("editor.panel_title");
+        AddFieldHelpText(StartupCard,
+                         "Startup content settings seed the descriptor values used when the project boots in editor or "
+                         "runtime mode.");
+
+        auto StartupLevelLabel = StartupCard.Add(SnAPI::UI::UIText("Startup Level Asset"));
+        StartupLevelLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(StartupCard,
+                         "Relative startup level asset field written into the descriptor. The source asset must exist "
+                         "for validation and packaging to succeed.");
+        auto StartupLevelInput = StartupCard.Add(SnAPI::UI::UITextInput{});
+        auto& StartupLevelInputElement = StartupLevelInput.Element();
+        StartupLevelInputElement.ElementStyle().Apply("editor.text_input");
+        StartupLevelInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        StartupLevelInputElement.Placeholder().Set("Levels/StarterLevel.level");
+        StartupLevelInputElement.Text().Set(m_projectStartupLevelText);
+        StartupLevelInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+            m_projectStartupLevelText = Value;
+        }));
+        m_projectStartupLevelInput = StartupLevelInput.Handle();
+
+        const std::string RuntimeSummary = m_projectCreateRuntimeModule
+            ? ("Runtime module `" + TrimCopy(m_projectRuntimeModuleText.empty() ? m_projectNameText : m_projectRuntimeModuleText) +
+               "` with starter game/bootstrap code.")
+            : std::string("Content-only project. No starter runtime module will be generated.");
+        const std::string EditorSummary = m_projectCreateEditorModule
+            ? ("\nEditor module `" + TrimCopy(m_projectEditorModuleText.empty()
+                                                    ? ((m_projectRuntimeModuleText.empty() ? m_projectNameText : m_projectRuntimeModuleText) + "Editor")
+                                                    : m_projectEditorModuleText) + "` will be generated.")
+            : std::string("\nNo editor companion module.");
+        auto SummaryText = StartupCard.Add(SnAPI::UI::UIText(RuntimeSummary + EditorSummary));
+        auto& SummaryTextElement = SummaryText.Element();
+        SummaryTextElement.ElementStyle().Apply("editor.panel_subtitle");
+        SummaryTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
     }
     else
     {
-        auto FileLabel = FormPanel.Add(SnAPI::UI::UIText("Project File (.json)"));
-        FileLabel.Element().ElementStyle().Apply("editor.menu_item");
+        auto OpenCard = BodyScroll.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.OpenCard"));
+        auto& OpenCardPanel = OpenCard.Element();
+        OpenCardPanel.ElementStyle().Apply("editor.section_card");
+        OpenCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+        OpenCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+        OpenCardPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+        OpenCardPanel.Padding().Set(12.0f);
+        OpenCardPanel.Gap().Set(8.0f);
 
-        auto FileInput = FormPanel.Add(SnAPI::UI::UIFilesystemPicker{});
+        auto FileLabel = OpenCard.Add(SnAPI::UI::UIText("Project File"));
+        FileLabel.Element().ElementStyle().Apply("editor.menu_item");
+        auto FileInput = OpenCard.Add(SnAPI::UI::UIFilesystemPicker{});
         auto& FileInputElement = FileInput.Element();
         FileInputElement.ElementStyle().Apply("editor.filesystem_picker");
         FileInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
-        FileInputElement.Height().Set(SnAPI::UI::Sizing::Auto());
         FileInputElement.ReadOnly().Set(false);
         FileInputElement.AllowMultiSelect().Set(false);
         FileInputElement.PickDirectories().Set(false);
         FileInputElement.ShowDirectories().Set(true);
         FileInputElement.ShowFiles().Set(true);
         FileInputElement.RestrictToRoot().Set(false);
-        FileInputElement.Placeholder().Set(std::string("Path to project.json"));
+        FileInputElement.Placeholder().Set(std::string("Path to project.snproj.json"));
         FileInputElement.Value().Set(m_projectFilePathText);
         FileInputElement.CurrentPath().Set(std::filesystem::path(m_projectFilePathText).parent_path().string());
         FileInputElement.SetAllowedExtensions({".json"});
@@ -7046,8 +7814,12 @@ void EditorLayout::EnsureProjectModalOverlay()
                     }
                 }));
         m_projectFilePathInput = FileInput.Handle();
-        m_projectNameInput = {};
-        m_projectDirectoryInput = {};
+
+        auto OpenHint = OpenCard.Add(SnAPI::UI::UIText(
+            "Opening a project reloads the asset manager, loads the startup level, and applies the project's default render settings when configured."));
+        auto& OpenHintElement = OpenHint.Element();
+        OpenHintElement.ElementStyle().Apply("editor.panel_subtitle");
+        OpenHintElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
     }
 
     auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.Buttons"));
@@ -7059,38 +7831,31 @@ void EditorLayout::EnsureProjectModalOverlay()
     ButtonsRowPanel.Gap().Set(8.0f);
 
     auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ProjectModal.ButtonSpacer"));
-    auto& SpacerPanel = Spacer.Element();
-    ConfigureLayoutSpacerPanel(SpacerPanel);
-    SpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ConfigureLayoutSpacerPanel(Spacer.Element());
+    Spacer.Element().Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
 
     auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
     auto& CancelButtonElement = CancelButton.Element();
     CancelButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
-    CancelButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
-    CancelButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    CancelButtonElement.ElementPadding().Set(SnAPI::UI::Padding{12.0f, 6.0f, 12.0f, 6.0f});
     CancelButtonElement.SetDisabled(m_projectModalRequired);
     CancelButtonElement.OnClick([this]() {
         CloseProjectModal();
     });
     auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
-    auto& CancelLabelText = CancelLabel.Element();
-    CancelLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
-    CancelLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    CancelLabel.Element().ElementStyle().Apply("editor.project_modal_action_button_text");
+    CancelLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
 
     auto OkButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
     auto& OkButtonElement = OkButton.Element();
     OkButtonElement.ElementStyle().Apply("editor.project_modal_action_button_primary");
-    OkButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
-    OkButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
-    OkButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    OkButtonElement.ElementPadding().Set(SnAPI::UI::Padding{12.0f, 6.0f, 12.0f, 6.0f});
     OkButtonElement.OnClick([this]() {
         ConfirmProjectModal();
     });
     auto OkLabel = OkButton.Add(SnAPI::UI::UIText(IsCreate ? "Create Project" : "Open Project"));
-    auto& OkLabelText = OkLabel.Element();
-    OkLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
-    OkLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    OkLabel.Element().ElementStyle().Apply("editor.project_modal_action_button_text");
+    OkLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
     m_projectModalOkButton = OkButton.Handle();
 
     RefreshProjectModalOkButtonState();
@@ -7111,9 +7876,857 @@ void EditorLayout::DestroyProjectModalOverlay()
 
     m_projectModalOverlay = {};
     m_projectNameInput = {};
+    m_projectDisplayNameInput = {};
+    m_projectCompanyInput = {};
+    m_projectNamespaceInput = {};
+    m_projectRuntimeModuleInput = {};
+    m_projectEditorModuleInput = {};
     m_projectDirectoryInput = {};
     m_projectFilePathInput = {};
+    m_projectStartupLevelInput = {};
+    m_projectTemplateCombo = {};
+    m_projectRuntimeModuleCheckbox = {};
+    m_projectEditorModuleCheckbox = {};
     m_projectModalOkButton = {};
+}
+
+void EditorLayout::EnsurePluginModalOverlay()
+{
+    if (!m_context || m_pluginModalOverlay.Id.Value != 0 || !m_pluginModalOpen)
+    {
+        return;
+    }
+
+    auto Root = m_context->Root();
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(true);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(10.0f);
+    OverlayPanel.ContentPadding().Set(14.0f);
+    ConfigureModalScreenRatio(OverlayPanel, 0.58f);
+    m_pluginModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.PluginModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.ElementStyle().Apply("editor.project_modal_root");
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(12.0f);
+    ModalPanel.Gap().Set(10.0f);
+
+    auto Header = Modal.Add(SnAPI::UI::UIPanel("Editor.PluginModal.Header"));
+    auto& HeaderPanel = Header.Element();
+    ConfigureTransparentLayoutPanel(HeaderPanel);
+    HeaderPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HeaderPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HeaderPanel.Gap().Set(10.0f);
+
+    auto HeaderIcon = Header.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kContentBrowserIconPath)));
+    auto& HeaderIconImage = HeaderIcon.Element();
+    ConfigureSvgIcon(HeaderIconImage, 20.0f, SnAPI::UI::Color::RGB(230, 206, 162));
+    HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto HeaderText = Header.Add(SnAPI::UI::UIPanel("Editor.PluginModal.HeaderText"));
+    auto& HeaderTextPanel = HeaderText.Element();
+    ConfigureTransparentLayoutPanel(HeaderTextPanel);
+    HeaderTextPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    HeaderTextPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HeaderTextPanel.Gap().Set(2.0f);
+
+    auto Title = HeaderText.Add(SnAPI::UI::UIText("Create Plugin"));
+    Title.Element().ElementStyle().Apply("editor.project_welcome_title");
+    Title.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto Subtitle = HeaderText.Add(SnAPI::UI::UIText(
+        "Create a runtime, editor, hybrid, or content-only plugin with generated module scaffolding and build wiring."));
+    Subtitle.Element().ElementStyle().Apply("editor.project_welcome_subtitle");
+    Subtitle.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto Scroll = Modal.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ScrollElement = Scroll.Element();
+    ScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ScrollElement.ShowHorizontalScrollbar().Set(false);
+    ScrollElement.ShowVerticalScrollbar().Set(true);
+    ScrollElement.Smooth().Set(true);
+    ScrollElement.Padding().Set(2.0f);
+    ScrollElement.Gap().Set(10.0f);
+
+    auto TopRow = Scroll.Add(SnAPI::UI::UIPanel("Editor.PluginModal.TopRow"));
+    auto& TopRowPanel = TopRow.Element();
+    ConfigureTransparentLayoutPanel(TopRowPanel);
+    TopRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    TopRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    TopRowPanel.Gap().Set(10.0f);
+
+    auto IdentityCard = TopRow.Add(SnAPI::UI::UIPanel("Editor.PluginModal.IdentityCard"));
+    auto& IdentityCardPanel = IdentityCard.Element();
+    IdentityCardPanel.ElementStyle().Apply("editor.section_card");
+    IdentityCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    IdentityCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    IdentityCardPanel.Padding().Set(12.0f);
+    IdentityCardPanel.Gap().Set(8.0f);
+
+    auto IdentityTitle = IdentityCard.Add(SnAPI::UI::UIText("Identity"));
+    IdentityTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(IdentityCard,
+                     "Plugin identity fields become the canonical plugin descriptor values and seed default starter "
+                     "module names.");
+
+    auto PluginNameLabel = IdentityCard.Add(SnAPI::UI::UIText("Plugin Name"));
+    PluginNameLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "Stable plugin identifier used for the root folder, descriptor identity, and default runtime "
+                     "module stem.");
+    auto PluginNameInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& PluginNameInputElement = PluginNameInput.Element();
+    PluginNameInputElement.ElementStyle().Apply("editor.text_input");
+    PluginNameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    PluginNameInputElement.Placeholder().Set("MyPlugin");
+    PluginNameInputElement.Text().Set(m_pluginNameText);
+    PluginNameInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginNameText = Value;
+        if (TrimCopy(m_pluginDisplayNameText).empty())
+        {
+            m_pluginDisplayNameText = Value;
+        }
+        if (TrimCopy(m_pluginRuntimeModuleText).empty())
+        {
+            m_pluginRuntimeModuleText = Value;
+        }
+        if (TrimCopy(m_pluginNamespaceText).empty())
+        {
+            m_pluginNamespaceText = Value;
+        }
+        RefreshPluginModalOkButtonState();
+    }));
+    m_pluginNameInput = PluginNameInput.Handle();
+
+    auto PluginDisplayLabel = IdentityCard.Add(SnAPI::UI::UIText("Display Name"));
+    PluginDisplayLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "Human-facing plugin title shown in editor-facing plugin lists and metadata.");
+    auto PluginDisplayInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& PluginDisplayInputElement = PluginDisplayInput.Element();
+    PluginDisplayInputElement.ElementStyle().Apply("editor.text_input");
+    PluginDisplayInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    PluginDisplayInputElement.Placeholder().Set("My Plugin");
+    PluginDisplayInputElement.Text().Set(m_pluginDisplayNameText);
+    PluginDisplayInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginDisplayNameText = Value;
+    }));
+    m_pluginDisplayNameInput = PluginDisplayInput.Handle();
+
+    auto PluginCompanyLabel = IdentityCard.Add(SnAPI::UI::UIText("Company"));
+    PluginCompanyLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "Optional vendor or organization name written into the plugin descriptor.");
+    auto PluginCompanyInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& PluginCompanyInputElement = PluginCompanyInput.Element();
+    PluginCompanyInputElement.ElementStyle().Apply("editor.text_input");
+    PluginCompanyInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    PluginCompanyInputElement.Placeholder().Set("Studio Name");
+    PluginCompanyInputElement.Text().Set(m_pluginCompanyText);
+    PluginCompanyInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginCompanyText = Value;
+    }));
+    m_pluginCompanyInput = PluginCompanyInput.Handle();
+
+    auto VersionLabel = IdentityCard.Add(SnAPI::UI::UIText("Version"));
+    VersionLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "Semantic or studio-defined plugin version string persisted into the descriptor.");
+    auto VersionInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& VersionInputElement = VersionInput.Element();
+    VersionInputElement.ElementStyle().Apply("editor.text_input");
+    VersionInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    VersionInputElement.Placeholder().Set("0.1.0");
+    VersionInputElement.Text().Set(m_pluginVersionText);
+    VersionInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginVersionText = Value;
+    }));
+    m_pluginVersionInput = VersionInput.Handle();
+
+    auto LocationCard = TopRow.Add(SnAPI::UI::UIPanel("Editor.PluginModal.LocationCard"));
+    auto& LocationCardPanel = LocationCard.Element();
+    LocationCardPanel.ElementStyle().Apply("editor.section_card");
+    LocationCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    LocationCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    LocationCardPanel.Padding().Set(12.0f);
+    LocationCardPanel.Gap().Set(8.0f);
+
+    auto LocationTitle = LocationCard.Add(SnAPI::UI::UIText("Shape and Location"));
+    LocationTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(LocationCard,
+                     "Plugin shape controls which starter modules are emitted, while the location chooses where the "
+                     "workspace is materialized on disk.");
+
+    auto ShapeLabel = LocationCard.Add(SnAPI::UI::UIText("Plugin Shape"));
+    ShapeLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(LocationCard,
+                     "Choose whether the plugin is runtime-only, editor-only, hybrid, or content-focused.");
+    auto ShapeComboBuilder = LocationCard.Add(SnAPI::UI::UIComboBox{});
+    auto& ShapeCombo = ShapeComboBuilder.Element();
+    ShapeCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    ShapeCombo.SetItems({"Runtime Plugin", "Editor Tool", "Hybrid Plugin", "Content Plugin"});
+    (void)ShapeCombo.SetSelectedIndex(static_cast<int32_t>(m_pluginTemplatePreset), false);
+    ShapeCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        ApplyPluginTemplatePreset(Index);
+        DestroyPluginModalOverlay();
+        RefreshPluginModalVisibility();
+        RefreshPluginModalOkButtonState();
+        if (m_context)
+        {
+            m_context->MarkLayoutDirty();
+        }
+    });
+    m_pluginTemplateCombo = ShapeComboBuilder.Handle();
+
+    auto DirectoryLabel = LocationCard.Add(SnAPI::UI::UIText("Parent Directory"));
+    DirectoryLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(LocationCard,
+                     "The plugin root is created beneath this directory as `<Parent>/<PluginName>`.");
+    auto DirectoryInput = LocationCard.Add(SnAPI::UI::UIFilesystemPicker{});
+    auto& DirectoryInputElement = DirectoryInput.Element();
+    DirectoryInputElement.ElementStyle().Apply("editor.filesystem_picker");
+    DirectoryInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    DirectoryInputElement.ReadOnly().Set(false);
+    DirectoryInputElement.AllowMultiSelect().Set(false);
+    DirectoryInputElement.PickDirectories().Set(true);
+    DirectoryInputElement.ShowDirectories().Set(true);
+    DirectoryInputElement.ShowFiles().Set(false);
+    DirectoryInputElement.RestrictToRoot().Set(false);
+    DirectoryInputElement.Placeholder().Set(std::string("Path to parent folder"));
+    DirectoryInputElement.Value().Set(m_pluginDirectoryText);
+    DirectoryInputElement.CurrentPath().Set(m_pluginDirectoryText);
+    DirectoryInputElement.OnSelectionChanged(
+        SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind([this](const std::vector<std::string>& Values) {
+            if (!Values.empty())
+            {
+                m_pluginDirectoryText = Values.front();
+                RefreshPluginModalOkButtonState();
+            }
+        }));
+    m_pluginDirectoryInput = DirectoryInput.Handle();
+
+    auto AssetsCheckboxBuilder = LocationCard.Add(SnAPI::UI::UICheckbox("Plugin can contain assets"));
+    auto& AssetsCheckbox = AssetsCheckboxBuilder.Element();
+    AssetsCheckbox.Checked().Set(m_pluginCanContainAssets);
+    AssetsCheckbox.OnChanged([this](const bool Checked) {
+        m_pluginCanContainAssets = Checked;
+    });
+    m_pluginCanContainAssetsCheckbox = AssetsCheckboxBuilder.Handle();
+    AddFieldHelpText(LocationCard,
+                     "Enable this when the plugin should own authored assets in addition to code modules.");
+
+    auto DescriptionLabel = Scroll.Add(SnAPI::UI::UIText("Description"));
+    DescriptionLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(Scroll,
+                     "Short human-readable summary of what the plugin provides. This is persisted into plugin "
+                     "metadata and later package/manifests can surface it.");
+    auto DescriptionInput = Scroll.Add(SnAPI::UI::UITextInput{});
+    auto& DescriptionInputElement = DescriptionInput.Element();
+    DescriptionInputElement.ElementStyle().Apply("editor.text_input");
+    DescriptionInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    DescriptionInputElement.Multiline().Set(true);
+    DescriptionInputElement.Text().Set(m_pluginDescriptionText);
+    DescriptionInputElement.Placeholder().Set("What does this plugin provide?");
+    DescriptionInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginDescriptionText = Value;
+    }));
+    m_pluginDescriptionInput = DescriptionInput.Handle();
+
+    auto CodeCard = Scroll.Add(SnAPI::UI::UIPanel("Editor.PluginModal.CodeCard"));
+    auto& CodeCardPanel = CodeCard.Element();
+    CodeCardPanel.ElementStyle().Apply("editor.section_card");
+    CodeCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    CodeCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    CodeCardPanel.Padding().Set(12.0f);
+    CodeCardPanel.Gap().Set(8.0f);
+
+    auto CodeTitle = CodeCard.Add(SnAPI::UI::UIText("Code"));
+    CodeTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(CodeCard,
+                     "Code settings decide which starter plugin modules are emitted and how their generated type names "
+                     "are composed.");
+
+    auto NamespaceLabel = CodeCard.Add(SnAPI::UI::UIText("Namespace Root"));
+    NamespaceLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(CodeCard,
+                     "Namespace root used by generated plugin runtime/editor module starter classes.");
+    auto NamespaceInput = CodeCard.Add(SnAPI::UI::UITextInput{});
+    auto& NamespaceInputElement = NamespaceInput.Element();
+    NamespaceInputElement.ElementStyle().Apply("editor.text_input");
+    NamespaceInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    NamespaceInputElement.Placeholder().Set("MyPlugin");
+    NamespaceInputElement.Text().Set(m_pluginNamespaceText);
+    NamespaceInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginNamespaceText = Value;
+    }));
+    m_pluginNamespaceInput = NamespaceInput.Handle();
+
+    auto RuntimeCheckboxBuilder = CodeCard.Add(SnAPI::UI::UICheckbox("Generate runtime module"));
+    auto& RuntimeCheckbox = RuntimeCheckboxBuilder.Element();
+    RuntimeCheckbox.Checked().Set(m_pluginCreateRuntimeModule);
+    RuntimeCheckbox.OnChanged([this](const bool Checked) {
+        m_pluginCreateRuntimeModule = Checked;
+        RefreshPluginModalOkButtonState();
+    });
+    m_pluginRuntimeModuleCheckbox = RuntimeCheckboxBuilder.Handle();
+    AddFieldHelpText(CodeCard,
+                     "Emit one starter runtime plugin module plus generated CMake wiring.");
+
+    auto RuntimeModuleLabel = CodeCard.Add(SnAPI::UI::UIText("Runtime Module Name"));
+    RuntimeModuleLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(CodeCard,
+                     "Primary runtime plugin target name and generated source folder stem.");
+    auto RuntimeModuleInput = CodeCard.Add(SnAPI::UI::UITextInput{});
+    auto& RuntimeModuleInputElement = RuntimeModuleInput.Element();
+    RuntimeModuleInputElement.ElementStyle().Apply("editor.text_input");
+    RuntimeModuleInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    RuntimeModuleInputElement.Placeholder().Set("MyPlugin");
+    RuntimeModuleInputElement.Text().Set(m_pluginRuntimeModuleText);
+    RuntimeModuleInputElement.SetDisabled(!m_pluginCreateRuntimeModule);
+    RuntimeModuleInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginRuntimeModuleText = Value;
+        RefreshPluginModalOkButtonState();
+    }));
+    m_pluginRuntimeModuleInput = RuntimeModuleInput.Handle();
+
+    auto EditorCheckboxBuilder = CodeCard.Add(SnAPI::UI::UICheckbox("Generate editor module"));
+    auto& EditorCheckbox = EditorCheckboxBuilder.Element();
+    EditorCheckbox.Checked().Set(m_pluginCreateEditorModule);
+    EditorCheckbox.OnChanged([this](const bool Checked) {
+        m_pluginCreateEditorModule = Checked;
+        RefreshPluginModalOkButtonState();
+        if (m_context)
+        {
+            m_context->MarkLayoutDirty();
+        }
+    });
+    m_pluginEditorModuleCheckbox = EditorCheckboxBuilder.Handle();
+    AddFieldHelpText(CodeCard,
+                     "Emit one editor-only companion plugin module for tools and authoring integrations.");
+
+    auto EditorModuleLabel = CodeCard.Add(SnAPI::UI::UIText("Editor Module Name"));
+    EditorModuleLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(CodeCard,
+                     "Editor companion target name. This module is linked into editor hosts only.");
+    auto EditorModuleInput = CodeCard.Add(SnAPI::UI::UITextInput{});
+    auto& EditorModuleInputElement = EditorModuleInput.Element();
+    EditorModuleInputElement.ElementStyle().Apply("editor.text_input");
+    EditorModuleInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    EditorModuleInputElement.Placeholder().Set("MyPluginEditor");
+    EditorModuleInputElement.Text().Set(m_pluginEditorModuleText);
+    EditorModuleInputElement.SetDisabled(!m_pluginCreateEditorModule);
+    EditorModuleInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_pluginEditorModuleText = Value;
+        RefreshPluginModalOkButtonState();
+    }));
+    m_pluginEditorModuleInput = EditorModuleInput.Handle();
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.PluginModal.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ConfigureTransparentLayoutPanel(ButtonsRowPanel);
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Gap().Set(8.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.PluginModal.ButtonSpacer"));
+    ConfigureLayoutSpacerPanel(Spacer.Element());
+    Spacer.Element().Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    CancelButton.Element().ElementStyle().Apply("editor.project_modal_action_button");
+    CancelButton.Element().ElementPadding().Set(SnAPI::UI::Padding{12.0f, 6.0f, 12.0f, 6.0f});
+    CancelButton.Element().OnClick([this]() {
+        ClosePluginModal();
+    });
+    auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
+    CancelLabel.Element().ElementStyle().Apply("editor.project_modal_action_button_text");
+    CancelLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto OkButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    OkButton.Element().ElementStyle().Apply("editor.project_modal_action_button_primary");
+    OkButton.Element().ElementPadding().Set(SnAPI::UI::Padding{12.0f, 6.0f, 12.0f, 6.0f});
+    OkButton.Element().OnClick([this]() {
+        ConfirmPluginModal();
+    });
+    auto OkLabel = OkButton.Add(SnAPI::UI::UIText("Create Plugin"));
+    OkLabel.Element().ElementStyle().Apply("editor.project_modal_action_button_text");
+    OkLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    m_pluginModalOkButton = OkButton.Handle();
+
+    RefreshPluginModalOkButtonState();
+}
+
+void EditorLayout::DestroyPluginModalOverlay()
+{
+    if (m_context && m_pluginModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_pluginModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_pluginModalOverlay = {};
+    m_pluginNameInput = {};
+    m_pluginDisplayNameInput = {};
+    m_pluginCompanyInput = {};
+    m_pluginVersionInput = {};
+    m_pluginDescriptionInput = {};
+    m_pluginNamespaceInput = {};
+    m_pluginRuntimeModuleInput = {};
+    m_pluginEditorModuleInput = {};
+    m_pluginDirectoryInput = {};
+    m_pluginTemplateCombo = {};
+    m_pluginRuntimeModuleCheckbox = {};
+    m_pluginEditorModuleCheckbox = {};
+    m_pluginCanContainAssetsCheckbox = {};
+    m_pluginModalOkButton = {};
+}
+
+void EditorLayout::EnsureModuleModalOverlay()
+{
+    if (!m_context || m_moduleModalOverlay.Id.Value != 0 || !m_moduleModalOpen)
+    {
+        return;
+    }
+
+    auto Root = m_context->Root();
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(true);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(10.0f);
+    OverlayPanel.ContentPadding().Set(14.0f);
+    ConfigureModalScreenRatio(OverlayPanel, 0.60f);
+    m_moduleModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.ModuleModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.ElementStyle().Apply("editor.project_modal_root");
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(12.0f);
+    ModalPanel.Gap().Set(10.0f);
+
+    const bool IsPluginModule = m_moduleModalAction == EModuleAction::CreatePluginModule;
+
+    auto Header = Modal.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.Header"));
+    auto& HeaderPanel = Header.Element();
+    ConfigureTransparentLayoutPanel(HeaderPanel);
+    HeaderPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HeaderPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HeaderPanel.Gap().Set(10.0f);
+
+    auto HeaderIcon = Header.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kHierarchyNodeIconPath)));
+    auto& HeaderIconImage = HeaderIcon.Element();
+    ConfigureSvgIcon(HeaderIconImage, 20.0f, SnAPI::UI::Color::RGB(230, 206, 162));
+    HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto HeaderText = Header.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.HeaderText"));
+    auto& HeaderTextPanel = HeaderText.Element();
+    ConfigureTransparentLayoutPanel(HeaderTextPanel);
+    HeaderTextPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    HeaderTextPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HeaderTextPanel.Gap().Set(2.0f);
+
+    auto Title = HeaderText.Add(SnAPI::UI::UIText(IsPluginModule ? "Add Plugin Module" : "Add Project Module"));
+    Title.Element().ElementStyle().Apply("editor.project_welcome_title");
+    Title.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto Subtitle = HeaderText.Add(SnAPI::UI::UIText(
+        "Generate module source, CMake fragments, and descriptor entries with type-specific starter hooks."));
+    Subtitle.Element().ElementStyle().Apply("editor.project_welcome_subtitle");
+    Subtitle.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto Scroll = Modal.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ScrollElement = Scroll.Element();
+    ScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ScrollElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    ScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ScrollElement.ShowHorizontalScrollbar().Set(false);
+    ScrollElement.ShowVerticalScrollbar().Set(true);
+    ScrollElement.Smooth().Set(true);
+    ScrollElement.Padding().Set(2.0f);
+    ScrollElement.Gap().Set(10.0f);
+
+    auto TopCard = Scroll.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.TopCard"));
+    auto& TopCardPanel = TopCard.Element();
+    TopCardPanel.ElementStyle().Apply("editor.section_card");
+    TopCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    TopCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    TopCardPanel.Padding().Set(12.0f);
+    TopCardPanel.Gap().Set(8.0f);
+
+    auto TargetRow = TopCard.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.TargetRow"));
+    auto& TargetRowPanel = TargetRow.Element();
+    ConfigureTransparentLayoutPanel(TargetRowPanel);
+    TargetRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    TargetRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    TargetRowPanel.Gap().Set(10.0f);
+
+    auto TargetModeCard = TargetRow.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.TargetModeCard"));
+    auto& TargetModeCardPanel = TargetModeCard.Element();
+    TargetModeCardPanel.ElementStyle().Apply("editor.section_card");
+    TargetModeCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    TargetModeCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.42f));
+    TargetModeCardPanel.Padding().Set(10.0f);
+    TargetModeCardPanel.Gap().Set(8.0f);
+
+    auto TargetModeLabel = TargetModeCard.Add(SnAPI::UI::UIText("Target"));
+    TargetModeLabel.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(TargetModeCard,
+                     "Choose whether the new module will be authored into the loaded project or an existing plugin "
+                     "descriptor.");
+    auto TargetComboBuilder = TargetModeCard.Add(SnAPI::UI::UIComboBox{});
+    auto& TargetCombo = TargetComboBuilder.Element();
+    TargetCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    TargetCombo.SetItems({"Project", "Plugin"});
+    (void)TargetCombo.SetSelectedIndex(IsPluginModule ? 1 : 0, false);
+    TargetCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_moduleModalAction = Index == 1 ? EModuleAction::CreatePluginModule : EModuleAction::CreateProjectModule;
+        DestroyModuleModalOverlay();
+        RefreshModuleModalVisibility();
+        RefreshModuleModalOkButtonState();
+        if (m_context)
+        {
+            m_context->MarkLayoutDirty();
+        }
+    });
+    m_moduleTargetCombo = TargetComboBuilder.Handle();
+
+    auto TargetDescriptorCard = TargetRow.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.TargetDescriptorCard"));
+    auto& TargetDescriptorCardPanel = TargetDescriptorCard.Element();
+    TargetDescriptorCardPanel.ElementStyle().Apply("editor.section_card");
+    TargetDescriptorCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    TargetDescriptorCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.58f));
+    TargetDescriptorCardPanel.Padding().Set(10.0f);
+    TargetDescriptorCardPanel.Gap().Set(8.0f);
+
+    auto TargetDescriptorLabel = TargetDescriptorCard.Add(SnAPI::UI::UIText(IsPluginModule ? "Plugin Descriptor" : "Project Descriptor"));
+    TargetDescriptorLabel.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(TargetDescriptorCard,
+                     "Point this dialog at the descriptor file that should be updated. The service will append the "
+                     "module declaration, emit starter source, and regenerate workspace build wiring.");
+    auto TargetDescriptorPicker = TargetDescriptorCard.Add(SnAPI::UI::UIFilesystemPicker{});
+    auto& TargetDescriptorPickerElement = TargetDescriptorPicker.Element();
+    TargetDescriptorPickerElement.ElementStyle().Apply("editor.filesystem_picker");
+    TargetDescriptorPickerElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    TargetDescriptorPickerElement.ReadOnly().Set(false);
+    TargetDescriptorPickerElement.AllowMultiSelect().Set(false);
+    TargetDescriptorPickerElement.PickDirectories().Set(false);
+    TargetDescriptorPickerElement.ShowDirectories().Set(true);
+    TargetDescriptorPickerElement.ShowFiles().Set(true);
+    TargetDescriptorPickerElement.RestrictToRoot().Set(false);
+    TargetDescriptorPickerElement.Placeholder().Set(IsPluginModule ? std::string("Path to plugin.snplugin.json")
+                                                                  : std::string("Path to project.snproj.json"));
+    TargetDescriptorPickerElement.Value().Set(m_moduleDescriptorFilePathText);
+    TargetDescriptorPickerElement.CurrentPath().Set(std::filesystem::path(m_moduleDescriptorFilePathText).parent_path().string());
+    TargetDescriptorPickerElement.SetAllowedExtensions({".json"});
+    TargetDescriptorPickerElement.OnSelectionChanged(
+        SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind([this](const std::vector<std::string>& Values) {
+            if (!Values.empty())
+            {
+                m_moduleDescriptorFilePathText = Values.front();
+                RefreshModuleModalOkButtonState();
+            }
+        }));
+    m_moduleDescriptorFileInput = TargetDescriptorPicker.Handle();
+
+    auto IdentityRow = Scroll.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.IdentityRow"));
+    auto& IdentityRowPanel = IdentityRow.Element();
+    ConfigureTransparentLayoutPanel(IdentityRowPanel);
+    IdentityRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    IdentityRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    IdentityRowPanel.Gap().Set(10.0f);
+
+    auto IdentityCard = IdentityRow.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.IdentityCard"));
+    auto& IdentityCardPanel = IdentityCard.Element();
+    IdentityCardPanel.ElementStyle().Apply("editor.section_card");
+    IdentityCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    IdentityCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    IdentityCardPanel.Padding().Set(12.0f);
+    IdentityCardPanel.Gap().Set(8.0f);
+
+    auto IdentityTitle = IdentityCard.Add(SnAPI::UI::UIText("Module Identity"));
+    IdentityTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto NameLabel = IdentityCard.Add(SnAPI::UI::UIText("Module Name"));
+    NameLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "This becomes the stable module identifier, default namespace stem, generated class names, and "
+                     "CMake target name.");
+    auto NameInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& NameInputElement = NameInput.Element();
+    NameInputElement.ElementStyle().Apply("editor.text_input");
+    NameInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    NameInputElement.Placeholder().Set("GameplaySystems");
+    NameInputElement.Text().Set(m_moduleNameText);
+    NameInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_moduleNameText = Value;
+        if (TrimCopy(m_moduleNamespaceText).empty())
+        {
+            m_moduleNamespaceText = Value;
+        }
+        RefreshModuleModalOkButtonState();
+    }));
+    m_moduleNameInput = NameInput.Handle();
+
+    auto NamespaceLabel = IdentityCard.Add(SnAPI::UI::UIText("Namespace Root"));
+    NamespaceLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "Override the generated C++ namespace root. Leave it aligned with the module name unless the "
+                     "workspace uses a different namespace policy.");
+    auto NamespaceInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& NamespaceInputElement = NamespaceInput.Element();
+    NamespaceInputElement.ElementStyle().Apply("editor.text_input");
+    NamespaceInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    NamespaceInputElement.Placeholder().Set("GameplaySystems");
+    NamespaceInputElement.Text().Set(m_moduleNamespaceText);
+    NamespaceInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_moduleNamespaceText = Value;
+    }));
+    m_moduleNamespaceInput = NamespaceInput.Handle();
+
+    auto RootLabel = IdentityCard.Add(SnAPI::UI::UIText("Module Root Override"));
+    RootLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(IdentityCard,
+                     "Optional descriptor-relative module root. When left empty the module is written under the host "
+                     "workspace code root as `Code/<ModuleName>`.");
+    auto RootInput = IdentityCard.Add(SnAPI::UI::UITextInput{});
+    auto& RootInputElement = RootInput.Element();
+    RootInputElement.ElementStyle().Apply("editor.text_input");
+    RootInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    RootInputElement.Placeholder().Set("Code/GameplaySystems");
+    RootInputElement.Text().Set(m_moduleRootText);
+    RootInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_moduleRootText = Value;
+    }));
+    m_moduleRootInput = RootInput.Handle();
+
+    auto TypeCard = IdentityRow.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.TypeCard"));
+    auto& TypeCardPanel = TypeCard.Element();
+    TypeCardPanel.ElementStyle().Apply("editor.section_card");
+    TypeCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    TypeCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    TypeCardPanel.Padding().Set(12.0f);
+    TypeCardPanel.Gap().Set(8.0f);
+
+    auto TypeTitle = TypeCard.Add(SnAPI::UI::UIText("Module Type"));
+    TypeTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(TypeCard,
+                     "Module type controls default host linkage, intended usage, and starter scaffolding shape.");
+
+    auto TypeComboBuilder = TypeCard.Add(SnAPI::UI::UIComboBox{});
+    auto& TypeCombo = TypeComboBuilder.Element();
+    TypeCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    TypeCombo.SetItems({"Runtime", "Editor", "Shared", "Developer", "Test", "Program"});
+    (void)TypeCombo.SetSelectedIndex(ModuleTypeToIndex(m_moduleType), false);
+    TypeCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_moduleType = ModuleTypeFromIndex(Index);
+        m_moduleGenerateGameplayBootstrap = m_moduleType == EProjectModuleType::Runtime;
+        m_moduleLoadInEditor = DefaultLoadInEditorForModule(m_moduleType);
+        m_moduleLoadInRuntime = DefaultLoadInRuntimeForModule(m_moduleType);
+        DestroyModuleModalOverlay();
+        RefreshModuleModalVisibility();
+        RefreshModuleModalOkButtonState();
+        if (m_context)
+        {
+            m_context->MarkLayoutDirty();
+        }
+    });
+    m_moduleTypeCombo = TypeComboBuilder.Handle();
+
+    auto ReflectionCheckbox = TypeCard.Add(SnAPI::UI::UICheckbox("Use reflection generation"));
+    ReflectionCheckbox.Element().Checked().Set(m_moduleUseReflectionGen);
+    ReflectionCheckbox.Element().OnChanged([this](const bool Checked) {
+        m_moduleUseReflectionGen = Checked;
+    });
+    m_moduleReflectionCheckbox = ReflectionCheckbox.Handle();
+    AddFieldHelpText(TypeCard,
+                     "Enable the reflection/code-generation pipeline for this module before C++ compilation.");
+
+    auto SwigCheckbox = TypeCard.Add(SnAPI::UI::UICheckbox("Generate SWIG bindings"));
+    SwigCheckbox.Element().Checked().Set(m_moduleUseSwig);
+    SwigCheckbox.Element().OnChanged([this](const bool Checked) {
+        m_moduleUseSwig = Checked;
+    });
+    m_moduleSwigCheckbox = SwigCheckbox.Handle();
+    AddFieldHelpText(TypeCard,
+                     "Opt the module into SWIG binding generation when the workspace uses script or interop wrappers.");
+
+    if (m_moduleType == EProjectModuleType::Runtime)
+    {
+        auto GameplayBootstrapCheckbox = TypeCard.Add(SnAPI::UI::UICheckbox("Generate Game + GameMode starter code"));
+        GameplayBootstrapCheckbox.Element().Checked().Set(m_moduleGenerateGameplayBootstrap);
+        GameplayBootstrapCheckbox.Element().OnChanged([this](const bool Checked) {
+            m_moduleGenerateGameplayBootstrap = Checked;
+        });
+        m_moduleGameplayBootstrapCheckbox = GameplayBootstrapCheckbox.Handle();
+        AddFieldHelpText(TypeCard,
+                         "Emit starter `IGame` and `IGameMode` implementations alongside the module class so a new "
+                         "runtime module can bootstrap gameplay immediately.");
+    }
+
+    auto LoadEditorCheckbox = TypeCard.Add(SnAPI::UI::UICheckbox("Load in editor host"));
+    LoadEditorCheckbox.Element().Checked().Set(m_moduleLoadInEditor);
+    LoadEditorCheckbox.Element().OnChanged([this](const bool Checked) {
+        m_moduleLoadInEditor = Checked;
+    });
+    m_moduleLoadInEditorCheckbox = LoadEditorCheckbox.Handle();
+    AddFieldHelpText(TypeCard,
+                     "Control whether the generated module is linked into editor-host builds by default.");
+
+    auto LoadRuntimeCheckbox = TypeCard.Add(SnAPI::UI::UICheckbox("Load in runtime host"));
+    LoadRuntimeCheckbox.Element().Checked().Set(m_moduleLoadInRuntime);
+    LoadRuntimeCheckbox.Element().OnChanged([this](const bool Checked) {
+        m_moduleLoadInRuntime = Checked;
+    });
+    m_moduleLoadInRuntimeCheckbox = LoadRuntimeCheckbox.Handle();
+    AddFieldHelpText(TypeCard,
+                     "Control whether the generated module is linked into packaged/runtime builds by default.");
+
+    auto DetailsCard = Scroll.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.DetailsCard"));
+    auto& DetailsCardPanel = DetailsCard.Element();
+    DetailsCardPanel.ElementStyle().Apply("editor.section_card");
+    DetailsCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    DetailsCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    DetailsCardPanel.Padding().Set(12.0f);
+    DetailsCardPanel.Gap().Set(8.0f);
+
+    auto DetailsTitle = DetailsCard.Add(SnAPI::UI::UIText("Dependencies and Flags"));
+    DetailsTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(DetailsCard,
+                     "List-shaped fields are edited as tokens so each dependency, platform filter, or definition stays "
+                     "explicit and easy to review.");
+
+    const auto AddTokenInput = [&DetailsCard](const char* Label,
+                                              const char* HelpText,
+                                              const std::string& Value,
+                                              const std::function<void(const std::vector<std::string>&)>& OnChanged) {
+        auto FieldLabel = DetailsCard.Add(SnAPI::UI::UIText(Label));
+        FieldLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(DetailsCard, HelpText);
+        auto FieldInput = DetailsCard.Add(SnAPI::UI::UITokenField{});
+        auto& FieldInputElement = FieldInput.Element();
+        FieldInputElement.ElementStyle().Apply("editor.token_field");
+        FieldInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        FieldInputElement.Placeholder().Set("Type and press Enter");
+        FieldInputElement.SetTokens(ParseMultilineEntries(Value), false);
+        FieldInputElement.OnTokensChanged(
+            SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind(OnChanged));
+        return FieldInput;
+    };
+
+    m_modulePublicDependenciesInput = AddTokenInput(
+        "Public Dependencies",
+        "Dependencies listed here are linked publicly and exposed through the module's public headers.",
+        m_modulePublicDependenciesText,
+        [this](const std::vector<std::string>& Values) { m_modulePublicDependenciesText = JoinEntries(Values); }).Handle();
+    m_modulePrivateDependenciesInput = AddTokenInput(
+        "Private Dependencies",
+        "Dependencies listed here are linked privately and should not leak through public headers.",
+        m_modulePrivateDependenciesText,
+        [this](const std::vector<std::string>& Values) { m_modulePrivateDependenciesText = JoinEntries(Values); }).Handle();
+    m_modulePlatformsInput = AddTokenInput(
+        "Platform Filters",
+        "Optional allow/deny platform entries copied into the descriptor. Use these only when the module truly "
+        "cannot participate on every platform.",
+        m_modulePlatformsText,
+        [this](const std::vector<std::string>& Values) { m_modulePlatformsText = JoinEntries(Values); }).Handle();
+    m_moduleDefinitionsInput = AddTokenInput(
+        "Preprocessor Definitions",
+        "Compile definitions are emitted as `target_compile_definitions(... PRIVATE ...)` entries in the generated "
+        "module fragment.",
+        m_moduleDefinitionsText,
+        [this](const std::vector<std::string>& Values) { m_moduleDefinitionsText = JoinEntries(Values); }).Handle();
+
+    auto ButtonsRow = Modal.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.Buttons"));
+    auto& ButtonsRowPanel = ButtonsRow.Element();
+    ConfigureTransparentLayoutPanel(ButtonsRowPanel);
+    ButtonsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ButtonsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ButtonsRowPanel.Gap().Set(8.0f);
+
+    auto Spacer = ButtonsRow.Add(SnAPI::UI::UIPanel("Editor.ModuleModal.ButtonSpacer"));
+    ConfigureLayoutSpacerPanel(Spacer.Element());
+    Spacer.Element().Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto CancelButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    CancelButton.Element().ElementStyle().Apply("editor.project_modal_action_button");
+    CancelButton.Element().ElementPadding().Set(SnAPI::UI::Padding{12.0f, 6.0f, 12.0f, 6.0f});
+    CancelButton.Element().OnClick([this]() {
+        CloseModuleModal();
+    });
+    auto CancelLabel = CancelButton.Add(SnAPI::UI::UIText("Cancel"));
+    CancelLabel.Element().ElementStyle().Apply("editor.project_modal_action_button_text");
+    CancelLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto OkButton = ButtonsRow.Add(SnAPI::UI::UIButton{});
+    OkButton.Element().ElementStyle().Apply("editor.project_modal_action_button_primary");
+    OkButton.Element().ElementPadding().Set(SnAPI::UI::Padding{12.0f, 6.0f, 12.0f, 6.0f});
+    OkButton.Element().OnClick([this]() {
+        ConfirmModuleModal();
+    });
+    auto OkLabel = OkButton.Add(SnAPI::UI::UIText(IsPluginModule ? "Add Plugin Module" : "Add Project Module"));
+    OkLabel.Element().ElementStyle().Apply("editor.project_modal_action_button_text");
+    OkLabel.Element().Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+    m_moduleModalOkButton = OkButton.Handle();
+
+    RefreshModuleModalOkButtonState();
+}
+
+void EditorLayout::DestroyModuleModalOverlay()
+{
+    if (m_context && m_moduleModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_moduleModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_moduleModalOverlay = {};
+    m_moduleTargetCombo = {};
+    m_moduleTypeCombo = {};
+    m_moduleNameInput = {};
+    m_moduleNamespaceInput = {};
+    m_moduleRootInput = {};
+    m_moduleDescriptorFileInput = {};
+    m_modulePublicDependenciesInput = {};
+    m_modulePrivateDependenciesInput = {};
+    m_modulePlatformsInput = {};
+    m_moduleDefinitionsInput = {};
+    m_moduleReflectionCheckbox = {};
+    m_moduleSwigCheckbox = {};
+    m_moduleGameplayBootstrapCheckbox = {};
+    m_moduleLoadInEditorCheckbox = {};
+    m_moduleLoadInRuntimeCheckbox = {};
+    m_moduleModalOkButton = {};
 }
 
 void EditorLayout::EnsureProjectSettingsModalOverlay()
@@ -7367,6 +8980,1969 @@ void EditorLayout::DestroyProjectSettingsModalOverlay()
     m_projectSettingsStartupAssetInput = {};
     m_projectSettingsDefaultRenderSettingsCombo = {};
     m_projectSettingsSaveButton = {};
+}
+
+const EditorLayout::BuildProfileEntry* EditorLayout::SelectedBuildProfileEntry() const
+{
+    auto SelectedIt = std::find_if(
+        m_buildPanelState.Profiles.begin(),
+        m_buildPanelState.Profiles.end(),
+        [this](const BuildProfileEntry& Entry) { return Entry.Name == m_buildModalSelectedProfileName; });
+    if (SelectedIt != m_buildPanelState.Profiles.end())
+    {
+        return std::addressof(*SelectedIt);
+    }
+
+    auto DefaultIt = std::find_if(
+        m_buildPanelState.Profiles.begin(),
+        m_buildPanelState.Profiles.end(),
+        [](const BuildProfileEntry& Entry) { return Entry.IsDefault; });
+    if (DefaultIt != m_buildPanelState.Profiles.end())
+    {
+        return std::addressof(*DefaultIt);
+    }
+
+    return m_buildPanelState.Profiles.empty() ? nullptr : std::addressof(m_buildPanelState.Profiles.front());
+}
+
+const EditorLayout::BuildHistoryEntryView* EditorLayout::SelectedBuildHistoryEntry() const
+{
+    auto SelectedIt = std::find_if(
+        m_buildPanelState.HistoryEntries.begin(),
+        m_buildPanelState.HistoryEntries.end(),
+        [this](const BuildHistoryEntryView& Entry) { return Entry.BuildId == m_buildModalSelectedHistoryBuildId; });
+    if (SelectedIt != m_buildPanelState.HistoryEntries.end())
+    {
+        return std::addressof(*SelectedIt);
+    }
+
+    auto LatestIt = std::find_if(
+        m_buildPanelState.HistoryEntries.begin(),
+        m_buildPanelState.HistoryEntries.end(),
+        [](const BuildHistoryEntryView& Entry) { return Entry.IsLatest; });
+    if (LatestIt != m_buildPanelState.HistoryEntries.end())
+    {
+        return std::addressof(*LatestIt);
+    }
+
+    return m_buildPanelState.HistoryEntries.empty() ? nullptr : std::addressof(m_buildPanelState.HistoryEntries.front());
+}
+
+bool EditorLayout::BuildModalRequiresStructuralRebuild(const BuildPanelState& PreviousState,
+                                                       const BuildPanelState& NextState) const
+{
+    if (PreviousState.ProjectLoaded != NextState.ProjectLoaded || PreviousState.ProjectName != NextState.ProjectName ||
+        PreviousState.ProjectFilePath != NextState.ProjectFilePath ||
+        PreviousState.AssetRootDirectory != NextState.AssetRootDirectory)
+    {
+        return true;
+    }
+
+    const auto ProfilesEqual = [](const std::vector<BuildProfileEntry>& Left,
+                                  const std::vector<BuildProfileEntry>& Right) -> bool {
+        if (Left.size() != Right.size())
+        {
+            return false;
+        }
+
+        for (std::size_t Index = 0; Index < Left.size(); ++Index)
+        {
+            const BuildProfileEntry& A = Left[Index];
+            const BuildProfileEntry& B = Right[Index];
+            if (A.Name != B.Name || A.Label != B.Label || A.Summary != B.Summary || A.Platform != B.Platform ||
+                A.Configuration != B.Configuration || A.ExecutionEnvironment != B.ExecutionEnvironment ||
+                A.SelectedLevels != B.SelectedLevels || A.ExplicitAssets != B.ExplicitAssets ||
+                A.IncludeFolders != B.IncludeFolders || A.ExcludeFolders != B.ExcludeFolders ||
+                A.IncludeAssetLabels != B.IncludeAssetLabels || A.ExcludeAssetLabels != B.ExcludeAssetLabels ||
+                A.IncludeAssetKinds != B.IncludeAssetKinds || A.ExcludeAssetKinds != B.ExcludeAssetKinds ||
+                A.DependencyPolicy != B.DependencyPolicy || A.ChunkStrategy != B.ChunkStrategy ||
+                A.AllowExplicitOverrideExcludes != B.AllowExplicitOverrideExcludes ||
+                A.ArchiveEnabled != B.ArchiveEnabled || A.ArchiveFormat != B.ArchiveFormat ||
+                A.IsDefault != B.IsDefault || A.IsAdHoc != B.IsAdHoc)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    const auto HistoryEqual = [](const std::vector<BuildHistoryEntryView>& Left,
+                                 const std::vector<BuildHistoryEntryView>& Right) -> bool {
+        if (Left.size() != Right.size())
+        {
+            return false;
+        }
+
+        for (std::size_t Index = 0; Index < Left.size(); ++Index)
+        {
+            const BuildHistoryEntryView& A = Left[Index];
+            const BuildHistoryEntryView& B = Right[Index];
+            if (A.BuildId != B.BuildId || A.Label != B.Label || A.Summary != B.Summary ||
+                A.RequestHash != B.RequestHash || A.StartedAtUtc != B.StartedAtUtc ||
+                A.FinishedAtUtc != B.FinishedAtUtc || A.IsComplete != B.IsComplete || A.IsLatest != B.IsLatest)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    return !ProfilesEqual(PreviousState.Profiles, NextState.Profiles) ||
+           PreviousState.AvailableLevels != NextState.AvailableLevels ||
+           PreviousState.AvailableAssets != NextState.AvailableAssets ||
+           PreviousState.AvailableAssetKinds != NextState.AvailableAssetKinds ||
+           !HistoryEqual(PreviousState.HistoryEntries, NextState.HistoryEntries);
+}
+
+void EditorLayout::RefreshBuildModalLiveState()
+{
+    if (!m_buildModalOpen || m_buildModalOverlay.Id.Value == 0 || !m_context)
+    {
+        return;
+    }
+
+    const auto SetTextHandle = [this](auto& Handle, const std::string& Value) {
+        if (Handle.Id.Value == 0)
+        {
+            return;
+        }
+
+        if (auto* Text = dynamic_cast<SnAPI::UI::UIText*>(&m_context->GetElement(Handle.Id)))
+        {
+            Text->Text().Set(Value);
+        }
+    };
+    const auto SyncComboSelection = [this](auto& Handle, const int32_t Index) {
+        if (Handle.Id.Value == 0)
+        {
+            return;
+        }
+
+        if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(Handle.Id)))
+        {
+            (void)Combo->SetSelectedIndex(Index, false);
+        }
+    };
+    const auto SyncComboSelectionByText = [this](auto& Handle, const std::string& Value) {
+        if (Handle.Id.Value == 0)
+        {
+            return;
+        }
+
+        auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(Handle.Id));
+        if (Combo == nullptr)
+        {
+            return;
+        }
+
+        if (TrimCopy(Value).empty())
+        {
+            (void)Combo->SetSelectedIndex(0, false);
+            return;
+        }
+
+        const std::vector<std::string>& Items = Combo->Items();
+        const auto It = std::find(Items.begin(), Items.end(), TrimCopy(Value));
+        if (It != Items.end())
+        {
+            (void)Combo->SetSelectedIndex(static_cast<int32_t>(std::distance(Items.begin(), It)), false);
+        }
+    };
+
+    std::string SubtitleValue = m_buildPanelState.ProjectLoaded
+                                    ? "Plan, package, and inspect build history for the active project."
+                                    : "Load a project to access packaging and build history.";
+    if (!m_buildPanelState.ProjectFilePath.empty())
+    {
+        SubtitleValue += " File: " + m_buildPanelState.ProjectFilePath;
+    }
+    SetTextHandle(m_buildModalSubtitleText, SubtitleValue);
+
+    std::string OverviewSummary = m_buildPanelState.ProjectLoaded ? ("Project: " + m_buildPanelState.ProjectName)
+                                                                  : std::string("No project is currently loaded.");
+    if (m_buildPanelState.BuildInProgress)
+    {
+        OverviewSummary += "\nBackground task: build/package work is running on a worker thread.";
+    }
+    if (!m_buildPanelState.StatusMessage.empty())
+    {
+        OverviewSummary += "\nStatus: " + m_buildPanelState.StatusMessage;
+    }
+    SetTextHandle(m_buildModalOverviewSummaryText, OverviewSummary);
+
+    std::string ProfileSummary = "No build profile is available for the active project.";
+    if (const BuildProfileEntry* SelectedProfile = SelectedBuildProfileEntry())
+    {
+        ProfileSummary = SelectedProfile->Summary;
+        const std::string EffectivePlatform =
+            TrimCopy(m_buildModalPlatformText).empty()
+                ? (SelectedProfile->Platform.empty() ? std::string("Inherited") : SelectedProfile->Platform)
+                : TrimCopy(m_buildModalPlatformText);
+        if (!EffectivePlatform.empty())
+        {
+            ProfileSummary += "\nResolved target: " + EffectivePlatform + " / " +
+                              std::string(BuildConfigurationLabel(m_buildModalConfiguration));
+        }
+        const std::string EffectiveExecutionEnvironment =
+            TrimCopy(m_buildModalExecutionEnvironmentText).empty()
+                ? (SelectedProfile->ExecutionEnvironment.empty() ? std::string("Inherited / host-local")
+                                                                 : SelectedProfile->ExecutionEnvironment)
+                : TrimCopy(m_buildModalExecutionEnvironmentText);
+        if (!EffectiveExecutionEnvironment.empty())
+        {
+            ProfileSummary += "\nExecution: " + EffectiveExecutionEnvironment;
+        }
+        ProfileSummary += "\nSelected levels: " + std::to_string(ParseMultilineEntries(m_buildModalSelectedLevelsText).size()) +
+                          "  Explicit assets: " +
+                          std::to_string(ParseMultilineEntries(m_buildModalExplicitAssetsText).size());
+    }
+    SetTextHandle(m_buildModalProfileSummaryText, ProfileSummary);
+
+    std::string LatestSummary = m_buildPanelState.LastPlanSummary;
+    if (!m_buildPanelState.LastBuildSummary.empty())
+    {
+        LatestSummary = m_buildPanelState.LastBuildSummary;
+    }
+    if (!m_buildPanelState.LastBuildOutputSummary.empty())
+    {
+        if (!LatestSummary.empty())
+        {
+            LatestSummary += "\n";
+        }
+        LatestSummary += m_buildPanelState.LastBuildOutputSummary;
+    }
+    if (LatestSummary.empty())
+    {
+        LatestSummary = "No build has been planned or executed in this editor session yet.";
+    }
+    SetTextHandle(m_buildModalLatestSummaryText, LatestSummary);
+
+    std::string PlatformSummary = "Platform: " +
+                                  (TrimCopy(m_buildModalPlatformText).empty() ? std::string("Inherited")
+                                                                             : TrimCopy(m_buildModalPlatformText));
+    PlatformSummary += "\nConfiguration: ";
+    PlatformSummary += BuildConfigurationLabel(m_buildModalConfiguration);
+    PlatformSummary += "\nExecution Environment: " +
+                       (TrimCopy(m_buildModalExecutionEnvironmentText).empty() ? std::string("Inherited / host-local")
+                                                                              : TrimCopy(m_buildModalExecutionEnvironmentText));
+    SetTextHandle(m_buildModalPlatformSummaryText, PlatformSummary);
+
+    std::string OutputSummary =
+        "Packages promote the staged tree into a final output directory using the standard naming scheme.";
+    if (!TrimCopy(m_buildModalPackageDirectoryText).empty())
+    {
+        OutputSummary += "\nDirectory override: " + TrimCopy(m_buildModalPackageDirectoryText);
+    }
+    if (!TrimCopy(m_buildModalOutputRootText).empty())
+    {
+        OutputSummary += "\nOutput root: " + TrimCopy(m_buildModalOutputRootText);
+    }
+    if (m_buildModalArchiveEnabled)
+    {
+        OutputSummary += "\nArchive: " +
+                         (TrimCopy(m_buildModalArchiveFormatText).empty() ? std::string("zip")
+                                                                          : TrimCopy(m_buildModalArchiveFormatText));
+        if (!TrimCopy(m_buildModalArchiveFileText).empty())
+        {
+            OutputSummary += " -> " + TrimCopy(m_buildModalArchiveFileText);
+        }
+    }
+    SetTextHandle(m_buildModalOutputSummaryText, OutputSummary);
+
+    std::string HistoryDetailSummary = "Select a build from history to inspect, retry, or compare it.";
+    if (const BuildHistoryEntryView* SelectedHistory = SelectedBuildHistoryEntry())
+    {
+        HistoryDetailSummary = SelectedHistory->Summary;
+        if (!SelectedHistory->RequestHash.empty())
+        {
+            HistoryDetailSummary += "\nRequest: " + SelectedHistory->RequestHash;
+        }
+        if (!SelectedHistory->StartedAtUtc.empty())
+        {
+            HistoryDetailSummary += "\nStarted: " + SelectedHistory->StartedAtUtc;
+        }
+        if (!SelectedHistory->FinishedAtUtc.empty())
+        {
+            HistoryDetailSummary += "\nFinished: " + SelectedHistory->FinishedAtUtc;
+        }
+    }
+    SetTextHandle(m_buildModalHistoryDetailText, HistoryDetailSummary);
+
+    const std::string ComparisonSummary = m_buildPanelState.HistoryComparisonSummary.empty()
+                                              ? std::string("No comparison result is currently loaded.")
+                                              : m_buildPanelState.HistoryComparisonSummary;
+    SetTextHandle(m_buildModalComparisonText, ComparisonSummary);
+
+    const std::string ConsoleSummary =
+        m_buildPanelState.ConsoleLogText.empty()
+            ? std::string("No packaging output has been captured yet. Plan or package a build to populate this console.")
+            : std::string("Captured output from the active project's most recent planning or packaging session.");
+    SetTextHandle(m_buildModalConsoleSummaryText, ConsoleSummary);
+    SetTextHandle(m_buildModalConsoleText,
+                  m_buildPanelState.ConsoleLogText.empty() ? std::string("No packaging output has been captured yet.\n")
+                                                           : m_buildPanelState.ConsoleLogText);
+    if (m_buildModalConsoleScroll.Id.Value != 0 && m_context)
+    {
+        if (auto* Scroll =
+                dynamic_cast<SnAPI::UI::UIScrollContainer*>(&m_context->GetElement(m_buildModalConsoleScroll.Id)))
+        {
+            Scroll->ScrollToEnd();
+        }
+    }
+
+    SyncComboSelection(m_buildConfigurationCombo, BuildConfigurationToIndex(m_buildModalConfiguration));
+    SyncComboSelection(m_buildDependencyPolicyCombo, DependencyPolicyToIndex(m_buildModalDependencyPolicy));
+    SyncComboSelection(m_buildChunkStrategyCombo, ChunkStrategyToIndex(m_buildModalChunkStrategy));
+    SyncComboSelectionByText(m_buildPlatformInput, m_buildModalPlatformText);
+    SyncComboSelectionByText(m_buildArchiveFormatInput, m_buildModalArchiveFormatText);
+    if (m_buildAllowExplicitOverrideCheckbox.Id.Value != 0)
+    {
+        if (auto* Checkbox =
+                dynamic_cast<SnAPI::UI::UICheckbox*>(&m_context->GetElement(m_buildAllowExplicitOverrideCheckbox.Id)))
+        {
+            Checkbox->Checked().Set(m_buildModalAllowExplicitOverrideExcludes);
+        }
+    }
+    if (m_buildArchiveEnabledCheckbox.Id.Value != 0)
+    {
+        if (auto* Checkbox =
+                dynamic_cast<SnAPI::UI::UICheckbox*>(&m_context->GetElement(m_buildArchiveEnabledCheckbox.Id)))
+        {
+            Checkbox->Checked().Set(m_buildModalArchiveEnabled);
+        }
+    }
+    if (m_buildExecutionEnvironmentInput.Id.Value != 0)
+    {
+        if (auto* Input =
+                dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_buildExecutionEnvironmentInput.Id));
+            Input != nullptr && Input->Text().Get() != m_buildModalExecutionEnvironmentText)
+        {
+            Input->Text().Set(m_buildModalExecutionEnvironmentText);
+        }
+    }
+    if (m_buildOutputRootInput.Id.Value != 0)
+    {
+        if (auto* Picker =
+                dynamic_cast<SnAPI::UI::UIFilesystemPicker*>(&m_context->GetElement(m_buildOutputRootInput.Id)))
+        {
+            Picker->Value().Set(m_buildModalOutputRootText);
+            if (!TrimCopy(m_buildModalOutputRootText).empty())
+            {
+                Picker->CurrentPath().Set(m_buildModalOutputRootText);
+            }
+        }
+    }
+    if (m_buildPackageDirectoryInput.Id.Value != 0)
+    {
+        if (auto* Input =
+                dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_buildPackageDirectoryInput.Id));
+            Input != nullptr && Input->Text().Get() != m_buildModalPackageDirectoryText)
+        {
+            Input->Text().Set(m_buildModalPackageDirectoryText);
+        }
+    }
+    if (m_buildArchiveFileInput.Id.Value != 0)
+    {
+        if (auto* Input = dynamic_cast<SnAPI::UI::UITextInput*>(&m_context->GetElement(m_buildArchiveFileInput.Id));
+            Input != nullptr && Input->Text().Get() != m_buildModalArchiveFileText)
+        {
+            Input->Text().Set(m_buildModalArchiveFileText);
+        }
+    }
+
+    SyncBuildModalTokenField(m_buildSelectedLevelsInput, m_buildModalSelectedLevelsText);
+    SyncBuildModalTokenField(m_buildExplicitAssetsInput, m_buildModalExplicitAssetsText);
+    SyncBuildModalTokenField(m_buildIncludeFoldersInput, m_buildModalIncludeFoldersText);
+    SyncBuildModalTokenField(m_buildExcludeFoldersInput, m_buildModalExcludeFoldersText);
+    SyncBuildModalTokenField(m_buildIncludeLabelsInput, m_buildModalIncludeLabelsText);
+    SyncBuildModalTokenField(m_buildExcludeLabelsInput, m_buildModalExcludeLabelsText);
+    SyncBuildModalTokenField(m_buildIncludeKindsInput, m_buildModalIncludeKindsText);
+    SyncBuildModalTokenField(m_buildExcludeKindsInput, m_buildModalExcludeKindsText);
+
+    if (m_buildModalTabs.Id.Value != 0)
+    {
+        if (auto* Tabs = dynamic_cast<SnAPI::UI::UITabs*>(&m_context->GetElement(m_buildModalTabs.Id)))
+        {
+            Tabs->ActiveIndex().Set(m_buildModalActiveTabIndex);
+        }
+    }
+    if (m_buildArchiveFormatInput.Id.Value != 0)
+    {
+        if (auto* Element = dynamic_cast<SnAPI::UI::UIElementBase*>(&m_context->GetElement(m_buildArchiveFormatInput.Id)))
+        {
+            Element->SetDisabled(!m_buildModalArchiveEnabled);
+        }
+    }
+    if (m_buildArchiveFileInput.Id.Value != 0)
+    {
+        if (auto* Element = dynamic_cast<SnAPI::UI::UIElementBase*>(&m_context->GetElement(m_buildArchiveFileInput.Id)))
+        {
+            Element->SetDisabled(!m_buildModalArchiveEnabled);
+        }
+    }
+}
+
+std::string EditorLayout::BuildHistoryComparisonTargetId() const
+{
+    if (!m_buildPanelState.LastBuildId.empty() && m_buildPanelState.LastBuildId != m_buildModalSelectedHistoryBuildId)
+    {
+        return m_buildPanelState.LastBuildId;
+    }
+
+    for (const BuildHistoryEntryView& Entry : m_buildPanelState.HistoryEntries)
+    {
+        if (Entry.BuildId != m_buildModalSelectedHistoryBuildId)
+        {
+            return Entry.BuildId;
+        }
+    }
+
+    return {};
+}
+
+void EditorLayout::ApplyProjectTemplatePreset(const std::int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        m_projectTemplatePreset = EProjectTemplatePreset::RuntimeAndEditorGame;
+        m_projectCreateRuntimeModule = true;
+        m_projectCreateEditorModule = true;
+        break;
+    case 2:
+        m_projectTemplatePreset = EProjectTemplatePreset::ContentOnly;
+        m_projectCreateRuntimeModule = false;
+        m_projectCreateEditorModule = false;
+        break;
+    case 0:
+    default:
+        m_projectTemplatePreset = EProjectTemplatePreset::RuntimeGame;
+        m_projectCreateRuntimeModule = true;
+        m_projectCreateEditorModule = false;
+        break;
+    }
+
+    if (TrimCopy(m_projectRuntimeModuleText).empty())
+    {
+        m_projectRuntimeModuleText = TrimCopy(m_projectNameText);
+    }
+    if (TrimCopy(m_projectEditorModuleText).empty())
+    {
+        const std::string RuntimeName = TrimCopy(m_projectRuntimeModuleText.empty() ? m_projectNameText : m_projectRuntimeModuleText);
+        m_projectEditorModuleText = RuntimeName.empty() ? std::string("ProjectEditor") : (RuntimeName + "Editor");
+    }
+}
+
+void EditorLayout::ApplyPluginTemplatePreset(const std::int32_t Index)
+{
+    switch (Index)
+    {
+    case 1:
+        m_pluginTemplatePreset = EPluginTemplatePreset::EditorTool;
+        m_pluginCreateRuntimeModule = false;
+        m_pluginCreateEditorModule = true;
+        m_pluginCanContainAssets = false;
+        break;
+    case 2:
+        m_pluginTemplatePreset = EPluginTemplatePreset::Hybrid;
+        m_pluginCreateRuntimeModule = true;
+        m_pluginCreateEditorModule = true;
+        m_pluginCanContainAssets = true;
+        break;
+    case 3:
+        m_pluginTemplatePreset = EPluginTemplatePreset::ContentOnly;
+        m_pluginCreateRuntimeModule = false;
+        m_pluginCreateEditorModule = false;
+        m_pluginCanContainAssets = true;
+        break;
+    case 0:
+    default:
+        m_pluginTemplatePreset = EPluginTemplatePreset::Runtime;
+        m_pluginCreateRuntimeModule = true;
+        m_pluginCreateEditorModule = false;
+        m_pluginCanContainAssets = true;
+        break;
+    }
+
+    if (TrimCopy(m_pluginRuntimeModuleText).empty())
+    {
+        m_pluginRuntimeModuleText = TrimCopy(m_pluginNameText);
+    }
+    if (TrimCopy(m_pluginEditorModuleText).empty())
+    {
+        const std::string RuntimeName = TrimCopy(m_pluginRuntimeModuleText.empty() ? m_pluginNameText : m_pluginRuntimeModuleText);
+        m_pluginEditorModuleText = RuntimeName.empty() ? std::string("PluginEditor") : (RuntimeName + "Editor");
+    }
+}
+
+void EditorLayout::ResetBuildModalDraftFromSelectedProfile()
+{
+    const BuildProfileEntry* Profile = SelectedBuildProfileEntry();
+    if (Profile == nullptr)
+    {
+        m_buildModalPlatformText.clear();
+        m_buildModalExecutionEnvironmentText.clear();
+        m_buildModalConfiguration = EBuildConfiguration::Development;
+        m_buildModalSelectedLevelsText.clear();
+        m_buildModalExplicitAssetsText.clear();
+        m_buildModalIncludeFoldersText.clear();
+        m_buildModalExcludeFoldersText.clear();
+        m_buildModalIncludeLabelsText.clear();
+        m_buildModalExcludeLabelsText.clear();
+        m_buildModalIncludeKindsText.clear();
+        m_buildModalExcludeKindsText.clear();
+        m_buildModalDependencyPolicy = EAssetDependencyPolicy::HardOnly;
+        m_buildModalChunkStrategy = EAssetChunkStrategy::Monolithic;
+        m_buildModalAllowExplicitOverrideExcludes = false;
+        m_buildModalOutputRootText.clear();
+        m_buildModalPackageDirectoryText.clear();
+        m_buildModalArchiveEnabled = false;
+        m_buildModalArchiveFormatText.clear();
+        m_buildModalArchiveFileText.clear();
+        m_buildModalDraftSeedProfileName.clear();
+        m_buildModalDraftDirty = false;
+        return;
+    }
+
+    m_buildModalPlatformText = Profile->Platform;
+    m_buildModalExecutionEnvironmentText = Profile->ExecutionEnvironment;
+    if (Profile->Configuration == "Debug")
+    {
+        m_buildModalConfiguration = EBuildConfiguration::Debug;
+    }
+    else if (Profile->Configuration == "Test")
+    {
+        m_buildModalConfiguration = EBuildConfiguration::Test;
+    }
+    else if (Profile->Configuration == "Shipping")
+    {
+        m_buildModalConfiguration = EBuildConfiguration::Shipping;
+    }
+    else
+    {
+        m_buildModalConfiguration = EBuildConfiguration::Development;
+    }
+    m_buildModalSelectedLevelsText = JoinEntries(Profile->SelectedLevels);
+    m_buildModalExplicitAssetsText = JoinEntries(Profile->ExplicitAssets);
+    m_buildModalIncludeFoldersText = JoinEntries(Profile->IncludeFolders);
+    m_buildModalExcludeFoldersText = JoinEntries(Profile->ExcludeFolders);
+    m_buildModalIncludeLabelsText = JoinEntries(Profile->IncludeAssetLabels);
+    m_buildModalExcludeLabelsText = JoinEntries(Profile->ExcludeAssetLabels);
+    m_buildModalIncludeKindsText = JoinEntries(Profile->IncludeAssetKinds);
+    m_buildModalExcludeKindsText = JoinEntries(Profile->ExcludeAssetKinds);
+    m_buildModalDependencyPolicy = Profile->DependencyPolicy;
+    m_buildModalChunkStrategy = Profile->ChunkStrategy;
+    m_buildModalAllowExplicitOverrideExcludes = Profile->AllowExplicitOverrideExcludes;
+    m_buildModalArchiveEnabled = Profile->ArchiveEnabled;
+    m_buildModalArchiveFormatText = Profile->ArchiveFormat;
+    m_buildModalOutputRootText.clear();
+    m_buildModalPackageDirectoryText.clear();
+    m_buildModalArchiveFileText.clear();
+    m_buildModalDraftSeedProfileName = Profile->Name;
+    m_buildModalDraftDirty = false;
+}
+
+void EditorLayout::MarkBuildModalDraftDirty(const bool RefreshLiveState)
+{
+    m_buildModalDraftDirty = true;
+    if (RefreshLiveState)
+    {
+        RefreshBuildModalLiveState();
+    }
+}
+
+void EditorLayout::SyncBuildModalTokenField(const SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField>& Handle,
+                                            const std::string& Value) const
+{
+    if (Handle.Id.Value == 0 || !m_context)
+    {
+        return;
+    }
+
+    if (auto* TokenField = dynamic_cast<SnAPI::UI::UITokenField*>(&m_context->GetElement(Handle.Id)))
+    {
+        TokenField->SetTokens(ParseMultilineEntries(Value), false);
+    }
+}
+
+BuildRequest EditorLayout::BuildModalRequest() const
+{
+    BuildRequest Request{};
+    Request.ProfileName = m_buildModalSelectedProfileName;
+    Request.Overrides.Platform = BuildProfileValue<std::string>{.IsSet = !TrimCopy(m_buildModalPlatformText).empty(),
+                                                                .Value = TrimCopy(m_buildModalPlatformText)};
+    Request.Overrides.ExecutionEnvironment = BuildProfileValue<std::string>{
+        .IsSet = !TrimCopy(m_buildModalExecutionEnvironmentText).empty(),
+        .Value = TrimCopy(m_buildModalExecutionEnvironmentText),
+    };
+    Request.Overrides.Configuration = BuildProfileValue<EBuildConfiguration>{
+        .IsSet = true,
+        .Value = m_buildModalConfiguration,
+    };
+    Request.Overrides.SelectedLevels = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalSelectedLevelsText),
+    };
+    Request.Overrides.ExplicitAssets = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalExplicitAssetsText),
+    };
+    Request.Overrides.IncludeFolders = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalIncludeFoldersText),
+    };
+    Request.Overrides.ExcludeFolders = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalExcludeFoldersText),
+    };
+    Request.Overrides.IncludeAssetLabels = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalIncludeLabelsText),
+    };
+    Request.Overrides.ExcludeAssetLabels = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalExcludeLabelsText),
+    };
+    Request.Overrides.IncludeAssetKinds = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalIncludeKindsText),
+    };
+    Request.Overrides.ExcludeAssetKinds = BuildProfileStringList{
+        .IsSet = true,
+        .Values = ParseMultilineEntries(m_buildModalExcludeKindsText),
+    };
+    Request.Overrides.DependencyPolicy = BuildProfileValue<EAssetDependencyPolicy>{
+        .IsSet = true,
+        .Value = m_buildModalDependencyPolicy,
+    };
+    Request.Overrides.ChunkStrategy = BuildProfileValue<EAssetChunkStrategy>{
+        .IsSet = true,
+        .Value = m_buildModalChunkStrategy,
+    };
+    Request.Overrides.AllowExplicitOverrideExcludes = BuildProfileValue<bool>{
+        .IsSet = true,
+        .Value = m_buildModalAllowExplicitOverrideExcludes,
+    };
+    Request.Overrides.Archive.Enabled = BuildProfileValue<bool>{.IsSet = true, .Value = m_buildModalArchiveEnabled};
+    Request.Overrides.Archive.Format = BuildProfileValue<std::string>{
+        .IsSet = !TrimCopy(m_buildModalArchiveFormatText).empty(),
+        .Value = TrimCopy(m_buildModalArchiveFormatText),
+    };
+    return Request;
+}
+
+PackageOutputOptions EditorLayout::BuildModalPackageOutput() const
+{
+    PackageOutputOptions Options{};
+    Options.OutputRootDirectory = TrimCopy(m_buildModalOutputRootText);
+    Options.PackageDirectoryName = TrimCopy(m_buildModalPackageDirectoryText);
+    Options.ArchiveEnabled = m_buildModalArchiveEnabled;
+    Options.ArchiveFormat = TrimCopy(m_buildModalArchiveFormatText);
+    Options.ArchiveFileName = TrimCopy(m_buildModalArchiveFileText);
+    return Options;
+}
+
+void EditorLayout::EnsureBuildModalOverlay()
+{
+    if (!m_context || m_buildModalOverlay.Id.Value != 0 || !m_buildModalOpen)
+    {
+        return;
+    }
+
+    auto Root = m_context->Root();
+    auto Overlay = Root.Add(SnAPI::UI::UIModal{});
+    auto& OverlayPanel = Overlay.Element();
+    OverlayPanel.Movable().Set(true);
+    OverlayPanel.Resizable().Set(true);
+    OverlayPanel.DragRegionHeight().Set(30.0f);
+    OverlayPanel.ContentBackgroundColor().Set(SnAPI::UI::Color::RGBA(18, 22, 30, 252));
+    OverlayPanel.ContentBorderColor().Set(SnAPI::UI::Color::RGBA(87, 97, 112, 245));
+    OverlayPanel.ContentBorderThickness().Set(1.0f);
+    OverlayPanel.ContentCornerRadius().Set(10.0f);
+    OverlayPanel.ContentPadding().Set(12.0f);
+    ConfigureModalScreenRatio(OverlayPanel, 0.66f);
+    m_buildModalOverlay = Overlay.Handle();
+
+    auto Modal = Overlay.Add(SnAPI::UI::UIPanel("Editor.BuildModal"));
+    auto& ModalPanel = Modal.Element();
+    ModalPanel.ElementStyle().Apply("editor.project_modal_root");
+    ModalPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ModalPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ModalPanel.Padding().Set(10.0f);
+    ModalPanel.Gap().Set(10.0f);
+
+    auto HeaderRow = Modal.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Header"));
+    auto& HeaderRowPanel = HeaderRow.Element();
+    ConfigureTransparentLayoutPanel(HeaderRowPanel);
+    HeaderRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HeaderRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HeaderRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    HeaderRowPanel.Gap().Set(8.0f);
+
+    auto HeaderIcon = HeaderRow.Add(SnAPI::UI::UIImage(ResolveUIImageSource(kProjectSettingsIconPath)));
+    auto& HeaderIconImage = HeaderIcon.Element();
+    ConfigureSvgIcon(HeaderIconImage, 18.0f, SnAPI::UI::Color::RGB(230, 206, 162));
+    HeaderIconImage.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto Title = HeaderRow.Add(SnAPI::UI::UIText("Package Project"));
+    auto& TitleText = Title.Element();
+    TitleText.ElementStyle().Apply("editor.project_welcome_title");
+    TitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    TitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto HeaderSpacer = HeaderRow.Add(SnAPI::UI::UIPanel("Editor.BuildModal.HeaderSpacer"));
+    auto& HeaderSpacerPanel = HeaderSpacer.Element();
+    ConfigureLayoutSpacerPanel(HeaderSpacerPanel);
+    HeaderSpacerPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+
+    auto CloseButton = HeaderRow.Add(SnAPI::UI::UIButton{});
+    auto& CloseButtonElement = CloseButton.Element();
+    CloseButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
+    CloseButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CloseButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CloseButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    CloseButtonElement.OnClick([this]() {
+        CloseBuildModal();
+    });
+    auto CloseLabel = CloseButton.Add(SnAPI::UI::UIText("Close"));
+    auto& CloseLabelText = CloseLabel.Element();
+    CloseLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    CloseLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto Subtitle = Modal.Add(SnAPI::UI::UIText(""));
+    auto& SubtitleText = Subtitle.Element();
+    SubtitleText.ElementStyle().Apply("editor.project_welcome_subtitle");
+    SubtitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalSubtitleText = Subtitle.Handle();
+
+    auto Tabs = Modal.Add(SnAPI::UI::UITabs{});
+    auto& TabsElement = Tabs.Element();
+    TabsElement.ElementStyle().Apply("editor.viewport_tabs");
+    TabsElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    TabsElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    TabsElement.HeaderHeight().Set(30.0f);
+    TabsElement.ActiveIndex().Set(m_buildModalActiveTabIndex);
+    TabsElement.OnSelectionChanged([this](const int32_t Index) {
+        m_buildModalActiveTabIndex = std::max(0, Index);
+    });
+    m_buildModalTabs = Tabs.Handle();
+
+    auto OverviewTab = Tabs.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Overview"));
+    auto& OverviewTabPanel = OverviewTab.Element();
+    OverviewTabPanel.ElementStyle().Apply("editor.section_card");
+    OverviewTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OverviewTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    OverviewTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    OverviewTabPanel.Padding().Set(8.0f);
+    OverviewTabPanel.Gap().Set(8.0f);
+
+    auto OverviewScroll = OverviewTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& OverviewScrollElement = OverviewScroll.Element();
+    OverviewScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    OverviewScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    OverviewScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OverviewScrollElement.ShowHorizontalScrollbar().Set(false);
+    OverviewScrollElement.ShowVerticalScrollbar().Set(true);
+    OverviewScrollElement.Smooth().Set(true);
+    OverviewScrollElement.Padding().Set(2.0f);
+    OverviewScrollElement.Gap().Set(8.0f);
+
+    auto OverviewCard = OverviewScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.OverviewCard"));
+    auto& OverviewCardPanel = OverviewCard.Element();
+    OverviewCardPanel.ElementStyle().Apply("editor.section_card");
+    OverviewCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OverviewCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    OverviewCardPanel.Gap().Set(4.0f);
+
+    auto OverviewTitle = OverviewCard.Add(SnAPI::UI::UIText("Overview"));
+    OverviewTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto OverviewSummaryText = OverviewCard.Add(SnAPI::UI::UIText(""));
+    auto& OverviewSummaryElement = OverviewSummaryText.Element();
+    OverviewSummaryElement.ElementStyle().Apply("editor.panel_subtitle");
+    OverviewSummaryElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalOverviewSummaryText = OverviewSummaryText.Handle();
+
+    auto ProfileCard = OverviewScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.ProfileCard"));
+    auto& ProfileCardPanel = ProfileCard.Element();
+    ProfileCardPanel.ElementStyle().Apply("editor.section_card");
+    ProfileCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ProfileCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ProfileCardPanel.Gap().Set(6.0f);
+
+    auto ProfileTitle = ProfileCard.Add(SnAPI::UI::UIText("Profile"));
+    ProfileTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(ProfileCard,
+                     "Profiles capture reusable package defaults. The fields in the tabs below override the selected "
+                     "profile for this one build request without rewriting the descriptor.");
+
+    auto ProfileComboBuilder = ProfileCard.Add(SnAPI::UI::UIComboBox{});
+    auto& ProfileCombo = ProfileComboBuilder.Element();
+    ProfileCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    ProfileCombo.Height().Set(SnAPI::UI::Sizing::Auto());
+    ProfileCombo.Placeholder().Set(std::string("Select build profile"));
+    ProfileCombo.MaxDropdownHeight().Set(240.0f);
+    m_buildModalProfileKeys.clear();
+
+    std::vector<std::string> ProfileLabels{};
+    ProfileLabels.reserve(m_buildPanelState.Profiles.size());
+    int32_t SelectedProfileIndex = -1;
+    for (std::size_t Index = 0; Index < m_buildPanelState.Profiles.size(); ++Index)
+    {
+        const BuildProfileEntry& Entry = m_buildPanelState.Profiles[Index];
+        ProfileLabels.push_back(Entry.Label.empty() ? Entry.Name : Entry.Label);
+        m_buildModalProfileKeys.push_back(Entry.Name);
+        if (Entry.Name == m_buildModalSelectedProfileName)
+        {
+            SelectedProfileIndex = static_cast<int32_t>(Index);
+        }
+    }
+    if (SelectedProfileIndex < 0 && !m_buildPanelState.Profiles.empty())
+    {
+        auto DefaultIt = std::find_if(
+            m_buildPanelState.Profiles.begin(),
+            m_buildPanelState.Profiles.end(),
+            [](const BuildProfileEntry& Entry) { return Entry.IsDefault; });
+        if (DefaultIt != m_buildPanelState.Profiles.end())
+        {
+            SelectedProfileIndex = static_cast<int32_t>(std::distance(m_buildPanelState.Profiles.begin(), DefaultIt));
+            m_buildModalSelectedProfileName = DefaultIt->Name;
+        }
+        else
+        {
+            SelectedProfileIndex = 0;
+            m_buildModalSelectedProfileName = m_buildPanelState.Profiles.front().Name;
+        }
+    }
+    ProfileCombo.SetItems(std::move(ProfileLabels));
+    (void)ProfileCombo.SetSelectedIndex(SelectedProfileIndex, false);
+    ProfileCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        if (Index >= 0 && static_cast<std::size_t>(Index) < m_buildModalProfileKeys.size())
+        {
+            m_buildModalSelectedProfileName = m_buildModalProfileKeys[static_cast<std::size_t>(Index)];
+        }
+        else
+        {
+            m_buildModalSelectedProfileName.clear();
+        }
+        ResetBuildModalDraftFromSelectedProfile();
+        RebuildBuildModalOverlay();
+    });
+    m_buildProfileCombo = ProfileComboBuilder.Handle();
+
+    auto ProfileSummaryText = ProfileCard.Add(SnAPI::UI::UIText(""));
+    auto& ProfileSummaryElement = ProfileSummaryText.Element();
+    ProfileSummaryElement.ElementStyle().Apply("editor.panel_subtitle");
+    ProfileSummaryElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalProfileSummaryText = ProfileSummaryText.Handle();
+
+    auto ActionsRow = OverviewScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Actions"));
+    auto& ActionsRowPanel = ActionsRow.Element();
+    ConfigureTransparentLayoutPanel(ActionsRowPanel);
+    ActionsRowPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ActionsRowPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ActionsRowPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ActionsRowPanel.Gap().Set(8.0f);
+
+    const bool CanExecuteBuildActions =
+        m_buildPanelState.ProjectLoaded && !m_buildPanelState.Profiles.empty() && !m_buildPanelState.BuildInProgress;
+
+    auto PlanButton = ActionsRow.Add(SnAPI::UI::UIButton{});
+    auto& PlanButtonElement = PlanButton.Element();
+    PlanButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
+    PlanButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    PlanButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    PlanButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    PlanButtonElement.SetDisabled(!CanExecuteBuildActions || !m_onBuildActionRequested);
+    PlanButtonElement.OnClick([this]() {
+        if (!m_onBuildActionRequested)
+        {
+            return;
+        }
+        BuildActionRequest Request{};
+        Request.Action = EBuildAction::PlanProject;
+        Request.Request = BuildModalRequest();
+        m_onBuildActionRequested(Request);
+    });
+    auto PlanLabel = PlanButton.Add(SnAPI::UI::UIText("Plan Build"));
+    auto& PlanLabelText = PlanLabel.Element();
+    PlanLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    PlanLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto PackageButton = ActionsRow.Add(SnAPI::UI::UIButton{});
+    auto& PackageButtonElement = PackageButton.Element();
+    PackageButtonElement.ElementStyle().Apply("editor.project_modal_action_button_primary");
+    PackageButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    PackageButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    PackageButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    PackageButtonElement.SetDisabled(!CanExecuteBuildActions || !m_onBuildActionRequested);
+    PackageButtonElement.OnClick([this]() {
+        if (!m_onBuildActionRequested)
+        {
+            return;
+        }
+        BuildActionRequest Request{};
+        Request.Action = EBuildAction::PackageProject;
+        Request.Request = BuildModalRequest();
+        Request.PackageOutput = BuildModalPackageOutput();
+        m_onBuildActionRequested(Request);
+    });
+    auto PackageLabel = PackageButton.Add(SnAPI::UI::UIText("Package"));
+    auto& PackageLabelText = PackageLabel.Element();
+    PackageLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    PackageLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto LatestCard = OverviewScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.LatestCard"));
+    auto& LatestCardPanel = LatestCard.Element();
+    LatestCardPanel.ElementStyle().Apply("editor.section_card");
+    LatestCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    LatestCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    LatestCardPanel.Gap().Set(4.0f);
+
+    auto LatestTitle = LatestCard.Add(SnAPI::UI::UIText("Latest Result"));
+    LatestTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto LatestSummaryText = LatestCard.Add(SnAPI::UI::UIText(""));
+    auto& LatestSummaryElement = LatestSummaryText.Element();
+    LatestSummaryElement.ElementStyle().Apply("editor.panel_subtitle");
+    LatestSummaryElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalLatestSummaryText = LatestSummaryText.Handle();
+
+    const auto AddTokenBuildInput =
+        [](SnAPI::UI::TElementBuilder<SnAPI::UI::UIPanel>& Parent,
+           const char* Label,
+           const char* HelpText,
+           const std::string& Value,
+           const std::function<void(const std::vector<std::string>&)>& OnChanged)
+            -> SnAPI::UI::ElementHandle<SnAPI::UI::UITokenField> {
+        auto FieldLabel = Parent.Add(SnAPI::UI::UIText(Label));
+        FieldLabel.Element().ElementStyle().Apply("editor.menu_item");
+        AddFieldHelpText(Parent, HelpText);
+        auto FieldInput = Parent.Add(SnAPI::UI::UITokenField{});
+        auto& FieldInputElement = FieldInput.Element();
+        FieldInputElement.ElementStyle().Apply("editor.token_field");
+        FieldInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+        FieldInputElement.Placeholder().Set("Type and press Enter");
+        FieldInputElement.SetTokens(ParseMultilineEntries(Value), false);
+        FieldInputElement.OnTokensChanged(
+            SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind(OnChanged));
+        return FieldInput.Handle();
+    };
+
+    auto ContentTab = Tabs.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Content"));
+    auto& ContentTabPanel = ContentTab.Element();
+    ContentTabPanel.ElementStyle().Apply("editor.section_card");
+    ContentTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ContentTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ContentTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ContentTabPanel.Padding().Set(8.0f);
+    ContentTabPanel.Gap().Set(8.0f);
+
+    auto ContentScroll = ContentTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ContentScrollElement = ContentScroll.Element();
+    ContentScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ContentScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    ContentScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ContentScrollElement.ShowHorizontalScrollbar().Set(false);
+    ContentScrollElement.ShowVerticalScrollbar().Set(true);
+    ContentScrollElement.Smooth().Set(true);
+    ContentScrollElement.Padding().Set(2.0f);
+    ContentScrollElement.Gap().Set(10.0f);
+
+    auto ContentSelectors = ContentScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.ContentSelectors"));
+    auto& ContentSelectorsPanel = ContentSelectors.Element();
+    ConfigureTransparentLayoutPanel(ContentSelectorsPanel);
+    ContentSelectorsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    ContentSelectorsPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ContentSelectorsPanel.Gap().Set(10.0f);
+
+    auto SelectionCard = ContentSelectors.Add(SnAPI::UI::UIPanel("Editor.BuildModal.SelectionCard"));
+    auto& SelectionCardPanel = SelectionCard.Element();
+    SelectionCardPanel.ElementStyle().Apply("editor.section_card");
+    SelectionCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    SelectionCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    SelectionCardPanel.Padding().Set(12.0f);
+    SelectionCardPanel.Gap().Set(8.0f);
+
+    auto SelectionTitle = SelectionCard.Add(SnAPI::UI::UIText("Content Selection"));
+    SelectionTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(SelectionCard,
+                     "Choose the primary authored assets that drive the cook set. Selected levels are the normal V1 "
+                     "entrypoint because dependency expansion can build a package from them.");
+    auto AddLevelComboBuilder = SelectionCard.Add(SnAPI::UI::UIComboBox{});
+    const auto AddLevelComboHandle = AddLevelComboBuilder.Handle();
+    auto& AddLevelCombo = AddLevelComboBuilder.Element();
+    AddLevelCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    AddLevelCombo.Placeholder().Set("Add discovered level");
+    {
+        std::vector<std::string> Items{"Add discovered level"};
+        Items.insert(Items.end(), m_buildPanelState.AvailableLevels.begin(), m_buildPanelState.AvailableLevels.end());
+        AddLevelCombo.SetItems(std::move(Items));
+    }
+    (void)AddLevelCombo.SetSelectedIndex(0, false);
+    AddLevelCombo.OnChanged([this, AddLevelComboHandle](const int32_t Index, const std::string& Text) {
+        if (Index <= 0)
+        {
+            return;
+        }
+        AppendUniqueEntryText(m_buildModalSelectedLevelsText, Text);
+        if (AddLevelComboHandle.Id.Value != 0 && m_context)
+        {
+            if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(AddLevelComboHandle.Id)))
+            {
+                (void)Combo->SetSelectedIndex(0, false);
+            }
+        }
+        MarkBuildModalDraftDirty();
+    });
+    m_buildSelectedLevelsInput = AddTokenBuildInput(
+        SelectionCard,
+        "Selected Levels",
+        "Explicitly selected level source assets. These are usually authored as `Levels/*.level` relative asset "
+        "paths and drive dependency expansion for level-based packages.",
+        m_buildModalSelectedLevelsText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalSelectedLevelsText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+    auto AddAssetComboBuilder = SelectionCard.Add(SnAPI::UI::UIComboBox{});
+    const auto AddAssetComboHandle = AddAssetComboBuilder.Handle();
+    auto& AddAssetCombo = AddAssetComboBuilder.Element();
+    AddAssetCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    AddAssetCombo.Placeholder().Set("Add discovered asset");
+    {
+        std::vector<std::string> Items{"Add discovered asset"};
+        Items.insert(Items.end(), m_buildPanelState.AvailableAssets.begin(), m_buildPanelState.AvailableAssets.end());
+        AddAssetCombo.SetItems(std::move(Items));
+    }
+    (void)AddAssetCombo.SetSelectedIndex(0, false);
+    AddAssetCombo.OnChanged([this, AddAssetComboHandle](const int32_t Index, const std::string& Text) {
+        if (Index <= 0)
+        {
+            return;
+        }
+        AppendUniqueEntryText(m_buildModalExplicitAssetsText, Text);
+        if (AddAssetComboHandle.Id.Value != 0 && m_context)
+        {
+            if (auto* Combo = dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(AddAssetComboHandle.Id)))
+            {
+                (void)Combo->SetSelectedIndex(0, false);
+            }
+        }
+        MarkBuildModalDraftDirty();
+    });
+    m_buildExplicitAssetsInput = AddTokenBuildInput(
+        SelectionCard,
+        "Explicit Assets",
+        "Explicit source assets that should be included even when they are not reached from a selected level. Use "
+        "this for standalone assets, shared gameplay data, or assets under active investigation.",
+        m_buildModalExplicitAssetsText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalExplicitAssetsText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+
+    auto RulesCard = ContentSelectors.Add(SnAPI::UI::UIPanel("Editor.BuildModal.RulesCard"));
+    auto& RulesCardPanel = RulesCard.Element();
+    RulesCardPanel.ElementStyle().Apply("editor.section_card");
+    RulesCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    RulesCardPanel.Width().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    RulesCardPanel.Padding().Set(12.0f);
+    RulesCardPanel.Gap().Set(8.0f);
+
+    auto RulesTitle = RulesCard.Add(SnAPI::UI::UIText("Rules"));
+    RulesTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(RulesCard,
+                     "Rules let one profile widen or narrow the cook set without forcing whole-project packaging.");
+    m_buildIncludeFoldersInput = AddTokenBuildInput(
+        RulesCard,
+        "Include Folders",
+        "Descriptor-relative folder rules whose contents should be included before exclusion and dependency policy are "
+        "applied.",
+        m_buildModalIncludeFoldersText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalIncludeFoldersText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+    m_buildExcludeFoldersInput = AddTokenBuildInput(
+        RulesCard,
+        "Exclude Folders",
+        "Descriptor-relative folder rules whose contents should be removed from the resolved cook set.",
+        m_buildModalExcludeFoldersText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalExcludeFoldersText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+    m_buildIncludeLabelsInput = AddTokenBuildInput(
+        RulesCard,
+        "Include Labels",
+        "Asset labels that should opt matching content into the build when labels are available from the authored "
+        "asset metadata set.",
+        m_buildModalIncludeLabelsText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalIncludeLabelsText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+    m_buildExcludeLabelsInput = AddTokenBuildInput(
+        RulesCard,
+        "Exclude Labels",
+        "Asset labels that should remove matching content from the resolved cook set.",
+        m_buildModalExcludeLabelsText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalExcludeLabelsText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+    auto AddIncludeKindComboBuilder = RulesCard.Add(SnAPI::UI::UIComboBox{});
+    const auto AddIncludeKindComboHandle = AddIncludeKindComboBuilder.Handle();
+    auto& AddIncludeKindCombo = AddIncludeKindComboBuilder.Element();
+    AddIncludeKindCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    AddIncludeKindCombo.Placeholder().Set("Add discovered asset kind");
+    {
+        std::vector<std::string> Items{"Add discovered asset kind"};
+        Items.insert(Items.end(), m_buildPanelState.AvailableAssetKinds.begin(), m_buildPanelState.AvailableAssetKinds.end());
+        AddIncludeKindCombo.SetItems(std::move(Items));
+    }
+    (void)AddIncludeKindCombo.SetSelectedIndex(0, false);
+    AddIncludeKindCombo.OnChanged([this, AddIncludeKindComboHandle](const int32_t Index, const std::string& Text) {
+        if (Index <= 0)
+        {
+            return;
+        }
+        AppendUniqueEntryText(m_buildModalIncludeKindsText, Text);
+        if (AddIncludeKindComboHandle.Id.Value != 0 && m_context)
+        {
+            if (auto* Combo =
+                    dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(AddIncludeKindComboHandle.Id)))
+            {
+                (void)Combo->SetSelectedIndex(0, false);
+            }
+        }
+        MarkBuildModalDraftDirty();
+    });
+    m_buildIncludeKindsInput = AddTokenBuildInput(
+        RulesCard,
+        "Include Asset Kinds",
+        "Asset-kind filters that opt matching content into the build. Use this sparingly because kind-wide rules can "
+        "pull in large content sets.",
+        m_buildModalIncludeKindsText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalIncludeKindsText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+    auto AddExcludeKindComboBuilder = RulesCard.Add(SnAPI::UI::UIComboBox{});
+    const auto AddExcludeKindComboHandle = AddExcludeKindComboBuilder.Handle();
+    auto& AddExcludeKindCombo = AddExcludeKindComboBuilder.Element();
+    AddExcludeKindCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    AddExcludeKindCombo.Placeholder().Set("Add discovered asset kind to exclude");
+    {
+        std::vector<std::string> Items{"Add discovered asset kind to exclude"};
+        Items.insert(Items.end(), m_buildPanelState.AvailableAssetKinds.begin(), m_buildPanelState.AvailableAssetKinds.end());
+        AddExcludeKindCombo.SetItems(std::move(Items));
+    }
+    (void)AddExcludeKindCombo.SetSelectedIndex(0, false);
+    AddExcludeKindCombo.OnChanged([this, AddExcludeKindComboHandle](const int32_t Index, const std::string& Text) {
+        if (Index <= 0)
+        {
+            return;
+        }
+        AppendUniqueEntryText(m_buildModalExcludeKindsText, Text);
+        if (AddExcludeKindComboHandle.Id.Value != 0 && m_context)
+        {
+            if (auto* Combo =
+                    dynamic_cast<SnAPI::UI::UIComboBox*>(&m_context->GetElement(AddExcludeKindComboHandle.Id)))
+            {
+                (void)Combo->SetSelectedIndex(0, false);
+            }
+        }
+        MarkBuildModalDraftDirty();
+    });
+    m_buildExcludeKindsInput = AddTokenBuildInput(
+        RulesCard,
+        "Exclude Asset Kinds",
+        "Asset-kind filters that remove matching content from the resolved cook set.",
+        m_buildModalExcludeKindsText,
+        [this](const std::vector<std::string>& Values) {
+            m_buildModalExcludeKindsText = JoinEntries(Values);
+            MarkBuildModalDraftDirty();
+        });
+
+    auto PolicyCard = ContentScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.PolicyCard"));
+    auto& PolicyCardPanel = PolicyCard.Element();
+    PolicyCardPanel.ElementStyle().Apply("editor.section_card");
+    PolicyCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    PolicyCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PolicyCardPanel.Padding().Set(12.0f);
+    PolicyCardPanel.Gap().Set(8.0f);
+
+    auto PolicyTitle = PolicyCard.Add(SnAPI::UI::UIText("Dependency and Chunking"));
+    PolicyTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(PolicyCard,
+                     "These options control how the selected primary assets expand into the final cook set and how the "
+                     "cooked payload is partitioned into `.snpak` outputs.");
+
+    auto ConfigLabel = PolicyCard.Add(SnAPI::UI::UIText("Build Configuration"));
+    ConfigLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(PolicyCard,
+                     "Configuration affects both C++ compilation and package composition, including optimization level, "
+                     "diagnostics, and editor-only content handling.");
+    auto ConfigComboBuilder = PolicyCard.Add(SnAPI::UI::UIComboBox{});
+    auto& ConfigCombo = ConfigComboBuilder.Element();
+    ConfigCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConfigCombo.SetItems({"Debug", "Development", "Test", "Shipping"});
+    (void)ConfigCombo.SetSelectedIndex(BuildConfigurationToIndex(m_buildModalConfiguration), false);
+    ConfigCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_buildModalConfiguration = BuildConfigurationFromIndex(Index);
+        MarkBuildModalDraftDirty();
+    });
+    m_buildConfigurationCombo = ConfigComboBuilder.Handle();
+
+    auto DependencyLabel = PolicyCard.Add(SnAPI::UI::UIText("Dependency Policy"));
+    DependencyLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(PolicyCard,
+                     "Choose how far dependency walking should go beyond the primary selected assets.");
+    auto DependencyComboBuilder = PolicyCard.Add(SnAPI::UI::UIComboBox{});
+    auto& DependencyCombo = DependencyComboBuilder.Element();
+    DependencyCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    DependencyCombo.SetItems({"Hard Only", "Hard + Soft", "Hard + Soft + Editor Preview", "Custom Resolver"});
+    (void)DependencyCombo.SetSelectedIndex(DependencyPolicyToIndex(m_buildModalDependencyPolicy), false);
+    DependencyCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_buildModalDependencyPolicy = DependencyPolicyFromIndex(Index);
+        MarkBuildModalDraftDirty();
+    });
+    m_buildDependencyPolicyCombo = DependencyComboBuilder.Handle();
+
+    auto ChunkLabel = PolicyCard.Add(SnAPI::UI::UIText("Chunk Strategy"));
+    ChunkLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(PolicyCard,
+                     "Chunk strategy decides whether cooked payloads are emitted as one package or partitioned by level "
+                     "or label for future modular delivery.");
+    auto ChunkComboBuilder = PolicyCard.Add(SnAPI::UI::UIComboBox{});
+    auto& ChunkCombo = ChunkComboBuilder.Element();
+    ChunkCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    ChunkCombo.SetItems({"Monolithic", "Shared + Per-Level", "Per Label", "Custom Graph"});
+    (void)ChunkCombo.SetSelectedIndex(ChunkStrategyToIndex(m_buildModalChunkStrategy), false);
+    ChunkCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        (void)Text;
+        m_buildModalChunkStrategy = ChunkStrategyFromIndex(Index);
+        MarkBuildModalDraftDirty();
+    });
+    m_buildChunkStrategyCombo = ChunkComboBuilder.Handle();
+
+    auto OverrideCheckbox = PolicyCard.Add(SnAPI::UI::UICheckbox("Allow explicit includes to override excludes"));
+    OverrideCheckbox.Element().Checked().Set(m_buildModalAllowExplicitOverrideExcludes);
+    OverrideCheckbox.Element().OnChanged([this](const bool Checked) {
+        m_buildModalAllowExplicitOverrideExcludes = Checked;
+        MarkBuildModalDraftDirty();
+    });
+    m_buildAllowExplicitOverrideCheckbox = OverrideCheckbox.Handle();
+    AddFieldHelpText(PolicyCard,
+                     "When enabled, an explicit asset or level selection can win against inherited exclusion rules. "
+                     "Leave this off when exclusion rules should stay authoritative.");
+
+    const std::string AvailableLevelsSummary = m_buildPanelState.AvailableLevels.empty()
+        ? std::string("No discovered level assets yet.")
+        : JoinEntries(m_buildPanelState.AvailableLevels);
+    auto LevelsHint = PolicyCard.Add(SnAPI::UI::UIText("Known levels:\n" + AvailableLevelsSummary));
+    LevelsHint.Element().ElementStyle().Apply("editor.panel_subtitle");
+    LevelsHint.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    const std::string AvailableAssetsSummary = m_buildPanelState.AvailableAssets.empty()
+        ? std::string("No discovered authored assets yet.")
+        : JoinEntries(m_buildPanelState.AvailableAssets);
+    auto AssetsHint = PolicyCard.Add(SnAPI::UI::UIText("Known assets:\n" + AvailableAssetsSummary));
+    AssetsHint.Element().ElementStyle().Apply("editor.panel_subtitle");
+    AssetsHint.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    const std::string AvailableKindsSummary = m_buildPanelState.AvailableAssetKinds.empty()
+        ? std::string("No discovered asset kinds yet.")
+        : JoinEntries(m_buildPanelState.AvailableAssetKinds);
+    auto KindsHint = PolicyCard.Add(SnAPI::UI::UIText("Known asset kinds:\n" + AvailableKindsSummary));
+    KindsHint.Element().ElementStyle().Apply("editor.panel_subtitle");
+    KindsHint.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto PlatformTab = Tabs.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Platform"));
+    auto& PlatformTabPanel = PlatformTab.Element();
+    PlatformTabPanel.ElementStyle().Apply("editor.section_card");
+    PlatformTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    PlatformTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PlatformTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    PlatformTabPanel.Padding().Set(8.0f);
+    PlatformTabPanel.Gap().Set(8.0f);
+
+    auto PlatformScroll = PlatformTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& PlatformScrollElement = PlatformScroll.Element();
+    PlatformScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    PlatformScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    PlatformScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    PlatformScrollElement.ShowHorizontalScrollbar().Set(false);
+    PlatformScrollElement.ShowVerticalScrollbar().Set(true);
+    PlatformScrollElement.Smooth().Set(true);
+    PlatformScrollElement.Padding().Set(2.0f);
+    PlatformScrollElement.Gap().Set(10.0f);
+
+    auto PlatformCard = PlatformScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.PlatformCard"));
+    auto& PlatformCardPanel = PlatformCard.Element();
+    PlatformCardPanel.ElementStyle().Apply("editor.section_card");
+    PlatformCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    PlatformCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PlatformCardPanel.Padding().Set(12.0f);
+    PlatformCardPanel.Gap().Set(8.0f);
+
+    auto PlatformTitle = PlatformCard.Add(SnAPI::UI::UIText("Platform and Toolchain"));
+    PlatformTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(PlatformCard,
+                     "Packaging is resolved against an explicit target platform and execution environment so builds can "
+                     "be reproduced locally, in CI, or inside pinned container images.");
+
+    auto PlatformLabel = PlatformCard.Add(SnAPI::UI::UIText("Target Platform"));
+    PlatformLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(PlatformCard,
+                     "Select the runtime platform that should receive binaries, cooked assets, and packaging rules.");
+    auto PlatformComboBuilder = PlatformCard.Add(SnAPI::UI::UIComboBox{});
+    auto& PlatformCombo = PlatformComboBuilder.Element();
+    PlatformCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    std::vector<std::string> PlatformItems = BuildComboItemsWithCurrent(
+        std::span<const std::string_view>(kKnownBuildPlatforms.begin(), kKnownBuildPlatforms.end()),
+        "Inherited platform",
+        m_buildModalPlatformText);
+    PlatformCombo.SetItems(PlatformItems);
+    int32_t SelectedPlatformIndex = 0;
+    const std::string TrimmedPlatform = TrimCopy(m_buildModalPlatformText);
+    if (!TrimmedPlatform.empty())
+    {
+        const auto It = std::find(PlatformItems.begin(), PlatformItems.end(), TrimmedPlatform);
+        if (It != PlatformItems.end())
+        {
+            SelectedPlatformIndex = static_cast<int32_t>(std::distance(PlatformItems.begin(), It));
+        }
+    }
+    (void)PlatformCombo.SetSelectedIndex(SelectedPlatformIndex, false);
+    PlatformCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        m_buildModalPlatformText = Index <= 0 ? std::string{} : Text;
+        MarkBuildModalDraftDirty();
+    });
+    m_buildPlatformInput = PlatformComboBuilder.Handle();
+
+    auto EnvironmentLabel = PlatformCard.Add(SnAPI::UI::UIText("Execution Environment"));
+    EnvironmentLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(PlatformCard,
+                     "Use `host-local` for local toolchains or a `docker://image:tag` environment to pin the build "
+                     "against a known-good platform container.");
+    auto EnvironmentPresetComboBuilder = PlatformCard.Add(SnAPI::UI::UIComboBox{});
+    auto& EnvironmentPresetCombo = EnvironmentPresetComboBuilder.Element();
+    EnvironmentPresetCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    std::vector<std::string> EnvironmentItems = BuildComboItemsWithCurrent(
+        std::span<const std::string_view>(kKnownBuildExecutionEnvironments.begin(), kKnownBuildExecutionEnvironments.end()),
+        "Inherited execution environment",
+        m_buildModalExecutionEnvironmentText);
+    EnvironmentPresetCombo.SetItems(EnvironmentItems);
+    int32_t SelectedEnvironmentIndex = 0;
+    const std::string TrimmedEnvironment = TrimCopy(m_buildModalExecutionEnvironmentText);
+    if (!TrimmedEnvironment.empty())
+    {
+        const auto It = std::find(EnvironmentItems.begin(), EnvironmentItems.end(), TrimmedEnvironment);
+        if (It != EnvironmentItems.end())
+        {
+            SelectedEnvironmentIndex = static_cast<int32_t>(std::distance(EnvironmentItems.begin(), It));
+        }
+    }
+    (void)EnvironmentPresetCombo.SetSelectedIndex(SelectedEnvironmentIndex, false);
+    EnvironmentPresetCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        m_buildModalExecutionEnvironmentText = Index <= 0 ? std::string{} : Text;
+        MarkBuildModalDraftDirty();
+    });
+    auto EnvironmentInput = PlatformCard.Add(SnAPI::UI::UITextInput{});
+    auto& EnvironmentInputElement = EnvironmentInput.Element();
+    EnvironmentInputElement.ElementStyle().Apply("editor.text_input");
+    EnvironmentInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    EnvironmentInputElement.Placeholder().Set("Optional custom execution environment override");
+    EnvironmentInputElement.Text().Set(m_buildModalExecutionEnvironmentText);
+    EnvironmentInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_buildModalExecutionEnvironmentText = Value;
+        MarkBuildModalDraftDirty();
+    }));
+    m_buildExecutionEnvironmentInput = EnvironmentInput.Handle();
+
+    auto PlatformHint = PlatformCard.Add(SnAPI::UI::UIText(
+        "Use the execution environment field to pin the build to a stable host or Docker image for reproducible packaging."));
+    PlatformHint.Element().ElementStyle().Apply("editor.panel_subtitle");
+    PlatformHint.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+
+    auto PlatformSummaryCard = PlatformScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.PlatformSummaryCard"));
+    auto& PlatformSummaryCardPanel = PlatformSummaryCard.Element();
+    PlatformSummaryCardPanel.ElementStyle().Apply("editor.section_card");
+    PlatformSummaryCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    PlatformSummaryCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    PlatformSummaryCardPanel.Padding().Set(12.0f);
+    PlatformSummaryCardPanel.Gap().Set(8.0f);
+
+    auto PlatformSummaryTitle = PlatformSummaryCard.Add(SnAPI::UI::UIText("Resolved Intent"));
+    PlatformSummaryTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto PlatformSummaryText = PlatformSummaryCard.Add(SnAPI::UI::UIText(""));
+    PlatformSummaryText.Element().ElementStyle().Apply("editor.panel_subtitle");
+    PlatformSummaryText.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalPlatformSummaryText = PlatformSummaryText.Handle();
+
+    auto OutputTab = Tabs.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Output"));
+    auto& OutputTabPanel = OutputTab.Element();
+    OutputTabPanel.ElementStyle().Apply("editor.section_card");
+    OutputTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OutputTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    OutputTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    OutputTabPanel.Padding().Set(8.0f);
+    OutputTabPanel.Gap().Set(8.0f);
+
+    auto OutputScroll = OutputTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& OutputScrollElement = OutputScroll.Element();
+    OutputScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    OutputScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    OutputScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OutputScrollElement.ShowHorizontalScrollbar().Set(false);
+    OutputScrollElement.ShowVerticalScrollbar().Set(true);
+    OutputScrollElement.Smooth().Set(true);
+    OutputScrollElement.Padding().Set(2.0f);
+    OutputScrollElement.Gap().Set(10.0f);
+
+    auto OutputCard = OutputScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.OutputCard"));
+    auto& OutputCardPanel = OutputCard.Element();
+    OutputCardPanel.ElementStyle().Apply("editor.section_card");
+    OutputCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OutputCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    OutputCardPanel.Padding().Set(12.0f);
+    OutputCardPanel.Gap().Set(8.0f);
+
+    auto OutputTitle = OutputCard.Add(SnAPI::UI::UIText("Output and Archive"));
+    OutputTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(OutputCard,
+                     "Final output settings control where the staged package tree is promoted, how the final package "
+                     "directory is named, and whether an archive should be emitted for handoff or CI artifacts.");
+
+    auto OutputRootLabel = OutputCard.Add(SnAPI::UI::UIText("Output Root"));
+    OutputRootLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(OutputCard,
+                     "Optional user-facing package destination. Leave this empty to promote packages under the "
+                     "project's Saved/Packages directory.");
+    auto OutputRootInput = OutputCard.Add(SnAPI::UI::UIFilesystemPicker{});
+    auto& OutputRootInputElement = OutputRootInput.Element();
+    OutputRootInputElement.ElementStyle().Apply("editor.filesystem_picker");
+    OutputRootInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    OutputRootInputElement.ReadOnly().Set(false);
+    OutputRootInputElement.AllowMultiSelect().Set(false);
+    OutputRootInputElement.PickDirectories().Set(true);
+    OutputRootInputElement.ShowDirectories().Set(true);
+    OutputRootInputElement.ShowFiles().Set(false);
+    OutputRootInputElement.RestrictToRoot().Set(false);
+    OutputRootInputElement.Placeholder().Set(std::string("Defaults to <Saved>/Packages"));
+    OutputRootInputElement.Value().Set(m_buildModalOutputRootText);
+    OutputRootInputElement.CurrentPath().Set(m_buildModalOutputRootText.empty() ? m_buildPanelState.AssetRootDirectory
+                                                                                : m_buildModalOutputRootText);
+    OutputRootInputElement.OnSelectionChanged(
+        SnAPI::UI::TDelegate<void(const std::vector<std::string>&)>::Bind([this](const std::vector<std::string>& Values) {
+            if (!Values.empty())
+            {
+                m_buildModalOutputRootText = Values.front();
+                MarkBuildModalDraftDirty();
+            }
+        }));
+    m_buildOutputRootInput = OutputRootInput.Handle();
+
+    auto PackageDirLabel = OutputCard.Add(SnAPI::UI::UIText("Package Directory Name"));
+    PackageDirLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(OutputCard,
+                     "Optional final package directory leaf name. Leave this blank to use the standard "
+                     "<Project>_<Profile>_<Platform>_<Configuration>_<BuildId> convention.");
+    auto PackageDirInput = OutputCard.Add(SnAPI::UI::UITextInput{});
+    auto& PackageDirInputElement = PackageDirInput.Element();
+    PackageDirInputElement.ElementStyle().Apply("editor.text_input");
+    PackageDirInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    PackageDirInputElement.Placeholder().Set("Leave blank for standard naming");
+    PackageDirInputElement.Text().Set(m_buildModalPackageDirectoryText);
+    PackageDirInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_buildModalPackageDirectoryText = Value;
+        MarkBuildModalDraftDirty();
+    }));
+    m_buildPackageDirectoryInput = PackageDirInput.Handle();
+
+    auto ArchiveCheckbox = OutputCard.Add(SnAPI::UI::UICheckbox("Create archive"));
+    ArchiveCheckbox.Element().Checked().Set(m_buildModalArchiveEnabled);
+    ArchiveCheckbox.Element().OnChanged([this](const bool Checked) {
+        m_buildModalArchiveEnabled = Checked;
+        MarkBuildModalDraftDirty();
+    });
+    m_buildArchiveEnabledCheckbox = ArchiveCheckbox.Handle();
+    AddFieldHelpText(OutputCard,
+                     "Enable final archive emission after the package directory is promoted. Archives are built from "
+                     "the final copied package tree rather than directly from intermediate staging.");
+
+    auto ArchiveFormatLabel = OutputCard.Add(SnAPI::UI::UIText("Archive Format"));
+    ArchiveFormatLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(OutputCard,
+                     "Choose the archive container emitted from the final package directory. V1 currently supports "
+                     "`zip`, so this is intentionally a constrained dropdown instead of a free-form text field.");
+    auto ArchiveFormatComboBuilder = OutputCard.Add(SnAPI::UI::UIComboBox{});
+    auto& ArchiveFormatCombo = ArchiveFormatComboBuilder.Element();
+    ArchiveFormatCombo.Width().Set(SnAPI::UI::Sizing::Fill());
+    std::vector<std::string> ArchiveFormatItems = BuildComboItemsWithCurrent(
+        std::span<const std::string_view>(kKnownArchiveFormats.begin(), kKnownArchiveFormats.end()),
+        "Use resolved profile format",
+        m_buildModalArchiveFormatText);
+    ArchiveFormatCombo.SetItems(ArchiveFormatItems);
+    int32_t SelectedArchiveFormatIndex = 0;
+    const std::string TrimmedArchiveFormat = TrimCopy(m_buildModalArchiveFormatText);
+    if (!TrimmedArchiveFormat.empty())
+    {
+        const auto It = std::find(ArchiveFormatItems.begin(), ArchiveFormatItems.end(), TrimmedArchiveFormat);
+        if (It != ArchiveFormatItems.end())
+        {
+            SelectedArchiveFormatIndex = static_cast<int32_t>(std::distance(ArchiveFormatItems.begin(), It));
+        }
+    }
+    (void)ArchiveFormatCombo.SetSelectedIndex(SelectedArchiveFormatIndex, false);
+    ArchiveFormatCombo.SetDisabled(!m_buildModalArchiveEnabled);
+    ArchiveFormatCombo.OnChanged([this](const int32_t Index, const std::string& Text) {
+        m_buildModalArchiveFormatText = Index <= 0 ? std::string{} : Text;
+        MarkBuildModalDraftDirty();
+    });
+    m_buildArchiveFormatInput = ArchiveFormatComboBuilder.Handle();
+
+    auto ArchiveFileLabel = OutputCard.Add(SnAPI::UI::UIText("Archive File Name"));
+    ArchiveFileLabel.Element().ElementStyle().Apply("editor.menu_item");
+    AddFieldHelpText(OutputCard,
+                     "Optional archive file leaf name. Leave this blank to use the standard "
+                     "<Project>_<Platform>_<Configuration>.<Format> convention.");
+    auto ArchiveFileInput = OutputCard.Add(SnAPI::UI::UITextInput{});
+    auto& ArchiveFileInputElement = ArchiveFileInput.Element();
+    ArchiveFileInputElement.ElementStyle().Apply("editor.text_input");
+    ArchiveFileInputElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ArchiveFileInputElement.Placeholder().Set("Leave blank for standard naming");
+    ArchiveFileInputElement.Text().Set(m_buildModalArchiveFileText);
+    ArchiveFileInputElement.SetDisabled(!m_buildModalArchiveEnabled);
+    ArchiveFileInputElement.OnTextChanged(SnAPI::UI::TDelegate<void(const std::string&)>::Bind([this](const std::string& Value) {
+        m_buildModalArchiveFileText = Value;
+        MarkBuildModalDraftDirty();
+    }));
+    m_buildArchiveFileInput = ArchiveFileInput.Handle();
+
+    auto OutputSummaryCard = OutputScroll.Add(SnAPI::UI::UIPanel("Editor.BuildModal.OutputSummaryCard"));
+    auto& OutputSummaryCardPanel = OutputSummaryCard.Element();
+    OutputSummaryCardPanel.ElementStyle().Apply("editor.section_card");
+    OutputSummaryCardPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    OutputSummaryCardPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    OutputSummaryCardPanel.Padding().Set(12.0f);
+    OutputSummaryCardPanel.Gap().Set(8.0f);
+
+    auto OutputSummaryTitle = OutputSummaryCard.Add(SnAPI::UI::UIText("Promotion Preview"));
+    OutputSummaryTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(OutputSummaryCard,
+                     "This preview reflects the final promoted package outputs after staging succeeds. It does not "
+                     "change the build graph itself; it changes only the final copy/archive step.");
+    auto OutputSummaryText = OutputSummaryCard.Add(SnAPI::UI::UIText(""));
+    OutputSummaryText.Element().ElementStyle().Apply("editor.panel_subtitle");
+    OutputSummaryText.Element().Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalOutputSummaryText = OutputSummaryText.Handle();
+
+    auto HistoryTab = Tabs.Add(SnAPI::UI::UIPanel("Editor.BuildModal.History"));
+    auto& HistoryTabPanel = HistoryTab.Element();
+    HistoryTabPanel.ElementStyle().Apply("editor.section_card");
+    HistoryTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    HistoryTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HistoryTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    HistoryTabPanel.Padding().Set(8.0f);
+    HistoryTabPanel.Gap().Set(8.0f);
+
+    auto HistoryControls = HistoryTab.Add(SnAPI::UI::UIPanel("Editor.BuildModal.HistoryControls"));
+    auto& HistoryControlsPanel = HistoryControls.Element();
+    ConfigureTransparentLayoutPanel(HistoryControlsPanel);
+    HistoryControlsPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HistoryControlsPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HistoryControlsPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    HistoryControlsPanel.Gap().Set(8.0f);
+    AddFieldHelpText(HistoryTab,
+                     "Build history keeps each package invocation's frozen request, plan, report, logs, and manifests "
+                     "under Saved/BuildHistory so failed and successful runs stay inspectable.");
+
+    const bool HasSelectedHistory = SelectedBuildHistoryEntry() != nullptr;
+    const std::string ComparisonTargetId = BuildHistoryComparisonTargetId();
+
+    auto RefreshButton = HistoryControls.Add(SnAPI::UI::UIButton{});
+    auto& RefreshButtonElement = RefreshButton.Element();
+    RefreshButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
+    RefreshButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    RefreshButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    RefreshButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    RefreshButtonElement.SetDisabled(!m_buildPanelState.ProjectLoaded || !m_onBuildActionRequested);
+    RefreshButtonElement.OnClick([this]() {
+        if (!m_onBuildActionRequested)
+        {
+            return;
+        }
+        BuildActionRequest Request{};
+        Request.Action = EBuildAction::RefreshHistory;
+        m_onBuildActionRequested(Request);
+    });
+    auto RefreshLabel = RefreshButton.Add(SnAPI::UI::UIText("Refresh History"));
+    auto& RefreshLabelText = RefreshLabel.Element();
+    RefreshLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    RefreshLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto RetryButton = HistoryControls.Add(SnAPI::UI::UIButton{});
+    auto& RetryButtonElement = RetryButton.Element();
+    RetryButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
+    RetryButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    RetryButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    RetryButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    RetryButtonElement.SetDisabled(!HasSelectedHistory || !m_onBuildActionRequested || m_buildPanelState.BuildInProgress);
+    RetryButtonElement.OnClick([this]() {
+        if (!m_onBuildActionRequested)
+        {
+            return;
+        }
+        BuildActionRequest Request{};
+        Request.Action = EBuildAction::RetryBuild;
+        Request.SourceBuildId = m_buildModalSelectedHistoryBuildId;
+        m_onBuildActionRequested(Request);
+    });
+    auto RetryLabel = RetryButton.Add(SnAPI::UI::UIText("Retry Selected"));
+    auto& RetryLabelText = RetryLabel.Element();
+    RetryLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    RetryLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto RebuildButton = HistoryControls.Add(SnAPI::UI::UIButton{});
+    auto& RebuildButtonElement = RebuildButton.Element();
+    RebuildButtonElement.ElementStyle().Apply("editor.project_modal_action_button_primary");
+    RebuildButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    RebuildButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    RebuildButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    RebuildButtonElement.SetDisabled(!HasSelectedHistory || !m_onBuildActionRequested || m_buildPanelState.BuildInProgress);
+    RebuildButtonElement.OnClick([this]() {
+        if (!m_onBuildActionRequested)
+        {
+            return;
+        }
+        BuildActionRequest Request{};
+        Request.Action = EBuildAction::RebuildAll;
+        Request.SourceBuildId = m_buildModalSelectedHistoryBuildId;
+        m_onBuildActionRequested(Request);
+    });
+    auto RebuildLabel = RebuildButton.Add(SnAPI::UI::UIText("Rebuild All"));
+    auto& RebuildLabelText = RebuildLabel.Element();
+    RebuildLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    RebuildLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto CompareButton = HistoryControls.Add(SnAPI::UI::UIButton{});
+    auto& CompareButtonElement = CompareButton.Element();
+    CompareButtonElement.ElementStyle().Apply("editor.project_modal_action_button");
+    CompareButtonElement.Width().Set(SnAPI::UI::Sizing::Auto());
+    CompareButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+    CompareButtonElement.ElementPadding().Set(SnAPI::UI::Padding{10.0f, 5.0f, 10.0f, 5.0f});
+    CompareButtonElement.SetDisabled(!HasSelectedHistory || ComparisonTargetId.empty() || !m_onBuildActionRequested);
+    CompareButtonElement.OnClick([this, ComparisonTargetId]() {
+        if (!m_onBuildActionRequested)
+        {
+            return;
+        }
+        BuildActionRequest Request{};
+        Request.Action = EBuildAction::CompareHistory;
+        Request.SourceBuildId = m_buildModalSelectedHistoryBuildId;
+        Request.CompareBuildId = ComparisonTargetId;
+        m_onBuildActionRequested(Request);
+    });
+    auto CompareLabel = CompareButton.Add(SnAPI::UI::UIText("Compare"));
+    auto& CompareLabelText = CompareLabel.Element();
+    CompareLabelText.ElementStyle().Apply("editor.project_modal_action_button_text");
+    CompareLabelText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+    auto HistoryBody = HistoryTab.Add(SnAPI::UI::UIPanel("Editor.BuildModal.HistoryBody"));
+    auto& HistoryBodyPanel = HistoryBody.Element();
+    ConfigureTransparentLayoutPanel(HistoryBodyPanel);
+    HistoryBodyPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Horizontal);
+    HistoryBodyPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    HistoryBodyPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    HistoryBodyPanel.Gap().Set(8.0f);
+
+    auto HistoryListScroll = HistoryBody.Add(SnAPI::UI::UIScrollContainer{});
+    auto& HistoryListScrollElement = HistoryListScroll.Element();
+    HistoryListScrollElement.Width().Set(SnAPI::UI::Sizing::Ratio(0.48f));
+    HistoryListScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    HistoryListScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    HistoryListScrollElement.ShowHorizontalScrollbar().Set(false);
+    HistoryListScrollElement.ShowVerticalScrollbar().Set(true);
+    HistoryListScrollElement.Smooth().Set(true);
+    HistoryListScrollElement.Padding().Set(2.0f);
+    HistoryListScrollElement.Gap().Set(6.0f);
+
+    if (m_buildPanelState.HistoryEntries.empty())
+    {
+        auto EmptyText = HistoryListScroll.Add(SnAPI::UI::UIText("No build history is available for the active project yet."));
+        auto& EmptyTextElement = EmptyText.Element();
+        EmptyTextElement.ElementStyle().Apply("editor.panel_subtitle");
+        EmptyTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    }
+    else
+    {
+        for (const BuildHistoryEntryView& Entry : m_buildPanelState.HistoryEntries)
+        {
+            const bool IsSelected = Entry.BuildId == m_buildModalSelectedHistoryBuildId;
+
+            auto EntryButton = HistoryListScroll.Add(SnAPI::UI::UIButton{});
+            auto& EntryButtonElement = EntryButton.Element();
+            EntryButtonElement.ElementStyle().Apply(IsSelected ? "editor.project_modal_mode_button_active"
+                                                               : "editor.project_modal_mode_button");
+            EntryButtonElement.Width().Set(SnAPI::UI::Sizing::Fill());
+            EntryButtonElement.Height().Set(SnAPI::UI::Sizing::Auto());
+            EntryButtonElement.ElementPadding().Set(SnAPI::UI::Padding{8.0f, 8.0f, 8.0f, 8.0f});
+            EntryButtonElement.OnClick([this, BuildId = Entry.BuildId]() {
+                m_buildModalSelectedHistoryBuildId = BuildId;
+                RebuildBuildModalOverlay();
+            });
+
+            auto EntryPanel = EntryButton.Add(SnAPI::UI::UIPanel("Editor.BuildModal.HistoryEntry"));
+            auto& EntryPanelElement = EntryPanel.Element();
+            ConfigureTransparentLayoutPanel(EntryPanelElement);
+            EntryPanelElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+            EntryPanelElement.Width().Set(SnAPI::UI::Sizing::Fill());
+            EntryPanelElement.Height().Set(SnAPI::UI::Sizing::Auto());
+            EntryPanelElement.Gap().Set(2.0f);
+            EntryPanelElement.Properties().SetProperty(
+                SnAPI::UI::UIElementBase::VisibilityKey,
+                SnAPI::UI::EVisibility::HitTestInvisible);
+
+            auto EntryTitle = EntryPanel.Add(SnAPI::UI::UIText(Entry.Label));
+            auto& EntryTitleText = EntryTitle.Element();
+            EntryTitleText.ElementStyle().Apply("editor.panel_title");
+            EntryTitleText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+            EntryTitleText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+
+            auto EntrySummary = EntryPanel.Add(SnAPI::UI::UIText(Entry.Summary));
+            auto& EntrySummaryText = EntrySummary.Element();
+            EntrySummaryText.ElementStyle().Apply("editor.panel_subtitle");
+            EntrySummaryText.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+            EntrySummaryText.Visibility().Set(SnAPI::UI::EVisibility::HitTestInvisible);
+        }
+    }
+
+    auto HistoryDetail = HistoryBody.Add(SnAPI::UI::UIPanel("Editor.BuildModal.HistoryDetail"));
+    auto& HistoryDetailPanel = HistoryDetail.Element();
+    HistoryDetailPanel.ElementStyle().Apply("editor.section_card");
+    HistoryDetailPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    HistoryDetailPanel.Width().Set(SnAPI::UI::Sizing::Ratio(0.52f));
+    HistoryDetailPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    HistoryDetailPanel.Padding().Set(8.0f);
+    HistoryDetailPanel.Gap().Set(6.0f);
+
+    auto HistoryDetailTitle = HistoryDetail.Add(SnAPI::UI::UIText("Selection"));
+    HistoryDetailTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto HistoryDetailText = HistoryDetail.Add(SnAPI::UI::UIText(""));
+    auto& HistoryDetailTextElement = HistoryDetailText.Element();
+    HistoryDetailTextElement.ElementStyle().Apply("editor.panel_subtitle");
+    HistoryDetailTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalHistoryDetailText = HistoryDetailText.Handle();
+
+    auto ComparisonTitle = HistoryDetail.Add(SnAPI::UI::UIText("Comparison"));
+    ComparisonTitle.Element().ElementStyle().Apply("editor.panel_title");
+
+    auto ComparisonText = HistoryDetail.Add(SnAPI::UI::UIText(""));
+    auto& ComparisonTextElement = ComparisonText.Element();
+    ComparisonTextElement.ElementStyle().Apply("editor.panel_subtitle");
+    ComparisonTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalComparisonText = ComparisonText.Handle();
+
+    auto ConsoleTab = Tabs.Add(SnAPI::UI::UIPanel("Editor.BuildModal.Console"));
+    auto& ConsoleTabPanel = ConsoleTab.Element();
+    ConsoleTabPanel.ElementStyle().Apply("editor.section_card");
+    ConsoleTabPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConsoleTabPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConsoleTabPanel.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConsoleTabPanel.Padding().Set(8.0f);
+    ConsoleTabPanel.Gap().Set(8.0f);
+
+    auto ConsoleHeader = ConsoleTab.Add(SnAPI::UI::UIPanel("Editor.BuildModal.ConsoleHeader"));
+    auto& ConsoleHeaderPanel = ConsoleHeader.Element();
+    ConfigureTransparentLayoutPanel(ConsoleHeaderPanel);
+    ConsoleHeaderPanel.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConsoleHeaderPanel.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConsoleHeaderPanel.Height().Set(SnAPI::UI::Sizing::Auto());
+    ConsoleHeaderPanel.Gap().Set(4.0f);
+
+    auto ConsoleTitle = ConsoleHeader.Add(SnAPI::UI::UIText("Console Output"));
+    ConsoleTitle.Element().ElementStyle().Apply("editor.panel_title");
+    AddFieldHelpText(ConsoleHeader,
+                     "This log captures packaging session stdout, stderr, shared build events, and streamed CMake "
+                     "configure/build output. The current execution model is synchronous, so the console is a "
+                     "session transcript for the active action rather than a detached live terminal.");
+
+    auto ConsoleSummaryText = ConsoleHeader.Add(SnAPI::UI::UIText(""));
+    auto& ConsoleSummaryTextElement = ConsoleSummaryText.Element();
+    ConsoleSummaryTextElement.ElementStyle().Apply("editor.panel_subtitle");
+    ConsoleSummaryTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::Wrap);
+    m_buildModalConsoleSummaryText = ConsoleSummaryText.Handle();
+
+    auto ConsoleScroll = ConsoleTab.Add(SnAPI::UI::UIScrollContainer{});
+    auto& ConsoleScrollElement = ConsoleScroll.Element();
+    ConsoleScrollElement.Width().Set(SnAPI::UI::Sizing::Fill());
+    ConsoleScrollElement.Height().Set(SnAPI::UI::Sizing::Fill());
+    ConsoleScrollElement.Direction().Set(SnAPI::UI::ELayoutDirection::Vertical);
+    ConsoleScrollElement.ShowHorizontalScrollbar().Set(true);
+    ConsoleScrollElement.ShowVerticalScrollbar().Set(true);
+    ConsoleScrollElement.Smooth().Set(true);
+    ConsoleScrollElement.AutoScrollToEnd().Set(true);
+    ConsoleScrollElement.Padding().Set(10.0f);
+    ConsoleScrollElement.Gap().Set(0.0f);
+    m_buildModalConsoleScroll = ConsoleScroll.Handle();
+
+    auto ConsoleText = ConsoleScroll.Add(SnAPI::UI::UIText(""));
+    auto& ConsoleTextElement = ConsoleText.Element();
+    ConsoleTextElement.ElementStyle().Apply("editor.console_log_text");
+    ConsoleTextElement.Wrapping().Set(SnAPI::UI::ETextWrapping::NoWrap);
+    m_buildModalConsoleText = ConsoleText.Handle();
+
+    TabsElement.SetTabLabel(0, "Overview");
+    TabsElement.SetTabLabel(1, "Content");
+    TabsElement.SetTabLabel(2, "Platform");
+    TabsElement.SetTabLabel(3, "Output");
+    TabsElement.SetTabLabel(4, "History");
+    TabsElement.SetTabLabel(5, "Console");
+    RefreshBuildModalLiveState();
+}
+
+void EditorLayout::DestroyBuildModalOverlay()
+{
+    if (m_buildModalTabs.Id.Value != 0 && m_context)
+    {
+        if (auto* Tabs = dynamic_cast<SnAPI::UI::UITabs*>(&m_context->GetElement(m_buildModalTabs.Id)))
+        {
+            m_buildModalActiveTabIndex = std::max(0, Tabs->ActiveIndex().Get());
+        }
+    }
+
+    if (m_context && m_buildModalOverlay.Id.Value != 0)
+    {
+        const SnAPI::UI::ElementId OverlayId = m_buildModalOverlay.Id;
+        const SnAPI::UI::ElementId CapturedElement = m_context->GetCapture();
+        if (IsElementWithinSubtree(*m_context, CapturedElement, OverlayId))
+        {
+            m_context->ReleaseCapture();
+        }
+        m_context->DestroyElement(OverlayId);
+    }
+
+    m_buildModalOverlay = {};
+    m_buildModalTabs = {};
+    m_buildProfileCombo = {};
+    m_buildConfigurationCombo = {};
+    m_buildDependencyPolicyCombo = {};
+    m_buildChunkStrategyCombo = {};
+    m_buildPlatformInput = {};
+    m_buildExecutionEnvironmentInput = {};
+    m_buildSelectedLevelsInput = {};
+    m_buildExplicitAssetsInput = {};
+    m_buildIncludeFoldersInput = {};
+    m_buildExcludeFoldersInput = {};
+    m_buildIncludeLabelsInput = {};
+    m_buildExcludeLabelsInput = {};
+    m_buildIncludeKindsInput = {};
+    m_buildExcludeKindsInput = {};
+    m_buildAllowExplicitOverrideCheckbox = {};
+    m_buildArchiveEnabledCheckbox = {};
+    m_buildOutputRootInput = {};
+    m_buildPackageDirectoryInput = {};
+    m_buildArchiveFormatInput = {};
+    m_buildArchiveFileInput = {};
+    m_buildModalSubtitleText = {};
+    m_buildModalOverviewSummaryText = {};
+    m_buildModalProfileSummaryText = {};
+    m_buildModalLatestSummaryText = {};
+    m_buildModalPlatformSummaryText = {};
+    m_buildModalOutputSummaryText = {};
+    m_buildModalHistoryDetailText = {};
+    m_buildModalComparisonText = {};
+    m_buildModalConsoleSummaryText = {};
+    m_buildModalConsoleScroll = {};
+    m_buildModalConsoleText = {};
+    m_buildModalProfileKeys.clear();
+}
+
+void EditorLayout::OpenBuildModal()
+{
+    if (!m_context || !m_projectState.IsLoaded)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    ClosePluginModal();
+    CloseModuleModal();
+    CloseProjectModal(true);
+    CloseProjectSettingsModal();
+    ResetBuildModalDraftFromSelectedProfile();
+    m_buildModalOpen = true;
+    RefreshBuildModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::CloseBuildModal()
+{
+    if (!m_buildModalOpen && m_buildModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    m_buildModalOpen = false;
+    RefreshBuildModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::RefreshBuildModalVisibility()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_buildModalOpen)
+    {
+        EnsureBuildModalOverlay();
+        return;
+    }
+
+    DestroyBuildModalOverlay();
+}
+
+void EditorLayout::RebuildBuildModalOverlay()
+{
+    if (!m_buildModalOpen)
+    {
+        return;
+    }
+
+    if (m_buildModalTabs.Id.Value != 0 && m_context)
+    {
+        if (auto* Tabs = dynamic_cast<SnAPI::UI::UITabs*>(&m_context->GetElement(m_buildModalTabs.Id)))
+        {
+            m_buildModalActiveTabIndex = std::max(0, Tabs->ActiveIndex().Get());
+        }
+    }
+
+    DestroyBuildModalOverlay();
+    EnsureBuildModalOverlay();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
 }
 
 void EditorLayout::OpenContentAssetCreateModal()
@@ -7914,11 +11490,21 @@ void EditorLayout::OpenProjectCreateModal()
     }
 
     CloseContextMenu();
+    CloseBuildModal();
     CloseProjectSettingsModal();
     m_projectModalAction = EProjectAction::CreateNew;
     m_projectModalOpen = true;
     m_projectModalShowWelcome = false;
+    m_projectTemplatePreset = EProjectTemplatePreset::RuntimeGame;
     m_projectNameText = "NewProject";
+    m_projectDisplayNameText = "New Project";
+    m_projectCompanyText.clear();
+    m_projectNamespaceText = "NewProject";
+    m_projectRuntimeModuleText = "NewProject";
+    m_projectEditorModuleText = "NewProjectEditor";
+    m_projectStartupLevelText = std::string(ProjectDescriptorService::kDefaultStartupLevelAsset);
+    m_projectCreateRuntimeModule = true;
+    m_projectCreateEditorModule = false;
     if (m_projectDirectoryText.empty())
     {
         std::error_code Error{};
@@ -7935,6 +11521,114 @@ void EditorLayout::OpenProjectCreateModal()
     m_context->MarkLayoutDirty();
 }
 
+void EditorLayout::OpenPluginCreateModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    CloseBuildModal();
+    CloseProjectSettingsModal();
+    m_pluginModalOpen = true;
+    m_pluginTemplatePreset = EPluginTemplatePreset::Runtime;
+    m_pluginNameText = "NewPlugin";
+    m_pluginDisplayNameText = "New Plugin";
+    m_pluginCompanyText.clear();
+    m_pluginVersionText = "0.1.0";
+    m_pluginDescriptionText.clear();
+    m_pluginNamespaceText = "NewPlugin";
+    m_pluginRuntimeModuleText = "NewPlugin";
+    m_pluginEditorModuleText = "NewPluginEditor";
+    m_pluginCreateRuntimeModule = true;
+    m_pluginCreateEditorModule = false;
+    m_pluginCanContainAssets = true;
+    if (m_pluginDirectoryText.empty())
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error && !CurrentPath.empty())
+        {
+            m_pluginDirectoryText = CurrentPath.string();
+        }
+    }
+    DestroyPluginModalOverlay();
+    RefreshPluginModalVisibility();
+    RefreshPluginModalOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::OpenProjectModuleModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    CloseBuildModal();
+    m_moduleModalAction = EModuleAction::CreateProjectModule;
+    m_moduleModalOpen = true;
+    m_moduleType = EProjectModuleType::Runtime;
+    m_moduleNameText = "GameplaySystems";
+    m_moduleNamespaceText = "GameplaySystems";
+    m_moduleRootText.clear();
+    m_modulePublicDependenciesText.clear();
+    m_modulePrivateDependenciesText.clear();
+    m_modulePlatformsText.clear();
+    m_moduleDefinitionsText.clear();
+    m_moduleUseReflectionGen = false;
+    m_moduleUseSwig = false;
+    m_moduleGenerateGameplayBootstrap = true;
+    m_moduleLoadInEditor = DefaultLoadInEditorForModule(m_moduleType);
+    m_moduleLoadInRuntime = DefaultLoadInRuntimeForModule(m_moduleType);
+    m_moduleDescriptorFilePathText = m_projectState.ProjectFilePath;
+    DestroyModuleModalOverlay();
+    RefreshModuleModalVisibility();
+    RefreshModuleModalOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
+void EditorLayout::OpenPluginModuleModal()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    CloseContextMenu();
+    CloseBuildModal();
+    m_moduleModalAction = EModuleAction::CreatePluginModule;
+    m_moduleModalOpen = true;
+    m_moduleType = EProjectModuleType::Runtime;
+    m_moduleNameText = "PluginRuntime";
+    m_moduleNamespaceText = "PluginRuntime";
+    m_moduleRootText.clear();
+    m_modulePublicDependenciesText.clear();
+    m_modulePrivateDependenciesText.clear();
+    m_modulePlatformsText.clear();
+    m_moduleDefinitionsText.clear();
+    m_moduleUseReflectionGen = false;
+    m_moduleUseSwig = false;
+    m_moduleGenerateGameplayBootstrap = true;
+    m_moduleLoadInEditor = DefaultLoadInEditorForModule(m_moduleType);
+    m_moduleLoadInRuntime = DefaultLoadInRuntimeForModule(m_moduleType);
+    if (m_moduleDescriptorFilePathText.empty())
+    {
+        std::error_code Error{};
+        const std::filesystem::path CurrentPath = std::filesystem::current_path(Error);
+        if (!Error && !CurrentPath.empty())
+        {
+            m_moduleDescriptorFilePathText = (CurrentPath / std::string(PluginDescriptorService::kDefaultPluginFileName)).string();
+        }
+    }
+    DestroyModuleModalOverlay();
+    RefreshModuleModalVisibility();
+    RefreshModuleModalOkButtonState();
+    m_context->MarkLayoutDirty();
+}
+
 void EditorLayout::OpenProjectOpenModal()
 {
     if (!m_context)
@@ -7943,6 +11637,7 @@ void EditorLayout::OpenProjectOpenModal()
     }
 
     CloseContextMenu();
+    CloseBuildModal();
     CloseProjectSettingsModal();
     m_projectModalAction = EProjectAction::OpenExisting;
     m_projectModalOpen = true;
@@ -7971,6 +11666,7 @@ void EditorLayout::OpenProjectSettingsModal()
     }
 
     CloseContextMenu();
+    CloseBuildModal();
     m_projectSettingsModalOpen = true;
     m_projectSettingsNameText = m_projectState.Name;
     m_projectSettingsStartupAssetText = m_projectState.StartupLevelAsset;
@@ -7990,6 +11686,36 @@ void EditorLayout::CloseProjectSettingsModal()
 
     m_projectSettingsModalOpen = false;
     RefreshProjectSettingsModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::ClosePluginModal()
+{
+    if (!m_pluginModalOpen && m_pluginModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    m_pluginModalOpen = false;
+    RefreshPluginModalVisibility();
+    if (m_context)
+    {
+        m_context->MarkLayoutDirty();
+    }
+}
+
+void EditorLayout::CloseModuleModal()
+{
+    if (!m_moduleModalOpen && m_moduleModalOverlay.Id.Value == 0)
+    {
+        return;
+    }
+
+    m_moduleModalOpen = false;
+    RefreshModuleModalVisibility();
     if (m_context)
     {
         m_context->MarkLayoutDirty();
@@ -8139,7 +11865,39 @@ void EditorLayout::ConfirmProjectModal()
 
     if (Request.Action == EProjectAction::CreateNew)
     {
-        if (Request.ProjectName.empty() || Request.ProjectDirectory.empty())
+        Request.CreateRequest.ProjectName = Request.ProjectName;
+        Request.CreateRequest.ParentDirectory = Request.ProjectDirectory;
+        Request.CreateRequest.ProjectFileName = std::string(kDefaultProjectConfigFileName);
+
+        auto DefaultDescriptor = ProjectCreationService::BuildDefaultDescriptor(Request.ProjectName);
+        if (!DefaultDescriptor)
+        {
+            RefreshProjectModalOkButtonState();
+            return;
+        }
+
+        Request.CreateRequest.Descriptor = std::move(*DefaultDescriptor);
+        if (!TrimCopy(m_projectDisplayNameText).empty())
+        {
+            Request.CreateRequest.Descriptor.Project.DisplayName = TrimCopy(m_projectDisplayNameText);
+        }
+        if (!TrimCopy(m_projectCompanyText).empty())
+        {
+            Request.CreateRequest.Descriptor.Project.Company = TrimCopy(m_projectCompanyText);
+        }
+        if (!TrimCopy(m_projectStartupLevelText).empty())
+        {
+            Request.CreateRequest.Descriptor.Startup.StartupLevelAsset = TrimCopy(m_projectStartupLevelText);
+        }
+        Request.CreateRequest.Code.CreateStarterRuntimeModule = m_projectCreateRuntimeModule;
+        Request.CreateRequest.Code.RuntimeModuleName = TrimCopy(m_projectRuntimeModuleText);
+        Request.CreateRequest.Code.NamespaceRoot = TrimCopy(m_projectNamespaceText);
+        Request.CreateRequest.Code.CreateStarterEditorModule = m_projectCreateEditorModule;
+        Request.CreateRequest.Code.EditorModuleName = TrimCopy(m_projectEditorModuleText);
+
+        if (Request.ProjectName.empty() || Request.ProjectDirectory.empty() ||
+            (m_projectCreateRuntimeModule && Request.CreateRequest.Code.RuntimeModuleName.empty()) ||
+            (m_projectCreateEditorModule && Request.CreateRequest.Code.EditorModuleName.empty()))
         {
             RefreshProjectModalOkButtonState();
             return;
@@ -8156,6 +11914,127 @@ void EditorLayout::ConfirmProjectModal()
         m_onProjectActionRequested(Request);
     }
     CloseProjectModal(true);
+}
+
+void EditorLayout::ConfirmPluginModal()
+{
+    if (!m_pluginModalOpen)
+    {
+        return;
+    }
+
+    PluginActionRequest Request{};
+    Request.Action = EPluginAction::CreateNew;
+    Request.CreateRequest.PluginName = TrimCopy(m_pluginNameText);
+    Request.CreateRequest.ParentDirectory = TrimCopy(m_pluginDirectoryText);
+    Request.CreateRequest.PluginFileName = std::string(PluginDescriptorService::kDefaultPluginFileName);
+
+    auto DefaultDescriptor = PluginCreationService::BuildDefaultDescriptor(Request.CreateRequest.PluginName);
+    if (!DefaultDescriptor)
+    {
+        RefreshPluginModalOkButtonState();
+        return;
+    }
+
+    Request.CreateRequest.Descriptor = std::move(*DefaultDescriptor);
+    if (!TrimCopy(m_pluginDisplayNameText).empty())
+    {
+        Request.CreateRequest.Descriptor.Plugin.DisplayName = TrimCopy(m_pluginDisplayNameText);
+    }
+    if (!TrimCopy(m_pluginCompanyText).empty())
+    {
+        Request.CreateRequest.Descriptor.Plugin.Company = TrimCopy(m_pluginCompanyText);
+    }
+    if (!TrimCopy(m_pluginVersionText).empty())
+    {
+        Request.CreateRequest.Descriptor.Plugin.Version = TrimCopy(m_pluginVersionText);
+    }
+    if (!TrimCopy(m_pluginDescriptionText).empty())
+    {
+        Request.CreateRequest.Descriptor.Plugin.Description = TrimCopy(m_pluginDescriptionText);
+    }
+    Request.CreateRequest.Descriptor.Plugin.CanContainAssets = m_pluginCanContainAssets;
+    Request.CreateRequest.Code.CreateStarterRuntimeModule = m_pluginCreateRuntimeModule;
+    Request.CreateRequest.Code.RuntimeModuleName = TrimCopy(m_pluginRuntimeModuleText);
+    Request.CreateRequest.Code.NamespaceRoot = TrimCopy(m_pluginNamespaceText);
+    Request.CreateRequest.Code.CreateStarterEditorModule = m_pluginCreateEditorModule;
+    Request.CreateRequest.Code.EditorModuleName = TrimCopy(m_pluginEditorModuleText);
+
+    if (Request.CreateRequest.PluginName.empty() || Request.CreateRequest.ParentDirectory.empty() ||
+        (m_pluginCreateRuntimeModule && Request.CreateRequest.Code.RuntimeModuleName.empty()) ||
+        (m_pluginCreateEditorModule && Request.CreateRequest.Code.EditorModuleName.empty()) ||
+        (!m_pluginCreateRuntimeModule && !m_pluginCreateEditorModule && !m_pluginCanContainAssets))
+    {
+        RefreshPluginModalOkButtonState();
+        return;
+    }
+
+    if (m_onPluginActionRequested)
+    {
+        m_onPluginActionRequested(Request);
+    }
+    ClosePluginModal();
+}
+
+void EditorLayout::ConfirmModuleModal()
+{
+    if (!m_moduleModalOpen)
+    {
+        return;
+    }
+
+    ModuleActionRequest Request{};
+    Request.Action = m_moduleModalAction;
+    if (m_moduleModalAction == EModuleAction::CreatePluginModule)
+    {
+        Request.PluginRequest.PluginFilePath = TrimCopy(m_moduleDescriptorFilePathText);
+        Request.PluginRequest.ModuleName = TrimCopy(m_moduleNameText);
+        Request.PluginRequest.ModuleType = m_moduleType;
+        Request.PluginRequest.ModuleRoot = TrimCopy(m_moduleRootText);
+        Request.PluginRequest.NamespaceRoot = TrimCopy(m_moduleNamespaceText);
+        Request.PluginRequest.PublicDependencies = ParseMultilineEntries(m_modulePublicDependenciesText);
+        Request.PluginRequest.PrivateDependencies = ParseMultilineEntries(m_modulePrivateDependenciesText);
+        Request.PluginRequest.Platforms = ParseMultilineEntries(m_modulePlatformsText);
+        Request.PluginRequest.PreprocessorDefinitions = ParseMultilineEntries(m_moduleDefinitionsText);
+        Request.PluginRequest.UseReflectionGen = m_moduleUseReflectionGen;
+        Request.PluginRequest.UseSWIG = m_moduleUseSwig;
+        Request.PluginRequest.GenerateGameplayBootstrap = m_moduleGenerateGameplayBootstrap;
+        Request.PluginRequest.LoadInEditor = m_moduleLoadInEditor;
+        Request.PluginRequest.LoadInRuntime = m_moduleLoadInRuntime;
+        if (Request.PluginRequest.PluginFilePath.empty() || Request.PluginRequest.ModuleName.empty())
+        {
+            RefreshModuleModalOkButtonState();
+            return;
+        }
+    }
+    else
+    {
+        Request.ProjectRequest.ProjectFilePath = TrimCopy(m_moduleDescriptorFilePathText);
+        Request.ProjectRequest.ModuleName = TrimCopy(m_moduleNameText);
+        Request.ProjectRequest.ModuleType = m_moduleType;
+        Request.ProjectRequest.ModuleRoot = TrimCopy(m_moduleRootText);
+        Request.ProjectRequest.NamespaceRoot = TrimCopy(m_moduleNamespaceText);
+        Request.ProjectRequest.PublicDependencies = ParseMultilineEntries(m_modulePublicDependenciesText);
+        Request.ProjectRequest.PrivateDependencies = ParseMultilineEntries(m_modulePrivateDependenciesText);
+        Request.ProjectRequest.Platforms = ParseMultilineEntries(m_modulePlatformsText);
+        Request.ProjectRequest.PreprocessorDefinitions = ParseMultilineEntries(m_moduleDefinitionsText);
+        Request.ProjectRequest.UseReflectionGen = m_moduleUseReflectionGen;
+        Request.ProjectRequest.UseSWIG = m_moduleUseSwig;
+        Request.ProjectRequest.GenerateGameplayBootstrap = m_moduleGenerateGameplayBootstrap;
+        Request.ProjectRequest.LoadInEditor = m_moduleLoadInEditor;
+        Request.ProjectRequest.LoadInRuntime = m_moduleLoadInRuntime;
+        if (Request.ProjectRequest.ProjectFilePath.empty() || Request.ProjectRequest.ModuleName.empty())
+        {
+            RefreshModuleModalOkButtonState();
+            return;
+        }
+    }
+
+    if (m_onModuleActionRequested)
+    {
+        m_onModuleActionRequested(Request);
+    }
+    CloseModuleModal();
 }
 
 void EditorLayout::RememberRecentProject(const ProjectActionRequest& Request)
@@ -8329,6 +12208,70 @@ void EditorLayout::RefreshProjectModalOkButtonState()
     }
 
     if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_projectModalOkButton.Id)))
+    {
+        Button->SetDisabled(!CanConfirm);
+    }
+}
+
+void EditorLayout::RefreshPluginModalVisibility()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_pluginModalOpen)
+    {
+        EnsurePluginModalOverlay();
+        return;
+    }
+
+    DestroyPluginModalOverlay();
+}
+
+void EditorLayout::RefreshPluginModalOkButtonState()
+{
+    if (!m_context || m_pluginModalOkButton.Id.Value == 0)
+    {
+        return;
+    }
+
+    const bool CanConfirm = !TrimCopy(m_pluginNameText).empty() &&
+        !TrimCopy(m_pluginDirectoryText).empty() &&
+        (!m_pluginCreateRuntimeModule || !TrimCopy(m_pluginRuntimeModuleText).empty()) &&
+        (!m_pluginCreateEditorModule || !TrimCopy(m_pluginEditorModuleText).empty()) &&
+        (m_pluginCreateRuntimeModule || m_pluginCreateEditorModule || m_pluginCanContainAssets);
+    if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_pluginModalOkButton.Id)))
+    {
+        Button->SetDisabled(!CanConfirm);
+    }
+}
+
+void EditorLayout::RefreshModuleModalVisibility()
+{
+    if (!m_context)
+    {
+        return;
+    }
+
+    if (m_moduleModalOpen)
+    {
+        EnsureModuleModalOverlay();
+        return;
+    }
+
+    DestroyModuleModalOverlay();
+}
+
+void EditorLayout::RefreshModuleModalOkButtonState()
+{
+    if (!m_context || m_moduleModalOkButton.Id.Value == 0)
+    {
+        return;
+    }
+
+    const bool CanConfirm = !TrimCopy(m_moduleDescriptorFilePathText).empty() && !TrimCopy(m_moduleNameText).empty();
+    if (auto* Button = dynamic_cast<SnAPI::UI::UIButton*>(&m_context->GetElement(m_moduleModalOkButton.Id)))
     {
         Button->SetDisabled(!CanConfirm);
     }
@@ -9208,8 +13151,8 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ViewportElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     ViewportElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     ViewportElement.ViewportName().Set(std::string("Editor.GameViewport"));
-    ViewportElement.PassGraphPreset().Set(ERenderViewportPassGraphPreset::EditorWorld);
-    ViewportElement.AutoRegisterPassGraph().Set(true);
+    ViewportElement.FeatureProfile().Set(EGameRenderFeatureProfile::EditorWorld);
+    ViewportElement.AutoApplyFeatureProfile().Set(true);
     ViewportElement.RenderScale().Set(1.0f);
     ViewportElement.Enabled().Set(true);
     ViewportElement.SetGameRuntime(&Runtime);
@@ -10368,16 +14311,15 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
 
     Viewport->SetGameRuntime(&Runtime);
 
-    std::shared_ptr<SnAPI::Graphics::ICamera> RetainedCamera{};
-    SnAPI::Graphics::ICamera* RenderCamera = nullptr;
     CameraComponent* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
+    std::shared_ptr<GameRenderCamera> RetainedCamera{};
+    GameRenderCamera* RenderCamera = nullptr;
     if (ActiveCameraComponent)
     {
         RetainedCamera = ActiveCameraComponent->CameraShared();
         RenderCamera = RetainedCamera.get();
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
     if (!RenderCamera)
     {
         if (auto* WorldPtr = Runtime.WorldPtr())
@@ -10386,7 +14328,6 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
             RenderCamera = RetainedCamera ? RetainedCamera.get() : WorldPtr->Renderer().ActiveCamera();
         }
     }
-#endif
 
     if (ActiveCameraComponent && Viewport)
     {

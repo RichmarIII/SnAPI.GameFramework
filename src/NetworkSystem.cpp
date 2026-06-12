@@ -63,8 +63,21 @@ Result NetworkSystem::InitializeOwnedSession(const NetworkBootstrapSettings& Set
         && (Settings.Role == SnAPI::Networking::ESessionRole::Client
             || Settings.Role == SnAPI::Networking::ESessionRole::ServerAndClient))
     {
-        m_ownedSession->OpenConnection(m_transport->Handle(),
-                                       SnAPI::Networking::NetEndpoint{Settings.ConnectAddress, Settings.ConnectPort});
+        const SnAPI::Networking::NetConnectionHandle Handle =
+            m_ownedSession->OpenConnection(m_transport->Handle(),
+                                           SnAPI::Networking::NetEndpoint{Settings.ConnectAddress, Settings.ConnectPort});
+        if (Settings.Role == SnAPI::Networking::ESessionRole::ServerAndClient && Handle != 0)
+        {
+            m_hostedClientConnection = Handle;
+        }
+        else
+        {
+            m_hostedClientConnection.reset();
+        }
+    }
+    else
+    {
+        m_hostedClientConnection.reset();
     }
 
     if (!WireSession(*m_ownedSession, Settings.RpcTargetId))
@@ -134,6 +147,7 @@ void NetworkSystem::ShutdownOwnedSession()
     m_rpc.reset();
     m_transport.reset();
     m_ownedSession.reset();
+    m_hostedClientConnection.reset();
 
     // Reset RPC bridge binding state so a new session can bind cleanly.
     if (m_world)
@@ -230,6 +244,23 @@ std::optional<SnAPI::Networking::NetConnectionHandle> NetworkSystem::ResolveConn
     }
 
     return std::nullopt;
+}
+
+bool NetworkSystem::IsHostedClientConnection(const std::uint64_t OwnerConnectionId) const
+{
+    SNAPI_GF_PROFILE_FUNCTION("Networking");
+    if (OwnerConnectionId == 0)
+    {
+        return false;
+    }
+
+    GameLockGuard Lock(m_threadMutex);
+    if (!m_session || !m_session->IsServerAndClient() || !m_hostedClientConnection.has_value())
+    {
+        return false;
+    }
+
+    return static_cast<std::uint64_t>(*m_hostedClientConnection) == OwnerConnectionId;
 }
 
 } // namespace SnAPI::GameFramework

@@ -10,32 +10,27 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class AtmosphereCompositePass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that tunes atmosphere-composite passes for one or more viewports.
+ * @brief Data-driven node that tunes atmosphere-composite feature settings for one or more viewports.
  *
- * `AtmosphereCompositeParamsNode` configures post-lighting composite passes that blend atmosphere
+ * `AtmosphereCompositeParamsNode` configures post-lighting composite feature stages that blend atmosphere
  * results into the final scene. Unlike the primary atmosphere node, this class may apply to multiple
- * composite passes per viewport because a pass graph can contain several composite stages.
+ * composite feature stages per viewport because a feature profile can contain several composite stages.
  *
  * Core semantics:
  * - Negative viewport ids target all active render viewports.
  * - Non-negative ids target one viewport by renderer-assigned id.
- * - Every composite pass of type `AtmosphereCompositePass` found in the selected viewport receives
- *   the same stored settings.
+ * - Selected viewports receive the same stored atmosphere composite settings.
  * - Blend weights are clamped to the unit interval before upload.
  *
  * Ownership and lifetime:
  * - The node owns only its serialized blend parameters.
- * - Composite passes remain renderer-owned and can be recreated when pass graphs change.
+ * - Atmosphere composite feature resources remain renderer-owned and can be recreated when feature profiles change.
  *
  * Threading model:
  * - Main-thread only.
@@ -89,7 +84,7 @@ public:
      */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -100,8 +95,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -110,7 +105,7 @@ private:
     float m_blendWhenSky = 1.0f;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

@@ -18,14 +18,8 @@
 #include <cstdint>
 #include <cmath>
 #include <iostream>
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-#include <LinearAlgebra.hpp>
-#include <ICamera.hpp>
-#include <FontFace.hpp>
-#endif
 #if defined(SNAPI_GF_ENABLE_UI)
 #include <UIPacketWriter.h>
-#include <unordered_map>
 #endif
 
 namespace SnAPI::GameFramework
@@ -33,102 +27,6 @@ namespace SnAPI::GameFramework
 
 namespace
 {
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
-class UiFontMetricsAdapter final : public SnAPI::UI::IFontMetrics
-{
-public:
-    void Bind(SnAPI::Graphics::FontFace* Face)
-    {
-        if (m_face == Face)
-        {
-            return;
-        }
-        m_face = Face;
-        m_cachedGlyphs.clear();
-        m_cachedRevision = 0;
-    }
-
-    const SnAPI::UI::GlyphMetrics* GetGlyph(uint32_t Codepoint) const override
-    {
-        if (!m_face || !m_face->Valid())
-        {
-            return nullptr;
-        }
-
-        const uint64_t CacheRevision = m_face->GlyphCacheRevision();
-        if (CacheRevision != m_cachedRevision)
-        {
-            m_cachedGlyphs.clear();
-            m_cachedRevision = CacheRevision;
-        }
-
-        if (const auto Cached = m_cachedGlyphs.find(Codepoint); Cached != m_cachedGlyphs.end())
-        {
-            return &Cached->second;
-        }
-
-        SnAPI::Graphics::FontFace::ResolvedGlyph ResolvedGlyph{};
-        if (!m_face->ResolveGlyph(Codepoint, ResolvedGlyph))
-        {
-            return nullptr;
-        }
-
-        const auto& Glyph = ResolvedGlyph.GlyphData;
-        const auto GlyphUv = ResolvedGlyph.UV;
-        float PaddingX = 0.0f;
-        float PaddingY = 0.0f;
-        if (ResolvedGlyph.pOwningFace)
-        {
-            if (const auto* AtlasPage = ResolvedGlyph.pOwningFace->AtlasForCodePoint(ResolvedGlyph.ResolvedCodePoint))
-            {
-                const auto AtlasSize = AtlasPage->Size();
-                if (AtlasSize.x() > 0 && AtlasSize.y() > 0)
-                {
-                    const float UvWidthPixels = static_cast<float>(GlyphUv.Width()) * static_cast<float>(AtlasSize.x());
-                    const float UvHeightPixels = static_cast<float>(GlyphUv.Height()) * static_cast<float>(AtlasSize.y());
-                    PaddingX = std::max(0.0f, (UvWidthPixels - static_cast<float>(Glyph.Width)) * 0.5f);
-                    PaddingY = std::max(0.0f, (UvHeightPixels - static_cast<float>(Glyph.Height)) * 0.5f);
-                }
-            }
-        }
-
-        SnAPI::UI::GlyphMetrics Metrics{};
-        Metrics.U0 = static_cast<float>(GlyphUv.Min.x());
-        Metrics.V0 = static_cast<float>(GlyphUv.Min.y());
-        Metrics.U1 = static_cast<float>(GlyphUv.Max.x());
-        Metrics.V1 = static_cast<float>(GlyphUv.Max.y());
-        Metrics.Width = static_cast<float>(Glyph.Width) + PaddingX * 2.0f;
-        Metrics.Height = static_cast<float>(Glyph.Height) + PaddingY * 2.0f;
-        Metrics.BearingX = static_cast<float>(Glyph.BitmapLeft) - PaddingX;
-        // UIPacketWriter expects stb-style y-offset from baseline (usually negative).
-        // FreeType BitmapTop is upward-positive, so convert sign for consistent layout.
-        Metrics.BearingY = -(static_cast<float>(Glyph.BitmapTop) + PaddingY);
-        Metrics.Advance = static_cast<float>(Glyph.Advance.x());
-        Metrics.AtlasTextureHandle = static_cast<std::uint64_t>(
-            reinterpret_cast<std::uintptr_t>(ResolvedGlyph.pAtlasImage));
-
-        auto [It, Inserted] = m_cachedGlyphs.emplace(Codepoint, Metrics);
-        (void)Inserted;
-        return &It->second;
-    }
-
-    float GetLineHeight() const override
-    {
-        return (m_face && m_face->Valid()) ? m_face->Height() : 0.0f;
-    }
-
-    float GetAscent() const override
-    {
-        return (m_face && m_face->Valid()) ? m_face->Ascender() : 0.0f;
-    }
-
-private:
-    SnAPI::Graphics::FontFace* m_face = nullptr;
-    mutable std::unordered_map<uint32_t, SnAPI::UI::GlyphMetrics> m_cachedGlyphs{};
-    mutable uint64_t m_cachedRevision = 0;
-};
-#endif
-
 [[nodiscard]] const BaseNode* ResolveComponentOwnerNode(const IWorld& WorldRef,
                                                         NodeHandle& InOutOwner,
                                                         NodeHandle& OutResolvedHandle)
@@ -821,20 +719,6 @@ void World::FixedTick(float DeltaSeconds)
     {
         if (m_physicsSystem.Settings().AutoRebaseFloatingOrigin)
         {
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-            if (const auto* ActiveCamera = m_rendererSystem.ActiveCamera())
-            {
-                {
-                    
-                    const auto CameraPos = ActiveCamera->Position();
-                    const SnAPI::Physics::Vec3 AnchorWorld{
-                        static_cast<SnAPI::Physics::Vec3::Scalar>(CameraPos.x()),
-                        static_cast<SnAPI::Physics::Vec3::Scalar>(CameraPos.y()),
-                        static_cast<SnAPI::Physics::Vec3::Scalar>(CameraPos.z())};
-                    (void)m_physicsSystem.EnsureFloatingOriginNear(AnchorWorld);
-                }
-            }
-#endif
         }
         
         (void)m_physicsSystem.Step(DeltaSeconds);
@@ -904,13 +788,7 @@ void World::EndFrame()
             }
         };
 
-        SnAPI::UI::IFontMetrics* Metrics = nullptr;
-        static UiFontMetricsAdapter FontMetricsAdapter{};
-        if (auto* FontFace = m_rendererSystem.EnsureDefaultFontFace())
-        {
-            FontMetricsAdapter.Bind(FontFace);
-            Metrics = &FontMetricsAdapter;
-        }
+        SnAPI::UI::IFontMetrics* Metrics = m_rendererSystem.EnsureDefaultUiFontMetrics();
 
         const auto ContextIds = m_uiSystem.ContextIds();
         for (const auto ContextId : ContextIds)

@@ -48,10 +48,9 @@ CameraComponent* EditorSceneService::ActiveCameraComponent() const
     return m_scene.ActiveCameraComponent();
 }
 
-SnAPI::Graphics::ICamera* EditorSceneService::ActiveRenderCamera() const
+GameRenderCamera* EditorSceneService::ActiveRenderCamera() const
 {
     return m_scene.ActiveRenderCamera();
 }
-
 
 } // namespace SnAPI::GameFramework::Editor

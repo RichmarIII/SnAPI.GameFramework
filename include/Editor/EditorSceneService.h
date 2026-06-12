@@ -4,14 +4,11 @@
 #include "Editor/EditorSceneBootstrap.h"
 #include "Editor/IEditorService.h"
 
-namespace SnAPI::Graphics
-{
-class ICamera;
-}
 
 namespace SnAPI::GameFramework
 {
 class CameraComponent;
+class GameRenderCamera;
 }
 
 namespace SnAPI::GameFramework::Editor
@@ -28,7 +25,7 @@ public:
 
     [[nodiscard]] ComponentHandle ActiveCameraHandle() const;
     [[nodiscard]] CameraComponent* ActiveCameraComponent() const;
-    [[nodiscard]] SnAPI::Graphics::ICamera* ActiveRenderCamera() const;
+    [[nodiscard]] GameRenderCamera* ActiveRenderCamera() const;
 
 private:
     EditorSceneBootstrap m_scene{};

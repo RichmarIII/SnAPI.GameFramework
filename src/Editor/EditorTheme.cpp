@@ -575,6 +575,12 @@ void EditorTheme::Initialize()
         .Set(SnAPI::UI::UIText::TextColorKey, Color{160, 167, 178, 255})
         .Set(SnAPI::UI::UIText::WrappingKey, SnAPI::UI::ETextWrapping::NoWrap);
 
+    DefineClass("editor.console_log_text")
+        .Set(SnAPI::UI::UIText::TextColorKey, Color{216, 222, 231, 255})
+        .Set(SnAPI::UI::UIText::WrappingKey, SnAPI::UI::ETextWrapping::NoWrap)
+        .Set(SnAPI::UI::UIText::TextAlignmentKey, SnAPI::UI::ETextAlignment::Start)
+        .Set(SnAPI::UI::UIText::TextJustifyKey, SnAPI::UI::ETextJustify::None);
+
     DefineClass("editor.menu_item")
         .Set(SnAPI::UI::UIText::TextColorKey, kTextSecondary)
         .Hovered()

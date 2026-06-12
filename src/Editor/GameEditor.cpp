@@ -1,21 +1,110 @@
 #include "Editor/GameEditor.h"
 
 #include "Conduit/Editor/Service.h"
+#include "BaseNode.h"
+#include "Editor/EditorAssetService.h"
 #include "Editor/EditorCoreServices.h"
+#include "Editor/EditorSelectionService.h"
 #include "Editor/EditorWorld.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace SnAPI::GameFramework::Editor
 {
+namespace
+{
+[[nodiscard]] std::string_view StartupProjectPathFromEnvironment()
+{
+    const char* Value = std::getenv("SNAPI_GF_EDITOR_OPEN_PROJECT");
+    return Value ? std::string_view{Value} : std::string_view{};
+}
+
+[[nodiscard]] std::string_view StartupSelectionNodeNameFromEnvironment()
+{
+    const char* Value = std::getenv("SNAPI_GF_EDITOR_SELECT_NODE");
+    return Value ? std::string_view{Value} : std::string_view{};
+}
+
+[[nodiscard]] bool NodeNameMatchesSelectionRequest(const std::string_view NodeName, const std::string_view RequestedName)
+{
+    if (NodeName == RequestedName)
+    {
+        return true;
+    }
+
+    const auto MatchesQualifiedSuffix = [](const std::string_view FullName, const std::string_view LeafName) {
+        return FullName.size() > LeafName.size() &&
+               FullName.ends_with(LeafName) &&
+               FullName[FullName.size() - LeafName.size() - 1u] == '.';
+    };
+    return MatchesQualifiedSuffix(NodeName, RequestedName) || MatchesQualifiedSuffix(RequestedName, NodeName);
+}
+
+[[nodiscard]] Result LoadStartupProjectIfRequested(GameEditor& Editor)
+{
+    const std::string_view ProjectPath = StartupProjectPathFromEnvironment();
+    if (ProjectPath.empty())
+    {
+        return Ok();
+    }
+
+    EditorServiceContext Context(Editor);
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    if (!AssetService)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Editor asset service is not available"));
+    }
+
+    return AssetService->LoadProject(Context, ProjectPath);
+}
+
+[[nodiscard]] TExpected<bool> TrySelectNodeByName(GameEditor& Editor, const std::string_view NodeName)
+{
+    if (NodeName.empty())
+    {
+        return true;
+    }
+
+    EditorServiceContext Context(Editor);
+    auto* SelectionService = Context.GetService<EditorSelectionService>();
+    auto* WorldPtr = Context.Runtime().WorldPtr();
+    if (!SelectionService || !WorldPtr)
+    {
+        return std::unexpected(MakeError(EErrorCode::NotReady, "Editor selection service is not available"));
+    }
+
+    NodeHandle MatchedNode{};
+    WorldPtr->ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
+        if (MatchedNode.IsNull() && NodeNameMatchesSelectionRequest(Node.Name(), NodeName))
+        {
+            MatchedNode = Node.Handle();
+            if (MatchedNode.IsNull())
+            {
+                MatchedNode = Handle;
+            }
+        }
+    });
+
+    if (MatchedNode.IsNull())
+    {
+        return false;
+    }
+
+    (void)SelectionService->Model().SelectNode(MatchedNode);
+    return true;
+}
+} // namespace
 
 Result GameEditor::Initialize(const GameEditorSettings& Settings)
 {
     Shutdown();
     m_settings = Settings;
+    m_startupSelectionNodeName = std::string(StartupSelectionNodeNameFromEnvironment());
+    m_startupSelectionPending = !m_startupSelectionNodeName.empty();
 
     if (auto InitRuntime = InitializeRuntime(m_settings); !InitRuntime)
     {
@@ -40,6 +129,8 @@ void GameEditor::Shutdown()
     }
 
     m_runtime.Shutdown();
+    m_startupSelectionNodeName.clear();
+    m_startupSelectionPending = false;
     m_initialized = false;
 }
 
@@ -56,6 +147,7 @@ bool GameEditor::Update(const float DeltaSeconds)
     }
 
     TickServices(DeltaSeconds);
+    (void)ApplyStartupSelectionIfPending();
 
     return m_runtime.Update(DeltaSeconds);
 }
@@ -256,11 +348,31 @@ Result GameEditor::InitializeEditorModules()
         }
 
         WorldPtr->DeferNodeOnCreateCallbacks(false);
-        return FinalizeBootstrapLifecycle();
+        if (const Result StartupProjectResult = LoadStartupProjectIfRequested(*this); !StartupProjectResult)
+        {
+            return StartupProjectResult;
+        }
+        if (const Result BootstrapResult = FinalizeBootstrapLifecycle(); !BootstrapResult)
+        {
+            return BootstrapResult;
+        }
+        if (const Result StartupSelectionResult = ApplyStartupSelectionIfPending(); !StartupSelectionResult)
+        {
+            return StartupSelectionResult;
+        }
+        return Ok();
     }
 #endif
 
-    return InitializeServices();
+    if (const Result InitResult = InitializeServices(); !InitResult)
+    {
+        return InitResult;
+    }
+    if (const Result StartupProjectResult = LoadStartupProjectIfRequested(*this); !StartupProjectResult)
+    {
+        return StartupProjectResult;
+    }
+    return ApplyStartupSelectionIfPending();
 }
 
 Result GameEditor::FinalizeBootstrapLifecycle()
@@ -280,6 +392,26 @@ Result GameEditor::FinalizeBootstrapLifecycle()
     TickServices(0.0f);
     WorldPtr->Tick(0.0f);
     WorldPtr->EndFrame();
+    return Ok();
+}
+
+Result GameEditor::ApplyStartupSelectionIfPending()
+{
+    if (!m_startupSelectionPending)
+    {
+        return Ok();
+    }
+
+    auto SelectionResult = TrySelectNodeByName(*this, m_startupSelectionNodeName);
+    if (!SelectionResult)
+    {
+        return std::unexpected(SelectionResult.error());
+    }
+
+    if (*SelectionResult)
+    {
+        m_startupSelectionPending = false;
+    }
     return Ok();
 }
 
@@ -303,6 +435,7 @@ void GameEditor::EnsureDefaultServicesRegistered()
     (void)RegisterService<EditorSelectionService>();
     (void)RegisterService<EditorPieService>();
     (void)RegisterService<EditorAssetService>();
+    (void)RegisterService<EditorBuildService>();
     (void)RegisterService<Conduit::Editor::ConduitEditorService>();
     (void)RegisterService<EditorAssetIconService>();
     (void)RegisterService<EditorLayoutService>();

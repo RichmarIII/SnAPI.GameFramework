@@ -7,18 +7,16 @@
 
 #include <UILayout.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 
-namespace SnAPI::Graphics
-{
-class ICamera;
-class IRenderObject;
-}
 
 namespace SnAPI::GameFramework
 {
 class BaseNode;
+class GameRenderCamera;
 struct NodeTransform;
 }
 
@@ -63,20 +61,19 @@ private:
         Z
     };
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    void EnsureGizmoRenderObjects();
-    void ConfigureGizmoGeometryForMode();
-    void QueueTransformGizmos(EditorServiceContext& Context,
-                              BaseNode* SelectedNode,
-                              const NodeTransform& SelectedTransform,
-                              SnAPI::Graphics::ICamera& Camera,
-                              std::uint64_t ViewportID);
-    [[nodiscard]] EActiveAxis PickGizmoAxis(EditorServiceContext& Context,
-                                            float ScreenX,
-                                            float ScreenY,
-                                            const SnAPI::UI::UIRect& ViewRect,
-                                            std::uint64_t ViewportID) const;
-#endif
+    void UpdateNativeTransformGizmos(EditorServiceContext& Context,
+                                     BaseNode* SelectedNode,
+                                     const NodeTransform& SelectedTransform,
+                                     const GameRenderCamera& Camera,
+                                     std::uint64_t ViewportID);
+    [[nodiscard]] EActiveAxis PickNativeGizmoAxis(EditorServiceContext& Context,
+                                                  const NodeTransform& SelectedTransform,
+                                                  const GameRenderCamera& Camera,
+                                                  float ScreenX,
+                                                  float ScreenY,
+                                                  const SnAPI::UI::UIRect& ViewRect,
+                                                  std::uint64_t ViewportID) const;
+
 
     EEditorTransformMode m_mode = EEditorTransformMode::Translate;
     EditorLayout::EGizmoSpace m_space = EditorLayout::EGizmoSpace::World;
@@ -99,21 +96,6 @@ private:
     Vec3 m_axisMoveAxisDirection = Vec3::UnitX();
     Vec3 m_axisMoveNodeStart = Vec3::Zero();
     Vec3 m_axisMoveHitStart = Vec3::Zero();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisX{};
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisY{};
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisZ{};
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisXAux{};
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisYAux{};
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisZAux{};
-    std::uint32_t m_gizmoAxisXID = 0;
-    std::uint32_t m_gizmoAxisYID = 0;
-    std::uint32_t m_gizmoAxisZID = 0;
-    std::uint32_t m_gizmoAxisXAuxID = 0;
-    std::uint32_t m_gizmoAxisYAuxID = 0;
-    std::uint32_t m_gizmoAxisZAuxID = 0;
-    EEditorTransformMode m_gizmoGeometryMode = EEditorTransformMode::Translate;
-#endif
 };
 
 } // namespace SnAPI::GameFramework::Editor

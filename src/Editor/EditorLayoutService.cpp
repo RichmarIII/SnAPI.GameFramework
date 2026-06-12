@@ -6,6 +6,7 @@
 #include "Conduit/Editor/Service.h"
 #include "Editor/EditorAssetIconService.h"
 #include "Editor/EditorAssetService.h"
+#include "Editor/EditorBuildService.h"
 #include "Editor/EditorCommandService.h"
 #include "Editor/EditorPieService.h"
 #include "Editor/EditorRootViewportService.h"
@@ -17,6 +18,7 @@
 #include "NodeCast.h"
 #include "PawnBase.h"
 #include "PlayerStart.h"
+#include "ProjectDescriptor.h"
 #include "Serialization.h"
 #include "TypeRegistry.h"
 #include "UIRenderViewport.h"
@@ -27,6 +29,8 @@
 #include <UIContext.h>
 
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <functional>
 #include <iomanip>
@@ -43,6 +47,37 @@ namespace SnAPI::GameFramework::Editor
 {
 namespace
 {
+[[nodiscard]] std::string TrimCopy(std::string Value)
+{
+    while (!Value.empty() && std::isspace(static_cast<unsigned char>(Value.front())) != 0)
+    {
+        Value.erase(Value.begin());
+    }
+    while (!Value.empty() && std::isspace(static_cast<unsigned char>(Value.back())) != 0)
+    {
+        Value.pop_back();
+    }
+    return Value;
+}
+
+[[nodiscard]] bool IsProjectWelcomeSuppressed()
+{
+    const char* Value = std::getenv("SNAPI_GF_EDITOR_SUPPRESS_PROJECT_WELCOME");
+    if (!Value)
+    {
+        return false;
+    }
+
+    const std::string_view Text{Value};
+    return Text == "1" || Text == "true" || Text == "TRUE" || Text == "yes" || Text == "on";
+}
+
+[[nodiscard]] bool ShouldRequireProjectSelection(const EditorAssetService& AssetService,
+                                                 const bool HasPendingProjectActionRequest)
+{
+    return !IsProjectWelcomeSuppressed() && !AssetService.CurrentProject().IsLoaded && !HasPendingProjectActionRequest;
+}
+
 void ApplySelection(EditorSelectionModel& Model, const NodeHandle& Node)
 {
     if (Node.IsNull())
@@ -286,6 +321,291 @@ void ReportEditorExpectedFailure(std::string_view Operation, const TExpectedLike
 #endif
 }
 
+[[nodiscard]] std::string_view BuildConfigurationLabel(const EBuildConfiguration Configuration)
+{
+    switch (Configuration)
+    {
+    case EBuildConfiguration::Debug:
+        return "Debug";
+    case EBuildConfiguration::Development:
+        return "Development";
+    case EBuildConfiguration::Test:
+        return "Test";
+    case EBuildConfiguration::Shipping:
+        return "Shipping";
+    default:
+        return "Development";
+    }
+}
+
+[[nodiscard]] std::string_view BuildStatusLabel(const EBuildExecutionStatus Status)
+{
+    switch (Status)
+    {
+    case EBuildExecutionStatus::Succeeded:
+        return "Succeeded";
+    case EBuildExecutionStatus::Failed:
+        return "Failed";
+    case EBuildExecutionStatus::Cancelled:
+        return "Cancelled";
+    default:
+        return "Unknown";
+    }
+}
+
+[[nodiscard]] std::string_view HistoryStateLabel(const EBuildHistoryEntryState State)
+{
+    switch (State)
+    {
+    case EBuildHistoryEntryState::Complete:
+        return "Complete";
+    case EBuildHistoryEntryState::Incomplete:
+        return "Incomplete";
+    default:
+        return "Unknown";
+    }
+}
+
+template<typename TValue>
+void HashCombine(std::size_t& Seed, const TValue& Value)
+{
+    Seed ^= std::hash<TValue>{}(Value) + 0x9e3779b9 + (Seed << 6) + (Seed >> 2);
+}
+
+[[nodiscard]] std::string DescribeOutputSummary(const BuildExecutionReport& Report)
+{
+    if (!Report.ArchiveFilePath.empty())
+    {
+        return "Archive: " + Report.ArchiveFilePath.string();
+    }
+    if (!Report.PackageDirectoryPath.empty())
+    {
+        return "Package: " + Report.PackageDirectoryPath.string();
+    }
+    if (!Report.PackageOutputRootDirectory.empty())
+    {
+        return "Output Root: " + Report.PackageOutputRootDirectory.string();
+    }
+    if (!Report.StageDirectory.empty())
+    {
+        return "Stage: " + Report.StageDirectory.string();
+    }
+    return {};
+}
+
+[[nodiscard]] std::string DescribePlanSummary(const EditorBuildPlan& Plan)
+{
+    return "Planned build " + Plan.Graph.BuildId + " with " + std::to_string(Plan.Graph.Nodes.size()) + " nodes for " +
+           Plan.Request.Project.Descriptor.Project.Name + ".";
+}
+
+[[nodiscard]] std::string DescribeBuildSummary(const BuildExecutionReport& Report)
+{
+    std::string Summary = "Build " + Report.BuildId + " " + std::string(BuildStatusLabel(Report.Status)) +
+                          " with " + std::to_string(Report.NodeRecords.size()) + " node records.";
+    if (!Report.RequestHash.empty())
+    {
+        Summary += "\nRequest: " + Report.RequestHash;
+    }
+    if (Report.Status != EBuildExecutionStatus::Succeeded)
+    {
+        const auto FailedNodeIt = std::find_if(
+            Report.NodeRecords.begin(),
+            Report.NodeRecords.end(),
+            [](const BuildNodeExecutionRecord& Record) { return Record.Status == EBuildNodeExecutionStatus::Failed; });
+        if (FailedNodeIt != Report.NodeRecords.end() && !FailedNodeIt->Message.empty())
+        {
+            Summary += "\nReason: Node '" + FailedNodeIt->Name + "' failed: " + FailedNodeIt->Message;
+        }
+        else
+        {
+            const auto ValidationIssueIt =
+                std::find_if(Report.ValidationIssues.begin(),
+                             Report.ValidationIssues.end(),
+                             [](const BuildValidationIssue& Issue)
+                             { return Issue.Severity == EBuildValidationSeverity::Error; });
+            if (ValidationIssueIt != Report.ValidationIssues.end())
+            {
+                Summary += "\nReason: " + ValidationIssueIt->RuleId + ": " + ValidationIssueIt->Message;
+            }
+            else if (Report.Status == EBuildExecutionStatus::Cancelled)
+            {
+                Summary += "\nReason: Build cancelled before completion.";
+            }
+        }
+    }
+    return Summary;
+}
+
+[[nodiscard]] Result BuildActionResultFromExecutionReport(const TExpected<BuildExecutionReport>& ReportValue,
+                                                          const std::string_view StatusMessage)
+{
+    if (!ReportValue)
+    {
+        return std::unexpected(ReportValue.error());
+    }
+
+    if (ReportValue->Status == EBuildExecutionStatus::Succeeded)
+    {
+        return Ok();
+    }
+
+    const std::string Message =
+        !StatusMessage.empty()
+            ? std::string(StatusMessage)
+            : "Build " + ReportValue->BuildId + " completed with status " +
+                  std::string(BuildStatusLabel(ReportValue->Status)) + ".";
+    return std::unexpected(MakeError(ReportValue->Status == EBuildExecutionStatus::Cancelled ? EErrorCode::NotReady
+                                                                                             : EErrorCode::InternalError,
+                                     Message));
+}
+
+[[nodiscard]] std::string DescribeHistorySummary(const BuildHistoryEntry& Entry)
+{
+    std::string Summary = std::string(HistoryStateLabel(Entry.State));
+    if (Entry.State == EBuildHistoryEntryState::Complete)
+    {
+        Summary += " / " + std::string(BuildStatusLabel(Entry.Status));
+    }
+    if (!Entry.StartedAtUtc.empty())
+    {
+        Summary += " / Started: " + Entry.StartedAtUtc;
+    }
+    if (Entry.OutputFileCount > 0u)
+    {
+        Summary += " / Outputs: " + std::to_string(Entry.OutputFileCount);
+    }
+    return Summary;
+}
+
+[[nodiscard]] std::string BuildDiscoveredAssetField(const EditorAssetService::DiscoveredAsset& Asset,
+                                                    const std::string_view AssetRootDirectory)
+{
+    if (!Asset.SourceFilePath.empty() && !AssetRootDirectory.empty())
+    {
+        return ProjectDescriptorService::ToProjectRelativePathField(Asset.SourceFilePath, AssetRootDirectory);
+    }
+
+    if (!Asset.Name.empty())
+    {
+        return Asset.Name;
+    }
+
+    return Asset.Key;
+}
+
+[[nodiscard]] bool IsLevelAssetField(const std::string_view AssetField)
+{
+    if (AssetField.empty())
+    {
+        return false;
+    }
+
+    return std::filesystem::path(std::string(AssetField)).extension() == ".level";
+}
+
+[[nodiscard]] std::size_t ComputeBuildPanelStateSignature(const EditorLayout::BuildPanelState& State)
+{
+    std::size_t Signature = 0u;
+    HashCombine(Signature, State.ProjectLoaded);
+    HashCombine(Signature, State.ProjectName);
+    HashCombine(Signature, State.ProjectFilePath);
+    HashCombine(Signature, State.AssetRootDirectory);
+    HashCombine(Signature, State.BuildInProgress);
+    HashCombine(Signature, State.StatusMessage);
+    HashCombine(Signature, State.LastPlanSummary);
+    HashCombine(Signature, State.LastBuildId);
+    HashCombine(Signature, State.LastBuildSummary);
+    HashCombine(Signature, State.LastBuildOutputSummary);
+    HashCombine(Signature, State.HistoryComparisonSummary);
+    HashCombine(Signature, State.ConsoleLogRevision);
+    HashCombine(Signature, State.Profiles.size());
+    for (const auto& Profile : State.Profiles)
+    {
+        HashCombine(Signature, Profile.Name);
+        HashCombine(Signature, Profile.Label);
+        HashCombine(Signature, Profile.Summary);
+        HashCombine(Signature, Profile.Platform);
+        HashCombine(Signature, Profile.Configuration);
+        HashCombine(Signature, Profile.ExecutionEnvironment);
+        HashCombine(Signature, Profile.SelectedLevels.size());
+        for (const auto& Value : Profile.SelectedLevels)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.ExplicitAssets.size());
+        for (const auto& Value : Profile.ExplicitAssets)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.IncludeFolders.size());
+        for (const auto& Value : Profile.IncludeFolders)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.ExcludeFolders.size());
+        for (const auto& Value : Profile.ExcludeFolders)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.IncludeAssetLabels.size());
+        for (const auto& Value : Profile.IncludeAssetLabels)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.ExcludeAssetLabels.size());
+        for (const auto& Value : Profile.ExcludeAssetLabels)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.IncludeAssetKinds.size());
+        for (const auto& Value : Profile.IncludeAssetKinds)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, Profile.ExcludeAssetKinds.size());
+        for (const auto& Value : Profile.ExcludeAssetKinds)
+        {
+            HashCombine(Signature, Value);
+        }
+        HashCombine(Signature, static_cast<std::size_t>(Profile.DependencyPolicy));
+        HashCombine(Signature, static_cast<std::size_t>(Profile.ChunkStrategy));
+        HashCombine(Signature, Profile.AllowExplicitOverrideExcludes);
+        HashCombine(Signature, Profile.ArchiveEnabled);
+        HashCombine(Signature, Profile.ArchiveFormat);
+        HashCombine(Signature, Profile.IsDefault);
+        HashCombine(Signature, Profile.IsAdHoc);
+    }
+    HashCombine(Signature, State.AvailableLevels.size());
+    for (const auto& Entry : State.AvailableLevels)
+    {
+        HashCombine(Signature, Entry);
+    }
+    HashCombine(Signature, State.AvailableAssets.size());
+    for (const auto& Entry : State.AvailableAssets)
+    {
+        HashCombine(Signature, Entry);
+    }
+    HashCombine(Signature, State.AvailableAssetKinds.size());
+    for (const auto& Entry : State.AvailableAssetKinds)
+    {
+        HashCombine(Signature, Entry);
+    }
+    HashCombine(Signature, State.HistoryEntries.size());
+    for (const auto& Entry : State.HistoryEntries)
+    {
+        HashCombine(Signature, Entry.BuildId);
+        HashCombine(Signature, Entry.Label);
+        HashCombine(Signature, Entry.Summary);
+        HashCombine(Signature, Entry.RequestHash);
+        HashCombine(Signature, Entry.StartedAtUtc);
+        HashCombine(Signature, Entry.FinishedAtUtc);
+        HashCombine(Signature, Entry.IsComplete);
+        HashCombine(Signature, Entry.IsLatest);
+    }
+    return Signature;
+}
+
 [[nodiscard]] Result ExecuteHierarchyAction(EditorServiceContext& Context,
                                             EditorLayout::HierarchyActionRequest& Request)
 {
@@ -468,6 +788,7 @@ std::vector<std::type_index> EditorLayoutService::Dependencies() const
             std::type_index(typeid(EditorRootViewportService)),
             std::type_index(typeid(EditorCommandService)),
             std::type_index(typeid(EditorAssetService)),
+            std::type_index(typeid(EditorBuildService)),
             std::type_index(typeid(EditorAssetIconService)),
             std::type_index(typeid(Conduit::Editor::ConduitEditorService))};
 }
@@ -479,9 +800,11 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     auto* SelectionService = Context.GetService<EditorSelectionService>();
     auto* PieService = Context.GetService<EditorPieService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
+    auto* BuildService = Context.GetService<EditorBuildService>();
     auto* IconService = Context.GetService<EditorAssetIconService>();
     auto* ConduitService = Context.GetService<Conduit::Editor::ConduitEditorService>();
-    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService || !IconService || !ConduitService)
+    if (!ThemeService || !SceneService || !SelectionService || !PieService || !AssetService || !BuildService || !IconService ||
+        !ConduitService)
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Missing required editor services for layout"));
     }
@@ -494,6 +817,8 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     m_hasPendingProjectActionRequest = false;
     m_pendingProjectActionRequest = {};
+    m_hasPendingBuildActionRequest = false;
+    m_pendingBuildActionRequest = {};
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -603,10 +928,15 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
+    m_buildPanelStateSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
+    m_buildPanelHistoryDirty = true;
+    m_buildPanelHistoryProjectFilePath.clear();
+    m_buildPanelComparisonSummary.clear();
+    m_cachedBuildHistory.clear();
 
     const Result BuildResult = m_layout.Build(Context.Runtime(),
                                               ThemeService->Theme(),
@@ -639,6 +969,24 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
                 m_hasPendingProjectActionRequest = true;
                 // Prevent same-frame required-project logic from reopening the chooser while a request is queued.
                 m_layout.SetProjectSelectionRequired(false);
+            }));
+    m_layout.SetPluginActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::PluginActionRequest&)>::Bind(
+            [this](const EditorLayout::PluginActionRequest& Request) {
+                m_pendingPluginActionRequest = Request;
+                m_hasPendingPluginActionRequest = true;
+            }));
+    m_layout.SetModuleActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ModuleActionRequest&)>::Bind(
+            [this](const EditorLayout::ModuleActionRequest& Request) {
+                m_pendingModuleActionRequest = Request;
+                m_hasPendingModuleActionRequest = true;
+            }));
+    m_layout.SetBuildActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::BuildActionRequest&)>::Bind(
+            [this](const EditorLayout::BuildActionRequest& Request) {
+                m_pendingBuildActionRequest = Request;
+                m_hasPendingBuildActionRequest = true;
             }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
@@ -874,7 +1222,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_hasPendingConduitClassGraphRequest = true;
     }));
 
-    m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
+    m_layout.SetProjectSelectionRequired(ShouldRequireProjectSelection(*AssetService, m_hasPendingProjectActionRequest));
     ApplyAssetBrowserState(Context);
     return Ok();
 }
@@ -886,8 +1234,9 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     auto* PieService = Context.GetService<EditorPieService>();
     auto* CommandService = Context.GetService<EditorCommandService>();
     auto* AssetService = Context.GetService<EditorAssetService>();
+    auto* BuildService = Context.GetService<EditorBuildService>();
     auto* ConduitService = Context.GetService<Conduit::Editor::ConduitEditorService>();
-    if (!SceneService || !SelectionService || !PieService || !AssetService || !ConduitService)
+    if (!SceneService || !SelectionService || !PieService || !AssetService || !BuildService || !ConduitService)
     {
         return;
     }
@@ -916,7 +1265,7 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         Result ProjectResult = Ok();
         if (Request.Action == EditorLayout::EProjectAction::CreateNew)
         {
-            ProjectResult = AssetService->CreateProject(Context, Request.ProjectName, Request.ProjectDirectory);
+            ProjectResult = AssetService->CreateProject(Context, Request.CreateRequest, true);
         }
         else if (Request.Action == EditorLayout::EProjectAction::OpenExisting)
         {
@@ -944,13 +1293,173 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
             {
                 CommandService->ClearHistory();
             }
+            m_buildPanelHistoryDirty = true;
+            m_buildPanelHistoryProjectFilePath.clear();
+            m_buildPanelComparisonSummary.clear();
+            m_cachedBuildHistory.clear();
+            m_buildPanelStateSignature = 0;
             QueueLayoutRebuild();
         }
     }
 
+    if (m_hasPendingPluginActionRequest)
+    {
+        m_hasPendingPluginActionRequest = false;
+        const EditorLayout::PluginActionRequest Request = m_pendingPluginActionRequest;
+        m_pendingPluginActionRequest = {};
+
+        Result PluginResult = Ok();
+        if (Request.Action == EditorLayout::EPluginAction::CreateNew)
+        {
+            PluginResult = AssetService->CreatePlugin(Context, Request.CreateRequest);
+        }
+        else
+        {
+            PluginResult = std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported editor plugin action"));
+        }
+
+        ReportEditorExpectedFailure("Plugin action", PluginResult);
+    }
+
+    if (m_hasPendingModuleActionRequest)
+    {
+        m_hasPendingModuleActionRequest = false;
+        const EditorLayout::ModuleActionRequest Request = m_pendingModuleActionRequest;
+        m_pendingModuleActionRequest = {};
+
+        Result ModuleResult = Ok();
+        if (Request.Action == EditorLayout::EModuleAction::CreateProjectModule)
+        {
+            ModuleResult = AssetService->CreateProjectModule(Context, Request.ProjectRequest);
+        }
+        else if (Request.Action == EditorLayout::EModuleAction::CreatePluginModule)
+        {
+            ModuleResult = AssetService->CreatePluginModule(Context, Request.PluginRequest);
+        }
+        else
+        {
+            ModuleResult = std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported editor module action"));
+        }
+
+        ReportEditorExpectedFailure("Module action", ModuleResult);
+    }
+
+    if (m_hasPendingBuildActionRequest)
+    {
+        m_hasPendingBuildActionRequest = false;
+        const EditorLayout::BuildActionRequest Request = m_pendingBuildActionRequest;
+        m_pendingBuildActionRequest = {};
+
+        Result BuildActionResult = Ok();
+        switch (Request.Action)
+        {
+        case EditorLayout::EBuildAction::PlanProject:
+        {
+            m_buildPanelComparisonSummary.clear();
+            BuildActionResult = BuildService->QueuePlanActiveProject(Context, Request.Request);
+            break;
+        }
+        case EditorLayout::EBuildAction::PackageProject:
+        {
+            m_buildPanelComparisonSummary.clear();
+            if (PieService->IsSessionActive())
+            {
+                BuildActionResult =
+                    std::unexpected(MakeError(EErrorCode::NotReady, "Cannot package the project while PIE is active"));
+            }
+            else
+            {
+                BuildExecutionOptions ExecutionOptions{};
+                ExecutionOptions.CodeBuild.Enabled = true;
+                ExecutionOptions.AssetCook.Enabled = true;
+                ExecutionOptions.PackageOutput = Request.PackageOutput;
+                BuildActionResult =
+                    BuildService->QueuePackageActiveProject(Context, Request.Request, {}, ExecutionOptions);
+            }
+            break;
+        }
+        case EditorLayout::EBuildAction::RetryBuild:
+        {
+            m_buildPanelComparisonSummary.clear();
+            BuildExecutionOptions ExecutionOptions{};
+            ExecutionOptions.CodeBuild.Enabled = true;
+            ExecutionOptions.AssetCook.Enabled = true;
+            BuildActionResult = BuildService->QueueRetryBuild(Context, Request.SourceBuildId, {}, ExecutionOptions);
+            break;
+        }
+        case EditorLayout::EBuildAction::RebuildAll:
+        {
+            m_buildPanelComparisonSummary.clear();
+            BuildExecutionOptions ExecutionOptions{};
+            ExecutionOptions.CodeBuild.Enabled = true;
+            ExecutionOptions.AssetCook.Enabled = true;
+            ExecutionOptions.ResumeSucceededNodes = false;
+            BuildActionResult = BuildService->QueueRetryBuild(Context, Request.SourceBuildId, {}, ExecutionOptions);
+            break;
+        }
+        case EditorLayout::EBuildAction::RefreshHistory:
+        {
+            m_buildPanelComparisonSummary.clear();
+            BuildActionResult = Ok();
+            break;
+        }
+        case EditorLayout::EBuildAction::CompareHistory:
+        {
+            auto Comparison = BuildService->CompareHistory(Context, Request.SourceBuildId, Request.CompareBuildId);
+            ReportEditorExpectedFailure("Compare build history", Comparison);
+            if (Comparison)
+            {
+                std::ostringstream Builder{};
+                Builder << "Compared " << Comparison->LeftBuildId << " -> " << Comparison->RightBuildId
+                        << ". Request hash match: " << (Comparison->SameRequestHash ? "yes" : "no")
+                        << ". Status match: " << (Comparison->SameStatus ? "yes" : "no")
+                        << ". Added outputs: " << Comparison->AddedOutputFiles.size()
+                        << ". Removed outputs: " << Comparison->RemovedOutputFiles.size()
+                        << ". Node deltas: " << Comparison->NodeDeltas.size() << ".";
+                m_buildPanelComparisonSummary = Builder.str();
+                BuildActionResult = Ok();
+            }
+            else
+            {
+                BuildActionResult = std::unexpected(Comparison.error());
+            }
+            break;
+        }
+        default:
+            BuildActionResult = std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported editor build action"));
+            break;
+        }
+
+        m_buildPanelHistoryDirty = true;
+        ApplyBuildPanelState(Context, true);
+        ReportEditorExpectedFailure("Build action", BuildActionResult);
+    }
+
     const bool HasProjectLoaded = AssetService->CurrentProject().IsLoaded;
-    const bool RequireProjectSelection = !HasProjectLoaded && !m_hasPendingProjectActionRequest;
+    const bool RequireProjectSelection = !IsProjectWelcomeSuppressed() && !HasProjectLoaded && !m_hasPendingProjectActionRequest;
     m_layout.SetProjectSelectionRequired(RequireProjectSelection);
+    ApplyBuildPanelState(Context);
+
+    if (m_hasPendingSelectionRequest)
+    {
+        const NodeHandle Previous = SelectionService->Model().SelectedNode();
+        const NodeHandle Next = m_pendingSelectionRequest;
+        m_hasPendingSelectionRequest = false;
+        m_pendingSelectionRequest = {};
+
+        if (Previous != Next)
+        {
+            if (CommandService)
+            {
+                (void)CommandService->Execute(Context, std::make_unique<SelectNodeCommand>(Previous, Next));
+            }
+            else
+            {
+                ApplySelection(SelectionService->Model(), Next);
+            }
+        }
+    }
+
     if (!HasProjectLoaded)
     {
         SceneService->Tick(Context, 0.0f);
@@ -1443,26 +1952,6 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_pendingConduitClassGraph.clear();
     }
 
-    if (m_hasPendingSelectionRequest)
-    {
-        const NodeHandle Previous = SelectionService->Model().SelectedNode();
-        const NodeHandle Next = m_pendingSelectionRequest;
-        m_hasPendingSelectionRequest = false;
-        m_pendingSelectionRequest = {};
-
-        if (Previous != Next)
-        {
-            if (CommandService)
-            {
-                (void)CommandService->Execute(Context, std::make_unique<SelectNodeCommand>(Previous, Next));
-            }
-            else
-            {
-                ApplySelection(SelectionService->Model(), Next);
-            }
-        }
-    }
-
     if (m_hasPendingHierarchyActionRequest)
     {
         EditorLayout::HierarchyActionRequest Request = m_pendingHierarchyActionRequest;
@@ -1539,12 +2028,180 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     m_layout.Sync(Context.Runtime(), SceneService->ActiveCameraHandle(), &SelectionService->Model(), DeltaSeconds);
 }
 
+void EditorLayoutService::ApplyBuildPanelState(EditorServiceContext& Context, const bool ForceHistoryReload)
+{
+    auto* AssetService = Context.GetService<EditorAssetService>();
+    auto* BuildService = Context.GetService<EditorBuildService>();
+    if (!AssetService || !BuildService)
+    {
+        return;
+    }
+
+    EditorLayout::BuildPanelState State{};
+    const auto& CurrentProject = AssetService->CurrentProject();
+    State.ProjectLoaded = CurrentProject.IsLoaded;
+    State.ProjectName = CurrentProject.Name;
+    State.ProjectFilePath = CurrentProject.ProjectFilePath;
+    State.AssetRootDirectory = CurrentProject.AssetRootDirectory;
+    State.BuildInProgress = BuildService->IsBusy();
+    State.StatusMessage = BuildService->StatusMessage();
+    if (BuildService->ConsoleLogProjectFilePath().lexically_normal() ==
+        std::filesystem::path(CurrentProject.ProjectFilePath).lexically_normal())
+    {
+        State.ConsoleLogRevision = BuildService->ConsoleLogRevision();
+        State.ConsoleLogText = BuildService->ConsoleLogText();
+    }
+
+    if (!CurrentProject.IsLoaded || CurrentProject.ProjectFilePath.empty())
+    {
+        m_cachedBuildHistory.clear();
+        m_buildPanelHistoryDirty = true;
+        m_buildPanelHistoryProjectFilePath.clear();
+        m_buildPanelComparisonSummary.clear();
+        State.HistoryComparisonSummary.clear();
+
+        const std::size_t Signature = ComputeBuildPanelStateSignature(State);
+        if (Signature != m_buildPanelStateSignature)
+        {
+            m_layout.SetBuildPanelState(std::move(State));
+            m_buildPanelStateSignature = Signature;
+        }
+        return;
+    }
+
+    const bool ProjectChanged = (m_buildPanelHistoryProjectFilePath != CurrentProject.ProjectFilePath);
+    if (ProjectChanged)
+    {
+        m_cachedBuildHistory.clear();
+        m_buildPanelComparisonSummary.clear();
+        m_buildPanelHistoryDirty = true;
+    }
+
+    auto Profiles = BuildService->ListProfiles(Context);
+    ReportEditorExpectedFailure("List build profiles", Profiles);
+    if (Profiles)
+    {
+        State.Profiles.reserve(Profiles->size());
+        for (const auto& Profile : *Profiles)
+        {
+            EditorLayout::BuildProfileEntry Entry{};
+            Entry.Name = Profile.Name;
+            Entry.Label = Profile.Label;
+            Entry.Summary = Profile.Summary;
+            Entry.Platform = Profile.Platform;
+            Entry.Configuration = Profile.Configuration;
+            Entry.ExecutionEnvironment = Profile.ExecutionEnvironment;
+            Entry.SelectedLevels = Profile.SelectedLevels;
+            Entry.ExplicitAssets = Profile.ExplicitAssets;
+            Entry.IncludeFolders = Profile.IncludeFolders;
+            Entry.ExcludeFolders = Profile.ExcludeFolders;
+            Entry.IncludeAssetLabels = Profile.IncludeAssetLabels;
+            Entry.ExcludeAssetLabels = Profile.ExcludeAssetLabels;
+            Entry.IncludeAssetKinds = Profile.IncludeAssetKinds;
+            Entry.ExcludeAssetKinds = Profile.ExcludeAssetKinds;
+            Entry.DependencyPolicy = Profile.DependencyPolicy;
+            Entry.ChunkStrategy = Profile.ChunkStrategy;
+            Entry.AllowExplicitOverrideExcludes = Profile.AllowExplicitOverrideExcludes;
+            Entry.ArchiveEnabled = Profile.ArchiveEnabled;
+            Entry.ArchiveFormat = Profile.ArchiveFormat;
+            Entry.IsDefault = Profile.IsDefault;
+            Entry.IsAdHoc = Profile.IsAdHoc;
+            State.Profiles.emplace_back(std::move(Entry));
+        }
+    }
+
+    std::unordered_set<std::string> AddedLevels{};
+    std::unordered_set<std::string> AddedAssets{};
+    std::unordered_set<std::string> AddedKinds{};
+    for (const EditorAssetService::DiscoveredAsset& Asset : AssetService->Assets())
+    {
+        const std::string AssetField = TrimCopy(BuildDiscoveredAssetField(Asset, CurrentProject.AssetRootDirectory));
+        if (!AssetField.empty() && AddedAssets.insert(AssetField).second)
+        {
+            State.AvailableAssets.push_back(AssetField);
+            if (IsLevelAssetField(AssetField) && AddedLevels.insert(AssetField).second)
+            {
+                State.AvailableLevels.push_back(AssetField);
+            }
+        }
+
+        const std::string KindLabel = TrimCopy(Asset.TypeLabel.empty() ? Asset.Variant : Asset.TypeLabel);
+        if (!KindLabel.empty() && AddedKinds.insert(KindLabel).second)
+        {
+            State.AvailableAssetKinds.push_back(KindLabel);
+        }
+    }
+    std::sort(State.AvailableLevels.begin(), State.AvailableLevels.end());
+    std::sort(State.AvailableAssets.begin(), State.AvailableAssets.end());
+    std::sort(State.AvailableAssetKinds.begin(), State.AvailableAssetKinds.end());
+
+    if (const auto& LastPlan = BuildService->LastPlan(); LastPlan.has_value())
+    {
+        State.LastPlanSummary = DescribePlanSummary(*LastPlan);
+    }
+
+    if (const auto& LastReport = BuildService->LastReport(); LastReport.has_value())
+    {
+        State.LastBuildId = LastReport->BuildId;
+        State.LastBuildSummary = DescribeBuildSummary(*LastReport);
+        State.LastBuildOutputSummary = DescribeOutputSummary(*LastReport);
+    }
+
+    if (BuildService->ConsumeHistoryRefreshRequested())
+    {
+        m_buildPanelHistoryDirty = true;
+    }
+
+    if (ForceHistoryReload || ProjectChanged || m_buildPanelHistoryDirty ||
+        (m_layout.IsBuildModalOpen() && m_cachedBuildHistory.empty()))
+    {
+        auto History = BuildService->ListHistory(Context);
+        ReportEditorExpectedFailure("List build history", History);
+        if (History)
+        {
+            m_cachedBuildHistory = *History;
+            m_buildPanelHistoryDirty = false;
+            m_buildPanelHistoryProjectFilePath = CurrentProject.ProjectFilePath;
+        }
+    }
+
+    State.HistoryEntries.reserve(m_cachedBuildHistory.size());
+    for (std::size_t Index = 0; Index < m_cachedBuildHistory.size(); ++Index)
+    {
+        const BuildHistoryEntry& Entry = m_cachedBuildHistory[Index];
+        EditorLayout::BuildHistoryEntryView View{};
+        View.BuildId = Entry.BuildId;
+        View.Label = Entry.BuildId + " [" + std::string(HistoryStateLabel(Entry.State));
+        if (Entry.State == EBuildHistoryEntryState::Complete)
+        {
+            View.Label += " / " + std::string(BuildStatusLabel(Entry.Status));
+        }
+        View.Label += "]";
+        View.Summary = DescribeHistorySummary(Entry);
+        View.RequestHash = Entry.RequestHash;
+        View.StartedAtUtc = Entry.StartedAtUtc;
+        View.FinishedAtUtc = Entry.FinishedAtUtc;
+        View.IsComplete = Entry.State == EBuildHistoryEntryState::Complete;
+        View.IsLatest = (Index == 0u);
+        State.HistoryEntries.emplace_back(std::move(View));
+    }
+    State.HistoryComparisonSummary = m_buildPanelComparisonSummary;
+
+    const std::size_t Signature = ComputeBuildPanelStateSignature(State);
+    if (Signature != m_buildPanelStateSignature)
+    {
+        m_layout.SetBuildPanelState(std::move(State));
+        m_buildPanelStateSignature = Signature;
+    }
+}
+
 void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
 {
     auto* AssetService = Context.GetService<EditorAssetService>();
+    auto* BuildService = Context.GetService<EditorBuildService>();
     auto* IconService = Context.GetService<EditorAssetIconService>();
     auto* ConduitService = Context.GetService<Conduit::Editor::ConduitEditorService>();
-    if (!AssetService || !IconService || !ConduitService)
+    if (!AssetService || !BuildService || !IconService || !ConduitService)
     {
         return;
     }
@@ -1635,7 +2292,11 @@ void EditorLayoutService::ApplyAssetBrowserState(EditorServiceContext& Context)
         Details.CanSave = false;
     }
 
-    if (!AssetService->StatusMessage().empty())
+    if (!BuildService->StatusMessage().empty())
+    {
+        Details.Status = BuildService->StatusMessage();
+    }
+    else if (!AssetService->StatusMessage().empty())
     {
         Details.Status = AssetService->StatusMessage();
     }
@@ -2141,6 +2802,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_layout.Shutdown(&Context.Runtime());
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
+    m_buildPanelStateSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
@@ -2151,6 +2813,10 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
     m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     m_hasPendingProjectActionRequest = false;
     m_pendingProjectActionRequest = {};
+    m_hasPendingPluginActionRequest = false;
+    m_pendingPluginActionRequest = {};
+    m_hasPendingModuleActionRequest = false;
+    m_pendingModuleActionRequest = {};
     m_hasPendingAssetCreateRequest = false;
     m_pendingAssetCreateRequest = {};
     m_hasPendingAssetImportRequest = false;
@@ -2244,6 +2910,24 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
                 m_hasPendingProjectActionRequest = true;
                 // Prevent same-frame required-project logic from reopening the chooser while a request is queued.
                 m_layout.SetProjectSelectionRequired(false);
+            }));
+    m_layout.SetPluginActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::PluginActionRequest&)>::Bind(
+            [this](const EditorLayout::PluginActionRequest& Request) {
+                m_pendingPluginActionRequest = Request;
+                m_hasPendingPluginActionRequest = true;
+            }));
+    m_layout.SetModuleActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::ModuleActionRequest&)>::Bind(
+            [this](const EditorLayout::ModuleActionRequest& Request) {
+                m_pendingModuleActionRequest = Request;
+                m_hasPendingModuleActionRequest = true;
+            }));
+    m_layout.SetBuildActionHandler(
+        SnAPI::UI::TDelegate<void(const EditorLayout::BuildActionRequest&)>::Bind(
+            [this](const EditorLayout::BuildActionRequest& Request) {
+                m_pendingBuildActionRequest = Request;
+                m_hasPendingBuildActionRequest = true;
             }));
     m_layout.SetContentAssetSelectionHandler(
         SnAPI::UI::TDelegate<void(const std::string&, bool)>::Bind([this](const std::string& AssetKey, const bool IsDoubleClick) {
@@ -2481,7 +3165,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
 
     if (auto* AssetService = Context.GetService<EditorAssetService>())
     {
-        m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
+        m_layout.SetProjectSelectionRequired(ShouldRequireProjectSelection(*AssetService, m_hasPendingProjectActionRequest));
     }
     ApplyAssetBrowserState(Context);
     m_layoutRebuildRequested = false;
@@ -2539,6 +3223,9 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layout.SetHierarchyActionHandler({});
     m_layout.SetToolbarActionHandler({});
     m_layout.SetProjectActionHandler({});
+    m_layout.SetPluginActionHandler({});
+    m_layout.SetModuleActionHandler({});
+    m_layout.SetBuildActionHandler({});
     m_hasPendingSelectionRequest = false;
     m_pendingSelectionRequest = {};
     m_hasPendingHierarchyActionRequest = false;
@@ -2547,6 +3234,12 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_pendingToolbarAction = EditorLayout::EToolbarAction::Play;
     m_hasPendingProjectActionRequest = false;
     m_pendingProjectActionRequest = {};
+    m_hasPendingPluginActionRequest = false;
+    m_pendingPluginActionRequest = {};
+    m_hasPendingModuleActionRequest = false;
+    m_pendingModuleActionRequest = {};
+    m_hasPendingBuildActionRequest = false;
+    m_pendingBuildActionRequest = {};
     m_hasPendingAssetSelection = false;
     m_pendingAssetSelectionDoubleClick = false;
     m_pendingAssetSelectionKey.clear();
@@ -2642,10 +3335,15 @@ void EditorLayoutService::Shutdown(EditorServiceContext& Context)
     m_layoutRebuildRequested = false;
     m_assetListSignature = 0;
     m_assetDetailsSignature = 0;
+    m_buildPanelStateSignature = 0;
     m_assetInspectorSessionRevision = std::numeric_limits<std::uint64_t>::max();
     m_assetInspectorIconRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitWorkspaceRevision = std::numeric_limits<std::uint64_t>::max();
     m_conduitCanvasRevision = std::numeric_limits<std::uint64_t>::max();
+    m_buildPanelHistoryDirty = true;
+    m_buildPanelHistoryProjectFilePath.clear();
+    m_buildPanelComparisonSummary.clear();
+    m_cachedBuildHistory.clear();
     m_layout.Shutdown(&Context.Runtime());
 }
 

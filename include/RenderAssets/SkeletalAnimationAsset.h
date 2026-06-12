@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BuiltinTypes.h"
 #include "IAsset.h"
 #include "RenderAssets/AnimationPayload.h"
 #include "RenderAssets/ImportedAssetProvenancePayload.h"
@@ -35,5 +36,9 @@ struct SkeletalAnimationAsset : public IAsset
                Provenance == Other.Provenance;
     }
 };
+
+using SkeletalAnimationAssetRef = TAssetRef<SkeletalAnimationAsset, void>;
+SNAPI_DEFINE_TYPE_NAME(SkeletalAnimationAssetRef, "SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalAnimationAsset>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<SkeletalAnimationAssetRef>, "std::vector<SnAPI::GameFramework::TAssetRef<SnAPI::GameFramework::SkeletalAnimationAsset>>")
 
 } // namespace SnAPI::GameFramework

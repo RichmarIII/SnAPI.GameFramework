@@ -21,6 +21,7 @@
 #include "SSGIParamsNode.h"
 #include "SSRParamsNode.h"
 #include "TAAParamsNode.h"
+#include "SkeletalMeshComponent.h"
 #include "StaticMeshComponent.h"
 #include "ToneMapParamsNode.h"
 #include "WorldRenderSettings.h"
@@ -1798,6 +1799,85 @@ void UIPropertyPanel::BuildTypeIntoContainer(
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
   if (Type == StaticTypeId<StaticMeshComponent::Settings>())
+  {
+    const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
+    std::vector<FieldPathEntry> overridePath{};
+    bool hasOverrideField = false;
+    for (const ReflectedFieldRef& fieldRef : reflectedFields)
+    {
+      if (!fieldRef.Field)
+      {
+        continue;
+      }
+
+      if (fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::Hidden))
+      {
+        continue;
+      }
+
+      if (EqualsIgnoreCase(fieldRef.Field->Name, "MaterialInstanceOverrides"))
+      {
+        overridePath = PathPrefix;
+        overridePath.push_back(FieldPathEntry{
+          fieldRef.OwnerType,
+          fieldRef.Field->Name,
+          fieldRef.Field->IsConst,
+          fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
+        hasOverrideField = true;
+        continue;
+      }
+
+      auto path = PathPrefix;
+      path.push_back(FieldPathEntry{
+        fieldRef.OwnerType,
+        fieldRef.Field->Name,
+        fieldRef.Field->IsConst,
+        fieldRef.Field->EditorFlags.Has(EFieldEditorFlagBits::ReadOnly)});
+      AddFieldEditor(Parent, *fieldRef.Field, RootInstance, std::move(path), Depth, SectionIndex);
+    }
+
+    if (!hasOverrideField)
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Field metadata is missing");
+      return;
+    }
+
+    void* owner = nullptr;
+    const FieldInfo* field = nullptr;
+    if (!ResolveLeafPath(RootInstance, overridePath, owner, field) || !field || !field->MutablePointer)
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Unable to resolve override storage");
+      return;
+    }
+
+    if (field->FieldType != StaticTypeId<std::vector<TAssetRef<MaterialInstanceAsset>>>())
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Override field type mismatch");
+      return;
+    }
+
+    auto* overrides = static_cast<std::vector<TAssetRef<MaterialInstanceAsset>>*>(field->MutablePointer(owner));
+    if (!overrides)
+    {
+      AddUnsupportedRow(Parent, "Material Instance Overrides", "Override storage is unavailable");
+      return;
+    }
+
+    const bool readOnly = std::ranges::any_of(overridePath, [](const FieldPathEntry& entry) {
+      return entry.IsConst || entry.ForceReadOnly;
+    })
+                       || field->IsConst
+                       || !field->Setter;
+    AddMaterialInstanceAssetRefCollectionEditor(
+      Parent,
+      *overrides,
+      readOnly,
+      "Material Instance Overrides",
+      "Slot");
+    return;
+  }
+
+  if (Type == StaticTypeId<SkeletalMeshComponent::Settings>())
   {
     const auto reflectedFields = TypeRegistry::Instance().CollectFields(Type);
     std::vector<FieldPathEntry> overridePath{};

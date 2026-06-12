@@ -10,33 +10,29 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class BloomPass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures bloom passes for one or more render viewports.
+ * @brief Data-driven node that configures bloom feature settings for one or more render viewports.
  *
  * `BloomParamsNode` stores the renderer-facing bloom settings that authors want applied to the
  * selected viewport or viewports. The node itself is not a renderer resource. It is a world node
- * that retries until the renderer exposes a bloom pass for the targeted viewport, then uploads the
+ * that retries until the renderer exposes bloom feature state for the targeted viewport, then uploads the
  * current parameters.
  *
  * Core semantics:
  * - A negative viewport id targets all currently known render viewports.
  * - A non-negative viewport id targets one renderer viewport with the same numeric id.
- * - The node notices pass-graph rebuilds and reapplies automatically after the bloom pass is recreated.
+ * - The node notices feature-profile changes and reapplies automatically after renderer feature state is recreated.
  * - Numeric values are sanitized before upload; for example, negative values are clamped away and
  *   mip counts are forced to at least one.
  *
  * Ownership and lifetime:
  * - The node owns only its serialized bloom settings.
- * - Bloom passes are owned by `RendererSystem` and may come and go with viewport lifetime.
+ * - Bloom feature state is owned by `RendererSystem` and may be recreated with viewport lifetime.
  *
  * Threading model:
  * - Main-thread only.
@@ -106,11 +102,11 @@ public:
 
     /**
      * @brief Mark the node dirty and attempt to apply the current bloom settings.
-     * @remarks Safe before viewport readiness; the node will retry until a bloom pass exists.
+     * @remarks Safe before viewport readiness; the node will retry until renderer feature state is available.
      */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -121,8 +117,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -134,7 +130,7 @@ private:
     std::uint32_t m_mipCount = 5;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

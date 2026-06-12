@@ -240,6 +240,17 @@ public:
      */
     std::optional<SnAPI::Networking::NetConnectionHandle> ResolveConnectionByOwnerId(std::uint64_t OwnerConnectionId) const;
 
+    /**
+     * @brief Check whether one owner-connection id is the local client leg of an owned listen-server bootstrap.
+     * @param OwnerConnectionId Stable gameplay owner-connection id / live transport handle.
+     * @return `true` when this system owns a listen-server session whose bootstrap auto-connect created the given handle.
+     *
+     * Listen-server bootstrap opens one client connection back into the locally hosted
+     * server so replicated client-side systems can execute against a real transport flow.
+     * Gameplay systems must not treat that connection as a remote player source.
+     */
+    [[nodiscard]] bool IsHostedClientConnection(std::uint64_t OwnerConnectionId) const;
+
 private:
     bool WireSession(SnAPI::Networking::NetSession& Session,
                      SnAPI::Networking::RpcTargetId TargetIdValue);
@@ -255,6 +266,7 @@ private:
     std::unique_ptr<NetReplicationBridge> m_replicationBridge{}; /**< @brief Graph replication adapter owned by subsystem. */
     std::unique_ptr<NetRpcBridge> m_rpcBridge{}; /**< @brief Graph RPC adapter owned by subsystem. */
     SnAPI::Networking::RpcTargetId m_rpcTargetId = 1; /**< @brief RPC target namespace/channel id used for bridge binding. */
+    std::optional<SnAPI::Networking::NetConnectionHandle> m_hostedClientConnection{}; /**< @brief Owned listen-server bootstrap client handle, if any. */
 };
 
 SNAPI_DEFINE_TYPE_NAME(NetworkSystem, "SnAPI::GameFramework::NetworkSystem")

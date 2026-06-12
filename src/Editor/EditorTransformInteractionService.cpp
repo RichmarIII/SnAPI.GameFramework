@@ -9,11 +9,14 @@
 #include "Editor/EditorSelectionService.h"
 #include "GameRuntime.h"
 #include "InputSystem.h"
+#include "RendererSystem.h"
 #include "SkeletalMeshComponent.h"
 #include "StaticMeshComponent.h"
 #include "TransformComponent.h"
 #include "UIRenderViewport.h"
 #include "World.h"
+
+#include "Rendering/GameRenderCamera.h"
 
 #include <UIEvents.h>
 #include <UIContext.h>
@@ -23,18 +26,16 @@
 #include <Input.h>
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-#include <PrimitiveStreamSources.hpp>
-#include "ICamera.hpp"
-#include "IRenderObject.hpp"
-#include "LinearAlgebra.hpp"
-#include <MeshRenderObject.hpp>
-#endif
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <numbers>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -90,176 +91,16 @@ namespace
     return Quantized;
 }
 
-[[nodiscard]] Quat RotationFromTo(const Vec3& From, const Vec3& To)
-{
-    const Vec3 Source = NormalizeOrAxis(From, Vec3::UnitX());
-    const Vec3 Target = NormalizeOrAxis(To, Vec3::UnitX());
-    const SnAPI::Math::Scalar Dot =
-        std::clamp(Source.dot(Target), static_cast<SnAPI::Math::Scalar>(-1.0), static_cast<SnAPI::Math::Scalar>(1.0));
 
-    if (Dot >= static_cast<SnAPI::Math::Scalar>(1.0 - 1.0e-6))
-    {
-        return Quat::Identity();
-    }
-
-    if (Dot <= static_cast<SnAPI::Math::Scalar>(-1.0 + 1.0e-6))
-    {
-        const Vec3 SeedAxis = std::fabs(Source.dot(Vec3::UnitX())) < static_cast<SnAPI::Math::Scalar>(0.99)
-            ? Vec3::UnitX()
-            : Vec3::UnitY();
-        const Vec3 OrthogonalAxis = NormalizeOrAxis(Source.cross(SeedAxis), Vec3::UnitZ());
-        return Quat(SnAPI::Math::AngleAxis3D(std::numbers::pi_v<SnAPI::Math::Scalar>, OrthogonalAxis));
-    }
-
-    const Vec3 Axis = NormalizeOrAxis(Source.cross(Target), Vec3::UnitZ());
-    const SnAPI::Math::Scalar Angle = std::acos(Dot);
-    return Quat(SnAPI::Math::AngleAxis3D(Angle, Axis));
-}
-
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-class EditorTorusStreamSource final : public SnAPI::Graphics::PrimitiveStreamSourceBase
-{
-public:
-    EditorTorusStreamSource(float MajorRadius, float MinorRadius, std::uint32_t MajorSegments, std::uint32_t MinorSegments)
-        : SnAPI::Graphics::PrimitiveStreamSourceBase("EditorTorusStreamSource")
-        , m_majorRadius(std::max(MajorRadius, 0.01f))
-        , m_minorRadius(std::max(MinorRadius, 0.0025f))
-        , m_majorSegments(std::max(MajorSegments, 8u))
-        , m_minorSegments(std::max(MinorSegments, 4u))
-    {
-        RebuildGeometry();
-    }
-
-    void SetShape(float MajorRadius, float MinorRadius)
-    {
-        const float NextMajor = std::max(MajorRadius, 0.01f);
-        const float NextMinor = std::max(MinorRadius, 0.0025f);
-        if (std::fabs(m_majorRadius - NextMajor) <= 1.0e-6f
-            && std::fabs(m_minorRadius - NextMinor) <= 1.0e-6f)
-        {
-            return;
-        }
-
-        m_majorRadius = NextMajor;
-        m_minorRadius = NextMinor;
-        RebuildGeometry();
-    }
-
-private:
-    void RebuildGeometry()
-    {
-        const std::uint32_t RingSegments = std::max(m_majorSegments, 8u);
-        const std::uint32_t TubeSegments = std::max(m_minorSegments, 4u);
-        const std::uint32_t RingVertices = RingSegments + 1u;
-        const std::uint32_t TubeVertices = TubeSegments + 1u;
-
-        std::vector<SnAPI::Vector3DF> Positions{};
-        std::vector<SnAPI::Vector3DF> Normals{};
-        std::vector<SnAPI::Vector4DF> Tangents{};
-        std::vector<SnAPI::Vector2DF> UV0{};
-        std::vector<std::uint32_t> Indices{};
-
-        Positions.reserve(static_cast<std::size_t>(RingVertices) * static_cast<std::size_t>(TubeVertices));
-        Normals.reserve(Positions.capacity());
-        Tangents.reserve(Positions.capacity());
-        UV0.reserve(Positions.capacity());
-        Indices.reserve(static_cast<std::size_t>(RingSegments) * static_cast<std::size_t>(TubeSegments) * 6u);
-
-        const float InvRing = 1.0f / static_cast<float>(RingSegments);
-        const float InvTube = 1.0f / static_cast<float>(TubeSegments);
-        for (std::uint32_t Ring = 0; Ring <= RingSegments; ++Ring)
-        {
-            const float RingT = static_cast<float>(Ring) * InvRing;
-            const float Phi = RingT * static_cast<float>(2.0 * std::numbers::pi_v<double>);
-            const float CosPhi = std::cos(Phi);
-            const float SinPhi = std::sin(Phi);
-
-            for (std::uint32_t Tube = 0; Tube <= TubeSegments; ++Tube)
-            {
-                const float TubeT = static_cast<float>(Tube) * InvTube;
-                const float Theta = TubeT * static_cast<float>(2.0 * std::numbers::pi_v<double>);
-                const float CosTheta = std::cos(Theta);
-                const float SinTheta = std::sin(Theta);
-
-                const float RadiusAtTube = m_majorRadius + (m_minorRadius * CosTheta);
-                const SnAPI::Vector3DF Position{
-                    RadiusAtTube * CosPhi,
-                    m_minorRadius * SinTheta,
-                    RadiusAtTube * SinPhi};
-
-                SnAPI::Vector3DF Normal{
-                    CosTheta * CosPhi,
-                    SinTheta,
-                    CosTheta * SinPhi};
-                if (Normal.squaredNorm() > 1.0e-10f)
-                {
-                    Normal.normalize();
-                }
-                else
-                {
-                    Normal = SnAPI::Vector3DF::UnitY();
-                }
-
-                SnAPI::Vector3DF Tangent3{
-                    -RadiusAtTube * SinPhi,
-                    0.0f,
-                    RadiusAtTube * CosPhi};
-                if (Tangent3.squaredNorm() > 1.0e-10f)
-                {
-                    Tangent3.normalize();
-                }
-                else
-                {
-                    Tangent3 = SnAPI::Vector3DF::UnitX();
-                }
-
-                Positions.push_back(Position);
-                Normals.push_back(Normal);
-                Tangents.emplace_back(Tangent3.x(), Tangent3.y(), Tangent3.z(), 1.0f);
-                UV0.emplace_back(RingT, TubeT);
-            }
-        }
-
-        for (std::uint32_t Ring = 0; Ring < RingSegments; ++Ring)
-        {
-            for (std::uint32_t Tube = 0; Tube < TubeSegments; ++Tube)
-            {
-                const std::uint32_t I0 = (Ring * TubeVertices) + Tube;
-                const std::uint32_t I1 = I0 + 1u;
-                const std::uint32_t I2 = ((Ring + 1u) * TubeVertices) + Tube;
-                const std::uint32_t I3 = I2 + 1u;
-
-                Indices.push_back(I0);
-                Indices.push_back(I2);
-                Indices.push_back(I1);
-
-                Indices.push_back(I1);
-                Indices.push_back(I2);
-                Indices.push_back(I3);
-            }
-        }
-
-        ReplaceGeometry(std::move(Positions),
-                        std::move(Normals),
-                        std::move(Tangents),
-                        std::move(UV0),
-                        std::move(Indices));
-    }
-
-    float m_majorRadius = 0.5f;
-    float m_minorRadius = 0.08f;
-    std::uint32_t m_majorSegments = 64u;
-    std::uint32_t m_minorSegments = 14u;
-};
-
-[[nodiscard]] bool TryBuildViewportRay(const SnAPI::Graphics::ICamera& Camera,
+[[nodiscard]] bool TryBuildViewportRay(const GameRenderCamera& Camera,
                                        const SnAPI::UI::UIRect& ViewRect,
                                        const float ScreenX,
                                        const float ScreenY,
                                        Vec3& OutRayOrigin,
                                        Vec3& OutRayDirection)
 {
-    if (ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !std::isfinite(ScreenX) || !std::isfinite(ScreenY))
+    if (!Camera.Valid() || ViewRect.W <= 0.0f || ViewRect.H <= 0.0f
+        || !std::isfinite(ScreenX) || !std::isfinite(ScreenY))
     {
         return false;
     }
@@ -274,7 +115,7 @@ private:
     const SnAPI::Math::Scalar NormalizedX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
     const SnAPI::Math::Scalar NormalizedY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
     const SnAPI::Math::Scalar FovRadians = static_cast<SnAPI::Math::Scalar>(
-        static_cast<double>(Camera.Fov()) * (std::numbers::pi_v<double> / 180.0));
+        static_cast<double>(Camera.FovDegrees()) * (std::numbers::pi_v<double> / 180.0));
     const SnAPI::Math::Scalar TanHalfFov = static_cast<SnAPI::Math::Scalar>(
         std::tan(static_cast<double>(FovRadians) * 0.5));
     const SnAPI::Math::Scalar Aspect = static_cast<SnAPI::Math::Scalar>(Camera.Aspect());
@@ -285,9 +126,9 @@ private:
         return false;
     }
 
-    const Vec3 Forward = NormalizeOrAxis(Camera.Forward().template cast<SnAPI::Math::Scalar>(), Vec3::UnitZ());
-    const Vec3 Right = NormalizeOrAxis(Camera.Right().template cast<SnAPI::Math::Scalar>(), Vec3::UnitX());
-    const Vec3 Up = NormalizeOrAxis(Camera.Up().template cast<SnAPI::Math::Scalar>(), Vec3::UnitY());
+    const Vec3 Forward = NormalizeOrAxis(Camera.Forward(), Vec3::UnitZ());
+    const Vec3 Right = NormalizeOrAxis(Camera.Right(), Vec3::UnitX());
+    const Vec3 Up = NormalizeOrAxis(Camera.Up(), Vec3::UnitY());
 
     Vec3 RayDirection = Forward +
         (Right * (NormalizedX * Aspect * TanHalfFov)) +
@@ -300,8 +141,8 @@ private:
 
     RayDirection /= std::sqrt(DirectionLengthSquared);
     const SnAPI::Math::Scalar NearClip =
-        std::max(static_cast<SnAPI::Math::Scalar>(Camera.Near()), static_cast<SnAPI::Math::Scalar>(0.001));
-    const Vec3 RayOrigin = Camera.Position().template cast<SnAPI::Math::Scalar>() + (RayDirection * NearClip);
+        std::max(static_cast<SnAPI::Math::Scalar>(Camera.NearClip()), static_cast<SnAPI::Math::Scalar>(0.001));
+    const Vec3 RayOrigin = Camera.Position() + (RayDirection * NearClip);
     if (!IsFiniteVec3(RayOrigin) || !IsFiniteVec3(RayDirection))
     {
         return false;
@@ -348,12 +189,12 @@ private:
 }
 
 [[nodiscard]] Vec3 ResolveAxisMovePlaneNormal(const Vec3& AxisDirection,
-                                              const SnAPI::Graphics::ICamera& Camera)
+                                              const GameRenderCamera& Camera)
 {
     const Vec3 Axis = NormalizeOrAxis(AxisDirection, Vec3::UnitX());
-    const Vec3 CameraForward = NormalizeOrAxis(Camera.Forward().template cast<SnAPI::Math::Scalar>(), Vec3::UnitZ());
-    const Vec3 CameraRight = NormalizeOrAxis(Camera.Right().template cast<SnAPI::Math::Scalar>(), Vec3::UnitX());
-    const Vec3 CameraUp = NormalizeOrAxis(Camera.Up().template cast<SnAPI::Math::Scalar>(), Vec3::UnitY());
+    const Vec3 CameraForward = NormalizeOrAxis(Camera.Forward(), Vec3::UnitZ());
+    const Vec3 CameraRight = NormalizeOrAxis(Camera.Right(), Vec3::UnitX());
+    const Vec3 CameraUp = NormalizeOrAxis(Camera.Up(), Vec3::UnitY());
 
     const auto RejectAxis = [&Axis](const Vec3& Value) -> Vec3
     {
@@ -380,139 +221,96 @@ private:
     return NormalizeOrAxis(PlaneNormal, Vec3::UnitZ());
 }
 
-[[nodiscard]] bool IsFiniteMatrix4(const SnAPI::Matrix4& Matrix)
+void ResolveNativeGizmoFrame(const NodeTransform& SelectedTransform,
+                             const GameRenderCamera& Camera,
+                             const EditorLayout::EGizmoSpace Space,
+                             std::array<Vec3, 3>& OutAxisBasis,
+                             SnAPI::Math::Scalar& OutAxisLength,
+                             SnAPI::Math::Scalar& OutAxisThickness,
+                             SnAPI::Math::Scalar& OutRingRadius)
 {
-    return Matrix.allFinite();
-}
-#endif
-
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
-[[nodiscard]] std::array<SnAPI::Math::Scalar, 3> ResolveFallbackAxisExtents(const std::array<Vec3, 3>& Axes,
-                                                                             const Vec3& FallbackScale)
-{
-    const Vec3 ScaleAbs = FallbackScale.cwiseAbs();
-    std::array<SnAPI::Math::Scalar, 3> Extents{
-        static_cast<SnAPI::Math::Scalar>(0.05),
-        static_cast<SnAPI::Math::Scalar>(0.05),
-        static_cast<SnAPI::Math::Scalar>(0.05)};
-
-    for (std::size_t AxisIndex = 0; AxisIndex < Axes.size(); ++AxisIndex)
+    Vec3 BasisX = Vec3::UnitX();
+    Vec3 BasisY = Vec3::UnitY();
+    Vec3 BasisZ = Vec3::UnitZ();
+    switch (Space)
     {
-        const Vec3 Axis = NormalizeOrAxis(
-            Axes[AxisIndex],
-            AxisIndex == 0
-                ? Vec3::UnitX()
-                : (AxisIndex == 1 ? Vec3::UnitY() : Vec3::UnitZ()));
-        const SnAPI::Math::Scalar Extent = static_cast<SnAPI::Math::Scalar>(0.5) * (
-            std::fabs(Axis.x()) * ScaleAbs.x() +
-            std::fabs(Axis.y()) * ScaleAbs.y() +
-            std::fabs(Axis.z()) * ScaleAbs.z());
-        if (std::isfinite(Extent) && Extent > static_cast<SnAPI::Math::Scalar>(0.0))
+    case EditorLayout::EGizmoSpace::Object:
         {
-            Extents[AxisIndex] = std::max(Extents[AxisIndex], Extent);
+            const auto RotationMatrix = SelectedTransform.Rotation.toRotationMatrix();
+            BasisX = NormalizeOrAxis(RotationMatrix * Vec3::UnitX(), Vec3::UnitX());
+            BasisY = NormalizeOrAxis(RotationMatrix * Vec3::UnitY(), Vec3::UnitY());
+            BasisZ = NormalizeOrAxis(RotationMatrix * Vec3::UnitZ(), Vec3::UnitZ());
         }
+        break;
+    case EditorLayout::EGizmoSpace::Camera:
+        BasisX = NormalizeOrAxis(Camera.Right(), Vec3::UnitX());
+        BasisY = NormalizeOrAxis(Camera.Up(), Vec3::UnitY());
+        BasisZ = NormalizeOrAxis(Camera.Forward(), Vec3::UnitZ());
+        break;
+    case EditorLayout::EGizmoSpace::World:
+    default:
+        break;
     }
 
-    return Extents;
-}
+    OutAxisBasis = {
+        NormalizeOrAxis(BasisX, Vec3::UnitX()),
+        NormalizeOrAxis(BasisY, Vec3::UnitY()),
+        NormalizeOrAxis(BasisZ, Vec3::UnitZ())};
 
-[[nodiscard]] bool ComputeRenderObjectAxisExtentsFromPivot(const SnAPI::Graphics::IRenderObject& RenderObject,
-                                                           const std::array<Vec3, 3>& Axes,
-                                                           std::array<SnAPI::Math::Scalar, 3>& InOutMaxExtents)
-{
-    const auto& Source = RenderObject.VertexStreamSource();
-    if (!Source)
-    {
-        return false;
-    }
-
-    const std::uint32_t SubMeshCount = Source->SubMeshCount();
-    if (SubMeshCount == 0)
-    {
-        return false;
-    }
-
-    std::array<SnAPI::Vector3D, 3> AxisVectors{
-        SnAPI::Vector3D{NormalizeOrAxis(Axes[0], Vec3::UnitX()).x(), NormalizeOrAxis(Axes[0], Vec3::UnitX()).y(), NormalizeOrAxis(Axes[0], Vec3::UnitX()).z()},
-        SnAPI::Vector3D{NormalizeOrAxis(Axes[1], Vec3::UnitY()).x(), NormalizeOrAxis(Axes[1], Vec3::UnitY()).y(), NormalizeOrAxis(Axes[1], Vec3::UnitY()).z()},
-        SnAPI::Vector3D{NormalizeOrAxis(Axes[2], Vec3::UnitZ()).x(), NormalizeOrAxis(Axes[2], Vec3::UnitZ()).y(), NormalizeOrAxis(Axes[2], Vec3::UnitZ()).z()}};
-
-    bool HasBounds = false;
-    for (std::uint32_t SubMeshIndex = 0; SubMeshIndex < SubMeshCount; ++SubMeshIndex)
-    {
-        SnAPI::Graphics::VertexSourceSubMesh SubMesh{};
-        if (!Source->SubMesh(SubMeshIndex, SubMesh))
-        {
-            continue;
-        }
-
-        const SnAPI::Matrix4 WorldTransform = RenderObject.GlobalTransform(SubMeshIndex);
-        if (!IsFiniteMatrix4(WorldTransform))
-        {
-            continue;
-        }
-
-        const SnAPI::Vector3D LocalMin = SubMesh.BoundingBoxMin.cast<double>();
-        const SnAPI::Vector3D LocalMax = SubMesh.BoundingBoxMax.cast<double>();
-        const SnAPI::Vector3D LocalCenter = (LocalMin + LocalMax) * 0.5;
-        const SnAPI::Vector3D LocalExtent = (LocalMax - LocalMin) * 0.5;
-
-        const auto LinearPart = WorldTransform.block<3, 3>(0, 0);
-        const SnAPI::Vector3D CenterOffset = LinearPart * LocalCenter;
-        const SnAPI::Vector3D AxisColumn0 = LinearPart.col(0);
-        const SnAPI::Vector3D AxisColumn1 = LinearPart.col(1);
-        const SnAPI::Vector3D AxisColumn2 = LinearPart.col(2);
-
-        for (std::size_t AxisIndex = 0; AxisIndex < AxisVectors.size(); ++AxisIndex)
-        {
-            const SnAPI::Vector3D& Axis = AxisVectors[AxisIndex];
-            const SnAPI::Math::Scalar Extent = static_cast<SnAPI::Math::Scalar>(
-                std::fabs(Axis.dot(CenterOffset)) +
-                (std::fabs(Axis.dot(AxisColumn0)) * LocalExtent.x()) +
-                (std::fabs(Axis.dot(AxisColumn1)) * LocalExtent.y()) +
-                (std::fabs(Axis.dot(AxisColumn2)) * LocalExtent.z()));
-            if (!std::isfinite(Extent) || !(Extent > static_cast<SnAPI::Math::Scalar>(0.0)))
-            {
-                continue;
-            }
-
-            InOutMaxExtents[AxisIndex] = std::max(InOutMaxExtents[AxisIndex], Extent);
-            HasBounds = true;
-        }
-    }
-
-    return HasBounds;
+    const SnAPI::Math::Scalar CameraDistance = std::max<SnAPI::Math::Scalar>(
+        static_cast<SnAPI::Math::Scalar>(0.25),
+        (SelectedTransform.Position - Camera.Position()).norm());
+    const SnAPI::Math::Scalar GizmoScaleMultiplier = static_cast<SnAPI::Math::Scalar>(3.0);
+    OutAxisLength = std::max<SnAPI::Math::Scalar>(
+        CameraDistance * static_cast<SnAPI::Math::Scalar>(0.08) * GizmoScaleMultiplier,
+        static_cast<SnAPI::Math::Scalar>(0.12) * GizmoScaleMultiplier);
+    OutAxisThickness = std::max<SnAPI::Math::Scalar>(
+        static_cast<SnAPI::Math::Scalar>(0.016) * GizmoScaleMultiplier,
+        OutAxisLength * static_cast<SnAPI::Math::Scalar>(0.085));
+    OutRingRadius = std::max<SnAPI::Math::Scalar>(
+        OutAxisLength * static_cast<SnAPI::Math::Scalar>(0.9),
+        CameraDistance * static_cast<SnAPI::Math::Scalar>(0.14) * GizmoScaleMultiplier);
 }
 
-[[nodiscard]] std::array<SnAPI::Math::Scalar, 3> ResolveSelectedObjectAxisExtents(BaseNode& Node,
-                                                                                   const std::array<Vec3, 3>& Axes,
-                                                                                   const Vec3& FallbackScale)
+[[nodiscard]] SnAPI::Math::Scalar RaySegmentDistanceSquared(const Vec3& RayOrigin,
+                                                            const Vec3& RayDirection,
+                                                            const Vec3& SegmentStart,
+                                                            const Vec3& SegmentEnd,
+                                                            SnAPI::Math::Scalar& OutRayT)
 {
-    auto Extents = ResolveFallbackAxisExtents(Axes, FallbackScale);
+    const Vec3 Segment = SegmentEnd - SegmentStart;
+    const Vec3 Offset = RayOrigin - SegmentStart;
+    const SnAPI::Math::Scalar A = RayDirection.dot(RayDirection);
+    const SnAPI::Math::Scalar B = RayDirection.dot(Segment);
+    const SnAPI::Math::Scalar C = Segment.dot(Segment);
+    const SnAPI::Math::Scalar D = RayDirection.dot(Offset);
+    const SnAPI::Math::Scalar E = Segment.dot(Offset);
+    const SnAPI::Math::Scalar Denominator = (A * C) - (B * B);
 
-    auto StaticMeshResult = Node.Component<StaticMeshComponent>();
-    if (StaticMeshResult && StaticMeshResult->RenderObject())
+    SnAPI::Math::Scalar RayT = static_cast<SnAPI::Math::Scalar>(0.0);
+    SnAPI::Math::Scalar SegmentT = static_cast<SnAPI::Math::Scalar>(0.0);
+    if (std::fabs(Denominator) > static_cast<SnAPI::Math::Scalar>(1.0e-8))
     {
-        (void)ComputeRenderObjectAxisExtentsFromPivot(*StaticMeshResult->RenderObject(), Axes, Extents);
+        RayT = ((B * E) - (C * D)) / Denominator;
+        SegmentT = ((A * E) - (B * D)) / Denominator;
+    }
+    else if (C > static_cast<SnAPI::Math::Scalar>(1.0e-8))
+    {
+        SegmentT = E / C;
     }
 
-    auto SkeletalMeshResult = Node.Component<SkeletalMeshComponent>();
-    if (SkeletalMeshResult && SkeletalMeshResult->RenderObject())
-    {
-        (void)ComputeRenderObjectAxisExtentsFromPivot(*SkeletalMeshResult->RenderObject(), Axes, Extents);
-    }
+    RayT = std::max<SnAPI::Math::Scalar>(RayT, static_cast<SnAPI::Math::Scalar>(0.0));
+    SegmentT = std::clamp(
+        SegmentT,
+        static_cast<SnAPI::Math::Scalar>(0.0),
+        static_cast<SnAPI::Math::Scalar>(1.0));
 
-    for (auto& Extent : Extents)
-    {
-        if (!std::isfinite(Extent) || Extent <= static_cast<SnAPI::Math::Scalar>(0.0))
-        {
-            Extent = static_cast<SnAPI::Math::Scalar>(0.05);
-        }
-    }
-    return Extents;
+    const Vec3 RayPoint = RayOrigin + (RayDirection * RayT);
+    const Vec3 SegmentPoint = SegmentStart + (Segment * SegmentT);
+    OutRayT = RayT;
+    return (RayPoint - SegmentPoint).squaredNorm();
 }
 
-#endif
 
 [[nodiscard]] bool IsPointInsideRect(const SnAPI::UI::UIRect& Rect, const float X, const float Y)
 {
@@ -545,460 +343,271 @@ std::vector<std::type_index> EditorTransformInteractionService::Dependencies() c
             std::type_index(typeid(EditorLayoutService))};
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-void EditorTransformInteractionService::EnsureGizmoRenderObjects()
+void EditorTransformInteractionService::UpdateNativeTransformGizmos(EditorServiceContext& Context,
+                                                                    BaseNode* SelectedNode,
+                                                                    const NodeTransform& SelectedTransform,
+                                                                    const GameRenderCamera& Camera,
+                                                                    const std::uint64_t ViewportID)
 {
-    if (m_gizmoAxisX && m_gizmoAxisY && m_gizmoAxisZ
-        && m_gizmoAxisXAux && m_gizmoAxisYAux && m_gizmoAxisZAux)
-    {
-        return;
-    }
-
-    const auto BuildGizmoObject = []() -> std::shared_ptr<SnAPI::Graphics::IRenderObject>
-    {
-        auto RenderObject = std::make_shared<SnAPI::Graphics::MeshRenderObject>();
-        if (!RenderObject)
-        {
-            return {};
-        }
-
-        RenderObject->TriangleCulling(false);
-        RenderObject->SetCastsShadows(false);
-        return RenderObject;
-    };
-
-    if (!m_gizmoAxisX)
-    {
-        m_gizmoAxisX = BuildGizmoObject();
-    }
-    if (!m_gizmoAxisY)
-    {
-        m_gizmoAxisY = BuildGizmoObject();
-    }
-    if (!m_gizmoAxisZ)
-    {
-        m_gizmoAxisZ = BuildGizmoObject();
-    }
-    if (!m_gizmoAxisXAux)
-    {
-        m_gizmoAxisXAux = BuildGizmoObject();
-    }
-    if (!m_gizmoAxisYAux)
-    {
-        m_gizmoAxisYAux = BuildGizmoObject();
-    }
-    if (!m_gizmoAxisZAux)
-    {
-        m_gizmoAxisZAux = BuildGizmoObject();
-    }
-
-    ConfigureGizmoGeometryForMode();
-}
-
-void EditorTransformInteractionService::ConfigureGizmoGeometryForMode()
-{
-    if (!m_gizmoAxisX || !m_gizmoAxisY || !m_gizmoAxisZ
-        || !m_gizmoAxisXAux || !m_gizmoAxisYAux || !m_gizmoAxisZAux)
-    {
-        return;
-    }
-
-    const bool MissingSource =
-        !m_gizmoAxisX->VertexStreamSource() || !m_gizmoAxisY->VertexStreamSource() || !m_gizmoAxisZ->VertexStreamSource()
-        || !m_gizmoAxisXAux->VertexStreamSource() || !m_gizmoAxisYAux->VertexStreamSource() || !m_gizmoAxisZAux->VertexStreamSource();
-    if (!MissingSource && m_gizmoGeometryMode == m_mode)
-    {
-        return;
-    }
-
-    const auto MakeUnitBox = []() -> std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>
-    {
-        auto Source = std::make_shared<SnAPI::Graphics::BoxStreamSource>();
-        if (Source)
-        {
-            Source->SetSize(1.0f, 1.0f, 1.0f);
-        }
-        return Source;
-    };
-    const auto MakeUnitCone = []() -> std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>
-    {
-        return std::make_shared<SnAPI::Graphics::ConeStreamSource>(0.32f, 1.0f, 24u);
-    };
-    const auto MakeUnitHoop = []() -> std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>
-    {
-        return std::make_shared<EditorTorusStreamSource>(0.5f, 0.07f, 56u, 12u);
-    };
-
-    switch (m_mode)
-    {
-    case EEditorTransformMode::Translate:
-        m_gizmoAxisX->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisY->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisZ->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisXAux->SetVertexStreamSource(MakeUnitCone());
-        m_gizmoAxisYAux->SetVertexStreamSource(MakeUnitCone());
-        m_gizmoAxisZAux->SetVertexStreamSource(MakeUnitCone());
-        break;
-    case EEditorTransformMode::Rotate:
-        m_gizmoAxisX->SetVertexStreamSource(MakeUnitHoop());
-        m_gizmoAxisY->SetVertexStreamSource(MakeUnitHoop());
-        m_gizmoAxisZ->SetVertexStreamSource(MakeUnitHoop());
-        // Keep aux objects valid; rotate mode only queues primary hoop objects.
-        m_gizmoAxisXAux->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisYAux->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisZAux->SetVertexStreamSource(MakeUnitBox());
-        break;
-    case EEditorTransformMode::Scale:
-        m_gizmoAxisX->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisY->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisZ->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisXAux->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisYAux->SetVertexStreamSource(MakeUnitBox());
-        m_gizmoAxisZAux->SetVertexStreamSource(MakeUnitBox());
-        break;
-    default:
-        break;
-    }
-
-    m_gizmoGeometryMode = m_mode;
-}
-
-void EditorTransformInteractionService::QueueTransformGizmos(EditorServiceContext& Context,
-                                                             BaseNode* SelectedNode,
-                                                             const NodeTransform& SelectedTransform,
-                                                             SnAPI::Graphics::ICamera& Camera,
-                                                             const std::uint64_t ViewportID)
-{
-    (void)SelectedNode;
-
-    m_gizmoAxisXID = 0;
-    m_gizmoAxisYID = 0;
-    m_gizmoAxisZID = 0;
-    m_gizmoAxisXAuxID = 0;
-    m_gizmoAxisYAuxID = 0;
-    m_gizmoAxisZAuxID = 0;
-
     if (ViewportID == 0)
     {
         return;
     }
 
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr)
+    auto* NativeWorldPtr = Context.Runtime().WorldPtr();
+    if (!NativeWorldPtr)
     {
         return;
     }
 
-    auto& Renderer = WorldPtr->Renderer();
-    if (!Renderer.IsInitialized())
+    auto& NativeRenderer = NativeWorldPtr->Renderer();
+    if (!NativeRenderer.IsInitialized())
     {
         return;
     }
 
-    EnsureGizmoRenderObjects();
-    ConfigureGizmoGeometryForMode();
-    if (!m_gizmoAxisX || !m_gizmoAxisY || !m_gizmoAxisZ
-        || !m_gizmoAxisXAux || !m_gizmoAxisYAux || !m_gizmoAxisZAux)
-    {
-        return;
-    }
+    std::array<Vec3, 3> NativeAxisBasis{};
+    SnAPI::Math::Scalar NativeAxisLength = static_cast<SnAPI::Math::Scalar>(0.0);
+    SnAPI::Math::Scalar NativeAxisThickness = static_cast<SnAPI::Math::Scalar>(0.0);
+    SnAPI::Math::Scalar NativeRingRadius = static_cast<SnAPI::Math::Scalar>(0.0);
+    ResolveNativeGizmoFrame(
+        SelectedTransform,
+        Camera,
+        m_space,
+        NativeAxisBasis,
+        NativeAxisLength,
+        NativeAxisThickness,
+        NativeRingRadius);
 
-    Vec3 BasisX = Vec3::UnitX();
-    Vec3 BasisY = Vec3::UnitY();
-    Vec3 BasisZ = Vec3::UnitZ();
-    switch (m_space)
+    const auto NativeAxisColor = [this](const EActiveAxis Axis) -> std::array<float, 4>
     {
-    case EditorLayout::EGizmoSpace::Object:
+        if (Axis == m_activeAxis)
         {
-            const auto RotationMatrix = SelectedTransform.Rotation.toRotationMatrix();
-            BasisX = NormalizeOrAxis(RotationMatrix * Vec3::UnitX(), Vec3::UnitX());
-            BasisY = NormalizeOrAxis(RotationMatrix * Vec3::UnitY(), Vec3::UnitY());
-            BasisZ = NormalizeOrAxis(RotationMatrix * Vec3::UnitZ(), Vec3::UnitZ());
+            return {1.0f, 0.88f, 0.14f, 1.0f};
         }
-        break;
-    case EditorLayout::EGizmoSpace::Camera:
-        BasisX = NormalizeOrAxis(Camera.Right().template cast<SnAPI::Math::Scalar>(), Vec3::UnitX());
-        BasisY = NormalizeOrAxis(Camera.Up().template cast<SnAPI::Math::Scalar>(), Vec3::UnitY());
-        BasisZ = NormalizeOrAxis(Camera.Forward().template cast<SnAPI::Math::Scalar>(), Vec3::UnitZ());
-        break;
-    case EditorLayout::EGizmoSpace::World:
-    default:
-        break;
-    }
 
-    const std::array<Vec3, 3> AxisBasis{
-        NormalizeOrAxis(BasisX, Vec3::UnitX()),
-        NormalizeOrAxis(BasisY, Vec3::UnitY()),
-        NormalizeOrAxis(BasisZ, Vec3::UnitZ())};
-    const auto CameraPosition = Camera.Position().template cast<SnAPI::Math::Scalar>();
-    const SnAPI::Math::Scalar CameraDistance = std::max<SnAPI::Math::Scalar>(
-        static_cast<SnAPI::Math::Scalar>(0.25),
-        (SelectedTransform.Position - CameraPosition).norm());
-    const SnAPI::Math::Scalar GizmoScaleMultiplier = static_cast<SnAPI::Math::Scalar>(3.0);
-    const SnAPI::Math::Scalar AxisLength = std::max<SnAPI::Math::Scalar>(
-        CameraDistance * static_cast<SnAPI::Math::Scalar>(0.08) * GizmoScaleMultiplier,
-        static_cast<SnAPI::Math::Scalar>(0.12) * GizmoScaleMultiplier);
-    const SnAPI::Math::Scalar AxisThickness = std::max<SnAPI::Math::Scalar>(
-        static_cast<SnAPI::Math::Scalar>(0.016) * GizmoScaleMultiplier,
-        AxisLength * static_cast<SnAPI::Math::Scalar>(0.085));
-
-    const auto ToRendererVec3 = [](const Vec3& Value)
-    {
-        return SnAPI::Vector3D{
-            static_cast<SnAPI::Vector3D::Scalar>(Value.x()),
-            static_cast<SnAPI::Vector3D::Scalar>(Value.y()),
-            static_cast<SnAPI::Vector3D::Scalar>(Value.z())};
-    };
-
-    const auto ToRendererQuat = [](const Quat& Value)
-    {
-        SnAPI::Quaternion Rotation = SnAPI::Quaternion::Identity();
-        Rotation.x() = static_cast<SnAPI::Quaternion::Scalar>(Value.x());
-        Rotation.y() = static_cast<SnAPI::Quaternion::Scalar>(Value.y());
-        Rotation.z() = static_cast<SnAPI::Quaternion::Scalar>(Value.z());
-        Rotation.w() = static_cast<SnAPI::Quaternion::Scalar>(Value.w());
-        if (Rotation.squaredNorm() > 0.0)
-        {
-            Rotation.normalize();
-        }
-        else
-        {
-            Rotation = SnAPI::Quaternion::Identity();
-        }
-        return Rotation;
-    };
-
-    const auto AxisDirection = [&](const EActiveAxis Axis) -> Vec3
-    {
         switch (Axis)
         {
         case EActiveAxis::X:
-            return BasisX;
+            return {1.0f, 0.16f, 0.10f, 1.0f};
         case EActiveAxis::Y:
-            return BasisY;
+            return {0.14f, 0.92f, 0.26f, 1.0f};
         case EActiveAxis::Z:
-            return BasisZ;
+            return {0.20f, 0.42f, 1.0f, 1.0f};
         case EActiveAxis::None:
         default:
-            return Vec3::UnitX();
+            return {1.0f, 1.0f, 1.0f, 1.0f};
         }
     };
 
-    const auto BuildAlignedTransform = [&](const Vec3& Center,
-                                           const Vec3& Direction,
-                                           const Vec3& LocalScale) -> SnAPI::Matrix4
+    const auto QueueNativeLine = [&](const Vec3& Start,
+                                     const Vec3& End,
+                                     const std::array<float, 4>& Color,
+                                     const float Thickness)
     {
-        const Quat AxisRotation = RotationFromTo(Vec3::UnitY(), Direction);
-        auto Transform = SnAPI::Transform3D::Identity();
-        Transform.translate(ToRendererVec3(Center));
-        Transform.rotate(ToRendererQuat(AxisRotation));
-        Transform.scale(ToRendererVec3(LocalScale));
-        return Transform.matrix();
+        (void)NativeRenderer.QueueDebugLine(GameRenderDebugLine{
+            .StartWorld = Start,
+            .EndWorld = End,
+            .ColorLinear = Color,
+            .ThicknessPixels = Thickness,
+            .DepthTest = false});
     };
 
-    const auto QueueGizmoObject = [&](const std::shared_ptr<SnAPI::Graphics::IRenderObject>& GizmoObject,
-                                      std::uint32_t AxisTag,
-                                      std::uint32_t& OutObjectID)
+    const auto QueueNativeAxis = [&](const EActiveAxis Axis, const Vec3& Direction)
     {
-        OutObjectID = 0;
-        if (!GizmoObject)
+        const Vec3 UnitDirection = NormalizeOrAxis(Direction, Vec3::UnitY());
+        const std::array<float, 4> Color = NativeAxisColor(Axis);
+        const float PrimaryThickness = m_mode == EEditorTransformMode::Scale ? 5.0f : 4.0f;
+        const Vec3 Start = SelectedTransform.Position;
+        const Vec3 End = SelectedTransform.Position
+            + (UnitDirection * NativeAxisLength * static_cast<SnAPI::Math::Scalar>(1.35));
+        QueueNativeLine(Start, End, Color, PrimaryThickness);
+
+        const Vec3 CameraRight = NormalizeOrAxis(Camera.Right(), Vec3::UnitX());
+        const Vec3 CameraUp = NormalizeOrAxis(Camera.Up(), Vec3::UnitY());
+        Vec3 HeadSide = UnitDirection.cross(CameraRight);
+        if (!(HeadSide.squaredNorm() > static_cast<SnAPI::Math::Scalar>(1.0e-8)))
         {
-            return;
+            HeadSide = UnitDirection.cross(CameraUp);
         }
+        HeadSide = NormalizeOrAxis(HeadSide, Vec3::UnitZ());
 
-        RendererSystem::EditorImmediateRenderMetadata Metadata{};
-        Metadata.IsGizmo = (AxisTag != 0u);
-        Metadata.AxisTag = AxisTag;
+        const SnAPI::Math::Scalar HeadLength = std::max<SnAPI::Math::Scalar>(
+            NativeAxisLength * static_cast<SnAPI::Math::Scalar>(0.18),
+            NativeAxisThickness * static_cast<SnAPI::Math::Scalar>(2.5));
+        const SnAPI::Math::Scalar HeadSpread = std::max<SnAPI::Math::Scalar>(
+            NativeAxisLength * static_cast<SnAPI::Math::Scalar>(0.06),
+            NativeAxisThickness * static_cast<SnAPI::Math::Scalar>(1.6));
+        const Vec3 HeadBase = End - (UnitDirection * HeadLength);
+        QueueNativeLine(End, HeadBase + (HeadSide * HeadSpread), Color, PrimaryThickness);
+        QueueNativeLine(End, HeadBase - (HeadSide * HeadSpread), Color, PrimaryThickness);
 
-        const bool QueuedInEditorIDPass = Renderer.QueueEditorImmediateRenderObject(
-            GizmoObject,
-            ViewportID,
-            SnAPI::Graphics::ERenderPassType::EditorID,
-            Metadata);
-        const bool QueuedInOverlayPass = Renderer.QueueEditorImmediateRenderObject(
-            GizmoObject,
-            ViewportID,
-            SnAPI::Graphics::ERenderPassType::EditorOverlay,
-            Metadata);
-        if (!QueuedInEditorIDPass && !QueuedInOverlayPass)
+        if (m_mode == EEditorTransformMode::Scale)
         {
-            return;
+            const SnAPI::Math::Scalar Tick = std::max<SnAPI::Math::Scalar>(
+                HeadSpread,
+                NativeAxisLength * static_cast<SnAPI::Math::Scalar>(0.08));
+            QueueNativeLine(End - (HeadSide * Tick), End + (HeadSide * Tick), Color, PrimaryThickness);
         }
-
-        OutObjectID = Renderer.RenderObjectID(GizmoObject).value_or(0u);
     };
 
-    const auto ApplyAxisTransform = [&](const EActiveAxis Axis,
-                                        const std::shared_ptr<SnAPI::Graphics::IRenderObject>& PrimaryObject,
-                                        const std::shared_ptr<SnAPI::Graphics::IRenderObject>& AuxObject)
+    if (m_mode == EEditorTransformMode::Rotate)
     {
-        const Vec3 Direction = NormalizeOrAxis(AxisDirection(Axis), Vec3::UnitY());
-
-        if (m_mode == EEditorTransformMode::Rotate)
+        const std::array<std::pair<EActiveAxis, std::pair<Vec3, Vec3>>, 3> Rings{
+            std::pair{EActiveAxis::X, std::pair{NativeAxisBasis[1], NativeAxisBasis[2]}},
+            std::pair{EActiveAxis::Y, std::pair{NativeAxisBasis[2], NativeAxisBasis[0]}},
+            std::pair{EActiveAxis::Z, std::pair{NativeAxisBasis[0], NativeAxisBasis[1]}}};
+        constexpr std::size_t SegmentCount = 72u;
+        for (const auto& Ring : Rings)
         {
-            const SnAPI::Math::Scalar RingRadius = std::max<SnAPI::Math::Scalar>(
-                AxisLength * static_cast<SnAPI::Math::Scalar>(0.9),
-                CameraDistance * static_cast<SnAPI::Math::Scalar>(0.14) * GizmoScaleMultiplier);
-            if (PrimaryObject)
+            const std::array<float, 4> Color = NativeAxisColor(Ring.first);
+            const Vec3 U = NormalizeOrAxis(Ring.second.first, Vec3::UnitX());
+            const Vec3 V = NormalizeOrAxis(Ring.second.second, Vec3::UnitY());
+            for (std::size_t Segment = 0; Segment < SegmentCount; ++Segment)
             {
-                PrimaryObject->SetWorldTransform(BuildAlignedTransform(
-                    SelectedTransform.Position,
-                    Direction,
-                    Vec3{
-                        static_cast<Vec3::Scalar>(RingRadius),
-                        static_cast<Vec3::Scalar>(RingRadius * static_cast<SnAPI::Math::Scalar>(0.12)),
-                        static_cast<Vec3::Scalar>(RingRadius)}));
+                const double T0 = static_cast<double>(Segment) / static_cast<double>(SegmentCount);
+                const double T1 = static_cast<double>(Segment + 1u) / static_cast<double>(SegmentCount);
+                const double A0 = T0 * 2.0 * std::numbers::pi_v<double>;
+                const double A1 = T1 * 2.0 * std::numbers::pi_v<double>;
+                const Vec3 P0 = SelectedTransform.Position
+                    + (U * static_cast<SnAPI::Math::Scalar>(std::cos(A0) * static_cast<double>(NativeRingRadius)))
+                    + (V * static_cast<SnAPI::Math::Scalar>(std::sin(A0) * static_cast<double>(NativeRingRadius)));
+                const Vec3 P1 = SelectedTransform.Position
+                    + (U * static_cast<SnAPI::Math::Scalar>(std::cos(A1) * static_cast<double>(NativeRingRadius)))
+                    + (V * static_cast<SnAPI::Math::Scalar>(std::sin(A1) * static_cast<double>(NativeRingRadius)));
+                QueueNativeLine(P0, P1, Color, 3.0f);
             }
+        }
+    }
+    else
+    {
+        QueueNativeAxis(EActiveAxis::X, NativeAxisBasis[0]);
+        QueueNativeAxis(EActiveAxis::Y, NativeAxisBasis[1]);
+        QueueNativeAxis(EActiveAxis::Z, NativeAxisBasis[2]);
+    }
+
+    (void)Context;
+    (void)SelectedNode;
+}
+
+EditorTransformInteractionService::EActiveAxis EditorTransformInteractionService::PickNativeGizmoAxis(
+    EditorServiceContext& Context,
+    const NodeTransform& SelectedTransform,
+    const GameRenderCamera& Camera,
+    const float ScreenX,
+    const float ScreenY,
+    const SnAPI::UI::UIRect& ViewRect,
+    const std::uint64_t ViewportID) const
+{
+    (void)Context;
+
+    if (ViewportID == 0 || ViewRect.W <= 0.0f || ViewRect.H <= 0.0f
+        || !std::isfinite(ScreenX) || !std::isfinite(ScreenY))
+    {
+        return EActiveAxis::None;
+    }
+
+    Vec3 RayOrigin = Vec3::Zero();
+    Vec3 RayDirection = Vec3::Zero();
+    if (!TryBuildViewportRay(Camera, ViewRect, ScreenX, ScreenY, RayOrigin, RayDirection))
+    {
+        return EActiveAxis::None;
+    }
+
+    std::array<Vec3, 3> AxisBasis{};
+    SnAPI::Math::Scalar AxisLength = static_cast<SnAPI::Math::Scalar>(0.0);
+    SnAPI::Math::Scalar AxisThickness = static_cast<SnAPI::Math::Scalar>(0.0);
+    SnAPI::Math::Scalar RingRadius = static_cast<SnAPI::Math::Scalar>(0.0);
+    ResolveNativeGizmoFrame(SelectedTransform, Camera, m_space, AxisBasis, AxisLength, AxisThickness, RingRadius);
+
+    EActiveAxis BestAxis = EActiveAxis::None;
+    SnAPI::Math::Scalar BestRayT = std::numeric_limits<SnAPI::Math::Scalar>::max();
+    SnAPI::Math::Scalar BestScore = std::numeric_limits<SnAPI::Math::Scalar>::max();
+    const auto Consider = [&](const EActiveAxis Axis,
+                              const SnAPI::Math::Scalar RayT,
+                              const SnAPI::Math::Scalar Score)
+    {
+        if (!std::isfinite(RayT) || !std::isfinite(Score))
+        {
             return;
         }
 
+        if (RayT < BestRayT || (std::fabs(RayT - BestRayT) <= static_cast<SnAPI::Math::Scalar>(1.0e-5) && Score < BestScore))
+        {
+            BestRayT = RayT;
+            BestScore = Score;
+            BestAxis = Axis;
+        }
+    };
+
+    if (m_mode == EEditorTransformMode::Rotate)
+    {
+        const SnAPI::Math::Scalar PickTolerance = std::max<SnAPI::Math::Scalar>(
+            RingRadius * static_cast<SnAPI::Math::Scalar>(0.16),
+            AxisThickness * static_cast<SnAPI::Math::Scalar>(2.5));
+        for (std::size_t AxisIndex = 0; AxisIndex < AxisBasis.size(); ++AxisIndex)
+        {
+            Vec3 HitPoint = Vec3::Zero();
+            if (!TryIntersectRayPlane(
+                    RayOrigin,
+                    RayDirection,
+                    SelectedTransform.Position,
+                    AxisBasis[AxisIndex],
+                    HitPoint))
+            {
+                continue;
+            }
+
+            const SnAPI::Math::Scalar Radius = (HitPoint - SelectedTransform.Position).norm();
+            const SnAPI::Math::Scalar Delta = std::fabs(Radius - RingRadius);
+            if (!std::isfinite(Delta) || Delta > PickTolerance)
+            {
+                continue;
+            }
+
+            const SnAPI::Math::Scalar RayT = (HitPoint - RayOrigin).dot(RayDirection);
+            Consider(static_cast<EActiveAxis>(AxisIndex + 1u), RayT, Delta);
+        }
+        return BestAxis;
+    }
+
+    const SnAPI::Math::Scalar PickRadius = std::max<SnAPI::Math::Scalar>(
+        AxisThickness * static_cast<SnAPI::Math::Scalar>(4.0),
+        AxisLength * static_cast<SnAPI::Math::Scalar>(0.08));
+    const SnAPI::Math::Scalar PickRadiusSquared = PickRadius * PickRadius;
+    for (std::size_t AxisIndex = 0; AxisIndex < AxisBasis.size(); ++AxisIndex)
+    {
+        const Vec3 Direction = NormalizeOrAxis(AxisBasis[AxisIndex], Vec3::UnitX());
+        SnAPI::Math::Scalar AxisReach = AxisLength;
         if (m_mode == EEditorTransformMode::Translate)
         {
-            const SnAPI::Math::Scalar ShaftLength = AxisLength;
-            const SnAPI::Math::Scalar HeadLength = std::max<SnAPI::Math::Scalar>(
+            AxisReach += std::max<SnAPI::Math::Scalar>(
                 static_cast<SnAPI::Math::Scalar>(0.10),
                 AxisLength * static_cast<SnAPI::Math::Scalar>(0.28));
-            const SnAPI::Math::Scalar HeadRadius = std::max<SnAPI::Math::Scalar>(
-                AxisThickness * static_cast<SnAPI::Math::Scalar>(2.5),
-                HeadLength * static_cast<SnAPI::Math::Scalar>(0.20));
-
-            const Vec3 ShaftCenter = SelectedTransform.Position + Direction * (ShaftLength * static_cast<SnAPI::Math::Scalar>(0.5));
-            const Vec3 HeadCenter = SelectedTransform.Position + Direction * (ShaftLength + HeadLength * static_cast<SnAPI::Math::Scalar>(0.5));
-
-            if (PrimaryObject)
-            {
-                PrimaryObject->SetWorldTransform(BuildAlignedTransform(
-                    ShaftCenter,
-                    Direction,
-                    Vec3{
-                        static_cast<Vec3::Scalar>(AxisThickness),
-                        static_cast<Vec3::Scalar>(ShaftLength),
-                        static_cast<Vec3::Scalar>(AxisThickness)}));
-            }
-            if (AuxObject)
-            {
-                AuxObject->SetWorldTransform(BuildAlignedTransform(
-                    HeadCenter,
-                    Direction,
-                    Vec3{
-                        static_cast<Vec3::Scalar>(HeadRadius * static_cast<SnAPI::Math::Scalar>(2.0)),
-                        static_cast<Vec3::Scalar>(HeadLength),
-                        static_cast<Vec3::Scalar>(HeadRadius * static_cast<SnAPI::Math::Scalar>(2.0))}));
-            }
-            return;
         }
-
-        const SnAPI::Math::Scalar ShaftLength = AxisLength * static_cast<SnAPI::Math::Scalar>(0.62);
-        const SnAPI::Math::Scalar HandleLength = std::max<SnAPI::Math::Scalar>(
-            AxisThickness * static_cast<SnAPI::Math::Scalar>(2.6),
-            AxisLength * static_cast<SnAPI::Math::Scalar>(0.18));
-        const SnAPI::Math::Scalar HandleThickness = std::max<SnAPI::Math::Scalar>(
-            AxisThickness * static_cast<SnAPI::Math::Scalar>(2.8),
-            AxisLength * static_cast<SnAPI::Math::Scalar>(0.13));
-
-        const Vec3 ShaftCenter = SelectedTransform.Position + Direction * (ShaftLength * static_cast<SnAPI::Math::Scalar>(0.5));
-        const Vec3 HandleCenter = SelectedTransform.Position + Direction * (ShaftLength + HandleLength * static_cast<SnAPI::Math::Scalar>(0.5));
-        if (PrimaryObject)
+        else
         {
-            PrimaryObject->SetWorldTransform(BuildAlignedTransform(
-                ShaftCenter,
-                Direction,
-                Vec3{
-                    static_cast<Vec3::Scalar>(AxisThickness * static_cast<SnAPI::Math::Scalar>(0.9)),
-                    static_cast<Vec3::Scalar>(ShaftLength),
-                    static_cast<Vec3::Scalar>(AxisThickness * static_cast<SnAPI::Math::Scalar>(0.9))}));
+            AxisReach = AxisLength * static_cast<SnAPI::Math::Scalar>(0.80);
         }
-        if (AuxObject)
+
+        SnAPI::Math::Scalar RayT = static_cast<SnAPI::Math::Scalar>(0.0);
+        const SnAPI::Math::Scalar DistanceSquared = RaySegmentDistanceSquared(
+            RayOrigin,
+            RayDirection,
+            SelectedTransform.Position,
+            SelectedTransform.Position + (Direction * AxisReach),
+            RayT);
+        if (!std::isfinite(DistanceSquared) || DistanceSquared > PickRadiusSquared)
         {
-            AuxObject->SetWorldTransform(BuildAlignedTransform(
-                HandleCenter,
-                Direction,
-                Vec3{
-                    static_cast<Vec3::Scalar>(HandleThickness * static_cast<SnAPI::Math::Scalar>(1.1)),
-                    static_cast<Vec3::Scalar>(HandleLength),
-                    static_cast<Vec3::Scalar>(HandleThickness * static_cast<SnAPI::Math::Scalar>(1.1))}));
+            continue;
         }
-    };
 
-    ApplyAxisTransform(EActiveAxis::X, m_gizmoAxisX, m_gizmoAxisXAux);
-    ApplyAxisTransform(EActiveAxis::Y, m_gizmoAxisY, m_gizmoAxisYAux);
-    ApplyAxisTransform(EActiveAxis::Z, m_gizmoAxisZ, m_gizmoAxisZAux);
-
-    QueueGizmoObject(m_gizmoAxisX, 1u, m_gizmoAxisXID);
-    QueueGizmoObject(m_gizmoAxisY, 2u, m_gizmoAxisYID);
-    QueueGizmoObject(m_gizmoAxisZ, 3u, m_gizmoAxisZID);
-    if (m_mode == EEditorTransformMode::Translate || m_mode == EEditorTransformMode::Scale)
-    {
-        QueueGizmoObject(m_gizmoAxisXAux, 1u, m_gizmoAxisXAuxID);
-        QueueGizmoObject(m_gizmoAxisYAux, 2u, m_gizmoAxisYAuxID);
-        QueueGizmoObject(m_gizmoAxisZAux, 3u, m_gizmoAxisZAuxID);
+        Consider(static_cast<EActiveAxis>(AxisIndex + 1u), RayT, DistanceSquared);
     }
+
+    return BestAxis;
 }
 
-EditorTransformInteractionService::EActiveAxis EditorTransformInteractionService::PickGizmoAxis(EditorServiceContext& Context,
-                                                                                                 const float ScreenX,
-                                                                                                 const float ScreenY,
-                                                                                                 const SnAPI::UI::UIRect& ViewRect,
-                                                                                                 const std::uint64_t ViewportID) const
-{
-    if (ViewportID == 0 || ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !std::isfinite(ScreenX) || !std::isfinite(ScreenY))
-    {
-        return EActiveAxis::None;
-    }
-
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr)
-    {
-        return EActiveAxis::None;
-    }
-
-    auto& Renderer = WorldPtr->Renderer();
-    if (!Renderer.IsInitialized())
-    {
-        return EActiveAxis::None;
-    }
-
-    const float U = (ScreenX - ViewRect.X) / ViewRect.W;
-    const float V = (ScreenY - ViewRect.Y) / ViewRect.H;
-    if (!std::isfinite(U) || !std::isfinite(V))
-    {
-        return EActiveAxis::None;
-    }
-
-    const auto RenderObjectID = Renderer.ReadRenderViewportObjectID(ViewportID, U, V);
-    if (!RenderObjectID.has_value() || *RenderObjectID == 0u)
-    {
-        return EActiveAxis::None;
-    }
-
-    if (m_gizmoAxisXID != 0 && *RenderObjectID == m_gizmoAxisXID)
-    {
-        return EActiveAxis::X;
-    }
-    if (m_gizmoAxisXAuxID != 0 && *RenderObjectID == m_gizmoAxisXAuxID)
-    {
-        return EActiveAxis::X;
-    }
-    if (m_gizmoAxisYID != 0 && *RenderObjectID == m_gizmoAxisYID)
-    {
-        return EActiveAxis::Y;
-    }
-    if (m_gizmoAxisYAuxID != 0 && *RenderObjectID == m_gizmoAxisYAuxID)
-    {
-        return EActiveAxis::Y;
-    }
-    if (m_gizmoAxisZID != 0 && *RenderObjectID == m_gizmoAxisZID)
-    {
-        return EActiveAxis::Z;
-    }
-    if (m_gizmoAxisZAuxID != 0 && *RenderObjectID == m_gizmoAxisZAuxID)
-    {
-        return EActiveAxis::Z;
-    }
-
-    return EActiveAxis::None;
-}
-#endif
 
 Result EditorTransformInteractionService::Initialize(EditorServiceContext& Context)
 {
@@ -1024,15 +633,6 @@ Result EditorTransformInteractionService::Initialize(EditorServiceContext& Conte
     m_axisMoveAxisDirection = Vec3::UnitX();
     m_axisMoveNodeStart = Vec3::Zero();
     m_axisMoveHitStart = Vec3::Zero();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    m_gizmoAxisXID = 0;
-    m_gizmoAxisYID = 0;
-    m_gizmoAxisZID = 0;
-    m_gizmoAxisXAuxID = 0;
-    m_gizmoAxisYAuxID = 0;
-    m_gizmoAxisZAuxID = 0;
-    m_gizmoGeometryMode = EEditorTransformMode::Translate;
-#endif
     return Ok();
 }
 
@@ -1040,7 +640,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
 {
     (void)DeltaSeconds;
 
-#if !defined(SNAPI_GF_ENABLE_INPUT) || !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(SNAPI_GF_ENABLE_UI)
+#if !defined(SNAPI_GF_ENABLE_INPUT) || !defined(SNAPI_GF_ENABLE_UI) || !defined(SNAPI_GF_ENABLE_RENDERER)
     (void)Context;
     m_dragging = false;
     m_activeAxis = EActiveAxis::None;
@@ -1055,9 +655,11 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
         m_freeMovePlaneActive = false;
         m_axisMovePlaneActive = false;
     };
+    const auto ClearNativeGizmosForCurrentFrame = []() {};
 
     if (auto* PieService = Context.GetService<EditorPieService>(); PieService && PieService->IsSessionActive())
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1069,6 +671,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1089,6 +692,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     auto* LayoutService = Context.GetService<EditorLayoutService>();
     if (!SelectionService || !SceneService || !LayoutService)
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1100,6 +704,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     const NodeHandle Selected = SelectionService->Model().SelectedNode();
     if (Selected.IsNull())
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1111,6 +716,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     BaseNode* Node = SelectionService->Model().ResolveSelectedNode(*WorldPtr);
     if (!Node)
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1122,6 +728,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     auto TransformResult = Node->Component<TransformComponent>();
     if (!TransformResult)
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1134,6 +741,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     auto* ViewportElement = LayoutService->GameViewportElement();
     if (!Camera || !ViewportElement)
     {
+        ClearNativeGizmosForCurrentFrame();
         m_dragging = false;
         m_activeAxis = EActiveAxis::None;
         m_rotateSnapRemainderPrimary = static_cast<SnAPI::Math::Scalar>(0.0);
@@ -1201,7 +809,11 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
     {
         if (ViewportID != 0 && !HideGizmoForActiveEditorCamera)
         {
-            QueueTransformGizmos(Context, Node, TransformWorld, *Camera, ViewportID);
+            UpdateNativeTransformGizmos(Context, Node, TransformWorld, *Camera, ViewportID);
+        }
+        else
+        {
+            ClearNativeGizmosForCurrentFrame();
         }
     };
 
@@ -1268,7 +880,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
         m_dragging = true;
         if (LeftPressed)
         {
-            m_activeAxis = PickGizmoAxis(Context, MouseX, MouseY, ViewRect, ViewportID);
+            m_activeAxis = PickNativeGizmoAxis(Context, TransformWorld, *Camera, MouseX, MouseY, ViewRect, ViewportID);
         }
         ResetTranslateDragPlanes();
         if (m_mode == EEditorTransformMode::Translate && m_activeAxis == EActiveAxis::None)
@@ -1640,21 +1252,6 @@ void EditorTransformInteractionService::Shutdown(EditorServiceContext& Context)
     m_axisMoveAxisDirection = Vec3::UnitX();
     m_axisMoveNodeStart = Vec3::Zero();
     m_axisMoveHitStart = Vec3::Zero();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    m_gizmoAxisX.reset();
-    m_gizmoAxisY.reset();
-    m_gizmoAxisZ.reset();
-    m_gizmoAxisXAux.reset();
-    m_gizmoAxisYAux.reset();
-    m_gizmoAxisZAux.reset();
-    m_gizmoAxisXID = 0;
-    m_gizmoAxisYID = 0;
-    m_gizmoAxisZID = 0;
-    m_gizmoAxisXAuxID = 0;
-    m_gizmoAxisYAuxID = 0;
-    m_gizmoAxisZAuxID = 0;
-    m_gizmoGeometryMode = EEditorTransformMode::Translate;
-#endif
 }
 
 } // namespace SnAPI::GameFramework::Editor

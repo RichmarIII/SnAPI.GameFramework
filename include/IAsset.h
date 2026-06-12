@@ -27,6 +27,41 @@ public:
     ::SnAPI::AssetPipeline::AssetId AssetId{};
     std::string LogicalName{};
 
+    /**
+     * @brief Default-construct an authored asset identity wrapper.
+     */
+    IAsset() = default;
+
+    /**
+     * @brief Copy authored asset identity state.
+     * @param Other Source asset identity wrapper.
+     */
+    IAsset(const IAsset& Other) = default;
+
+    /**
+     * @brief Move authored asset identity state.
+     * @param Other Source asset identity wrapper.
+     *
+     * `IAsset` declares a virtual destructor, so the move operations need to be
+     * defaulted explicitly to preserve normal value semantics for derived asset
+     * structs that are copied and moved through `TExpected` and other containers.
+     */
+    IAsset(IAsset&& Other) noexcept = default;
+
+    /**
+     * @brief Copy-assign authored asset identity state.
+     * @param Other Source asset identity wrapper.
+     * @return Reference to this instance.
+     */
+    IAsset& operator=(const IAsset& Other) = default;
+
+    /**
+     * @brief Move-assign authored asset identity state.
+     * @param Other Source asset identity wrapper.
+     * @return Reference to this instance.
+     */
+    IAsset& operator=(IAsset&& Other) noexcept = default;
+
     virtual ~IAsset() = default;
 
     void SetPersistentIdentity(const ::SnAPI::AssetPipeline::AssetId& InAssetId, std::string_view InLogicalName)

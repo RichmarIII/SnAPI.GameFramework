@@ -121,7 +121,7 @@ void PawnBase::EnsureDefaultComponents()
             Settings.Visible = true;
             Settings.CastShadows = true;
             Settings.SyncFromTransform = true;
-            Settings.RegisterWithRenderer = true;
+            Settings.RetainInScene = true;
             (void)Mesh->ReloadMesh();
         }
     }

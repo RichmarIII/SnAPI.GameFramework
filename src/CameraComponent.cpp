@@ -1,13 +1,10 @@
 #include "CameraComponent.h"
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
 
 #include <algorithm>
 #include <cmath>
 
 #include <SnAPI/Math/LinearAlgebra.h>
-#include <LinearAlgebra.hpp>
-#include <CameraBase.hpp>
 
 #include "BaseNode.h"
 #include "IWorld.h"
@@ -26,32 +23,6 @@ bool IsFiniteVec3(const Vec3& Value)
 bool IsFiniteQuat(const Quat& Value)
 {
     return std::isfinite(Value.x()) && std::isfinite(Value.y()) && std::isfinite(Value.z()) && std::isfinite(Value.w());
-}
-
-SnAPI::Vector3D ToRendererVector3(const Vec3& Value)
-{
-    return SnAPI::Vector3D{
-        static_cast<SnAPI::Vector3D::Scalar>(Value.x()),
-        static_cast<SnAPI::Vector3D::Scalar>(Value.y()),
-        static_cast<SnAPI::Vector3D::Scalar>(Value.z())};
-}
-
-SnAPI::QuaternionF ToRendererRotation(const Quat& Rotation)
-{
-    SnAPI::QuaternionF Out = SnAPI::QuaternionF::Identity();
-    Out.x() = static_cast<SnAPI::QuaternionF::Scalar>(Rotation.x());
-    Out.y() = static_cast<SnAPI::QuaternionF::Scalar>(Rotation.y());
-    Out.z() = static_cast<SnAPI::QuaternionF::Scalar>(Rotation.z());
-    Out.w() = static_cast<SnAPI::QuaternionF::Scalar>(Rotation.w());
-    if (Out.squaredNorm() > 0.0f)
-    {
-        Out.normalize();
-    }
-    else
-    {
-        Out = SnAPI::QuaternionF::Identity();
-    }
-    return Out;
 }
 
 Quat EulerToQuat(const Vec3& Euler)
@@ -92,17 +63,17 @@ bool IsCameraSettingsField(const std::string_view Name)
 #endif
 } // namespace
 
-SnAPI::Graphics::CameraBase* CameraComponent::Camera()
+GameRenderCamera* CameraComponent::Camera()
 {
     return m_camera.get();
 }
 
-const SnAPI::Graphics::CameraBase* CameraComponent::Camera() const
+const GameRenderCamera* CameraComponent::Camera() const
 {
     return m_camera.get();
 }
 
-std::shared_ptr<SnAPI::Graphics::CameraBase> CameraComponent::CameraShared() const
+std::shared_ptr<GameRenderCamera> CameraComponent::CameraShared() const
 {
     return m_camera;
 }
@@ -130,14 +101,7 @@ void CameraComponent::SetActive(const bool Active)
 
 void CameraComponent::OnCreate()
 {
-    EnsureCamera();
-    ApplyCameraSettings();
-    SyncFromTransform();
-
-    if (auto* Renderer = ResolveRendererSystem(); Renderer && Renderer->IsInitialized() && m_settings.Active)
-    {
-        (void)Renderer->SetActiveCamera(m_camera);
-    }
+    UpdateCamera(0.0f);
 }
 
 void CameraComponent::OnDestroy()
@@ -167,12 +131,10 @@ void CameraComponent::EditorTick(const float DeltaSeconds)
 
 void CameraComponent::EditorOnPropertyChanged(const std::string_view Name)
 {
-    if (!IsCameraSettingsField(Name))
+    if (IsCameraSettingsField(Name))
     {
-        return;
+        UpdateCamera(0.0f);
     }
-
-    UpdateCamera(0.0f);
 }
 #endif
 
@@ -223,7 +185,7 @@ void CameraComponent::EnsureCamera()
 {
     if (!m_camera)
     {
-        m_camera = std::make_shared<SnAPI::Graphics::CameraBase>();
+        m_camera = std::make_shared<GameRenderCamera>();
     }
 }
 
@@ -234,15 +196,13 @@ void CameraComponent::ApplyCameraSettings() const
         return;
     }
 
-    const float NearClip = std::max(0.0001f, m_settings.NearClip);
-    const float FarClip = std::max(NearClip + 0.001f, m_settings.FarClip);
-    const float Fov = std::clamp(m_settings.FovDegrees, 1.0f, 179.0f);
-    const float Aspect = std::max(0.001f, m_settings.Aspect);
-
-    m_camera->Near(NearClip);
-    m_camera->Far(FarClip);
-    m_camera->Fov(Fov);
-    m_camera->Aspect(Aspect);
+    m_camera->Configure(
+        m_settings.NearClip,
+        m_settings.FarClip,
+        m_settings.FovDegrees,
+        m_settings.Aspect,
+        m_camera->Position(),
+        m_camera->Rotation());
 }
 
 void CameraComponent::SyncFromTransform() const
@@ -295,10 +255,13 @@ void CameraComponent::SyncFromTransform() const
         return;
     }
 
-    m_camera->Position(ToRendererVector3(CameraPosition));
-    m_camera->Rotation(ToRendererRotation(CameraRotation));
+    m_camera->Configure(
+        m_settings.NearClip,
+        m_settings.FarClip,
+        m_settings.FovDegrees,
+        m_settings.Aspect,
+        CameraPosition,
+        CameraRotation);
 }
 
 } // namespace SnAPI::GameFramework
-
-#endif // SNAPI_GF_ENABLE_RENDERER

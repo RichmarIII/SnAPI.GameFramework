@@ -6,6 +6,7 @@
 #include "Editor/EditorRootViewportService.h"
 #include "Editor/EditorSelectionService.h"
 #include "Editor/EditorPieService.h"
+#include "Editor/EditorBuildService.h"
 #include "Editor/EditorAssetIconService.h"
 #include "Editor/EditorLayoutService.h"
 #include "Editor/EditorGameViewportOverlayService.h"

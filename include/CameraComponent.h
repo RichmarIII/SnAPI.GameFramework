@@ -8,11 +8,8 @@
 #include "BaseComponent.h"
 #include "Math.h"
 #include "ReflectionAnnotations.h"
+#include "Rendering/GameRenderCamera.h"
 
-namespace SnAPI::Graphics
-{
-class CameraBase;
-} // namespace SnAPI::Graphics
 
 namespace SnAPI::GameFramework
 {
@@ -24,7 +21,7 @@ class RendererSystem;
  * @brief Component that owns and drives a renderer camera.
  *
  * `CameraComponent` is the bridge between a game-world node and a renderer camera
- * instance. It owns one `SnAPI::Graphics::CameraBase`, keeps its projection settings
+ * instance. It owns one renderer camera record, keeps its projection settings
  * synchronized from `Settings`, and optionally derives camera pose from the owning
  * node's world transform plus configurable local offsets.
  *
@@ -112,11 +109,9 @@ public:
     }
 
     /** @brief Get renderer camera instance. @return Non-owning camera pointer, or `nullptr` before creation/after destruction. */
-    SnAPI::Graphics::CameraBase* Camera();
-    /** @brief Get renderer camera instance (const). @return Non-owning camera pointer, or `nullptr` before creation/after destruction. */
-    const SnAPI::Graphics::CameraBase* Camera() const;
-    /** @brief Access the shared renderer camera object retained by this component. */
-    std::shared_ptr<SnAPI::Graphics::CameraBase> CameraShared() const;
+    GameRenderCamera* Camera();
+    const GameRenderCamera* Camera() const;
+    std::shared_ptr<GameRenderCamera> CameraShared() const;
 
     /** @brief Runtime active state helper. */
     bool IsActive() const
@@ -155,7 +150,7 @@ private:
     void UpdateCamera(float DeltaSeconds);
 
     Settings m_settings{}; /**< @brief Camera configuration. */
-    std::shared_ptr<SnAPI::Graphics::CameraBase> m_camera{}; /**< @brief Shared renderer camera instance retained by the renderer while active. */
+    std::shared_ptr<GameRenderCamera> m_camera{}; /**< @brief Shared Renderer.New camera record retained by the renderer while active. */
 };
 
 } // namespace SnAPI::GameFramework

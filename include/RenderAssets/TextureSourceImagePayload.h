@@ -32,7 +32,7 @@ struct TextureSourceImagePayload
     std::string SourceFilename{};
     SnField(SnKey("EncodedBytes"), SnHidden, SnHeavyData)
     std::vector<uint8_t> EncodedBytes{};
-    std::vector<uint8_t> Pixels{}; // Legacy fallback for older authored assets that serialized raw pixels.
+    std::vector<uint8_t> Pixels{}; // Transient import scratch data. Saved payloads store EncodedBytes.
 
     bool operator==(const TextureSourceImagePayload& Other) const
     {

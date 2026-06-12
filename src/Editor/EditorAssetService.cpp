@@ -23,6 +23,8 @@
 #include "PawnBase.h"
 #include "PayloadRegistry.h"
 #include "PlayerStart.h"
+#include "ProjectCreationService.h"
+#include "ProjectDescriptor.h"
 #include "RenderAssetPayloads.h"
 #include "RenderAssetImportSettings.h"
 #include "Serialization.h"
@@ -33,17 +35,6 @@
 #include "UIRenderViewport.h"
 #include "World.h"
 #include "WorldEcsRuntime.h"
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-#include <ICamera.hpp>
-#include <Definitions.hpp>
-#include <IVertexStreamSource.hpp>
-#include <Material.hpp>
-#include <MaterialInstance.hpp>
-#include <MaterialRuntimeDescriptor.hpp>
-#include <TMaterialFor.hpp>
-#include "StaticMeshComponent.h"
-#include "WorldRenderSettings.h"
-#endif
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
 #include "ColliderComponent.h"
 #include "CollisionFilters.h"
@@ -126,7 +117,6 @@ constexpr std::string_view kDefaultProjectAssetRoot = "Assets";
 constexpr std::string_view kDefaultProjectStartupLevelAsset = "Levels/StarterLevel.level";
 constexpr std::string_view kEditorStarterLevelTemplateAssetFileName = "StarterLevelTemplate.level";
 constexpr std::string_view kEditorStarterScriptFileName = "platform_bob.lua";
-constexpr uint32_t kProjectConfigVersion = 1u;
 constexpr uint32_t kMaterialPayloadSchemaVersion = 2u;
 constexpr uint32_t kMaterialInstancePayloadSchemaVersion = 1u;
 constexpr std::string_view kDefaultMaterialShaderModule = "DefaultGBufferMaterial";
@@ -225,135 +215,7 @@ void ApplyPlacementWorldPose(BaseNode& Node, const Vec3& WorldPosition)
     (void)TransformComponent::TrySetNodeWorldPose(Node, WorldPosition, Quat::Identity(), true);
 }
 
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
-[[nodiscard]] bool TryBuildViewportPlacementRay(EditorServiceContext& Context,
-                                                const float ScreenX,
-                                                const float ScreenY,
-                                                Vec3& OutRayOrigin,
-                                                Vec3& OutRayDirection)
-{
-    auto* LayoutService = Context.GetService<EditorLayoutService>();
-    auto* SceneService = Context.GetService<EditorSceneService>();
-    if (!LayoutService || !SceneService)
-    {
-        return false;
-    }
 
-    auto* Viewport = LayoutService->GameViewportElement();
-    auto* Camera = SceneService->ActiveRenderCamera();
-    if (!Viewport || !Camera)
-    {
-        return false;
-    }
-
-    const SnAPI::UI::UIRect ViewRect = Viewport->LayoutRect();
-    const SnAPI::UI::UIPoint ScreenPoint{ScreenX, ScreenY};
-    if (ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !ViewRect.Contains(ScreenPoint))
-    {
-        return false;
-    }
-
-    const float U = (ScreenX - ViewRect.X) / ViewRect.W;
-    const float V = (ScreenY - ViewRect.Y) / ViewRect.H;
-    if (!std::isfinite(U) || !std::isfinite(V))
-    {
-        return false;
-    }
-
-    const SnAPI::Math::Scalar NormalizedX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
-    const SnAPI::Math::Scalar NormalizedY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
-    const SnAPI::Math::Scalar FovRadians = static_cast<SnAPI::Math::Scalar>(
-        static_cast<double>(Camera->Fov()) * (std::numbers::pi_v<double> / 180.0));
-    const SnAPI::Math::Scalar TanHalfFov = static_cast<SnAPI::Math::Scalar>(
-        std::tan(static_cast<double>(FovRadians) * 0.5));
-    const SnAPI::Math::Scalar Aspect = static_cast<SnAPI::Math::Scalar>(Camera->Aspect());
-    if (!std::isfinite(TanHalfFov) || !std::isfinite(Aspect) ||
-        !(TanHalfFov > static_cast<SnAPI::Math::Scalar>(0.0)) ||
-        !(Aspect > static_cast<SnAPI::Math::Scalar>(0.0)))
-    {
-        return false;
-    }
-
-    Vec3 Forward = Camera->Forward().cast<SnAPI::Math::Scalar>();
-    Vec3 Right = Camera->Right().cast<SnAPI::Math::Scalar>();
-    Vec3 Up = Camera->Up().cast<SnAPI::Math::Scalar>();
-    constexpr SnAPI::Math::Scalar kSmallNumber = static_cast<SnAPI::Math::Scalar>(1.0e-8);
-
-    const SnAPI::Math::Scalar ForwardLength = Forward.norm();
-    const SnAPI::Math::Scalar RightLength = Right.norm();
-    const SnAPI::Math::Scalar UpLength = Up.norm();
-    if (!(ForwardLength > kSmallNumber) || !(RightLength > kSmallNumber) || !(UpLength > kSmallNumber))
-    {
-        return false;
-    }
-
-    Forward /= ForwardLength;
-    Right /= RightLength;
-    Up /= UpLength;
-
-    Vec3 RayDirection = Forward +
-        (Right * (NormalizedX * Aspect * TanHalfFov)) +
-        (Up * (NormalizedY * TanHalfFov));
-    const SnAPI::Math::Scalar DirectionLength = RayDirection.norm();
-    if (!(DirectionLength > kSmallNumber))
-    {
-        return false;
-    }
-    RayDirection /= DirectionLength;
-
-    const SnAPI::Math::Scalar NearClip =
-        std::max(static_cast<SnAPI::Math::Scalar>(Camera->Near()), static_cast<SnAPI::Math::Scalar>(0.001));
-    const Vec3 CameraPosition = Camera->Position().cast<SnAPI::Math::Scalar>();
-    OutRayOrigin = CameraPosition + (RayDirection * NearClip);
-    OutRayDirection = RayDirection;
-    return true;
-}
-#endif
-
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
-[[nodiscard]] bool TryResolveViewportPlacementWorldPosition(EditorServiceContext& Context,
-                                                            const float ScreenX,
-                                                            const float ScreenY,
-                                                            Vec3& OutWorldPosition)
-{
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr || !WorldPtr->ShouldAllowPhysicsQueries())
-    {
-        return false;
-    }
-
-    Vec3 RayOrigin{};
-    Vec3 RayDirection{};
-    if (!TryBuildViewportPlacementRay(Context, ScreenX, ScreenY, RayOrigin, RayDirection))
-    {
-        return false;
-    }
-
-    auto& Physics = WorldPtr->Physics();
-    auto* Scene = Physics.Scene();
-    if (!Scene)
-    {
-        return false;
-    }
-
-    SnAPI::Physics::RaycastRequest Request{};
-    Request.Origin = Physics.WorldToPhysicsPosition(RayOrigin, false);
-    Request.Direction = RayDirection;
-    Request.Distance = static_cast<float>(100000.0);
-    Request.Mode = SnAPI::Physics::EQueryMode::ClosestHit;
-
-    std::array<SnAPI::Physics::RaycastHit, 1> Hits{};
-    const std::uint32_t HitCount = Scene->Query().Raycast(Request, std::span<SnAPI::Physics::RaycastHit>(Hits));
-    if (HitCount == 0 || !Hits[0].Body.IsValid())
-    {
-        return false;
-    }
-
-    const SnAPI::Physics::Vec3 WorldHit = Physics.PhysicsToWorldPosition(Hits[0].Position);
-    OutWorldPosition = Vec3(WorldHit.x(), WorldHit.y(), WorldHit.z());
-    return true;
-}
-#endif
 
 [[nodiscard]] std::string PlacementAssetBaseName(std::string_view LogicalName)
 {
@@ -376,60 +238,6 @@ void ApplyPlacementWorldPose(BaseNode& Node, const Vec3& WorldPosition)
     return BaseName;
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-[[nodiscard]] bool TryComputeVertexStreamSourceBounds(
-    const std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>& StreamSource,
-    Vec3& OutCenter,
-    Vec3& OutHalfExtent)
-{
-    if (!StreamSource || StreamSource->SubMeshCount() == 0u)
-    {
-        return false;
-    }
-
-    SnAPI::Graphics::VertexSourceSubMesh SubMesh{};
-    using BoundsVector = decltype(SubMesh.BoundingBoxMin);
-    bool HasBounds = false;
-    BoundsVector BoundsMin{};
-    BoundsVector BoundsMax{};
-    for (std::uint32_t SubMeshIndex = 0; SubMeshIndex < StreamSource->SubMeshCount(); ++SubMeshIndex)
-    {
-        if (!StreamSource->SubMesh(SubMeshIndex, SubMesh))
-        {
-            continue;
-        }
-
-        if (!HasBounds)
-        {
-            BoundsMin = SubMesh.BoundingBoxMin;
-            BoundsMax = SubMesh.BoundingBoxMax;
-            HasBounds = true;
-            continue;
-        }
-
-        BoundsMin = BoundsMin.cwiseMin(SubMesh.BoundingBoxMin);
-        BoundsMax = BoundsMax.cwiseMax(SubMesh.BoundingBoxMax);
-    }
-
-    if (!HasBounds)
-    {
-        return false;
-    }
-
-    const BoundsVector Center = (BoundsMin + BoundsMax) * 0.5f;
-    const BoundsVector HalfExtent = (BoundsMax - BoundsMin) * 0.5f;
-    constexpr SnAPI::Math::Scalar kMinHalfExtent = static_cast<SnAPI::Math::Scalar>(0.05);
-
-    OutCenter = Vec3(static_cast<SnAPI::Math::Scalar>(Center.x()),
-                     static_cast<SnAPI::Math::Scalar>(Center.y()),
-                     static_cast<SnAPI::Math::Scalar>(Center.z()));
-    OutHalfExtent = Vec3(
-        std::max(static_cast<SnAPI::Math::Scalar>(std::abs(HalfExtent.x())), kMinHalfExtent),
-        std::max(static_cast<SnAPI::Math::Scalar>(std::abs(HalfExtent.y())), kMinHalfExtent),
-        std::max(static_cast<SnAPI::Math::Scalar>(std::abs(HalfExtent.z())), kMinHalfExtent));
-    return true;
-}
-#endif
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 struct WorldRenderSettingsRootSet
@@ -1102,69 +910,6 @@ void ApplyStaticMeshEditorPayloadToCooked(
     InOutCooked.MaterialInstances = EditorPayload.MaterialInstances;
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-[[nodiscard]] bool EqualsIgnoreCase(std::string_view Left, std::string_view Right)
-{
-    if (Left.size() != Right.size())
-    {
-        return false;
-    }
-    for (size_t Index = 0; Index < Left.size(); ++Index)
-    {
-        if (static_cast<char>(std::tolower(static_cast<unsigned char>(Left[Index]))) !=
-            static_cast<char>(std::tolower(static_cast<unsigned char>(Right[Index]))))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-[[nodiscard]] SnAPI::Graphics::MaterialDomain DomainFromShadingModelName(std::string_view ShadingModel)
-{
-    if (ShadingModel == "GBufferShadingModel")
-    {
-        return SnAPI::Graphics::MaterialDomain::GBuffer;
-    }
-    if (ShadingModel == "ShadowShadingModel")
-    {
-        return SnAPI::Graphics::MaterialDomain::ShadowCaster;
-    }
-    if (ShadingModel == "UIShadingModel")
-    {
-        return SnAPI::Graphics::MaterialDomain::UI;
-    }
-    if (ShadingModel == "PostProcessShadingModel")
-    {
-        return SnAPI::Graphics::MaterialDomain::PostProcess;
-    }
-    if (ShadingModel == "DeferredShadingShadingModel")
-    {
-        return SnAPI::Graphics::MaterialDomain::DeferredLit;
-    }
-    return SnAPI::Graphics::MaterialDomain::GBuffer;
-}
-
-[[nodiscard]] bool TryParseFloatValue(std::string_view Text, float& OutValue)
-{
-    std::string Buffer(Text);
-    char* End = nullptr;
-    const float Parsed = std::strtof(Buffer.c_str(), &End);
-    if (End == Buffer.c_str())
-    {
-        return false;
-    }
-    while (End && *End != '\0' && std::isspace(static_cast<unsigned char>(*End)))
-    {
-        ++End;
-    }
-    if (End && *End != '\0')
-    {
-        return false;
-    }
-    OutValue = Parsed;
-    return true;
-}
 
 [[nodiscard]] std::string BuildAssetRefIdentity(const AssetRefPayload& Ref)
 {
@@ -1197,334 +942,6 @@ void ApplyStaticMeshEditorPayloadToCooked(
     return {};
 }
 
-[[nodiscard]] const SnAPI::Graphics::ShaderMetaData::UserAttribute* FindDefaultAttribute(
-    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter)
-{
-    for (const auto& Attribute : Parameter.Attributes)
-    {
-        if (EqualsIgnoreCase(Attribute.Name, "EditorDefault") || EqualsIgnoreCase(Attribute.Name, "Default"))
-        {
-            return &Attribute;
-        }
-    }
-    return nullptr;
-}
-
-[[nodiscard]] bool TryReadAttributeNumber(
-    const SnAPI::Graphics::ShaderMetaData::UserAttribute& Attribute,
-    const size_t Index,
-    float& OutValue)
-{
-    if (Index < Attribute.FloatArguments.size())
-    {
-        OutValue = Attribute.FloatArguments[Index];
-        return true;
-    }
-    if (Index < Attribute.IntArguments.size())
-    {
-        OutValue = static_cast<float>(Attribute.IntArguments[Index]);
-        return true;
-    }
-    if (Index < Attribute.Arguments.size())
-    {
-        return TryParseFloatValue(Attribute.Arguments[Index], OutValue);
-    }
-    return false;
-}
-
-[[nodiscard]] bool TryResolveDefaultScalar(
-    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter,
-    float& OutValue)
-{
-    const auto* Attribute = FindDefaultAttribute(Parameter);
-    if (!Attribute)
-    {
-        return false;
-    }
-    return TryReadAttributeNumber(*Attribute, 0, OutValue);
-}
-
-[[nodiscard]] bool TryResolveDefaultVector(
-    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter,
-    const size_t ComponentCount,
-    std::array<float, 4>& OutValue)
-{
-    if (ComponentCount == 0 || ComponentCount > OutValue.size())
-    {
-        return false;
-    }
-    const auto* Attribute = FindDefaultAttribute(Parameter);
-    if (!Attribute)
-    {
-        return false;
-    }
-
-    float FirstValue = 0.0f;
-    if (!TryReadAttributeNumber(*Attribute, 0, FirstValue))
-    {
-        return false;
-    }
-
-    OutValue = {0.0f, 0.0f, 0.0f, 0.0f};
-    for (size_t Component = 0; Component < ComponentCount; ++Component)
-    {
-        float Value = FirstValue;
-        (void)TryReadAttributeNumber(*Attribute, Component, Value);
-        OutValue[Component] = Value;
-    }
-    return true;
-}
-
-void CollectParameterLookupKeys(
-    const SnAPI::Graphics::MaterialRuntimeParameterDesc& Parameter,
-    std::vector<std::string>& OutKeys)
-{
-    OutKeys.clear();
-    OutKeys.reserve(6);
-
-    const auto Append = [&OutKeys](std::string_view Key) {
-        if (Key.empty())
-        {
-            return;
-        }
-        const std::string Lower = ToLowerCopy(Key);
-        if (std::ranges::find(OutKeys, Lower) == OutKeys.end())
-        {
-            OutKeys.push_back(Lower);
-        }
-    };
-
-    Append(Parameter.Path);
-    Append(Parameter.Name);
-    if (const size_t DotIndex = Parameter.Path.rfind('.'); DotIndex != std::string::npos)
-    {
-        Append(std::string_view(Parameter.Path).substr(DotIndex + 1));
-    }
-}
-
-[[nodiscard]] std::expected<SnAPI::Graphics::MaterialRuntimeDescriptor, std::string> BuildDescriptorForMaterialAsset(
-    const MaterialAsset& ParentMaterial)
-{
-    if (ParentMaterial.ShaderModule.empty())
-    {
-        return std::unexpected("Parent material has no shader module");
-    }
-
-    const std::string ShadingModelName = ParentMaterial.ShadingModel.empty()
-        ? std::string(kDefaultMaterialShadingModel)
-        : ParentMaterial.ShadingModel;
-
-    std::shared_ptr<SnAPI::Graphics::Material> Material{};
-    if (EqualsIgnoreCase(ShadingModelName, SnAPI::Graphics::GBufferContract::ShadingModelModuleName))
-    {
-        auto TypedMaterial = std::make_shared<SnAPI::Graphics::GBufferMaterial>(ParentMaterial.ShaderModule);
-        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlbedoMap, ParentMaterial.FeatureAlbedoMap);
-        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::NormalMap, ParentMaterial.FeatureNormalMap);
-        TypedMaterial->SetFeature(
-            SnAPI::Graphics::GBufferContract::Feature::RoughnessMap,
-            ParentMaterial.FeatureRoughnessMap);
-        TypedMaterial->SetFeature(
-            SnAPI::Graphics::GBufferContract::Feature::MetalnessMap,
-            ParentMaterial.FeatureMetalnessMap);
-        TypedMaterial->SetFeature(
-            SnAPI::Graphics::GBufferContract::Feature::OcclusionMap,
-            ParentMaterial.FeatureOcclusionMap);
-        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlphaTest, ParentMaterial.FeatureAlphaTest);
-        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::AlphaBlend, ParentMaterial.FeatureAlphaBlend);
-        TypedMaterial->SetFeature(
-            SnAPI::Graphics::GBufferContract::Feature::DoubleSided,
-            ParentMaterial.FeatureDoubleSided);
-        TypedMaterial->SetFeature(SnAPI::Graphics::GBufferContract::Feature::Instancing, ParentMaterial.FeatureInstancing);
-        TypedMaterial->BakeCompileTimeParams();
-        Material = std::move(TypedMaterial);
-    }
-    else if (EqualsIgnoreCase(ShadingModelName, SnAPI::Graphics::ShadowContract::ShadingModelModuleName))
-    {
-        auto TypedMaterial = std::make_shared<SnAPI::Graphics::ShadowMaterial>(ParentMaterial.ShaderModule);
-        TypedMaterial->SetFeature(SnAPI::Graphics::ShadowContract::Feature::AlphaTest, ParentMaterial.FeatureAlphaTest);
-        TypedMaterial->SetFeature(SnAPI::Graphics::ShadowContract::Feature::Instancing, ParentMaterial.FeatureInstancing);
-        TypedMaterial->BakeCompileTimeParams();
-        Material = std::move(TypedMaterial);
-    }
-    else
-    {
-        auto GenericMaterial = std::make_shared<SnAPI::Graphics::Material>(
-            ParentMaterial.ShaderModule,
-            ShadingModelName,
-            DomainFromShadingModelName(ShadingModelName));
-        GenericMaterial->BakeAndCompile();
-        Material = std::move(GenericMaterial);
-    }
-
-    auto Instance = Material->CreateMaterialInstance();
-    if (!Instance)
-    {
-        return std::unexpected("Failed to instantiate runtime material for descriptor reflection");
-    }
-
-    return SnAPI::Graphics::BuildMaterialRuntimeDescriptor(*Instance);
-}
-
-[[nodiscard]] bool SyncMaterialInstanceAssetToRuntimeDescriptor(
-    MaterialInstanceAsset& Payload,
-    const SnAPI::Graphics::MaterialRuntimeDescriptor& Descriptor)
-{
-    std::vector<MaterialScalarParamPayload> SyncedScalars{};
-    std::vector<MaterialVectorParamPayload> SyncedVectors{};
-    std::vector<MaterialTextureParamPayload> SyncedTextures{};
-
-    std::vector<bool> UsedScalars(Payload.Scalars.size(), false);
-    std::vector<bool> UsedVectors(Payload.Vectors.size(), false);
-    std::vector<bool> UsedTextures(Payload.Textures.size(), false);
-
-    std::unordered_map<std::string, size_t> ScalarByName{};
-    std::unordered_map<std::string, size_t> VectorByName{};
-    std::unordered_map<std::string, size_t> TextureByName{};
-    ScalarByName.reserve(Payload.Scalars.size());
-    VectorByName.reserve(Payload.Vectors.size());
-    TextureByName.reserve(Payload.Textures.size());
-
-    for (size_t Index = 0; Index < Payload.Scalars.size(); ++Index)
-    {
-        ScalarByName.try_emplace(ToLowerCopy(Payload.Scalars[Index].Name), Index);
-    }
-    for (size_t Index = 0; Index < Payload.Vectors.size(); ++Index)
-    {
-        VectorByName.try_emplace(ToLowerCopy(Payload.Vectors[Index].Name), Index);
-    }
-    for (size_t Index = 0; Index < Payload.Textures.size(); ++Index)
-    {
-        TextureByName.try_emplace(ToLowerCopy(Payload.Textures[Index].SlotName), Index);
-    }
-
-    std::vector<std::string> LookupKeys{};
-    for (const auto& Parameter : Descriptor.Parameters)
-    {
-        if (Parameter.Set != 0)
-        {
-            continue;
-        }
-
-        CollectParameterLookupKeys(Parameter, LookupKeys);
-        const auto FindIndex = [&LookupKeys](const std::unordered_map<std::string, size_t>& ByName) -> std::optional<size_t> {
-            for (const std::string& Key : LookupKeys)
-            {
-                if (const auto It = ByName.find(Key); It != ByName.end())
-                {
-                    return It->second;
-                }
-            }
-            return std::nullopt;
-        };
-
-        switch (Parameter.eValueType)
-        {
-        case SnAPI::Graphics::ShaderMetaData::EValueType::Bool:
-        case SnAPI::Graphics::ShaderMetaData::EValueType::Int:
-        case SnAPI::Graphics::ShaderMetaData::EValueType::UInt:
-        case SnAPI::Graphics::ShaderMetaData::EValueType::Float:
-            {
-                MaterialScalarParamPayload Scalar{};
-                if (const auto Existing = FindIndex(ScalarByName); Existing && *Existing < Payload.Scalars.size())
-                {
-                    Scalar = Payload.Scalars[*Existing];
-                    UsedScalars[*Existing] = true;
-                }
-                else
-                {
-                    (void)TryResolveDefaultScalar(Parameter, Scalar.Value);
-                }
-                Scalar.Name = Parameter.Name;
-                SyncedScalars.push_back(std::move(Scalar));
-            }
-            break;
-        case SnAPI::Graphics::ShaderMetaData::EValueType::Float2:
-        case SnAPI::Graphics::ShaderMetaData::EValueType::Float3:
-        case SnAPI::Graphics::ShaderMetaData::EValueType::Float4:
-            {
-                MaterialVectorParamPayload Vector{};
-                if (const auto Existing = FindIndex(VectorByName); Existing && *Existing < Payload.Vectors.size())
-                {
-                    Vector = Payload.Vectors[*Existing];
-                    UsedVectors[*Existing] = true;
-                }
-                else
-                {
-                    size_t Components = 4;
-                    if (Parameter.eValueType == SnAPI::Graphics::ShaderMetaData::EValueType::Float2)
-                    {
-                        Components = 2;
-                    }
-                    else if (Parameter.eValueType == SnAPI::Graphics::ShaderMetaData::EValueType::Float3)
-                    {
-                        Components = 3;
-                    }
-                    (void)TryResolveDefaultVector(Parameter, Components, Vector.Value);
-                }
-                Vector.Name = Parameter.Name;
-                SyncedVectors.push_back(std::move(Vector));
-            }
-            break;
-        default:
-            break;
-        }
-    }
-
-    for (const auto& Resource : Descriptor.Resources)
-    {
-        if (Resource.Set != 0 ||
-            Resource.eBindingType != SnAPI::Graphics::ShaderMetaData::EBindingType::SampledImage)
-        {
-            continue;
-        }
-
-        MaterialTextureParamPayload Texture{};
-        if (const auto Existing = TextureByName.find(ToLowerCopy(Resource.Name));
-            Existing != TextureByName.end() && Existing->second < Payload.Textures.size())
-        {
-            Texture = Payload.Textures[Existing->second];
-            UsedTextures[Existing->second] = true;
-        }
-        Texture.SlotName = Resource.Name;
-        SyncedTextures.push_back(std::move(Texture));
-    }
-
-    for (size_t Index = 0; Index < Payload.Scalars.size(); ++Index)
-    {
-        if (!UsedScalars[Index])
-        {
-            SyncedScalars.push_back(Payload.Scalars[Index]);
-        }
-    }
-    for (size_t Index = 0; Index < Payload.Vectors.size(); ++Index)
-    {
-        if (!UsedVectors[Index])
-        {
-            SyncedVectors.push_back(Payload.Vectors[Index]);
-        }
-    }
-    for (size_t Index = 0; Index < Payload.Textures.size(); ++Index)
-    {
-        if (!UsedTextures[Index])
-        {
-            SyncedTextures.push_back(Payload.Textures[Index]);
-        }
-    }
-
-    const bool Changed =
-        Payload.Scalars != SyncedScalars ||
-        Payload.Vectors != SyncedVectors ||
-        Payload.Textures != SyncedTextures;
-
-    if (Changed)
-    {
-        Payload.Scalars = std::move(SyncedScalars);
-        Payload.Vectors = std::move(SyncedVectors);
-        Payload.Textures = std::move(SyncedTextures);
-    }
-    return Changed;
-}
-#endif
 
 class InlineImportPipelineContext final : public ::SnAPI::AssetPipeline::IPipelineContext
 {
@@ -1844,45 +1261,9 @@ private:
 
 [[nodiscard]] std::filesystem::path ResolveRendererShaderSourceDirectory()
 {
-    namespace fs = std::filesystem;
-    std::vector<fs::path> Candidates{};
-#if defined(SNAPI_GF_RENDERER_SHADER_SOURCE_DIR)
-    Candidates.emplace_back(fs::path(SNAPI_GF_RENDERER_SHADER_SOURCE_DIR));
-#endif
-    Candidates.emplace_back(fs::path(__FILE__).parent_path() / ".." / ".." / ".." / "SnAPI.Renderer" / "shaders");
-    Candidates.emplace_back(fs::current_path() / ".." / "SnAPI.Renderer" / "shaders");
-    Candidates.emplace_back(fs::current_path() / "shaders");
-
-    std::error_code Error{};
-    for (const fs::path& Candidate : Candidates)
-    {
-        Error.clear();
-        if (!fs::exists(Candidate, Error) || Error)
-        {
-            continue;
-        }
-
-        Error.clear();
-        if (!fs::is_directory(Candidate, Error) || Error)
-        {
-            continue;
-        }
-
-        return Candidate;
-    }
-
     return {};
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-void ConfigureRendererShaderSearchRootForAssetRoot(GameRuntime& Runtime, const std::filesystem::path& AssetRoot)
-{
-    if (auto* WorldPtr = Runtime.WorldPtr(); WorldPtr)
-    {
-        (void)WorldPtr->Renderer().SetProjectShaderSearchRoot(AssetRoot);
-    }
-}
-#endif
 
 [[nodiscard]] std::filesystem::path EditorDefaultShapeAssetDirectory()
 {
@@ -1932,219 +1313,23 @@ void ConfigureRendererShaderSearchRootForAssetRoot(GameRuntime& Runtime, const s
     return Escaped;
 }
 
-[[nodiscard]] std::expected<std::string, std::string> JsonParseString(const std::string& Text, std::size_t& Position)
+/**
+ * @brief Project the shared descriptor service result into the editor's cached project snapshot.
+ * @param Descriptor Resolved descriptor produced by `ProjectDescriptorService`.
+ * @return Editor-facing project info snapshot.
+ */
+[[nodiscard]] EditorAssetService::ProjectInfo MakeProjectInfo(const ResolvedProjectDescriptor& Descriptor)
 {
-    if (Position >= Text.size() || Text[Position] != '"')
-    {
-        return std::unexpected("Expected JSON string");
-    }
-    ++Position;
-
-    std::string Output{};
-    while (Position < Text.size())
-    {
-        const char Character = Text[Position++];
-        if (Character == '"')
-        {
-            return Output;
-        }
-        if (Character != '\\')
-        {
-            Output.push_back(Character);
-            continue;
-        }
-        if (Position >= Text.size())
-        {
-            return std::unexpected("Invalid JSON escape sequence");
-        }
-        const char Escape = Text[Position++];
-        switch (Escape)
-        {
-        case '"':
-            Output.push_back('"');
-            break;
-        case '\\':
-            Output.push_back('\\');
-            break;
-        case '/':
-            Output.push_back('/');
-            break;
-        case 'b':
-            Output.push_back('\b');
-            break;
-        case 'f':
-            Output.push_back('\f');
-            break;
-        case 'n':
-            Output.push_back('\n');
-            break;
-        case 'r':
-            Output.push_back('\r');
-            break;
-        case 't':
-            Output.push_back('\t');
-            break;
-        default:
-            return std::unexpected("Unsupported JSON escape sequence");
-        }
-    }
-    return std::unexpected("Unterminated JSON string");
-}
-
-[[nodiscard]] bool JsonTryReadStringField(const std::string& Text, std::string_view Key, std::string& OutValue)
-{
-    const std::string KeyToken = "\"" + std::string(Key) + "\"";
-    std::size_t SearchOffset = 0;
-    while (true)
-    {
-        const std::size_t KeyPos = Text.find(KeyToken, SearchOffset);
-        if (KeyPos == std::string::npos)
-        {
-            return false;
-        }
-        std::size_t ValuePos = KeyPos + KeyToken.size();
-        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-        {
-            ++ValuePos;
-        }
-        if (ValuePos >= Text.size() || Text[ValuePos] != ':')
-        {
-            SearchOffset = KeyPos + KeyToken.size();
-            continue;
-        }
-        ++ValuePos;
-        while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-        {
-            ++ValuePos;
-        }
-        auto Parsed = JsonParseString(Text, ValuePos);
-        if (!Parsed)
-        {
-            SearchOffset = KeyPos + KeyToken.size();
-            continue;
-        }
-        OutValue = std::move(*Parsed);
-        return true;
-    }
-}
-
-[[nodiscard]] bool JsonTryReadUnsignedField(const std::string& Text, std::string_view Key, uint32_t& OutValue)
-{
-    const std::string KeyToken = "\"" + std::string(Key) + "\"";
-    const std::size_t KeyPos = Text.find(KeyToken);
-    if (KeyPos == std::string::npos)
-    {
-        return false;
-    }
-
-    std::size_t ValuePos = Text.find(':', KeyPos + KeyToken.size());
-    if (ValuePos == std::string::npos)
-    {
-        return false;
-    }
-    ++ValuePos;
-    while (ValuePos < Text.size() && std::isspace(static_cast<unsigned char>(Text[ValuePos])) != 0)
-    {
-        ++ValuePos;
-    }
-    std::size_t EndPos = ValuePos;
-    while (EndPos < Text.size() && std::isdigit(static_cast<unsigned char>(Text[EndPos])) != 0)
-    {
-        ++EndPos;
-    }
-    if (EndPos <= ValuePos)
-    {
-        return false;
-    }
-
-    try
-    {
-        OutValue = static_cast<uint32_t>(std::stoul(Text.substr(ValuePos, EndPos - ValuePos)));
-        return true;
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-[[nodiscard]] std::string NormalizeProjectPathField(const std::string_view RawValue)
-{
-    std::string Value = TrimCopy(std::string(RawValue));
-    if (Value.empty())
-    {
-        return {};
-    }
-
-    std::replace(Value.begin(), Value.end(), '\\', '/');
-    return std::filesystem::path(Value).lexically_normal().generic_string();
-}
-
-[[nodiscard]] std::string ToProjectRelativePathField(const std::string_view RawValue, const std::filesystem::path& BaseRoot)
-{
-    std::string Value = TrimCopy(std::string(RawValue));
-    if (Value.empty())
-    {
-        return {};
-    }
-    if (HasUriScheme(Value))
-    {
-        return Value;
-    }
-
-    std::filesystem::path ValuePath = std::filesystem::path(Value).lexically_normal();
-    if (ValuePath.is_absolute() && !BaseRoot.empty())
-    {
-        std::error_code RelativeError{};
-        std::filesystem::path RelativePath = std::filesystem::relative(ValuePath, BaseRoot, RelativeError);
-        if (!RelativeError && !RelativePath.empty())
-        {
-            const std::string RelativeText = RelativePath.generic_string();
-            if (!RelativeText.starts_with("../") && RelativeText != "..")
-            {
-                return std::filesystem::path(RelativeText).lexically_normal().generic_string();
-            }
-        }
-    }
-
-    return ValuePath.generic_string();
-}
-
-[[nodiscard]] std::expected<void, std::string> WriteProjectConfigFile(const std::filesystem::path& ProjectFilePath,
-                                                                      const std::string_view Name,
-                                                                      const std::string_view AssetRoot,
-                                                                      const std::string_view StartupLevelAsset,
-                                                                      const std::string_view DefaultRenderSettingsAssetId)
-{
-    std::ofstream ProjectFile(ProjectFilePath, std::ios::binary | std::ios::trunc);
-    if (!ProjectFile.is_open())
-    {
-        return std::unexpected("Failed to open project file for writing");
-    }
-
-    ProjectFile << "{\n";
-    ProjectFile << "  \"version\": " << kProjectConfigVersion << ",\n";
-    ProjectFile << "  \"name\": \"" << JsonEscape(Name) << "\",\n";
-    ProjectFile << "  \"assetRoot\": \"" << JsonEscape(AssetRoot) << "\",\n";
-    ProjectFile << "  \"startupLevelAsset\": \"" << JsonEscape(StartupLevelAsset) << "\",\n";
-    ProjectFile << "  \"defaultRenderSettings\": \"" << JsonEscape(DefaultRenderSettingsAssetId) << "\"\n";
-    ProjectFile << "}\n";
-
-    if (!ProjectFile.good())
-    {
-        return std::unexpected("Failed to write project file");
-    }
-    ProjectFile.flush();
-    if (!ProjectFile.good())
-    {
-        return std::unexpected("Failed to flush project file");
-    }
-    ProjectFile.close();
-    if (!ProjectFile.good())
-    {
-        return std::unexpected("Failed to close project file");
-    }
-    return {};
+    EditorAssetService::ProjectInfo Project{};
+    Project.IsLoaded = true;
+    Project.Name = Descriptor.Descriptor.Project.Name;
+    Project.ProjectFilePath = Descriptor.ProjectFilePath.string();
+    Project.ProjectRootDirectory = Descriptor.ProjectRootDirectory.string();
+    Project.AssetRoot = Descriptor.Descriptor.Paths.AssetRoot;
+    Project.AssetRootDirectory = Descriptor.AssetRootDirectory.string();
+    Project.StartupLevelAsset = Descriptor.Descriptor.Startup.StartupLevelAsset;
+    Project.DefaultRenderSettingsAssetId = Descriptor.Descriptor.Startup.DefaultRenderSettingsAssetId;
+    return Project;
 }
 
 struct DefaultShapePackSpec
@@ -2242,7 +1427,7 @@ struct DefaultShapePackSpec
     MeshSettings.Visible = true;
     MeshSettings.CastShadows = true;
     MeshSettings.SyncFromTransform = true;
-    MeshSettings.RegisterWithRenderer = true;
+    MeshSettings.RetainInScene = true;
 #endif
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
@@ -2352,7 +1537,7 @@ struct DefaultShapePackSpec
     MeshSettings.Visible = true;
     MeshSettings.CastShadows = true;
     MeshSettings.SyncFromTransform = true;
-    MeshSettings.RegisterWithRenderer = true;
+    MeshSettings.RetainInScene = true;
 #endif
 
 #if defined(SNAPI_GF_ENABLE_PHYSICS)
@@ -3461,15 +2646,15 @@ void RewriteImportedAssetRefs(ImportedSourceAssetVariant& Asset,
                     MaterialRef = MaterialInstanceAssetRef(It->second.AssetName, It->second.AssetId);
                 }
             }
-            if (const auto It = RefByOriginalName.find(TypedAsset.Skeleton.AssetName); It != RefByOriginalName.end())
+            if (const auto It = RefByOriginalName.find(TypedAsset.Skeleton.GetAssetName()); It != RefByOriginalName.end())
             {
-                TypedAsset.Skeleton = It->second;
+                TypedAsset.Skeleton = SkeletonAssetRef(It->second.AssetName, It->second.AssetId);
             }
-            for (AssetRefPayload& AnimationRef : TypedAsset.Animations)
+            for (SkeletalAnimationAssetRef& AnimationRef : TypedAsset.Animations)
             {
-                if (const auto It = RefByOriginalName.find(AnimationRef.AssetName); It != RefByOriginalName.end())
+                if (const auto It = RefByOriginalName.find(AnimationRef.GetAssetName()); It != RefByOriginalName.end())
                 {
-                    AnimationRef = It->second;
+                    AnimationRef = SkeletalAnimationAssetRef(It->second.AssetName, It->second.AssetId);
                 }
             }
         }
@@ -3662,7 +2847,7 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
     m_currentProject = {};
     m_loadedDefaultRenderSettingsNode = {};
     m_defaultRenderSettingsApplyPending = false;
-    m_defaultRenderSettingsLastPassGraphRevision = 0;
+    m_defaultRenderSettingsLastFeatureRevision = 0;
     ClearAssetEditorState();
 
     if (const std::filesystem::path ExistingAssetRoot = SPathResolver::Instance().AssetRoot();
@@ -3725,9 +2910,6 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
         m_statusMessage += "Editor template bootstrap failed: " + TemplateError;
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), SPathResolver::Instance().AssetRoot());
-#endif
 
     return Ok();
 }
@@ -3796,15 +2978,15 @@ void EditorAssetService::Tick(EditorServiceContext& Context, float DeltaSeconds)
         }
     }
 
-    const std::uint64_t PassGraphRevision = RuntimeWorld->Renderer().RenderViewportPassGraphRevision();
+    const std::uint64_t FeatureRevision = RuntimeWorld->Renderer().RenderViewportFeatureRevision();
     const bool ShouldReapply = m_defaultRenderSettingsApplyPending
-                               || (PassGraphRevision != m_defaultRenderSettingsLastPassGraphRevision);
+                               || (FeatureRevision != m_defaultRenderSettingsLastFeatureRevision);
     if (!ShouldReapply)
     {
         return;
     }
 
-    m_defaultRenderSettingsLastPassGraphRevision = PassGraphRevision;
+    m_defaultRenderSettingsLastFeatureRevision = FeatureRevision;
     if (NodeCast<WorldRenderSettings>(LoadedNode) != nullptr)
     {
         if (const Result RequestResult = RuntimeWorld->RequestNodeOnCreate(m_loadedDefaultRenderSettingsNode); RequestResult)
@@ -3844,7 +3026,7 @@ void EditorAssetService::Shutdown(EditorServiceContext& Context)
     m_currentProject = {};
     m_loadedDefaultRenderSettingsNode = {};
     m_defaultRenderSettingsApplyPending = false;
-    m_defaultRenderSettingsLastPassGraphRevision = 0;
+    m_defaultRenderSettingsLastFeatureRevision = 0;
     ClearAssetEditorState();
 }
 
@@ -7306,21 +6488,6 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context,
     }
 
     AssetPlacementRequest ResolvedRequest = Request;
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
-    if (ResolvedRequest.UseScreenPoint && !ResolvedRequest.UseWorldPosition)
-    {
-        Vec3 HitWorldPosition{};
-        if (TryResolveViewportPlacementWorldPosition(
-                Context,
-                ResolvedRequest.ScreenPositionX,
-                ResolvedRequest.ScreenPositionY,
-                HitWorldPosition))
-        {
-            ResolvedRequest.WorldPosition = HitWorldPosition;
-            ResolvedRequest.UseWorldPosition = true;
-        }
-    }
-#endif
 
     if (Asset->AssetKind == AssetKindLevel())
     {
@@ -7425,16 +6592,6 @@ Result EditorAssetService::EnsureEditorTemplateAssets(EditorServiceContext& Cont
     if (!SourceEditorAssetDirectory.empty())
     {
         if (auto CopyResult = CopyDirectoryContentsRecursive(SourceEditorAssetDirectory, m_editorTemplateAssetDirectory); !CopyResult)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, CopyResult.error()));
-        }
-    }
-
-    const std::filesystem::path RendererShaderSourceDirectory = ResolveRendererShaderSourceDirectory();
-    if (!RendererShaderSourceDirectory.empty())
-    {
-        const std::filesystem::path TemplateShaderDirectory = m_editorTemplateAssetDirectory / "Shaders";
-        if (auto CopyResult = CopyDirectoryContentsRecursive(RendererShaderSourceDirectory, TemplateShaderDirectory); !CopyResult)
         {
             return std::unexpected(MakeError(EErrorCode::InternalError, CopyResult.error()));
         }
@@ -7625,7 +6782,7 @@ Result EditorAssetService::LoadProjectStartupLevelAsset(EditorServiceContext& Co
     WorldPtr->Clear();
     m_loadedDefaultRenderSettingsNode = {};
     m_defaultRenderSettingsApplyPending = false;
-    m_defaultRenderSettingsLastPassGraphRevision = 0;
+    m_defaultRenderSettingsLastFeatureRevision = 0;
 
     std::error_code Error{};
     if (!std::filesystem::exists(StartupAssetPath, Error) || Error)
@@ -7668,28 +6825,39 @@ Result EditorAssetService::CreateProject(EditorServiceContext& Context,
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project directory cannot be empty"));
     }
 
-    std::error_code Error{};
-    std::filesystem::path ParentPath(ParentDirectoryText);
-    if (!ParentPath.is_absolute())
+    if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
     {
-        ParentPath = std::filesystem::absolute(ParentPath, Error);
-        if (Error)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to resolve project directory: " + Error.message()));
-        }
+        return TemplateResult;
     }
 
-    const std::filesystem::path ProjectRoot = ParentPath / Name;
-    const std::filesystem::path AssetRoot = ProjectRoot / std::string(kDefaultProjectAssetRoot);
-    const std::filesystem::path ProjectFilePath = ProjectRoot / std::string(kDefaultProjectFileName);
-    const std::filesystem::path StartupAssetPath = AssetRoot / std::filesystem::path(kDefaultProjectStartupLevelAsset);
-
-    std::filesystem::create_directories(AssetRoot, Error);
-    if (Error)
+    auto DescriptorResult = ProjectCreationService::BuildDefaultDescriptor(Name);
+    if (!DescriptorResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError,
-                                         "Failed to create project directory: " + Error.message()));
+        return std::unexpected(DescriptorResult.error());
+    }
+
+    ProjectCreationRequest CreateRequest{};
+    CreateRequest.ProjectName = Name;
+    CreateRequest.ParentDirectory = ParentDirectoryText;
+    CreateRequest.ProjectFileName = std::string(kDefaultProjectFileName);
+    CreateRequest.Descriptor = std::move(*DescriptorResult);
+    return CreateProject(Context, CreateRequest, true);
+}
+
+Result EditorAssetService::CreateProject(EditorServiceContext& Context,
+                                         const ProjectCreationRequest& Request,
+                                         const bool LoadAfterCreate,
+                                         ProjectCreationResult* OutResult)
+{
+    ProjectCreationRequest CreateRequest = Request;
+    CreateRequest.ProjectName = TrimCopy(CreateRequest.ProjectName);
+    if (CreateRequest.ProjectName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project name cannot be empty"));
+    }
+    if (CreateRequest.ParentDirectory.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project directory cannot be empty"));
     }
 
     if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
@@ -7697,233 +6865,187 @@ Result EditorAssetService::CreateProject(EditorServiceContext& Context,
         return TemplateResult;
     }
 
-    if (Result StarterResult = EnsureProjectStarterLevelAsset(AssetRoot, StartupAssetPath); !StarterResult)
+    if (CreateRequest.ProjectFileName.empty())
     {
-        return StarterResult;
+        CreateRequest.ProjectFileName = std::string(kDefaultProjectFileName);
     }
-    if (Result ShaderResult = EnsureProjectShaderDirectory(AssetRoot); !ShaderResult)
+    if (CreateRequest.Templates.StarterLevelTemplateSourcePath.empty())
     {
-        return ShaderResult;
+        CreateRequest.Templates.StarterLevelTemplateSourcePath = m_editorStarterLevelTemplateAssetPath;
     }
-
-    if (!m_editorStarterScriptTemplatePath.empty())
+    if (CreateRequest.Templates.StarterScriptTemplateSourcePath.empty())
     {
-        const std::filesystem::path ProjectScriptPath = AssetRoot / std::string(kEditorStarterScriptFileName);
-        Error.clear();
-        if (!std::filesystem::exists(ProjectScriptPath, Error) || Error)
+        CreateRequest.Templates.StarterScriptTemplateSourcePath = m_editorStarterScriptTemplatePath;
+    }
+    if (CreateRequest.Templates.ShaderTemplateDirectory.empty())
+    {
+        const std::filesystem::path TemplateShaderDirectory = m_editorTemplateAssetDirectory / "Shaders";
+        std::error_code Error{};
+        if (std::filesystem::exists(TemplateShaderDirectory, Error) && !Error)
         {
-            Error.clear();
-            std::filesystem::copy_file(m_editorStarterScriptTemplatePath,
-                                       ProjectScriptPath,
-                                       std::filesystem::copy_options::overwrite_existing,
-                                       Error);
-            if (Error)
-            {
-                return std::unexpected(MakeError(EErrorCode::InternalError,
-                                                 "Failed to copy starter script into project assets: " + Error.message()));
-            }
+            CreateRequest.Templates.ShaderTemplateDirectory = TemplateShaderDirectory;
         }
     }
 
-    if (auto WriteResult = WriteProjectConfigFile(ProjectFilePath,
-                                                  Name,
-                                                  std::string(kDefaultProjectAssetRoot),
-                                                  std::string(kDefaultProjectStartupLevelAsset),
-                                                  std::string{}); !WriteResult)
+    ProjectCreationResult CreateResult{};
+    if (Result CreateWorkspaceResult = ProjectCreationService::CreateProject(CreateRequest, &CreateResult); !CreateWorkspaceResult)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
+        return CreateWorkspaceResult;
     }
 
-    auto LoadResult = LoadProject(Context, ProjectFilePath.string());
-    if (!LoadResult)
+    if (OutResult != nullptr)
     {
-        return LoadResult;
+        *OutResult = CreateResult;
     }
 
-    m_statusMessage = "Created and loaded project: " + Name;
+    if (LoadAfterCreate)
+    {
+        auto LoadResult = LoadProject(Context, CreateResult.Project.ProjectFilePath.string());
+        if (!LoadResult)
+        {
+            return LoadResult;
+        }
+
+        m_statusMessage = "Created and loaded project: " + CreateResult.Project.Descriptor.Project.Name;
+        return Ok();
+    }
+
+    m_statusMessage = "Created project: " + CreateResult.Project.Descriptor.Project.Name;
+    return Ok();
+}
+
+Result EditorAssetService::CreatePlugin(EditorServiceContext& Context,
+                                        const PluginCreationRequest& Request,
+                                        PluginCreationResult* OutResult)
+{
+    (void)Context;
+    PluginCreationRequest CreateRequest = Request;
+    CreateRequest.PluginName = TrimCopy(CreateRequest.PluginName);
+    if (CreateRequest.PluginName.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Plugin name cannot be empty"));
+    }
+    if (CreateRequest.ParentDirectory.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Plugin directory cannot be empty"));
+    }
+
+    PluginCreationResult CreateResult{};
+    if (Result CreateWorkspaceResult = PluginCreationService::CreatePlugin(CreateRequest, &CreateResult); !CreateWorkspaceResult)
+    {
+        return CreateWorkspaceResult;
+    }
+
+    if (OutResult != nullptr)
+    {
+        *OutResult = CreateResult;
+    }
+
+    m_statusMessage = "Created plugin: " + CreateResult.Plugin.Descriptor.Plugin.Name;
+    return Ok();
+}
+
+Result EditorAssetService::CreateProjectModule(EditorServiceContext& Context,
+                                               const ModuleCreationRequest& Request,
+                                               ModuleCreationResult* OutResult)
+{
+    (void)Context;
+    ModuleCreationRequest CreateRequest = Request;
+    if (CreateRequest.ProjectFilePath.empty())
+    {
+        if (m_currentProject.ProjectFilePath.empty())
+        {
+            return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                             "Project module creation requires a project descriptor path"));
+        }
+
+        CreateRequest.ProjectFilePath = m_currentProject.ProjectFilePath;
+    }
+
+    ModuleCreationResult CreateResult{};
+    if (Result CreateModuleResult = ModuleCreationService::CreateModule(CreateRequest, &CreateResult); !CreateModuleResult)
+    {
+        return CreateModuleResult;
+    }
+
+    if (OutResult != nullptr)
+    {
+        *OutResult = CreateResult;
+    }
+
+    m_statusMessage = "Added project module: " + CreateResult.Module.Name;
+    return Ok();
+}
+
+Result EditorAssetService::CreatePluginModule(EditorServiceContext& Context,
+                                              const PluginModuleCreationRequest& Request,
+                                              PluginModuleCreationResult* OutResult)
+{
+    (void)Context;
+    PluginModuleCreationRequest CreateRequest = Request;
+    if (CreateRequest.PluginFilePath.empty())
+    {
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument,
+                                         "Plugin module creation requires a plugin descriptor path"));
+    }
+
+    PluginModuleCreationResult CreateResult{};
+    if (Result CreateModuleResult = ModuleCreationService::CreatePluginModule(CreateRequest, &CreateResult); !CreateModuleResult)
+    {
+        return CreateModuleResult;
+    }
+
+    if (OutResult != nullptr)
+    {
+        *OutResult = CreateResult;
+    }
+
+    m_statusMessage = "Added plugin module: " + CreateResult.Module.Name;
     return Ok();
 }
 
 Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std::string_view ProjectFilePath)
 {
-    std::string ProjectFileText = TrimCopy(std::string(ProjectFilePath));
-    if (ProjectFileText.empty())
+    auto ResolvedProject = ProjectDescriptorService::LoadResolved(ProjectFilePath);
+    if (!ResolvedProject)
     {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file path cannot be empty"));
-    }
-
-    std::filesystem::path ProjectFile = std::filesystem::path(ProjectFileText);
-    if (auto Resolved = SPathResolver::Instance().Resolve(ProjectFileText); Resolved)
-    {
-        ProjectFile = *Resolved;
-    }
-    else if (!ProjectFile.is_absolute())
-    {
-        std::error_code Error{};
-        ProjectFile = std::filesystem::absolute(ProjectFile, Error);
-        if (Error)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError,
-                                             "Failed to resolve project file path: " + Error.message()));
-        }
+        return std::unexpected(ResolvedProject.error());
     }
 
     std::error_code Error{};
-    if (!std::filesystem::exists(ProjectFile, Error) || Error)
-    {
-        return std::unexpected(MakeError(EErrorCode::NotFound, "Project file was not found: " + ProjectFile.string()));
-    }
-
-    std::ifstream Input(ProjectFile, std::ios::binary);
-    if (!Input.is_open())
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to open project file"));
-    }
-    std::ostringstream Buffer{};
-    Buffer << Input.rdbuf();
-    const std::string JsonText = Buffer.str();
-    if (JsonText.empty())
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Project file is empty"));
-    }
-
-    uint32_t Version = kProjectConfigVersion;
-    (void)JsonTryReadUnsignedField(JsonText, "version", Version);
-    if (Version != kProjectConfigVersion)
-    {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported project file version"));
-    }
-
-    std::string Name = ProjectFile.stem().string();
-    (void)JsonTryReadStringField(JsonText, "name", Name);
-    Name = TrimCopy(Name);
-    if (Name.empty())
-    {
-        Name = "Project";
-    }
-
-    std::string AssetRootField = std::string(kDefaultProjectAssetRoot);
-    (void)JsonTryReadStringField(JsonText, "assetRoot", AssetRootField);
-    AssetRootField = TrimCopy(AssetRootField);
-    if (AssetRootField.empty())
-    {
-        AssetRootField = std::string(kDefaultProjectAssetRoot);
-    }
-    else if (!HasUriScheme(AssetRootField))
-    {
-        AssetRootField = NormalizeProjectPathField(AssetRootField);
-    }
-
-    std::string StartupLevelAssetField{};
-    (void)JsonTryReadStringField(JsonText, "startupLevelAsset", StartupLevelAssetField);
-    StartupLevelAssetField = TrimCopy(StartupLevelAssetField);
-    if (StartupLevelAssetField.empty())
-    {
-        std::string LegacyStartupLevelPack{};
-        (void)JsonTryReadStringField(JsonText, "startupLevelPack", LegacyStartupLevelPack);
-        LegacyStartupLevelPack = TrimCopy(LegacyStartupLevelPack);
-        if (!LegacyStartupLevelPack.empty())
-        {
-            if (!HasUriScheme(LegacyStartupLevelPack))
-            {
-                LegacyStartupLevelPack = NormalizeProjectPathField(LegacyStartupLevelPack);
-                std::filesystem::path LegacyPath = std::filesystem::path(LegacyStartupLevelPack);
-                if (NormalizeAssetExtension(LegacyPath.extension().string()) == ".snpak")
-                {
-                    LegacyPath.replace_extension(".level");
-                }
-                StartupLevelAssetField = LegacyPath.lexically_normal().generic_string();
-            }
-            else
-            {
-                StartupLevelAssetField = LegacyStartupLevelPack;
-            }
-        }
-    }
-    if (StartupLevelAssetField.empty())
-    {
-        StartupLevelAssetField = std::string(kDefaultProjectStartupLevelAsset);
-    }
-    else if (!HasUriScheme(StartupLevelAssetField))
-    {
-        StartupLevelAssetField = NormalizeProjectPathField(StartupLevelAssetField);
-    }
-
-    std::string DefaultRenderSettingsField{};
-    (void)JsonTryReadStringField(JsonText, "defaultRenderSettings", DefaultRenderSettingsField);
-    DefaultRenderSettingsField = TrimCopy(DefaultRenderSettingsField);
-
-    const std::filesystem::path ProjectRoot = ProjectFile.parent_path();
-    std::filesystem::path ResolvedAssetRoot = std::filesystem::path(AssetRootField);
-    if (HasUriScheme(AssetRootField))
-    {
-        auto Resolved = SPathResolver::Instance().Resolve(AssetRootField);
-        if (!Resolved)
-        {
-            return std::unexpected(Resolved.error());
-        }
-        ResolvedAssetRoot = *Resolved;
-    }
-    else if (!ResolvedAssetRoot.is_absolute())
-    {
-        ResolvedAssetRoot = ProjectRoot / ResolvedAssetRoot;
-    }
-    ResolvedAssetRoot = ResolvedAssetRoot.lexically_normal();
-
-    std::filesystem::create_directories(ResolvedAssetRoot, Error);
+    std::filesystem::create_directories(ResolvedProject->AssetRootDirectory, Error);
     if (Error)
     {
         return std::unexpected(MakeError(EErrorCode::InternalError,
                                          "Failed to create project asset root directory: " + Error.message()));
     }
 
-    if (Result SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedAssetRoot); !SetRootResult)
+    if (Result SetRootResult = SPathResolver::Instance().SetAssetRoot(ResolvedProject->AssetRootDirectory); !SetRootResult)
     {
         return SetRootResult;
     }
 
-    m_currentProject = {};
-    m_currentProject.IsLoaded = true;
-    m_currentProject.Name = Name;
-    m_currentProject.ProjectFilePath = ProjectFile.string();
-    m_currentProject.ProjectRootDirectory = ProjectRoot.string();
-    m_currentProject.AssetRoot = AssetRootField;
-    m_currentProject.AssetRootDirectory = ResolvedAssetRoot.string();
-    m_currentProject.StartupLevelAsset = StartupLevelAssetField;
-    m_currentProject.DefaultRenderSettingsAssetId = DefaultRenderSettingsField;
-
-    std::filesystem::path StartupAssetPath = std::filesystem::path(StartupLevelAssetField);
-    if (HasUriScheme(StartupLevelAssetField))
-    {
-        auto Resolved = SPathResolver::Instance().Resolve(StartupLevelAssetField);
-        if (!Resolved)
-        {
-            return std::unexpected(Resolved.error());
-        }
-        StartupAssetPath = *Resolved;
-    }
-    else if (!StartupAssetPath.is_absolute())
-    {
-        StartupAssetPath = ResolvedAssetRoot / StartupAssetPath;
-    }
-    StartupAssetPath = StartupAssetPath.lexically_normal();
+    m_currentProject = MakeProjectInfo(*ResolvedProject);
+    const std::filesystem::path StartupAssetPath = ResolvedProject->StartupLevelAssetPath;
 
     if (Result TemplateResult = EnsureEditorTemplateAssets(Context); !TemplateResult)
     {
         return TemplateResult;
     }
-    if (Result StarterResult = EnsureProjectStarterLevelAsset(ResolvedAssetRoot, StartupAssetPath); !StarterResult)
+    if (Result StarterResult = EnsureProjectStarterLevelAsset(ResolvedProject->AssetRootDirectory, StartupAssetPath);
+        !StarterResult)
     {
         return StarterResult;
     }
-    if (Result ShaderResult = EnsureProjectShaderDirectory(ResolvedAssetRoot); !ShaderResult)
+    if (Result ShaderResult = EnsureProjectShaderDirectory(ResolvedProject->AssetRootDirectory); !ShaderResult)
     {
         return ShaderResult;
     }
 
     if (!m_editorStarterScriptTemplatePath.empty())
     {
-        const std::filesystem::path ProjectScriptPath = ResolvedAssetRoot / std::string(kEditorStarterScriptFileName);
+        const std::filesystem::path ProjectScriptPath =
+            ResolvedProject->AssetRootDirectory / std::string(kEditorStarterScriptFileName);
         Error.clear();
         if (!std::filesystem::exists(ProjectScriptPath, Error) || Error)
         {
@@ -7940,9 +7062,6 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
         }
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), ResolvedAssetRoot);
-#endif
 
     if (Result RebuildResult = RebuildAssetManager(); !RebuildResult)
     {
@@ -7974,6 +7093,14 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
     const std::filesystem::path ProjectFilePath = std::filesystem::path(m_currentProject.ProjectFilePath).lexically_normal();
     const std::filesystem::path ProjectRoot = ProjectFilePath.parent_path();
 
+    auto DescriptorResult = ProjectDescriptorService::Load(ProjectFilePath.string());
+    if (!DescriptorResult)
+    {
+        return std::unexpected(DescriptorResult.error());
+    }
+
+    ProjectDescriptor Descriptor = *DescriptorResult;
+
     std::string NextName = TrimCopy(std::string(ProjectName));
     if (NextName.empty())
     {
@@ -7989,7 +7116,8 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
     {
         if (!m_currentProject.AssetRootDirectory.empty())
         {
-            NextAssetRoot = ToProjectRelativePathField(m_currentProject.AssetRootDirectory, ProjectRoot);
+            NextAssetRoot =
+                ProjectDescriptorService::ToProjectRelativePathField(m_currentProject.AssetRootDirectory, ProjectRoot);
         }
         if (NextAssetRoot.empty())
         {
@@ -8019,7 +7147,8 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
     }
     if (!HasUriScheme(NextStartupLevelAsset))
     {
-        NextStartupLevelAsset = ToProjectRelativePathField(NextStartupLevelAsset, AssetRootPath);
+        NextStartupLevelAsset =
+            ProjectDescriptorService::ToProjectRelativePathField(NextStartupLevelAsset, AssetRootPath);
     }
 
     std::string NextDefaultRenderSettingsAssetId = TrimCopy(std::string(DefaultRenderSettingsAssetId));
@@ -8028,19 +7157,27 @@ Result EditorAssetService::SaveProjectSettings(EditorServiceContext& Context,
         NextDefaultRenderSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
     }
 
-    if (auto WriteResult = WriteProjectConfigFile(ProjectFilePath,
-                                                  NextName,
-                                                  NextAssetRoot,
-                                                  NextStartupLevelAsset,
-                                                  NextDefaultRenderSettingsAssetId); !WriteResult)
+    Descriptor.Project.Name = NextName;
+    if (Descriptor.Project.DisplayName.empty() || Descriptor.Project.DisplayName == m_currentProject.Name)
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, WriteResult.error()));
+        Descriptor.Project.DisplayName = NextName;
+    }
+    Descriptor.Paths.AssetRoot = NextAssetRoot;
+    Descriptor.Startup.StartupLevelAsset = NextStartupLevelAsset;
+    Descriptor.Startup.DefaultRenderSettingsAssetId = NextDefaultRenderSettingsAssetId;
+
+    if (Result SaveResult = ProjectDescriptorService::Save(Descriptor, ProjectFilePath.string()); !SaveResult)
+    {
+        return SaveResult;
     }
 
-    m_currentProject.Name = std::move(NextName);
-    m_currentProject.AssetRoot = std::move(NextAssetRoot);
-    m_currentProject.StartupLevelAsset = std::move(NextStartupLevelAsset);
-    m_currentProject.DefaultRenderSettingsAssetId = std::move(NextDefaultRenderSettingsAssetId);
+    auto ResolvedProject = ProjectDescriptorService::LoadResolved(ProjectFilePath.string());
+    if (!ResolvedProject)
+    {
+        return std::unexpected(ResolvedProject.error());
+    }
+
+    m_currentProject = MakeProjectInfo(*ResolvedProject);
 
     if (Result LoadDefaultsResult = LoadProjectDefaultRenderSettings(Context); !LoadDefaultsResult)
     {
@@ -8061,8 +7198,8 @@ Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext
     }
     m_defaultRenderSettingsApplyPending = false;
     // Force one deferred re-apply in Tick() after initial load.
-    // Editor viewport pass graphs can be registered after this call.
-    m_defaultRenderSettingsLastPassGraphRevision = 0;
+    // Editor viewport feature profiles can be registered after this call.
+    m_defaultRenderSettingsLastFeatureRevision = 0;
 
     const std::string DefaultSettingsAssetId = TrimCopy(m_currentProject.DefaultRenderSettingsAssetId);
     if (DefaultSettingsAssetId.empty())
@@ -8126,9 +7263,9 @@ Result EditorAssetService::LoadProjectDefaultRenderSettings(EditorServiceContext
             NodeCast<WorldRenderSettings>(CreatedNode) != nullptr)
         {
             CreatedNode->EditorTransient(true);
-            // Apply immediately for already-ready pass graphs.
+            // Apply immediately for already-ready feature profiles.
             (void)RuntimeWorld->RequestNodeOnCreate(m_loadedDefaultRenderSettingsNode);
-            // Also schedule one deferred apply when the pass graph revision is available/stable.
+            // Also schedule one deferred apply when the feature profile revision is available/stable.
             m_defaultRenderSettingsApplyPending = true;
         }
         else
@@ -9580,112 +8717,8 @@ void EditorAssetService::RefreshAssetEditorHierarchy()
 
 Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
 {
-#if !defined(SNAPI_GF_ENABLE_RENDERER)
     m_assetEditorMaterialInstanceDescriptorParentKey.clear();
     return Ok();
-#else
-    MaterialInstanceAsset* PayloadPtr = ResolveActiveMaterialInstanceEditorPayload();
-    if (!PayloadPtr || !m_assetManager)
-    {
-        m_assetEditorMaterialInstanceDescriptorParentKey.clear();
-        return Ok();
-    }
-
-    MaterialInstanceAsset& Payload = *PayloadPtr;
-    const std::string ParentIdentity = BuildAssetRefIdentity(Payload.ParentMaterial);
-    m_assetEditorMaterialInstanceDescriptorParentKey = ParentIdentity;
-    if (ParentIdentity.empty())
-    {
-        return Ok();
-    }
-
-    MaterialAsset ParentMaterial{};
-    bool ParentResolved = false;
-
-    TAssetRef<MaterialAsset> ParentMaterialRef(Payload.ParentMaterial.AssetName, Payload.ParentMaterial.AssetId);
-    if (auto ParentAssetResult = ParentMaterialRef.LoadAsset(); ParentAssetResult && *ParentAssetResult)
-    {
-        ParentMaterial = std::move(**ParentAssetResult);
-        ParentResolved = true;
-    }
-
-    if (!ParentResolved)
-    {
-        const std::string ParentAssetName = ToLowerCopy(Payload.ParentMaterial.AssetName);
-        const std::string ParentAssetIdText = Payload.ParentMaterial.AssetId;
-        ::SnAPI::AssetPipeline::AssetId ParentAssetId{};
-        const bool HasParentId = !ParentAssetIdText.empty();
-        if (HasParentId)
-        {
-            ParentAssetId = ::SnAPI::AssetPipeline::AssetId::FromString(ParentAssetIdText);
-        }
-
-        const DiscoveredAsset* ParentAsset = nullptr;
-        if (HasParentId && !ParentAssetId.IsNull())
-        {
-            const auto It = std::ranges::find_if(m_assets, [&ParentAssetId](const DiscoveredAsset& Asset) {
-                return Asset.AssetId == ParentAssetId;
-            });
-            if (It != m_assets.end())
-            {
-                ParentAsset = &(*It);
-            }
-        }
-        if (!ParentAsset && !ParentAssetName.empty())
-        {
-            const auto It = std::ranges::find_if(m_assets, [&ParentAssetName](const DiscoveredAsset& Asset) {
-                return ToLowerCopy(Asset.Name) == ParentAssetName;
-            });
-            if (It != m_assets.end())
-            {
-                ParentAsset = &(*It);
-            }
-        }
-        if (!ParentAsset)
-        {
-            return std::unexpected(MakeError(EErrorCode::NotFound, "Parent material asset could not be resolved"));
-        }
-
-        auto CookedPayloadResult = BuildCookedPayloadForAsset(*ParentAsset);
-        if (!CookedPayloadResult)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, CookedPayloadResult.error()));
-        }
-        if (CookedPayloadResult->PayloadType != PayloadMaterial())
-        {
-            return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Parent material payload type mismatch"));
-        }
-
-        auto MaterialPayloadResult = DeserializeMaterialPayload(
-            CookedPayloadResult->Bytes.data(),
-            CookedPayloadResult->Bytes.size());
-        if (!MaterialPayloadResult)
-        {
-            return std::unexpected(MakeError(EErrorCode::InternalError, MaterialPayloadResult.error().Message));
-        }
-
-        ParentMaterial = std::move(MaterialPayloadResult.value());
-        ParentResolved = true;
-    }
-
-    if (!ParentResolved)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Unable to resolve parent material payload"));
-    }
-
-    auto DescriptorResult = BuildDescriptorForMaterialAsset(ParentMaterial);
-    if (!DescriptorResult)
-    {
-        return std::unexpected(MakeError(EErrorCode::InternalError, DescriptorResult.error()));
-    }
-
-    if (SyncMaterialInstanceAssetToRuntimeDescriptor(Payload, *DescriptorResult))
-    {
-        ++m_assetEditorSessionRevision;
-    }
-
-    return Ok();
-#endif
 }
 
 std::expected<::SnAPI::AssetPipeline::TypedPayload, std::string> EditorAssetService::SerializeAssetEditorPayload() const
@@ -10433,16 +9466,6 @@ Result EditorAssetService::InstantiateStaticMeshAsset(EditorServiceContext& Cont
 
     Vec3 MeshBoundsCenter{0.0f, 0.0f, 0.0f};
     Vec3 MeshBoundsHalfExtent{0.5f, 0.5f, 0.5f};
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-    {
-        const StaticMeshAssetRef MeshRef(Asset.Name, MeshAssetId);
-        auto StreamResult = MeshRef.LoadRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*m_assetManager);
-        if (StreamResult)
-        {
-            (void)TryComputeVertexStreamSourceBounds(*StreamResult, MeshBoundsCenter, MeshBoundsHalfExtent);
-        }
-    }
-#endif
 
     {
         ScopedComponentOnCreateSuppression SuppressOnCreate{};
@@ -10472,7 +9495,7 @@ Result EditorAssetService::InstantiateStaticMeshAsset(EditorServiceContext& Cont
         MeshSettings.Visible = true;
         MeshSettings.CastShadows = true;
         MeshSettings.SyncFromTransform = true;
-        MeshSettings.RegisterWithRenderer = true;
+        MeshSettings.RetainInScene = true;
         MeshSettings.MeshAsset = StaticMeshAssetRef(Asset.Name, MeshAssetId);
 #endif
 
@@ -10663,7 +9686,7 @@ Result EditorAssetService::InstantiateTextureAsset(EditorServiceContext& Context
         MeshSettings.Visible = true;
         MeshSettings.CastShadows = true;
         MeshSettings.SyncFromTransform = true;
-        MeshSettings.RegisterWithRenderer = true;
+        MeshSettings.RetainInScene = true;
         MeshSettings.MaterialInstanceOverrides = {
             MaterialInstanceAssetRef(MaterialInstanceLogicalName, MaterialInstanceAssetId.ToString())};
 #endif

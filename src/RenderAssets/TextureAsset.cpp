@@ -79,8 +79,8 @@ void EnsureFreeImageInitialized()
     return Ok();
 }
 
-[[nodiscard]] TExpected<void> EncodeLegacyPixelsToBytes(const TextureSourceImagePayload& Image,
-                                                        std::vector<std::uint8_t>& OutBytes)
+[[nodiscard]] TExpected<void> EncodeTransientPixelsToBytes(const TextureSourceImagePayload& Image,
+                                                           std::vector<std::uint8_t>& OutBytes)
 {
     EnsureFreeImageInitialized();
 
@@ -281,8 +281,8 @@ void EnsureFreeImageInitialized()
 }
 #endif
 
-[[nodiscard]] TExpected<void> DecodeLegacyPixelsToIntermediate(const TextureSourceImagePayload& Image,
-                                                               TextureCompressorPlugin::ImageIntermediate& OutIntermediate)
+[[nodiscard]] TExpected<void> DecodeTransientPixelsToIntermediate(const TextureSourceImagePayload& Image,
+                                                                  TextureCompressorPlugin::ImageIntermediate& OutIntermediate)
 {
     if (Image.Width == 0u || Image.Height == 0u)
     {
@@ -318,7 +318,7 @@ void EnsureFreeImageInitialized()
 
     if (Image.BitsPerChannel != 8u || Image.Channels == 0u || Image.Channels > 4u)
     {
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported legacy texture pixel layout"));
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Unsupported transient texture pixel layout"));
     }
 
     const std::size_t PixelCount = static_cast<std::size_t>(Image.Width) * static_cast<std::size_t>(Image.Height);
@@ -425,11 +425,11 @@ TExpected<void> EnsureTextureSourceImageEncoded(TextureSourceImagePayload& Image
         {
             return Ok();
         }
-        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Texture image has no encoded bytes or legacy pixels"));
+        return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Texture image has no encoded source bytes or transient pixels"));
     }
 
 #if defined(SNAPI_GF_HAS_FREEIMAGE) && SNAPI_GF_HAS_FREEIMAGE
-    auto EncodeResult = EncodeLegacyPixelsToBytes(Image, Image.EncodedBytes);
+    auto EncodeResult = EncodeTransientPixelsToBytes(Image, Image.EncodedBytes);
     if (!EncodeResult)
     {
         return EncodeResult;
@@ -454,7 +454,7 @@ TExpected<void> DecodeTextureSourceImageToIntermediate(const TextureSourceImageP
 #endif
     }
 
-    return DecodeLegacyPixelsToIntermediate(Image, OutIntermediate);
+    return DecodeTransientPixelsToIntermediate(Image, OutIntermediate);
 }
 
 TExpected<void> DecodeTextureSourceImageToRgba(const TextureSourceImagePayload& Image,

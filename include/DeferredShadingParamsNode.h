@@ -10,10 +10,6 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class DeferredShadingPass;
-}
 
 namespace SnAPI::GameFramework
 {
@@ -24,24 +20,24 @@ namespace SnAPI::GameFramework
  *
  * `DeferredShadingParamsNode` exposes the renderer's deferred-material debug feature mask through
  * the world graph. The node is passive with respect to renderer setup: it does not create or own
- * deferred shading passes. Instead, it waits until matching passes exist and then applies the
+ * deferred shading feature resources. Instead, it waits until the targeted viewport is available and then applies the
  * authored feature mask.
  *
  * Core semantics:
  * - Negative viewport ids target all current render viewports.
  * - Non-negative ids target one renderer viewport by numeric id.
- * - Debug toggles map directly onto `SnAPI::Graphics::DeferredContract::Feature` bits.
+ * - Debug toggles map directly onto `Renderer.New deferred feature` bits.
  * - If multiple debug toggles are enabled simultaneously, shader-side precedence decides which
  *   view is shown.
  *
  * Ownership and lifetime:
  * - The node owns only its serialized settings.
- * - Deferred shading passes remain renderer-owned and may disappear across pass-graph rebuilds.
+ * - Deferred shading feature state remains renderer-owned and may be recreated across feature-profile changes.
  *
  * Threading model:
  * - Main-thread only.
  *
- * @warning `DebugTextureCoords` previews fullscreen UVs because the deferred pass does not store
+ * @warning `DebugTextureCoords` previews fullscreen UVs because the deferred G-buffer does not store
  * mesh UVs in the G-buffer.
  *
  * @see RendererSystem
@@ -118,8 +114,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -137,7 +133,7 @@ private:
     bool m_debugLighting = false;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

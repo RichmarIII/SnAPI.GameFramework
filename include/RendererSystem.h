@@ -7,7 +7,7 @@
 #include <array>
 #include <filesystem>
 #include "GameThreading.h"
-#include <UUID.hpp>
+#include "Uuid.h"
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -18,34 +18,27 @@
 #include <utility>
 #include <vector>
 
+#include <SnAPI/Math/LinearAlgebra.h>
+
 #include "TypeName.h"
 #include "ReflectionAnnotations.h"
+#include "Rendering/GameRenderCamera.h"
+#include "Rendering/GameRenderDebugLine.h"
+#include "Rendering/GameRenderLight.h"
+#include "Rendering/GameRenderMesh.h"
+#include "Rendering/GameRenderObject.h"
+#include "Rendering/GameRenderWindow.h"
 
-namespace SnAPI::Graphics
+namespace SnAPI::Renderer
 {
-class ICamera;
-class CameraBase;
-class IRenderObject;
-class Material;
-class MaterialInstance;
-class VulkanGraphicsAPI;
-struct ViewportFit;
-enum class ERenderPassType;
-struct WindowBase;
-class LightManager;
-class SSAOPass;
-class SSGIPass;
-class SSRPass;
-class BloomPass;
-class GBufferPass;
-class FontFace;
-class IHighLevelPass;
-struct IGPUImage;
-} // namespace SnAPI::Graphics
+struct DirectionalLightDesc;
+struct PrimitiveMeshData;
+} // namespace SnAPI::Renderer
 
 #if defined(SNAPI_GF_ENABLE_UI)
 namespace SnAPI::UI
 {
+class IFontMetrics;
 class UIContext;
 class RenderPacketList;
 } // namespace SnAPI::UI
@@ -54,16 +47,18 @@ class RenderPacketList;
 namespace SnAPI::GameFramework
 {
 
+struct RuntimeMeshData;
+
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Bootstrap settings for world-owned renderer integration.
  *
  * `RendererBootstrapSettings` defines how `RendererSystem` bootstraps the renderer backend,
- * optional window resources, default pass graphs, default scene helpers, and convenience
+ * optional window resources, default feature profiles, default scene helpers, and convenience
  * assets such as fallback materials and the default font.
  *
  * Core semantics:
- * - `CreateGraphicsApi` controls whether a graphics backend is created at all
+ * - `CreateRendererRuntime` controls whether the Renderer.New runtime and backend are created at all
  * - `CreateWindow` only affects the subsystem-owned platform window path
  * - default pass/light/font/material toggles are convenience bootstrap steps, not permanent feature locks
  * - out-of-memory fallback flags mutate the effective settings used for a second initialization attempt
@@ -82,8 +77,8 @@ namespace SnAPI::GameFramework
 SnType()
 struct RendererBootstrapSettings
 {
-    SnField(SnKey("CreateGraphicsApi"))
-    bool CreateGraphicsApi = true; /**< @brief Create and initialize VulkanGraphicsAPI singleton on initialize. */
+    SnField(SnKey("CreateRendererRuntime"))
+    bool CreateRendererRuntime = true; /**< @brief Create and initialize the Renderer.New runtime and backend on initialize. */
     SnField(SnKey("CreateWindow"))
     bool CreateWindow = true; /**< @brief Create an SDL window and initialize renderer resources for it. */
     SnField(SnKey("WindowTitle"))
@@ -110,26 +105,26 @@ struct RendererBootstrapSettings
     bool AllowTransparency = true; /**< @brief Enable transparent compositor support when available. */
     SnField(SnKey("CreateDefaultLighting"))
     bool CreateDefaultLighting = false; /**< @brief Create a default directional light used by shadow/deferred passes. */
-    SnField(SnKey("RegisterDefaultPassGraph"))
-    bool RegisterDefaultPassGraph = true; /**< @brief Register the default renderer pass DAG (shadow/gbuffer/deferred/present). */
+    SnField(SnKey("ApplyDefaultFeatureProfile"))
+    bool ApplyDefaultFeatureProfile = true; /**< @brief Apply the default renderer feature profile (shadow/gbuffer/deferred/present). */
     SnField(SnKey("EnableSsao"))
-    bool EnableSsao = true; /**< @brief Register SSAO pass chain in default pass graph. */
+    bool EnableSsao = true; /**< @brief Register the Renderer.New ambient-occlusion feature chain in the default feature profile. */
     SnField(SnKey("EnableSsgi"))
-    bool EnableSsgi = true; /**< @brief Register SSGI trace/filter/composite passes in default pass graph. */
+    bool EnableSsgi = true; /**< @brief Register SSGI trace/filter/composite passes in default feature profile. */
     SnField(SnKey("EnableSsr"))
-    bool EnableSsr = true; /**< @brief Register SSR + composite passes in default pass graph. */
+    bool EnableSsr = true; /**< @brief Register SSR + composite passes in default feature profile. */
     SnField(SnKey("EnableTaa"))
-    bool EnableTaa = true; /**< @brief Register full-resolution temporal anti-aliasing in default pass graph. */
+    bool EnableTaa = true; /**< @brief Register full-resolution temporal anti-aliasing in default feature profile. */
     SnField(SnKey("EnableBloom"))
-    bool EnableBloom = true; /**< @brief Register bloom pass in default pass graph. */
+    bool EnableBloom = true; /**< @brief Register bloom pass in default feature profile. */
     SnField(SnKey("EnableAtmosphere"))
-    bool EnableAtmosphere = true; /**< @brief Register atmosphere + composite passes in default pass graph. */
+    bool EnableAtmosphere = true; /**< @brief Register atmosphere + composite passes in default feature profile. */
     SnField(SnKey("EnableHeightFog"))
-    bool EnableHeightFog = true; /**< @brief Register analytic height fog pass in default pass graph. */
+    bool EnableHeightFog = true; /**< @brief Register analytic height fog pass in default feature profile. */
     SnField(SnKey("AtmosphereWorldMode"))
     bool AtmosphereWorldMode = false; /**< @brief Enable planet-scale atmosphere coordinates (`WORLD=1`); false uses regular-scene mode. */
-    SnField(SnKey("AutoHandleSwapChainResize"))
-    bool AutoHandleSwapChainResize = true; /**< @brief Detect window-size changes and recreate swapchain automatically. */
+    SnField(SnKey("AutoHandleSurfaceResize"))
+    bool AutoHandleSurfaceResize = true; /**< @brief Detect window-size changes and recreate surface automatically. */
     SnField(SnKey("AutoFallbackOnOutOfMemory"))
     bool AutoFallbackOnOutOfMemory = true; /**< @brief Retry renderer init with reduced settings when device-memory allocation fails. */
     SnField(SnKey("OutOfMemoryFallbackWindowWidth"))
@@ -164,57 +159,218 @@ struct RendererBootstrapSettings
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Built-in pass graph presets for virtual render viewports.
+ * @brief Built-in feature profile presets for virtual render viewports.
  *
- * Each preset describes a named, one-time pass registration recipe for a virtual
+ * Each preset describes a named, one-time feature selection recipe for a virtual
  * render viewport. Presets are intentionally coarse-grained so gameplay/editor code
- * can ask for a standard viewport topology without constructing passes manually.
+ * can ask for a standard viewport topology without selecting renderer passes manually.
  *
  * Semantics:
- * - one preset may be registered per viewport through `RendererSystem::RegisterRenderViewportPassGraph(...)`
+ * - one preset may be registered per viewport through `RendererSystem::ApplyRenderViewportFeatureProfile(...)`
  * - registering the same preset again is idempotent
  * - attempting to replace one preset with a different preset on the same viewport is rejected
  *
- * @see RendererSystem::RegisterRenderViewportPassGraph
+ * @see RendererSystem::ApplyRenderViewportFeatureProfile
  */
 SnType()
-enum class ERenderViewportPassGraphPreset : uint8_t
+enum class EGameRenderFeatureProfile : uint8_t
 {
-    None = 0, /**< @brief Do not auto-register any passes. */
-    UiPresentOnly, /**< @brief Register only UI + Present passes (editor shell style viewport). */
-    DefaultWorld, /**< @brief Register default world stack (shadow/gbuffer/deferred/post/ui/present + optional effects). */
+    None = 0, /**< @brief Do not apply a render feature profile. */
+    DefaultWorld, /**< @brief Render the default world stack (shadow/gbuffer/deferred/post/ui/present + optional effects). */
 #if defined(WITH_EDITOR) && WITH_EDITOR
-    EditorWorld /**< @brief Register editor world stack (default world + editor id/overlay passes). */
+    EditorWorld /**< @brief Render the editor world stack (default world + editor id/overlay passes). */
 #endif
 };
-SNAPI_DEFINE_TYPE_NAME(ERenderViewportPassGraphPreset, "SnAPI::GameFramework::ERenderViewportPassGraphPreset")
+SNAPI_DEFINE_TYPE_NAME(EGameRenderFeatureProfile, "SnAPI::GameFramework::EGameRenderFeatureProfile")
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief World-owned adapter over SnAPI.Renderer's process-global backend.
+ * @brief Deferred shading debug-view settings retained by the renderer facade.
+ */
+struct RendererDeferredShadingFeatureSettings
+{
+    bool DebugMotionVectors{false};
+    bool DebugNormals{false};
+    bool DebugAlbedo{false};
+    bool DebugAO{false};
+    bool DebugRoughness{false};
+    bool DebugMetallic{false};
+    bool DebugDepth{false};
+    bool DebugTextureCoords{false};
+    bool DebugDirectLighting{false};
+    bool DebugGI{false};
+    bool DebugSpecular{false};
+    bool DebugLighting{false};
+};
+
+struct RendererSsaoFeatureSettings
+{
+    float Radius{0.5f};
+    float Bias{0.025f};
+    float Intensity{1.0f};
+    float MaxDistance{4.0f};
+    std::uint32_t SliceCount{3u};
+    std::uint32_t StepsPerSlice{3u};
+    float FalloffStart{0.0f};
+    float FalloffEnd{1.0f};
+    float MaxPixelRadius{80.0f};
+    float Thickness{0.25f};
+    float DenoiseBlurBeta{8.0f};
+    float TemporalBlendFactor{0.08f};
+    float DisocclusionThreshold{0.02f};
+    float VelocityWeight{12.0f};
+};
+
+struct RendererSsgiFeatureSettings
+{
+    float Intensity{0.85f};
+    float MaxDistance{6.0f};
+    float Thickness{0.2f};
+    float SurfaceBias{0.05f};
+    std::uint32_t MaxSteps{16u};
+    std::uint32_t RayCount{4u};
+    float DepthSigma{64.0f};
+    float NormalSigma{32.0f};
+    float RadianceClamp{2.5f};
+    float MaxPixelRadius{96.0f};
+    float StepExponent{1.25f};
+    float TemporalBlendFactor{0.08f};
+    float DisocclusionThreshold{0.02f};
+    float ClampStrength{0.10f};
+    float VelocityWeight{12.0f};
+    float LowLumaBoost{0.08f};
+    std::uint32_t TemporalDebugMode{0u};
+};
+
+struct RendererSsrFeatureSettings
+{
+    float MaxDistance{0.25f};
+    float Thickness{0.015f};
+    float MaxRoughness{0.8f};
+    float RoughnessThreshold{0.2f};
+    std::uint32_t MaxSteps{32u};
+    std::uint32_t MaxBinarySteps{8u};
+    float ScreenEdgeFade{0.1f};
+    float ReflectionFade{0.8f};
+    float TemporalBlendFactor{0.10f};
+    float ClampStrength{0.10f};
+    float MotionHistoryReset{0.25f};
+    std::uint32_t TemporalDebugMode{0u};
+};
+
+struct RendererTaaFeatureSettings
+{
+    float BlendFactor{0.06f};
+    float MotionBlendFactor{0.18f};
+    float ClampStrength{0.10f};
+    float Sharpen{0.0f};
+    float JitterScale{1.0f};
+};
+
+struct RendererBloomFeatureSettings
+{
+    float Threshold{1.1f};
+    float Knee{0.5f};
+    float Intensity{0.8f};
+    float Scatter{0.6f};
+    float Clamp{10.0f};
+    std::uint32_t MipCount{5u};
+};
+
+struct RendererAtmosphereFeatureSettings
+{
+    bool WorldMode{false};
+    std::array<float, 3> SunDirection{0.70710677f, 0.70710677f, 0.0f};
+    std::array<float, 3> SunColor{1.0f, 1.0f, 1.0f};
+    float Exposure{8.0f};
+    float SunIntensity{1.0f};
+    std::array<float, 3> RayleighScattering{5.8e-6f, 13.5e-6f, 33.1e-6f};
+    float RayleighScaleHeight{8000.0f};
+    std::array<float, 3> MieScattering{21.0e-6f, 21.0e-6f, 21.0e-6f};
+    float MieScaleHeight{1200.0f};
+    std::array<float, 3> MieAbsorption{0.0f, 0.0f, 0.0f};
+    float MieAnisotropyG{0.76f};
+    float PlanetRadiusMeters{6360.0e3f};
+    float AtmosphereRadiusMeters{6420.0e3f};
+    float CameraGroundOffsetMeters{100.0f};
+    float MaxSunDistanceMeters{120.0e3f};
+    std::uint32_t ViewSampleCount{4u};
+    std::uint32_t SunSampleCount{4u};
+    float MultiScatterStrength{2.0e-6f};
+};
+
+struct RendererAtmosphereCompositeFeatureSettings
+{
+    float DepthThreshold{0.0f};
+    float BlendWhenGeometry{0.0f};
+    float BlendWhenSky{1.0f};
+};
+
+struct RendererHeightFogFeatureSettings
+{
+    float Density{0.004f};
+    float HeightFalloff{0.008f};
+    bool UseAbsoluteHeight{true};
+    double HeightOffsetAbsoluteY{0.0};
+    bool UseActiveCameraYAsRebaseOrigin{true};
+    double RebaseOriginAbsoluteY{0.0};
+    float HeightOffsetRebased{0.0f};
+    float StartDistance{10.0f};
+    std::array<float, 3> FogColor{0.64f, 0.70f, 0.76f};
+    std::array<float, 3> HorizonColor{0.69f, 0.72f, 0.75f};
+    std::array<float, 3> ZenithColor{0.47f, 0.57f, 0.69f};
+    float SkyBlendStartDistance{100.0f};
+    float SkyBlendEndDistance{1200.0f};
+    float SkyBlendStrength{1.0f};
+    float TauDitherAmplitude{0.005f};
+    std::array<float, 3> SunDirection{0.0f, -1.0f, 0.0f};
+    float SunAnisotropyG{0.7f};
+    std::array<float, 3> SunColor{1.0f, 0.95f, 0.85f};
+    float SunInscatterIntensity{0.05f};
+};
+
+struct RendererToneMapFeatureSettings
+{
+    float Exposure{1.0f};
+    float Gamma{2.2f};
+    float DitherStrength{1.0f};
+    float AgXExposureBiasStops{-0.5f};
+    float AgXSaturation{1.05f};
+    float AgXContrast{1.03f};
+    float AgXPivot{0.5f};
+    float AgXGamutThreshold{0.9f};
+    float AgXGamutKnee{0.5f};
+    float AcesSaturation{1.05f};
+    float AcesWhitePoint{11.2f};
+    bool EnableACES{true};
+    bool EnableAgX{false};
+    bool EnableCompare{false};
+};
+
+/**
+ * @ingroup SnAPI_GameFramework
+ * @brief World-owned rendering facade for windows, scene outputs, UI, and renderer resources.
  *
  * `RendererSystem` is the GameFramework-owned facade for rendering. It exposes renderer
- * lifecycle, world window ownership, virtual render viewports, pass-graph registration,
- * render-object routing, UI packet translation, default materials/fonts, and light-manager
+ * lifecycle, world window ownership, virtual render viewports, scene-object registration,
+ * UI packet translation, default materials/fonts, and light-manager
  * access behind one subsystem that `World` can own and tick.
  *
  * Why this abstraction exists:
  * - to align renderer bootstrap/shutdown with world/runtime lifetime
- * - to hide backend-global APIs behind a world-oriented contract
- * - to centralize the glue between scene components, UI, and the renderer pass system
+ * - to hide backend/runtime details behind a world-oriented contract
+ * - to centralize the glue between scene components, UI, and renderer output management
  *
  * Core semantics:
- * - the underlying graphics API is still process-global even though this wrapper is world-owned
  * - `Initialize(...)` copies the bootstrap settings and may perform a second attempt with reduced settings after out-of-memory failure
- * - virtual render viewports, swapchains, pass graphs, UI textures, and queued text are all owned/tracked here
+ * - virtual render viewports, renderer scene records, UI textures, and queued text are all owned/tracked here
  * - `EndFrame()` is the point where queued UI/text work is flushed and frame submission occurs
- * - `RenderViewportPassGraphRevision()` increments when viewport pass topology changes so components can reapply pass routing safely
+ * - `RenderViewportFeatureRevision()` increments when viewport feature-profile topology changes so components can reapply feature routing safely
  *
  * Ownership and lifetime:
  * - Owned by `World`.
- * - Owns the subsystem-created window, light manager, cached materials, cached UI resources, and tracked viewport metadata.
- * - `Graphics()` returns a non-owning pointer to the process-global graphics backend.
- * - Window, graphics, pass, material, font, and light-manager pointers become invalid after `Shutdown()`.
+ * - Owns the subsystem-created window, cached UI resources, and tracked viewport metadata.
+ * - Native GameFramework render records become invalid after `Shutdown()`.
  *
  * Threading model:
  * - Main-thread oriented.
@@ -227,7 +383,7 @@ SNAPI_DEFINE_TYPE_NAME(ERenderViewportPassGraphPreset, "SnAPI::GameFramework::ER
  *
  * @see World
  * @see RendererBootstrapSettings
- * @see ERenderViewportPassGraphPreset
+ * @see EGameRenderFeatureProfile
  */
 SnType()
 class RendererSystem final : public ITaskDispatcher
@@ -271,7 +427,7 @@ public:
      * @return `true` when bootstrap completed successfully.
      * @remarks
      * A successful return means the bootstrap sequence completed. `IsInitialized()` becomes
-     * `true` only when a graphics backend was actually created; if `CreateGraphicsApi` is
+     * `true` only when a graphics backend was actually created; if `CreateRendererRuntime` is
      * disabled in the effective settings, initialization may still return success while the
      * subsystem remains intentionally non-ready for rendering work.
      */
@@ -308,27 +464,11 @@ public:
         return m_settings;
     }
 
-    /**
-     * @brief Access active graphics backend.
-     * @return Non-owning `VulkanGraphicsAPI` pointer or `nullptr`.
-     */
-    SnAPI::Graphics::VulkanGraphicsAPI* Graphics();
-    /**
-     * @brief Access active graphics backend (const).
-     * @return Non-owning `VulkanGraphicsAPI` pointer or `nullptr`.
-     */
-    const SnAPI::Graphics::VulkanGraphicsAPI* Graphics() const;
 
     /**
-     * @brief Access the primary renderer window created by this system.
-     * @return Non-owning window pointer or `nullptr` when no window is owned.
+     * @brief Snapshot the primary Renderer.New window state.
      */
-    SnAPI::Graphics::WindowBase* Window();
-    /**
-     * @brief Access the primary renderer window created by this system (const).
-     * @return Non-owning window pointer or `nullptr` when no window is owned.
-     */
-    const SnAPI::Graphics::WindowBase* Window() const;
+    [[nodiscard]] GameRenderWindow MainWindow() const;
 
     /**
      * @brief Check whether a renderer window exists and is currently open.
@@ -336,37 +476,10 @@ public:
     SnFunction(SnKey("HasOpenWindow"))
     bool HasOpenWindow() const;
 
-    /**
-     * @brief Set the active camera used by the renderer.
-     * @param Camera Shared camera reference, or empty to clear the active camera.
-     * @return `true` if the renderer is initialized and the assignment was applied.
-     * @remarks
-     * The renderer retains a strong reference while the camera is active so process-global
-     * backend state cannot dangle across deferred destroy or editor/world rebinding.
-     */
-    bool SetActiveCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera);
-
-    /**
-     * @brief Set the active camera used by the renderer.
-     * @param Camera Borrowed camera pointer, or `nullptr` to clear the active camera.
-     * @return `true` if the renderer is initialized and the assignment was applied.
-     * @remarks
-     * Passing `nullptr` clears any retained active-camera reference. Non-null raw pointers are
-     * forwarded to the backend for compatibility, but do not extend camera lifetime.
-     */
-    bool SetActiveCamera(SnAPI::Graphics::ICamera* Camera);
-
-    /**
-     * @brief Access active renderer camera.
-     * @return Camera pointer or nullptr.
-     */
-    SnAPI::Graphics::ICamera* ActiveCamera() const;
-
-    /**
-     * @brief Access the renderer-retained active camera.
-     * @return Shared camera reference, or empty when no retained active camera exists.
-     */
-    std::shared_ptr<SnAPI::Graphics::ICamera> ActiveCameraShared() const;
+    bool SetActiveCamera(const std::shared_ptr<GameRenderCamera>& Camera);
+    bool SetActiveCamera(GameRenderCamera* Camera);
+    [[nodiscard]] GameRenderCamera* ActiveCamera() const;
+    [[nodiscard]] std::shared_ptr<GameRenderCamera> ActiveCameraShared() const;
 
     /**
      * @brief Configure project shader search root for runtime Slang compilation.
@@ -377,18 +490,6 @@ public:
      */
     bool SetProjectShaderSearchRoot(const std::filesystem::path& AssetRoot);
 
-    /**
-     * @brief Set default virtual render viewport for the renderer.
-     * @param ViewPort Top-left pixel viewport rectangle in window space.
-     * @return True when renderer is initialized and viewport was applied.
-     */
-    bool SetViewPort(const SnAPI::Graphics::ViewportFit& ViewPort);
-
-    /**
-     * @brief Reset default virtual render viewport to full-window behavior.
-     * @return True when renderer is initialized and viewport was reset.
-     */
-    bool ClearViewPort();
 
     /**
      * @brief Enable or disable renderer default viewport runtime (ID = `DefaultRenderViewportID()`).
@@ -405,26 +506,6 @@ public:
     SnFunction(SnKey("IsUsingDefaultRenderViewport"))
     [[nodiscard]] bool IsUsingDefaultRenderViewport() const;
 
-    /**
-     * @brief Set a pass-specific viewport override.
-     * @param PassType Render pass type to override.
-     * @param ViewPort Top-left pixel viewport rectangle for that pass.
-     * @return True when renderer is initialized and override was applied.
-     */
-    bool SetPassViewPort(SnAPI::Graphics::ERenderPassType PassType, const SnAPI::Graphics::ViewportFit& ViewPort);
-
-    /**
-     * @brief Clear a pass-specific viewport override.
-     * @param PassType Render pass type to clear.
-     * @return True when renderer is initialized and override was cleared.
-     */
-    bool ClearPassViewPort(SnAPI::Graphics::ERenderPassType PassType);
-
-    /**
-     * @brief Clear all pass-specific viewport overrides.
-     * @return True when renderer is initialized and overrides were cleared.
-     */
-    bool ClearPassViewPorts();
 
     /**
      * @brief Create a new virtual render viewport.
@@ -448,7 +529,7 @@ public:
                               float Height,
                               std::uint32_t RenderWidth,
                               std::uint32_t RenderHeight,
-                              SnAPI::Graphics::ICamera* Camera,
+                              const std::shared_ptr<GameRenderCamera>& Camera,
                               bool Enabled,
                               std::uint64_t& OutViewportID);
 
@@ -464,7 +545,7 @@ public:
                               float Height,
                               std::uint32_t RenderWidth,
                               std::uint32_t RenderHeight,
-                              SnAPI::Graphics::ICamera* Camera,
+                              const std::shared_ptr<GameRenderCamera>& Camera,
                               bool Enabled);
 
     /**
@@ -499,284 +580,143 @@ public:
      */
     [[nodiscard]] std::optional<std::size_t> RenderViewportIndex(std::uint64_t ViewportID) const;
 
-    /**
-     * @brief Create a non-presentable render-target swapchain.
-     * @param Width Target width in pixels.
-     * @param Height Target height in pixels.
-     * @param OutSwapChainID Receives created swapchain id on success.
-     * @param ImageCount Requested image count (minimum 1).
-     * @return True when swapchain creation succeeded.
-     */
-    bool CreateRenderTargetSwapChain(std::uint32_t Width,
-                                     std::uint32_t Height,
-                                     std::uint64_t& OutSwapChainID,
-                                     std::uint32_t ImageCount = 1);
 
     /**
-     * @brief Resize an existing swapchain.
-     * @param SwapChainID Target swapchain id.
-     * @param Width New width in pixels.
-     * @param Height New height in pixels.
-     * @return True when resize succeeded.
-     */
-    SnFunction(SnKey("ResizeSwapChain"))
-    bool ResizeSwapChain(std::uint64_t SwapChainID, std::uint32_t Width, std::uint32_t Height);
-
-    /**
-     * @brief Destroy an existing swapchain.
-     * @param SwapChainID Target swapchain id.
-     * @return True when swapchain was destroyed.
-     */
-    SnFunction(SnKey("DestroySwapChain"))
-    bool DestroySwapChain(std::uint64_t SwapChainID);
-
-    /**
-     * @brief Assign a swapchain to a render viewport.
-     * @param ViewportID Target viewport id.
-     * @param SwapChainID Target swapchain id.
-     * @return True when assignment succeeded.
-     */
-    SnFunction(SnKey("AssignSwapChainToRenderViewport"))
-    bool AssignSwapChainToRenderViewport(std::uint64_t ViewportID, std::uint64_t SwapChainID);
-
-    /**
-     * @brief Query assigned swapchain for a render viewport.
-     * @param ViewportID Target viewport id.
-     * @return Assigned swapchain id when available.
-     */
-    [[nodiscard]] std::optional<std::uint64_t> RenderViewportSwapChain(std::uint64_t ViewportID) const;
-
-    /**
-     * @brief Register a built-in pass graph preset for a viewport.
+     * @brief Apply a built-in feature profile preset for a viewport.
      * @param ViewportID Target viewport identifier.
-     * @param Preset Pass-graph preset.
+     * @param Preset Feature-profile preset.
      * @return `true` when registration succeeded or the same preset had already been applied.
      * @remarks
      * A viewport can only have one tracked preset assignment. Re-registering the same preset is
      * idempotent; attempting to replace an existing different preset is rejected. Successful new
-     * registrations increment `RenderViewportPassGraphRevision()`.
+     * registrations increment `RenderViewportFeatureRevision()`.
      */
-    SnFunction(SnKey("RegisterRenderViewportPassGraph"))
-    bool RegisterRenderViewportPassGraph(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset);
+    SnFunction(SnKey("ApplyRenderViewportFeatureProfile"))
+    bool ApplyRenderViewportFeatureProfile(std::uint64_t ViewportID, EGameRenderFeatureProfile Preset);
+
 
     /**
-     * @brief Set global DAG input-name remaps for one virtual viewport.
-     * @param ViewportID Target viewport identifier.
-     * @param Overrides Mapping pairs {FromName, ToName}.
+     * @brief Register one static mesh resource with Renderer.New from compiled GameFramework mesh data.
+     * @param MeshData Cooked mesh payload to upload.
+     * @param OutMesh Destination GameFramework mesh record.
+     * @param DebugName Optional diagnostic name.
+     * @return True when the mesh and backing Renderer.New buffers were created.
      */
-    bool SetRenderViewportGlobalInputNameOverrides(std::uint64_t ViewportID, std::vector<std::pair<std::string, std::string>> Overrides);
+    [[nodiscard]] bool CreateStaticRenderMesh(
+        const RuntimeMeshData& MeshData,
+        GameRenderMesh& OutMesh,
+        std::string_view DebugName = {});
 
     /**
-     * @brief Set global DAG output-name remaps for one virtual viewport.
-     * @param ViewportID Target viewport identifier.
-     * @param Overrides Mapping pairs {FromName, ToName}.
+     * @brief Register one static mesh resource with Renderer.New from Renderer.New primitive mesh data.
+     * @param MeshData Primitive mesh payload to upload.
+     * @param OutMesh Destination GameFramework mesh record.
+     * @param DebugName Optional diagnostic name.
+     * @return True when the mesh and backing Renderer.New buffers were created.
      */
-    bool SetRenderViewportGlobalOutputNameOverrides(std::uint64_t ViewportID, std::vector<std::pair<std::string, std::string>> Overrides);
+    [[nodiscard]] bool CreateStaticRenderMesh(
+        SnAPI::Renderer::PrimitiveMeshData MeshData,
+        GameRenderMesh& OutMesh,
+        std::string_view DebugName = {});
 
     /**
-     * @brief Set per-pass DAG input-name remaps for one virtual viewport.
-     * @param ViewportID Target viewport identifier.
-     * @param Pass Target pass pointer.
-     * @param Overrides Mapping pairs {FromName, ToName}.
+     * @brief Destroy one Renderer.New mesh resource owned through a GameFramework mesh record.
+     * @param Mesh Mesh record to destroy and reset.
+     * @return True when a live resource was destroyed.
      */
-    bool SetRenderViewportPassInputNameOverrides(std::uint64_t ViewportID,
-                                                 const SnAPI::Graphics::IHighLevelPass* Pass,
-                                                 std::vector<std::pair<std::string, std::string>> Overrides);
+    bool DestroyRenderMesh(GameRenderMesh& Mesh);
 
     /**
-     * @brief Set per-pass DAG output-name remaps for one virtual viewport.
-     * @param ViewportID Target viewport identifier.
-     * @param Pass Target pass pointer.
-     * @param Overrides Mapping pairs {FromName, ToName}.
+     * @brief Create one retained Renderer.New scene object from a registered mesh.
+     * @param Mesh Registered mesh resource.
+     * @param OutObject Destination object record.
+     * @param WorldFromLocal Initial object transform.
+     * @param CastShadows Whether the object should participate in shadow-capable feature profiles.
+     * @param DebugName Optional diagnostic name.
+     * @return True when the retained object was created.
      */
-    bool SetRenderViewportPassOutputNameOverrides(std::uint64_t ViewportID,
-                                                  const SnAPI::Graphics::IHighLevelPass* Pass,
-                                                  std::vector<std::pair<std::string, std::string>> Overrides);
+    [[nodiscard]] bool CreateStaticRenderObject(
+        const GameRenderMesh& Mesh,
+        GameRenderObject& OutObject,
+        const SnAPI::Math::Matrix4& WorldFromLocal,
+        bool CastShadows = true,
+        std::string_view DebugName = {});
 
     /**
-     * @brief Clear per-pass DAG name remaps for one virtual viewport.
-     * @param ViewportID Target viewport identifier.
-     * @param Pass Target pass pointer.
+     * @brief Create one retained Renderer.New scene object with explicit feature-channel routing.
+     * @param Mesh Registered mesh resource.
+     * @param OutObject Destination object record.
+     * @param WorldFromLocal Initial object transform.
+     * @param FeatureChannels Renderer.New feature channels used by built-in profiles.
+     * @param CastShadows Whether the GameFramework object record should report shadow participation.
+     * @param DebugName Optional diagnostic name.
+     * @return True when the retained object was created.
      */
-    bool ClearRenderViewportPassNameOverrides(std::uint64_t ViewportID, const SnAPI::Graphics::IHighLevelPass* Pass);
+    [[nodiscard]] bool CreateStaticRenderObject(
+        const GameRenderMesh& Mesh,
+        GameRenderObject& OutObject,
+        const SnAPI::Math::Matrix4& WorldFromLocal,
+        SnAPI::Renderer::RenderFeatureChannelMask FeatureChannels,
+        bool CastShadows,
+        std::string_view DebugName = {});
 
     /**
-     * @brief Clear all DAG name remaps for one virtual viewport.
-     * @param ViewportID Target viewport identifier.
+     * @brief Destroy one retained Renderer.New scene object.
+     * @param Object Object record to destroy and reset.
+     * @return True when a live object was destroyed.
      */
-    bool ClearRenderViewportNameOverrides(std::uint64_t ViewportID);
+    bool DestroyRenderObject(GameRenderObject& Object);
 
     /**
-     * @brief Route one render object to a viewport-local pass type.
-     * @param RenderObject Weak render object reference.
-     * @param ViewportID Target viewport identifier.
-     * @param PassType Target pass type.
-     * @return True when routing was applied.
+     * @brief Update the transform for one retained Renderer.New scene object.
+     * @param Object Object record to update.
+     * @param WorldFromLocal New world-from-local transform.
+     * @return True when the renderer accepted the transform update.
      */
-    bool AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                         std::uint64_t ViewportID,
-                         SnAPI::Graphics::ERenderPassType PassType);
+    bool SetRenderObjectTransform(GameRenderObject& Object, const SnAPI::Math::Matrix4& WorldFromLocal);
 
     /**
-     * @brief Route one render object to one pass id.
-     * @param RenderObject Weak render object reference.
-     * @param PassID Target pass id.
-     * @return True when routing was applied.
+     * @brief Queue one world-space debug line for the next Renderer.New frame.
+     * @param Line Debug line in world coordinates.
+     * @return True when the line was accepted for the next frame.
      */
-    bool AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                         const SnAPI::UUID& PassID);
+    [[nodiscard]] bool QueueDebugLine(const GameRenderDebugLine& Line);
+
+    [[nodiscard]] bool CreateDirectionalRenderLight(
+        const SnAPI::Renderer::DirectionalLightDesc& Desc,
+        GameRenderLight& OutLight,
+        std::string_view DebugName = {});
+    bool SetDirectionalRenderLight(GameRenderLight& Light, const SnAPI::Renderer::DirectionalLightDesc& Desc);
+    bool DestroyRenderLight(GameRenderLight& Light);
+
 
     /**
-     * @brief Remove one render object from a viewport-local pass type.
-     * @param RenderObject Weak render object reference.
-     * @param ViewportID Target viewport identifier.
-     * @param PassType Target pass type.
-     * @return True when an existing pass/object link was removed.
-     */
-    bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                            std::uint64_t ViewportID,
-                            SnAPI::Graphics::ERenderPassType PassType);
-
-    /**
-     * @brief Remove one render object from one pass id.
-     * @param RenderObject Weak render object reference.
-     * @param PassID Target pass id.
-     * @return True when an existing pass/object link was removed.
-     */
-    bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                            const SnAPI::UUID& PassID);
-
-    /**
-     * @brief Remove one render object from all renderer passes.
-     * @param RenderObject Weak render object reference.
-     * @return True when one or more pass/object links were removed.
-     */
-    bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject);
-
-#if defined(WITH_EDITOR) && WITH_EDITOR
-    /**
-     * @brief Metadata attached to one-frame editor immediate render submissions.
-     */
-    struct EditorImmediateRenderMetadata
-    {
-        bool IsGizmo = false;
-        std::uint32_t AxisTag = 0u;
-    };
-
-    /**
-     * @brief Queue one-frame editor-only render object submission.
-     * @param RenderObject Weak render object reference.
-     * @param ViewportID Target render viewport id.
-     * @param PassType Target pass type (for example EditorID / EditorOverlay).
-     * @return True when the object was routed to the target pass and tracked for end-of-frame removal.
-     */
-    bool QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                                          std::uint64_t ViewportID,
-                                          SnAPI::Graphics::ERenderPassType PassType);
-
-    /**
-     * @brief Queue one-frame editor-only render object submission.
-     * @param RenderObject Weak render object reference.
-     * @param ViewportID Target render viewport id.
-     * @param PassType Target pass type (for example EditorID / EditorOverlay).
-     * @param Metadata Optional metadata consumed by editor passes for one-frame rendering behavior.
-     * @return True when the object was routed to the target pass and tracked for end-of-frame removal.
-     */
-    bool QueueEditorImmediateRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                                          std::uint64_t ViewportID,
-                                          SnAPI::Graphics::ERenderPassType PassType,
-                                          const EditorImmediateRenderMetadata& Metadata);
-
-    /**
-     * @brief Sample editor id output for one viewport at normalized coordinates.
-     * @param ViewportID Target viewport id.
-     * @param NormalizedX Horizontal normalized coordinate in [0, 1].
-     * @param NormalizedY Vertical normalized coordinate in [0, 1].
-     * @param ResourceName Output resource name (defaults to `EditorID_Value`).
-     * @return Encoded render-object id when available.
-     */
-    [[nodiscard]] std::optional<std::uint32_t> ReadRenderViewportObjectID(std::uint64_t ViewportID,
-                                                                           float NormalizedX,
-                                                                           float NormalizedY,
-                                                                           std::string_view ResourceName = "EditorID_Value") const;
-
-    /**
-     * @brief Resolve a tracked render object from renderer id.
-     * @param RenderObjectID Stable render object id.
-     * @return Shared render object when currently tracked.
-     */
-    [[nodiscard]] std::shared_ptr<SnAPI::Graphics::IRenderObject> ResolveRenderObjectByID(std::uint32_t RenderObjectID) const;
-
-    /**
-     * @brief Resolve tracked renderer id for one render object pointer.
-     * @param RenderObject Render object to query.
-     * @return Stable renderer id when currently tracked by renderer.
-     */
-    [[nodiscard]] std::optional<std::uint32_t> RenderObjectID(
-        const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject) const;
-#endif
-
-    /**
-     * @brief Populate default material instances for a render object.
-     * @param RenderObject Render object to update.
-     * @return `true` when default materials were assigned.
+     * @brief Monotonic revision for render-viewport feature profile topology changes.
+     * @return Current feature-profile revision value.
      * @remarks
-     * Creates fallback material instances lazily and applies them to every submesh exposed by
-     * the render object's current vertex-stream source.
+     * Components can cache this value to know when viewport feature profiles were added and
+     * feature participation should be re-applied to existing render objects.
      */
-    bool ApplyDefaultMaterials(SnAPI::Graphics::IRenderObject& RenderObject);
+    SnFunction(SnKey("RenderViewportFeatureRevision"))
+    std::uint64_t RenderViewportFeatureRevision() const;
 
-    /**
-     * @brief Access the lazily-created default GBuffer material.
-     * @return Shared default GBuffer material or nullptr when unavailable.
-     */
-    std::shared_ptr<SnAPI::Graphics::Material> DefaultGBufferMaterial();
-
-    /**
-     * @brief Access the lazily-created default shadow material.
-     * @return Shared default shadow material or nullptr when unavailable.
-     */
-    std::shared_ptr<SnAPI::Graphics::Material> DefaultShadowMaterial();
-
-    /**
-     * @brief Configure standard world pass visibility for a render object.
-     * @param RenderObject Render object to configure.
-     * @param Visible `true` to enable geometry/editor-id pass membership where those passes exist.
-     * @param CastShadows `true` to enable shadow-pass membership where that pass exists.
-     * @return `true` when at least one relevant pass existed and state was applied.
-     * @remarks
-     * This evaluates all currently known viewports and only routes the object into passes that
-     * actually exist for those viewports. Components commonly reapply this when
-     * `RenderViewportPassGraphRevision()` changes.
-     */
-    bool ConfigureRenderObjectPasses(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                                     bool Visible,
-                                     bool CastShadows);
-
-    /**
-     * @brief Monotonic revision for render-viewport pass graph topology changes.
-     * @return Current pass-graph revision value.
-     * @remarks
-     * Components can cache this value to know when viewport pass graphs were added and
-     * pass enable masks should be re-applied to existing render objects.
-     */
-    SnFunction(SnKey("RenderViewportPassGraphRevision"))
-    std::uint64_t RenderViewportPassGraphRevision() const;
+    [[nodiscard]] std::uint64_t RendererFeatureSettingsRevision() const;
+    bool ApplyDeferredShadingFeatureSettings(std::int64_t ViewportID, const RendererDeferredShadingFeatureSettings& Settings);
+    bool ApplySsaoFeatureSettings(std::int64_t ViewportID, const RendererSsaoFeatureSettings& Settings);
+    bool ApplySsgiFeatureSettings(std::int64_t ViewportID, const RendererSsgiFeatureSettings& Settings);
+    bool ApplySsrFeatureSettings(std::int64_t ViewportID, const RendererSsrFeatureSettings& Settings);
+    bool ApplyTaaFeatureSettings(std::int64_t ViewportID, const RendererTaaFeatureSettings& Settings);
+    bool ApplyBloomFeatureSettings(std::int64_t ViewportID, const RendererBloomFeatureSettings& Settings);
+    bool ApplyAtmosphereFeatureSettings(std::int64_t ViewportID, const RendererAtmosphereFeatureSettings& Settings);
+    bool ApplyAtmosphereCompositeFeatureSettings(std::int64_t ViewportID, const RendererAtmosphereCompositeFeatureSettings& Settings);
+    bool ApplyHeightFogFeatureSettings(std::int64_t ViewportID, const RendererHeightFogFeatureSettings& Settings);
+    bool ApplyToneMapFeatureSettings(std::int64_t ViewportID, const RendererToneMapFeatureSettings& Settings);
 
     SnFunction(SnKey("SetDefaultTaaJitterScale"))
     void SetDefaultTaaJitterScale(float Value);
     SnFunction(SnKey("SetViewportTaaJitterScale"))
     void SetViewportTaaJitterScale(std::uint64_t ViewportID, float Value);
 
-    /**
-     * @brief Force swapchain recreation for the owned window.
-     * @return `true` when recreation succeeded.
-     * @remarks
-     * When out-of-memory fallback is enabled, a failed recreation may retry with reduced
-     * window/transparency settings before giving up.
-     */
-    SnFunction(SnKey("RecreateSwapChain"))
-    bool RecreateSwapChain();
 
     /**
      * @brief Load and set the default font used by `QueueText`.
@@ -804,13 +744,10 @@ public:
     SnFunction(SnKey("HasDefaultFont"))
     bool HasDefaultFont() const;
 
-    /**
-     * @brief Ensure a renderable default font exists and return it.
-     * @return Non-owning font pointer, or nullptr when default font cannot be resolved.
-     */
-    SnAPI::Graphics::FontFace* EnsureDefaultFontFace();
 
 #if defined(SNAPI_GF_ENABLE_UI)
+    SnAPI::UI::IFontMetrics* EnsureDefaultUiFontMetrics();
+
     /**
      * @brief Queue one frame of UI render packets for renderer submission.
      * @param ViewportID Target render viewport id that should consume these packets.
@@ -848,19 +785,6 @@ public:
                                            std::uint64_t SourceViewportID,
                                            bool HasTransparency);
 
-    /**
-     * @brief Register an external image-backed UI texture binding for one context-local texture id.
-     * @param Context UI context that owns the texture id.
-     * @param TextureId Context-local texture id.
-     * @param Image External GPU image pointer to sample.
-     * @param HasTransparency True when sampled output should be alpha blended.
-     * @return `true` when the binding was accepted.
-     * @remarks Replaces any existing external-viewport binding for the same `(Context, TextureId)` pair.
-     */
-    bool RegisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context,
-                                        std::uint32_t TextureId,
-                                        SnAPI::Graphics::IGPUImage* Image,
-                                        bool HasTransparency);
 
     /**
      * @brief Remove one external viewport-backed UI texture binding.
@@ -870,87 +794,51 @@ public:
      */
     bool UnregisterExternalViewportUiTexture(const SnAPI::UI::UIContext& Context, std::uint32_t TextureId);
 
-    /**
-     * @brief Remove one external image-backed UI texture binding.
-     * @param Context UI context that owns the texture id.
-     * @param TextureId Context-local texture id.
-     * @return True when a binding existed and was removed.
-     */
-    bool UnregisterExternalImageUiTexture(const SnAPI::UI::UIContext& Context, std::uint32_t TextureId);
 #endif
 
     /**
      * @brief Run end-of-frame renderer maintenance and frame submission.
      * @remarks
-     * Executes queued subsystem tasks, optionally coalesces swapchain resize handling,
+     * Executes queued subsystem tasks, optionally coalesces surface resize handling,
      * begins/presents a frame when a live window exists, flushes queued UI/text work,
      * clears editor-immediate submissions, and saves previous-frame camera/render-object state.
      */
     void EndFrame();
 
-    /**
-     * @brief Get mutable world light manager.
-     * @return Non-owning light-manager pointer or `nullptr` when unavailable.
-     */
-    Graphics::LightManager* LightManager();
-
-    /**
-     * @brief Get immutable world light manager.
-     * @return Non-owning light-manager pointer or `nullptr` when unavailable.
-     */
-    const Graphics::LightManager* LightManager() const;
-
-    /**
-     * @brief Ensure the world light manager exists.
-     * @return Non-owning light-manager pointer or `nullptr` when creation is unavailable.
-     * @remarks Creates the manager lazily when the renderer is initialized.
-     */
-    Graphics::LightManager* EnsureLightManager();
 
 private:
 #if defined(SNAPI_GF_ENABLE_UI)
     struct QueuedUiRect;
 #endif
+    struct RendererNewRuntimeState;
+    struct RendererNewRuntimeStateDeleter
+    {
+        void operator()(RendererNewRuntimeState* State) const;
+    };
 
     bool InitializeUnlocked();
     void ApplyOutOfMemoryFallbackSettings();
-    bool RecreateSwapChainForCurrentWindowUnlocked();
-    struct WindowDeleter
-    {
-        void operator()(SnAPI::Graphics::WindowBase* Window) const;
-    };
-
-    struct LightManagerDeleter
-    {
-        void operator()(SnAPI::Graphics::LightManager* Manager) const;
-    };
 
     void ShutdownUnlocked();
-    bool EnsureDefaultMaterials();
-    bool EnsureLightManagerInternal();
     bool EnsureDefaultLighting();
     bool EnsureDefaultEnvironmentProbe();
     bool EnsureDefaultFont();
     bool HandleWindowResizeIfNeeded();
     void FlushQueuedText();
 #if defined(SNAPI_GF_ENABLE_UI)
-    bool EnsureUiMaterialResources();
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForTexture(const SnAPI::UI::UIContext& Context,
-                                                                                    std::uint32_t TextureId);
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiMaterialForGradient(const QueuedUiRect& Entry);
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ResolveUiFontMaterialInstance(std::uint64_t AtlasTextureHandle);
     void FlushQueuedUiPackets();
 #endif
     bool CreateWindowResources();
-    bool RegisterDefaultPassGraph();
-    bool RegisterRenderViewportPassGraphUnlocked(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset, bool TrackDefaultPassPointers);
-    bool ConfigureRenderObjectPassesLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                                           bool Visible,
-                                           bool CastShadows);
+    bool EnsureRendererNewViewportTarget(std::uint64_t ViewportID, std::uint32_t RenderWidth, std::uint32_t RenderHeight);
+    void DestroyRendererNewViewportTarget(std::uint64_t ViewportID);
+    bool EnsureRendererNewDefaultTextFontUnlocked();
+    void WarmRendererNewQueuedOverlayTextUnlocked();
+    void ClearRendererNewQueuedOverlaysUnlocked();
+    void FlushRendererNewDebugLinesUnlocked();
+    void ApplyRendererNewFeatureSettingsUnlocked(std::uint64_t ViewportID);
+    bool ApplyDefaultFeatureProfile();
+    bool ApplyRenderViewportFeatureProfileUnlocked(std::uint64_t ViewportID, EGameRenderFeatureProfile Preset, bool TrackDefaultPassPointers);
     void ResetPassPointers();
-    bool TrackRegisteredRenderObjectLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject);
-    bool UntrackRegisteredRenderObjectLocked(const SnAPI::Graphics::IRenderObject* RenderObject);
-    void PruneTrackedRenderObjectIfUnreferencedLocked(const SnAPI::Graphics::IRenderObject* RenderObject);
 
     struct TextRequest
     {
@@ -1084,76 +972,25 @@ private:
         bool HasTransparency = true;
     };
 
-    struct UiExternalImageBinding
-    {
-        SnAPI::Graphics::IGPUImage* Image = nullptr;
-        bool HasTransparency = true;
-    };
 #endif
 
     mutable GameMutex m_mutex{}; /**< @brief Renderer-system thread affinity guard. */
     TSystemTaskQueue<RendererSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
     RendererBootstrapSettings m_settings{}; /**< @brief Active bootstrap settings snapshot. */
-    SnAPI::Graphics::VulkanGraphicsAPI* m_graphics = nullptr; /**< @brief Non-owning pointer to active renderer singleton instance. */
-    std::unique_ptr<SnAPI::Graphics::WindowBase, WindowDeleter> m_window{}; /**< @brief Optional world-owned renderer window. */
-    std::unique_ptr<SnAPI::Graphics::LightManager, LightManagerDeleter> m_lightManager{}; /**< @brief Optional world-owned light manager for default pass graph. */
-    SnAPI::Graphics::SSAOPass* m_ssaoPass = nullptr; /**< @brief Non-owning pointer to default SSAO pass when registered. */
-    SnAPI::Graphics::SSRPass* m_ssrPass = nullptr; /**< @brief Non-owning pointer to default SSR pass when registered. */
-    SnAPI::Graphics::BloomPass* m_bloomPass = nullptr; /**< @brief Non-owning pointer to default bloom pass when registered. */
-    SnAPI::Graphics::GBufferPass* m_gbufferPass = nullptr; /**< @brief Non-owning pointer to default GBuffer pass when registered. */
-    bool m_passGraphRegistered = false; /**< @brief True once default pass DAG has been registered. */
-    std::shared_ptr<SnAPI::Graphics::Material> m_defaultGBufferMaterial{}; /**< @brief Default material assigned by mesh components. */
-    std::shared_ptr<SnAPI::Graphics::Material> m_defaultShadowMaterial{}; /**< @brief Default shadow material assigned by mesh components. */
-    std::shared_ptr<SnAPI::Graphics::ICamera> m_activeCamera{}; /**< @brief Strongly retained active camera for this world-facing renderer facade. */
-    std::weak_ptr<SnAPI::Graphics::MaterialInstance> m_defaultGBufferMaterialInstance{}; /**< @brief Cached default GBuffer material instance used when assigning fallback materials. */
-    std::weak_ptr<SnAPI::Graphics::MaterialInstance> m_defaultShadowMaterialInstance{}; /**< @brief Cached default shadow material instance used when assigning fallback materials. */
-    SnAPI::Graphics::FontFace* m_defaultFont = nullptr; /**< @brief Non-owning default font pointer managed by FontLibrary cache. */
+    std::unique_ptr<RendererNewRuntimeState, RendererNewRuntimeStateDeleter> m_rendererNew{}; /**< @brief Private renderer runtime state for this integration. */
+    std::vector<GameRenderDebugLine> m_rendererNewDebugLines{}; /**< @brief Per-frame world-space debug line submissions flushed into Renderer.New. */
+    GameRenderWindow m_mainWindow{};
+    std::shared_ptr<GameRenderCamera> m_activeCamera{}; /**< @brief Strongly retained active Renderer.New camera for this world-facing renderer facade. */
     bool m_defaultFontFallbacksConfigured = false; /**< @brief True once fallback face chain is attached to the default font. */
     std::vector<TextRequest> m_textQueue{}; /**< @brief Pending text draw requests flushed in EndFrame. */
 #if defined(SNAPI_GF_ENABLE_UI)
-    std::shared_ptr<SnAPI::Graphics::Material> m_uiMaterial{}; /**< @brief Shared UI material used to create texture-bound UI material instances. */
-    std::shared_ptr<SnAPI::Graphics::Material> m_uiFontMaterial{}; /**< @brief Shared UI font material used for glyph coverage sampling. */
-    std::shared_ptr<SnAPI::Graphics::Material> m_uiTriangleMaterial{}; /**< @brief Shared UI triangle material used for vector triangle masking. */
-    std::shared_ptr<SnAPI::Graphics::Material> m_uiCircleMaterial{}; /**< @brief Shared UI circle material used for vector circle fills. */
-    std::shared_ptr<SnAPI::Graphics::Material> m_uiShadowMaterial{}; /**< @brief Shared UI shadow material used for procedural drop-shadow rendering. */
-    std::shared_ptr<SnAPI::Graphics::IGPUImage> m_uiFallbackTexture{}; /**< @brief White 1x1 fallback texture used for rects and missing images. */
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiFallbackMaterialInstance{}; /**< @brief Material instance bound to fallback white texture. */
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiTriangleMaterialInstance{}; /**< @brief Reused immutable triangle material instance. */
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiCircleMaterialInstance{}; /**< @brief Reused immutable circle material instance. */
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_uiShadowMaterialInstance{}; /**< @brief Reused immutable shadow material instance. */
-    std::unordered_map<SnAPI::Graphics::IGPUImage*, std::shared_ptr<SnAPI::Graphics::MaterialInstance>> m_uiFontMaterialInstances{}; /**< @brief Cached immutable UI material instances keyed by font atlas texture pointer. */
-    std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiTextureCacheKeyHasher> m_uiTextures{}; /**< @brief UI GPU images keyed by (UIContext, texture-id) to avoid cross-context id collisions. */
-    std::unordered_map<UiTextureCacheKey, bool, UiTextureCacheKeyHasher> m_uiTextureHasTransparency{}; /**< @brief UI texture transparency hint keyed by (UIContext, texture-id); UI defaults this to true to avoid CPU alpha scans. */
     std::unordered_map<UiTextureCacheKey, UiExternalTextureBinding, UiTextureCacheKeyHasher> m_uiExternalTextureBindings{}; /**< @brief External viewport-backed texture bindings keyed by (UIContext, texture-id). */
-    std::unordered_map<UiTextureCacheKey, UiExternalImageBinding, UiTextureCacheKeyHasher> m_uiExternalImageBindings{}; /**< @brief External image-backed texture bindings keyed by (UIContext, texture-id). */
-    std::unordered_map<UiTextureCacheKey, SnAPI::Graphics::IGPUImage*, UiTextureCacheKeyHasher> m_uiExternalResolvedTextureImages{}; /**< @brief Last resolved external image pointer per external UI texture key. */
-    std::unordered_map<UiTextureCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiTextureCacheKeyHasher> m_uiTextureMaterialInstances{}; /**< @brief UI texture material instances keyed by (UIContext, texture-id). */
-    std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::IGPUImage>, UiGradientCacheKeyHasher> m_uiGradientTextures{}; /**< @brief Cached generated gradient textures keyed by gradient definition. */
-    std::unordered_map<UiGradientCacheKey, std::shared_ptr<SnAPI::Graphics::MaterialInstance>, UiGradientCacheKeyHasher> m_uiGradientMaterialInstances{}; /**< @brief Cached material instances for generated gradient textures. */
     std::unordered_map<UiTextureCacheKey, PendingUiTextureUpload, UiTextureCacheKeyHasher> m_uiPendingTextureUploads{}; /**< @brief Deferred CPU-side UI image payloads keyed by (UIContext, texture-id). */
     std::vector<QueuedUiRect> m_uiQueuedRects{}; /**< @brief Per-frame translated UI rectangles awaiting renderer draw submission. */
     bool m_uiPacketsQueuedThisFrame = false; /**< @brief True once at least one UI context queued packets for the current frame. */
 #endif
-    float m_lastWindowWidth = 0.0f; /**< @brief Last known window width used for resize detection. */
-    float m_lastWindowHeight = 0.0f; /**< @brief Last known window height used for resize detection. */
-    bool m_hasWindowSizeSnapshot = false; /**< @brief True after first window-size sample. */
-    float m_pendingSwapChainWidth = 0.0f; /**< @brief Latest observed window width waiting for swapchain recreation. */
-    float m_pendingSwapChainHeight = 0.0f; /**< @brief Latest observed window height waiting for swapchain recreation. */
-    bool m_hasPendingSwapChainResize = false; /**< @brief True while window size has diverged and resize is being coalesced. */
-    std::uint32_t m_pendingSwapChainStableFrames = 0; /**< @brief Consecutive frames where pending swapchain target stayed unchanged. */
-    std::vector<std::weak_ptr<SnAPI::Graphics::IRenderObject>> m_registeredRenderObjects{}; /**< @brief Registered render objects that need end-of-frame state snapshots. */
-#if defined(WITH_EDITOR) && WITH_EDITOR
-    struct EditorImmediateRenderObjectEntry
-    {
-        std::shared_ptr<SnAPI::Graphics::IRenderObject> RenderObject{};
-        std::uint64_t ViewportID{};
-        SnAPI::Graphics::ERenderPassType PassType{};
-        EditorImmediateRenderMetadata Metadata{};
-    };
-    std::vector<EditorImmediateRenderObjectEntry> m_editorImmediateRenderObjects{}; /**< @brief One-frame editor render-object submissions auto-removed after present. */
-#endif
-    std::unordered_map<std::uint64_t, ERenderViewportPassGraphPreset> m_registeredViewportPassGraphs{}; /**< @brief Tracks preset assignment per viewport to prevent duplicate pass registration. */
-    std::uint64_t m_renderViewportPassGraphRevision = 1; /**< @brief Monotonic revision incremented when viewport pass-graph topology changes. */
+    std::unordered_map<std::uint64_t, EGameRenderFeatureProfile> m_renderViewportFeatureProfiles{}; /**< @brief Tracks feature profile assignment per viewport. */
+    std::uint64_t m_renderViewportFeatureRevision = 1; /**< @brief Monotonic revision incremented when viewport feature-profile topology changes. */
     float m_defaultTaaJitterScale = 1.0f; /**< @brief Default projection jitter amplitude scale applied to TAA-enabled world viewports. */
     std::unordered_map<std::uint64_t, float> m_viewportTaaJitterScales{}; /**< @brief Optional per-viewport TAA jitter-scale overrides keyed by viewport id. */
     std::uint64_t m_taaFrameIndex = 0; /**< @brief Monotonic TAA jitter sample index advanced on rendered frames. */

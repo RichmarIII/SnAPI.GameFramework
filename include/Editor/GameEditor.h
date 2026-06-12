@@ -5,6 +5,7 @@
 #include "GameRuntime.h"
 
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <typeindex>
 #include <unordered_map>
@@ -51,7 +52,7 @@ struct GameEditorSettings
  * - During editor module startup the host defers node/component `OnCreate` work until the
  *   editor viewport and related UI bindings have had a chance to materialize.
  * - This keeps editor-authored scene bootstrap nodes from running render-dependent setup
- *   before viewports and pass graphs are ready.
+ *   before viewports and feature profiles are ready.
  *
  * Ownership and lifetime:
  * - `GameEditor` owns the runtime and every registered service instance.
@@ -192,6 +193,7 @@ private:
     Result BuildServiceOrder();
     Result InitializeServices();
     Result FinalizeBootstrapLifecycle();
+    Result ApplyStartupSelectionIfPending();
     void TickServices(float DeltaSeconds);
     void ShutdownServices();
     void RebuildServiceIndexByType();
@@ -208,6 +210,8 @@ private:
     std::vector<ServiceEntry> m_services{};
     std::unordered_map<std::type_index, std::size_t> m_serviceIndexByType{};
     std::vector<std::size_t> m_serviceOrder{};
+    std::string m_startupSelectionNodeName{};
+    bool m_startupSelectionPending = false;
     bool m_defaultServicesRegistered = false;
     bool m_initialized = false;
 };

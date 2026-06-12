@@ -623,6 +623,72 @@ template<size_t N>
     return (SourceDir / UriPath).lexically_normal().string();
 }
 
+[[nodiscard]] std::string NormalizeLogicalDependencyName(std::string Value)
+{
+    std::replace(Value.begin(), Value.end(), '\\', '/');
+    Value = std::filesystem::path(Value).lexically_normal().generic_string();
+    if (Value == ".")
+    {
+        return {};
+    }
+    if (!Value.empty() && Value.starts_with("./"))
+    {
+        Value.erase(0u, 2u);
+    }
+    return Value;
+}
+
+void AppendAssetDependency(std::vector<::SnAPI::AssetPipeline::AssetDependencyRef>& Dependencies,
+                           ::SnAPI::AssetPipeline::AssetDependencyRef Dependency)
+{
+    Dependency.LogicalName = NormalizeLogicalDependencyName(std::move(Dependency.LogicalName));
+    if (Dependency.Id.IsNull() && Dependency.LogicalName.empty())
+    {
+        return;
+    }
+
+    const auto Existing = std::ranges::find_if(
+        Dependencies,
+        [&](const ::SnAPI::AssetPipeline::AssetDependencyRef& Entry)
+        {
+            return Entry.Id == Dependency.Id &&
+                   Entry.LogicalName == Dependency.LogicalName &&
+                   Entry.Kind == Dependency.Kind;
+        });
+    if (Existing == Dependencies.end())
+    {
+        Dependencies.push_back(std::move(Dependency));
+    }
+}
+
+void AppendAssetRefDependency(std::vector<::SnAPI::AssetPipeline::AssetDependencyRef>& Dependencies,
+                              const AssetRefPayload& Reference,
+                              const ::SnAPI::AssetPipeline::EAssetDependencyKind Kind =
+                                  ::SnAPI::AssetPipeline::EAssetDependencyKind::Required)
+{
+    AppendAssetDependency(
+        Dependencies,
+        ::SnAPI::AssetPipeline::AssetDependencyRef{
+            .Id = ::SnAPI::AssetPipeline::AssetId::FromString(Reference.AssetId),
+            .LogicalName = Reference.AssetName,
+            .Kind = Kind,
+        });
+}
+
+void AppendMaterialInstanceDependency(std::vector<::SnAPI::AssetPipeline::AssetDependencyRef>& Dependencies,
+                                      const MaterialInstanceAssetRef& Reference,
+                                      const ::SnAPI::AssetPipeline::EAssetDependencyKind Kind =
+                                          ::SnAPI::AssetPipeline::EAssetDependencyKind::Required)
+{
+    AppendAssetDependency(
+        Dependencies,
+        ::SnAPI::AssetPipeline::AssetDependencyRef{
+            .Id = ::SnAPI::AssetPipeline::AssetId::FromString(Reference.GetAssetId()),
+            .LogicalName = Reference.GetAssetName(),
+            .Kind = Kind,
+        });
+}
+
 [[nodiscard]] bool ParseStaticMeshPayloadFields(const JsonValue& Root, StaticMeshPayload& Out)
 {
     if (const JsonValue* Name = TryGetField(Root, "name"); Name)
@@ -692,10 +758,10 @@ template<size_t N>
     return true;
 }
 
-[[nodiscard]] bool ParseStreamSourceArray(
+[[nodiscard]] bool ParseVertexStreamArray(
     const JsonValue& Root,
     std::string_view SourceUri,
-    std::vector<MeshStreamSourcePayload>& OutStreams)
+    std::vector<MeshVertexStreamPayload>& OutStreams)
 {
     const JsonValue* Streams = TryGetField(Root, "streams");
     if (!Streams || Streams->Type != EJsonValueType::Array)
@@ -710,7 +776,7 @@ template<size_t N>
             return false;
         }
 
-        MeshStreamSourcePayload Stream{};
+        MeshVertexStreamPayload Stream{};
         if (const JsonValue* SemanticValue = TryGetField(StreamValue, "semantic"))
         {
             std::string SemanticText{};
@@ -1109,18 +1175,23 @@ public:
             Item.Intermediate.PayloadType = PayloadMaterialInstance();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
             Serializer->SerializeToBytes(&Payload, Item.Intermediate.Bytes);
+            AppendAssetRefDependency(Item.AssetDependencies, Payload.ParentMaterial);
+            for (const MaterialTextureParamPayload& Texture : Payload.Textures)
+            {
+                AppendAssetRefDependency(Item.AssetDependencies, Texture.Texture);
+            }
         }
         else if (SourceType == ERenderSourceType::StaticMesh)
         {
             StaticMeshAsset SourcePayload{};
             if (!ParseStaticMeshPayloadFields(Root, SourcePayload.Mesh) ||
-                !ParseStreamSourceArray(Root, Source.Uri, SourcePayload.Streams))
+                !ParseVertexStreamArray(Root, Source.Uri, SourcePayload.Streams))
             {
                 Ctx.LogError("RenderAsset importer failed to parse static mesh payload: %s", Source.Uri.c_str());
                 return false;
             }
 
-            for (const MeshStreamSourcePayload& Stream : SourcePayload.Streams)
+            for (const MeshVertexStreamPayload& Stream : SourcePayload.Streams)
             {
                 Item.Dependencies.emplace_back(Stream.Uri, 0);
             }
@@ -1137,6 +1208,10 @@ public:
             Item.Intermediate.PayloadType = PayloadStaticMeshSource();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
             Serializer->SerializeToBytes(&SourcePayload, Item.Intermediate.Bytes);
+            for (const MaterialInstanceAssetRef& MaterialRef : SourcePayload.Mesh.MaterialInstances)
+            {
+                AppendMaterialInstanceDependency(Item.AssetDependencies, MaterialRef);
+            }
         }
         else if (SourceType == ERenderSourceType::SkeletalMesh)
         {
@@ -1149,7 +1224,7 @@ public:
             }
 
             if (!ParseStaticMeshPayloadFields(*BaseMesh, SourcePayload.BaseMesh.Mesh) ||
-                !ParseStreamSourceArray(*BaseMesh, Source.Uri, SourcePayload.BaseMesh.Streams))
+                !ParseVertexStreamArray(*BaseMesh, Source.Uri, SourcePayload.BaseMesh.Streams))
             {
                 Ctx.LogError("RenderAsset importer failed to parse skeletal base mesh: %s", Source.Uri.c_str());
                 return false;
@@ -1210,7 +1285,7 @@ public:
                     ResolveUriRelativeToSource(Source.Uri, std::move(SourcePayload.SkeletonAnimationUri));
             }
 
-            for (const MeshStreamSourcePayload& Stream : SourcePayload.BaseMesh.Streams)
+            for (const MeshVertexStreamPayload& Stream : SourcePayload.BaseMesh.Streams)
             {
                 Item.Dependencies.emplace_back(Stream.Uri, 0);
             }
@@ -1231,6 +1306,10 @@ public:
             Item.Intermediate.PayloadType = PayloadSkeletalMeshSource();
             Item.Intermediate.SchemaVersion = Serializer->GetSchemaVersion();
             Serializer->SerializeToBytes(&SourcePayload, Item.Intermediate.Bytes);
+            for (const MaterialInstanceAssetRef& MaterialRef : SourcePayload.BaseMesh.Mesh.MaterialInstances)
+            {
+                AppendMaterialInstanceDependency(Item.AssetDependencies, MaterialRef);
+            }
         }
 
         Item.Id = ResolvedAssetId;
@@ -1465,6 +1544,7 @@ public:
     {
         Out.Cooked = Req.Intermediate;
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         Out.Tags["RenderAsset.Kind"] = "Material";
         return true;
     }
@@ -1487,6 +1567,7 @@ public:
     {
         Out.Cooked = Req.Intermediate;
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         Out.Tags["RenderAsset.Kind"] = "MaterialInstance";
         return true;
     }
@@ -1509,6 +1590,7 @@ public:
     {
         Out.Cooked = Req.Intermediate;
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         Out.Tags["RenderAsset.Kind"] = "Skeleton";
         return true;
     }
@@ -1531,6 +1613,7 @@ public:
     {
         Out.Cooked = Req.Intermediate;
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         Out.Tags["RenderAsset.Kind"] = "Animation";
         return true;
     }
@@ -1573,7 +1656,7 @@ public:
         CookedPayload.Streams.clear();
         CookedPayload.Streams.reserve(SourcePayload.Streams.size());
 
-        for (const MeshStreamSourcePayload& Stream : SourcePayload.Streams)
+        for (const MeshVertexStreamPayload& Stream : SourcePayload.Streams)
         {
             if (Stream.ElementCount == 0 || Stream.StrideBytes == 0)
             {
@@ -1620,6 +1703,7 @@ public:
         CookedSerializer->SerializeToBytes(&CookedPayload, Out.Cooked.Bytes);
 
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         Out.Tags["RenderAsset.Kind"] = "StaticMesh";
         Out.Tags["RenderAsset.StreamCount"] = std::to_string(CookedPayload.Streams.size());
         Out.Tags["RenderAsset.SubMeshCount"] = std::to_string(CookedPayload.SubMeshes.size());
@@ -1668,7 +1752,7 @@ public:
         CookedPayload.BaseMesh.Streams.clear();
         CookedPayload.BaseMesh.Streams.reserve(SourcePayload.BaseMesh.Streams.size());
 
-        for (const MeshStreamSourcePayload& Stream : SourcePayload.BaseMesh.Streams)
+        for (const MeshVertexStreamPayload& Stream : SourcePayload.BaseMesh.Streams)
         {
             if (Stream.ElementCount == 0 || Stream.StrideBytes == 0)
             {
@@ -1742,6 +1826,7 @@ public:
         CookedSerializer->SerializeToBytes(&CookedPayload, Out.Cooked.Bytes);
 
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         Out.Tags["RenderAsset.Kind"] = "SkeletalMesh";
         Out.Tags["RenderAsset.BoneCount"] = std::to_string(CookedPayload.Bones.size());
         Out.Tags["RenderAsset.StreamCount"] = std::to_string(CookedPayload.BaseMesh.Streams.size());

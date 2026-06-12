@@ -11,11 +11,10 @@
 #include "BaseComponent.h"
 #include "BuiltinTypes.h"
 #include "ReflectionAnnotations.h"
-
-namespace SnAPI::Graphics
-{
-class MeshRenderObject;
-} // namespace SnAPI::Graphics
+#include "RenderAssets/MaterialInstanceAsset.h"
+#include "RenderAssets/SkeletalMeshAsset.h"
+#include "Rendering/GameRenderMesh.h"
+#include "Rendering/GameRenderObject.h"
 
 namespace SnAPI::GameFramework
 {
@@ -27,13 +26,13 @@ class RendererSystem;
  * @brief Component that owns a skeletal mesh render object and drives rigid-animation playback.
  *
  * `SkeletalMeshComponent` is the animated counterpart to `StaticMeshComponent`. It owns one
- * renderer mesh render-object, registers it into the appropriate renderer passes, synchronizes
- * its transform from the owning node, and optionally auto-plays rigid animations after load.
+ * renderer mesh object, retains it in the active renderer scene, synchronizes its transform
+ * from the owning node, and optionally auto-plays rigid animations after load.
  *
  * Source semantics:
- * - `Settings::MeshAsset` is the reliable runtime load path and the preferred way to use this component
- * - `Settings::MeshPath` is retained for compatibility and participates in change detection, but the
- *   current implementation is asset-centric and does not guarantee direct source-path loading by itself
+ * - `Settings::MeshAsset` is the authored/cooked asset path
+ * - `Settings::MeshPath` is available for future primitive or generated mesh URI support, but this
+ *   component currently requires `MeshAsset` for actual loading
  *
  * Animation semantics:
  * - `AutoPlayAnimations` is applied lazily after a mesh exists
@@ -41,8 +40,7 @@ class RendererSystem;
  * - `StopAnimations()` stops active rigid animations and clears the auto-play-applied flag
  *
  * Ownership and lifetime:
- * - The component owns the `MeshRenderObject` shared pointer it creates.
- * - The renderer borrows that object while it is registered in passes.
+ * - Renderer.New builds retain `GameRenderMesh` and `GameRenderObject` records.
  *
  * Threading model:
  * - Main-thread only.
@@ -61,9 +59,11 @@ public:
      * @brief Runtime mesh/render/animation settings.
      *
      * Semantics:
-     * - `RegisterWithRenderer` controls pass registration, not object creation
-     * - `Visible` and `CastShadows` affect renderer pass membership
+     * - `RetainInScene` controls retained scene-object registration, not mesh loading
+     * - `Visible` and `CastShadows` update renderer scene-object participation
      * - `AnimationName` empty means "play all available rigid animations" for auto-play and `PlayAllAnimations()`
+     * - `MaterialInstanceOverrides` replace matching baked mesh material slots while leaving unspecified
+     *   slots on the shared runtime mesh unchanged
      */
     SnType()
     struct Settings
@@ -71,15 +71,15 @@ public:
         static constexpr const char* kTypeName = "SnAPI::GameFramework::SkeletalMeshComponent::Settings";
 
         SnField(SnKey("MeshPath"), SnReplicated)
-        std::string MeshPath{}; /**< @brief Compatibility mesh identifier tracked for change detection; direct source-path loading is not the primary supported path in the current implementation. */
+        std::string MeshPath{}; /**< @brief Optional mesh URI reserved for generated or primitive skeletal mesh sources. */
         SnField(SnKey("Visible"), SnReplicated)
-        bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
+        bool Visible = true; /**< @brief Toggle retained scene-object visibility. */
         SnField(SnKey("CastShadows"), SnReplicated)
-        bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
+        bool CastShadows = true; /**< @brief Toggle shadow-capable feature participation for the retained object. */
         SnField(SnKey("SyncFromTransform"))
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
-        SnField(SnKey("RegisterWithRenderer"))
-        bool RegisterWithRenderer = true; /**< @brief Register loaded mesh in renderer draw list. */
+        SnField(SnKey("RetainInScene"))
+        bool RetainInScene = true; /**< @brief Retain the loaded mesh as a Renderer.New scene object. */
         SnField(SnKey("AutoPlayAnimations"))
         bool AutoPlayAnimations = true; /**< @brief Auto-play animation after load. */
         SnField(SnKey("LoopAnimations"))
@@ -88,6 +88,8 @@ public:
         std::string AnimationName{}; /**< @brief Optional named rigid animation; empty = play all. */
         SnField(SnKey("MeshAsset"), SnReplicated)
         SkeletalMeshAssetRef MeshAsset{}; /**< @brief Preferred authored skeletal-mesh asset reference. */
+        SnField(SnKey("MaterialInstanceOverrides"), SnReplicated)
+        std::vector<TAssetRef<MaterialInstanceAsset>> MaterialInstanceOverrides{}; /**< @brief Optional per-material-slot overrides applied on top of mesh-default material instances. */
     };
 
     /** @brief Access settings (const). */
@@ -106,7 +108,7 @@ public:
     /** @brief Explicitly clear cached load state and rebuild from current source settings. @return `true` when a render object is available after reload. */
     SnFunction(SnKey("ReloadMesh"))
     bool ReloadMesh();
-    /** @brief Clear the current render object, stop its registration, and reset animation tracking state. */
+    /** @brief Clear the current render mesh, retained scene object, and animation tracking state. */
     void ClearMesh();
 
     /** @brief Play one rigid animation by name on the loaded mesh. @param Name Animation name. @param Loop Whether playback should loop. @param StartTime Initial playback time in seconds. @return `true` when a render object exists and the request was applied. */
@@ -119,17 +121,21 @@ public:
     SnFunction(SnKey("StopAnimations"))
     void StopAnimations();
 
-    /** @brief Access the component-owned renderer object handle. @return Borrowed reference to the shared-pointer handle, which may be empty. */
-    [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::MeshRenderObject>& RenderObject() const
+    [[nodiscard]] const GameRenderMesh& RenderMesh() const
+    {
+        return m_renderMesh;
+    }
+
+    [[nodiscard]] const GameRenderObject& RenderObject() const
     {
         return m_renderObject;
     }
 
     /** @brief Attempt initial skeletal mesh/render-object creation from the current source settings. */
     void OnCreate();
-    /** @brief Remove the render object from renderer passes and clear owned state. */
+    /** @brief Destroy the retained scene object and clear owned render resources. */
     void OnDestroy();
-    /** @brief Per-frame transform, pass-state, auto-play, and animation update. @param DeltaSeconds Frame delta in seconds. */
+    /** @brief Per-frame transform, retained scene-object, auto-play, and animation update. @param DeltaSeconds Frame delta in seconds. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only update hook. @param DeltaSeconds Frame delta in seconds. */
@@ -141,22 +147,21 @@ public:
 private:
     RendererSystem* ResolveRendererSystem() const;
     bool EnsureMeshLoaded();
-    void SyncRenderObjectTransform(SnAPI::Graphics::MeshRenderObject& RenderObject) const;
-    void ApplyRenderObjectState(SnAPI::Graphics::MeshRenderObject& RenderObject);
-    void ApplyAutoPlay(SnAPI::Graphics::MeshRenderObject& RenderObject);
+    void SyncRenderObjectTransform();
+    void UpdateRetainedSceneObject();
 
     Settings m_settings{}; /**< @brief Mesh/render/animation settings. */
-    std::shared_ptr<SnAPI::Graphics::MeshRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
+    GameRenderMesh m_renderMesh{};
+    GameRenderObject m_renderObject{};
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
+    std::vector<TAssetRef<MaterialInstanceAsset>> m_loadedMeshMaterialInstances{}; /**< @brief Material instance asset refs baked into the currently loaded skeletal mesh asset. */
     std::string m_lastAutoPlayAnimation{}; /**< @brief Last animation name used for auto-play state tracking. */
     bool m_lastAutoPlayLoop = true; /**< @brief Last loop setting used for auto-play state tracking. */
     bool m_autoPlayApplied = false; /**< @brief True when auto-play has been applied for current settings. */
-    bool m_registered = false; /**< @brief True when current mesh has been registered with renderer. */
-    bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */
     bool m_lastCastShadows = true; /**< @brief Last applied cast-shadows state. */
-    std::uint64_t m_lastPassGraphRevision = 0; /**< @brief Last renderer pass-graph revision applied to this render object. */
+    bool m_retainedSceneObjectStateInitialized = false; /**< @brief True after the retained object visibility/shadow state was evaluated. */
     std::string m_lastFailedPathLoadKey{}; /**< @brief Last source-path load key that failed; used to avoid per-frame retry loops. */
 };
 

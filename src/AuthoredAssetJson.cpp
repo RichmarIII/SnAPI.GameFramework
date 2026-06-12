@@ -392,8 +392,9 @@ private:
 
                                   std::vector<TElement> Parsed{};
                                   Parsed.reserve(Source.size());
-                                  for (const auto& ElementJson : Source)
+                                  for (std::size_t ElementIndex = 0; ElementIndex < Source.size(); ++ElementIndex)
                                   {
+                                      const auto& ElementJson = Source[ElementIndex];
                                       TElement Element{};
                                       auto ElementResult = DeserializeValueFromJsonInto(
                                           StaticTypeId<TElement>(),
@@ -402,11 +403,87 @@ private:
                                           false);
                                       if (!ElementResult)
                                       {
-                                          return ElementResult;
+                                          return std::unexpected(MakeError(
+                                              ElementResult.error().Code,
+                                              "Element " + std::to_string(ElementIndex) + ": " +
+                                                  ElementResult.error().Message));
                                       }
                                       Parsed.push_back(std::move(Element));
                                   }
                                   *static_cast<std::vector<TElement>*>(Value) = std::move(Parsed);
+                                  return Ok();
+                              },
+                          });
+    }
+
+    template<typename TAssetRefValue>
+    void RegisterAssetRef()
+    {
+        m_entries.emplace(StaticTypeId<TAssetRefValue>(),
+                          JsonCodecEntry{
+                              .Encode = [] (const void* Value) -> TExpected<Json> {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null asset ref JSON value"));
+                                  }
+
+                                  const auto& Ref = *static_cast<const TAssetRefValue*>(Value);
+                                  return Json{
+                                      {"AssetName", Ref.GetAssetName()},
+                                      {"AssetId", Ref.GetAssetId()},
+                                  };
+                              },
+                              .DecodeInto = [] (void* Value, const Json& Source) -> Result {
+                                  if (!Value)
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument, "Null asset ref JSON destination"));
+                                  }
+
+                                  auto& Ref = *static_cast<TAssetRefValue*>(Value);
+                                  if (Source.is_null())
+                                  {
+                                      Ref.Clear();
+                                      return Ok();
+                                  }
+                                  if (Source.is_string())
+                                  {
+                                      Ref = TAssetRefValue(Source.get<std::string>());
+                                      return Ok();
+                                  }
+                                  if (!Source.is_object())
+                                  {
+                                      return std::unexpected(
+                                          MakeError(EErrorCode::InvalidArgument,
+                                                    "Asset ref JSON value must be an object, string, or null"));
+                                  }
+
+                                  std::string AssetName{};
+                                  if (const auto AssetNameIt = Source.find("AssetName");
+                                      AssetNameIt != Source.end() && AssetNameIt->is_string())
+                                  {
+                                      AssetName = AssetNameIt->get<std::string>();
+                                  }
+                                  else if (const auto AssetNameIt = Source.find("assetName");
+                                           AssetNameIt != Source.end() && AssetNameIt->is_string())
+                                  {
+                                      AssetName = AssetNameIt->get<std::string>();
+                                  }
+
+                                  std::string AssetId{};
+                                  if (const auto AssetIdIt = Source.find("AssetId");
+                                      AssetIdIt != Source.end() && AssetIdIt->is_string())
+                                  {
+                                      AssetId = AssetIdIt->get<std::string>();
+                                  }
+                                  else if (const auto AssetIdIt = Source.find("assetId");
+                                           AssetIdIt != Source.end() && AssetIdIt->is_string())
+                                  {
+                                      AssetId = AssetIdIt->get<std::string>();
+                                  }
+
+                                  Ref = TAssetRefValue(std::move(AssetName), std::move(AssetId));
                                   return Ok();
                               },
                           });
@@ -908,11 +985,28 @@ private:
         RegisterVector<SkeletalBonePayload>();
         RegisterVector<AnimationKeyFramePayload>();
         RegisterVector<AnimationTrackPayload>();
-        RegisterVector<MeshStreamSourcePayload>();
+        RegisterVector<MeshVertexStreamPayload>();
         RegisterVector<MaterialScalarParamPayload>();
         RegisterVector<MaterialVectorParamPayload>();
         RegisterVector<MaterialTextureParamPayload>();
         RegisterVector<MaterialInstanceAssetRef>();
+        RegisterAssetRef<PawnBaseAssetRef>();
+        RegisterAssetRef<StaticMeshAssetRef>();
+        RegisterAssetRef<SkeletalMeshAssetRef>();
+        RegisterAssetRef<MaterialInstanceAssetRef>();
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        RegisterAssetRef<DeferredShadingParamsNodeAssetRef>();
+        RegisterAssetRef<SSAOParamsNodeAssetRef>();
+        RegisterAssetRef<SSGIParamsNodeAssetRef>();
+        RegisterAssetRef<SSRParamsNodeAssetRef>();
+        RegisterAssetRef<TAAParamsNodeAssetRef>();
+        RegisterAssetRef<BloomParamsNodeAssetRef>();
+        RegisterAssetRef<AtmosphereParamsNodeAssetRef>();
+        RegisterAssetRef<AtmosphereCompositeParamsNodeAssetRef>();
+        RegisterAssetRef<HeightFogParamsNodeAssetRef>();
+        RegisterAssetRef<ToneMapParamsNodeAssetRef>();
+        RegisterAssetRef<WorldRenderSettingsAssetRef>();
+#endif
         RegisterArray<float, 3>();
         RegisterArray<float, 4>();
         RegisterArray<float, 16>();
@@ -1694,7 +1788,8 @@ Result DeserializeObjectFromJson(const TypeId& Type,
         auto FieldResult = DeserializeFieldValueFromJson(Field, Value, *It, TolerateFailures, Diagnostics, FieldPath);
         if (!FieldResult && !TolerateFailures)
         {
-            return FieldResult;
+            return std::unexpected(MakeError(FieldResult.error().Code,
+                                             FieldPath + ": " + FieldResult.error().Message));
         }
     }
 

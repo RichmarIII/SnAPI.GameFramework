@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <cmath>
 #include <limits>
 #include <mutex>
@@ -26,17 +27,8 @@
 #include <cstdlib>
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-#include <VulkanGraphicsAPI.hpp>
-#include <WindowBase.hpp>
-#endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && __has_include(<SDL3/SDL.h>)
-#include <SDL3/SDL.h>
-#define SNAPI_GF_RUNTIME_HAS_SDL3 1
-#else
 #define SNAPI_GF_RUNTIME_HAS_SDL3 0
-#endif
 
 namespace SnAPI::GameFramework
 {
@@ -284,6 +276,12 @@ namespace
 constexpr auto kFrameSleepMargin = std::chrono::microseconds(1500);
 constexpr auto kFrameYieldMargin = std::chrono::microseconds(200);
 
+[[nodiscard]] bool IsRuntimeEnvEnabled(const char* Name)
+{
+    const char* Value = std::getenv(Name);
+    return Value != nullptr && Value[0] != '\0' && Value[0] != '0';
+}
+
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_UI)
 [[nodiscard]] uint32_t MapUiKeyCode(const SnAPI::Input::EKey Key)
 {
@@ -506,23 +504,46 @@ struct UiViewportTransform
 };
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
-[[nodiscard]] float QueryWindowDisplayScale(const SnAPI::Graphics::WindowBase* Window)
+#if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_RENDERER)
+void ConfigureInputHostWindowFromRenderer(InputBootstrapSettings& InputSettings, const RendererSystem& Renderer)
 {
-    if (!Window)
+    if (InputSettings.CreateDesc.HostWindow.Valid())
     {
-        return 0.0f;
+        return;
     }
 
-    auto* NativeWindow = reinterpret_cast<SDL_Window*>(Window->Handle());
-    if (!NativeWindow)
+    const GameRenderWindow Window = Renderer.MainWindow();
+    if (!Window.Valid())
     {
-        return 0.0f;
+        return;
     }
 
-    return SDL_GetWindowDisplayScale(NativeWindow);
+    const auto& NativeSurface = Window.NativeSurface();
+    InputSettings.CreateDesc.HostWindow.Width = Window.Width();
+    InputSettings.CreateDesc.HostWindow.Height = Window.Height();
+    switch (NativeSurface.Platform)
+    {
+    case SnAPI::Renderer::ENativeSurfacePlatform::Xlib:
+        InputSettings.CreateDesc.HostWindow.Platform = SnAPI::Input::EInputHostWindowPlatform::X11;
+        InputSettings.CreateDesc.HostWindow.DisplayConnection = NativeSurface.Xlib.DisplayConnection;
+        InputSettings.CreateDesc.HostWindow.Window = NativeSurface.Xlib.Window;
+        break;
+    case SnAPI::Renderer::ENativeSurfacePlatform::Wayland:
+        InputSettings.CreateDesc.HostWindow.Platform = SnAPI::Input::EInputHostWindowPlatform::Wayland;
+        InputSettings.CreateDesc.HostWindow.DisplayConnection = NativeSurface.Wayland.DisplayConnection;
+        InputSettings.CreateDesc.HostWindow.Surface = NativeSurface.Wayland.Surface;
+        break;
+    default:
+        break;
+    }
+
+    if (!InputSettings.CreateDesc.HostWindow.Valid())
+    {
+        InputSettings.CreateDesc.HostWindow = {};
+    }
 }
 #endif
+
 } // namespace
 
 Result GameRuntime::Init(const GameRuntimeSettings& Settings)
@@ -578,7 +599,22 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
 #if defined(SNAPI_GF_ENABLE_INPUT)
     if (m_settings.Input)
     {
-        auto InitInput = m_world->Input().Initialize(*m_settings.Input);
+        InputBootstrapSettings InputSettings = *m_settings.Input;
+#if defined(SNAPI_GF_ENABLE_RENDERER)
+        if (m_settings.Renderer)
+        {
+            if (!m_world->Renderer().IsInitialized())
+            {
+                if (!m_world->Renderer().Initialize(*m_settings.Renderer))
+                {
+                    Shutdown();
+                    return std::unexpected(MakeError(EErrorCode::NotReady, "Failed to initialize renderer system"));
+                }
+            }
+            ConfigureInputHostWindowFromRenderer(InputSettings, m_world->Renderer());
+        }
+#endif
+        auto InitInput = m_world->Input().Initialize(InputSettings);
         if (!InitInput)
         {
             Shutdown();
@@ -626,7 +662,7 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     if (m_settings.Renderer)
     {
-        if (!m_world->Renderer().Initialize(*m_settings.Renderer))
+        if (!m_world->Renderer().IsInitialized() && !m_world->Renderer().Initialize(*m_settings.Renderer))
         {
             Shutdown();
             return std::unexpected(MakeError(EErrorCode::NotReady, "Failed to initialize renderer system"));
@@ -634,21 +670,18 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
-    if (m_settings.Renderer && m_settings.UI)
+#if   defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
+    if (m_settings.Renderer && m_settings.UI && m_world->Renderer().IsUsingDefaultRenderViewport())
     {
-        if (m_world->Renderer().IsUsingDefaultRenderViewport())
+        if (const auto BindResult = BindViewportWithUI(1u, m_world->UI().RootContextId()); !BindResult)
         {
-            if (const auto BindResult = BindViewportWithUI(m_world->Renderer().Graphics()->DefaultRenderViewportID(), m_world->UI().RootContextId()); !BindResult)
-            {
-                Shutdown();
-                return std::unexpected(BindResult.error());
-            }
+            Shutdown();
+            return std::unexpected(BindResult.error());
         }
     }
 #endif
 
-    if (m_settings.Gameplay && m_world->ShouldRunGameplay())
+    if (m_settings.AutoStartGameplay && m_settings.Gameplay && m_world->ShouldRunGameplay())
     {
         auto InitGameplay = StartGameplayHost();
         if (!InitGameplay)
@@ -685,10 +718,10 @@ void GameRuntime::Shutdown()
         m_world->Physics().Shutdown();
     }
 #endif
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_INPUT)
     if (m_world)
     {
-        m_world->Renderer().Shutdown();
+        m_world->Input().Shutdown();
     }
 #endif
 #if defined(SNAPI_GF_ENABLE_UI)
@@ -697,10 +730,10 @@ void GameRuntime::Shutdown()
         m_world->UI().Shutdown();
     }
 #endif
-#if defined(SNAPI_GF_ENABLE_INPUT)
+#if defined(SNAPI_GF_ENABLE_RENDERER)
     if (m_world)
     {
-        m_world->Input().Shutdown();
+        m_world->Renderer().Shutdown();
     }
 #endif
     m_world.reset();
@@ -819,34 +852,6 @@ bool GameRuntime::Update(float DeltaSeconds)
         }
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
-    auto& Renderer = m_world->Renderer();
-    auto& UI = m_world->UI();
-    if (Renderer.IsInitialized() && UI.IsInitialized())
-    {
-        if (const auto* GraphicsApi = Renderer.Graphics())
-        {
-            const auto RootContextID = UI.RootContextId();
-            if (RootContextID != 0)
-            {
-                if (const auto ViewportID = UI.BoundViewportForContext(RootContextID))
-                {
-                    if (const auto RenderViewportConfig = GraphicsApi->GetRenderViewportConfig(
-                            static_cast<SnAPI::Graphics::RenderViewportID>(*ViewportID)))
-                    {
-                        // The root context is not owned by a UIRenderViewport, so keep its
-                        // screen rect aligned with the renderer viewport it is bound to.
-                        (void)UI.SetContextScreenRect(RootContextID,
-                                                      RenderViewportConfig->OutputRect.X,
-                                                      RenderViewportConfig->OutputRect.Y,
-                                                      RenderViewportConfig->OutputRect.Width,
-                                                      RenderViewportConfig->OutputRect.Height);
-                    }
-                }
-            }
-        }
-    }
-#endif
 
     SNAPI_GF_PROFILE_END_FRAME();
 
@@ -869,35 +874,15 @@ bool GameRuntime::ProcessPlatformAndUiInput()
     }
 
     bool ContinueRunning = true;
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
-    bool InputAvailableForPlatformEvents = false;
-#endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI) && SNAPI_GF_RUNTIME_HAS_SDL3
-    if (m_settings.AutoUpdateUiDpiScaleFromWindow && m_world->Renderer().IsInitialized() && m_world->UI().IsInitialized())
-    {
-        const float Scale = QueryWindowDisplayScale(m_world->Renderer().Window());
-        if (std::isfinite(Scale) && Scale > 0.0f && std::abs(Scale - m_uiDpiScaleCache) > 0.0001f)
-        {
-            m_uiDpiScaleCache = Scale;
-            (void)m_world->UI().SetDpiScale(Scale);
-        }
-    }
-#endif
 
 #if defined(SNAPI_GF_ENABLE_INPUT)
     bool InputInitialized = m_world->Input().IsInitialized();
     if (InputInitialized)
     {
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
-#if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
-        InputAvailableForPlatformEvents = m_world->Input().Settings().Backend == SnAPI::Input::EInputBackend::SDL3;
-#else
-        InputAvailableForPlatformEvents = false;
-#endif
-#endif
 
         const auto* Events = m_world->Input().Events();
+        const bool LogInputEvents = IsRuntimeEnvEnabled("SNAPI_GF_LOG_INPUT_EVENTS");
 
 #if defined(SNAPI_GF_ENABLE_INPUT) && defined(SNAPI_GF_ENABLE_UI)
         const bool ForwardToUi = m_settings.AutoForwardInputEventsToUi && m_world->UI().IsInitialized();
@@ -905,52 +890,17 @@ bool GameRuntime::ProcessPlatformAndUiInput()
         UiViewportTransform UiTransform{};
         if (ForwardToUi)
         {
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-            if (m_world->Renderer().IsInitialized())
-            {
-                if (const auto* GraphicsApi = m_world->Renderer().Graphics())
-                {
-                    std::optional<std::uint64_t> ViewportId{};
-                    const auto RootContextId = m_world->UI().RootContextId();
-                    if (RootContextId != 0)
-                    {
-                        ViewportId = m_world->UI().BoundViewportForContext(RootContextId);
-                    }
-
-                    if (!ViewportId.has_value() && GraphicsApi->IsUsingDefaultViewport())
-                    {
-                        ViewportId = GraphicsApi->DefaultRenderViewportID();
-                    }
-
-                    if (ViewportId.has_value() && *ViewportId != 0)
-                    {
-                        if (const auto Config = GraphicsApi->GetRenderViewportConfig(
-                                static_cast<SnAPI::Graphics::RenderViewportID>(*ViewportId)))
-                        {
-                            UiTransform.OutputX = Config->OutputRect.X;
-                            UiTransform.OutputY = Config->OutputRect.Y;
-                            UiTransform.OutputWidth = Config->OutputRect.Width;
-                            UiTransform.OutputHeight = Config->OutputRect.Height;
-                            UiTransform.UiWidth = static_cast<float>(Config->RenderExtent.x());
-                            UiTransform.UiHeight = static_cast<float>(Config->RenderExtent.y());
-                        }
-                    }
-                }
-            }
-#endif
 
             if (!UiTransform.IsValid())
             {
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-                if (const auto* Window = m_world->Renderer().Window())
+                const auto Window = m_world->Renderer().MainWindow();
+                if (Window.Valid())
                 {
-                    const auto WindowSize = Window->Size();
                     UiTransform.OutputX = 0.0f;
                     UiTransform.OutputY = 0.0f;
-                    UiTransform.OutputWidth = WindowSize.x();
-                    UiTransform.OutputHeight = WindowSize.y();
+                    UiTransform.OutputWidth = static_cast<float>(Window.Width());
+                    UiTransform.OutputHeight = static_cast<float>(Window.Height());
                 }
-#endif
                 const auto& UiSettings = m_world->UI().Settings();
                 UiTransform.UiWidth = UiSettings.ViewportWidth;
                 UiTransform.UiHeight = UiSettings.ViewportHeight;
@@ -1018,18 +968,30 @@ bool GameRuntime::ProcessPlatformAndUiInput()
                         default:
                             break;
                         }
+                        if (LogInputEvents)
+                        {
+                            std::cerr << "[GameFramework][Input] mouse_button "
+                                      << (Down ? "down" : "up")
+                                      << " button=" << static_cast<int>(ButtonData->Button)
+                                      << " x=" << ButtonData->X
+                                      << " y=" << ButtonData->Y << '\n';
+                        }
 
                         SnAPI::UI::PointerEvent UiPointer{};
+                        UiPointer.Position = ToUiPoint(ButtonData->X, ButtonData->Y);
                         UiPointer.LeftDown = m_uiLeftDown;
                         UiPointer.RightDown = m_uiRightDown;
                         UiPointer.MiddleDown = m_uiMiddleDown;
 
-                        if (const auto* Snapshot = m_world->Input().Snapshot())
-                        {
-                            UiPointer.Position = ToUiPoint(Snapshot->Mouse().X, Snapshot->Mouse().Y);
-                        }
-
                         UiSystem.PushInput(UiPointer);
+                        if (LogInputEvents)
+                        {
+                            std::cerr << "[GameFramework][UI] pointer x=" << UiPointer.Position.X
+                                      << " y=" << UiPointer.Position.Y
+                                      << " left=" << UiPointer.LeftDown
+                                      << " right=" << UiPointer.RightDown
+                                      << " middle=" << UiPointer.MiddleDown << '\n';
+                        }
                     }
                     break;
                 case SnAPI::Input::EInputEventType::MouseWheel:
@@ -1086,19 +1048,6 @@ bool GameRuntime::ProcessPlatformAndUiInput()
     }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
-    if (!InputAvailableForPlatformEvents && m_settings.AutoExitOnWindowClose && m_world->Renderer().IsInitialized())
-    {
-        SDL_Event Event{};
-        while (SDL_PollEvent(&Event))
-        {
-            if (Event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED || Event.type == SDL_EVENT_QUIT)
-            {
-                ContinueRunning = false;
-            }
-        }
-    }
-#endif
 
     return ContinueRunning;
 }
@@ -1118,13 +1067,7 @@ bool GameRuntime::ShouldContinueRunning() const
         return true;
     }
 
-    const auto* Window = Renderer.Window();
-    if (!Window)
-    {
-        return true;
-    }
-
-    return Window->IsOpen();
+    return Renderer.HasOpenWindow();
 }
 #endif
 
@@ -1204,13 +1147,11 @@ bool GameRuntime::ShouldCapFrameRate() const
         return false;
     }
 
-    const auto* Window = Renderer.Window();
-    if (!Window || !Window->IsOpen())
+    if (!Renderer.HasOpenWindow())
     {
         return false;
     }
 
-    //return Window->VSyncMode() == SnAPI::Graphics::EWindowVSyncMode::Off;
     return true;
 #else
     return false;

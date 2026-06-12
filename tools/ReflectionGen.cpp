@@ -256,6 +256,7 @@ struct RegistrationScanData
 struct HeaderScanInfo
 {
     fs::path Header{};
+    std::uint64_t HeaderSetHash = 0;
     std::uint64_t SourceHash = 0;
     bool HasMarkers = false;
     bool HasTypeExpressions = false;
@@ -474,7 +475,7 @@ void AddDependencySnapshot(std::vector<FileDependencySnapshot>& Out,
     }
 }
 
-constexpr std::uint64_t kReflectionCacheSchemaVersion = 12;
+constexpr std::uint64_t kReflectionCacheSchemaVersion = 13;
 constexpr std::uint64_t kFnvOffsetBasis = 14695981039346656037ull;
 constexpr std::uint64_t kFnvPrime = 1099511628211ull;
 
@@ -2249,12 +2250,22 @@ std::unordered_map<std::string, HeaderScanInfo> BuildHeaderScanInfo(
     const std::vector<fs::path>& Headers,
     const std::unordered_map<std::string, HeaderMarkers>& Markers)
 {
+    std::vector<std::string> HeaderKeys{};
+    HeaderKeys.reserve(Headers.size());
+    for (const fs::path& Header : Headers)
+    {
+        HeaderKeys.push_back(NormalizePath(Header).generic_string());
+    }
+    std::sort(HeaderKeys.begin(), HeaderKeys.end());
+    const std::uint64_t HeaderSetHash = HashStringVector(HeaderKeys);
+
     std::unordered_map<std::string, HeaderScanInfo> Result{};
     for (const fs::path& Header : Headers)
     {
         const fs::path NormalizedHeader = NormalizePath(Header);
         HeaderScanInfo Info{};
         Info.Header = NormalizedHeader;
+        Info.HeaderSetHash = HeaderSetHash;
 
         if (const auto MarkersIt = Markers.find(NormalizedHeader.generic_string()); MarkersIt != Markers.end())
         {
@@ -2330,6 +2341,7 @@ std::uint64_t ComputeVersionedHeaderFingerprint(const std::uint64_t SchemaVersio
     return CombinedHash(
         {SchemaVersion,
          CompileArgsHash,
+         HeaderInfo.HeaderSetHash,
          HeaderInfo.SourceHash,
          HeaderInfo.HasMarkers ? 1ull : 0ull,
          HeaderInfo.HasTypeExpressions ? 1ull : 0ull,
@@ -2345,6 +2357,7 @@ std::uint64_t ComputeVersionedHeaderFingerprintWithKnowledge(const std::uint64_t
         {SchemaVersion,
          CompileArgsHash,
          KnowledgeFingerprint,
+         HeaderInfo.HeaderSetHash,
          HeaderInfo.SourceHash,
          HeaderInfo.HasMarkers ? 1ull : 0ull,
          HeaderInfo.HasTypeExpressions ? 1ull : 0ull,

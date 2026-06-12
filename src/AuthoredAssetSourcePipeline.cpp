@@ -2,8 +2,12 @@
 #include "AuthoredAssetJson.h"
 #include "NodeAsset.h"
 
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
 #include <filesystem>
 #include <memory>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -17,6 +21,8 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+using Json = nlohmann::ordered_json;
+
 [[nodiscard]] TExpected<::SnAPI::AssetPipeline::TypedPayload> BuildSourceTypedPayload(
     const void* Object,
     const ::SnAPI::AssetPipeline::IPipelineContext& Context,
@@ -52,6 +58,111 @@ namespace
         }
     }
     return Extension;
+}
+
+[[nodiscard]] std::string NormalizeLogicalDependencyName(std::string Value)
+{
+    std::replace(Value.begin(), Value.end(), '\\', '/');
+    Value = std::filesystem::path(Value).lexically_normal().generic_string();
+    if (Value == ".")
+    {
+        return {};
+    }
+    if (!Value.empty() && Value.starts_with("./"))
+    {
+        Value.erase(0u, 2u);
+    }
+    return Value;
+}
+
+void AppendAssetDependency(std::vector<::SnAPI::AssetPipeline::AssetDependencyRef>& Dependencies,
+                           ::SnAPI::AssetPipeline::AssetDependencyRef Dependency)
+{
+    Dependency.LogicalName = NormalizeLogicalDependencyName(std::move(Dependency.LogicalName));
+    if (Dependency.Id.IsNull() && Dependency.LogicalName.empty())
+    {
+        return;
+    }
+
+    const auto Existing = std::ranges::find_if(
+        Dependencies,
+        [&](const ::SnAPI::AssetPipeline::AssetDependencyRef& Entry)
+        {
+            return Entry.Id == Dependency.Id &&
+                   Entry.LogicalName == Dependency.LogicalName &&
+                   Entry.Kind == Dependency.Kind;
+        });
+    if (Existing == Dependencies.end())
+    {
+        Dependencies.push_back(std::move(Dependency));
+    }
+}
+
+void CollectJsonAssetDependencies(const Json& Value,
+                                  const std::size_t Depth,
+                                  const ::SnAPI::AssetPipeline::AssetId SelfId,
+                                  const std::string_view SelfLogicalName,
+                                  std::vector<::SnAPI::AssetPipeline::AssetDependencyRef>& OutDependencies)
+{
+    if (Value.is_object())
+    {
+        if (Depth > 0u)
+        {
+            std::string LogicalName{};
+            if (const auto AssetNameIt = Value.find("AssetName");
+                AssetNameIt != Value.end() && AssetNameIt->is_string())
+            {
+                LogicalName = AssetNameIt->get<std::string>();
+            }
+            else if (const auto AssetNameIt = Value.find("assetName");
+                     AssetNameIt != Value.end() && AssetNameIt->is_string())
+            {
+                LogicalName = AssetNameIt->get<std::string>();
+            }
+
+            std::string AssetIdText{};
+            if (const auto AssetIdIt = Value.find("AssetId");
+                AssetIdIt != Value.end() && AssetIdIt->is_string())
+            {
+                AssetIdText = AssetIdIt->get<std::string>();
+            }
+            else if (const auto AssetIdIt = Value.find("assetId");
+                     AssetIdIt != Value.end() && AssetIdIt->is_string())
+            {
+                AssetIdText = AssetIdIt->get<std::string>();
+            }
+
+            const std::string NormalizedLogicalName = NormalizeLogicalDependencyName(LogicalName);
+            const auto ParsedId = ::SnAPI::AssetPipeline::AssetId::FromString(AssetIdText);
+            const bool bIsSelf =
+                (!SelfId.IsNull() && ParsedId == SelfId) ||
+                (!SelfLogicalName.empty() && NormalizedLogicalName == SelfLogicalName);
+            if (!bIsSelf && (!ParsedId.IsNull() || !NormalizedLogicalName.empty()))
+            {
+                AppendAssetDependency(
+                    OutDependencies,
+                    ::SnAPI::AssetPipeline::AssetDependencyRef{
+                        .Id = ParsedId,
+                        .LogicalName = NormalizedLogicalName,
+                        .Kind = ::SnAPI::AssetPipeline::EAssetDependencyKind::Required,
+                    });
+            }
+        }
+
+        for (const auto& [_, Child] : Value.items())
+        {
+            CollectJsonAssetDependencies(Child, Depth + 1u, SelfId, SelfLogicalName, OutDependencies);
+        }
+        return;
+    }
+
+    if (Value.is_array())
+    {
+        for (const Json& Child : Value)
+        {
+            CollectJsonAssetDependencies(Child, Depth + 1u, SelfId, SelfLogicalName, OutDependencies);
+        }
+    }
 }
 
 class AuthoredAssetJsonImporter final : public ::SnAPI::AssetPipeline::IAssetImporter
@@ -115,6 +226,13 @@ public:
             AuthoredAsset->SetPersistentIdentity(AssetId, LogicalName);
         }
 
+        std::vector<::SnAPI::AssetPipeline::AssetDependencyRef> AssetDependencies{};
+        Json SourceJson = Json::parse(SourceText, nullptr, false);
+        if (!SourceJson.is_discarded())
+        {
+            CollectJsonAssetDependencies(SourceJson, 0u, AssetId, LogicalName, AssetDependencies);
+        }
+
         auto PayloadResult = BuildSourceTypedPayload(Storage, Ctx, Descriptor->SourcePayloadType);
         Descriptor->Type->RuntimeOps->Destroy(Storage);
         ::operator delete(Storage, std::align_val_t(Descriptor->Type->Align));
@@ -138,6 +256,7 @@ public:
         Item.AssetKind = Descriptor->CookedAssetKind;
         Item.Intermediate = std::move(PayloadResult.value());
         Item.Dependencies.push_back(Source);
+        Item.AssetDependencies = std::move(AssetDependencies);
         Item.Id = AssetId;
         OutItems.push_back(std::move(Item));
         return true;
@@ -168,6 +287,7 @@ public:
     {
         Out.Cooked = Req.Intermediate;
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         return true;
     }
 };
@@ -219,6 +339,7 @@ public:
 
         Out.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadNode(), NodeSerializer::kSchemaVersion, std::move(Bytes));
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         return true;
     }
 };
@@ -270,6 +391,7 @@ public:
 
         Out.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadLevel(), LevelSerializer::kSchemaVersion, std::move(Bytes));
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         return true;
     }
 };
@@ -321,6 +443,7 @@ public:
 
         Out.Cooked = ::SnAPI::AssetPipeline::TypedPayload(PayloadWorld(), WorldSerializer::kSchemaVersion, std::move(Bytes));
         Out.Dependencies = Req.Dependencies;
+        Out.AssetDependencies = Req.AssetDependencies;
         return true;
     }
 };

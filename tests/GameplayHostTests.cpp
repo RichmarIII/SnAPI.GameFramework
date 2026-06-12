@@ -229,6 +229,20 @@ GameRuntimeSettings MakeNetworkedGameplaySettings(const SnAPI::Networking::ESess
     Settings.Networking = Net;
     return Settings;
 }
+
+/**
+ * @brief Reserve one ephemeral UDP port for a short-lived listen-server bootstrap test.
+ * @return Port assigned by the OS.
+ */
+std::uint16_t ReserveUdpPort()
+{
+    SnAPI::Networking::UdpTransportAsio Transport{};
+    REQUIRE(Transport.Open(SnAPI::Networking::NetEndpoint{"127.0.0.1", 0}));
+
+    const SnAPI::Networking::NetEndpoint Endpoint = Transport.LocalEndpoint();
+    REQUIRE(Endpoint.Port != 0);
+    return Endpoint.Port;
+}
 #endif
 
 } // namespace
@@ -384,5 +398,42 @@ TEST_CASE("GameplayHost emits connection lifecycle callbacks from networking ses
     Host->Tick(0.0f);
     REQUIRE(GamePtr->ConnectionRemovedCalls == 1);
     REQUIRE(GamePtr->LastConnectionRemoved == kConnectionHandle);
+}
+
+TEST_CASE("GameplayHost listen-server startup keeps exactly one local player for the hosted client leg")
+{
+    RegisterBuiltinTypes();
+
+    GameRuntime Runtime{};
+    GameRuntimeSettings Settings{};
+    Settings.WorldName = "ListenGameplayHostStartupWorld";
+    Settings.RegisterBuiltins = true;
+    Settings.Gameplay = GameRuntimeGameplaySettings{};
+
+    GameRuntimeNetworkingSettings Net{};
+    Net.Role = SnAPI::Networking::ESessionRole::ServerAndClient;
+    Net.Net.Threading.UseInternalThreads = false;
+    Net.BindAddress = "127.0.0.1";
+    Net.ConnectAddress = "127.0.0.1";
+    Net.BindPort = ReserveUdpPort();
+    Net.ConnectPort = Net.BindPort;
+    Net.AutoConnect = true;
+    Settings.Networking = Net;
+
+    REQUIRE(Runtime.Init(Settings));
+    REQUIRE(Runtime.Gameplay() != nullptr);
+    REQUIRE(Runtime.Gameplay()->IsListenServer());
+
+    const auto HostedClientConnection = Runtime.World().Networking().PrimaryConnection();
+    REQUIRE(HostedClientConnection.has_value());
+    REQUIRE(Runtime.World().Networking().IsHostedClientConnection(static_cast<std::uint64_t>(*HostedClientConnection)));
+
+    const auto Players = Runtime.Gameplay()->LocalPlayers();
+    REQUIRE(Players.size() == 1);
+
+    NodeHandle PlayerHandle = Players.front();
+    auto* Player = NodeCast<LocalPlayer>(PlayerHandle.Borrowed());
+    REQUIRE(Player != nullptr);
+    CHECK(Player->GetOwnerConnectionId() == 0);
 }
 #endif

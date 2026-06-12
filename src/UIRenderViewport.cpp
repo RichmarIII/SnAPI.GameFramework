@@ -12,11 +12,11 @@
 #include <string>
 #include <utility>
 
-#include <ICamera.hpp>
 #include <UIContext.h>
 #include <UIEvents.h>
 #include <UIImage.h>
 #include <UISizing.h>
+
 
 namespace SnAPI::GameFramework
 {
@@ -47,8 +47,8 @@ UIRenderViewport::UIRenderViewport()
     m_Properties.SetDefaultProperty(EnabledKey, true);
     m_Properties.SetDefaultProperty(RenderScaleKey, 1.0f);
     m_Properties.SetDefaultProperty(ViewportIndexKey, static_cast<std::int32_t>(0));
-    m_Properties.SetDefaultProperty(PassGraphPresetKey, ERenderViewportPassGraphPreset::DefaultWorld);
-    m_Properties.SetDefaultProperty(AutoRegisterPassGraphKey, true);
+    m_Properties.SetDefaultProperty(FeatureProfileKey, EGameRenderFeatureProfile::DefaultWorld);
+    m_Properties.SetDefaultProperty(AutoApplyFeatureProfileKey, true);
 
     m_Properties.SetDefaultProperty(BackgroundColorKey, SnAPI::UI::Color{9, 14, 24, 0});
     m_Properties.SetDefaultProperty(BorderColorKey, SnAPI::UI::Color{72, 96, 128, 220});
@@ -132,7 +132,7 @@ void UIRenderViewport::SetGameRuntime(GameRuntime* Runtime)
     SyncViewport();
 }
 
-void UIRenderViewport::SetViewportCamera(SnAPI::Graphics::ICamera* Camera)
+void UIRenderViewport::SetViewportCamera(GameRenderCamera* Camera)
 {
     if (m_camera == Camera && !m_retainedCamera)
     {
@@ -144,7 +144,7 @@ void UIRenderViewport::SetViewportCamera(SnAPI::Graphics::ICamera* Camera)
     SyncViewport();
 }
 
-void UIRenderViewport::SetViewportCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera)
+void UIRenderViewport::SetViewportCamera(const std::shared_ptr<GameRenderCamera>& Camera)
 {
     if (m_camera == Camera.get() && m_retainedCamera == Camera)
     {
@@ -340,7 +340,7 @@ void UIRenderViewport::ReleaseOwnedResources()
 {
     auto ResetState = [this]() {
         m_ownedViewportId = 0;
-        m_ownedSwapChainId = 0;
+        m_ownedOutputId = 0;
         m_ownedContextId = 0;
         m_presenterImageId = {};
         m_presentedTextureId = {};
@@ -350,7 +350,7 @@ void UIRenderViewport::ReleaseOwnedResources()
         m_pendingRenderWidth = 0;
         m_pendingRenderHeight = 0;
         m_hasPendingRenderExtentResize = false;
-        m_registeredPassGraphPreset.reset();
+        m_appliedFeatureProfile.reset();
     };
 
     if (!m_runtime)
@@ -403,11 +403,6 @@ void UIRenderViewport::ReleaseOwnedResources()
         (void)Renderer.DestroyRenderViewport(m_ownedViewportId);
     }
 
-    if (m_ownedSwapChainId != 0 && Renderer.IsInitialized())
-    {
-        (void)Renderer.DestroySwapChain(m_ownedSwapChainId);
-    }
-
     m_bindingEstablished = false;
     ResetState();
 }
@@ -447,19 +442,15 @@ void UIRenderViewport::SyncViewport()
         {
             (void)Renderer.UnregisterExternalViewportUiTexture(*m_Context, m_presentedTextureId.Value);
         }
-        if (m_ownedSwapChainId != 0)
-        {
-            (void)Renderer.DestroySwapChain(m_ownedSwapChainId);
-            m_ownedSwapChainId = 0;
-        }
         m_ownedViewportId = 0;
+        m_ownedOutputId = 0;
         m_bindingEstablished = false;
         m_appliedRenderWidth = 0;
         m_appliedRenderHeight = 0;
         m_pendingRenderWidth = 0;
         m_pendingRenderHeight = 0;
         m_hasPendingRenderExtentResize = false;
-        m_registeredPassGraphPreset.reset();
+        m_appliedFeatureProfile.reset();
     }
 
     if (m_ownedContextId == 0)
@@ -545,83 +536,46 @@ void UIRenderViewport::SyncViewport()
         RenderHeight = DesiredRenderHeight;
     }
 
-    if (m_camera && RenderHeight > 0u)
-    {
-        m_camera->Aspect(static_cast<float>(RenderWidth) / static_cast<float>(RenderHeight));
-    }
 
     if (m_ownedViewportId == 0)
     {
         std::uint64_t NewViewportId = 0;
+        const auto ViewportCamera = m_retainedCamera;
         if (!Renderer.CreateRenderViewport(
-                Name, m_Rect.X, m_Rect.Y, m_Rect.W, m_Rect.H, RenderWidth, RenderHeight, m_camera, EnabledValue, NewViewportId))
+                Name, m_Rect.X, m_Rect.Y, m_Rect.W, m_Rect.H, RenderWidth, RenderHeight, ViewportCamera, EnabledValue, NewViewportId))
         {
             return;
         }
 
         m_ownedViewportId = NewViewportId;
+        m_ownedOutputId = NewViewportId;
         m_appliedRenderWidth = RenderWidth;
         m_appliedRenderHeight = RenderHeight;
         m_pendingRenderWidth = RenderWidth;
         m_pendingRenderHeight = RenderHeight;
         m_hasPendingRenderExtentResize = false;
-        m_registeredPassGraphPreset.reset();
+        m_appliedFeatureProfile.reset();
     }
 
-    if (m_ownedSwapChainId == 0)
+    if (m_ownedViewportId != 0)
     {
-        std::uint64_t NewSwapChainId = 0;
-        if (!Renderer.CreateRenderTargetSwapChain(RenderWidth, RenderHeight, NewSwapChainId, 1))
-        {
-            if (m_ownedViewportId != 0)
-            {
-                (void)Renderer.DestroyRenderViewport(m_ownedViewportId);
-                m_ownedViewportId = 0;
-            }
-            m_bindingEstablished = false;
-            m_registeredPassGraphPreset.reset();
-            return;
-        }
-        m_ownedSwapChainId = NewSwapChainId;
-    }
-
-    if (m_ownedViewportId != 0 && m_ownedSwapChainId != 0)
-    {
-        if (!Renderer.AssignSwapChainToRenderViewport(m_ownedViewportId, m_ownedSwapChainId))
-        {
-            (void)Renderer.DestroySwapChain(m_ownedSwapChainId);
-            m_ownedSwapChainId = 0;
-
-            std::uint64_t NewSwapChainId = 0;
-            if (!Renderer.CreateRenderTargetSwapChain(RenderWidth, RenderHeight, NewSwapChainId, 1))
-            {
-                return;
-            }
-
-            m_ownedSwapChainId = NewSwapChainId;
-            if (!Renderer.AssignSwapChainToRenderViewport(m_ownedViewportId, m_ownedSwapChainId))
-            {
-                return;
-            }
-        }
-
         const std::int32_t StyledViewportIndex = GetStyledProperty(ViewportIndexKey, static_cast<std::int32_t>(0));
         if (StyledViewportIndex >= 0)
         {
             (void)Renderer.SetRenderViewportIndex(m_ownedViewportId, static_cast<std::size_t>(StyledViewportIndex));
         }
 
-        const bool AutoRegisterPassGraph = GetStyledProperty(AutoRegisterPassGraphKey, true);
-        const auto Preset = GetStyledProperty(PassGraphPresetKey, ERenderViewportPassGraphPreset::DefaultWorld);
-        if (!AutoRegisterPassGraph || Preset == ERenderViewportPassGraphPreset::None)
+        const bool AutoApplyFeatureProfile = GetStyledProperty(AutoApplyFeatureProfileKey, true);
+        const auto Profile = GetStyledProperty(FeatureProfileKey, EGameRenderFeatureProfile::DefaultWorld);
+        if (!AutoApplyFeatureProfile || Profile == EGameRenderFeatureProfile::None)
         {
-            m_registeredPassGraphPreset.reset();
+            m_appliedFeatureProfile.reset();
         }
-        else if (!m_registeredPassGraphPreset.has_value() || *m_registeredPassGraphPreset != Preset)
+        else if (!m_appliedFeatureProfile.has_value() || *m_appliedFeatureProfile != Profile)
         {
-            if (Renderer.RegisterRenderViewportPassGraph(m_ownedViewportId, Preset))
+            if (Renderer.ApplyRenderViewportFeatureProfile(m_ownedViewportId, Profile))
             {
-                m_registeredPassGraphPreset = Preset;
+                m_appliedFeatureProfile = Profile;
             }
         }
     }
@@ -651,15 +605,11 @@ void UIRenderViewport::SyncViewport()
         ChildContext->SetViewportSize(std::max(m_Rect.W, 1.0f), std::max(m_Rect.H, 1.0f));
     }
 
+    const auto ViewportCamera = m_retainedCamera;
     const bool Updated = Renderer.UpdateRenderViewport(
-        m_ownedViewportId, Name, m_Rect.X, m_Rect.Y, m_Rect.W, m_Rect.H, RenderWidth, RenderHeight, m_camera, EnabledValue);
+        m_ownedViewportId, Name, m_Rect.X, m_Rect.Y, m_Rect.W, m_Rect.H, RenderWidth, RenderHeight, ViewportCamera, EnabledValue);
     if (Updated && (ApplyRenderExtent || m_appliedRenderWidth == 0 || m_appliedRenderHeight == 0))
     {
-        if (m_ownedSwapChainId != 0)
-        {
-            (void)Renderer.ResizeSwapChain(m_ownedSwapChainId, RenderWidth, RenderHeight);
-        }
-
         m_appliedRenderWidth = RenderWidth;
         m_appliedRenderHeight = RenderHeight;
         m_pendingRenderWidth = RenderWidth;

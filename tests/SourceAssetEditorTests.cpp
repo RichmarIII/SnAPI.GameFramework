@@ -1994,6 +1994,157 @@ TEST_CASE("PIE stop clears transient fog nodes created during play", "[Assets][E
 
 #endif
 
+TEST_CASE("Editor asset service creates projects with the structured descriptor schema", "[Assets][Editor][Project]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    EditorServiceContext Context(Host);
+
+    REQUIRE(Host.AssetService.CreateProject(Context, "StructuredEditorProject", Root.Path.string()));
+
+    const std::filesystem::path ProjectRoot = Root.Path / "StructuredEditorProject";
+    const std::filesystem::path ProjectFilePath = ProjectRoot / "project.snproj.json";
+    const std::filesystem::path StartupLevelPath = ProjectRoot / "Assets" / "Levels" / "StarterLevel.level";
+
+    REQUIRE(std::filesystem::exists(ProjectFilePath));
+    REQUIRE(std::filesystem::exists(StartupLevelPath));
+
+    const auto ResolvedProject = ProjectDescriptorService::LoadResolved(ProjectFilePath.string());
+    REQUIRE(ResolvedProject);
+    CHECK(ResolvedProject->Descriptor.Project.Name == "StructuredEditorProject");
+    CHECK(ResolvedProject->Descriptor.Project.DisplayName == "StructuredEditorProject");
+    CHECK(ResolvedProject->Descriptor.Paths.AssetRoot == "Assets");
+    CHECK(ResolvedProject->Descriptor.Startup.StartupLevelAsset == "Levels/StarterLevel.level");
+
+    const auto& CurrentProject = Host.AssetService.CurrentProject();
+    CHECK(CurrentProject.IsLoaded);
+    CHECK(CurrentProject.Name == "StructuredEditorProject");
+    CHECK(std::filesystem::path(CurrentProject.ProjectFilePath).lexically_normal() == ProjectFilePath.lexically_normal());
+    CHECK(std::filesystem::path(CurrentProject.AssetRootDirectory).lexically_normal()
+          == (ProjectRoot / "Assets").lexically_normal());
+
+    const std::string ProjectFileText = ReadTextFile(ProjectFilePath);
+    const nlohmann::ordered_json RootJson = nlohmann::ordered_json::parse(ProjectFileText, nullptr, false);
+    REQUIRE_FALSE(RootJson.is_discarded());
+    CHECK(RootJson.contains("Format"));
+    CHECK(RootJson.contains("Project"));
+    CHECK(RootJson.contains("Paths"));
+    CHECK(RootJson.contains("Startup"));
+    CHECK_FALSE(RootJson.contains("version"));
+    CHECK_FALSE(RootJson.contains("name"));
+}
+
+TEST_CASE("Editor asset service creates plugins with structured starter scaffolding", "[Assets][Editor][Plugin]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    EditorServiceContext Context(Host);
+
+    PluginCreationRequest Request{};
+    Request.PluginName = "StructuredEditorPlugin";
+    Request.ParentDirectory = Root.Path;
+    auto Descriptor = PluginCreationService::BuildDefaultDescriptor(Request.PluginName);
+    REQUIRE(Descriptor);
+    Request.Descriptor = *Descriptor;
+    Request.Code.CreateStarterRuntimeModule = true;
+    Request.Code.RuntimeModuleName = "StructuredEditorPlugin";
+    Request.Code.CreateStarterEditorModule = true;
+    Request.Code.EditorModuleName = "StructuredEditorPluginEditor";
+
+    PluginCreationResult CreateResult{};
+    REQUIRE(Host.AssetService.CreatePlugin(Context, Request, &CreateResult));
+
+    const std::filesystem::path PluginRoot = Root.Path / "StructuredEditorPlugin";
+    const std::filesystem::path PluginFilePath = PluginRoot / PluginDescriptorService::kDefaultPluginFileName;
+
+    REQUIRE(std::filesystem::exists(PluginFilePath));
+    REQUIRE(std::filesystem::exists(PluginRoot / "Code" / "CMakeLists.txt"));
+    REQUIRE(std::filesystem::exists(PluginRoot / "Intermediate" / "Build" / "Generated" / "PluginModules.cmake"));
+    REQUIRE(std::filesystem::exists(CreateResult.RuntimeModuleDirectory));
+    REQUIRE(std::filesystem::exists(CreateResult.EditorModuleDirectory));
+
+    const auto ResolvedPlugin = PluginDescriptorService::LoadResolved(PluginFilePath.string());
+    REQUIRE(ResolvedPlugin);
+    CHECK(ResolvedPlugin->Descriptor.Plugin.Name == "StructuredEditorPlugin");
+    CHECK(ResolvedPlugin->Descriptor.Modules.size() == 2u);
+    CHECK(ResolvedPlugin->Descriptor.Modules[0].Type == EProjectModuleType::Runtime);
+    CHECK(ResolvedPlugin->Descriptor.Modules[1].Type == EProjectModuleType::Editor);
+}
+
+TEST_CASE("Editor asset service adds project and plugin modules with type-specific starter hooks", "[Assets][Editor][Module]")
+{
+    RegisterBuiltinTypes();
+
+    TestEditorHost Host{};
+    TempDir Root{};
+    EditorServiceContext Context(Host);
+
+    REQUIRE(Host.AssetService.CreateProject(Context, "EditorModuleProject", Root.Path.string()));
+    const std::filesystem::path ProjectFilePath = Root.Path / "EditorModuleProject" / "project.snproj.json";
+
+    ModuleCreationRequest ProjectModuleRequest{};
+    ProjectModuleRequest.ModuleName = "GameplayShared";
+    ProjectModuleRequest.ModuleType = EProjectModuleType::Shared;
+    ProjectModuleRequest.PublicDependencies = {"SnAPI.GameFramework"};
+
+    ModuleCreationResult ProjectModuleResult{};
+    REQUIRE(Host.AssetService.CreateProjectModule(Context, ProjectModuleRequest, &ProjectModuleResult));
+    REQUIRE(std::filesystem::exists(ProjectModuleResult.ModuleHeaderPath));
+    REQUIRE(std::filesystem::exists(ProjectModuleResult.ModuleSourcePath));
+    CHECK(ReadTextFile(ProjectModuleResult.ModuleHeaderPath).find("RegisterSharedServices") != std::string::npos);
+
+    ModuleCreationRequest GameplayModuleRequest{};
+    GameplayModuleRequest.ModuleName = "GameplayRuntime";
+    GameplayModuleRequest.ModuleType = EProjectModuleType::Runtime;
+    GameplayModuleRequest.GenerateGameplayBootstrap = true;
+
+    ModuleCreationResult GameplayModuleResult{};
+    REQUIRE(Host.AssetService.CreateProjectModule(Context, GameplayModuleRequest, &GameplayModuleResult));
+    REQUIRE(std::filesystem::exists(GameplayModuleResult.GameHeaderPath));
+    REQUIRE(std::filesystem::exists(GameplayModuleResult.GameModeHeaderPath));
+    CHECK(ReadTextFile(GameplayModuleResult.GameHeaderPath).find("class GameplayRuntimeGame final") != std::string::npos);
+    CHECK(ReadTextFile(GameplayModuleResult.GameModeHeaderPath).find("class GameplayRuntimeGameMode final") !=
+          std::string::npos);
+
+    PluginCreationRequest PluginRequest{};
+    PluginRequest.PluginName = "EditorModulePlugin";
+    PluginRequest.ParentDirectory = Root.Path;
+    auto PluginDescriptor = PluginCreationService::BuildDefaultDescriptor(PluginRequest.PluginName);
+    REQUIRE(PluginDescriptor);
+    PluginRequest.Descriptor = *PluginDescriptor;
+    REQUIRE(Host.AssetService.CreatePlugin(Context, PluginRequest));
+
+    const std::filesystem::path PluginFilePath = Root.Path / "EditorModulePlugin" / PluginDescriptorService::kDefaultPluginFileName;
+
+    PluginModuleCreationRequest PluginModuleRequest{};
+    PluginModuleRequest.PluginFilePath = PluginFilePath;
+    PluginModuleRequest.ModuleName = "EditorModuleDiagnostics";
+    PluginModuleRequest.ModuleType = EProjectModuleType::Developer;
+    PluginModuleRequest.PrivateDependencies = {"SnAPI.GameFramework"};
+
+    PluginModuleCreationResult PluginModuleResult{};
+    REQUIRE(Host.AssetService.CreatePluginModule(Context, PluginModuleRequest, &PluginModuleResult));
+    REQUIRE(std::filesystem::exists(PluginModuleResult.ModuleHeaderPath));
+    REQUIRE(std::filesystem::exists(PluginModuleResult.ModuleSourcePath));
+    CHECK(ReadTextFile(PluginModuleResult.ModuleHeaderPath).find("RegisterDeveloperTools") != std::string::npos);
+
+    const auto ResolvedProject = ProjectDescriptorService::LoadResolved(ProjectFilePath.string());
+    REQUIRE(ResolvedProject);
+    CHECK(std::any_of(ResolvedProject->Descriptor.Modules.begin(),
+                      ResolvedProject->Descriptor.Modules.end(),
+                      [](const ProjectModuleDescriptor& Module) { return Module.Name == "GameplayShared"; }));
+
+    const auto ResolvedPlugin = PluginDescriptorService::LoadResolved(PluginFilePath.string());
+    REQUIRE(ResolvedPlugin);
+    CHECK(std::any_of(ResolvedPlugin->Descriptor.Modules.begin(),
+                      ResolvedPlugin->Descriptor.Modules.end(),
+                      [](const ProjectModuleDescriptor& Module) { return Module.Name == "EditorModuleDiagnostics"; }));
+}
+
 TEST_CASE("Editor asset service routes Conduit source assets through the Conduit document service", "[Assets][Editor][Source][Conduit]")
 {
     RegisterBuiltinTypes();

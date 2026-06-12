@@ -24,8 +24,9 @@ enum class ERunMode : std::uint8_t
 
 struct RuntimeOptions
 {
-    std::string ProjectFilePath{};
-    ERunMode Mode = ERunMode::Listen;
+    std::string BootstrapPath{};
+    std::string ProjectLabel{};
+    ERunMode Mode = ERunMode::Local;
     std::string BindAddress = "0.0.0.0";
     std::string HostAddress = "127.0.0.1";
     std::uint16_t Port = 7777;
@@ -46,18 +47,22 @@ void HandleTerminationSignal(const int)
 
 void PrintUsage(const char* Executable)
 {
-    std::cerr << "Usage: " << Executable << " [options] <project.snproj.json>\n"
+    std::cerr << "Usage: " << Executable << " [options] [project.snproj.json|bootstrap-path]\n"
               << "Options:\n"
-              << "  --project <path>   Project file path (alternative to positional arg)\n"
-              << "  --local            Run without networking\n"
+              << "  --project <path>   Project descriptor or packaged bootstrap path\n"
+              << "  --local            Run without networking (default)\n"
               << "  --server           Run as a dedicated server\n"
               << "  --client           Run as a network client\n"
-              << "  --listen           Run as a listen server (default)\n"
+              << "  --listen           Run as a listen server\n"
               << "  --bind <address>   Local bind address for networking\n"
               << "  --host <address>   Remote host address for client/listen connect\n"
               << "  --port <port>      Network port (default: 7777)\n"
               << "  --headless         Disable window, renderer UI bootstrap, and input bootstrap\n"
-              << "  --help             Show this help text\n";
+              << "  --help             Show this help text\n"
+              << "\n"
+              << "When launched from a packaged build, the runtime auto-discovers\n"
+              << "Config/ResolvedRuntimeConfig.json relative to the executable, so\n"
+              << "double-click launch does not need an explicit project path.\n";
 }
 
 [[nodiscard]] std::optional<std::uint16_t> ParsePort(const std::string_view Value)
@@ -91,7 +96,7 @@ void PrintUsage(const char* Executable)
                 OutError = "Missing value for --project";
                 return std::nullopt;
             }
-            Options.ProjectFilePath = argv[++Index];
+            Options.BootstrapPath = argv[++Index];
             continue;
         }
 
@@ -161,29 +166,89 @@ void PrintUsage(const char* Executable)
             OutError = "Unknown option: " + std::string(Arg);
             return std::nullopt;
         }
-        if (!Options.ProjectFilePath.empty())
+        if (!Options.BootstrapPath.empty())
         {
-            OutError = "Multiple project file arguments were provided";
+            OutError = "Multiple bootstrap path arguments were provided";
             return std::nullopt;
         }
 
-        Options.ProjectFilePath = std::string(Arg);
-    }
-
-    if (Options.ProjectFilePath.empty())
-    {
-        OutError = "A project file path is required";
-        return std::nullopt;
+        Options.BootstrapPath = std::string(Arg);
     }
 
     return Options;
 }
 
+[[nodiscard]] std::filesystem::path ResolveExecutablePath(const char* Executable)
+{
+#if defined(__linux__)
+    std::error_code ProcError{};
+    const std::filesystem::path ProcSelfPath = std::filesystem::read_symlink("/proc/self/exe", ProcError);
+    if (!ProcError && !ProcSelfPath.empty())
+    {
+        return ProcSelfPath.lexically_normal();
+    }
+#endif
+
+    if (Executable == nullptr || *Executable == '\0')
+    {
+        return {};
+    }
+
+    std::error_code Error{};
+    const std::filesystem::path Candidate(Executable);
+    const std::filesystem::path Absolute = std::filesystem::absolute(Candidate, Error);
+    if (!Error)
+    {
+        return Absolute.lexically_normal();
+    }
+
+    return Candidate.lexically_normal();
+}
+
+[[nodiscard]] std::optional<std::filesystem::path> DiscoverPackagedBootstrapPath(const char* Executable)
+{
+    const std::filesystem::path ExecutablePath = ResolveExecutablePath(Executable);
+    const std::filesystem::path ExecutableDirectory = ExecutablePath.parent_path();
+    const std::array<std::filesystem::path, 3> Candidates{
+        ExecutableDirectory / ".." / "Config" / "ResolvedRuntimeConfig.json",
+        ExecutableDirectory / "Config" / "ResolvedRuntimeConfig.json",
+        std::filesystem::current_path() / "Config" / "ResolvedRuntimeConfig.json",
+    };
+
+    for (const std::filesystem::path& Candidate : Candidates)
+    {
+        std::error_code Error{};
+        if (std::filesystem::exists(Candidate, Error) && !Error)
+        {
+            return Candidate.lexically_normal();
+        }
+    }
+
+    return std::nullopt;
+}
+
+[[nodiscard]] std::string ProjectLabelFromBootstrapPath(const std::string_view BootstrapPath)
+{
+    const std::filesystem::path Path(BootstrapPath);
+    if (Path.filename() == "project.snproj.json")
+    {
+        return Path.parent_path().filename().string();
+    }
+    if (Path.filename() == "ResolvedRuntimeConfig.json")
+    {
+        return Path.parent_path().parent_path().filename().string();
+    }
+    if (!Path.stem().empty())
+    {
+        return Path.stem().string();
+    }
+    return {};
+}
+
 [[nodiscard]] std::string RuntimeWindowTitle(const RuntimeOptions& Options)
 {
-    const std::filesystem::path ProjectPath(Options.ProjectFilePath);
     const std::string ProjectName =
-        ProjectPath.stem().empty() ? std::string("SnAPI.GameFramework.Runtime") : ProjectPath.stem().string();
+        Options.ProjectLabel.empty() ? std::string("SnAPI.GameFramework.Runtime") : Options.ProjectLabel;
 
     switch (Options.Mode)
     {
@@ -281,7 +346,7 @@ void PrintUsage(const char* Executable)
     if (Options.WantsWindow())
     {
         GameRuntimeRendererSettings RendererSettings{};
-        RendererSettings.CreateGraphicsApi = true;
+        RendererSettings.CreateRendererRuntime = true;
         RendererSettings.CreateWindow = true;
         RendererSettings.WindowTitle = RuntimeWindowTitle(Options);
         RendererSettings.WindowWidth = 1920.0f;
@@ -289,11 +354,14 @@ void PrintUsage(const char* Executable)
         RendererSettings.Resizable = true;
         RendererSettings.Visible = true;
         RendererSettings.FullScreen = true;
-        RendererSettings.CreateDefaultLighting = true;
-        RendererSettings.RegisterDefaultPassGraph = true;
+        // Project/bootstrap runtime should render authored scene lighting exactly as packaged.
+        // Fallback lights are useful for raw renderer demos, but they can win registration order
+        // against authored directional lights and produce the wrong sun direction at runtime.
+        RendererSettings.CreateDefaultLighting = false;
+        RendererSettings.ApplyDefaultFeatureProfile = true;
         RendererSettings.CreateDefaultMaterials = true;
         RendererSettings.PreloadDefaultFont = true;
-        RendererSettings.CreateDefaultEnvironmentProbe = true;
+        RendererSettings.CreateDefaultEnvironmentProbe = false;
         Settings.Renderer = RendererSettings;
     }
 #endif
@@ -332,13 +400,29 @@ int main(int argc, char** argv)
         return 1;
     }
 
+    RuntimeOptions EffectiveOptions = *ParsedOptions;
+    if (EffectiveOptions.BootstrapPath.empty())
+    {
+        const auto DiscoveredBootstrapPath = DiscoverPackagedBootstrapPath(argv[0]);
+        if (!DiscoveredBootstrapPath)
+        {
+            std::cerr << "A project/bootstrap path is required unless the runtime is launched from a packaged build "
+                         "that contains Config/ResolvedRuntimeConfig.json.\n";
+            PrintUsage(argv[0]);
+            return 1;
+        }
+
+        EffectiveOptions.BootstrapPath = DiscoveredBootstrapPath->string();
+    }
+    EffectiveOptions.ProjectLabel = ProjectLabelFromBootstrapPath(EffectiveOptions.BootstrapPath);
+
     std::signal(SIGINT, HandleTerminationSignal);
     std::signal(SIGTERM, HandleTerminationSignal);
 
     SnAPI::GameFramework::GameProjectRuntime RuntimeApp{};
     SnAPI::GameFramework::GameProjectRuntimeSettings Settings{};
-    Settings.ProjectFilePath = ParsedOptions->ProjectFilePath;
-    Settings.Runtime = BuildRuntimeSettings(*ParsedOptions);
+    Settings.BootstrapPath = EffectiveOptions.BootstrapPath;
+    Settings.Runtime = BuildRuntimeSettings(EffectiveOptions);
 
     if (const auto InitResult = RuntimeApp.Initialize(Settings); !InitResult)
     {

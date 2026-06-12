@@ -10,10 +10,6 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class TAAPass;
-}
 
 namespace SnAPI::GameFramework
 {
@@ -60,8 +56,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
     float m_blendFactor = 0.06f;
@@ -71,7 +67,7 @@ private:
     float m_jitterScale = 1.0f;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 } // namespace SnAPI::GameFramework

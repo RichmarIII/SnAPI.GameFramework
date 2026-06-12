@@ -1060,10 +1060,10 @@ TEST_CASE("Conduit editor palette includes reflected world and subsystem instanc
               return Entry.StableId == "instance.method.RendererSystem.Settings";
           }) != Palette.end());
     CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
-              return Entry.StableId == "instance.field.read.RendererBootstrapSettings.CreateGraphicsApi";
+              return Entry.StableId == "instance.field.read.RendererBootstrapSettings.CreateRendererRuntime";
           }) != Palette.end());
     CHECK(std::find_if(Palette.begin(), Palette.end(), [](const PaletteEntryView& Entry) {
-              return Entry.StableId == "instance.field.write.RendererBootstrapSettings.CreateGraphicsApi";
+              return Entry.StableId == "instance.field.write.RendererBootstrapSettings.CreateRendererRuntime";
           }) != Palette.end());
 
     auto QueueTextNodeResult = Service.SpawnNode("instance.method.RendererSystem.QueueText");

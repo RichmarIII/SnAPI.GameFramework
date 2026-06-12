@@ -1,18 +1,31 @@
 #include "DirectionalLightComponent.h"
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-
-#include "Profiling.h"
-
-#include <algorithm>
-#include <cmath>
-
-#include <LightManager.hpp>
-#include <TLightFor.hpp>
 
 #include "BaseNode.h"
 #include "IWorld.h"
 #include "RendererSystem.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+
+#include <SnAPI/Math/LinearAlgebra.h>
+#include <SnAPI/Math/SemanticTransforms.h>
+#include <SnAPI/Math/Types.h>
+
+namespace SnAPI::Renderer
+{
+using Scalar = SnAPI::Math::Scalar;
+using Vec2 = SnAPI::Math::Vec2;
+using Vec3 = SnAPI::Math::Vec3;
+using Vec4 = SnAPI::Math::Vec4;
+using Point3 = SnAPI::Math::Point3D;
+using Quat = SnAPI::Math::Quat;
+using Matrix4 = SnAPI::Math::Matrix4;
+using Transform = SnAPI::Math::Transform;
+} // namespace SnAPI::Renderer
+
+#include "Lights/TLightFor.h"
 
 namespace SnAPI::GameFramework
 {
@@ -28,37 +41,48 @@ float ClampNonNegative(const float Value)
     return std::max(0.0f, Value);
 }
 
-SnAPI::Vector3DF ToRendererVector3(const Vec3& Value)
+SnAPI::Renderer::Vec3 ToRendererVector3(const Vec3& Value)
 {
-    return SnAPI::Vector3DF{
-        static_cast<float>(Value.x()),
-        static_cast<float>(Value.y()),
-        static_cast<float>(Value.z())};
+    SnAPI::Renderer::Vec3 Result = SnAPI::Renderer::Vec3::Zero();
+    Result << static_cast<double>(Value.x()),
+        static_cast<double>(Value.y()),
+        static_cast<double>(Value.z());
+    return Result;
 }
 
-SnAPI::Vector3DF NormalizeDirectionOrDefault(const Vec3& Value)
+SnAPI::Renderer::Vec3 NormalizeDirectionOrDefault(const Vec3& Value)
 {
-    if (!IsFiniteVec3(Value))
+    SnAPI::Renderer::Vec3 Direction = SnAPI::Renderer::Vec3::Zero();
+    if (IsFiniteVec3(Value))
     {
-        return SnAPI::Vector3DF(-0.5f, -1.0f, -0.3f).normalized();
+        Direction = ToRendererVector3(Value);
     }
-
-    SnAPI::Vector3DF Direction = ToRendererVector3(Value);
-    if (Direction.squaredNorm() <= 0.000001f)
+    if (Direction.squaredNorm() <= 0.000001)
     {
-        Direction = SnAPI::Vector3DF(-0.5f, -1.0f, -0.3f);
+        Direction << -0.5, -1.0, -0.3;
     }
     return Direction.normalized();
 }
 
-SnAPI::ColorF ToRendererColor(const Vec3& Value)
+std::array<float, 3> ToRendererColor(const Vec3& Value)
 {
     const Vec3 Safe = IsFiniteVec3(Value) ? Value : Vec3{1.0, 1.0, 1.0};
-    return SnAPI::ColorF(
+    return {
         ClampNonNegative(static_cast<float>(Safe.x())),
         ClampNonNegative(static_cast<float>(Safe.y())),
-        ClampNonNegative(static_cast<float>(Safe.z())),
-        1.0f);
+        ClampNonNegative(static_cast<float>(Safe.z()))};
+}
+
+SnAPI::Renderer::DirectionalLightDesc BuildDirectionalLightDesc(
+    const DirectionalLightComponent::Settings& Settings)
+{
+    return SnAPI::Renderer::DirectionalLightDesc{
+        .DebugName = "DirectionalLightComponent",
+        .DirectionWorld = NormalizeDirectionOrDefault(Settings.Direction),
+        .ColorLinear = ToRendererColor(Settings.Color),
+        .IlluminanceLux = ClampNonNegative(Settings.Intensity),
+        .Mobility = SnAPI::Renderer::ERenderMobility::Dynamic,
+        .CastsShadows = Settings.CastShadows};
 }
 
 #if defined(WITH_EDITOR) && WITH_EDITOR
@@ -82,20 +106,19 @@ bool IsDirectionalLightSettingsField(const std::string_view Name)
 #endif
 } // namespace
 
-SnAPI::Graphics::DirectionalLight* DirectionalLightComponent::Light()
+GameRenderLight* DirectionalLightComponent::Light()
 {
-    return m_light.get();
+    return m_light.Valid() ? &m_light : nullptr;
 }
 
-const SnAPI::Graphics::DirectionalLight* DirectionalLightComponent::Light() const
+const GameRenderLight* DirectionalLightComponent::Light() const
 {
-    return m_light.get();
+    return m_light.Valid() ? &m_light : nullptr;
 }
 
 void DirectionalLightComponent::OnCreate()
 {
-    EnsureLightRegistered();
-    ApplyLightSettings();
+    UpdateLight(0.0f);
 }
 
 void DirectionalLightComponent::OnDestroy()
@@ -116,12 +139,10 @@ void DirectionalLightComponent::EditorTick(const float DeltaSeconds)
 
 void DirectionalLightComponent::EditorOnPropertyChanged(const std::string_view Name)
 {
-    if (!IsDirectionalLightSettingsField(Name))
+    if (IsDirectionalLightSettingsField(Name))
     {
-        return;
+        UpdateLight(0.0f);
     }
-
-    UpdateLight(0.0f);
 }
 #endif
 
@@ -157,74 +178,56 @@ void DirectionalLightComponent::EnsureLightRegistered()
         return;
     }
 
+    if (m_light.Valid())
+    {
+        return;
+    }
+
     auto* Renderer = ResolveRendererSystem();
     if (!Renderer || !Renderer->IsInitialized())
     {
         return;
     }
 
-    auto* Manager = Renderer->EnsureLightManager();
-    if (!Manager)
-    {
-        return;
-    }
-
-    if (!m_light)
-    {
-        m_light = Manager->CreateDirectionalLight();
-        return;
-    }
-
-    const auto& RegisteredLights = Manager->GetAllLights();
-    const bool AlreadyRegistered = std::any_of(
-        RegisteredLights.begin(), RegisteredLights.end(), [this](const auto& Existing) {
-            return Existing.get() == m_light.get();
-        });
-    if (!AlreadyRegistered)
-    {
-        Manager->AddLight(m_light);
-    }
+    auto Desc = BuildDirectionalLightDesc(m_settings);
+    (void)Renderer->CreateDirectionalRenderLight(Desc, m_light, Desc.DebugName);
 }
 
 void DirectionalLightComponent::ApplyLightSettings()
 {
-    if (!m_light)
+    if (!m_light.Valid())
     {
         return;
     }
 
-    m_light->SetDirection(NormalizeDirectionOrDefault(m_settings.Direction));
-    m_light->SetColor(ToRendererColor(m_settings.Color));
-    m_light->SetIntensity(ClampNonNegative(m_settings.Intensity));
-    m_light->SetCastsShadows(m_settings.CastShadows);
-    m_light->SetCascadeCount(m_settings.CascadeCount);
-    m_light->SetShadowMapSize(std::max(1u, m_settings.ShadowMapSize));
-    m_light->SetShadowBias(ClampNonNegative(m_settings.ShadowBias));
-    m_light->SetShadowFarDistance(std::max(1.0f, m_settings.ShadowFarDistance));
-    m_light->SetSoftnessFactor(ClampNonNegative(m_settings.SoftnessFactor));
-    m_light->SetFeature(SnAPI::Graphics::DirectionalLightContract::Feature::SoftShadows, m_settings.SoftShadows);
-    m_light->SetFeature(SnAPI::Graphics::DirectionalLightContract::Feature::ContactHardening, m_settings.ContactHardening);
-    m_light->SetFeature(SnAPI::Graphics::DirectionalLightContract::Feature::CascadeBlending, m_settings.CascadeBlending);
+    auto* Renderer = ResolveRendererSystem();
+    if (!Renderer || !Renderer->IsInitialized())
+    {
+        return;
+    }
+
+    auto Desc = BuildDirectionalLightDesc(m_settings);
+    if (!Renderer->SetDirectionalRenderLight(m_light, Desc))
+    {
+        m_light.Reset();
+    }
 }
 
 void DirectionalLightComponent::ReleaseLight()
 {
-    if (!m_light)
+    if (!m_light.Valid())
     {
         return;
     }
 
-    if (auto* Renderer = ResolveRendererSystem(); Renderer && Renderer->IsInitialized())
+    auto* Renderer = ResolveRendererSystem();
+    if (Renderer && Renderer->IsInitialized())
     {
-        if (auto* Manager = Renderer->LightManager())
-        {
-            Manager->RemoveLight(m_light.get());
-        }
+        (void)Renderer->DestroyRenderLight(m_light);
+        return;
     }
 
-    m_light.reset();
+    m_light.Reset();
 }
 
 } // namespace SnAPI::GameFramework
-
-#endif // SNAPI_GF_ENABLE_RENDERER
