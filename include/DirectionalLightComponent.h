@@ -9,14 +9,8 @@
 #include "Math.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-template<typename Contract>
-class TLightFor;
-struct DirectionalLightContract;
-using DirectionalLight = TLightFor<DirectionalLightContract>;
-class LightManager;
-} // namespace SnAPI::Graphics
+#include "Rendering/GameRenderLight.h"
+
 
 namespace SnAPI::GameFramework
 {
@@ -28,18 +22,18 @@ class RendererSystem;
  * @brief Component that owns and synchronizes a renderer directional light.
  *
  * `DirectionalLightComponent` owns one renderer directional-light object and keeps it
- * registered with the world's `RendererSystem` light manager while the component is enabled.
+ * registered with the world's `RendererSystem` while the component is enabled.
  * The component is data-driven: every update pushes the current `Settings` state into the
  * renderer light rather than requiring gameplay code to touch the renderer directly.
  *
  * Core semantics:
  * - `Settings::Enabled` controls whether a renderer light should exist at all
- * - disabling releases the renderer light registration and owned shared handle
- * - enabling re-registers the light if the renderer/light manager is available
+ * - disabling releases the renderer light registration and owned handle
+ * - enabling re-registers the light if the renderer is available
  * - color, intensity, shadow, and cascade settings are clamped to safe non-negative ranges before upload
  *
  * Ownership and lifetime:
- * - The component owns a shared handle to the renderer light it creates.
+ * - The component owns the renderer light record it creates.
  * - `Light()` returns a non-owning pointer that becomes invalid after `OnDestroy()` or `ReleaseLight()`.
  *
  * Threading model:
@@ -107,9 +101,9 @@ public:
     }
 
     /** @brief Access the owned renderer light. @return Non-owning light pointer or `nullptr` when not registered. */
-    SnAPI::Graphics::DirectionalLight* Light();
+    GameRenderLight* Light();
     /** @brief Access the owned renderer light (const). @return Non-owning light pointer or `nullptr` when not registered. */
-    const SnAPI::Graphics::DirectionalLight* Light() const;
+    const GameRenderLight* Light() const;
 
     /** @brief Register the light if enabled and apply current settings. */
     void OnCreate();
@@ -132,7 +126,7 @@ private:
     void UpdateLight(float DeltaSeconds);
 
     Settings m_settings{}; /**< @brief Runtime light settings. */
-    std::shared_ptr<SnAPI::Graphics::DirectionalLight> m_light{}; /**< @brief Owned/shared renderer directional light handle. */
+    GameRenderLight m_light{}; /**< @brief Owned Renderer.New directional light record. */
 };
 
 } // namespace SnAPI::GameFramework

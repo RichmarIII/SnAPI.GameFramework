@@ -10,40 +10,36 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class SSRPass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures screen-space reflection passes for one or more viewports.
+ * @brief Data-driven node that configures screen-space reflection feature settings for one or more viewports.
  *
  * `SSRParamsNode` exposes serialized reflection settings through the world graph and applies them
- * to renderer-owned SSR passes when those passes exist. The node is intentionally passive: it does
- * not create render viewports or add SSR to a pass graph. Its job is to wait for matching passes
- * and then push sanitized values into them.
+ * to renderer-owned SSR feature state when the targeted viewport is available. The node is intentionally passive: it does
+ * not create render viewports or add SSR to a feature profile. Its job is to wait until the selected viewport
+ * can accept SSR settings, then push sanitized values into the renderer facade.
  *
  * Viewport selection semantics:
  * - A negative viewport id means "apply to every current renderer viewport".
  * - A non-negative viewport id targets exactly one renderer viewport with the same numeric id.
- * - Pass-graph rebuilds are detected automatically through the renderer revision counter, so the
+ * - Feature-profile rebuilds are detected automatically through the renderer revision counter, so the
  *   node reapplies settings after viewport recreation or preset changes.
  *
  * Ownership and lifetime:
  * - The node owns only its stored parameter values.
- * - SSR passes are owned by the renderer and may disappear when the viewport graph changes.
- * - No pass pointer is retained across frames.
+ * - Renderer feature resources are owned by the renderer and may be recreated when viewport profiles change.
+ * - No renderer-internal pointer is retained across frames.
  *
  * Threading model:
  * - Main-thread only.
  *
  * Performance notes:
  * - Successful steady-state ticks are cheap because the node caches the last viewport selection
- *   and pass-graph revision that accepted the settings.
+ *   and feature-profile revision that accepted the settings.
  * - Applying to all viewports scales linearly with the number of active render viewports.
  *
  * @warning Mutable `Edit*()` accessors only change stored configuration. Renderer state updates
@@ -91,10 +87,10 @@ public:
     /** @brief Read the roughness ceiling accepted by SSR. @return Stored roughness limit. */
     const float& GetMaxRoughness() const;
 
-    /** @brief Access the roughness threshold used by the pass. @return Mutable roughness threshold, clamped non-negative on upload. */
+    /** @brief Access the roughness threshold used by the feature state. @return Mutable roughness threshold, clamped non-negative on upload. */
     SnField(SnKey("RoughnessThreshold"), SnConstGetter(GetRoughnessThreshold))
     float& EditRoughnessThreshold();
-    /** @brief Read the roughness threshold used by the pass. @return Stored roughness threshold. */
+    /** @brief Read the roughness threshold used by the feature state. @return Stored roughness threshold. */
     const float& GetRoughnessThreshold() const;
 
     /** @brief Access the maximum number of forward march steps. @return Mutable step count; values below 1 are clamped to 1. */
@@ -151,11 +147,11 @@ public:
 
     /**
      * @brief Mark the node dirty and attempt an immediate apply.
-     * @remarks Missing renderer/pass state is treated as deferred readiness, not an error.
+     * @remarks Missing renderer feature state is treated as deferred readiness, not an error.
      */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -166,8 +162,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -185,7 +181,7 @@ private:
     std::uint32_t m_temporalDebugMode = 0;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

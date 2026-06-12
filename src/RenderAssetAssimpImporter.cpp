@@ -1850,7 +1850,7 @@ struct MeshImportBuffers
             {
                 return;
             }
-            MeshStreamSourcePayload Stream{};
+            MeshVertexStreamPayload Stream{};
             Stream.Semantic = Semantic;
             Stream.SubIndex = static_cast<uint32_t>(Semantic);
             Stream.Bytes = Bytes;
@@ -1915,7 +1915,7 @@ struct MeshImportBuffers
             {
                 return;
             }
-            MeshStreamSourcePayload Stream{};
+            MeshVertexStreamPayload Stream{};
             Stream.Semantic = Semantic;
             Stream.SubIndex = static_cast<uint32_t>(Semantic);
             Stream.Bytes = Bytes;

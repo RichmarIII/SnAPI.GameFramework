@@ -3,9 +3,6 @@
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
 #include "BaseNode.h"
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-#include "CameraBase.hpp"
-#endif
 #include "CameraComponent.h"
 #include "DirectionalLightComponent.h"
 #if defined(SNAPI_GF_ENABLE_INPUT)
@@ -154,7 +151,7 @@ bool ConfigureVisual(BaseNode& Node, const PrimitiveSpawnSpec& Spec)
     Settings.Visible = true;
     Settings.CastShadows = true;
     Settings.SyncFromTransform = true;
-    Settings.RegisterWithRenderer = true;
+    Settings.RetainInScene = true;
     (void)Mesh.ReloadMesh();
     return true;
 }
@@ -933,9 +930,8 @@ CameraComponent* EditorSceneBootstrap::ActiveCameraComponent() const
     return static_cast<CameraComponent*>(CameraHandle.Borrowed());
 }
 
-SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
+GameRenderCamera* EditorSceneBootstrap::ActiveRenderCamera() const
 {
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     CameraComponent* Camera = ActiveCameraComponent();
     if (!Camera)
     {
@@ -943,45 +939,12 @@ SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
     }
 
     return Camera->Camera();
-#else
-    return nullptr;
-#endif
 }
 
 CameraComponent* EditorSceneBootstrap::ResolveActiveCameraComponent(World& WorldRef) const
 {
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-    auto* ActiveCamera = WorldRef.Renderer().ActiveCamera();
-    if (!ActiveCamera)
-    {
-        return nullptr;
-    }
-
-    CameraComponent* MatchedCamera = nullptr;
-    WorldRef.ForEachNode([&](const NodeHandle&, BaseNode& Node) {
-        if (MatchedCamera != nullptr || !Node.Has<CameraComponent>())
-        {
-            return;
-        }
-
-        auto CameraResult = Node.Component<CameraComponent>();
-        if (!CameraResult)
-        {
-            return;
-        }
-
-        auto* Component = &*CameraResult;
-        if (Component->Camera() == ActiveCamera)
-        {
-            MatchedCamera = Component;
-        }
-    });
-
-    return MatchedCamera;
-#else
     (void)WorldRef;
     return ActiveCameraComponent();
-#endif
 }
 
 } // namespace SnAPI::GameFramework::Editor
@@ -1020,11 +983,6 @@ void EditorSceneBootstrap::SyncActiveCamera(World& WorldRef)
 }
 
 CameraComponent* EditorSceneBootstrap::ActiveCameraComponent() const
-{
-    return nullptr;
-}
-
-SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
 {
     return nullptr;
 }

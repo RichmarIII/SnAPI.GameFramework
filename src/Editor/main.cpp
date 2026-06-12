@@ -17,12 +17,12 @@ int main()
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     GameRuntimeRendererSettings RendererSettings{};
-    RendererSettings.CreateGraphicsApi = true;
+    RendererSettings.CreateRendererRuntime = true;
     RendererSettings.CreateWindow = true;
     RendererSettings.WindowTitle = "SnAPI.GameFramework.Editor";
     RendererSettings.WindowWidth = 1920.0f;
     RendererSettings.WindowHeight = 1080.0f;
-    RendererSettings.RegisterDefaultPassGraph = false;
+    RendererSettings.ApplyDefaultFeatureProfile = false;
     Settings.Runtime.Renderer = RendererSettings;
 #endif
 

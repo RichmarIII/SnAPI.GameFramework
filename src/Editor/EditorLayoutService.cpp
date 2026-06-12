@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <cstdio>
 #include <functional>
 #include <iomanip>
@@ -57,6 +58,24 @@ namespace
         Value.pop_back();
     }
     return Value;
+}
+
+[[nodiscard]] bool IsProjectWelcomeSuppressed()
+{
+    const char* Value = std::getenv("SNAPI_GF_EDITOR_SUPPRESS_PROJECT_WELCOME");
+    if (!Value)
+    {
+        return false;
+    }
+
+    const std::string_view Text{Value};
+    return Text == "1" || Text == "true" || Text == "TRUE" || Text == "yes" || Text == "on";
+}
+
+[[nodiscard]] bool ShouldRequireProjectSelection(const EditorAssetService& AssetService,
+                                                 const bool HasPendingProjectActionRequest)
+{
+    return !IsProjectWelcomeSuppressed() && !AssetService.CurrentProject().IsLoaded && !HasPendingProjectActionRequest;
 }
 
 void ApplySelection(EditorSelectionModel& Model, const NodeHandle& Node)
@@ -1203,7 +1222,7 @@ Result EditorLayoutService::Initialize(EditorServiceContext& Context)
         m_hasPendingConduitClassGraphRequest = true;
     }));
 
-    m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
+    m_layout.SetProjectSelectionRequired(ShouldRequireProjectSelection(*AssetService, m_hasPendingProjectActionRequest));
     ApplyAssetBrowserState(Context);
     return Ok();
 }
@@ -1417,9 +1436,30 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
     }
 
     const bool HasProjectLoaded = AssetService->CurrentProject().IsLoaded;
-    const bool RequireProjectSelection = !HasProjectLoaded && !m_hasPendingProjectActionRequest;
+    const bool RequireProjectSelection = !IsProjectWelcomeSuppressed() && !HasProjectLoaded && !m_hasPendingProjectActionRequest;
     m_layout.SetProjectSelectionRequired(RequireProjectSelection);
     ApplyBuildPanelState(Context);
+
+    if (m_hasPendingSelectionRequest)
+    {
+        const NodeHandle Previous = SelectionService->Model().SelectedNode();
+        const NodeHandle Next = m_pendingSelectionRequest;
+        m_hasPendingSelectionRequest = false;
+        m_pendingSelectionRequest = {};
+
+        if (Previous != Next)
+        {
+            if (CommandService)
+            {
+                (void)CommandService->Execute(Context, std::make_unique<SelectNodeCommand>(Previous, Next));
+            }
+            else
+            {
+                ApplySelection(SelectionService->Model(), Next);
+            }
+        }
+    }
+
     if (!HasProjectLoaded)
     {
         SceneService->Tick(Context, 0.0f);
@@ -1910,26 +1950,6 @@ void EditorLayoutService::Tick(EditorServiceContext& Context, const float DeltaS
         m_hasPendingConduitClassGraphRequest = false;
         (void)ConduitService->SetActiveClassGraph(m_pendingConduitClassGraph);
         m_pendingConduitClassGraph.clear();
-    }
-
-    if (m_hasPendingSelectionRequest)
-    {
-        const NodeHandle Previous = SelectionService->Model().SelectedNode();
-        const NodeHandle Next = m_pendingSelectionRequest;
-        m_hasPendingSelectionRequest = false;
-        m_pendingSelectionRequest = {};
-
-        if (Previous != Next)
-        {
-            if (CommandService)
-            {
-                (void)CommandService->Execute(Context, std::make_unique<SelectNodeCommand>(Previous, Next));
-            }
-            else
-            {
-                ApplySelection(SelectionService->Model(), Next);
-            }
-        }
     }
 
     if (m_hasPendingHierarchyActionRequest)
@@ -3145,7 +3165,7 @@ void EditorLayoutService::RebuildLayout(EditorServiceContext& Context)
 
     if (auto* AssetService = Context.GetService<EditorAssetService>())
     {
-        m_layout.SetProjectSelectionRequired(!AssetService->CurrentProject().IsLoaded && !m_hasPendingProjectActionRequest);
+        m_layout.SetProjectSelectionRequired(ShouldRequireProjectSelection(*AssetService, m_hasPendingProjectActionRequest));
     }
     ApplyAssetBrowserState(Context);
     m_layoutRebuildRequested = false;

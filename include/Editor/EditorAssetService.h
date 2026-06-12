@@ -748,7 +748,7 @@ private:
     ProjectInfo m_currentProject{};
     NodeHandle m_loadedDefaultRenderSettingsNode{};
     bool m_defaultRenderSettingsApplyPending = false;
-    std::uint64_t m_defaultRenderSettingsLastPassGraphRevision = 0;
+    std::uint64_t m_defaultRenderSettingsLastFeatureRevision = 0;
 
     std::unique_ptr<::SnAPI::GameFramework::World> m_assetEditorWorld{};
     NodeHandle m_assetEditorRootHandle{};

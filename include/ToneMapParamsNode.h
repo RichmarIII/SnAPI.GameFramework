@@ -10,22 +10,18 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class ToneMapPass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures tone-mapping passes for one or more viewports.
+ * @brief Data-driven node that configures tone-mapping feature settings for one or more viewports.
  *
- * `ToneMapParamsNode` stores output-transform parameters for the renderer's tone-map pass and
- * uploads them when the targeted viewport already contains such a pass. The node is passive with
- * respect to renderer setup: it does not create the pass graph and does not guarantee that a tone
- * map pass exists. Instead, it retries until the renderer is ready.
+ * `ToneMapParamsNode` stores output-transform parameters for the renderer's tone-map feature state and
+ * uploads them when the targeted viewport can accept tone-map settings. The node is passive with
+ * respect to renderer setup: it does not create the feature profile and does not guarantee that tone-map
+ * feature resources exist. Instead, it retries until the renderer is ready.
  *
  * Core semantics:
  * - Negative viewport ids target all current render viewports.
@@ -36,7 +32,7 @@ namespace SnAPI::GameFramework
  *
  * Ownership and lifetime:
  * - The node owns only serialized tone-map parameters.
- * - Tone-map passes are renderer-owned resources borrowed transiently during application.
+ * - Tone-map feature state is renderer-owned and updated through the renderer facade.
  *
  * Threading model:
  * - Main-thread only.
@@ -154,11 +150,11 @@ public:
 
     /**
      * @brief Mark the node dirty and attempt an initial tone-map upload.
-     * @remarks Safe before viewport readiness; missing passes simply cause future retries.
+     * @remarks Safe before viewport readiness; missing renderer feature state simply cause future retries.
      */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -169,8 +165,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -190,7 +186,7 @@ private:
     bool m_enableCompare = false;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

@@ -6,15 +6,12 @@
 
 #include <vector>
 
-namespace SnAPI::Graphics
-{
-class ICamera;
-} // namespace SnAPI::Graphics
 
 namespace SnAPI::GameFramework
 {
 class CameraComponent;
 class GameRuntime;
+class GameRenderCamera;
 class World;
 } // namespace SnAPI::GameFramework
 
@@ -94,7 +91,7 @@ public:
      * @brief Access the currently tracked render-camera interface.
      * @return Non-owning pointer or `nullptr` when no active camera is available.
      */
-    [[nodiscard]] SnAPI::Graphics::ICamera* ActiveRenderCamera() const;
+    [[nodiscard]] GameRenderCamera* ActiveRenderCamera() const;
 
 private:
     [[nodiscard]] CameraComponent* ResolveActiveCameraComponent(World& WorldRef) const;

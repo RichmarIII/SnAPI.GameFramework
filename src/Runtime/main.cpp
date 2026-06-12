@@ -346,7 +346,7 @@ void PrintUsage(const char* Executable)
     if (Options.WantsWindow())
     {
         GameRuntimeRendererSettings RendererSettings{};
-        RendererSettings.CreateGraphicsApi = true;
+        RendererSettings.CreateRendererRuntime = true;
         RendererSettings.CreateWindow = true;
         RendererSettings.WindowTitle = RuntimeWindowTitle(Options);
         RendererSettings.WindowWidth = 1920.0f;
@@ -358,7 +358,7 @@ void PrintUsage(const char* Executable)
         // Fallback lights are useful for raw renderer demos, but they can win registration order
         // against authored directional lights and produce the wrong sun direction at runtime.
         RendererSettings.CreateDefaultLighting = false;
-        RendererSettings.RegisterDefaultPassGraph = true;
+        RendererSettings.ApplyDefaultFeatureProfile = true;
         RendererSettings.CreateDefaultMaterials = true;
         RendererSettings.PreloadDefaultFont = true;
         RendererSettings.CreateDefaultEnvironmentProbe = false;

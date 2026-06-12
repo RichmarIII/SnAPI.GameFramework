@@ -10,51 +10,47 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class SSAOPass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures SSAO render passes for one or more viewports.
+ * @brief Data-driven node that configures SSAO feature settings for one or more viewports.
  *
  * `SSAOParamsNode` stores screen-space ambient occlusion tuning values in the world graph and
- * pushes them into renderer-owned SSAO passes when those passes are available. The node does
- * not create viewports, swapchains, or pass graphs. Instead, it retries application until the
- * selected render viewport already exposes an SSAO pass.
+ * pushes them into renderer-owned SSAO feature state when the targeted viewport is available. The node does
+ * not create viewports, render-target outputs, or feature profiles. Instead, it retries application until the
+ * selected render viewport can accept SSAO settings.
  *
  * Viewport selection semantics:
  * - A negative viewport id targets every render viewport currently known to the renderer.
  * - A non-negative viewport id targets exactly one renderer viewport with the same numeric id.
  * - New or rebuilt viewports are picked up automatically because the node tracks the renderer's
- *   pass-graph revision and retries after topology changes.
+ *   feature-profile revision and retries after topology changes.
  *
  * Core semantics:
  * - Missing renderer state is treated as "not ready yet", not as a hard failure.
  * - Uploaded values are sanitized before they reach the renderer.
- * - The node never owns the underlying SSAO pass and does not keep a stable pass pointer.
+ * - The node never owns renderer feature resources and does not keep renderer-internal pointers.
  *
  * Ownership and lifetime:
  * - The node owns only its serialized parameter state.
- * - Matching SSAO passes are owned by `RendererSystem` / the graphics backend.
- * - Applied state remains in the renderer until another system overwrites the same pass settings
- *   or the pass graph is recreated.
+ * - Renderer feature resources are owned by `RendererSystem` and the Renderer.New backend.
+ * - Applied state remains in the renderer facade until another system overwrites the same viewport feature settings
+ *   or the feature profile is recreated.
  *
  * Threading model:
  * - Main-thread only.
  *
  * Performance notes:
  * - Tick cost is low after successful application because the node exits early while the cached
- *   viewport selection and pass-graph revision remain unchanged.
+ *   viewport selection and feature-profile revision remain unchanged.
  * - Applying to "all viewports" scales linearly with the number of active render viewports.
  *
  * @warning Mutable `Edit*()` accessors update stored configuration immediately, but renderer
  * application is lazy. Settings are pushed during `OnCreate()`, `Tick()`, editor property-change
- * notifications, or later retry points when the target pass graph becomes available.
+ * notifications, or later retry points when the target feature profile becomes available.
  *
  * @see RendererSystem
  * @see WorldRenderSettings
@@ -183,13 +179,13 @@ public:
     const float& GetFalloffEnd() const;
 
     /**
-     * @brief Access the maximum radius in pixels used by the pass.
+     * @brief Access the maximum radius in pixels used by the feature state.
      * @return Mutable non-negative screen-space radius in pixels.
      */
     SnField(SnKey("MaxPixelRadius"), SnConstGetter(GetMaxPixelRadius))
     float& EditMaxPixelRadius();
     /**
-     * @brief Read the maximum radius in pixels used by the pass.
+     * @brief Read the maximum radius in pixels used by the feature state.
      * @return Stored screen-space radius in pixels.
      */
     const float& GetMaxPixelRadius() const;
@@ -257,13 +253,13 @@ public:
     /**
      * @brief Mark the node dirty and attempt an immediate initial apply.
      *
-     * Safe to call before the renderer or target viewport is ready. If no matching SSAO pass
-     * exists yet, the node simply remains dirty and retries later.
+     * Safe to call before the renderer or target viewport is ready. If the viewport cannot accept
+     * SSAO settings yet, the node simply remains dirty and retries later.
      */
     void OnCreate();
     void OnDestroy();
     /**
-     * @brief Retry pass application when needed.
+     * @brief Retry feature-setting application when needed.
      * @param DeltaSeconds Variable-step frame delta in seconds. Currently unused.
      */
     void Tick(float DeltaSeconds);
@@ -282,8 +278,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -303,7 +299,7 @@ private:
     float m_velocityWeight = 10.0f;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

@@ -21,6 +21,36 @@
 namespace SnAPI::GameFramework
 {
 SNAPI_REFLECT_TYPE(
+    NodeFieldAsset,
+    (TTypeBuilder<NodeFieldAsset>(NodeFieldAsset::kTypeName)
+        .Field("Name", &NodeFieldAsset::Name, EFieldFlagBits::Serialized)
+        .Field("Value", &NodeFieldAsset::Value, EFieldFlagBits::Serialized)
+        .Constructor<>()
+        .Register()));
+
+SNAPI_REFLECT_TYPE(
+    NodeComponentAsset,
+    (TTypeBuilder<NodeComponentAsset>(NodeComponentAsset::kTypeName)
+        .Field("Id", &NodeComponentAsset::Id, EFieldFlagBits::Serialized)
+        .Field("Type", &NodeComponentAsset::Type, EFieldFlagBits::Serialized)
+        .Field("Fields", &NodeComponentAsset::Fields, EFieldFlagBits::Serialized)
+        .Constructor<>()
+        .Register()));
+
+SNAPI_REFLECT_TYPE(
+    NodeObjectAsset,
+    (TTypeBuilder<NodeObjectAsset>(NodeObjectAsset::kTypeName)
+        .Field("Id", &NodeObjectAsset::Id, EFieldFlagBits::Serialized)
+        .Field("Type", &NodeObjectAsset::Type, EFieldFlagBits::Serialized)
+        .Field("Name", &NodeObjectAsset::Name, EFieldFlagBits::Serialized)
+        .Field("Active", &NodeObjectAsset::Active, EFieldFlagBits::Serialized)
+        .Field("Fields", &NodeObjectAsset::Fields, EFieldFlagBits::Serialized)
+        .Field("Components", &NodeObjectAsset::Components, EFieldFlagBits::Serialized)
+        .Field("Children", &NodeObjectAsset::Children, EFieldFlagBits::Serialized)
+        .Constructor<>()
+        .Register()));
+
+SNAPI_REFLECT_TYPE(
     NodeAsset,
     (TTypeBuilder<NodeAsset>(NodeAsset::kTypeName)
         .Base<IAsset>()

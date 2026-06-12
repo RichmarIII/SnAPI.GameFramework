@@ -9,6 +9,7 @@
 #include <mutex>
 #include <ostream>
 #include <streambuf>
+#include <type_traits>
 #include <unordered_map>
 
 #include <cereal/archives/binary.hpp>
@@ -24,6 +25,7 @@
 #include "Relevance.h"
 #include "ScriptComponent.h"
 #if defined(SNAPI_GF_ENABLE_RENDERER)
+#include "SkeletalMeshComponent.h"
 #include "StaticMeshComponent.h"
 #endif
 #include "TransformComponent.h"
@@ -2009,19 +2011,47 @@ void RegisterSerializationDefaults()
     ValueRegistry.Register<NodeHandle>();
     ValueRegistry.Register<ComponentHandle>();
 #if defined(SNAPI_GF_ENABLE_RENDERER)
-    (void)TypeAutoRegistry::Instance().Ensure(StaticTypeId<StaticMeshComponent::Settings>());
-    if (const TypeInfo* MeshSettingsType = TypeRegistry::Instance().Find(StaticTypeId<StaticMeshComponent::Settings>());
-        MeshSettingsType)
-    {
-        for (const FieldInfo& Field : MeshSettingsType->Fields)
+    ValueRegistry.Register<StaticMeshAssetRef>();
+    ValueRegistry.Register<SkeletalMeshAssetRef>();
+    ValueRegistry.Register<MaterialInstanceAssetRef>();
+
+    const auto RegisterReflectedFieldCodec = [&]<typename TValue>(
+                                                const TypeId& OwnerType,
+                                                const char* FieldName,
+                                                std::type_identity<TValue>) {
+        (void)TypeAutoRegistry::Instance().Ensure(OwnerType);
+        const TypeInfo* OwnerTypeInfo = TypeRegistry::Instance().Find(OwnerType);
+        if (!OwnerTypeInfo)
         {
-            if (Field.Name == "MaterialInstanceOverrides")
+            return;
+        }
+
+        for (const FieldInfo& Field : OwnerTypeInfo->Fields)
+        {
+            if (Field.Name == FieldName)
             {
-                ValueRegistry.RegisterAs<std::vector<TAssetRef<MaterialInstanceAsset>>>(Field.FieldType);
+                ValueRegistry.RegisterAs<TValue>(Field.FieldType);
                 break;
             }
         }
-    }
+    };
+
+    RegisterReflectedFieldCodec(
+        StaticTypeId<StaticMeshComponent::Settings>(),
+        "MeshAsset",
+        std::type_identity<StaticMeshAssetRef>{});
+    RegisterReflectedFieldCodec(
+        StaticTypeId<StaticMeshComponent::Settings>(),
+        "MaterialInstanceOverrides",
+        std::type_identity<std::vector<TAssetRef<MaterialInstanceAsset>>>{});
+    RegisterReflectedFieldCodec(
+        StaticTypeId<SkeletalMeshComponent::Settings>(),
+        "MeshAsset",
+        std::type_identity<SkeletalMeshAssetRef>{});
+    RegisterReflectedFieldCodec(
+        StaticTypeId<SkeletalMeshComponent::Settings>(),
+        "MaterialInstanceOverrides",
+        std::type_identity<std::vector<TAssetRef<MaterialInstanceAsset>>>{});
 #endif
 
     auto& ComponentRegistry = ComponentSerializationRegistry::Instance();

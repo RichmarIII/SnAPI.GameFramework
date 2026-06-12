@@ -74,9 +74,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-#include "CameraBase.hpp"
-#endif
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -13154,8 +13151,8 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
     ViewportElement.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
     ViewportElement.ElementMargin().Set(SnAPI::UI::Margin{0.0f, 0.0f, 0.0f, 0.0f});
     ViewportElement.ViewportName().Set(std::string("Editor.GameViewport"));
-    ViewportElement.PassGraphPreset().Set(ERenderViewportPassGraphPreset::EditorWorld);
-    ViewportElement.AutoRegisterPassGraph().Set(true);
+    ViewportElement.FeatureProfile().Set(EGameRenderFeatureProfile::EditorWorld);
+    ViewportElement.AutoApplyFeatureProfile().Set(true);
     ViewportElement.RenderScale().Set(1.0f);
     ViewportElement.Enabled().Set(true);
     ViewportElement.SetGameRuntime(&Runtime);
@@ -13185,13 +13182,11 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
             m_onContentAssetDropRequested(Request);
             return true;
         }));
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     if (auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
         ActiveCameraComponent && ActiveCameraComponent->Camera())
     {
         ViewportElement.SetViewportCamera(ActiveCameraComponent->CameraShared());
     }
-#endif
 
     auto ProfilerTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameProfilerTab"));
     auto& ProfilerTabPanel = ProfilerTab.Element();
@@ -14317,9 +14312,8 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
     Viewport->SetGameRuntime(&Runtime);
 
     CameraComponent* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-    std::shared_ptr<SnAPI::Graphics::ICamera> RetainedCamera{};
-    SnAPI::Graphics::ICamera* RenderCamera = nullptr;
+    std::shared_ptr<GameRenderCamera> RetainedCamera{};
+    GameRenderCamera* RenderCamera = nullptr;
     if (ActiveCameraComponent)
     {
         RetainedCamera = ActiveCameraComponent->CameraShared();
@@ -14334,7 +14328,6 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
             RenderCamera = RetainedCamera ? RetainedCamera.get() : WorldPtr->Renderer().ActiveCamera();
         }
     }
-#endif
 
     if (ActiveCameraComponent && Viewport)
     {
@@ -14346,7 +14339,6 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
         }
     }
 
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     if (RetainedCamera)
     {
         Viewport->SetViewportCamera(RetainedCamera);
@@ -14355,7 +14347,6 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
     {
         Viewport->SetViewportCamera(RenderCamera);
     }
-#endif
 }
 
 UIRenderViewport* EditorLayout::GameViewport() const

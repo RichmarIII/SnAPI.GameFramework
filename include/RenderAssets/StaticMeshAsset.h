@@ -6,7 +6,7 @@
 #include "IAsset.h"
 #include "RenderAssetImportSettings.h"
 #include "RenderAssets/ImportedAssetProvenancePayload.h"
-#include "RenderAssets/MeshStreamSourcePayload.h"
+#include "RenderAssets/MeshVertexStreamPayload.h"
 #include "RenderAssets/StaticMeshPayload.h"
 
 namespace SnAPI::GameFramework
@@ -20,7 +20,7 @@ struct StaticMeshAsset : public IAsset
     SnField(SnKey("Mesh"))
     StaticMeshPayload Mesh{};
     SnField(SnKey("Streams"), SnReadOnly, SnAdvanced)
-    std::vector<MeshStreamSourcePayload> Streams{};
+    std::vector<MeshVertexStreamPayload> Streams{};
     SnField(SnKey("ImportSettings"), SnHidden)
     AssimpImporterSettings ImportSettings{};
     SnField(SnKey("Provenance"), SnAdvanced)

@@ -15,6 +15,10 @@
 #include "UIRenderViewport.h"
 #include "World.h"
 
+#include "Rendering/GameRenderCamera.h"
+#include "Rendering/GameRenderMesh.h"
+#include "Rendering/GameRenderObject.h"
+
 #include <UIContext.h>
 #include <UIEvents.h>
 
@@ -26,12 +30,12 @@
 #include "RigidBodyComponent.h"
 #endif
 
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-#include "ICamera.hpp"
-#include "IRenderObject.hpp"
-#include "WindowBase.hpp"
-#include <MeshRenderObject.hpp>
-#endif
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <numbers>
+#include <optional>
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -117,39 +121,154 @@ private:
 }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
-[[nodiscard]] std::optional<NodeHandle> ResolveNodeHandleByRenderObject(World& WorldRef,
-                                                                         const SnAPI::Graphics::IRenderObject* TargetRenderObject)
+
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
+struct RendererNewPickRay
 {
-    if (!TargetRenderObject)
+    Vec3 Origin{Vec3::Zero()};
+    Vec3 Direction{Vec3{0.0, 0.0, -1.0}};
+};
+
+[[nodiscard]] bool IsFiniteVec3(const Vec3& Value)
+{
+    return std::isfinite(Value.x()) && std::isfinite(Value.y()) && std::isfinite(Value.z());
+}
+
+[[nodiscard]] Vec3 NormalizeOrAxis(const Vec3& Value, const Vec3& FallbackAxis)
+{
+    const auto LengthSquared = Value.squaredNorm();
+    if (!(LengthSquared > static_cast<Vec3::Scalar>(1.0e-10)))
     {
-        return std::nullopt;
+        return FallbackAxis;
+    }
+    return Value / std::sqrt(LengthSquared);
+}
+
+[[nodiscard]] bool TryBuildRendererNewViewportRay(const GameRenderCamera& Camera,
+                                                  const SnAPI::UI::UIRect& ViewRect,
+                                                  const SnAPI::UI::UIPoint& ScreenPoint,
+                                                  RendererNewPickRay& OutRay)
+{
+    if (!Camera.Valid() || ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !ViewRect.Contains(ScreenPoint))
+    {
+        return false;
     }
 
-    std::optional<NodeHandle> ResolvedHandle{};
-    WorldRef.ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
-        if (ResolvedHandle.has_value() || Node.EditorTransient())
-        {
-            return;
-        }
+    const float U = (ScreenPoint.X - ViewRect.X) / ViewRect.W;
+    const float V = (ScreenPoint.Y - ViewRect.Y) / ViewRect.H;
+    if (!std::isfinite(U) || !std::isfinite(V))
+    {
+        return false;
+    }
 
-        auto StaticMeshResult = Node.Component<StaticMeshComponent>();
-        if (StaticMeshResult && StaticMeshResult->RenderObject()
-            && StaticMeshResult->RenderObject().get() == TargetRenderObject)
-        {
-            ResolvedHandle = Handle;
-            return;
-        }
+    const SnAPI::Math::Scalar NormalizedX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
+    const SnAPI::Math::Scalar NormalizedY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
+    const SnAPI::Math::Scalar FovRadians = static_cast<SnAPI::Math::Scalar>(
+        static_cast<double>(Camera.FovDegrees()) * (std::numbers::pi_v<double> / 180.0));
+    const SnAPI::Math::Scalar TanHalfFov = static_cast<SnAPI::Math::Scalar>(
+        std::tan(static_cast<double>(FovRadians) * 0.5));
+    const SnAPI::Math::Scalar Aspect = static_cast<SnAPI::Math::Scalar>(Camera.Aspect());
+    if (!std::isfinite(TanHalfFov) || !std::isfinite(Aspect)
+        || !(TanHalfFov > static_cast<SnAPI::Math::Scalar>(0.0))
+        || !(Aspect > static_cast<SnAPI::Math::Scalar>(0.0)))
+    {
+        return false;
+    }
 
-        auto SkeletalMeshResult = Node.Component<SkeletalMeshComponent>();
-        if (SkeletalMeshResult && SkeletalMeshResult->RenderObject()
-            && static_cast<const SnAPI::Graphics::IRenderObject*>(SkeletalMeshResult->RenderObject().get()) == TargetRenderObject)
-        {
-            ResolvedHandle = Handle;
-        }
-    });
+    const Vec3 Forward = NormalizeOrAxis(Camera.Forward(), Vec3{0.0, 0.0, -1.0});
+    const Vec3 Right = NormalizeOrAxis(Camera.Right(), Vec3::UnitX());
+    const Vec3 Up = NormalizeOrAxis(Camera.Up(), Vec3::UnitY());
+    Vec3 RayDirection = Forward
+        + (Right * (NormalizedX * Aspect * TanHalfFov))
+        + (Up * (NormalizedY * TanHalfFov));
+    RayDirection = NormalizeOrAxis(RayDirection, Forward);
 
-    return ResolvedHandle;
+    const Vec3 RayOrigin = Camera.Position()
+        + (RayDirection * std::max(static_cast<SnAPI::Math::Scalar>(Camera.NearClip()),
+                                   static_cast<SnAPI::Math::Scalar>(0.001)));
+    if (!IsFiniteVec3(RayOrigin) || !IsFiniteVec3(RayDirection))
+    {
+        return false;
+    }
+
+    OutRay.Origin = RayOrigin;
+    OutRay.Direction = RayDirection;
+    return true;
+}
+
+[[nodiscard]] Vec3 TransformPoint(const SnAPI::Math::Matrix4& WorldFromLocal, const Vec3& LocalPoint)
+{
+    const Vec4 HomogeneousLocal{
+        static_cast<Vec4::Scalar>(LocalPoint.x()),
+        static_cast<Vec4::Scalar>(LocalPoint.y()),
+        static_cast<Vec4::Scalar>(LocalPoint.z()),
+        static_cast<Vec4::Scalar>(1.0)};
+    const Vec4 HomogeneousWorld = WorldFromLocal * HomogeneousLocal;
+    return Vec3{
+        static_cast<Vec3::Scalar>(HomogeneousWorld.x()),
+        static_cast<Vec3::Scalar>(HomogeneousWorld.y()),
+        static_cast<Vec3::Scalar>(HomogeneousWorld.z())};
+}
+
+[[nodiscard]] double MaxAxisScale(const SnAPI::Math::Matrix4& WorldFromLocal)
+{
+    const Vec3 AxisX{
+        static_cast<Vec3::Scalar>(WorldFromLocal(0, 0)),
+        static_cast<Vec3::Scalar>(WorldFromLocal(1, 0)),
+        static_cast<Vec3::Scalar>(WorldFromLocal(2, 0))};
+    const Vec3 AxisY{
+        static_cast<Vec3::Scalar>(WorldFromLocal(0, 1)),
+        static_cast<Vec3::Scalar>(WorldFromLocal(1, 1)),
+        static_cast<Vec3::Scalar>(WorldFromLocal(2, 1))};
+    const Vec3 AxisZ{
+        static_cast<Vec3::Scalar>(WorldFromLocal(0, 2)),
+        static_cast<Vec3::Scalar>(WorldFromLocal(1, 2)),
+        static_cast<Vec3::Scalar>(WorldFromLocal(2, 2))};
+    return std::max({static_cast<double>(AxisX.norm()),
+                     static_cast<double>(AxisY.norm()),
+                     static_cast<double>(AxisZ.norm()),
+                     1.0e-5});
+}
+
+[[nodiscard]] bool TryIntersectRendererNewObjectBounds(const GameRenderMesh& Mesh,
+                                                       const GameRenderObject& Object,
+                                                       const RendererNewPickRay& Ray,
+                                                       double& OutDistance)
+{
+    if (!Mesh.Valid() || !Mesh.HasLocalBounds() || !Object.Valid() || !Object.Visible())
+    {
+        return false;
+    }
+
+    const Vec3 Center = TransformPoint(Object.WorldFromLocal(), Mesh.LocalBoundsCenter());
+    const double Radius = std::max(Mesh.LocalBoundsRadius() * MaxAxisScale(Object.WorldFromLocal()), 1.0e-5);
+    if (!IsFiniteVec3(Center) || !std::isfinite(Radius) || !(Radius > 0.0))
+    {
+        return false;
+    }
+
+    const Vec3 Offset = Ray.Origin - Center;
+    const double B = static_cast<double>(Offset.dot(Ray.Direction));
+    const double C = static_cast<double>(Offset.dot(Offset)) - (Radius * Radius);
+    const double Discriminant = (B * B) - C;
+    if (Discriminant < 0.0)
+    {
+        return false;
+    }
+
+    const double SqrtDiscriminant = std::sqrt(Discriminant);
+    double Distance = -B - SqrtDiscriminant;
+    if (Distance < 0.0)
+    {
+        Distance = -B + SqrtDiscriminant;
+    }
+    if (!std::isfinite(Distance) || Distance < 0.0)
+    {
+        return false;
+    }
+
+    OutDistance = Distance;
+    return true;
 }
 #endif
 } // namespace
@@ -288,123 +407,16 @@ void EditorSelectionInteractionService::UpdatePieMouseCaptureState(EditorService
 
 void EditorSelectionInteractionService::QueueSelectedNodeEditorOverlay(EditorServiceContext& Context) const
 {
-#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(WITH_EDITOR) || !WITH_EDITOR
     (void)Context;
     return;
-#else
-    if (auto* PieService = Context.GetService<EditorPieService>(); PieService && PieService->IsSessionActive())
-    {
-        return;
-    }
-
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr)
-    {
-        return;
-    }
-
-    auto* SelectionService = Context.GetService<EditorSelectionService>();
-    auto* LayoutService = Context.GetService<EditorLayoutService>();
-    if (!SelectionService || !LayoutService)
-    {
-        return;
-    }
-
-    BaseNode* SelectedNode = SelectionService->Model().ResolveSelectedNode(*WorldPtr);
-    if (!SelectedNode || SelectedNode->EditorTransient())
-    {
-        return;
-    }
-
-    auto* Viewport = LayoutService->GameViewportElement();
-    if (!Viewport)
-    {
-        return;
-    }
-
-    const std::uint64_t ViewportID = Viewport->OwnedViewportId();
-    if (ViewportID == 0)
-    {
-        return;
-    }
-
-    auto& Renderer = WorldPtr->Renderer();
-    if (!Renderer.IsInitialized())
-    {
-        return;
-    }
-
-    if (auto StaticMeshResult = SelectedNode->Component<StaticMeshComponent>();
-        StaticMeshResult && StaticMeshResult->RenderObject())
-    {
-        (void)Renderer.QueueEditorImmediateRenderObject(StaticMeshResult->RenderObject(),
-                                                        ViewportID,
-                                                        SnAPI::Graphics::ERenderPassType::EditorOverlay);
-    }
-
-    if (auto SkeletalMeshResult = SelectedNode->Component<SkeletalMeshComponent>();
-        SkeletalMeshResult && SkeletalMeshResult->RenderObject())
-    {
-        (void)Renderer.QueueEditorImmediateRenderObject(SkeletalMeshResult->RenderObject(),
-                                                        ViewportID,
-                                                        SnAPI::Graphics::ERenderPassType::EditorOverlay);
-    }
-#endif
 }
 
 void EditorSelectionInteractionService::SetPieMouseCapture(EditorServiceContext& Context, const bool CaptureEnabled)
 {
-#if !defined(SNAPI_GF_ENABLE_RENDERER) || !SNAPI_GF_EDITOR_HAS_SDL3
     (void)Context;
     m_pieMouseCaptureEnabled = false;
     (void)CaptureEnabled;
     return;
-#else
-    if (m_pieMouseCaptureEnabled == CaptureEnabled)
-    {
-        return;
-    }
-
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr || !WorldPtr->Renderer().IsInitialized())
-    {
-        m_pieMouseCaptureEnabled = false;
-        return;
-    }
-
-    auto* Window = WorldPtr->Renderer().Window();
-    if (!Window)
-    {
-        m_pieMouseCaptureEnabled = false;
-        return;
-    }
-
-    auto* NativeWindow = reinterpret_cast<SDL_Window*>(Window->Handle());
-    if (!NativeWindow)
-    {
-        m_pieMouseCaptureEnabled = false;
-        return;
-    }
-
-    if (CaptureEnabled)
-    {
-        const bool RelativeEnabled = SDL_SetWindowRelativeMouseMode(NativeWindow, true);
-        const bool GrabEnabled = SDL_SetWindowMouseGrab(NativeWindow, true);
-        if (RelativeEnabled && GrabEnabled)
-        {
-            (void)SDL_CaptureMouse(true);
-            (void)SDL_HideCursor();
-            m_pieMouseCaptureEnabled = true;
-            return;
-        }
-    }
-
-    (void)SDL_SetWindowRelativeMouseMode(NativeWindow, false);
-    (void)SDL_SetWindowMouseGrab(NativeWindow, false);
-    (void)SDL_CaptureMouse(false);
-    (void)SDL_ShowCursor();
-    m_pieMouseCaptureEnabled = false;
-#endif
 }
 
 void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorServiceContext& Context,
@@ -501,29 +513,6 @@ void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorService
     const bool ResolvedNode = TryResolvePickedNode(Context, Event.Position, Next);
     if (!ResolvedNode)
     {
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
-        auto* WorldPtr = Context.Runtime().WorldPtr();
-        auto* LayoutService = Context.GetService<EditorLayoutService>();
-        auto* Viewport = LayoutService ? LayoutService->GameViewportElement() : nullptr;
-        if (WorldPtr && Viewport && WorldPtr->Renderer().IsInitialized())
-        {
-            const SnAPI::UI::UIRect ViewRect = Viewport->LayoutRect();
-            if (ViewRect.W > 0.0f && ViewRect.H > 0.0f && ViewRect.Contains(Event.Position))
-            {
-                const float U = (Event.Position.X - ViewRect.X) / ViewRect.W;
-                const float V = (Event.Position.Y - ViewRect.Y) / ViewRect.H;
-                if (std::isfinite(U) && std::isfinite(V))
-                {
-                    const auto HitRenderObjectID =
-                        WorldPtr->Renderer().ReadRenderViewportObjectID(Viewport->OwnedViewportId(), U, V);
-                    if (HitRenderObjectID.has_value() && *HitRenderObjectID != 0u)
-                    {
-                        return;
-                    }
-                }
-            }
-        }
-#endif
     }
 
     if (Previous == Next)
@@ -569,20 +558,27 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
 {
     OutNode = {};
 
-#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(SNAPI_GF_ENABLE_UI) || !defined(SNAPI_GF_ENABLE_PHYSICS)
     (void)Context;
     (void)ScreenPoint;
     return false;
-#else
+}
+
+bool EditorSelectionInteractionService::TryResolvePickedNodeRendererId(EditorServiceContext& Context,
+                                                                       const SnAPI::UI::UIPoint& ScreenPoint,
+                                                                       NodeHandle& OutNode) const
+{
+    OutNode = {};
+
+#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
     auto* WorldPtr = Context.Runtime().WorldPtr();
     if (!WorldPtr)
     {
         return false;
     }
 
-    auto* SceneService = Context.GetService<EditorSceneService>();
     auto* LayoutService = Context.GetService<EditorLayoutService>();
-    if (!SceneService || !LayoutService)
+    auto* SceneService = Context.GetService<EditorSceneService>();
+    if (!LayoutService || !SceneService)
     {
         return false;
     }
@@ -594,175 +590,52 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
         return false;
     }
 
-    const SnAPI::UI::UIRect ViewRect = Viewport->LayoutRect();
-    if (ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !ViewRect.Contains(ScreenPoint))
+    RendererNewPickRay Ray{};
+    if (!TryBuildRendererNewViewportRay(*Camera, Viewport->LayoutRect(), ScreenPoint, Ray))
     {
         return false;
     }
 
-    const float U = (ScreenPoint.X - ViewRect.X) / ViewRect.W;
-    const float V = (ScreenPoint.Y - ViewRect.Y) / ViewRect.H;
-    if (!std::isfinite(U) || !std::isfinite(V))
+    double BestDistance = std::numeric_limits<double>::max();
+    NodeHandle BestNode{};
+    WorldPtr->ForEachNode([&](const NodeHandle& Handle, BaseNode& Node) {
+        if (Node.EditorTransient())
+        {
+            return;
+        }
+
+        const auto TryCandidate = [&](const GameRenderMesh& Mesh, const GameRenderObject& Object) {
+            double Distance = 0.0;
+            if (!TryIntersectRendererNewObjectBounds(Mesh, Object, Ray, Distance) || Distance >= BestDistance)
+            {
+                return;
+            }
+
+            const NodeHandle Owner = Object.OwnerNode();
+            BestNode = Owner.IsNull() ? Handle : Owner;
+            BestDistance = Distance;
+        };
+
+        if (auto StaticMeshResult = Node.Component<StaticMeshComponent>(); StaticMeshResult)
+        {
+            TryCandidate(StaticMeshResult->RenderMesh(), StaticMeshResult->RenderObject());
+        }
+        if (auto SkeletalMeshResult = Node.Component<SkeletalMeshComponent>(); SkeletalMeshResult)
+        {
+            TryCandidate(SkeletalMeshResult->RenderMesh(), SkeletalMeshResult->RenderObject());
+        }
+    });
+
+    if (BestNode.IsNull())
     {
         return false;
     }
 
-    const SnAPI::Math::Scalar NormalizedX = static_cast<SnAPI::Math::Scalar>((U * 2.0f) - 1.0f);
-    const SnAPI::Math::Scalar NormalizedY = static_cast<SnAPI::Math::Scalar>(1.0f - (V * 2.0f));
-
-    const SnAPI::Math::Scalar FovRadians = static_cast<SnAPI::Math::Scalar>(
-        static_cast<double>(Camera->Fov()) * (std::numbers::pi_v<double> / 180.0));
-    const SnAPI::Math::Scalar TanHalfFov = static_cast<SnAPI::Math::Scalar>(
-        std::tan(static_cast<double>(FovRadians) * 0.5));
-    const SnAPI::Math::Scalar Aspect = static_cast<SnAPI::Math::Scalar>(Camera->Aspect());
-    if (!std::isfinite(TanHalfFov) || !std::isfinite(Aspect) ||
-        !(TanHalfFov > static_cast<SnAPI::Math::Scalar>(0.0)) ||
-        !(Aspect > static_cast<SnAPI::Math::Scalar>(0.0)))
-    {
-        return false;
-    }
-
-    SnAPI::Physics::Vec3 Forward = Camera->Forward().template cast<SnAPI::Math::Scalar>();
-    SnAPI::Physics::Vec3 Right = Camera->Right().template cast<SnAPI::Math::Scalar>();
-    SnAPI::Physics::Vec3 Up = Camera->Up().template cast<SnAPI::Math::Scalar>();
-
-    const SnAPI::Math::Scalar ForwardLength = Forward.norm();
-    const SnAPI::Math::Scalar RightLength = Right.norm();
-    const SnAPI::Math::Scalar UpLength = Up.norm();
-    constexpr SnAPI::Math::Scalar kSmallNumber = static_cast<SnAPI::Math::Scalar>(1.0e-8);
-    if (!(ForwardLength > kSmallNumber) || !(RightLength > kSmallNumber) || !(UpLength > kSmallNumber))
-    {
-        return false;
-    }
-
-    Forward /= ForwardLength;
-    Right /= RightLength;
-    Up /= UpLength;
-
-    SnAPI::Physics::Vec3 RayDirection = Forward +
-        (Right * (NormalizedX * Aspect * TanHalfFov)) +
-        (Up * (NormalizedY * TanHalfFov));
-
-    const SnAPI::Math::Scalar DirectionLength = RayDirection.norm();
-    if (!(DirectionLength > kSmallNumber))
-    {
-        return false;
-    }
-    RayDirection /= DirectionLength;
-
-    const SnAPI::Math::Scalar NearClip =
-        std::max(static_cast<SnAPI::Math::Scalar>(Camera->Near()), static_cast<SnAPI::Math::Scalar>(0.001));
-    const SnAPI::Physics::Vec3 CameraPosition = Camera->Position().template cast<SnAPI::Math::Scalar>();
-    const SnAPI::Physics::Vec3 RayOrigin = CameraPosition + (RayDirection * NearClip);
-
-    if (!WorldPtr->ShouldAllowPhysicsQueries())
-    {
-        return false;
-    }
-
-    auto& Physics = WorldPtr->Physics();
-    auto* Scene = Physics.Scene();
-    if (!Scene)
-    {
-        return false;
-    }
-
-    SnAPI::Physics::RaycastRequest Request{};
-    Request.Origin = Physics.WorldToPhysicsPosition(RayOrigin, false);
-    Request.Direction = RayDirection;
-    Request.Distance = static_cast<float>(100000.0);
-    Request.Mode = SnAPI::Physics::EQueryMode::ClosestHit;
-
-    std::array<SnAPI::Physics::RaycastHit, 1> Hits{};
-    const std::uint32_t HitCount = Scene->Query().Raycast(Request, std::span<SnAPI::Physics::RaycastHit>(Hits));
-    if (HitCount == 0 || !Hits[0].Body.IsValid())
-    {
-        return false;
-    }
-
-    const SnAPI::Physics::BodyHandle HitBody = Hits[0].Body;
-    if (auto Resolved = ResolveNodeHandleByPhysicsBody(*WorldPtr, HitBody))
-    {
-        OutNode = *Resolved;
-        return true;
-    }
-
-    return false;
-#endif
-}
-
-bool EditorSelectionInteractionService::TryResolvePickedNodeRendererId(EditorServiceContext& Context,
-                                                                       const SnAPI::UI::UIPoint& ScreenPoint,
-                                                                       NodeHandle& OutNode) const
-{
-    OutNode = {};
-
-#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(WITH_EDITOR) || !WITH_EDITOR
+    OutNode = BestNode;
+    return true;
+#else
     (void)Context;
     (void)ScreenPoint;
-    return false;
-#else
-    auto* WorldPtr = Context.Runtime().WorldPtr();
-    if (!WorldPtr)
-    {
-        return false;
-    }
-
-    auto* LayoutService = Context.GetService<EditorLayoutService>();
-    if (!LayoutService)
-    {
-        return false;
-    }
-
-    auto* Viewport = LayoutService->GameViewportElement();
-    if (!Viewport)
-    {
-        return false;
-    }
-
-    const SnAPI::UI::UIRect ViewRect = Viewport->LayoutRect();
-    if (ViewRect.W <= 0.0f || ViewRect.H <= 0.0f || !ViewRect.Contains(ScreenPoint))
-    {
-        return false;
-    }
-
-    const float U = (ScreenPoint.X - ViewRect.X) / ViewRect.W;
-    const float V = (ScreenPoint.Y - ViewRect.Y) / ViewRect.H;
-    if (!std::isfinite(U) || !std::isfinite(V))
-    {
-        return false;
-    }
-
-    auto& Renderer = WorldPtr->Renderer();
-    if (!Renderer.IsInitialized())
-    {
-        return false;
-    }
-
-    const std::uint64_t ViewportID = Viewport->OwnedViewportId();
-    if (ViewportID == 0)
-    {
-        return false;
-    }
-
-    const auto RenderObjectID = Renderer.ReadRenderViewportObjectID(ViewportID, U, V);
-    if (!RenderObjectID.has_value() || *RenderObjectID == 0)
-    {
-        return false;
-    }
-
-    const auto RenderObject = Renderer.ResolveRenderObjectByID(*RenderObjectID);
-    if (!RenderObject)
-    {
-        return false;
-    }
-
-    if (auto Resolved = ResolveNodeHandleByRenderObject(*WorldPtr, RenderObject.get()))
-    {
-        OutNode = *Resolved;
-        return true;
-    }
-
     return false;
 #endif
 }

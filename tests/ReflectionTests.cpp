@@ -375,7 +375,7 @@ TEST_CASE("Builtins expose enum metadata for editor-facing engine enums")
 #endif
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
-    const TypeInfo* ViewportPresetInfo = TypeRegistry::Instance().Find(StaticTypeId<ERenderViewportPassGraphPreset>());
+    const TypeInfo* ViewportPresetInfo = TypeRegistry::Instance().Find(StaticTypeId<EGameRenderFeatureProfile>());
     REQUIRE(ViewportPresetInfo != nullptr);
     CHECK(ViewportPresetInfo->IsEnum);
 #endif
@@ -440,7 +440,7 @@ TEST_CASE("Framework reflection exposes Conduit-facing node, component, and syst
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "Settings"));
     CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "UseDefaultRenderViewport"));
-    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "RegisterRenderViewportPassGraph"));
+    CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "ApplyRenderViewportFeatureProfile"));
     CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "QueueText"));
     CHECK(HasReflectedMethod(StaticTypeId<RendererSystem>(), "HasDefaultFont"));
 #endif

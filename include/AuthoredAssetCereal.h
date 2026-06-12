@@ -569,7 +569,7 @@ void serialize(Archive& Ar, StaticMeshPayload& Value)
 }
 
 template<class Archive>
-void serialize(Archive& Ar, MeshStreamSourcePayload& Value)
+void serialize(Archive& Ar, MeshVertexStreamPayload& Value)
 {
     Ar(Detail::Nvp("Semantic", Value.Semantic),
        Detail::Nvp("SubIndex", Value.SubIndex),

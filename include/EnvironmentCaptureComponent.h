@@ -12,11 +12,6 @@
 #include "Math.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class IEnvironmentProbe;
-class VulkanGraphicsAPI;
-} // namespace SnAPI::Graphics
 
 namespace SnAPI::GameFramework
 {
@@ -42,7 +37,7 @@ class RendererSystem;
  * registered at the front of the renderer probe list so the most recently authored probe takes priority.
  *
  * @see EnvironmentProbeNode
- * @see SnAPI::Graphics::IEnvironmentProbe
+ * @see SnAPI::Renderer environment-probe capture
  */
 SnType()
 class SNAPI_GAMEFRAMEWORK_API EnvironmentCaptureComponent final : public BaseComponent, public ComponentCRTP<EnvironmentCaptureComponent>
@@ -107,18 +102,13 @@ public:
 
 private:
     [[nodiscard]] RendererSystem* ResolveRendererSystem() const;
-    [[nodiscard]] SnAPI::Graphics::VulkanGraphicsAPI* ResolveGraphics() const;
     [[nodiscard]] bool EnsureProbeRegistered();
     void UnregisterProbe();
     void SyncProbePosition();
     void SyncProbeSettings();
     [[nodiscard]] bool RequestCapture(bool Force);
-    [[nodiscard]] std::optional<std::uint64_t> ResolveSourceViewportID(
-        const SnAPI::Graphics::VulkanGraphicsAPI& Graphics) const;
-    [[nodiscard]] bool ProbeRegisteredWithGraphics(const SnAPI::Graphics::VulkanGraphicsAPI& Graphics) const;
 
     Settings m_settings{};
-    SnAPI::Graphics::IEnvironmentProbe* m_probe = nullptr;
     bool m_bBakeRequested = false;
 };
 } // namespace SnAPI::GameFramework

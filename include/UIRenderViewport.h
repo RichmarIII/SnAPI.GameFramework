@@ -8,14 +8,11 @@
 #include <string>
 
 #include "Export.h"
+#include "Rendering/GameRenderCamera.h"
 
 #include <UIDelegates.h>
 #include <UIElementBase.h>
 
-namespace SnAPI::Graphics
-{
-class ICamera;
-} // namespace SnAPI::Graphics
 
 namespace SnAPI::UI
 {
@@ -28,7 +25,7 @@ namespace SnAPI::GameFramework
 {
 
 class GameRuntime;
-enum class ERenderViewportPassGraphPreset : uint8_t;
+enum class EGameRenderFeatureProfile : uint8_t;
 
 /**
  * @ingroup SnAPI_GameFramework
@@ -36,7 +33,7 @@ enum class ERenderViewportPassGraphPreset : uint8_t;
  *
  * `UIRenderViewport` is the bridge between the UI tree and the renderer's virtual-viewport
  * system. It behaves like a normal UI element in layout, but lazily creates a renderer
- * viewport, a render-target swapchain, a dedicated child `UISystem` context, and an internal
+ * viewport, a Renderer.New render target, a dedicated child `UISystem` context, and an internal
  * `UIImage` used to present the viewport output back into the parent UI tree.
  *
  * Why this abstraction exists:
@@ -53,7 +50,7 @@ enum class ERenderViewportPassGraphPreset : uint8_t;
  *
  * Ownership and lifetime:
  * - Owned by its parent `UIContext`.
- * - Owns the renderer viewport, render-target swapchain, child UI context, and presenter image it creates.
+ * - Owns the renderer viewport, Renderer.New render target, child UI context, and presenter image it creates.
  * - `GameRuntime*` and camera pointers are borrowed only.
  * - Owned resource ids become invalid after `OnDestroyed()` or when `SetGameRuntime(...)` replaces the runtime.
  *
@@ -81,8 +78,8 @@ public:
     SNAPI_PROPERTY_INV(bool, Enabled, SnAPI::UI::EInvalidation::Layout);
     SNAPI_PROPERTY_INV(float, RenderScale, SnAPI::UI::EInvalidation::Layout);
     SNAPI_PROPERTY_INV(std::int32_t, ViewportIndex, SnAPI::UI::EInvalidation::Layout);
-    SNAPI_PROPERTY_INV(ERenderViewportPassGraphPreset, PassGraphPreset, SnAPI::UI::EInvalidation::Layout);
-    SNAPI_PROPERTY_INV(bool, AutoRegisterPassGraph, SnAPI::UI::EInvalidation::Layout);
+    SNAPI_PROPERTY_INV(EGameRenderFeatureProfile, FeatureProfile, SnAPI::UI::EInvalidation::Layout);
+    SNAPI_PROPERTY_INV(bool, AutoApplyFeatureProfile, SnAPI::UI::EInvalidation::Layout);
 
     SNAPI_PROPERTY_INV(SnAPI::UI::Color, BackgroundColor, SnAPI::UI::EInvalidation::Paint);
     SNAPI_PROPERTY_INV(SnAPI::UI::Color, BorderColor, SnAPI::UI::EInvalidation::Paint);
@@ -115,14 +112,9 @@ public:
      * @param Camera Borrowed camera pointer, or `nullptr`.
      * @remarks Also updates the camera aspect ratio when the viewport has a valid render extent.
      */
-    void SetViewportCamera(SnAPI::Graphics::ICamera* Camera);
-    /**
-     * @brief Set the camera rendered by the owned viewport with retained shared ownership.
-     * @param Camera Shared camera reference, or empty to clear the viewport camera.
-     */
-    void SetViewportCamera(const std::shared_ptr<SnAPI::Graphics::ICamera>& Camera);
-    /** @brief Access the borrowed camera pointer currently used by the viewport. @return Camera pointer or `nullptr`. */
-    SnAPI::Graphics::ICamera* GetViewportCamera() const { return m_camera; }
+    void SetViewportCamera(GameRenderCamera* Camera);
+    void SetViewportCamera(const std::shared_ptr<GameRenderCamera>& Camera);
+    [[nodiscard]] GameRenderCamera* GetViewportCamera() const { return m_camera; }
     /**
      * @brief Install a pointer-event callback invoked for pointer move/down/up routing.
      * @param Handler Delegate invoked with the routed event, routed event type id, and hit-test result.
@@ -160,10 +152,10 @@ private:
     static std::uint32_t ComputeRenderExtent(float LogicalSize, float RenderScale);
 
     GameRuntime* m_runtime = nullptr;
-    SnAPI::Graphics::ICamera* m_camera = nullptr;
-    std::shared_ptr<SnAPI::Graphics::ICamera> m_retainedCamera{};
+    GameRenderCamera* m_camera = nullptr;
+    std::shared_ptr<GameRenderCamera> m_retainedCamera{};
     std::uint64_t m_ownedViewportId = 0;
-    std::uint64_t m_ownedSwapChainId = 0;
+    std::uint64_t m_ownedOutputId = 0;
     std::uint64_t m_ownedContextId = 0;
     SnAPI::UI::ElementId m_presenterImageId{};
     SnAPI::UI::TextureId m_presentedTextureId{};
@@ -173,7 +165,7 @@ private:
     std::uint32_t m_pendingRenderWidth = 0;
     std::uint32_t m_pendingRenderHeight = 0;
     bool m_hasPendingRenderExtentResize = false;
-    std::optional<ERenderViewportPassGraphPreset> m_registeredPassGraphPreset{};
+    std::optional<EGameRenderFeatureProfile> m_appliedFeatureProfile{};
     PointerEventHandler m_pointerEventHandler{};
     DragDropEventHandler m_dragDropEventHandler{};
 };

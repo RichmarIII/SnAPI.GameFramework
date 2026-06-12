@@ -10,33 +10,29 @@
 #include "Export.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class SSGIPass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures screen-space global illumination passes for one or more viewports.
+ * @brief Data-driven node that configures screen-space global illumination feature settings for one or more viewports.
  *
  * `SSGIParamsNode` stores SSGI trace, denoise, and temporal accumulation parameters inside the
- * world graph and pushes them into renderer-owned `SSGIPass` instances when those passes are
- * available. The node is passive: it does not create renderer viewports or register pass graphs.
- * Its responsibility is to retry application until matching `SSGIPass` objects already exist.
+ * world graph and pushes them into renderer-owned SSGI feature state when the targeted viewport is
+ * available. The node is passive: it does not create renderer viewports or register feature profiles.
+ * Its responsibility is to retry application until the selected viewport can accept SSGI settings.
  *
  * Viewport selection semantics:
  * - A negative viewport id applies to every current renderer viewport.
  * - A non-negative viewport id targets exactly one renderer viewport with the same numeric id.
- * - Pass-graph rebuilds are detected through the renderer revision counter, so the node reapplies
+ * - Feature-profile rebuilds are detected through the renderer revision counter, so the node reapplies
  *   settings after viewport recreation or preset changes.
  *
  * Ownership and lifetime:
  * - The node owns only its stored parameter values.
- * - Matching SSGI passes are owned by the renderer and may disappear when viewport graphs change.
- * - No pass pointer is retained across frames.
+ * - Renderer feature resources are owned by the renderer and may be recreated when viewport profiles change.
+ * - No renderer-internal pointer is retained across frames.
  *
  * Threading model:
  * - Main-thread only.
@@ -173,7 +169,7 @@ public:
     /** @brief Mark the node dirty and attempt an immediate apply. */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -184,8 +180,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -208,7 +204,7 @@ private:
     std::uint32_t m_temporalDebugMode = 0;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

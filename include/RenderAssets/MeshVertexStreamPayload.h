@@ -12,9 +12,9 @@ namespace SnAPI::GameFramework
 {
 
 SnType()
-struct MeshStreamSourcePayload
+struct MeshVertexStreamPayload
 {
-    static constexpr const char* kTypeName = "SnAPI::GameFramework::MeshStreamSourcePayload";
+    static constexpr const char* kTypeName = "SnAPI::GameFramework::MeshVertexStreamPayload";
 
     SnField(SnKey("Semantic"), SnReadOnly)
     EMeshStreamSemantic Semantic = EMeshStreamSemantic::Position;
@@ -31,9 +31,9 @@ struct MeshStreamSourcePayload
     SnField(SnKey("Compress"), SnReadOnly)
     bool Compress = true;
 
-    bool operator==(const MeshStreamSourcePayload&) const = default;
+    bool operator==(const MeshVertexStreamPayload&) const = default;
 };
 
-SNAPI_DEFINE_TYPE_NAME(std::vector<MeshStreamSourcePayload>, "std::vector<SnAPI::GameFramework::MeshStreamSourcePayload>")
+SNAPI_DEFINE_TYPE_NAME(std::vector<MeshVertexStreamPayload>, "std::vector<SnAPI::GameFramework::MeshVertexStreamPayload>")
 
 } // namespace SnAPI::GameFramework

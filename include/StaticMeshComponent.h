@@ -12,14 +12,11 @@
 #include "BaseComponent.h"
 #include "BuiltinTypes.h"
 #include "RenderAssetPayloads.h"
+#include "RenderAssets/MaterialInstanceAsset.h"
+#include "RenderAssets/StaticMeshAsset.h"
 #include "ReflectionAnnotations.h"
-
-namespace SnAPI::Graphics
-{
-class MaterialInstance;
-class IRenderObject;
-class IVertexStreamSource;
-} // namespace SnAPI::Graphics
+#include "Rendering/GameRenderMesh.h"
+#include "Rendering/GameRenderObject.h"
 
 namespace SnAPI::GameFramework
 {
@@ -28,27 +25,21 @@ class RendererSystem;
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Component that builds and registers a static render object with the renderer.
+ * @brief Component that builds and registers a static mesh instance with the renderer.
  *
- * `StaticMeshComponent` owns one renderer mesh render-object and keeps it synchronized
- * with the owning node's transform and visibility/shadow participation state. It is the
- * standard bridge from GameFramework nodes into the renderer geometry passes for rigid,
- * non-animated meshes.
+ * `StaticMeshComponent` owns one renderer mesh record plus one retained renderer scene
+ * object, and keeps that object synchronized with the owning node transform and
+ * visibility/shadow state. It is the standard bridge from GameFramework nodes into
+ * renderer scene geometry for rigid, non-animated meshes.
  *
  * Mesh source priority:
- * - a procedural vertex-stream source set through `SetVertexStreamSource(...)` takes highest priority
- * - otherwise `Settings::MeshAsset` is the preferred runtime/cooked asset path
- * - otherwise certain primitive tokens in `Settings::MeshPath` are supported
- *
- * Current implementation note:
- * - `MeshPath` reliably supports built-in primitive tokens such as `primitive://box`
- * - non-primitive filesystem/content-path strings participate in change detection/editor compatibility,
- *   but do not currently guarantee direct source-path loading on their own
+ * - `Settings::MeshAsset` is the authored/cooked asset path
+ * - `Settings::MeshPath` accepts built-in primitive URIs such as `primitive://box`
+ * - non-primitive filesystem/content strings are intentionally not loaded directly by this component
  *
  * Ownership and lifetime:
- * - The component owns the `IRenderObject` shared pointer it creates.
- * - The renderer only borrows the render object while it is registered in passes.
- * - `RenderObject()` returns a borrowed reference to the component-owned shared pointer.
+ * - Renderer.New builds retain `GameRenderMesh` and `GameRenderObject` records.
+ * - Accessors return borrowed references to the component-owned renderer record.
  *
  * Threading model:
  * - Main-thread only.
@@ -67,8 +58,8 @@ public:
      * @brief Runtime mesh/render settings.
      *
      * Semantics:
-     * - `RegisterWithRenderer` controls pass registration, not object creation
-     * - `Visible` and `CastShadows` feed renderer pass membership through `RendererSystem::ConfigureRenderObjectPasses(...)`
+     * - `RetainInScene` controls retained scene-object registration, not mesh loading
+     * - `Visible` and `CastShadows` update renderer scene-object participation
      * - `MaterialInstanceOverrides` replace matching baked material slots while leaving unspecified slots unchanged
      */
     SnType()
@@ -77,15 +68,15 @@ public:
         static constexpr const char* kTypeName = "SnAPI::GameFramework::StaticMeshComponent::Settings";
 
         SnField(SnKey("MeshPath"), SnReplicated)
-        std::string MeshPath{}; /**< @brief Optional compatibility mesh token. Primitive tokens are supported directly; non-primitive paths are currently best treated as metadata/change keys rather than guaranteed load sources. */
+        std::string MeshPath{}; /**< @brief Optional built-in primitive mesh URI such as `primitive://box`. */
         SnField(SnKey("Visible"), SnReplicated)
-        bool Visible = true; /**< @brief Toggle visibility in primary geometry pass. */
+        bool Visible = true; /**< @brief Toggle retained scene-object visibility. */
         SnField(SnKey("CastShadows"), SnReplicated)
-        bool CastShadows = true; /**< @brief Toggle participation in shadow pass. */
+        bool CastShadows = true; /**< @brief Toggle shadow-capable feature participation for the retained object. */
         SnField(SnKey("SyncFromTransform"))
         bool SyncFromTransform = true; /**< @brief Push owner transform to mesh local transform each tick. */
-        SnField(SnKey("RegisterWithRenderer"))
-        bool RegisterWithRenderer = true; /**< @brief Register loaded mesh in renderer draw list. */
+        SnField(SnKey("RetainInScene"))
+        bool RetainInScene = true; /**< @brief Retain the loaded mesh as a Renderer.New scene object. */
         SnField(SnKey("MeshAsset"), SnReplicated)
         StaticMeshAssetRef MeshAsset{}; /**< @brief Preferred authored static-mesh asset reference. */
         SnField(SnKey("MaterialInstanceOverrides"), SnReplicated)
@@ -108,44 +99,24 @@ public:
     /** @brief Explicitly clear cached load state and rebuild from current source settings. @return `true` when a render object is available after reload. */
     SnFunction(SnKey("ReloadMesh"))
     bool ReloadMesh();
-    /** @brief Clear the current render object and remove it from all renderer passes. */
+    /** @brief Clear the current render mesh and retained scene object. */
     void ClearMesh();
 
-    /**
-     * @brief Override mesh submesh material instances with shared instances.
-     * @param GBufferInstance Shared material instance applied to all geometry-pass submeshes.
-     * @param ShadowInstance Optional shared material instance applied to all shadow-pass submeshes.
-     * @remarks Useful when many objects should intentionally share one descriptor/material-state set.
-     */
-    void SetSharedMaterialInstances(std::shared_ptr<SnAPI::Graphics::MaterialInstance> GBufferInstance,
-                                    std::shared_ptr<SnAPI::Graphics::MaterialInstance> ShadowInstance = {});
-
-    /**
-     * @brief Override the render-object geometry source with a procedural vertex stream.
-     * @param StreamSource Shared procedural stream source, or null to clear the override.
-     * @remarks
-     * When set, this takes precedence over asset and mesh-path loading.
-     * Changing the source clears the current render object so it can be rebuilt lazily.
-     */
-    void SetVertexStreamSource(std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> StreamSource);
-
-    /** @brief Get the currently assigned procedural vertex stream source override. */
-    [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>& GetVertexStreamSource() const
+    [[nodiscard]] const GameRenderMesh& RenderMesh() const
     {
-        return m_streamSource;
+        return m_renderMesh;
     }
 
-    /** @brief Access the component-owned renderer object handle. @return Borrowed reference to the shared-pointer handle, which may be empty. */
-    [[nodiscard]] const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject() const
+    [[nodiscard]] const GameRenderObject& RenderObject() const
     {
         return m_renderObject;
     }
 
     /** @brief Attempt initial mesh/render-object creation from the current source settings. */
     void OnCreate();
-    /** @brief Remove the render object from renderer passes and clear owned state. */
+    /** @brief Destroy the retained scene object and clear owned render resources. */
     void OnDestroy();
-    /** @brief Per-frame transform/pass-state synchronization. @param DeltaSeconds Frame delta in seconds. */
+    /** @brief Per-frame transform and retained scene-object synchronization. @param DeltaSeconds Frame delta in seconds. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only update hook. @param DeltaSeconds Frame delta in seconds. */
@@ -157,25 +128,18 @@ public:
 private:
     RendererSystem* ResolveRendererSystem() const;
     bool EnsureMeshLoaded();
-    void SyncRenderObjectTransform(SnAPI::Graphics::IRenderObject& RenderObject) const;
-    void ApplyConfiguredMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject);
-    void ApplySharedMaterialInstances(SnAPI::Graphics::IRenderObject& RenderObject) const;
-    void ApplyRenderObjectState(SnAPI::Graphics::IRenderObject& RenderObject);
+    void SyncRenderObjectTransform();
+    void UpdateRetainedSceneObject();
 
     Settings m_settings{}; /**< @brief Mesh/render settings. */
-    std::shared_ptr<SnAPI::Graphics::IRenderObject> m_renderObject{}; /**< @brief Per-instance render object state. */
+    GameRenderMesh m_renderMesh{};
+    GameRenderObject m_renderObject{};
     std::string m_loadedPath{}; /**< @brief Last successfully loaded path. */
     bool m_loadedFromAsset = false; /**< @brief True when current mesh originated from `Settings::MeshAsset`. */
     std::vector<TAssetRef<MaterialInstanceAsset>> m_loadedMeshMaterialInstances{}; /**< @brief Material instance asset refs baked into currently loaded mesh asset. */
-    bool m_registered = false; /**< @brief True when current mesh has been registered with renderer. */
-    bool m_passStateInitialized = false; /**< @brief True after initial pass visibility/shadow state push. */
     bool m_lastVisible = true; /**< @brief Last applied visibility state. */
     bool m_lastCastShadows = true; /**< @brief Last applied cast-shadows state. */
-    std::uint64_t m_lastPassGraphRevision = 0; /**< @brief Last renderer pass-graph revision applied to this render object. */
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_sharedGBufferInstance{}; /**< @brief Optional shared GBuffer material instance override. */
-    std::shared_ptr<SnAPI::Graphics::MaterialInstance> m_sharedShadowInstance{}; /**< @brief Optional shared shadow material instance override. */
-    std::shared_ptr<SnAPI::Graphics::IVertexStreamSource> m_streamSource{}; /**< @brief Optional procedural stream source override. */
-    std::weak_ptr<SnAPI::Graphics::IVertexStreamSource> m_loadedStreamSource{}; /**< @brief Last procedural source used to build current render object. */
+    bool m_retainedSceneObjectStateInitialized = false; /**< @brief True after the retained object visibility/shadow state was evaluated. */
     std::string m_lastFailedPathLoadKey{}; /**< @brief Last source-path load key that failed; used to avoid per-frame retry loops. */
 };
 

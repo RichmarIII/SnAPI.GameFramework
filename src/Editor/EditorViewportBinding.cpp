@@ -4,13 +4,11 @@
 #include "RendererSystem.h"
 #include "UISystem.h"
 #include "World.h"
+#include "Rendering/GameRenderCamera.h"
 
 #include <algorithm>
 #include <cmath>
 
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-#include "WindowBase.hpp"
-#endif
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -18,6 +16,7 @@ namespace
 {
 constexpr float kMinExtent = 1.0f;
 constexpr float kChangeEpsilon = 0.25f;
+constexpr std::uint64_t kSurfaceViewportId = 1u;
 } // namespace
 
 Result EditorViewportBinding::Initialize(GameRuntime& Runtime, std::string ViewportName)
@@ -28,7 +27,8 @@ Result EditorViewportBinding::Initialize(GameRuntime& Runtime, std::string Viewp
     return std::unexpected(MakeError(EErrorCode::NotSupported,
                                      "Editor viewport binding requires renderer and UI support"));
 #else
-    Shutdown(&Runtime);
+    (void)ViewportName;
+    Shutdown(nullptr);
 
     auto* WorldPtr = Runtime.WorldPtr();
     if (!WorldPtr)
@@ -41,11 +41,6 @@ Result EditorViewportBinding::Initialize(GameRuntime& Runtime, std::string Viewp
     if (!Renderer.IsInitialized() || !UI.IsInitialized())
     {
         return std::unexpected(MakeError(EErrorCode::NotReady, "Renderer or UI system is not initialized"));
-    }
-
-    if (!ViewportName.empty())
-    {
-        m_viewportName = std::move(ViewportName);
     }
 
     m_rootContextId = UI.RootContextId();
@@ -61,41 +56,18 @@ Result EditorViewportBinding::Initialize(GameRuntime& Runtime, std::string Viewp
         return std::unexpected(MakeError(EErrorCode::InvalidArgument, "Failed to resolve editor viewport size"));
     }
 
-    (void)Renderer.UseDefaultRenderViewport(false);
-
-    std::uint64_t ViewportId = 0;
-    if (!Renderer.CreateRenderViewport(m_viewportName,
-                                       0.0f,
-                                       0.0f,
-                                       Width,
-                                       Height,
-                                       static_cast<std::uint32_t>(std::round(Width)),
-                                       static_cast<std::uint32_t>(std::round(Height)),
-                                       nullptr,
-                                       true,
-                                       ViewportId))
+    if (!Renderer.UseDefaultRenderViewport(true) || !Renderer.HasRenderViewport(kSurfaceViewportId))
     {
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to create root editor render viewport"));
+        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to enable renderer surface viewport"));
     }
 
-    m_viewportId = ViewportId;
+    m_viewportId = kSurfaceViewportId;
     m_lastWidth = Width;
     m_lastHeight = Height;
-    m_appliedRenderWidth = std::max<std::uint32_t>(1u, static_cast<std::uint32_t>(std::round(Width)));
-    m_appliedRenderHeight = std::max<std::uint32_t>(1u, static_cast<std::uint32_t>(std::round(Height)));
-    m_pendingRenderWidth = m_appliedRenderWidth;
-    m_pendingRenderHeight = m_appliedRenderHeight;
-    m_hasPendingRenderExtentResize = false;
-
-    if (!Renderer.RegisterRenderViewportPassGraph(m_viewportId, ERenderViewportPassGraphPreset::UiPresentOnly))
-    {
-        Shutdown(&Runtime);
-        return std::unexpected(MakeError(EErrorCode::InternalError, "Failed to register UiPresentOnly root pass graph"));
-    }
 
     if (auto BindResult = Runtime.BindViewportWithUI(m_viewportId, m_rootContextId); !BindResult)
     {
-        Shutdown(&Runtime);
+        Shutdown(nullptr);
         return std::unexpected(BindResult.error());
     }
 
@@ -110,29 +82,13 @@ void EditorViewportBinding::Shutdown(GameRuntime* Runtime)
 #if !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(SNAPI_GF_ENABLE_UI)
     (void)Runtime;
 #else
-    if (Runtime && Runtime->WorldPtr())
-    {
-        auto& Renderer = Runtime->World().Renderer();
-        if (m_viewportId != 0)
-        {
-            (void)Runtime->UnbindViewportFromUI(m_viewportId);
-            if (Renderer.IsInitialized())
-            {
-                (void)Renderer.DestroyRenderViewport(m_viewportId);
-            }
-        }
-    }
+    (void)Runtime;
 #endif
 
     m_viewportId = 0;
     m_rootContextId = 0;
     m_lastWidth = 0.0f;
     m_lastHeight = 0.0f;
-    m_appliedRenderWidth = 0;
-    m_appliedRenderHeight = 0;
-    m_pendingRenderWidth = 0;
-    m_pendingRenderHeight = 0;
-    m_hasPendingRenderExtentResize = false;
 }
 
 bool EditorViewportBinding::SyncToWindow(GameRuntime& Runtime)
@@ -159,14 +115,14 @@ bool EditorViewportBinding::SyncToWindow(GameRuntime& Runtime)
         return false;
     }
 
-    // Editor flow is fully explicit-viewport based. Keep the renderer default viewport
-    // disabled so no implicit fullscreen viewport can participate in rendering.
-    (void)Renderer.UseDefaultRenderViewport(false);
-
-    if (!Renderer.HasRenderViewport(m_viewportId))
+    if (!Renderer.UseDefaultRenderViewport(true))
     {
-        const std::string SavedName = m_viewportName;
-        const Result RecreateResult = Initialize(Runtime, SavedName);
+        return false;
+    }
+
+    if (m_viewportId != kSurfaceViewportId || !Renderer.HasRenderViewport(kSurfaceViewportId))
+    {
+        const Result RecreateResult = Initialize(Runtime, {});
         return static_cast<bool>(RecreateResult);
     }
 
@@ -182,10 +138,6 @@ bool EditorViewportBinding::SyncToWindow(GameRuntime& Runtime)
         return false;
     }
 
-    const auto ToRenderExtent = [](const float Value) {
-        return std::max<std::uint32_t>(1u, static_cast<std::uint32_t>(std::round(Value)));
-    };
-
     const bool NeedsResize = std::abs(Width - m_lastWidth) > kChangeEpsilon || std::abs(Height - m_lastHeight) > kChangeEpsilon;
     if (NeedsResize)
     {
@@ -195,71 +147,7 @@ bool EditorViewportBinding::SyncToWindow(GameRuntime& Runtime)
         (void)UI.SetContextScreenRect(m_rootContextId, 0.0f, 0.0f, Width, Height);
     }
 
-    const std::uint32_t DesiredRenderWidth = ToRenderExtent(Width);
-    const std::uint32_t DesiredRenderHeight = ToRenderExtent(Height);
-    std::uint32_t RenderWidth = m_appliedRenderWidth > 0 ? m_appliedRenderWidth : DesiredRenderWidth;
-    std::uint32_t RenderHeight = m_appliedRenderHeight > 0 ? m_appliedRenderHeight : DesiredRenderHeight;
-    bool ApplyRenderExtent = false;
-    bool IsPointerPressed = false;
-#if defined(SNAPI_GF_ENABLE_INPUT)
-    if (const auto* Snapshot = WorldPtr->Input().Snapshot())
-    {
-        IsPointerPressed = Snapshot->MouseButtonDown(SnAPI::Input::EMouseButton::Left);
-    }
-#endif
-
-    if (DesiredRenderWidth != m_appliedRenderWidth || DesiredRenderHeight != m_appliedRenderHeight)
-    {
-        const bool PendingChanged = !m_hasPendingRenderExtentResize
-                                    || m_pendingRenderWidth != DesiredRenderWidth
-                                    || m_pendingRenderHeight != DesiredRenderHeight;
-        if (PendingChanged)
-        {
-            m_pendingRenderWidth = DesiredRenderWidth;
-            m_pendingRenderHeight = DesiredRenderHeight;
-            m_hasPendingRenderExtentResize = true;
-        }
-
-        if (!IsPointerPressed)
-        {
-            RenderWidth = m_pendingRenderWidth;
-            RenderHeight = m_pendingRenderHeight;
-            ApplyRenderExtent = true;
-        }
-    }
-    else
-    {
-        m_pendingRenderWidth = DesiredRenderWidth;
-        m_pendingRenderHeight = DesiredRenderHeight;
-        m_hasPendingRenderExtentResize = false;
-        RenderWidth = DesiredRenderWidth;
-        RenderHeight = DesiredRenderHeight;
-    }
-
-    if (!NeedsResize && !ApplyRenderExtent)
-    {
-        return true;
-    }
-
-    const bool Updated = Renderer.UpdateRenderViewport(m_viewportId,
-                                                       m_viewportName,
-                                                       0.0f,
-                                                       0.0f,
-                                                       Width,
-                                                       Height,
-                                                       RenderWidth,
-                                                       RenderHeight,
-                                                       nullptr,
-                                                       true);
-    if (Updated && (ApplyRenderExtent || m_appliedRenderWidth == 0 || m_appliedRenderHeight == 0))
-    {
-        m_appliedRenderWidth = RenderWidth;
-        m_appliedRenderHeight = RenderHeight;
-        m_pendingRenderWidth = RenderWidth;
-        m_pendingRenderHeight = RenderHeight;
-        m_hasPendingRenderExtentResize = false;
-    }
-    return Updated;
+    return true;
 #endif
 }
 
@@ -278,20 +166,6 @@ bool EditorViewportBinding::ResolveViewportSize(GameRuntime& Runtime, float& Out
         return false;
     }
 
-#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
-    const auto* Window = WorldPtr->Renderer().Window();
-    if (Window)
-    {
-        const auto WindowSize = Window->Size();
-        if (std::isfinite(WindowSize.x()) && std::isfinite(WindowSize.y()) && WindowSize.x() > kMinExtent &&
-            WindowSize.y() > kMinExtent)
-        {
-            OutWidth = WindowSize.x();
-            OutHeight = WindowSize.y();
-            return true;
-        }
-    }
-#endif
 
     const auto& UiSettings = WorldPtr->UI().Settings();
     if (!std::isfinite(UiSettings.ViewportWidth) || !std::isfinite(UiSettings.ViewportHeight))

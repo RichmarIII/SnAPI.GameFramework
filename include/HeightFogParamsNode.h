@@ -11,23 +11,18 @@
 #include "Math.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class HeightFogPass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures height-fog passes for one or more render viewports.
+ * @brief Data-driven node that configures height-fog feature settings for one or more render viewports.
  *
  * `HeightFogParamsNode` is the world-facing contract for volumetric-style height fog tuning. The
- * node stores fog parameters, waits for a compatible `HeightFogPass` to appear in the selected
- * viewport, and then uploads the sanitized values. It may apply to multiple fullscreen passes per
- * viewport because the renderer can host several fullscreen stages and only some of them are height
- * fog passes.
+ * node stores fog parameters, waits for a compatible height-fog feature state to appear in the selected
+ * viewport, and then uploads the sanitized values. It may apply to multiple fullscreen feature stages per
+ * viewport because the renderer can host several fullscreen stages and only some of them are height fog.
  *
  * Height semantics:
  * - Absolute-height mode interprets offsets and rebase origins in world-space meters.
@@ -38,11 +33,11 @@ namespace SnAPI::GameFramework
  * Viewport selection semantics:
  * - Negative viewport ids target all current render viewports.
  * - Non-negative ids target one viewport by renderer id.
- * - Pass-graph rebuilds trigger automatic reapplication through the cached revision check.
+ * - Feature-profile rebuilds trigger automatic reapplication through the cached revision check.
  *
  * Ownership and lifetime:
  * - The node owns only serialized fog parameters.
- * - Matching fog passes and the active camera are borrowed from `RendererSystem`.
+ * - Fog feature state and the active camera are accessed through `RendererSystem`.
  *
  * Threading model:
  * - Main-thread only.
@@ -190,11 +185,11 @@ public:
 
     /**
      * @brief Mark the node dirty and attempt an initial fog upload.
-     * @remarks Safe before renderer readiness; missing passes simply cause future retries.
+     * @remarks Safe before renderer readiness; missing renderer feature state simply cause future retries.
      */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -205,8 +200,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -234,7 +229,7 @@ private:
     float m_sunInscatterIntensity = 0.05f;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

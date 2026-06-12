@@ -11,26 +11,22 @@
 #include "Math.h"
 #include "ReflectionAnnotations.h"
 
-namespace SnAPI::Graphics
-{
-class AtmospherePass;
-}
 
 namespace SnAPI::GameFramework
 {
 
 /**
  * @ingroup SnAPI_GameFramework
- * @brief Data-driven node that configures atmospheric scattering passes for one or more viewports.
+ * @brief Data-driven node that configures atmospheric scattering feature settings for one or more viewports.
  *
  * `AtmosphereParamsNode` stores the physically-inspired atmosphere parameters that should be pushed
- * into renderer-owned `AtmospherePass` instances. It does not create the pass or the viewport; it
+ * into renderer-owned atmosphere feature state. It does not create the feature state or the viewport; it
  * waits for those resources to exist, sanitizes its stored state, then uploads the current values.
  *
  * Viewport selection semantics:
  * - Negative viewport ids target all current renderer viewports.
  * - Non-negative ids target exactly one renderer viewport with the same numeric id.
- * - Recreated pass graphs are detected automatically through the renderer's pass-graph revision.
+ * - Recreated feature profiles are detected automatically through the renderer's feature-profile revision.
  *
  * Parameter semantics:
  * - Direction vectors are interpreted in world space and normalized before upload.
@@ -40,7 +36,7 @@ namespace SnAPI::GameFramework
  *
  * Ownership and lifetime:
  * - The node owns only serialized atmosphere configuration.
- * - The renderer owns the actual atmosphere passes and may recreate them at any time.
+ * - The renderer owns the actual atmosphere feature resources and may recreate them at any time.
  *
  * Threading model:
  * - Main-thread only.
@@ -72,7 +68,7 @@ public:
     /** @brief Read the target viewport selector. @return Stored viewport id; negative means all current viewports. */
     const std::int64_t& GetViewportID() const;
 
-    /** @brief Access the world-atmosphere feature toggle. @return Mutable flag enabling the pass's world-mode feature. */
+    /** @brief Access the world-atmosphere feature toggle. @return Mutable flag enabling world-mode atmosphere coordinates. */
     SnField(SnKey("WorldMode"), SnConstGetter(GetWorldMode))
     bool& EditWorldMode();
     /** @brief Read the world-atmosphere feature toggle. @return Stored world-mode flag. */
@@ -182,11 +178,11 @@ public:
 
     /**
      * @brief Mark the node dirty and attempt an initial atmosphere upload.
-     * @remarks Safe before renderer readiness; missing passes simply cause later retries.
+     * @remarks Safe before renderer readiness; missing renderer feature state simply cause later retries.
      */
     void OnCreate();
     void OnDestroy();
-    /** @brief Retry pass application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
+    /** @brief Retry feature-setting application when needed. @param DeltaSeconds Variable-step frame delta in seconds. Currently unused. */
     void Tick(float DeltaSeconds);
 #if defined(WITH_EDITOR) && WITH_EDITOR
     /** @brief Editor-only retry hook. @param DeltaSeconds Variable-step editor frame delta in seconds. Currently unused. */
@@ -197,8 +193,8 @@ public:
 
 private:
     void ApplyIfNeeded();
-    bool ApplyToPass();
-    void InvalidatePassCache();
+    bool ApplyFeatureSettings();
+    void InvalidateApplyState();
 
     std::int64_t m_viewportID = -1;
 
@@ -225,7 +221,7 @@ private:
     float m_multiScatterStrength = 2.0e-6f;
 
     bool m_applyPending = true;
-    std::uint64_t m_lastAppliedPassGraphRevision = 0;
+    std::uint64_t m_lastAppliedFeatureRevision = 0;
     std::uint64_t m_lastAppliedViewportID = 0;
 };
 

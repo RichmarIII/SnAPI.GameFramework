@@ -197,7 +197,7 @@ CameraComponent* EditorSceneService::ActiveCameraComponent() const
  * @brief Return no active render camera from the scene-service shim.
  * @return Always `nullptr`.
  */
-SnAPI::Graphics::ICamera* EditorSceneService::ActiveRenderCamera() const
+GameRenderCamera* EditorSceneService::ActiveRenderCamera() const
 {
     return nullptr;
 }

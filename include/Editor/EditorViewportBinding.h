@@ -15,24 +15,21 @@ namespace SnAPI::GameFramework::Editor
 
 /**
  * @ingroup SnAPI_GameFramework_Editor
- * @brief Owns the root editor render viewport and binds it to the root UI context.
+ * @brief Keeps the root editor UI context bound to the renderer surface viewport.
  *
  * `EditorViewportBinding` is the small stateful adapter that keeps the editor shell's root
- * render viewport synchronized with the runtime window and the root UI context.
+ * UI context synchronized with the runtime window and bound to the renderer's default
+ * surface viewport.
  *
  * Core semantics:
- * - Initialization creates an explicit renderer viewport instead of using the renderer's
- *   implicit default viewport.
- * - The created viewport is bound to the UI root context and assigned the `UiPresentOnly`
- *   pass-graph preset.
- * - `SyncToWindow()` preserves explicit-viewport mode, recreates missing bindings when
- *   possible, and keeps logical UI size and render extent in sync with the current window.
- * - Render-extent resize is intentionally deferred while the left mouse button is held to
- *   avoid resizing the render target during active drag operations.
+ * - Initialization enables the default renderer viewport (`1`) and binds it to the UI root context.
+ * - Embedded game/editor viewports remain explicit offscreen render viewports owned by `UIRenderViewport`.
+ * - `SyncToWindow()` recreates the root binding when needed and keeps the logical UI size
+ *   synchronized with the current renderer window size.
  *
  * Ownership and lifetime:
- * - The class stores only ids and cached size state.
- * - The underlying viewport and UI binding are owned by the runtime subsystems, not by this object.
+ * - The class stores only ids and cached UI size state.
+ * - The default renderer viewport and UI binding are owned by the runtime subsystems.
  * - Cached ids become invalid after `Shutdown()` or runtime teardown.
  *
  * Threading model:
@@ -46,17 +43,17 @@ class EditorViewportBinding final
 {
 public:
     /**
-     * @brief Create and bind the root editor viewport.
+     * @brief Bind the root editor UI context to the renderer surface viewport.
      * @param Runtime Initialized runtime that owns renderer and UI systems.
-     * @param ViewportName Optional logical viewport name. Empty input keeps the current/default name.
+     * @param ViewportName Reserved diagnostic name for callers that still pass one.
      * @return Success or an error.
      * @pre Renderer and UI subsystems must both be initialized.
-     * @post On success, `ViewportId()` and `ContextId()` reference a live explicit binding.
+     * @post On success, `ViewportId()` is the renderer default viewport id and `ContextId()` references the root UI context.
      */
     Result Initialize(GameRuntime& Runtime, std::string ViewportName);
     /**
-     * @brief Tear down the current viewport binding if it exists.
-     * @param Runtime Optional runtime used to unbind and destroy the live viewport. May be null during late teardown.
+     * @brief Clear cached binding state.
+     * @param Runtime Reserved runtime pointer for service lifecycle symmetry.
      * @remarks Safe to call repeatedly.
      */
     void Shutdown(GameRuntime* Runtime);
@@ -66,8 +63,8 @@ public:
      * @param Runtime Initialized runtime.
      * @return `true` when the binding remains valid and the requested sync work succeeded, otherwise `false`.
      * @remarks
-     * This function may recreate a missing viewport, rebind the UI context, and resize both
-     * the logical viewport rect and the render extent when required.
+     * This function may re-enable the default viewport, rebind the UI context, and resize
+     * the logical root UI rect when required.
      */
     [[nodiscard]] bool SyncToWindow(GameRuntime& Runtime);
     /**
@@ -91,16 +88,10 @@ private:
     [[nodiscard]] bool ResolveViewportSize(GameRuntime& Runtime, float& OutWidth, float& OutHeight) const;
     [[nodiscard]] bool EnsureUiBinding(GameRuntime& Runtime) const;
 
-    std::string m_viewportName{"Editor.RootViewport"};
     std::uint64_t m_viewportId = 0;
     std::uint64_t m_rootContextId = 0;
     float m_lastWidth = 0.0f;
     float m_lastHeight = 0.0f;
-    std::uint32_t m_appliedRenderWidth = 0;
-    std::uint32_t m_appliedRenderHeight = 0;
-    std::uint32_t m_pendingRenderWidth = 0;
-    std::uint32_t m_pendingRenderHeight = 0;
-    bool m_hasPendingRenderExtentResize = false;
 };
 
 } // namespace SnAPI::GameFramework::Editor

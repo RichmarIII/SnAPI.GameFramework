@@ -758,10 +758,10 @@ void AppendMaterialInstanceDependency(std::vector<::SnAPI::AssetPipeline::AssetD
     return true;
 }
 
-[[nodiscard]] bool ParseStreamSourceArray(
+[[nodiscard]] bool ParseVertexStreamArray(
     const JsonValue& Root,
     std::string_view SourceUri,
-    std::vector<MeshStreamSourcePayload>& OutStreams)
+    std::vector<MeshVertexStreamPayload>& OutStreams)
 {
     const JsonValue* Streams = TryGetField(Root, "streams");
     if (!Streams || Streams->Type != EJsonValueType::Array)
@@ -776,7 +776,7 @@ void AppendMaterialInstanceDependency(std::vector<::SnAPI::AssetPipeline::AssetD
             return false;
         }
 
-        MeshStreamSourcePayload Stream{};
+        MeshVertexStreamPayload Stream{};
         if (const JsonValue* SemanticValue = TryGetField(StreamValue, "semantic"))
         {
             std::string SemanticText{};
@@ -1185,13 +1185,13 @@ public:
         {
             StaticMeshAsset SourcePayload{};
             if (!ParseStaticMeshPayloadFields(Root, SourcePayload.Mesh) ||
-                !ParseStreamSourceArray(Root, Source.Uri, SourcePayload.Streams))
+                !ParseVertexStreamArray(Root, Source.Uri, SourcePayload.Streams))
             {
                 Ctx.LogError("RenderAsset importer failed to parse static mesh payload: %s", Source.Uri.c_str());
                 return false;
             }
 
-            for (const MeshStreamSourcePayload& Stream : SourcePayload.Streams)
+            for (const MeshVertexStreamPayload& Stream : SourcePayload.Streams)
             {
                 Item.Dependencies.emplace_back(Stream.Uri, 0);
             }
@@ -1224,7 +1224,7 @@ public:
             }
 
             if (!ParseStaticMeshPayloadFields(*BaseMesh, SourcePayload.BaseMesh.Mesh) ||
-                !ParseStreamSourceArray(*BaseMesh, Source.Uri, SourcePayload.BaseMesh.Streams))
+                !ParseVertexStreamArray(*BaseMesh, Source.Uri, SourcePayload.BaseMesh.Streams))
             {
                 Ctx.LogError("RenderAsset importer failed to parse skeletal base mesh: %s", Source.Uri.c_str());
                 return false;
@@ -1285,7 +1285,7 @@ public:
                     ResolveUriRelativeToSource(Source.Uri, std::move(SourcePayload.SkeletonAnimationUri));
             }
 
-            for (const MeshStreamSourcePayload& Stream : SourcePayload.BaseMesh.Streams)
+            for (const MeshVertexStreamPayload& Stream : SourcePayload.BaseMesh.Streams)
             {
                 Item.Dependencies.emplace_back(Stream.Uri, 0);
             }
@@ -1656,7 +1656,7 @@ public:
         CookedPayload.Streams.clear();
         CookedPayload.Streams.reserve(SourcePayload.Streams.size());
 
-        for (const MeshStreamSourcePayload& Stream : SourcePayload.Streams)
+        for (const MeshVertexStreamPayload& Stream : SourcePayload.Streams)
         {
             if (Stream.ElementCount == 0 || Stream.StrideBytes == 0)
             {
@@ -1752,7 +1752,7 @@ public:
         CookedPayload.BaseMesh.Streams.clear();
         CookedPayload.BaseMesh.Streams.reserve(SourcePayload.BaseMesh.Streams.size());
 
-        for (const MeshStreamSourcePayload& Stream : SourcePayload.BaseMesh.Streams)
+        for (const MeshVertexStreamPayload& Stream : SourcePayload.BaseMesh.Streams)
         {
             if (Stream.ElementCount == 0 || Stream.StrideBytes == 0)
             {
