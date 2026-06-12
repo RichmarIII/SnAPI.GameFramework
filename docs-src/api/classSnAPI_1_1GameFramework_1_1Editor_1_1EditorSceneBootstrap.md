@@ -85,9 +85,9 @@ Access the currently tracked active camera component.
 **Returns:** Non-owning pointer or `nullptr` when no active camera component is known.
 </div>
 <div class="snapi-api-card" markdown="1">
-### `SnAPI::Graphics::ICamera * SnAPI::GameFramework::Editor::EditorSceneBootstrap::ActiveRenderCamera() const`
+### `GameRenderCamera * SnAPI::GameFramework::Editor::EditorSceneBootstrap::ActiveRenderCamera() const`
 
-Access the currently tracked render-camera interface.
+Access the currently tracked render camera.
 
 **Returns:** Non-owning pointer or `nullptr` when no active camera is available.
 </div>

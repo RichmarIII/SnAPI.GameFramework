@@ -6,7 +6,7 @@ repo_name: RichmarIII/SnAPI.GameFramework
 edit_uri: ""
 
 docs_dir: docs-src
-site_dir: docs
+site_dir: docs/site
 use_directory_urls: true
 
 theme:

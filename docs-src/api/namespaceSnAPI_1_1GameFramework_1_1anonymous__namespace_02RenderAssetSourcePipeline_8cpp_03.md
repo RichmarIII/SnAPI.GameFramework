@@ -152,7 +152,7 @@
 - `Out`:
 </div>
 <div class="snapi-api-card" markdown="1">
-### `bool SnAPI::GameFramework::anonymous_namespace{RenderAssetSourcePipeline.cpp}::ParseStreamSourceArray(const JsonValue &Root, std::string_view SourceUri, std::vector< MeshStreamSourcePayload > &OutStreams)`
+### `bool SnAPI::GameFramework::anonymous_namespace{RenderAssetSourcePipeline.cpp}::ParseVertexStreamArray(const JsonValue &Root, std::string_view SourceUri, std::vector< MeshVertexStreamPayload > &OutStreams)`
 
 **Parameters**
 

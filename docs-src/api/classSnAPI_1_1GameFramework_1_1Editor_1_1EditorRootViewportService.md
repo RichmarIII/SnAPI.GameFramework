@@ -1,8 +1,8 @@
 # SnAPI::GameFramework::Editor::EditorRootViewportService
 
-Service that owns and resizes the root editor viewport binding.
+Service that owns the root editor UI surface binding.
 
-This is the service wrapper around `EditorViewportBinding`. It keeps the explicit root viewport alive and synchronized with the current runtime window for the duration of the editor session.
+This is the service wrapper around `EditorViewportBinding`. It keeps the root editor UI context bound to the renderer surface viewport for the duration of the editor session.
 
 ## Private Members
 
@@ -20,7 +20,7 @@ Service name used for diagnostics.
 <div class="snapi-api-card" markdown="1">
 ### `Result SnAPI::GameFramework::Editor::EditorRootViewportService::Initialize(EditorServiceContext &Context) override`
 
-Create the root editor viewport binding.
+Create the root editor UI surface binding.
 
 **Parameters**
 
@@ -29,7 +29,7 @@ Create the root editor viewport binding.
 <div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::Editor::EditorRootViewportService::Tick(EditorServiceContext &Context, float DeltaSeconds) override`
 
-Propagate window-size and UI-binding changes into the explicit root viewport.
+Propagate window-size and UI-binding changes into the root editor UI surface binding.
 
 **Parameters**
 
@@ -39,7 +39,7 @@ Propagate window-size and UI-binding changes into the explicit root viewport.
 <div class="snapi-api-card" markdown="1">
 ### `void SnAPI::GameFramework::Editor::EditorRootViewportService::Shutdown(EditorServiceContext &Context) override`
 
-Destroy the explicit root viewport binding.
+Clear the root editor UI surface binding.
 
 **Parameters**
 

@@ -17,13 +17,13 @@ GameRuntimeSettings Settings{};
 Settings.WorldName = "RenderWorld";
 
 GameRuntimeRendererSettings Renderer{};
-Renderer.CreateGraphicsApi = true;
+Renderer.CreateRendererRuntime = true;
 Renderer.CreateWindow = true;
 Renderer.WindowTitle = "SnAPI.GameFramework";
 Renderer.WindowWidth = 1280.0f;
 Renderer.WindowHeight = 720.0f;
 Renderer.CreateDefaultLighting = true;
-Renderer.RegisterDefaultPassGraph = true;
+Renderer.ApplyDefaultFeatureProfile = true;
 Renderer.CreateDefaultMaterials = true;
 Renderer.CreateDefaultEnvironmentProbe = true;
 Settings.Renderer = Renderer;
@@ -111,7 +111,7 @@ if (auto Mesh = Cube->Add<StaticMeshComponent>())
     MeshSettings.Visible = true;
     MeshSettings.CastShadows = true;
     MeshSettings.SyncFromTransform = true;
-    MeshSettings.RegisterWithRenderer = true;
+    MeshSettings.RetainInScene = true;
 }
 ```
 
@@ -131,7 +131,7 @@ Common settings:
 - `Visible`
 - `CastShadows`
 - `SyncFromTransform`
-- `RegisterWithRenderer`
+- `RetainInScene`
 - `AutoPlayAnimations`
 - `LoopAnimations`
 - `AnimationName`
