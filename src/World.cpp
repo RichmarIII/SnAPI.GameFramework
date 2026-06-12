@@ -18,8 +18,8 @@
 #include <cstdint>
 #include <cmath>
 #include <iostream>
-#if defined(SNAPI_GF_ENABLE_RENDERER)
-#include <LinearAlgebra.hpp>
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
+#include "SnAPI/Math/LinearAlgebra.h"
 #include <ICamera.hpp>
 #include <FontFace.hpp>
 #endif
@@ -33,7 +33,7 @@ namespace SnAPI::GameFramework
 
 namespace
 {
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
 class UiFontMetricsAdapter final : public SnAPI::UI::IFontMetrics
 {
 public:
@@ -821,7 +821,7 @@ void World::FixedTick(float DeltaSeconds)
     {
         if (m_physicsSystem.Settings().AutoRebaseFloatingOrigin)
         {
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
             if (const auto* ActiveCamera = m_rendererSystem.ActiveCamera())
             {
                 {
@@ -905,12 +905,14 @@ void World::EndFrame()
         };
 
         SnAPI::UI::IFontMetrics* Metrics = nullptr;
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
         static UiFontMetricsAdapter FontMetricsAdapter{};
         if (auto* FontFace = m_rendererSystem.EnsureDefaultFontFace())
         {
             FontMetricsAdapter.Bind(FontFace);
             Metrics = &FontMetricsAdapter;
         }
+#endif
 
         const auto ContextIds = m_uiSystem.ContextIds();
         for (const auto ContextId : ContextIds)

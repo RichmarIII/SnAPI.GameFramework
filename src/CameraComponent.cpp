@@ -1,12 +1,12 @@
 #include "CameraComponent.h"
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 
 #include <algorithm>
 #include <cmath>
 
 #include <SnAPI/Math/LinearAlgebra.h>
-#include <LinearAlgebra.hpp>
+#include "SnAPI/Math/LinearAlgebra.h"
 #include <CameraBase.hpp>
 
 #include "BaseNode.h"
@@ -301,4 +301,125 @@ void CameraComponent::SyncFromTransform() const
 
 } // namespace SnAPI::GameFramework
 
-#endif // SNAPI_GF_ENABLE_RENDERER
+#elif defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+
+#include "BaseNode.h"
+#include "IWorld.h"
+#include "RendererSystem.h"
+#include "TransformComponent.h"
+
+namespace SnAPI::GameFramework
+{
+namespace
+{
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsCameraSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "NearClip"
+        || Name == "FarClip"
+        || Name == "FovDegrees"
+        || Name == "Aspect"
+        || Name == "Active"
+        || Name == "SyncFromTransform"
+        || Name == "LocalPositionOffset"
+        || Name == "LocalRotationOffsetEuler"
+        || Name == "AutoActivateForPlayer";
+}
+#endif
+} // namespace
+
+SnAPI::Graphics::CameraBase* CameraComponent::Camera()
+{
+    return nullptr;
+}
+
+const SnAPI::Graphics::CameraBase* CameraComponent::Camera() const
+{
+    return nullptr;
+}
+
+std::shared_ptr<SnAPI::Graphics::CameraBase> CameraComponent::CameraShared() const
+{
+    return {};
+}
+
+CameraComponent::~CameraComponent() = default;
+
+void CameraComponent::SetActive(const bool Active)
+{
+    m_settings.Active = Active;
+}
+
+void CameraComponent::OnCreate()
+{
+    UpdateCamera(0.0f);
+}
+
+void CameraComponent::OnDestroy()
+{
+    m_camera.reset();
+}
+
+void CameraComponent::Tick(float DeltaSeconds)
+{
+    UpdateCamera(DeltaSeconds);
+}
+
+void CameraComponent::LateTick(float DeltaSeconds)
+{
+    UpdateCamera(DeltaSeconds);
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void CameraComponent::EditorTick(const float DeltaSeconds)
+{
+    UpdateCamera(DeltaSeconds);
+}
+
+void CameraComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (IsCameraSettingsField(Name))
+    {
+        UpdateCamera(0.0f);
+    }
+}
+#endif
+
+void CameraComponent::UpdateCamera(const float DeltaSeconds)
+{
+    (void)DeltaSeconds;
+}
+
+RendererSystem* CameraComponent::ResolveRendererSystem() const
+{
+    auto* Owner = OwnerNode();
+    if (!Owner)
+    {
+        return nullptr;
+    }
+
+    auto* WorldPtr = Owner->World();
+    if (!WorldPtr)
+    {
+        return nullptr;
+    }
+
+    return &WorldPtr->Renderer();
+}
+
+void CameraComponent::EnsureCamera()
+{
+}
+
+void CameraComponent::ApplyCameraSettings() const
+{
+}
+
+void CameraComponent::SyncFromTransform() const
+{
+}
+
+} // namespace SnAPI::GameFramework
+
+#endif // renderer integration

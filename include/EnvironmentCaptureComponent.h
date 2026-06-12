@@ -9,7 +9,7 @@
 
 #include "BaseComponent.h"
 #include "Export.h"
-#include <LinearAlgebra.hpp>
+#include "Math.h"
 #include "ReflectionAnnotations.h"
 
 namespace SnAPI::Graphics
@@ -76,9 +76,9 @@ public:
         SnField(SnKey("CaptureResourceNameOverride"))
         std::string CaptureResourceNameOverride{}; /**< @brief Optional graph resource name to capture instead of the viewport's configured final color resource. */
         SnField(SnKey("ProjectionExtents"))
-        SnAPI::Vector3D ProjectionExtents{SnAPI::Vector3D(5.0, 5.0, 5.0)}; /**< @brief Half-extents used for parallax-correct local specular projection. */
+        Vec3 ProjectionExtents{Vec3(5.0, 5.0, 5.0)}; /**< @brief Half-extents used for parallax-correct local specular projection. */
         SnField(SnKey("InfluenceExtents"))
-        SnAPI::Vector3D InfluenceExtents{SnAPI::Vector3D(7.5, 7.5, 7.5)}; /**< @brief Half-extents used for deferred local-probe blending weights. */
+        Vec3 InfluenceExtents{Vec3(7.5, 7.5, 7.5)}; /**< @brief Half-extents used for deferred local-probe blending weights. */
         SnField(SnKey("Priority"))
         float Priority = 1.0f; /**< @brief Relative probe priority when more than four probes overlap one pixel. */
     };

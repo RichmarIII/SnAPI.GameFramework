@@ -8,8 +8,10 @@
 #include <string_view>
 #include <vector>
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include <GBufferPass.hpp>
 #include <TMaterialFor.hpp>
+#endif
 
 namespace SnAPI::Graphics
 {
@@ -75,6 +77,8 @@ void ClearEditorImmediateRenderObjectMetadata();
  */
 [[nodiscard]] bool IsEditorImmediateGizmoRenderObject(const SnAPI::Graphics::IRenderObject* RenderObject,
                                                       SnAPI::Graphics::ERenderPassType PassType);
+
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 
 /**
  * @ingroup SnAPI_GameFramework_Editor
@@ -409,6 +413,8 @@ private:
     SnAPI::Graphics::SharedMaterialInstancePtr m_editorOverlayMaterialInstance{};
     SnAPI::Graphics::SharedMaterialInstancePtr m_editorOverlayGizmoMaterialInstance{};
 };
+
+#endif
 
 } // namespace SnAPI::GameFramework::Editor
 

@@ -74,7 +74,9 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include "CameraBase.hpp"
+#endif
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -13183,11 +13185,13 @@ void EditorLayout::BuildGamePane(PanelBuilder& Workspace, GameRuntime& Runtime, 
             m_onContentAssetDropRequested(Request);
             return true;
         }));
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     if (auto* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
         ActiveCameraComponent && ActiveCameraComponent->Camera())
     {
         ViewportElement.SetViewportCamera(ActiveCameraComponent->CameraShared());
     }
+#endif
 
     auto ProfilerTab = ViewTabs.Add(SnAPI::UI::UIPanel("Editor.GameProfilerTab"));
     auto& ProfilerTabPanel = ProfilerTab.Element();
@@ -14312,16 +14316,16 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
 
     Viewport->SetGameRuntime(&Runtime);
 
+    CameraComponent* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     std::shared_ptr<SnAPI::Graphics::ICamera> RetainedCamera{};
     SnAPI::Graphics::ICamera* RenderCamera = nullptr;
-    CameraComponent* ActiveCameraComponent = ResolveActiveCameraComponent(Runtime, ActiveCamera);
     if (ActiveCameraComponent)
     {
         RetainedCamera = ActiveCameraComponent->CameraShared();
         RenderCamera = RetainedCamera.get();
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
     if (!RenderCamera)
     {
         if (auto* WorldPtr = Runtime.WorldPtr())
@@ -14342,6 +14346,7 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
         }
     }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     if (RetainedCamera)
     {
         Viewport->SetViewportCamera(RetainedCamera);
@@ -14350,6 +14355,7 @@ void EditorLayout::SyncGameViewportCamera(GameRuntime& Runtime, ComponentHandle&
     {
         Viewport->SetViewportCamera(RenderCamera);
     }
+#endif
 }
 
 UIRenderViewport* EditorLayout::GameViewport() const

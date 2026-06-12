@@ -12,11 +12,14 @@
 #include <string>
 #include <utility>
 
-#include <ICamera.hpp>
 #include <UIContext.h>
 #include <UIEvents.h>
 #include <UIImage.h>
 #include <UISizing.h>
+
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
+#include <ICamera.hpp>
+#endif
 
 namespace SnAPI::GameFramework
 {
@@ -545,10 +548,12 @@ void UIRenderViewport::SyncViewport()
         RenderHeight = DesiredRenderHeight;
     }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     if (m_camera && RenderHeight > 0u)
     {
         m_camera->Aspect(static_cast<float>(RenderWidth) / static_cast<float>(RenderHeight));
     }
+#endif
 
     if (m_ownedViewportId == 0)
     {

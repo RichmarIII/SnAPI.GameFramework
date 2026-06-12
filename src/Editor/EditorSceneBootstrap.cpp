@@ -3,7 +3,9 @@
 #if defined(SNAPI_GF_ENABLE_RENDERER)
 
 #include "BaseNode.h"
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include "CameraBase.hpp"
+#endif
 #include "CameraComponent.h"
 #include "DirectionalLightComponent.h"
 #if defined(SNAPI_GF_ENABLE_INPUT)
@@ -933,6 +935,7 @@ CameraComponent* EditorSceneBootstrap::ActiveCameraComponent() const
 
 SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
 {
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     CameraComponent* Camera = ActiveCameraComponent();
     if (!Camera)
     {
@@ -940,10 +943,14 @@ SnAPI::Graphics::ICamera* EditorSceneBootstrap::ActiveRenderCamera() const
     }
 
     return Camera->Camera();
+#else
+    return nullptr;
+#endif
 }
 
 CameraComponent* EditorSceneBootstrap::ResolveActiveCameraComponent(World& WorldRef) const
 {
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     auto* ActiveCamera = WorldRef.Renderer().ActiveCamera();
     if (!ActiveCamera)
     {
@@ -971,6 +978,10 @@ CameraComponent* EditorSceneBootstrap::ResolveActiveCameraComponent(World& World
     });
 
     return MatchedCamera;
+#else
+    (void)WorldRef;
+    return ActiveCameraComponent();
+#endif
 }
 
 } // namespace SnAPI::GameFramework::Editor

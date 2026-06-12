@@ -8,7 +8,9 @@
 #include <algorithm>
 #include <cmath>
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include "WindowBase.hpp"
+#endif
 
 namespace SnAPI::GameFramework::Editor
 {
@@ -276,6 +278,7 @@ bool EditorViewportBinding::ResolveViewportSize(GameRuntime& Runtime, float& Out
         return false;
     }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     const auto* Window = WorldPtr->Renderer().Window();
     if (Window)
     {
@@ -288,6 +291,7 @@ bool EditorViewportBinding::ResolveViewportSize(GameRuntime& Runtime, float& Out
             return true;
         }
     }
+#endif
 
     const auto& UiSettings = WorldPtr->UI().Settings();
     if (!std::isfinite(UiSettings.ViewportWidth) || !std::isfinite(UiSettings.ViewportHeight))

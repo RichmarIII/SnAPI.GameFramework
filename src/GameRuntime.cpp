@@ -26,12 +26,12 @@
 #include <cstdlib>
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include <VulkanGraphicsAPI.hpp>
 #include <WindowBase.hpp>
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && __has_include(<SDL3/SDL.h>)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && __has_include(<SDL3/SDL.h>)
 #include <SDL3/SDL.h>
 #define SNAPI_GF_RUNTIME_HAS_SDL3 1
 #else
@@ -506,7 +506,7 @@ struct UiViewportTransform
 };
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
 [[nodiscard]] float QueryWindowDisplayScale(const SnAPI::Graphics::WindowBase* Window)
 {
     if (!Window)
@@ -634,7 +634,7 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
     }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     if (m_settings.Renderer && m_settings.UI)
     {
         if (m_world->Renderer().IsUsingDefaultRenderViewport())
@@ -644,6 +644,15 @@ Result GameRuntime::Init(const GameRuntimeSettings& Settings)
                 Shutdown();
                 return std::unexpected(BindResult.error());
             }
+        }
+    }
+#elif defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+    if (m_settings.Renderer && m_settings.UI && m_world->Renderer().IsUsingDefaultRenderViewport())
+    {
+        if (const auto BindResult = BindViewportWithUI(1u, m_world->UI().RootContextId()); !BindResult)
+        {
+            Shutdown();
+            return std::unexpected(BindResult.error());
         }
     }
 #endif
@@ -819,7 +828,7 @@ bool GameRuntime::Update(float DeltaSeconds)
         }
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(SNAPI_GF_ENABLE_UI)
     auto& Renderer = m_world->Renderer();
     auto& UI = m_world->UI();
     if (Renderer.IsInitialized() && UI.IsInitialized())
@@ -869,11 +878,11 @@ bool GameRuntime::ProcessPlatformAndUiInput()
     }
 
     bool ContinueRunning = true;
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
     bool InputAvailableForPlatformEvents = false;
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_UI) && SNAPI_GF_RUNTIME_HAS_SDL3
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(SNAPI_GF_ENABLE_UI) && SNAPI_GF_RUNTIME_HAS_SDL3
     if (m_settings.AutoUpdateUiDpiScaleFromWindow && m_world->Renderer().IsInitialized() && m_world->UI().IsInitialized())
     {
         const float Scale = QueryWindowDisplayScale(m_world->Renderer().Window());
@@ -889,7 +898,7 @@ bool GameRuntime::ProcessPlatformAndUiInput()
     bool InputInitialized = m_world->Input().IsInitialized();
     if (InputInitialized)
     {
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
 #if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
         InputAvailableForPlatformEvents = m_world->Input().Settings().Backend == SnAPI::Input::EInputBackend::SDL3;
 #else
@@ -905,7 +914,7 @@ bool GameRuntime::ProcessPlatformAndUiInput()
         UiViewportTransform UiTransform{};
         if (ForwardToUi)
         {
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
             if (m_world->Renderer().IsInitialized())
             {
                 if (const auto* GraphicsApi = m_world->Renderer().Graphics())
@@ -941,7 +950,7 @@ bool GameRuntime::ProcessPlatformAndUiInput()
 
             if (!UiTransform.IsValid())
             {
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
                 if (const auto* Window = m_world->Renderer().Window())
                 {
                     const auto WindowSize = Window->Size();
@@ -1086,7 +1095,7 @@ bool GameRuntime::ProcessPlatformAndUiInput()
     }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && SNAPI_GF_RUNTIME_HAS_SDL3
     if (!InputAvailableForPlatformEvents && m_settings.AutoExitOnWindowClose && m_world->Renderer().IsInitialized())
     {
         SDL_Event Event{};
@@ -1118,13 +1127,12 @@ bool GameRuntime::ShouldContinueRunning() const
         return true;
     }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     const auto* Window = Renderer.Window();
-    if (!Window)
-    {
-        return true;
-    }
-
-    return Window->IsOpen();
+    return !Window || Window->IsOpen();
+#else
+    return true;
+#endif
 }
 #endif
 
@@ -1204,11 +1212,13 @@ bool GameRuntime::ShouldCapFrameRate() const
         return false;
     }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     const auto* Window = Renderer.Window();
     if (!Window || !Window->IsOpen())
     {
         return false;
     }
+#endif
 
     //return Window->VSyncMode() == SnAPI::Graphics::EWindowVSyncMode::Off;
     return true;

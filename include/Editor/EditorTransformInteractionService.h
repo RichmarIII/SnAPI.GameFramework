@@ -63,7 +63,7 @@ private:
         Z
     };
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     void EnsureGizmoRenderObjects();
     void ConfigureGizmoGeometryForMode();
     void QueueTransformGizmos(EditorServiceContext& Context,
@@ -99,7 +99,7 @@ private:
     Vec3 m_axisMoveAxisDirection = Vec3::UnitX();
     Vec3 m_axisMoveNodeStart = Vec3::Zero();
     Vec3 m_axisMoveHitStart = Vec3::Zero();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisX{};
     std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisY{};
     std::shared_ptr<SnAPI::Graphics::IRenderObject> m_gizmoAxisZ{};

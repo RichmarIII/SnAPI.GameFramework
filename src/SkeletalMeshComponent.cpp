@@ -10,7 +10,7 @@
 #include <cmath>
 #include <string_view>
 
-#include <LinearAlgebra.hpp>
+#include "SnAPI/Math/LinearAlgebra.h"
 #include <MaterialInstance.hpp>
 #include <MeshRenderObject.hpp>
 

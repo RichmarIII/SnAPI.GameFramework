@@ -10,13 +10,16 @@
 #include "UIRenderViewport.h"
 #include "UISystem.h"
 
-#include <IGraphicsAPI.hpp>
 #include <Input.h>
 #include <SnAPI/Math/LinearAlgebra.h>
 #include <algorithm>
 #include <cmath>
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
+#include <IGraphicsAPI.hpp>
 #include "CameraBase.hpp"
+#endif
+
 #include "RendererSystem.h"
 
 namespace SnAPI::GameFramework
@@ -84,6 +87,7 @@ constexpr float kSmallNumber = 1.0e-6f;
     return Value / std::sqrt(LengthSquared);
 }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 [[nodiscard]] bool IsPointInsideViewportRect(const float X, const float Y, const SnAPI::Graphics::ViewportFit& Rect)
 {
     if (!std::isfinite(Rect.X) || !std::isfinite(Rect.Y) || !std::isfinite(Rect.Width) || !std::isfinite(Rect.Height))
@@ -155,6 +159,7 @@ constexpr float kSmallNumber = 1.0e-6f;
     // If this camera is not bound to any viewport, do not hard-block navigation.
     return !HasMatchedViewport;
 }
+#endif
 
 [[nodiscard]] bool IsPointerOverCameraViewportUi(const IWorld& WorldRef,
                                                  const SnAPI::Input::InputSnapshot& Snapshot)
@@ -258,11 +263,14 @@ void EditorCameraComponent::Tick(const float DeltaSeconds)
         Transform.Rotation = Quat::Identity();
     }
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     const auto OwnerCameraResult = Owner->Component<CameraComponent>();
     const SnAPI::Graphics::ICamera* OwnerCamera = OwnerCameraResult ? OwnerCameraResult->Camera() : nullptr;
-
     const bool PointerInsideViewport = !m_settings.RequirePointerInsideViewport
                                     || IsPointerInsideCameraViewport(*WorldPtr, *Snapshot, OwnerCamera);
+#else
+    const bool PointerInsideViewport = true;
+#endif
     const bool PointerOverViewportUi = !m_settings.RequirePointerInsideViewport
                                     || IsPointerOverCameraViewportUi(*WorldPtr, *Snapshot);
 

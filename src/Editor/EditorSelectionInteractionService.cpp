@@ -26,7 +26,7 @@
 #include "RigidBodyComponent.h"
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include "ICamera.hpp"
 #include "IRenderObject.hpp"
 #include "WindowBase.hpp"
@@ -117,7 +117,7 @@ private:
 }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
 [[nodiscard]] std::optional<NodeHandle> ResolveNodeHandleByRenderObject(World& WorldRef,
                                                                          const SnAPI::Graphics::IRenderObject* TargetRenderObject)
 {
@@ -288,7 +288,7 @@ void EditorSelectionInteractionService::UpdatePieMouseCaptureState(EditorService
 
 void EditorSelectionInteractionService::QueueSelectedNodeEditorOverlay(EditorServiceContext& Context) const
 {
-#if !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(WITH_EDITOR) || !WITH_EDITOR
+#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(WITH_EDITOR) || !WITH_EDITOR
     (void)Context;
     return;
 #else
@@ -501,7 +501,7 @@ void EditorSelectionInteractionService::HandleViewportPointerEvent(EditorService
     const bool ResolvedNode = TryResolvePickedNode(Context, Event.Position, Next);
     if (!ResolvedNode)
     {
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
         auto* WorldPtr = Context.Runtime().WorldPtr();
         auto* LayoutService = Context.GetService<EditorLayoutService>();
         auto* Viewport = LayoutService ? LayoutService->GameViewportElement() : nullptr;
@@ -569,7 +569,7 @@ bool EditorSelectionInteractionService::TryResolvePickedNodePhysics(EditorServic
 {
     OutNode = {};
 
-#if !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(SNAPI_GF_ENABLE_UI) || !defined(SNAPI_GF_ENABLE_PHYSICS)
+#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(SNAPI_GF_ENABLE_UI) || !defined(SNAPI_GF_ENABLE_PHYSICS)
     (void)Context;
     (void)ScreenPoint;
     return false;
@@ -697,7 +697,7 @@ bool EditorSelectionInteractionService::TryResolvePickedNodeRendererId(EditorSer
 {
     OutNode = {};
 
-#if !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(WITH_EDITOR) || !WITH_EDITOR
+#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(WITH_EDITOR) || !WITH_EDITOR
     (void)Context;
     (void)ScreenPoint;
     return false;

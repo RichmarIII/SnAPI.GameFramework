@@ -23,11 +23,11 @@
 #include <Input.h>
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include <PrimitiveStreamSources.hpp>
 #include "ICamera.hpp"
 #include "IRenderObject.hpp"
-#include "LinearAlgebra.hpp"
+#include "SnAPI/Math/LinearAlgebra.h"
 #include <MeshRenderObject.hpp>
 #endif
 
@@ -116,7 +116,7 @@ namespace
     return Quat(SnAPI::Math::AngleAxis3D(Angle, Axis));
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 class EditorTorusStreamSource final : public SnAPI::Graphics::PrimitiveStreamSourceBase
 {
 public:
@@ -386,7 +386,7 @@ private:
 }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
 [[nodiscard]] std::array<SnAPI::Math::Scalar, 3> ResolveFallbackAxisExtents(const std::array<Vec3, 3>& Axes,
                                                                              const Vec3& FallbackScale)
 {
@@ -545,7 +545,7 @@ std::vector<std::type_index> EditorTransformInteractionService::Dependencies() c
             std::type_index(typeid(EditorLayoutService))};
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 void EditorTransformInteractionService::EnsureGizmoRenderObjects()
 {
     if (m_gizmoAxisX && m_gizmoAxisY && m_gizmoAxisZ
@@ -1024,7 +1024,7 @@ Result EditorTransformInteractionService::Initialize(EditorServiceContext& Conte
     m_axisMoveAxisDirection = Vec3::UnitX();
     m_axisMoveNodeStart = Vec3::Zero();
     m_axisMoveHitStart = Vec3::Zero();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     m_gizmoAxisXID = 0;
     m_gizmoAxisYID = 0;
     m_gizmoAxisZID = 0;
@@ -1040,7 +1040,7 @@ void EditorTransformInteractionService::Tick(EditorServiceContext& Context, cons
 {
     (void)DeltaSeconds;
 
-#if !defined(SNAPI_GF_ENABLE_INPUT) || !defined(SNAPI_GF_ENABLE_RENDERER) || !defined(SNAPI_GF_ENABLE_UI)
+#if !defined(SNAPI_GF_ENABLE_INPUT) || !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) || !defined(SNAPI_GF_ENABLE_UI)
     (void)Context;
     m_dragging = false;
     m_activeAxis = EActiveAxis::None;
@@ -1640,7 +1640,7 @@ void EditorTransformInteractionService::Shutdown(EditorServiceContext& Context)
     m_axisMoveAxisDirection = Vec3::UnitX();
     m_axisMoveNodeStart = Vec3::Zero();
     m_axisMoveHitStart = Vec3::Zero();
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     m_gizmoAxisX.reset();
     m_gizmoAxisY.reset();
     m_gizmoAxisZ.reset();

@@ -7,7 +7,7 @@
 #include <array>
 #include <filesystem>
 #include "GameThreading.h"
-#include <UUID.hpp>
+#include "Uuid.h"
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -624,7 +624,7 @@ public:
      * @return True when routing was applied.
      */
     bool AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                         const SnAPI::UUID& PassID);
+                         const Uuid& PassID);
 
     /**
      * @brief Remove one render object from a viewport-local pass type.
@@ -644,7 +644,7 @@ public:
      * @return True when an existing pass/object link was removed.
      */
     bool RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                            const SnAPI::UUID& PassID);
+                            const Uuid& PassID);
 
     /**
      * @brief Remove one render object from all renderer passes.
@@ -911,6 +911,13 @@ private:
 #if defined(SNAPI_GF_ENABLE_UI)
     struct QueuedUiRect;
 #endif
+#if defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+    struct RendererNewRuntimeState;
+    struct RendererNewRuntimeStateDeleter
+    {
+        void operator()(RendererNewRuntimeState* State) const;
+    };
+#endif
 
     bool InitializeUnlocked();
     void ApplyOutOfMemoryFallbackSettings();
@@ -942,6 +949,10 @@ private:
     void FlushQueuedUiPackets();
 #endif
     bool CreateWindowResources();
+#if defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+    bool EnsureRendererNewViewportTarget(std::uint64_t ViewportID, std::uint32_t RenderWidth, std::uint32_t RenderHeight);
+    void DestroyRendererNewViewportTarget(std::uint64_t ViewportID);
+#endif
     bool RegisterDefaultPassGraph();
     bool RegisterRenderViewportPassGraphUnlocked(std::uint64_t ViewportID, ERenderViewportPassGraphPreset Preset, bool TrackDefaultPassPointers);
     bool ConfigureRenderObjectPassesLocked(const std::shared_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
@@ -1094,6 +1105,9 @@ private:
     mutable GameMutex m_mutex{}; /**< @brief Renderer-system thread affinity guard. */
     TSystemTaskQueue<RendererSystem> m_taskQueue{}; /**< @brief Cross-thread task handoff queue (real lock only on enqueue). */
     RendererBootstrapSettings m_settings{}; /**< @brief Active bootstrap settings snapshot. */
+#if defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+    std::unique_ptr<RendererNewRuntimeState, RendererNewRuntimeStateDeleter> m_rendererNew{}; /**< @brief Private renderer runtime state for this integration. */
+#endif
     SnAPI::Graphics::VulkanGraphicsAPI* m_graphics = nullptr; /**< @brief Non-owning pointer to active renderer singleton instance. */
     std::unique_ptr<SnAPI::Graphics::WindowBase, WindowDeleter> m_window{}; /**< @brief Optional world-owned renderer window. */
     std::unique_ptr<SnAPI::Graphics::LightManager, LightManagerDeleter> m_lightManager{}; /**< @brief Optional world-owned light manager for default pass graph. */

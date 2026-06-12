@@ -2,6 +2,8 @@
 
 #if defined(SNAPI_GF_ENABLE_RENDERER) && defined(WITH_EDITOR) && WITH_EDITOR
 
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
+
 #include <ICamera.hpp>
 #include <IGraphicsAPI.hpp>
 #include <IRenderObject.hpp>
@@ -677,5 +679,50 @@ void GFEditorOverlayPass::RenderScene(
 }
 
 } // namespace SnAPI::GameFramework::Editor
+
+#else
+
+namespace SnAPI::GameFramework::Editor
+{
+void SetEditorImmediateRenderObjectMetadata(const SnAPI::Graphics::IRenderObject* RenderObject,
+                                            SnAPI::Graphics::ERenderPassType PassType,
+                                            bool IsGizmo,
+                                            std::uint32_t AxisTag)
+{
+    (void)RenderObject;
+    (void)PassType;
+    (void)IsGizmo;
+    (void)AxisTag;
+}
+
+void RemoveEditorImmediateRenderObjectMetadata(const SnAPI::Graphics::IRenderObject* RenderObject,
+                                               SnAPI::Graphics::ERenderPassType PassType)
+{
+    (void)RenderObject;
+    (void)PassType;
+}
+
+void ClearEditorImmediateRenderObjectMetadata()
+{
+}
+
+std::uint32_t EditorImmediateAxisTag(const SnAPI::Graphics::IRenderObject* RenderObject,
+                                     SnAPI::Graphics::ERenderPassType PassType)
+{
+    (void)RenderObject;
+    (void)PassType;
+    return 0u;
+}
+
+bool IsEditorImmediateGizmoRenderObject(const SnAPI::Graphics::IRenderObject* RenderObject,
+                                        SnAPI::Graphics::ERenderPassType PassType)
+{
+    (void)RenderObject;
+    (void)PassType;
+    return false;
+}
+} // namespace SnAPI::GameFramework::Editor
+
+#endif
 
 #endif

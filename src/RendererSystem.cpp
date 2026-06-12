@@ -1629,7 +1629,7 @@ bool RendererSystem::AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRende
 }
 
 bool RendererSystem::AddRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                                     const SnAPI::UUID& PassID)
+                                     const Uuid& PassID)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);
@@ -1699,7 +1699,7 @@ bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRe
 }
 
 bool RendererSystem::RemoveRenderObject(const std::weak_ptr<SnAPI::Graphics::IRenderObject>& RenderObject,
-                                        const SnAPI::UUID& PassID)
+                                        const Uuid& PassID)
 {
     SNAPI_GF_PROFILE_FUNCTION("Rendering");
     GameLockGuard Lock(m_mutex);

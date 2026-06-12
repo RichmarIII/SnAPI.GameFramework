@@ -14,7 +14,7 @@
 
 #include <CapsuleStreamSource.hpp>
 #include <IVertexStreamSource.hpp>
-#include <LinearAlgebra.hpp>
+#include "SnAPI/Math/LinearAlgebra.h"
 #include <MaterialInstance.hpp>
 #include <MeshRenderObject.hpp>
 

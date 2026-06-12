@@ -1,6 +1,6 @@
 #include "DirectionalLightComponent.h"
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 
 #include "Profiling.h"
 
@@ -227,4 +227,112 @@ void DirectionalLightComponent::ReleaseLight()
 
 } // namespace SnAPI::GameFramework
 
-#endif // SNAPI_GF_ENABLE_RENDERER
+#elif defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+
+#include "BaseNode.h"
+#include "IWorld.h"
+#include "RendererSystem.h"
+
+namespace SnAPI::GameFramework
+{
+namespace
+{
+#if defined(WITH_EDITOR) && WITH_EDITOR
+bool IsDirectionalLightSettingsField(const std::string_view Name)
+{
+    return Name == "Settings"
+        || Name == "Enabled"
+        || Name == "Direction"
+        || Name == "Color"
+        || Name == "Intensity"
+        || Name == "CastShadows"
+        || Name == "CascadeCount"
+        || Name == "ShadowMapSize"
+        || Name == "ShadowBias"
+        || Name == "ShadowFarDistance"
+        || Name == "SoftnessFactor"
+        || Name == "SoftShadows"
+        || Name == "ContactHardening"
+        || Name == "CascadeBlending";
+}
+#endif
+} // namespace
+
+SnAPI::Graphics::DirectionalLight* DirectionalLightComponent::Light()
+{
+    return nullptr;
+}
+
+const SnAPI::Graphics::DirectionalLight* DirectionalLightComponent::Light() const
+{
+    return nullptr;
+}
+
+void DirectionalLightComponent::OnCreate()
+{
+    UpdateLight(0.0f);
+}
+
+void DirectionalLightComponent::OnDestroy()
+{
+    ReleaseLight();
+}
+
+void DirectionalLightComponent::Tick(float DeltaSeconds)
+{
+    UpdateLight(DeltaSeconds);
+}
+
+#if defined(WITH_EDITOR) && WITH_EDITOR
+void DirectionalLightComponent::EditorTick(const float DeltaSeconds)
+{
+    UpdateLight(DeltaSeconds);
+}
+
+void DirectionalLightComponent::EditorOnPropertyChanged(const std::string_view Name)
+{
+    if (IsDirectionalLightSettingsField(Name))
+    {
+        UpdateLight(0.0f);
+    }
+}
+#endif
+
+void DirectionalLightComponent::UpdateLight(const float DeltaSeconds)
+{
+    (void)DeltaSeconds;
+}
+
+RendererSystem* DirectionalLightComponent::ResolveRendererSystem() const
+{
+    auto* Owner = OwnerNode();
+    if (!Owner)
+    {
+        return nullptr;
+    }
+
+    auto* WorldPtr = Owner->World();
+    if (!WorldPtr)
+    {
+        return nullptr;
+    }
+
+    return &WorldPtr->Renderer();
+}
+
+void DirectionalLightComponent::EnsureLightRegistered()
+{
+}
+
+void DirectionalLightComponent::ApplyLightSettings()
+{
+}
+
+void DirectionalLightComponent::ReleaseLight()
+{
+    m_light.reset();
+}
+
+} // namespace SnAPI::GameFramework
+
+#endif // renderer integration

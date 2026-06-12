@@ -29,7 +29,7 @@
 #include "TextureCompressorPayloadSerializers.h"
 #include "World.h"
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include <GraphicsAPITypes.hpp>
 #include <IGraphicsAPI.hpp>
 #include <Image.hpp>
@@ -181,7 +181,7 @@ std::expected<void, std::string> MigrateWorldPayloadBaseNodeName(std::vector<uin
     return {};
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 using SnAPI::Graphics::EVertexStream;
 using SnAPI::Graphics::GetStreamByIndex;
 using SnAPI::Graphics::GetStreamInfo;
@@ -1379,6 +1379,244 @@ std::shared_ptr<SnAPI::Graphics::MaterialInstance> BuildSharedRuntimeMaterialIns
     ApplyDescriptorTexturesToMaterialInstance(*Created, Descriptor, MaterialPayload, AssetManager);
     return Created;
 }
+#elif defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+using MeshBulkLoadCallback = std::function<std::expected<std::vector<uint8_t>, std::string>(uint32_t)>;
+
+constexpr uint64_t kFnv1aOffset = 1469598103934665603ull;
+constexpr uint64_t kFnv1aPrime = 1099511628211ull;
+
+uint64_t HashBytes64(const void* Data, const size_t Size, const uint64_t Seed = kFnv1aOffset)
+{
+    uint64_t Hash = Seed;
+    const auto* Bytes = static_cast<const uint8_t*>(Data);
+    for (size_t Index = 0; Index < Size; ++Index)
+    {
+        Hash ^= static_cast<uint64_t>(Bytes[Index]);
+        Hash *= kFnv1aPrime;
+    }
+    return Hash;
+}
+
+uint64_t HashString64(const std::string_view Value, const uint64_t Seed = kFnv1aOffset)
+{
+    return HashBytes64(Value.data(), Value.size(), Seed);
+}
+
+[[nodiscard]] const MeshStreamChunkRef* FindStreamRef(const StaticMeshPayload& RuntimeMesh, const EMeshStreamSemantic Semantic)
+{
+    const auto It = std::ranges::find_if(RuntimeMesh.Streams, [Semantic](const MeshStreamChunkRef& StreamRef) {
+        return StreamRef.Semantic == Semantic;
+    });
+    return (It == RuntimeMesh.Streams.end()) ? nullptr : &(*It);
+}
+
+bool LoadRuntimeMeshStream(const MeshBulkLoadCallback& LoadBulk, const MeshStreamChunkRef& StreamRef, RuntimeMeshStream& Out)
+{
+    if (!LoadBulk || StreamRef.ElementCount == 0 || StreamRef.StrideBytes == 0)
+    {
+        return false;
+    }
+
+    auto BulkResult = LoadBulk(StreamRef.BulkIndex);
+    if (!BulkResult)
+    {
+        return false;
+    }
+
+    const size_t RequiredBytes =
+        static_cast<size_t>(StreamRef.ElementCount) * static_cast<size_t>(StreamRef.StrideBytes);
+    if (BulkResult->size() < RequiredBytes)
+    {
+        return false;
+    }
+
+    Out.Semantic = StreamRef.Semantic;
+    Out.ElementCount = StreamRef.ElementCount;
+    Out.StrideBytes = StreamRef.StrideBytes;
+    Out.Bytes = std::move(*BulkResult);
+    return true;
+}
+
+bool DecodeIndexStream(const RuntimeMeshStream& Stream, std::vector<uint32_t>& OutIndices)
+{
+    OutIndices.clear();
+    OutIndices.reserve(Stream.ElementCount);
+
+    if (Stream.StrideBytes >= sizeof(uint32_t))
+    {
+        for (uint32_t Index = 0; Index < Stream.ElementCount; ++Index)
+        {
+            const size_t ByteOffset = static_cast<size_t>(Index) * static_cast<size_t>(Stream.StrideBytes);
+            if (ByteOffset + sizeof(uint32_t) > Stream.Bytes.size())
+            {
+                return false;
+            }
+
+            uint32_t Value = 0;
+            std::memcpy(&Value, Stream.Bytes.data() + ByteOffset, sizeof(uint32_t));
+            OutIndices.push_back(Value);
+        }
+        return true;
+    }
+
+    if (Stream.StrideBytes >= sizeof(uint16_t))
+    {
+        for (uint32_t Index = 0; Index < Stream.ElementCount; ++Index)
+        {
+            const size_t ByteOffset = static_cast<size_t>(Index) * static_cast<size_t>(Stream.StrideBytes);
+            if (ByteOffset + sizeof(uint16_t) > Stream.Bytes.size())
+            {
+                return false;
+            }
+
+            uint16_t Value = 0;
+            std::memcpy(&Value, Stream.Bytes.data() + ByteOffset, sizeof(uint16_t));
+            OutIndices.push_back(static_cast<uint32_t>(Value));
+        }
+        return true;
+    }
+
+    return false;
+}
+
+[[nodiscard]] std::shared_ptr<RuntimeMeshData> BuildRuntimeMeshData(
+    const StaticMeshPayload& RuntimeMesh,
+    MeshBulkLoadCallback LoadBulk,
+    const std::string_view StableKey)
+{
+    const MeshStreamChunkRef* PositionRef = FindStreamRef(RuntimeMesh, EMeshStreamSemantic::Position);
+    const MeshStreamChunkRef* IndexRef = FindStreamRef(RuntimeMesh, EMeshStreamSemantic::Index);
+    if (!PositionRef || !IndexRef)
+    {
+        return {};
+    }
+
+    auto MeshData = std::make_shared<RuntimeMeshData>();
+    if (!MeshData)
+    {
+        return {};
+    }
+
+    RuntimeMeshStream PositionStream{};
+    RuntimeMeshStream IndexStream{};
+    if (!LoadRuntimeMeshStream(LoadBulk, *PositionRef, PositionStream)
+        || !LoadRuntimeMeshStream(LoadBulk, *IndexRef, IndexStream))
+    {
+        return {};
+    }
+
+    MeshData->VertexCount = PositionStream.ElementCount;
+    MeshData->Streams.push_back(std::move(PositionStream));
+    if (!DecodeIndexStream(IndexStream, MeshData->Indices) || MeshData->Indices.empty())
+    {
+        return {};
+    }
+
+    constexpr std::array<EMeshStreamSemantic, 7> OptionalSemantics{
+        EMeshStreamSemantic::Normal,
+        EMeshStreamSemantic::Tangent,
+        EMeshStreamSemantic::UV0,
+        EMeshStreamSemantic::UV1,
+        EMeshStreamSemantic::Color,
+        EMeshStreamSemantic::BoneIndices,
+        EMeshStreamSemantic::BoneWeights};
+
+    for (const EMeshStreamSemantic Semantic : OptionalSemantics)
+    {
+        const MeshStreamChunkRef* StreamRef = FindStreamRef(RuntimeMesh, Semantic);
+        if (!StreamRef)
+        {
+            continue;
+        }
+
+        RuntimeMeshStream Stream{};
+        if (LoadRuntimeMeshStream(LoadBulk, *StreamRef, Stream) && Stream.ElementCount == MeshData->VertexCount)
+        {
+            MeshData->Streams.push_back(std::move(Stream));
+        }
+    }
+
+    MeshData->SubMeshes.reserve(RuntimeMesh.SubMeshes.size());
+    for (const StaticSubMeshPayload& RuntimeSubMesh : RuntimeMesh.SubMeshes)
+    {
+        MeshData->SubMeshes.push_back(RuntimeMeshSubMesh{
+            .IndexOffset = RuntimeSubMesh.IndexOffset,
+            .IndexCount = RuntimeSubMesh.IndexCount,
+            .MaterialSlot = RuntimeSubMesh.MaterialSlot,
+            .BoundsMin = RuntimeSubMesh.BoundsMin,
+            .BoundsMax = RuntimeSubMesh.BoundsMax});
+    }
+
+    if (MeshData->SubMeshes.empty())
+    {
+        MeshData->SubMeshes.push_back(RuntimeMeshSubMesh{
+            .IndexOffset = 0,
+            .IndexCount = static_cast<uint32_t>(MeshData->Indices.size()),
+            .MaterialSlot = 0});
+    }
+
+    MeshData->DebugName = RuntimeMesh.Name.empty() ? "RuntimeMesh" : RuntimeMesh.Name;
+    if (!StableKey.empty())
+    {
+        MeshData->DebugName += " [" + std::string(StableKey) + "]";
+    }
+
+    MeshData->SourceId = HashString64(!StableKey.empty() ? StableKey : std::string_view(MeshData->DebugName));
+    uint64_t Revision = HashString64(MeshData->DebugName, MeshData->SourceId);
+    Revision = HashBytes64(&MeshData->VertexCount, sizeof(MeshData->VertexCount), Revision);
+    for (const RuntimeMeshStream& Stream : MeshData->Streams)
+    {
+        Revision = HashBytes64(&Stream.Semantic, sizeof(Stream.Semantic), Revision);
+        Revision = HashBytes64(&Stream.ElementCount, sizeof(Stream.ElementCount), Revision);
+        Revision = HashBytes64(&Stream.StrideBytes, sizeof(Stream.StrideBytes), Revision);
+        Revision = HashBytes64(Stream.Bytes.data(), Stream.Bytes.size(), Revision);
+    }
+    Revision = HashBytes64(MeshData->Indices.data(), MeshData->Indices.size() * sizeof(uint32_t), Revision);
+    MeshData->SourceRevision = Revision == 0 ? 1 : Revision;
+    return MeshData;
+}
+
+std::shared_ptr<StaticMeshRuntime> BuildSharedRuntimeStaticMesh(
+    const StaticMeshPayload& RuntimeMesh,
+    MeshBulkLoadCallback LoadBulk,
+    const std::string_view StableKey)
+{
+    auto Runtime = std::make_shared<StaticMeshRuntime>();
+    if (!Runtime)
+    {
+        return {};
+    }
+
+    Runtime->MeshData = BuildRuntimeMeshData(RuntimeMesh, std::move(LoadBulk), StableKey);
+    if (!Runtime->MeshData)
+    {
+        return {};
+    }
+
+    Runtime->MaterialRefs = RuntimeMesh.MaterialInstances;
+    return Runtime;
+}
+
+std::shared_ptr<SkeletalMeshRuntime> BuildSharedRuntimeSkeletalMesh(
+    const SkeletalMeshPayload& RuntimeMesh,
+    MeshBulkLoadCallback LoadBulk,
+    const std::string_view StableKey)
+{
+    auto Runtime = std::make_shared<SkeletalMeshRuntime>();
+    if (!Runtime)
+    {
+        return {};
+    }
+
+    Runtime->MeshData = BuildRuntimeMeshData(RuntimeMesh.BaseMesh, std::move(LoadBulk), StableKey);
+    if (!Runtime->MeshData)
+    {
+        return {};
+    }
+
+    Runtime->MaterialRefs = RuntimeMesh.BaseMesh.MaterialInstances;
+    return Runtime;
+}
 #endif
 
 /**
@@ -1591,7 +1829,7 @@ protected:
     }
 };
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 [[nodiscard]] std::optional<::SnAPI::Graphics::ETextureFormat> ToRendererTextureFormat(
     const TextureCompressorPlugin::ECompressedFormat Format)
 {
@@ -1924,6 +2162,68 @@ protected:
         return RuntimeMesh;
     }
 };
+#elif defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+class TSharedStaticMeshRuntimeFactory final
+    : public ::SnAPI::AssetPipeline::TAssetFactory<std::shared_ptr<StaticMeshRuntime>>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadStaticMesh();
+    }
+
+protected:
+    std::expected<std::shared_ptr<StaticMeshRuntime>, std::string> DoLoad(
+        const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<StaticMeshPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        const std::string StableKey = !Context.Info.Id.IsNull()
+            ? "asset-id://" + Context.Info.Id.ToString()
+            : (!Context.Info.Name.empty() ? "asset-name://" + Context.Info.Name : PayloadResult->Name);
+        auto RuntimeMesh = BuildSharedRuntimeStaticMesh(*PayloadResult, Context.LoadBulk, StableKey);
+        if (!RuntimeMesh)
+        {
+            return std::unexpected("Failed to build shared runtime static mesh");
+        }
+        return RuntimeMesh;
+    }
+};
+
+class TSharedSkeletalMeshRuntimeFactory final
+    : public ::SnAPI::AssetPipeline::TAssetFactory<std::shared_ptr<SkeletalMeshRuntime>>
+{
+public:
+    ::SnAPI::AssetPipeline::TypeId GetCookedPayloadType() const override
+    {
+        return PayloadSkeletalMesh();
+    }
+
+protected:
+    std::expected<std::shared_ptr<SkeletalMeshRuntime>, std::string> DoLoad(
+        const ::SnAPI::AssetPipeline::AssetLoadContext& Context) override
+    {
+        auto PayloadResult = Context.DeserializeCooked<SkeletalMeshPayload>();
+        if (!PayloadResult)
+        {
+            return std::unexpected(PayloadResult.error());
+        }
+
+        const std::string StableKey = !Context.Info.Id.IsNull()
+            ? "asset-id://" + Context.Info.Id.ToString()
+            : (!Context.Info.Name.empty() ? "asset-name://" + Context.Info.Name : PayloadResult->BaseMesh.Name);
+        auto RuntimeMesh = BuildSharedRuntimeSkeletalMesh(*PayloadResult, Context.LoadBulk, StableKey);
+        if (!RuntimeMesh)
+        {
+            return std::unexpected("Failed to build shared runtime skeletal mesh");
+        }
+        return RuntimeMesh;
+    }
+};
 #endif
 
 } // namespace
@@ -1960,13 +2260,16 @@ void RegisterAssetPipelineFactories(::SnAPI::AssetPipeline::AssetManager& Manage
     Manager.RegisterFactory<World>(std::make_unique<TWorldFactory>());
     Manager.RegisterFactory<Conduit::GraphAsset>(std::make_unique<TConduitGraphFactory>());
     Manager.RegisterFactory<Conduit::ClassAsset>(std::make_unique<TConduitClassFactory>());
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     Manager.RegisterFactory<::SnAPI::Graphics::IGPUImage>(std::make_unique<TCompressedTextureImageFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::Material>>(std::make_unique<TSharedMaterialFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::MaterialInstance>>(std::make_unique<TSharedMaterialInstanceFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::IVertexStreamSource>>(std::make_unique<TSharedStaticMeshSourceFactory>());
     Manager.RegisterFactory<std::shared_ptr<StaticMeshRuntime>>(std::make_unique<TSharedStaticMeshRuntimeFactory>());
     Manager.RegisterFactory<std::shared_ptr<::SnAPI::Graphics::IVertexStreamSource>>(std::make_unique<TSharedSkeletalMeshSourceFactory>());
+    Manager.RegisterFactory<std::shared_ptr<SkeletalMeshRuntime>>(std::make_unique<TSharedSkeletalMeshRuntimeFactory>());
+#elif defined(SNAPI_GF_ENABLE_RENDERER_NEW)
+    Manager.RegisterFactory<std::shared_ptr<StaticMeshRuntime>>(std::make_unique<TSharedStaticMeshRuntimeFactory>());
     Manager.RegisterFactory<std::shared_ptr<SkeletalMeshRuntime>>(std::make_unique<TSharedSkeletalMeshRuntimeFactory>());
 #endif
 }

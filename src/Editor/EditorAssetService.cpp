@@ -35,7 +35,7 @@
 #include "UIRenderViewport.h"
 #include "World.h"
 #include "WorldEcsRuntime.h"
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include <ICamera.hpp>
 #include <Definitions.hpp>
 #include <IVertexStreamSource.hpp>
@@ -43,6 +43,8 @@
 #include <MaterialInstance.hpp>
 #include <MaterialRuntimeDescriptor.hpp>
 #include <TMaterialFor.hpp>
+#endif
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 #include "StaticMeshComponent.h"
 #include "WorldRenderSettings.h"
 #endif
@@ -226,7 +228,7 @@ void ApplyPlacementWorldPose(BaseNode& Node, const Vec3& WorldPosition)
     (void)TransformComponent::TrySetNodeWorldPose(Node, WorldPosition, Quat::Identity(), true);
 }
 
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 [[nodiscard]] bool TryBuildViewportPlacementRay(EditorServiceContext& Context,
                                                 const float ScreenX,
                                                 const float ScreenY,
@@ -311,7 +313,7 @@ void ApplyPlacementWorldPose(BaseNode& Node, const Vec3& WorldPosition)
 }
 #endif
 
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
 [[nodiscard]] bool TryResolveViewportPlacementWorldPosition(EditorServiceContext& Context,
                                                             const float ScreenX,
                                                             const float ScreenY,
@@ -377,7 +379,7 @@ void ApplyPlacementWorldPose(BaseNode& Node, const Vec3& WorldPosition)
     return BaseName;
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 [[nodiscard]] bool TryComputeVertexStreamSourceBounds(
     const std::shared_ptr<SnAPI::Graphics::IVertexStreamSource>& StreamSource,
     Vec3& OutCenter,
@@ -1103,7 +1105,7 @@ void ApplyStaticMeshEditorPayloadToCooked(
     InOutCooked.MaterialInstances = EditorPayload.MaterialInstances;
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 [[nodiscard]] bool EqualsIgnoreCase(std::string_view Left, std::string_view Right)
 {
     if (Left.size() != Right.size())
@@ -1120,7 +1122,40 @@ void ApplyStaticMeshEditorPayloadToCooked(
     }
     return true;
 }
+#endif
 
+[[nodiscard]] std::string BuildAssetRefIdentity(const AssetRefPayload& Ref)
+{
+    const auto TrimText = [](std::string_view Text) {
+        size_t Begin = 0;
+        while (Begin < Text.size() && std::isspace(static_cast<unsigned char>(Text[Begin])))
+        {
+            ++Begin;
+        }
+
+        size_t End = Text.size();
+        while (End > Begin && std::isspace(static_cast<unsigned char>(Text[End - 1])))
+        {
+            --End;
+        }
+
+        return std::string(Text.substr(Begin, End - Begin));
+    };
+
+    const std::string AssetId = TrimText(Ref.AssetId);
+    if (!AssetId.empty())
+    {
+        return std::string("id://") + AssetId;
+    }
+    const std::string AssetName = TrimText(Ref.AssetName);
+    if (!AssetName.empty())
+    {
+        return std::string("name://") + AssetName;
+    }
+    return {};
+}
+
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 [[nodiscard]] SnAPI::Graphics::MaterialDomain DomainFromShadingModelName(std::string_view ShadingModel)
 {
     if (ShadingModel == "GBufferShadingModel")
@@ -1165,37 +1200,6 @@ void ApplyStaticMeshEditorPayloadToCooked(
     }
     OutValue = Parsed;
     return true;
-}
-
-[[nodiscard]] std::string BuildAssetRefIdentity(const AssetRefPayload& Ref)
-{
-    const auto TrimText = [](std::string_view Text) {
-        size_t Begin = 0;
-        while (Begin < Text.size() && std::isspace(static_cast<unsigned char>(Text[Begin])))
-        {
-            ++Begin;
-        }
-
-        size_t End = Text.size();
-        while (End > Begin && std::isspace(static_cast<unsigned char>(Text[End - 1])))
-        {
-            --End;
-        }
-
-        return std::string(Text.substr(Begin, End - Begin));
-    };
-
-    const std::string AssetId = TrimText(Ref.AssetId);
-    if (!AssetId.empty())
-    {
-        return std::string("id://") + AssetId;
-    }
-    const std::string AssetName = TrimText(Ref.AssetName);
-    if (!AssetName.empty())
-    {
-        return std::string("name://") + AssetName;
-    }
-    return {};
 }
 
 [[nodiscard]] const SnAPI::Graphics::ShaderMetaData::UserAttribute* FindDefaultAttribute(
@@ -1875,7 +1879,7 @@ private:
     return {};
 }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
 void ConfigureRendererShaderSearchRootForAssetRoot(GameRuntime& Runtime, const std::filesystem::path& AssetRoot)
 {
     if (auto* WorldPtr = Runtime.WorldPtr(); WorldPtr)
@@ -3530,7 +3534,7 @@ Result EditorAssetService::Initialize(EditorServiceContext& Context)
         m_statusMessage += "Editor template bootstrap failed: " + TemplateError;
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), SPathResolver::Instance().AssetRoot());
 #endif
 
@@ -7111,7 +7115,7 @@ Result EditorAssetService::InstantiateAssetByKey(EditorServiceContext& Context,
     }
 
     AssetPlacementRequest ResolvedRequest = Request;
-#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
+#if defined(SNAPI_GF_ENABLE_UI) && defined(SNAPI_GF_ENABLE_LEGACY_RENDERER) && defined(SNAPI_GF_ENABLE_PHYSICS)
     if (ResolvedRequest.UseScreenPoint && !ResolvedRequest.UseWorldPosition)
     {
         Vec3 HitWorldPosition{};
@@ -7710,7 +7714,7 @@ Result EditorAssetService::LoadProject(EditorServiceContext& Context, const std:
         }
     }
 
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     ConfigureRendererShaderSearchRootForAssetRoot(Context.Runtime(), ResolvedProject->AssetRootDirectory);
 #endif
 
@@ -9368,7 +9372,7 @@ void EditorAssetService::RefreshAssetEditorHierarchy()
 
 Result EditorAssetService::SyncMaterialInstanceEditorPayloadFromDescriptor()
 {
-#if !defined(SNAPI_GF_ENABLE_RENDERER)
+#if !defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     m_assetEditorMaterialInstanceDescriptorParentKey.clear();
     return Ok();
 #else
@@ -10221,7 +10225,7 @@ Result EditorAssetService::InstantiateStaticMeshAsset(EditorServiceContext& Cont
 
     Vec3 MeshBoundsCenter{0.0f, 0.0f, 0.0f};
     Vec3 MeshBoundsHalfExtent{0.5f, 0.5f, 0.5f};
-#if defined(SNAPI_GF_ENABLE_RENDERER)
+#if defined(SNAPI_GF_ENABLE_LEGACY_RENDERER)
     {
         const StaticMeshAssetRef MeshRef(Asset.Name, MeshAssetId);
         auto StreamResult = MeshRef.LoadRuntimeShared<SnAPI::Graphics::IVertexStreamSource>(*m_assetManager);

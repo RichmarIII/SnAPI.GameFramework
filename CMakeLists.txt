@@ -17,6 +17,8 @@ option(SNAPI_GF_ENABLE_LUA "Enable Lua scripting" ON)
 option(SNAPI_GF_ENABLE_SWIG "Enable SWIG bindings" ON)
 option(SNAPI_GF_ENABLE_PROFILER "Enable SnAPI.Profiler integration/instrumentation" ON)
 option(SNAPI_GF_INCLUDE_RENDERER_NEW_WORKSPACE "Load SnAPI.Renderer.New as a sibling CMake project for IDE visibility" ON)
+option(SNAPI_GF_USE_RENDERER_NEW "Use SnAPI.Renderer.New as the active GameFramework renderer integration" ON)
+option(SNAPI_GF_ENABLE_LEGACY_RENDERER "Build the legacy SnAPI.Renderer integration" OFF)
 set(SNAPI_PROJECT_ROOT_DIR "" CACHE PATH "Optional external project root integrated into SnAPI.GameFramework targets")
 
 if (SNAPI_ENABLE_IPO)
@@ -84,6 +86,7 @@ else()
     )
 endif()
 FetchContent_MakeAvailable(SnAPI.Math)
+FetchContent_GetProperties(SnAPI.Math SOURCE_DIR SNAPI_GF_MATH_SOURCE_ROOT)
 
 # SnAPI.Profiler integration (optional)
 if (SNAPI_GF_ENABLE_PROFILER)
@@ -240,6 +243,29 @@ set(SNAPI_GF_SOURCES
     src/World.cpp
 )
 
+if (SNAPI_GF_USE_RENDERER_NEW)
+    list(REMOVE_ITEM SNAPI_GF_SOURCES
+        src/DeferredShadingParamsNode.cpp
+        src/SSAOParamsNode.cpp
+        src/SSGIParamsNode.cpp
+        src/SSRParamsNode.cpp
+        src/TAAParamsNode.cpp
+        src/BloomParamsNode.cpp
+        src/AtmosphereParamsNode.cpp
+        src/AtmosphereCompositeParamsNode.cpp
+        src/HeightFogParamsNode.cpp
+        src/ToneMapParamsNode.cpp
+        src/RendererSystem.cpp
+        src/SkeletalMeshComponent.cpp
+        src/StaticMeshComponent.cpp
+    )
+    list(APPEND SNAPI_GF_SOURCES
+        src/RendererNewPassParamNodeStubs.cpp
+        src/RendererSystemRendererNew.cpp
+        src/MeshComponentsRendererNew.cpp
+    )
+endif()
+
 add_library(SnAPI.GameFramework ${SNAPI_GF_SOURCES})
 
 target_include_directories(SnAPI.GameFramework PUBLIC
@@ -306,7 +332,7 @@ if (SNAPI_GF_BUILD_REFLECTION_GEN)
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp")
 
-    snapi_add_reflection_codegen(
+snapi_add_reflection_codegen(
         TARGET SnAPI.GameFramework
         OUTPUT SnAPI.GameFramework.reflection.generated.cpp
         BUILD_DIR "${CMAKE_BINARY_DIR}"
@@ -314,7 +340,10 @@ if (SNAPI_GF_BUILD_REFLECTION_GEN)
         PROJECT_ROOT "${CMAKE_SOURCE_DIR}"
         HEADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/include"
         GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/reflection/include"
-        EXTRA_ARGS "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+        EXTRA_ARGS
+            "-I${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "-I${SNAPI_GF_MATH_SOURCE_ROOT}/include"
+            "-I${stduuid_SOURCE_DIR}/include"
         HEADERS ${SNAPI_GF_REFLECTION_HEADERS}
     )
 endif()
@@ -492,6 +521,8 @@ if (SNAPI_GF_ENABLE_LUA)
     if (UNIX)
         target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
     endif()
+    target_include_directories(SnAPI.GameFramework BEFORE PUBLIC ${lua_SOURCE_DIR})
+    target_link_libraries(SnAPI.GameFramework PUBLIC lua)
     target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_LUA=1)
 endif()
 
@@ -708,7 +739,7 @@ elseif (EXISTS "/mnt/Dev/CodeProjects/SnAPI.Renderer/CMakeLists.txt")
     set(SNAPI_GF_RENDERER_ROOT "/mnt/Dev/CodeProjects/SnAPI.Renderer")
 endif()
 
-if (SNAPI_GF_RENDERER_ROOT)
+if (SNAPI_GF_ENABLE_LEGACY_RENDERER AND SNAPI_GF_RENDERER_ROOT)
     if (TARGET lz4)
         set(SLANG_USE_SYSTEM_LZ4 ON CACHE BOOL "" FORCE)
     endif()
@@ -733,7 +764,7 @@ if (SNAPI_GF_RENDERER_ROOT)
         endif()
 
         target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Renderer)
-        target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_RENDERER)
+        target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_RENDERER SNAPI_GF_ENABLE_LEGACY_RENDERER)
         target_compile_definitions(SnAPI.GameFramework PRIVATE SNAPI_GF_RENDERER_SHADER_SOURCE_DIR="${SNAPI_GF_RENDERER_SHADER_SOURCE_DIR}")
         if (SNAPI_GF_BUILD_EDITOR AND TARGET SnAPI.GameFramework.Editor)
             if (SNAPI_GF_EDITOR_ASSET_OUTPUT_DIR)
@@ -752,7 +783,7 @@ if (SNAPI_GF_RENDERER_ROOT)
     else()
         message(FATAL_ERROR "SnAPI.Renderer source was found, but target SnAPI.Renderer was not created.")
     endif()
-else()
+elseif(NOT SNAPI_GF_USE_RENDERER_NEW)
     message(WARNING "SnAPI.Renderer source not found; set SNAPI_GF_RENDERER_SOURCE_DIR to enable renderer integration.")
 endif()
 
@@ -773,6 +804,52 @@ if (SNAPI_GF_INCLUDE_RENDERER_NEW_WORKSPACE AND SNAPI_GF_RENDERER_NEW_ROOT)
 
     if (TARGET SnAPI.Renderer.New)
         add_dependencies(SnAPI.GameFramework SnAPI.Renderer.New)
+        if (SNAPI_GF_USE_RENDERER_NEW)
+            target_link_libraries(SnAPI.GameFramework PUBLIC SnAPI.Renderer.New)
+            target_compile_definitions(SnAPI.GameFramework PUBLIC SNAPI_GF_ENABLE_RENDERER SNAPI_GF_ENABLE_RENDERER_NEW)
+            set_source_files_properties(src/RendererSystemRendererNew.cpp PROPERTIES
+                COMPILE_OPTIONS "-iquote;${SNAPI_GF_RENDERER_NEW_ROOT}/Modules/RenderCore/Public;-iquote;${SNAPI_GF_RENDERER_NEW_ROOT}/Modules/Platform/Public"
+            )
+
+            function(snapi_gf_link_renderer_new_static_group TargetName)
+                if (NOT TARGET ${TargetName})
+                    return()
+                endif()
+                if (APPLE OR NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+                    return()
+                endif()
+
+                set(RendererNewStaticArchives)
+                foreach(RendererNewStaticTarget IN ITEMS
+                    SnAPI.Renderer.New.Core
+                    SnAPI.Renderer.New.Platform
+                    SnAPI.Renderer.New.Backend.Registry
+                    SnAPI.Renderer.New.Backend.Null
+                    SnAPI.Renderer.New.Backend.Vulkan
+                    SnAPI.Renderer.New.Upscaling.FidelityFXFsr3
+                    SnAPI.Renderer.New.FidelityFX.FSR3
+                    SnAPI.Renderer.New.SceneImport.Assimp
+                )
+                    if (TARGET ${RendererNewStaticTarget})
+                        list(APPEND RendererNewStaticArchives "$<TARGET_FILE:${RendererNewStaticTarget}>")
+                        add_dependencies(${TargetName} ${RendererNewStaticTarget})
+                    endif()
+                endforeach()
+
+                if (RendererNewStaticArchives)
+                    target_link_libraries(${TargetName}
+                        PRIVATE
+                            "-Wl,--start-group"
+                            ${RendererNewStaticArchives}
+                            "-Wl,--end-group"
+                    )
+                endif()
+            endfunction()
+
+            snapi_gf_link_renderer_new_static_group(SnAPI.GameFramework.Runtime)
+            snapi_gf_link_renderer_new_static_group(SnAPI.GameFramework.Build)
+            snapi_gf_link_renderer_new_static_group(SnAPI.GameFramework.Editor)
+        endif()
     else()
         message(FATAL_ERROR "SnAPI.Renderer.New source was found, but target SnAPI.Renderer.New was not created.")
     endif()
