@@ -90,7 +90,7 @@ back through world/task-dispatch paths before touching world-owned state.
 
 ## Target Module Layout
 
-Runtime core public contracts should move to a `Modules/GameFramework/Public/`
-or equivalent module root. Runtime implementation should move to the matching
-`Private/` tree. Current `include/` and `src/` locations are legacy current-state
-facts.
+Runtime core public contracts live under `Modules/GameFramework/Public/`.
+Runtime implementation lives under `Modules/GameFramework/Private/`. New runtime
+code should stay inside those module roots unless an active plan creates a new
+compiled module.

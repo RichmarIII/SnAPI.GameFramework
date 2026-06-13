@@ -85,20 +85,20 @@ TEST_CASE("PluginCreationService creates a default plugin workspace", "[Plugin][
     CHECK(Result.Plugin.Descriptor.Plugin.Version == "0.1.0");
     CHECK(Result.Plugin.Descriptor.Modules.front().Name == "Inventory");
     CHECK(Result.Plugin.Descriptor.Modules.front().Type == EProjectModuleType::Runtime);
-    CHECK(Result.Plugin.Descriptor.Modules.front().Root == "Code/Inventory");
+    CHECK(Result.Plugin.Descriptor.Modules.front().Root == "Modules/Inventory");
     CHECK(Result.Plugin.Descriptor.Modules.front().PublicDependencies == std::vector<std::string>{"SnAPI.GameFramework"});
 
     CHECK(ReadTextFile(Result.PluginCodeRootCMakePath)
               .find("include(\"${SNAPI_PLUGIN_ROOT_DIR}/Intermediate/Build/Generated/PluginModules.cmake\" OPTIONAL)")
           != std::string::npos);
     CHECK(ReadTextFile(Result.GeneratedPluginModulesCMakePath)
-              .find("add_subdirectory(\"${SNAPI_PLUGIN_ROOT_DIR}/Code/Inventory\")")
+              .find("add_subdirectory(\"${SNAPI_PLUGIN_ROOT_DIR}/Modules/Inventory\")")
           != std::string::npos);
     CHECK(ReadTextFile(Result.GeneratedPluginModulesCMakePath)
               .find("target_link_libraries(SnAPI.GameFramework.Runtime PRIVATE Inventory)")
           != std::string::npos);
     CHECK(ReadTextFile(Result.RuntimeModuleCMakePath).find("add_library(Inventory") != std::string::npos);
-    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "include" / "Inventory" / "InventoryModule.h")
+    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "Public" / "Inventory" / "InventoryModule.h")
               .find("class InventoryModule final")
           != std::string::npos);
 }
@@ -127,13 +127,13 @@ TEST_CASE("PluginCreationService can generate a companion editor module", "[Plug
     CHECK(RuntimeModule.Name == "Inventory");
     CHECK(EditorModule.Name == "InventoryEditor");
     CHECK(EditorModule.Type == EProjectModuleType::Editor);
-    CHECK(EditorModule.Root == "Code/InventoryEditor");
+    CHECK(EditorModule.Root == "Modules/InventoryEditor");
     CHECK(EditorModule.LoadInEditor);
     CHECK_FALSE(EditorModule.LoadInRuntime);
     CHECK(EditorModule.PrivateDependencies == std::vector<std::string>{"Inventory", "SnAPI.GameFramework"});
 
     const std::string GeneratedPluginModules = ReadTextFile(Result.GeneratedPluginModulesCMakePath);
-    CHECK(GeneratedPluginModules.find("add_subdirectory(\"${SNAPI_PLUGIN_ROOT_DIR}/Code/InventoryEditor\")")
+    CHECK(GeneratedPluginModules.find("add_subdirectory(\"${SNAPI_PLUGIN_ROOT_DIR}/Modules/InventoryEditor\")")
           != std::string::npos);
     CHECK(GeneratedPluginModules.find("target_link_libraries(SnAPI.GameFramework.Editor PRIVATE InventoryEditor)")
           != std::string::npos);

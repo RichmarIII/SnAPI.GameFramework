@@ -74,8 +74,6 @@ GameFramework into the owner of lower-level module internals.
 - Keep compiled framework source under `Modules/` after the source-layout
   migration. Every compiled module owns its own `Public/`, `Private/`,
   `Dependencies.cmake`, and `CMakeLists.txt` contract.
-- Until source is migrated, treat `include/` and `src/` as legacy current-state
-  roots, not target architecture.
 - Keep public gameplay/editor/build contracts in module `Public/` roots and
   implementation details in module `Private/` roots.
 - `World` owns nodes, components, dense runtime storage, and subsystem adapter

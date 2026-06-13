@@ -38,9 +38,9 @@ Modules/<ModuleName>/
   CMakeLists.txt
 ```
 
-If project templates still emit older `Code/<Module>/include` and
-`Code/<Module>/src` shapes, record that as compatibility debt and migrate
-templates through an active plan.
+Project and plugin templates emit `Modules/<Module>/Public` and
+`Modules/<Module>/Private` roots so generated code matches the repository module
+contract.
 
 ## Descriptor And Build Boundaries
 

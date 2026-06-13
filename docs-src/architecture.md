@@ -73,7 +73,7 @@ BaseNode* CachedPointer = PlayerHandle.Borrowed();
 
 That order matters. The gameplay host starts last during bootstrap so it can rely on the other world-owned subsystems already existing.
 
-Source of truth: `src/GameRuntime.cpp`.
+Source of truth: `Modules/GameFramework/Private/GameRuntime.cpp`.
 
 ## Per-Frame Execution Order
 

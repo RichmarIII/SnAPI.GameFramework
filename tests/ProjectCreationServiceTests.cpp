@@ -118,7 +118,7 @@ TEST_CASE("ProjectCreationService creates a default project workspace", "[Projec
     CHECK(Result.Project.Descriptor.Startup.DefaultGameModeClass == "BlankGame::BlankGameMode");
     REQUIRE(Result.Project.Descriptor.Modules.size() == 1);
     CHECK(Result.Project.Descriptor.Modules.front().Name == "BlankGame");
-    CHECK(Result.Project.Descriptor.Modules.front().Root == "Code/BlankGame");
+    CHECK(Result.Project.Descriptor.Modules.front().Root == "Modules/BlankGame");
     CHECK(Result.Project.Descriptor.Modules.front().Type == EProjectModuleType::Runtime);
     CHECK(Result.Project.Descriptor.Modules.front().PublicDependencies == std::vector<std::string>{"SnAPI.GameFramework"});
 
@@ -126,7 +126,7 @@ TEST_CASE("ProjectCreationService creates a default project workspace", "[Projec
               .find("include(\"${SNAPI_PROJECT_ROOT_DIR}/Intermediate/Build/Generated/ProjectModules.cmake\" OPTIONAL)")
           != std::string::npos);
     CHECK(ReadTextFile(Result.GeneratedProjectModulesCMakePath)
-              .find("add_subdirectory(\"${SNAPI_PROJECT_ROOT_DIR}/Code/BlankGame\")")
+              .find("add_subdirectory(\"${SNAPI_PROJECT_ROOT_DIR}/Modules/BlankGame\")")
           != std::string::npos);
     CHECK(ReadTextFile(Result.GeneratedProjectModulesCMakePath)
               .find("target_link_libraries(SnAPI.GameFramework.Runtime PRIVATE BlankGame)")
@@ -134,13 +134,13 @@ TEST_CASE("ProjectCreationService creates a default project workspace", "[Projec
     CHECK(ReadTextFile(Result.RuntimeModuleRootCMakePath).find("include(\"${CMAKE_CURRENT_LIST_DIR}/BlankGame.CMakeLists.txt\")")
           != std::string::npos);
     CHECK(ReadTextFile(Result.RuntimeModuleCMakePath).find("add_library(BlankGame") != std::string::npos);
-    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "include" / "BlankGame" / "BlankGameGame.h")
+    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "Public" / "BlankGame" / "BlankGameGame.h")
               .find("class BlankGame final")
           != std::string::npos);
-    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "include" / "BlankGame" / "BlankGameGameMode.h")
+    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "Public" / "BlankGame" / "BlankGameGameMode.h")
               .find("class BlankGameMode final")
           != std::string::npos);
-    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "src" / "BlankGameGame.cpp")
+    CHECK(ReadTextFile(Result.RuntimeModuleDirectory / "Private" / "BlankGameGame.cpp")
               .find("std::make_unique<BlankGameMode>()")
           != std::string::npos);
 
@@ -182,15 +182,15 @@ TEST_CASE("ProjectCreationService can generate a companion editor module", "[Pro
     CHECK(RuntimeModule.Type == EProjectModuleType::Runtime);
     CHECK(EditorModule.Name == "EditorReadyGameEditor");
     CHECK(EditorModule.Type == EProjectModuleType::Editor);
-    CHECK(EditorModule.Root == "Code/EditorReadyGameEditor");
+    CHECK(EditorModule.Root == "Modules/EditorReadyGameEditor");
     CHECK(EditorModule.LoadInEditor);
     CHECK_FALSE(EditorModule.LoadInRuntime);
     CHECK(EditorModule.PrivateDependencies == std::vector<std::string>{"EditorReadyGame", "SnAPI.GameFramework"});
 
     const std::string GeneratedProjectModules = ReadTextFile(Result.GeneratedProjectModulesCMakePath);
-    CHECK(GeneratedProjectModules.find("add_subdirectory(\"${SNAPI_PROJECT_ROOT_DIR}/Code/EditorReadyGame\")")
+    CHECK(GeneratedProjectModules.find("add_subdirectory(\"${SNAPI_PROJECT_ROOT_DIR}/Modules/EditorReadyGame\")")
           != std::string::npos);
-    CHECK(GeneratedProjectModules.find("add_subdirectory(\"${SNAPI_PROJECT_ROOT_DIR}/Code/EditorReadyGameEditor\")")
+    CHECK(GeneratedProjectModules.find("add_subdirectory(\"${SNAPI_PROJECT_ROOT_DIR}/Modules/EditorReadyGameEditor\")")
           != std::string::npos);
     CHECK(GeneratedProjectModules.find("target_link_libraries(SnAPI.GameFramework.Editor PRIVATE EditorReadyGame)")
           != std::string::npos);
@@ -207,7 +207,8 @@ TEST_CASE("ProjectCreationService can generate a companion editor module", "[Pro
     CHECK(ReadTextFile(Result.EditorModuleCMakePath)
               .find("target_link_libraries(EditorReadyGameEditor PRIVATE\n    EditorReadyGame\n    SnAPI.GameFramework\n)")
           != std::string::npos);
-    CHECK(ReadTextFile(Result.EditorModuleDirectory / "include" / "EditorReadyGameEditor" / "EditorReadyGameEditorModule.h")
+    CHECK(ReadTextFile(Result.EditorModuleDirectory / "Public" / "EditorReadyGameEditor" /
+                       "EditorReadyGameEditorModule.h")
               .find("RegisterEditorServices(SnAPI::GameFramework::Editor::EditorServiceContext& Context)")
           != std::string::npos);
 }
@@ -244,7 +245,7 @@ TEST_CASE("ProjectCreationService copies optional starter resources", "[Project]
     CHECK(std::filesystem::exists(Result.StarterScriptPath));
     CHECK(std::filesystem::exists(Result.RuntimeModuleRootCMakePath));
     CHECK(std::filesystem::exists(Result.ShaderDirectory / "Common" / "Test.slang"));
-    CHECK(std::filesystem::exists(Result.RuntimeModuleDirectory / "src" / "TemplateGameModule.cpp"));
+    CHECK(std::filesystem::exists(Result.RuntimeModuleDirectory / "Private" / "TemplateGameModule.cpp"));
     CHECK(std::filesystem::exists(Result.DefaultGameConfigPath));
     CHECK(ReadTextFile(Result.StartupLevelAssetPath) == *StarterLevelJson);
     CHECK(ReadTextFile(Result.StarterScriptPath) == "-- starter script\n");

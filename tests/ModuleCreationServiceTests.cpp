@@ -132,7 +132,7 @@ TEST_CASE("ModuleCreationService creates a runtime module for an existing projec
     const ProjectModuleDescriptor& Module = Result.Project.Descriptor.Modules.front();
     CHECK(Module.Name == "GameplayCore");
     CHECK(Module.Type == EProjectModuleType::Runtime);
-    CHECK(Module.Root == "Code/GameplayCore");
+    CHECK(Module.Root == "Modules/GameplayCore");
     CHECK(Module.LoadInEditor);
     CHECK(Module.LoadInRuntime);
     CHECK(Module.PublicDependencies == std::vector<std::string>{"SnAPI.GameFramework"});
@@ -174,7 +174,7 @@ TEST_CASE("ModuleCreationService creates an editor module with custom descriptor
     REQUIRE(Result.Project.Descriptor.Modules.size() == 2);
     CHECK(Result.Module.Name == "GameplayToolsEditor");
     CHECK(Result.Module.Type == EProjectModuleType::Editor);
-    CHECK(Result.Module.Root == "Code/GameplayToolsEditor");
+    CHECK(Result.Module.Root == "Modules/GameplayToolsEditor");
     CHECK(Result.Module.LoadInEditor);
     CHECK_FALSE(Result.Module.LoadInRuntime);
     CHECK(Result.Module.PublicDependencies.empty());
@@ -233,8 +233,8 @@ TEST_CASE("ModuleCreationService can generate runtime gameplay bootstrap templat
     CHECK(GameSource.find("return std::make_unique<CombatRuntimeGameMode>()") != std::string::npos);
     CHECK(GameModeHeader.find("class CombatRuntimeGameMode final") != std::string::npos);
     CHECK(GameModeSource.find("CombatRuntimeGameMode::Initialize") != std::string::npos);
-    CHECK(ModuleCMake.find("src/CombatRuntimeGame.cpp") != std::string::npos);
-    CHECK(ModuleCMake.find("src/CombatRuntimeGameMode.cpp") != std::string::npos);
+    CHECK(ModuleCMake.find("Private/CombatRuntimeGame.cpp") != std::string::npos);
+    CHECK(ModuleCMake.find("Private/CombatRuntimeGameMode.cpp") != std::string::npos);
 }
 
 TEST_CASE("ModuleCreationService rejects duplicate module names", "[Project][Module]")
@@ -285,7 +285,7 @@ TEST_CASE("ModuleCreationService creates a runtime module for an existing plugin
     const ProjectModuleDescriptor& Module = Result.Plugin.Descriptor.Modules.front();
     CHECK(Module.Name == "InventoryRuntime");
     CHECK(Module.Type == EProjectModuleType::Runtime);
-    CHECK(Module.Root == "Code/InventoryRuntime");
+    CHECK(Module.Root == "Modules/InventoryRuntime");
     CHECK(Module.LoadInEditor);
     CHECK(Module.LoadInRuntime);
     CHECK(Module.PublicDependencies == std::vector<std::string>{"SnAPI.GameFramework"});
@@ -324,7 +324,7 @@ TEST_CASE("ModuleCreationService creates an editor module for an existing plugin
     REQUIRE(Result.Plugin.Descriptor.Modules.size() == 2);
     CHECK(Result.Module.Name == "InventoryEditor");
     CHECK(Result.Module.Type == EProjectModuleType::Editor);
-    CHECK(Result.Module.Root == "Code/InventoryEditor");
+    CHECK(Result.Module.Root == "Modules/InventoryEditor");
     CHECK(Result.Module.LoadInEditor);
     CHECK_FALSE(Result.Module.LoadInRuntime);
     CHECK(Result.Module.PrivateDependencies == std::vector<std::string>{"InventoryRuntime", "SnAPI.GameFramework"});

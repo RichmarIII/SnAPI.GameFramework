@@ -71,8 +71,6 @@ ctest --test-dir build/debug --output-on-failure
 ## Broaden Validation When
 
 - Public headers or runtime contracts under `Modules/<Module>/Public/` change.
-- Current legacy public headers under `include/` change before the module-layout
-  migration is complete.
 - `GameRuntime`, `World`, node/component storage, handles, lifecycle, or
   threading behavior changes.
 - Asset source/cooked payload contracts or AssetPipeline integration changes.
