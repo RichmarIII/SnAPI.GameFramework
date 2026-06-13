@@ -1,3 +1,13 @@
+include(FetchContent)
+
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG v3.5.0
+)
+FetchContent_MakeAvailable(Catch2)
+list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+
 add_executable(GameFrameworkTests
     AssetCookServiceAdapterTests.cpp
     AuthoredAssetTests.cpp
@@ -30,6 +40,7 @@ add_executable(GameFrameworkTests
 )
 
 target_link_libraries(GameFrameworkTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)
+snapi_gf_link_renderer_new_static_group(GameFrameworkTests)
 
 target_include_directories(GameFrameworkTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if (SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR)
@@ -46,7 +57,7 @@ if (SNAPI_GF_BUILD_REFLECTION_GEN)
         HEADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}"
         GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/reflection/tests"
         EXTRA_ARGS
-            "-I${CMAKE_SOURCE_DIR}/include"
+            "-I${CMAKE_SOURCE_DIR}/Modules/GameFramework/Public"
             "-I${CMAKE_CURRENT_SOURCE_DIR}"
         HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/GeneratedReflectionFixture.h"
     )
@@ -61,17 +72,22 @@ add_executable(GameFrameworkEditorTests
     SourceAssetEditorTests.cpp
     ConduitEditorTests.cpp
     EditorServiceTypeInfoStubs.cpp
-    ../src/Editor/EditorCameraComponent.cpp
-    ../src/Editor/EditorAssetIconService.cpp
-    ../src/Editor/EditorAssetService.cpp
-    ../src/Editor/EditorBuildService.cpp
-    ../src/Editor/EditorPieService.cpp
-    ../src/Editor/ConduitEditor.cpp
-    ../src/Editor/ConduitGraphCanvas.cpp
+    ../Modules/Editor/Private/Editor/EditorCameraComponent.cpp
+    ../Modules/Editor/Private/Editor/EditorAssetIconService.cpp
+    ../Modules/Editor/Private/Editor/EditorAssetService.cpp
+    ../Modules/Editor/Private/Editor/EditorBuildService.cpp
+    ../Modules/Editor/Private/Editor/EditorPieService.cpp
+    ../Modules/Editor/Private/Editor/ConduitEditor.cpp
+    ../Modules/Editor/Private/Editor/ConduitGraphCanvas.cpp
 )
 
 target_link_libraries(GameFrameworkEditorTests PRIVATE SnAPI.GameFramework Catch2::Catch2WithMain)
-target_include_directories(GameFrameworkEditorTests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+snapi_gf_link_renderer_new_static_group(GameFrameworkEditorTests)
+target_include_directories(GameFrameworkEditorTests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/Modules/Editor/Public
+    ${CMAKE_SOURCE_DIR}/Modules/Editor/Private
+)
 if (SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR)
     target_include_directories(GameFrameworkEditorTests PRIVATE ${SNAPI_GF_TEXTURE_COMPRESSOR_PLUGIN_INCLUDE_DIR})
 endif()
@@ -83,6 +99,7 @@ add_executable(ConduitPerf
 )
 
 target_link_libraries(ConduitPerf PRIVATE SnAPI.GameFramework)
+snapi_gf_link_renderer_new_static_group(ConduitPerf)
 target_include_directories(ConduitPerf PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(ConduitPerf PRIVATE SNAPI_BENCH_BUILD_LABEL="${CMAKE_BUILD_TYPE}")
 if (SNAPI_ENABLE_IPO AND SNAPI_IPO_SUPPORTED)
@@ -117,5 +134,5 @@ add_executable(GameThreadingTests
 )
 
 target_link_libraries(GameThreadingTests PRIVATE Catch2::Catch2WithMain)
-target_include_directories(GameThreadingTests PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(GameThreadingTests PRIVATE ${CMAKE_SOURCE_DIR}/Modules/GameFramework/Public)
 catch_discover_tests(GameThreadingTests)

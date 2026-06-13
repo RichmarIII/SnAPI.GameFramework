@@ -99,9 +99,9 @@ compile features, definitions, private/public linkage, and feature-gated
 participation. A module's `Dependencies.cmake` owns dependency discovery and
 dependency application for that module.
 
-Current `include/` and `src/` folders are migration debt. Do not expand them as
-the desired design. New broad source work should either happen under an active
-module-layout plan or be explicitly recorded as temporary debt.
+Do not recreate top-level `include/` or `src/` source roots for new compiled
+code. New broad source work should stay under an owning compiled module or add a
+new compiled module through an active plan.
 
 ## Naming Conventions
 

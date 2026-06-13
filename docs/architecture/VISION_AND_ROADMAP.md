@@ -42,8 +42,8 @@ Modules/<ModuleName>/
   CMakeLists.txt
 ```
 
-The current `include/` and `src/` layout is accepted only as existing debt. New
-plans should move toward the target rather than formalizing the old roots.
+New source should stay under module-owned `Public/` and `Private/` roots rather
+than recreating legacy top-level source roots.
 
 ## Risks
 

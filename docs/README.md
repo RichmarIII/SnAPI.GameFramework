@@ -24,7 +24,8 @@ This directory holds durable project context used by humans and AI agents.
 
 Current active-plan inventory:
 
-- None recorded in this docs framework yet.
+- `exec-plans/active/ModuleCMakeLayoutPlan.md` - aligning compiled modules and
+  CMake ownership with the `Modules/<Module>/Public` and `Private` layout.
 
 Historical and domain-specific notes also exist under `Docs/GameFramework/`.
 Those files remain useful context, but new agent-facing source-of-truth guidance

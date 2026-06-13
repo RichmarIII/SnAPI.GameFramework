@@ -7,4 +7,4 @@
 %define SNAPI_GAMEFRAMEWORK_API
 %enddef
 
-%include "../include/ScriptABI.h"
+%include "../Modules/GameFramework/Public/ScriptABI.h"

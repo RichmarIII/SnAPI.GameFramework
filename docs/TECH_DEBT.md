@@ -2,17 +2,6 @@
 
 Small cleanup items that are known but not currently active plan work.
 
-## Source Layout
-
-- Move current public headers from `include/` into module `Public/` roots.
-- Move current implementation sources from `src/` into module `Private/` roots.
-- Add a root `Modules/` tree with module-local `CMakeLists.txt` and
-  `Dependencies.cmake` files.
-- Split the current root `CMakeLists.txt` so target ownership and dependency
-  application live in module-local files.
-- Keep generated site output under `docs/site/` and avoid using `docs/` itself
-  as generated output.
-
 ## File Granularity
 
 - Split large runtime, renderer-integration, asset-pipeline, editor, and build

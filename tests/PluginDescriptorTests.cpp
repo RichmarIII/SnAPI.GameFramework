@@ -102,7 +102,7 @@ TEST_CASE("PluginDescriptorService resolves plugin workspace paths", "[Plugin][D
         "  \"Plugin\": { \"Name\": \"Inventory\", \"DisplayName\": \"Inventory\" },\n"
         "  \"Paths\": {\n"
         "    \"AssetRoot\": \"Assets\",\n"
-        "    \"CodeRoot\": \"Code\",\n"
+        "    \"CodeRoot\": \"Modules\",\n"
         "    \"ConfigRoot\": \"Config\",\n"
         "    \"IntermediateRoot\": \"Intermediate\",\n"
         "    \"SavedRoot\": \"Saved\"\n"
@@ -117,7 +117,7 @@ TEST_CASE("PluginDescriptorService resolves plugin workspace paths", "[Plugin][D
     CHECK(DescriptorResult->Descriptor.Plugin.Name == "Inventory");
     CHECK(DescriptorResult->PluginRootDirectory.lexically_normal() == PluginRoot.lexically_normal());
     CHECK(DescriptorResult->AssetRootDirectory.lexically_normal() == (PluginRoot / "Assets").lexically_normal());
-    CHECK(DescriptorResult->CodeRootDirectory.lexically_normal() == (PluginRoot / "Code").lexically_normal());
+    CHECK(DescriptorResult->CodeRootDirectory.lexically_normal() == (PluginRoot / "Modules").lexically_normal());
     CHECK(DescriptorResult->ConfigRootDirectory.lexically_normal() == (PluginRoot / "Config").lexically_normal());
 }
 

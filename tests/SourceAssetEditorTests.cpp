@@ -2062,7 +2062,7 @@ TEST_CASE("Editor asset service creates plugins with structured starter scaffold
     const std::filesystem::path PluginFilePath = PluginRoot / PluginDescriptorService::kDefaultPluginFileName;
 
     REQUIRE(std::filesystem::exists(PluginFilePath));
-    REQUIRE(std::filesystem::exists(PluginRoot / "Code" / "CMakeLists.txt"));
+    REQUIRE(std::filesystem::exists(PluginRoot / "Modules" / "CMakeLists.txt"));
     REQUIRE(std::filesystem::exists(PluginRoot / "Intermediate" / "Build" / "Generated" / "PluginModules.cmake"));
     REQUIRE(std::filesystem::exists(CreateResult.RuntimeModuleDirectory));
     REQUIRE(std::filesystem::exists(CreateResult.EditorModuleDirectory));

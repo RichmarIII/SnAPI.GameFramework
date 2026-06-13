@@ -78,7 +78,7 @@ TEST_CASE("ProjectDescriptorService migrates legacy flat project files", "[Proje
     CHECK(DescriptorResult->Descriptor.Startup.DefaultRenderSettingsAssetId == "render-settings-id");
     CHECK(DescriptorResult->ProjectRootDirectory.lexically_normal() == ProjectRoot.lexically_normal());
     CHECK(DescriptorResult->AssetRootDirectory.lexically_normal() == (ProjectRoot / "Assets").lexically_normal());
-    CHECK(DescriptorResult->CodeRootDirectory.lexically_normal() == (ProjectRoot / "Code").lexically_normal());
+    CHECK(DescriptorResult->CodeRootDirectory.lexically_normal() == (ProjectRoot / "Modules").lexically_normal());
     CHECK(DescriptorResult->StartupLevelAssetPath.lexically_normal() ==
           (ProjectRoot / "Assets" / "Packs" / "Intro.level").lexically_normal());
 }

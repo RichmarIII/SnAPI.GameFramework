@@ -59,7 +59,7 @@ TEST_CASE("BuildCliService creates workspaces and adds modules", "[Build][CLI]")
                               "runtime", "--public-dep", "SnAPI.GameFramework", "--define", "CLI_TEST_BUILD"},
                              Options);
     REQUIRE(AddModuleResult.ExitCode == EBuildCliExitCode::Success);
-    CHECK(std::filesystem::exists(ProjectRoot / "Code" / "GameplaySystems" / "CMakeLists.txt"));
+    CHECK(std::filesystem::exists(ProjectRoot / "Modules" / "GameplaySystems" / "CMakeLists.txt"));
 
     const std::filesystem::path PluginRoot = Root.Path / "CliPlugin";
     const BuildCliResult CreatePluginResult =
@@ -76,7 +76,7 @@ TEST_CASE("BuildCliService creates workspaces and adds modules", "[Build][CLI]")
                               "editor", "--private-dep", "CliPlugin"},
                              Options);
     REQUIRE(AddPluginModuleResult.ExitCode == EBuildCliExitCode::Success);
-    CHECK(std::filesystem::exists(PluginRoot / "Code" / "CliPluginTools" / "CMakeLists.txt"));
+    CHECK(std::filesystem::exists(PluginRoot / "Modules" / "CliPluginTools" / "CMakeLists.txt"));
 }
 
 TEST_CASE("BuildCliService validates and plans build requests", "[Build][CLI]")
