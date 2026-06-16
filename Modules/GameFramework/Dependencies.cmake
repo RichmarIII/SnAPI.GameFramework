@@ -125,7 +125,7 @@ if (SNAPI_GF_ENABLE_LUA)
         ${lua_SOURCE_DIR}/lzio.c
     )
 
-    add_library(lua STATIC ${LUA_SOURCES})
+    add_library(lua ${LUA_SOURCES})
     target_include_directories(lua PUBLIC ${lua_SOURCE_DIR})
     if (UNIX)
         target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
