@@ -1100,7 +1100,7 @@ bool GameRuntime::ShouldContinueRunning() const
     const auto& Renderer = m_world->Renderer();
     if (!Renderer.IsInitialized())
     {
-        return true;
+        return !m_settings.Renderer.has_value();
     }
 
     return Renderer.HasOpenWindow();

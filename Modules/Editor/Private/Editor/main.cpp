@@ -13,7 +13,7 @@ int main()
     Settings.Runtime.WorldName = "SnAPI.GameFramework.Editor";
     Settings.Runtime.Tick.EnableFixedTick = true;
     Settings.Runtime.Tick.EnableLateTick = true;
-    Settings.Runtime.Tick.MaxFpsWhenVSyncOff = 120;
+    Settings.Runtime.Tick.MaxFpsWhenVSyncOff = 0.0f;
 
 #if defined(SNAPI_GF_ENABLE_RENDERER)
     GameRuntimeRendererSettings RendererSettings{};
@@ -22,7 +22,9 @@ int main()
     RendererSettings.WindowTitle = "SnAPI.GameFramework.Editor";
     RendererSettings.WindowWidth = 1920.0f;
     RendererSettings.WindowHeight = 1080.0f;
+    RendererSettings.VSync = false;
     RendererSettings.ApplyDefaultFeatureProfile = false;
+    RendererSettings.UseUiOnlyMainSurfaceProfile = true;
     Settings.Runtime.Renderer = RendererSettings;
 #endif
 

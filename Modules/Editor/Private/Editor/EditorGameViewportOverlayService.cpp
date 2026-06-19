@@ -178,10 +178,10 @@ bool EditorGameViewportOverlayService::EnsureOverlayElements(SnAPI::UI::UIContex
     auto HudGraphBuilder = HudPanelBuilder.Add(SnAPI::UI::UIRealtimeGraph("Frame Time / FPS"));
     auto& HudGraph = HudGraphBuilder.Element();
     HudGraph.Width().Set(SnAPI::UI::Sizing::Auto());
-    HudGraph.Height().Set(SnAPI::UI::Sizing::Ratio(1.0f));
+    HudGraph.Height().Set(SnAPI::UI::Sizing::Auto());
     HudGraph.SampleCapacity().Set(220u);
     HudGraph.AutoRange().Set(true);
-    HudGraph.ShowLegend().Set(false);
+    HudGraph.ShowLegend().Set(true);
     HudGraph.GridLinesX().Set(8u);
     HudGraph.GridLinesY().Set(4u);
     HudGraph.ContentPadding().Set(6.0f);
