@@ -36,6 +36,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
@@ -45,6 +46,8 @@ namespace SnAPI::GameFramework
 {
 namespace
 {
+constexpr SnAPI::Renderer::FrameGraphProfileId kRendererNewEditorUiSurfaceProfileId = 2000u;
+
 [[nodiscard]] static float ClampWindowExtent(const float Value)
 {
     return std::max(1.0f, Value);
@@ -365,6 +368,69 @@ struct RendererNewHostWindow
            Left.OutputExtent.Height == Right.OutputExtent.Height &&
            Left.InternalRenderExtent.Width == Right.InternalRenderExtent.Width &&
            Left.InternalRenderExtent.Height == Right.InternalRenderExtent.Height;
+}
+
+static void ConfigureRendererNewEditorUiSurfaceProfile(SnAPI::Renderer::RendererRuntime& Runtime)
+{
+    constexpr std::array<std::string_view, 50u> DisabledPasses = {
+        "DeferredDepthPrepass",
+        "DeferredGBufferScenePass",
+        "DeferredGtaoDepthPrefilterPass",
+        "DeferredGtaoDepthDownsamplePass1",
+        "DeferredGtaoDepthDownsamplePass2",
+        "DeferredGtaoDepthDownsamplePass3",
+        "DeferredGtaoDepthDownsamplePass4",
+        "DeferredDirectionalShadowPass",
+        "DeferredDirectLightingPass",
+        "DeferredLightingCompositePass",
+        "ForwardPresentExternalTargetPass",
+        "DeferredTransparentBaseCopyPass",
+        "DeferredTransparentBaseColorCopyPass",
+        "DeferredTransparentScenePass",
+        "TemporalResolvePass",
+        "TemporalHistoryUpdatePass",
+        "TemporalDepthHistoryUpdatePass",
+        "Fsr3ReactiveMaskPass",
+        "Fsr3UpscalePass",
+        "AutoExposureHistogramClearPass",
+        "AutoExposureHistogramBuildPass",
+        "AutoExposureResolvePass",
+        "AutoExposureHistoryUpdatePass",
+        "DeferredTonemapExternalTargetPass",
+        "DebugGeometryPass",
+        "DeferredTonemapDebugColorPass",
+        "DeferredDebugViewPass",
+        "AtmosphereTransmittancePass",
+        "AtmosphereMultiScatteringPass",
+        "AtmosphereSkyViewPass",
+        "AtmosphereSkyCapturePass",
+        "DeferredAtmosphereSkyPass",
+        "AtmosphereCameraVolumePass",
+        "DeferredAtmosphereAerialPerspectivePass",
+        "AtmosphereSpaceResolvedPass",
+        "DeferredSsgiMainPass",
+        "SurfaceCacheScreenTraceUpdatePass",
+        "SurfaceCacheReadPass",
+        "SurfaceCacheFinalGatherPass",
+        "ProbeCaptureGBufferScenePass",
+        "ProbeCaptureDirectLightingPass",
+        "ProbeCapturePresentExternalTargetPass",
+        "SkyProbeRadianceDownsamplePass",
+        "LocalProbeRadianceDownsamplePass",
+        "SkyProbeDiffuseFilterPass",
+        "LocalProbeDiffuseFilterPass",
+        "SkyProbeSpecularFilterPass",
+        "LocalProbeSpecularFilterPass",
+        "PathTraceRayGenerationPass",
+        "PathTraceTonemapExternalTargetPass"};
+
+    auto& FrameGraph = Runtime.FrameGraph();
+    for (const std::string_view PassName : DisabledPasses)
+    {
+        FrameGraph.PassEnabled(kRendererNewEditorUiSurfaceProfileId, std::string(PassName), false);
+    }
+    FrameGraph.PassEnabled(kRendererNewEditorUiSurfaceProfileId, "UiOverlayPass", true);
+    FrameGraph.PassEnabled(kRendererNewEditorUiSurfaceProfileId, "TextOverlayPass", true);
 }
 
 [[nodiscard]] static bool ShouldLogRendererNewUiBridge() noexcept
@@ -1460,7 +1526,7 @@ static bool AppendRendererUiTextGlyphs(
                         .Color = ToRendererUiColor(Instance.ShadowColor),
                         .Offset = SnAPI::Renderer::Vec2{0.0f, 0.0f},
                         .BlurRadius = std::max(0.0f, Instance.Blur * std::max(ScaleX, ScaleY)),
-                        .Spread = std::max(0.0f, (Instance.Spread + Instance.Expansion) * std::max(ScaleX, ScaleY)),
+                        .Spread = std::max(0.0f, Instance.Spread * std::max(ScaleX, ScaleY)),
                         .CornerRadius = std::max(0.0f, Instance.CornerRadius * std::max(ScaleX, ScaleY))});
             }
             continue;
@@ -2149,6 +2215,33 @@ void RendererSystem::Shutdown()
 void RendererSystem::ShutdownUnlocked()
 {
     m_initialized = false;
+    if (m_rendererNew && m_rendererNew->Runtime)
+    {
+        for (auto& [ViewportID, Output] : m_rendererNew->ViewportOutputs)
+        {
+            (void)ViewportID;
+            if (Output.Target().Valid())
+            {
+                (void)m_rendererNew->Runtime->DestroyRenderTarget(Output.Target());
+            }
+            if (Output.Texture().Valid())
+            {
+                (void)m_rendererNew->Runtime->DestroyTexture(Output.Texture());
+            }
+        }
+        m_rendererNew->ViewportOutputs.clear();
+    }
+    if (m_rendererNew && m_rendererNew->Runtime && m_rendererNew->SurfaceValid && m_rendererNew->Surface.Valid())
+    {
+        auto DestroySurfaceResult = m_rendererNew->Runtime->DestroySurface(m_rendererNew->Surface);
+        if (DestroySurfaceResult.Failed())
+        {
+            std::cerr << "RendererSystem failed to destroy renderer surface during shutdown: "
+                      << DestroySurfaceResult.Error().Message << '\n';
+        }
+        m_rendererNew->Surface = {};
+        m_rendererNew->SurfaceValid = false;
+    }
     m_rendererNew.reset();
     m_mainWindow.Reset();
     ResetPassPointers();
@@ -3264,6 +3357,10 @@ void RendererSystem::EndFrame()
             return;
         }
         m_rendererNew->ViewExtents = ViewExtents;
+        if (m_settings.UseUiOnlyMainSurfaceProfile)
+        {
+            ConfigureRendererNewEditorUiSurfaceProfile(*m_rendererNew->Runtime);
+        }
     }
 
     const auto Now = std::chrono::steady_clock::now();
@@ -3371,12 +3468,15 @@ void RendererSystem::EndFrame()
         m_activeCamera->ApplyToView(View);
     }
     const auto* MainOverlay = !m_rendererNew->SurfaceOverlay.Empty() ? &m_rendererNew->SurfaceOverlay : nullptr;
+    const auto MainSurfaceProfile = m_settings.UseUiOnlyMainSurfaceProfile
+        ? kRendererNewEditorUiSurfaceProfileId
+        : SnAPI::Renderer::DeferredProfile::Id;
     ApplyRendererNewFeatureSettingsUnlocked(1u);
     auto RenderResult = m_rendererNew->Runtime->RenderSceneToSurface(SnAPI::Renderer::RenderSceneToSurfaceDesc{
         .Scene = m_rendererNew->Scene,
         .Surface = m_rendererNew->Surface,
         .View = View,
-        .Profile = SnAPI::Renderer::DeferredProfile::Id,
+        .Profile = MainSurfaceProfile,
         .FrameGraphOutputResourceName = "PresentTarget",
         .Overlay = MainOverlay});
     if (RenderResult.Failed())
@@ -3483,7 +3583,7 @@ bool RendererSystem::CreateWindowResources()
     auto SurfaceResult = m_rendererNew->Runtime->CreateSurface(SnAPI::Renderer::RenderSurfaceCreateInfo{
         .Window = Window.Window(),
         .NativeSurface = Window.NativeSurface(),
-        .VSync = true,
+        .VSync = m_settings.VSync,
         .HDR = false,
         .BufferCount = 3,
         .DebugName = "RendererSystem.Surface"});
@@ -3511,6 +3611,10 @@ bool RendererSystem::CreateWindowResources()
     {
         std::cerr << "RendererSystem failed to configure frame pipeline: " << ConfigureResult.Error().Message << '\n';
         return false;
+    }
+    if (m_settings.UseUiOnlyMainSurfaceProfile)
+    {
+        ConfigureRendererNewEditorUiSurfaceProfile(*m_rendererNew->Runtime);
     }
 
     std::cerr << "RendererSystem renderer host window: "

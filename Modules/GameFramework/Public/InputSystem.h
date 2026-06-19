@@ -16,6 +16,51 @@
 namespace SnAPI::GameFramework
 {
 
+namespace Detail
+{
+
+constexpr SnAPI::Input::EInputBackend DefaultInputBackend() noexcept
+{
+#if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
+    return SnAPI::Input::EInputBackend::SDL3;
+#elif defined(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI) && SNAPI_INPUT_ENABLE_BACKEND_HIDAPI
+    return SnAPI::Input::EInputBackend::HIDAPI;
+#elif defined(SNAPI_INPUT_ENABLE_BACKEND_LIBUSB) && SNAPI_INPUT_ENABLE_BACKEND_LIBUSB
+    return SnAPI::Input::EInputBackend::LIBUSB;
+#else
+    return SnAPI::Input::EInputBackend::Invalid;
+#endif
+}
+
+constexpr bool DefaultRegisterSdl3Backend() noexcept
+{
+#if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
+    return true;
+#else
+    return false;
+#endif
+}
+
+constexpr bool DefaultRegisterHidApiBackend() noexcept
+{
+#if defined(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI) && SNAPI_INPUT_ENABLE_BACKEND_HIDAPI
+    return true;
+#else
+    return false;
+#endif
+}
+
+constexpr bool DefaultRegisterLibUsbBackend() noexcept
+{
+#if defined(SNAPI_INPUT_ENABLE_BACKEND_LIBUSB) && SNAPI_INPUT_ENABLE_BACKEND_LIBUSB
+    return true;
+#else
+    return false;
+#endif
+}
+
+} // namespace Detail
+
 /**
  * @ingroup SnAPI_GameFramework
  * @brief Bootstrap settings for world-owned SnAPI.Input integration.
@@ -42,38 +87,18 @@ namespace SnAPI::GameFramework
 SnType()
 struct InputBootstrapSettings
 {
-#if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
     SnField(SnKey("Backend"))
-    SnAPI::Input::EInputBackend Backend = SnAPI::Input::EInputBackend::SDL3; /**< @brief Backend selected for context creation. */
-#elif defined(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI) && SNAPI_INPUT_ENABLE_BACKEND_HIDAPI
-    SnAPI::Input::EInputBackend Backend = SnAPI::Input::EInputBackend::HIDAPI; /**< @brief Backend selected for context creation. */
-#elif defined(SNAPI_INPUT_ENABLE_BACKEND_LIBUSB) && SNAPI_INPUT_ENABLE_BACKEND_LIBUSB
-    SnAPI::Input::EInputBackend Backend = SnAPI::Input::EInputBackend::LIBUSB; /**< @brief Backend selected for context creation. */
-#else
-    SnAPI::Input::EInputBackend Backend = SnAPI::Input::EInputBackend::Invalid; /**< @brief Backend selected for context creation. */
-#endif
+    SnAPI::Input::EInputBackend Backend = Detail::DefaultInputBackend(); /**< @brief Backend selected for context creation. */
     SnAPI::Input::InputBackendCreateDesc CreateDesc{}; /**< @brief Context creation descriptor passed directly to SnAPI.Input backend creation. */
 
-#if defined(SNAPI_INPUT_ENABLE_BACKEND_SDL3) && SNAPI_INPUT_ENABLE_BACKEND_SDL3
     SnField(SnKey("RegisterSdl3Backend"))
-    bool RegisterSdl3Backend = true; /**< @brief Auto-register SDL3 backend factory before creating context. */
-#else
-    bool RegisterSdl3Backend = false; /**< @brief Auto-register SDL3 backend factory before creating context. */
-#endif
+    bool RegisterSdl3Backend = Detail::DefaultRegisterSdl3Backend(); /**< @brief Auto-register SDL3 backend factory before creating context. */
 
-#if defined(SNAPI_INPUT_ENABLE_BACKEND_HIDAPI) && SNAPI_INPUT_ENABLE_BACKEND_HIDAPI
     SnField(SnKey("RegisterHidApiBackend"))
-    bool RegisterHidApiBackend = true; /**< @brief Auto-register HIDAPI backend factory before creating context. */
-#else
-    bool RegisterHidApiBackend = false; /**< @brief Auto-register HIDAPI backend factory before creating context. */
-#endif
+    bool RegisterHidApiBackend = Detail::DefaultRegisterHidApiBackend(); /**< @brief Auto-register HIDAPI backend factory before creating context. */
 
-#if defined(SNAPI_INPUT_ENABLE_BACKEND_LIBUSB) && SNAPI_INPUT_ENABLE_BACKEND_LIBUSB
     SnField(SnKey("RegisterLibUsbBackend"))
-    bool RegisterLibUsbBackend = true; /**< @brief Auto-register libusb backend factory before creating context. */
-#else
-    bool RegisterLibUsbBackend = false; /**< @brief Auto-register libusb backend factory before creating context. */
-#endif
+    bool RegisterLibUsbBackend = Detail::DefaultRegisterLibUsbBackend(); /**< @brief Auto-register libusb backend factory before creating context. */
 };
 
 /**

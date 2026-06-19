@@ -103,10 +103,14 @@ struct RendererBootstrapSettings
     bool Closeable = true; /**< @brief Allow platform close actions. */
     SnField(SnKey("AllowTransparency"))
     bool AllowTransparency = true; /**< @brief Enable transparent compositor support when available. */
+    SnField(SnKey("VSync"))
+    bool VSync = false; /**< @brief Enable presentation synchronization for the subsystem-owned renderer window surface. */
     SnField(SnKey("CreateDefaultLighting"))
     bool CreateDefaultLighting = false; /**< @brief Create a default directional light used by shadow/deferred passes. */
     SnField(SnKey("ApplyDefaultFeatureProfile"))
     bool ApplyDefaultFeatureProfile = true; /**< @brief Apply the default renderer feature profile (shadow/gbuffer/deferred/present). */
+    SnField(SnKey("UseUiOnlyMainSurfaceProfile"))
+    bool UseUiOnlyMainSurfaceProfile = false; /**< @brief Render the main window surface with UI/text overlay passes only. */
     SnField(SnKey("EnableSsao"))
     bool EnableSsao = true; /**< @brief Register the Renderer.New ambient-occlusion feature chain in the default feature profile. */
     SnField(SnKey("EnableSsgi"))
